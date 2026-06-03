@@ -11,27 +11,28 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util;
+package com.google.devtools.build.lib.util
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.exec.util.SpawnBuilder.build
+import com.google.devtools.build.lib.util.ClassNameTest
+import com.google.devtools.common.options.testing.ConverterTesterMap.Builder.build
+import net.starlark.java.syntax.FileOptions.Builder.build
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [ClassNameTest].  */
+@RunWith(JUnit4::class)
+class ClassNameTest {
+    @org.junit.Test
+    fun outerClassName() {
+        assertThat(ClassName.getSimpleNameWithOuter(ClassNameTest::class.java)).isEqualTo("ClassNameTest")
+    }
 
-/** Tests for {@link ClassNameTest}. */
-@RunWith(JUnit4.class)
-public class ClassNameTest {
-  @Test
-  public void outerClassName() {
-    assertThat(ClassName.getSimpleNameWithOuter(ClassNameTest.class)).isEqualTo("ClassNameTest");
-  }
+    internal class InnerClass
 
-  static class InnerClass {}
-
-  @Test
-  public void innerClassName() {
-    assertThat(ClassName.getSimpleNameWithOuter(InnerClass.class))
-        .isEqualTo("ClassNameTest$InnerClass");
-  }
+    @org.junit.Test
+    fun innerClassName() {
+        assertThat(ClassName.getSimpleNameWithOuter(com.google.devtools.build.lib.util.ClassNameTest.InnerClass::class.java))
+            .isEqualTo("ClassNameTest\$InnerClass")
+    }
 }

@@ -11,399 +11,374 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.common.options.testing
 
-package com.google.devtools.common.options.testing;
+import org.junit.Assert
+import org.junit.Test
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.fail;
-
-import com.google.devtools.common.options.Converter;
-import com.google.devtools.common.options.Converters;
-import com.google.devtools.common.options.OptionsParsingException;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests to exercise the functionality of {@link ConverterTester}. */
-@RunWith(JUnit4.class)
-public final class ConverterTesterTest {
-
-  @Test
-  public void construction_throwsAssertionErrorIfConverterCreationFails() throws Exception {
-    try {
-      new ConverterTester(UnconstructableConverter.class, /*conversionContext=*/ null);
-    } catch (AssertionError expected) {
-      assertThat(expected) // AssertionError
-          .hasCauseThat() // InvocationTargetException
-          .hasCauseThat() // UnsupportedOperationException
-          .hasMessageThat()
-          .contains("YOU CAN'T MAKE ME!");
-      return;
-    }
-    fail("expected tester creation to fail");
-  }
-
-  /** Test converter for construction_throwsAssertionErrorIfConverterCreationFails. */
-  public static final class UnconstructableConverter extends Converter.Contextless<String> {
-    public UnconstructableConverter() {
-      throw new UnsupportedOperationException("YOU CAN'T MAKE ME!");
+/** Tests to exercise the functionality of [ConverterTester].  */
+@RunWith(JUnit4::class)
+class ConverterTesterTest {
+    @Test
+    @Throws(Exception::class)
+    fun construction_throwsAssertionErrorIfConverterCreationFails() {
+        try {
+            ConverterTester(UnconstructableConverter::class.java,  /*conversionContext=*/null)
+        } catch (expected: AssertionError) {
+            Truth.assertThat(expected) // AssertionError
+                .hasCauseThat() // InvocationTargetException
+                .hasCauseThat() // UnsupportedOperationException
+                .hasMessageThat()
+                .contains("YOU CAN'T MAKE ME!")
+            return
+        }
+        Assert.fail("expected tester creation to fail")
     }
 
-    @Override
-    public String convert(String input) throws OptionsParsingException {
-      return input;
+    /** Test converter for construction_throwsAssertionErrorIfConverterCreationFails.  */
+    class UnconstructableConverter : Contextless<String?>() {
+        init {
+            throw UnsupportedOperationException("YOU CAN'T MAKE ME!")
+        }
+
+        @Throws(OptionsParsingException::class)
+        public override fun convert(input: String?): String? {
+            return input
+        }
+
+        val typeDescription: String
+            get() = "anything, if you can get an instance"
     }
 
-    @Override
-    public String getTypeDescription() {
-      return "anything, if you can get an instance";
+    @Test
+    @Throws(Exception::class)
+    fun getConverterClass_returnsConstructorArg() {
+        val tester =
+            ConverterTester(Converters.BooleanConverter::class.java,  /*conversionContext=*/null)
+        Truth.assertThat(tester.converterClass).isEqualTo(Converters.BooleanConverter::class.java)
     }
-  }
 
-  @Test
-  public void getConverterClass_returnsConstructorArg() throws Exception {
-    ConverterTester tester =
-        new ConverterTester(Converters.BooleanConverter.class, /*conversionContext=*/ null);
-    assertThat(tester.converterClass).isEqualTo(Converters.BooleanConverter.class);
-  }
+    @Test
+    @Throws(Exception::class)
+    fun hasTestForInput_returnsTrueIffInputPassedToAddEqualityGroup() {
+        val tester =
+            ConverterTester(Converters.DoubleConverter::class.java,  /*conversionContext=*/null)
+                .addEqualityGroup("1.0", "1", "1.00")
+                .addEqualityGroup("2")
 
-  @Test
-  public void hasTestForInput_returnsTrueIffInputPassedToAddEqualityGroup() throws Exception {
-    ConverterTester tester =
-        new ConverterTester(Converters.DoubleConverter.class, /*conversionContext=*/ null)
+        Truth.assertThat(tester.hasTestForInput("1.0")).isTrue()
+        Truth.assertThat(tester.hasTestForInput("1")).isTrue()
+        Truth.assertThat(tester.hasTestForInput("1.00")).isTrue()
+        Truth.assertThat(tester.hasTestForInput("2")).isTrue()
+
+        Truth.assertThat(tester.hasTestForInput("3")).isFalse()
+        Truth.assertThat(tester.hasTestForInput("1.000")).isFalse()
+        Truth.assertThat(tester.hasTestForInput("not a double")).isFalse()
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun addEqualityGroup_throwsIfConversionFails() {
+        val tester =
+            ConverterTester(ThrowingConverter::class.java,  /*conversionContext=*/null)
+                .addEqualityGroup("okay")
+                .addEqualityGroup("also okay", "pretty fine")
+        try {
+            tester.addEqualityGroup("wrong")
+        } catch (expected: AssertionError) {
+            Truth.assertThat(expected).hasMessageThat().contains("\"wrong\"")
+            Truth.assertThat(expected).hasCauseThat().hasMessageThat().contains("HOW DARE YOU")
+            return
+        }
+        Assert.fail("expected addEqualityGroup to fail")
+    }
+
+    /** Test converter for addEqualityGroup_throwsIfConversionFails.  */
+    class ThrowingConverter : Contextless<String?>() {
+        @Throws(OptionsParsingException::class)
+        public override fun convert(input: String?): String? {
+            if ("wrong" == input) {
+                throw OptionsParsingException("HOW DARE YOU")
+            }
+            return input
+        }
+
+        val typeDescription: String
+            get() = "just don't give the wrong answer"
+    }
+
+    @Test
+    fun testConvert_passesWhenAllInstancesObeyEqualsAndItemsOnlyEqualToOthersInSameGroup() {
+        ConverterTester(Converters.DoubleConverter::class.java,  /*conversionContext=*/null)
             .addEqualityGroup("1.0", "1", "1.00")
-            .addEqualityGroup("2");
-
-    assertThat(tester.hasTestForInput("1.0")).isTrue();
-    assertThat(tester.hasTestForInput("1")).isTrue();
-    assertThat(tester.hasTestForInput("1.00")).isTrue();
-    assertThat(tester.hasTestForInput("2")).isTrue();
-
-    assertThat(tester.hasTestForInput("3")).isFalse();
-    assertThat(tester.hasTestForInput("1.000")).isFalse();
-    assertThat(tester.hasTestForInput("not a double")).isFalse();
-  }
-
-  @Test
-  public void addEqualityGroup_throwsIfConversionFails() throws Exception {
-    ConverterTester tester =
-        new ConverterTester(ThrowingConverter.class, /*conversionContext=*/ null)
-            .addEqualityGroup("okay")
-            .addEqualityGroup("also okay", "pretty fine");
-    try {
-      tester.addEqualityGroup("wrong");
-    } catch (AssertionError expected) {
-      assertThat(expected).hasMessageThat().contains("\"wrong\"");
-      assertThat(expected).hasCauseThat().hasMessageThat().contains("HOW DARE YOU");
-      return;
-    }
-    fail("expected addEqualityGroup to fail");
-  }
-
-  /** Test converter for addEqualityGroup_throwsIfConversionFails. */
-  public static final class ThrowingConverter extends Converter.Contextless<String> {
-    @Override
-    public String convert(String input) throws OptionsParsingException {
-      if ("wrong".equals(input)) {
-        throw new OptionsParsingException("HOW DARE YOU");
-      }
-      return input;
+            .addEqualityGroup("2", "2", "2.0000", "2.0", "+2")
+            .addEqualityGroup("3")
+            .addEqualityGroup("3.1415")
+            .testConvert()
     }
 
-    @Override
-    public String getTypeDescription() {
-      return "just don't give the wrong answer";
-    }
-  }
-
-  @Test
-  public void testConvert_passesWhenAllInstancesObeyEqualsAndItemsOnlyEqualToOthersInSameGroup() {
-    new ConverterTester(Converters.DoubleConverter.class, /*conversionContext=*/ null)
-        .addEqualityGroup("1.0", "1", "1.00")
-        .addEqualityGroup("2", "2", "2.0000", "2.0", "+2")
-        .addEqualityGroup("3")
-        .addEqualityGroup("3.1415")
-        .testConvert();
-  }
-
-  @Test
-  public void testConvert_testsHashCodeConsistencyForConvertedInstance() {
-    ConverterTester tester =
-        new ConverterTester(InconsistentHashCodeConverter.class, /*conversionContext=*/ null)
-            .addEqualityGroup("input doesn't matter");
-    try {
-      tester.testConvert();
-    } catch (AssertionError expected) {
-      assertThat(expected).hasMessageThat().contains("\"input doesn't matter\"");
-      assertThat(expected).hasMessageThat().contains("hashCode");
-      assertThat(expected).hasMessageThat().contains("must be consistent");
-      return;
-    }
-    fail("expected the tester to notice the bad hash code implementation");
-  }
-
-  /** A class with a badly implemented hashCode which is not consistent across calls. */
-  public static final class InconsistentHashCode {
-    @Override
-    public boolean equals(Object other) {
-      return other instanceof InconsistentHashCode;
+    @Test
+    fun testConvert_testsHashCodeConsistencyForConvertedInstance() {
+        val tester =
+            ConverterTester(InconsistentHashCodeConverter::class.java,  /*conversionContext=*/null)
+                .addEqualityGroup("input doesn't matter")
+        try {
+            tester.testConvert()
+        } catch (expected: AssertionError) {
+            Truth.assertThat(expected).hasMessageThat().contains("\"input doesn't matter\"")
+            Truth.assertThat(expected).hasMessageThat().contains("hashCode")
+            Truth.assertThat(expected).hasMessageThat().contains("must be consistent")
+            return
+        }
+        Assert.fail("expected the tester to notice the bad hash code implementation")
     }
 
-    private int howManyTimesHaveIBeenHashedAlready = 0;
+    /** A class with a badly implemented hashCode which is not consistent across calls.  */
+    class InconsistentHashCode {
+        override fun equals(other: Any?): Boolean {
+            return other is InconsistentHashCode
+        }
 
-    @Override
-    public int hashCode() {
-      howManyTimesHaveIBeenHashedAlready += 1;
-      return howManyTimesHaveIBeenHashedAlready;
-    }
-  }
+        private var howManyTimesHaveIBeenHashedAlready = 0
 
-  /** Test converter for testConvert_testsHashCodeConsistencyForConvertedInstance. */
-  public static final class InconsistentHashCodeConverter
-      extends Converter.Contextless<InconsistentHashCode> {
-    @Override
-    public InconsistentHashCode convert(String input) throws OptionsParsingException {
-      return new InconsistentHashCode();
+        override fun hashCode(): Int {
+            howManyTimesHaveIBeenHashedAlready += 1
+            return howManyTimesHaveIBeenHashedAlready
+        }
     }
 
-    @Override
-    public String getTypeDescription() {
-      return "anything, I don't even look at it";
-    }
-  }
+    /** Test converter for testConvert_testsHashCodeConsistencyForConvertedInstance.  */
+    class InconsistentHashCodeConverter
 
-  @Test
-  public void testConvert_testsHashCodeConsistencyForSameConverter() {
-    ConverterTester tester =
-        new ConverterTester(IncrementingHashCodeConverter.class, /*conversionContext=*/ null)
-            .addEqualityGroup("meaningless input");
-    try {
-      tester.testConvert();
-    } catch (AssertionError expected) {
-      assertThat(expected).hasMessageThat().contains("\"meaningless input\"");
-      assertThat(expected).hasMessageThat().contains("consistent hashCode");
-      assertThat(expected).hasMessageThat().contains("same Converter");
-      return;
-    }
-    fail("expected the tester to notice the mismatched hash codes");
-  }
+        : Contextless<InconsistentHashCode?>() {
+        @Throws(OptionsParsingException::class)
+        public override fun convert(input: String?): InconsistentHashCode {
+            return InconsistentHashCode()
+        }
 
-  /** A class with a configurable hashCode set in the constructor. */
-  public static final class SettableHashCode {
-    private final int hashCode;
-
-    public SettableHashCode(int hashCode) {
-      this.hashCode = hashCode;
+        val typeDescription: String
+            get() = "anything, I don't even look at it"
     }
 
-    @Override
-    public boolean equals(Object other) {
-      return other instanceof SettableHashCode;
+    @Test
+    fun testConvert_testsHashCodeConsistencyForSameConverter() {
+        val tester =
+            ConverterTester(IncrementingHashCodeConverter::class.java,  /*conversionContext=*/null)
+                .addEqualityGroup("meaningless input")
+        try {
+            tester.testConvert()
+        } catch (expected: AssertionError) {
+            Truth.assertThat(expected).hasMessageThat().contains("\"meaningless input\"")
+            Truth.assertThat(expected).hasMessageThat().contains("consistent hashCode")
+            Truth.assertThat(expected).hasMessageThat().contains("same Converter")
+            return
+        }
+        Assert.fail("expected the tester to notice the mismatched hash codes")
     }
 
-    @Override
-    public int hashCode() {
-      return hashCode;
-    }
-  }
+    /** A class with a configurable hashCode set in the constructor.  */
+    class SettableHashCode(private val hashCode: Int) {
+        override fun equals(other: Any?): Boolean {
+            return other is SettableHashCode
+        }
 
-  /** Test converter for testConvert_testsHashCodeConsistencyForSameConverter. */
-  public static final class IncrementingHashCodeConverter
-      extends Converter.Contextless<SettableHashCode> {
-    private int howManyInstancesHaveIMadeAlready = 0;
-
-    @Override
-    public SettableHashCode convert(String input) throws OptionsParsingException {
-      howManyInstancesHaveIMadeAlready += 1;
-      return new SettableHashCode(howManyInstancesHaveIMadeAlready);
+        override fun hashCode(): Int {
+            return hashCode
+        }
     }
 
-    @Override
-    public String getTypeDescription() {
-      return "whatever, I'm pretty much just going to ignore it";
-    }
-  }
+    /** Test converter for testConvert_testsHashCodeConsistencyForSameConverter.  */
+    class IncrementingHashCodeConverter
 
-  @Test
-  public void testConvert_testsHashCodeConsistencyForDifferentConverters() {
-    ConverterTester tester =
-        new ConverterTester(StaticIncrementingHashCodeConverter.class, /*conversionContext=*/ null)
-            .addEqualityGroup("some kind of input");
-    try {
-      tester.testConvert();
-    } catch (AssertionError expected) {
-      assertThat(expected).hasMessageThat().contains("\"some kind of input\"");
-      assertThat(expected).hasMessageThat().contains("consistent hashCode");
-      assertThat(expected).hasMessageThat().contains("different Converter");
-      return;
-    }
-    fail("expected the tester to notice the mismatched hash codes");
-  }
+        : Contextless<SettableHashCode?>() {
+        private var howManyInstancesHaveIMadeAlready = 0
 
-  /** Test converter for testConvert_testsHashCodeConsistencyForDifferentConverters. */
-  public static final class StaticIncrementingHashCodeConverter
-      extends Converter.Contextless<SettableHashCode> {
-    private static int howManyInstancesHaveIMadeAlready = 0;
+        @Throws(OptionsParsingException::class)
+        public override fun convert(input: String?): SettableHashCode {
+            howManyInstancesHaveIMadeAlready += 1
+            return SettableHashCode(howManyInstancesHaveIMadeAlready)
+        }
 
-    private final int hashCode;
-
-    public StaticIncrementingHashCodeConverter() {
-      howManyInstancesHaveIMadeAlready += 1;
-      this.hashCode = howManyInstancesHaveIMadeAlready;
+        val typeDescription: String
+            get() = "whatever, I'm pretty much just going to ignore it"
     }
 
-    @Override
-    public SettableHashCode convert(String input) throws OptionsParsingException {
-      return new SettableHashCode(hashCode);
+    @Test
+    fun testConvert_testsHashCodeConsistencyForDifferentConverters() {
+        val tester =
+            ConverterTester(StaticIncrementingHashCodeConverter::class.java,  /*conversionContext=*/null)
+                .addEqualityGroup("some kind of input")
+        try {
+            tester.testConvert()
+        } catch (expected: AssertionError) {
+            Truth.assertThat(expected).hasMessageThat().contains("\"some kind of input\"")
+            Truth.assertThat(expected).hasMessageThat().contains("consistent hashCode")
+            Truth.assertThat(expected).hasMessageThat().contains("different Converter")
+            return
+        }
+        Assert.fail("expected the tester to notice the mismatched hash codes")
     }
 
-    @Override
-    public String getTypeDescription() {
-      return "a string or null, I'm easy";
-    }
-  }
+    /** Test converter for testConvert_testsHashCodeConsistencyForDifferentConverters.  */
+    class StaticIncrementingHashCodeConverter
 
+        : Contextless<SettableHashCode?>() {
+        private val hashCode: Int
 
-  @Test
-  public void testConvert_testsSelfEqualityForConvertedInstance() {
-    ConverterTester tester =
-        new ConverterTester(SelfLoathingConverter.class, /*conversionContext=*/ null)
-            .addEqualityGroup("self-loathing");
-    try {
-      tester.testConvert();
-    } catch (AssertionError expected) {
-      assertThat(expected).hasMessageThat().contains("\"self-loathing\"");
-      assertThat(expected).hasMessageThat().contains("must be Object#equals to itself");
-      return;
-    }
-    fail("expected the tester to notice the bad equals implementation");
-  }
+        init {
+            howManyInstancesHaveIMadeAlready += 1
+            this.hashCode = howManyInstancesHaveIMadeAlready
+        }
 
-  /** A class which is equal to every instance of its class except itself. */
-  public static final class SelfLoathingObject {
-    @Override
-    public boolean equals(Object other) {
-      return other instanceof SelfLoathingObject && other != this;
+        @Throws(OptionsParsingException::class)
+        public override fun convert(input: String?): SettableHashCode {
+            return SettableHashCode(hashCode)
+        }
+
+        val typeDescription: String
+            get() = "a string or null, I'm easy"
+
+        companion object {
+            private var howManyInstancesHaveIMadeAlready = 0
+        }
     }
 
-    @Override
-    public int hashCode() {
-      return 4; // chosen by fair hashing algorithm
-    }
-  }
 
-  /** Test converter for testConvert_testsSelfEqualityForConvertedInstance. */
-  public static final class SelfLoathingConverter
-      extends Converter.Contextless<SelfLoathingObject> {
-    @Override
-    public SelfLoathingObject convert(String input) throws OptionsParsingException {
-      return new SelfLoathingObject();
-    }
-
-    @Override
-    public String getTypeDescription() {
-      return "whatever... why even ask me to convert anything..............";
-    }
-  }
-
-  @Test
-  public void testConvert_testsEqualityForSameConverter() {
-    ConverterTester tester =
-        new ConverterTester(CountingConverter.class, /*conversionContext=*/ null)
-            .addEqualityGroup("countables");
-    try {
-      tester.testConvert();
-    } catch (AssertionError expected) {
-      assertThat(expected).hasMessageThat().contains("\"countables\"");
-      assertThat(expected).hasMessageThat().contains("equal to itself");
-      assertThat(expected).hasMessageThat().contains("same Converter");
-      return;
-    }
-    fail("expected the tester to notice the converter giving unequal objects");
-  }
-
-  /** Test converter for testConvert_testsEqualityForSameConverter. */
-  public static final class CountingConverter extends Converter.Contextless<Integer> {
-    private int howManyInstancesHaveIMadeAlready = 0;
-
-    @Override
-    public Integer convert(String input) throws OptionsParsingException {
-      howManyInstancesHaveIMadeAlready += 1;
-      return howManyInstancesHaveIMadeAlready;
+    @Test
+    fun testConvert_testsSelfEqualityForConvertedInstance() {
+        val tester =
+            ConverterTester(SelfLoathingConverter::class.java,  /*conversionContext=*/null)
+                .addEqualityGroup("self-loathing")
+        try {
+            tester.testConvert()
+        } catch (expected: AssertionError) {
+            Truth.assertThat(expected).hasMessageThat().contains("\"self-loathing\"")
+            Truth.assertThat(expected).hasMessageThat().contains("must be Object#equals to itself")
+            return
+        }
+        Assert.fail("expected the tester to notice the bad equals implementation")
     }
 
-    @Override
-    public String getTypeDescription() {
-      return "I can count anything!";
-    }
-  }
+    /** A class which is equal to every instance of its class except itself.  */
+    class SelfLoathingObject {
+        override fun equals(other: Any?): Boolean {
+            return other is SelfLoathingObject && other !== this
+        }
 
-  @Test
-  public void testConvert_testsEqualityForDifferentConverters() {
-    ConverterTester tester =
-        new ConverterTester(StaticCountingConverter.class, /*conversionContext=*/ null)
-            .addEqualityGroup("words I like");
-    try {
-      tester.testConvert();
-    } catch (AssertionError expected) {
-      assertThat(expected).hasMessageThat().contains("\"words I like\"");
-      assertThat(expected).hasMessageThat().contains("equal to itself");
-      assertThat(expected).hasMessageThat().contains("different Converter");
-      return;
-    }
-    fail("expected the tester to notice the converters giving unequal objects");
-  }
-
-  /** Test converter for testConvert_testsEqualityForDifferentConverters. */
-  public static final class StaticCountingConverter extends Converter.Contextless<Integer> {
-    private static int howManyInstancesHaveIMadeAlready = 0;
-
-    private final int output;
-
-    public StaticCountingConverter() {
-      howManyInstancesHaveIMadeAlready += 1;
-      this.output = howManyInstancesHaveIMadeAlready;
+        override fun hashCode(): Int {
+            return 4 // chosen by fair hashing algorithm
+        }
     }
 
-    @Override
-    public Integer convert(String input) throws OptionsParsingException {
-      return output;
+    /** Test converter for testConvert_testsSelfEqualityForConvertedInstance.  */
+    class SelfLoathingConverter
+
+        : Contextless<SelfLoathingObject?>() {
+        @Throws(OptionsParsingException::class)
+        public override fun convert(input: String?): SelfLoathingObject {
+            return SelfLoathingObject()
+        }
+
+        val typeDescription: String
+            get() = "whatever... why even ask me to convert anything.............."
     }
 
-    @Override
-    public String getTypeDescription() {
-      return "your favorite text";
+    @Test
+    fun testConvert_testsEqualityForSameConverter() {
+        val tester =
+            ConverterTester(CountingConverter::class.java,  /*conversionContext=*/null)
+                .addEqualityGroup("countables")
+        try {
+            tester.testConvert()
+        } catch (expected: AssertionError) {
+            Truth.assertThat(expected).hasMessageThat().contains("\"countables\"")
+            Truth.assertThat(expected).hasMessageThat().contains("equal to itself")
+            Truth.assertThat(expected).hasMessageThat().contains("same Converter")
+            return
+        }
+        Assert.fail("expected the tester to notice the converter giving unequal objects")
     }
-  }
 
-  @Test
-  public void testConvert_testsEqualityForItemsInSameGroup() {
-    ConverterTester tester =
-        new ConverterTester(Converters.DoubleConverter.class, /*conversionContext=*/ null)
-            .addEqualityGroup("+1.000", "2.30");
-    try {
-      tester.testConvert();
-    } catch (AssertionError expected) {
-      assertThat(expected).hasMessageThat().contains("\"+1.000\"");
-      assertThat(expected).hasMessageThat().contains("\"2.30\"");
-      return;
-    }
-    fail("expected the tester to notice the two non-equal conversion results in the same group");
-  }
+    /** Test converter for testConvert_testsEqualityForSameConverter.  */
+    class CountingConverter : Contextless<Int?>() {
+        private var howManyInstancesHaveIMadeAlready = 0
 
-  @Test
-  public void testConvert_testsNonEqualityForItemsInDifferentGroups() {
-    ConverterTester tester =
-        new ConverterTester(Converters.DoubleConverter.class, /*conversionContext=*/ null)
-            .addEqualityGroup("+1.000")
-            .addEqualityGroup("1.0");
-    try {
-      tester.testConvert();
-    } catch (AssertionError expected) {
-      assertThat(expected).hasMessageThat().contains("\"+1.000\"");
-      assertThat(expected).hasMessageThat().contains("\"1.0\"");
-      return;
+        @Throws(OptionsParsingException::class)
+        public override fun convert(input: String?): Int {
+            howManyInstancesHaveIMadeAlready += 1
+            return howManyInstancesHaveIMadeAlready
+        }
+
+        val typeDescription: String
+            get() = "I can count anything!"
     }
-    fail("expected the tester to notice the two equal conversion results in different groups");
-  }
+
+    @Test
+    fun testConvert_testsEqualityForDifferentConverters() {
+        val tester =
+            ConverterTester(StaticCountingConverter::class.java,  /*conversionContext=*/null)
+                .addEqualityGroup("words I like")
+        try {
+            tester.testConvert()
+        } catch (expected: AssertionError) {
+            Truth.assertThat(expected).hasMessageThat().contains("\"words I like\"")
+            Truth.assertThat(expected).hasMessageThat().contains("equal to itself")
+            Truth.assertThat(expected).hasMessageThat().contains("different Converter")
+            return
+        }
+        Assert.fail("expected the tester to notice the converters giving unequal objects")
+    }
+
+    /** Test converter for testConvert_testsEqualityForDifferentConverters.  */
+    class StaticCountingConverter : Contextless<Int?>() {
+        private val output: Int
+
+        init {
+            howManyInstancesHaveIMadeAlready += 1
+            this.output = howManyInstancesHaveIMadeAlready
+        }
+
+        @Throws(OptionsParsingException::class)
+        public override fun convert(input: String?): Int {
+            return output
+        }
+
+        val typeDescription: String
+            get() = "your favorite text"
+
+        companion object {
+            private var howManyInstancesHaveIMadeAlready = 0
+        }
+    }
+
+    @Test
+    fun testConvert_testsEqualityForItemsInSameGroup() {
+        val tester =
+            ConverterTester(Converters.DoubleConverter::class.java,  /*conversionContext=*/null)
+                .addEqualityGroup("+1.000", "2.30")
+        try {
+            tester.testConvert()
+        } catch (expected: AssertionError) {
+            Truth.assertThat(expected).hasMessageThat().contains("\"+1.000\"")
+            Truth.assertThat(expected).hasMessageThat().contains("\"2.30\"")
+            return
+        }
+        Assert.fail("expected the tester to notice the two non-equal conversion results in the same group")
+    }
+
+    @Test
+    fun testConvert_testsNonEqualityForItemsInDifferentGroups() {
+        val tester =
+            ConverterTester(Converters.DoubleConverter::class.java,  /*conversionContext=*/null)
+                .addEqualityGroup("+1.000")
+                .addEqualityGroup("1.0")
+        try {
+            tester.testConvert()
+        } catch (expected: AssertionError) {
+            Truth.assertThat(expected).hasMessageThat().contains("\"+1.000\"")
+            Truth.assertThat(expected).hasMessageThat().contains("\"1.0\"")
+            return
+        }
+        Assert.fail("expected the tester to notice the two equal conversion results in different groups")
+    }
 }

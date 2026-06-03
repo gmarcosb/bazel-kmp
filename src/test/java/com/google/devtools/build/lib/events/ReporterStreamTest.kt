@@ -11,55 +11,60 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.events;
+package com.google.devtools.build.lib.events
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.events.ReporterStream
+import com.google.devtools.build.lib.testutil.MoreAsserts
+import org.junit.Before
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.io.PrintWriter
 
-import com.google.devtools.build.lib.testutil.MoreAsserts;
-import java.io.PrintWriter;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+@RunWith(JUnit4::class)
+class ReporterStreamTest {
+    private var reporter: com.google.devtools.build.lib.events.Reporter? = null
+    private var out: java.lang.StringBuilder? = null
+    private var outAppender: com.google.devtools.build.lib.events.EventHandler? = null
 
-@RunWith(JUnit4.class)
-public class ReporterStreamTest {
-
-  private Reporter reporter;
-  private StringBuilder out;
-  private EventHandler outAppender;
-
-  @Before
-  public final void createOutputAppender() throws Exception {
-    reporter = new Reporter(EventBusEventHandler.createWithNewEventBus());
-    out = new StringBuilder();
-    outAppender =
-        new EventHandler() {
-          @Override
-          public void handle(Event event) {
-            out.append("[" + event.getKind() + ": " + event.getMessage() + "]\n");
-          }
-        };
-  }
-
-  @Test
-  public void reporterStream() throws Exception {
-    assertThat(out.toString()).isEmpty();
-    reporter.addHandler(outAppender);
-    try (PrintWriter warnWriter =
-            new PrintWriter(new ReporterStream(reporter, EventKind.WARNING), true);
-        PrintWriter infoWriter =
-            new PrintWriter(new ReporterStream(reporter, EventKind.INFO), true)) {
-      infoWriter.println("some info");
-      warnWriter.println("a warning");
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun createOutputAppender() {
+        reporter = com.google.devtools.build.lib.events.Reporter(EventBusEventHandler.createWithNewEventBus())
+        out = java.lang.StringBuilder()
+        outAppender =
+            object : com.google.devtools.build.lib.events.EventHandler {
+                override fun handle(event: com.google.devtools.build.lib.events.Event) {
+                    out.append("[" + event.getKind() + ": " + event.getMessage() + "]\n")
+                }
+            }
     }
-    reporter.getOutErr().printOutLn("some output");
-    reporter.getOutErr().printErrLn("an error");
-    MoreAsserts.assertEqualsUnifyingLineEnds(
-        "[INFO: some info\n]\n"
-            + "[WARNING: a warning\n]\n"
-            + "[STDOUT: some output\n]\n"
-            + "[STDERR: an error\n]\n",
-        out.toString());
-  }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun reporterStream() {
+        Truth.assertThat(out.toString()).isEmpty()
+        reporter.addHandler(outAppender)
+        PrintWriter(
+            ReporterStream(reporter, com.google.devtools.build.lib.events.EventKind.WARNING),
+            true
+        ).use { warnWriter ->
+            PrintWriter(
+                ReporterStream(reporter, com.google.devtools.build.lib.events.EventKind.INFO),
+                true
+            ).use { infoWriter ->
+                infoWriter.println("some info")
+                warnWriter.println("a warning")
+            }
+        }
+        reporter.getOutErr().printOutLn("some output")
+        reporter.getOutErr().printErrLn("an error")
+        MoreAsserts.assertEqualsUnifyingLineEnds(
+            ("[INFO: some info\n]\n"
+                    + "[WARNING: a warning\n]\n"
+                    + "[STDOUT: some output\n]\n"
+                    + "[STDERR: an error\n]\n"),
+            out.toString()
+        )
+    }
 }

@@ -11,26 +11,25 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester
 
-/** Tests for {@link Byte} serialization. */
-@RunWith(JUnit4.class)
-public class ByteArrayCodecTest {
-  @Test
-  public void smoke() {
-    new SerializationTester(byteArray(), byteArray(12, 34), byteArray(-128, 0, 127));
-  }
-
-  private static byte[] byteArray(int... bytes) {
-    byte[] result = new byte[bytes.length];
-    for (int i = 0; i < bytes.length; ++i) {
-      result[i] = (byte) bytes[i];
+/** Tests for [Byte] serialization.  */
+@RunWith(JUnit4::class)
+class ByteArrayCodecTest {
+    @org.junit.Test
+    fun smoke() {
+        SerializationTester(byteArray(), byteArray(12, 34), byteArray(-128, 0, 127))
     }
-    return result;
-  }
+
+    companion object {
+        private fun byteArray(vararg bytes: Int): ByteArray {
+            val result = ByteArray(bytes.size)
+            for (i in bytes.indices) {
+                result[i] = bytes[i].toByte()
+            }
+            return result
+        }
+    }
 }

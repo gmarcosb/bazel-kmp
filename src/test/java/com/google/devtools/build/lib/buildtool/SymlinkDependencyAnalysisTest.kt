@@ -11,52 +11,48 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.buildtool;
+package com.google.devtools.build.lib.buildtool
 
-import static com.google.common.collect.Iterables.getOnlyElement;
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.devtools.build.lib.buildtool.util.BuildIntegrationTestCase;
-import com.google.devtools.build.lib.vfs.Path;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.vfs.Path
 
 /**
  * Test that symbolic links are handled correctly by the dependency analysis:
  * that changes of the link target cause a rebuild.
  */
-@RunWith(JUnit4.class)
-public class SymlinkDependencyAnalysisTest extends BuildIntegrationTestCase {
+@RunWith(JUnit4::class)
+class SymlinkDependencyAnalysisTest : BuildIntegrationTestCase() {
+    @Throws(java.lang.Exception::class)
+    private fun buildAndReturnOutput(): String? {
+        buildTarget("//symlink")
+        return readContentAsLatin1String(com.google.common.collect.Iterables.getOnlyElement<Artifact?>(getArtifacts("//symlink:out")))
+    }
 
-  private String buildAndReturnOutput() throws Exception {
-    buildTarget("//symlink");
-    return readContentAsLatin1String(getOnlyElement(getArtifacts("//symlink:out")));
-  }
-
-  @Test
-  public void testSymlinkTargetChangeCausesRebuild() throws Exception {
-    Path buildFile =
-        write(
-            "symlink/BUILD",
-            """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSymlinkTargetChangeCausesRebuild() {
+        val buildFile: Path =
+            write(
+                "symlink/BUILD",
+                """
             genrule(
                 name = "symlink",
                 srcs = ["link"],
                 outs = ["out"],
-                cmd = "/bin/cp $(location link) $(location out)",
+                cmd = "/bin/cp ${'$'}(location link) ${'$'}(location out)",
             )
-            """);
-    Path target = write("symlink/target", "foo");
+            
+            """.trimIndent()
+            )
+        val target: Path = write("symlink/target", "foo")
 
-    Path link = buildFile.getParentDirectory().getChild("link");
-    link.createSymbolicLink(target);
+        val link: Path = buildFile.getParentDirectory().getChild("link")
+        link.createSymbolicLink(target)
 
-    target.setLastModifiedTime(10000);
-    assertThat(buildAndReturnOutput()).isEqualTo("foo\n"); // first build
+        target.setLastModifiedTime(10000)
+        Truth.assertThat(buildAndReturnOutput()).isEqualTo("foo\n") // first build
 
-    write("symlink/target", "bar");
-    target.setLastModifiedTime(20000);
-    assertThat(buildAndReturnOutput()).isEqualTo("bar\n"); // should do a rebuild
-  }
+        write("symlink/target", "bar")
+        target.setLastModifiedTime(20000)
+        Truth.assertThat(buildAndReturnOutput()).isEqualTo("bar\n") // should do a rebuild
+    }
 }

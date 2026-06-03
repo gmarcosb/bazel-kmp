@@ -11,247 +11,196 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.toolchains;
+package com.google.devtools.build.lib.skyframe.toolchains
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.analysis.testing.ToolchainCollectionSubject.assertThat;
-import static com.google.devtools.build.lib.analysis.testing.ToolchainContextSubject.assertThat;
-import static com.google.devtools.build.lib.skyframe.DependencyResolver.getDependencyContext;
-import static java.util.Objects.requireNonNull;
-
-import com.google.auto.value.AutoValue;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterables;
-import com.google.common.eventbus.EventBus;
-import com.google.devtools.build.lib.actions.Action;
-import com.google.devtools.build.lib.analysis.AnalysisResult;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.ExecGroupCollection;
-import com.google.devtools.build.lib.analysis.TargetAndConfiguration;
-import com.google.devtools.build.lib.analysis.ToolchainCollection;
-import com.google.devtools.build.lib.analysis.ToolchainContext;
-import com.google.devtools.build.lib.analysis.config.DependencyEvaluationException;
-import com.google.devtools.build.lib.analysis.config.ToolchainTypeRequirement;
-import com.google.devtools.build.lib.analysis.configuredtargets.RuleConfiguredTarget;
-import com.google.devtools.build.lib.analysis.constraints.IncompatibleTargetChecker.IncompatibleTargetException;
-import com.google.devtools.build.lib.analysis.producers.DependencyContext;
-import com.google.devtools.build.lib.analysis.producers.DependencyContextProducer;
-import com.google.devtools.build.lib.analysis.test.BaselineCoverageAction;
-import com.google.devtools.build.lib.analysis.util.AnalysisMock;
-import com.google.devtools.build.lib.analysis.util.AnalysisTestCase;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.RuleClassProvider;
-import com.google.devtools.build.lib.packages.util.Crosstool.CcToolchainConfig;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetFunction;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetKey;
-import com.google.devtools.build.lib.skyframe.ConfiguredValueCreationException;
-import com.google.devtools.build.lib.skyframe.DependencyResolver;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.lib.skyframe.util.SkyframeExecutorTestUtils;
-import com.google.devtools.build.skyframe.EvaluationResult;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionException;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.skyframe.DependencyResolver.getDependencyContext
 
 /**
- * Tests {@link ConfiguredTargetFunction}'s logic for determining each target toolchain context.
- *
- * <p>This is essentially an integration test for the toolchain part of {@link
- * DependencyContextProducer}. These methods form the core logic that figures out what a target's
+ * Tests [ConfiguredTargetFunction]'s logic for determining each target toolchain context.
+ * 
+ * 
+ * This is essentially an integration test for the toolchain part of [ ]. These methods form the core logic that figures out what a target's
  * toolchain dependencies are.
- *
- * <p>{@link ConfiguredTargetFunction} is a complicated class that does a lot of things. This test
- * focuses purely on the task of toolchain resolution. So instead of evaluating full {@link
- * ConfiguredTargetFunction} instances, it evaluates a mock {@link SkyFunction} that just wraps the
- * {@link DependencyResolver#getDependencyContext} part. This keeps focus tight and integration
+ * 
+ * 
+ * [ConfiguredTargetFunction] is a complicated class that does a lot of things. This test
+ * focuses purely on the task of toolchain resolution. So instead of evaluating full [ ] instances, it evaluates a mock [SkyFunction] that just wraps the
+ * [DependencyResolver.getDependencyContext] part. This keeps focus tight and integration
  * dependencies narrow.
- *
- * <p>We can't just call {@link ToolchainContextProducer} directly because that method needs a
- * {@link SkyFunction.Environment} and Blaze's test infrastructure doesn't support direct access to
+ * 
+ * 
+ * We can't just call [ToolchainContextProducer] directly because that method needs a
+ * [SkyFunction.Environment] and Blaze's test infrastructure doesn't support direct access to
  * environments.
  */
-@RunWith(JUnit4.class)
-public final class ToolchainsForTargetsTest extends AnalysisTestCase {
-  /** Returns a {@link SkyKey} for a given <Target, BuildConfigurationValue> pair. */
-  private static Key key(
-      TargetAndConfiguration targetAndConfiguration, ConfiguredTargetKey configuredTargetKey) {
-    return new AutoValue_ToolchainsForTargetsTest_Key(targetAndConfiguration, configuredTargetKey);
-  }
+@RunWith(JUnit4::class)
+class ToolchainsForTargetsTest : AnalysisTestCase() {
+    /** Key class for [ComputeUnloadedToolchainContextsFunction].  */
+    @AutoValue
+    internal abstract class Key : SkyKey {
+        abstract fun targetAndConfiguration(): TargetAndConfiguration?
 
-  /** Key class for {@link ComputeUnloadedToolchainContextsFunction}. */
-  @AutoValue
-  abstract static class Key implements SkyKey {
-    abstract TargetAndConfiguration targetAndConfiguration();
+        abstract fun configuredTargetKey(): ConfiguredTargetKey?
 
-    abstract ConfiguredTargetKey configuredTargetKey();
-
-    @Override
-    public SkyFunctionName functionName() {
-      return ComputeUnloadedToolchainContextsFunction.SKYFUNCTION_NAME;
-    }
-  }
-
-  /**
-   * Returns a {@link ToolchainCollection< UnloadedToolchainContext >} as the result of {@link
-   * DependencyResolver#getDependencyContext}.
-   */
-  @AutoCodec
-  record Value(ToolchainCollection<UnloadedToolchainContext> toolchainCollection)
-      implements SkyValue {
-    Value {
-      requireNonNull(toolchainCollection, "toolchainCollection");
+        public override fun functionName(): SkyFunctionName? {
+            return ComputeUnloadedToolchainContextsFunction.Companion.SKYFUNCTION_NAME
+        }
     }
 
-    static Value create(ToolchainCollection<UnloadedToolchainContext> toolchainCollection) {
-      return new Value(toolchainCollection);
-    }
-  }
+    /**
+     * Returns a [ ][<] as the result of [ ][DependencyResolver.getDependencyContext].
+     */
+    @AutoCodec
+    internal class Value(toolchainCollection: ToolchainCollection<UnloadedToolchainContext?>?) : SkyValue {
+        val toolchainCollection: ToolchainCollection<UnloadedToolchainContext?>?
 
-  /**
-   * A mock {@link SkyFunction} that just calls {@link DependencyResolver#getDependencyContext} and
-   * returns its results.
-   */
-  static class ComputeUnloadedToolchainContextsFunction implements SkyFunction {
-    static final SkyFunctionName SKYFUNCTION_NAME =
-        SkyFunctionName.createHermetic(
-            "CONFIGURED_TARGET_FUNCTION_COMPUTE_UNLOADED_TOOLCHAIN_CONTEXTS");
+        init {
+            this.toolchainCollection = toolchainCollection
+            java.util.Objects.requireNonNull<Any?>(toolchainCollection, "toolchainCollection")
+        }
 
-    private final LateBoundStateProvider stateProvider;
-
-    ComputeUnloadedToolchainContextsFunction(LateBoundStateProvider lateBoundStateProvider) {
-      this.stateProvider = lateBoundStateProvider;
-    }
-
-    @Override
-    public SkyValue compute(SkyKey skyKey, Environment env)
-        throws ComputeUnloadedToolchainContextsException, InterruptedException {
-      Key key = (Key) skyKey.argument();
-      var state =
-          env.getState(
-              () -> DependencyResolver.State.createForTesting(key.targetAndConfiguration()));
-      DependencyContext result;
-      try {
-        result =
-            getDependencyContext(
-                state,
-                key.configuredTargetKey(),
-                stateProvider.lateBoundRuleClassProvider(),
-                env,
-                env.getListener());
-      } catch (ToolchainException
-          | ConfiguredValueCreationException
-          | IncompatibleTargetException
-          | DependencyEvaluationException
-          | ExecGroupCollection.InvalidExecGroupException e) {
-        throw new ComputeUnloadedToolchainContextsException(e);
-      }
-      if (!state.transitiveRootCauses().isEmpty()) {
-        throw new IllegalStateException(
-            "expected empty: " + state.transitiveRootCauses().build().toList());
-      }
-      if (result == null) {
-        return null;
-      }
-      return Value.create(result.unloadedToolchainContexts());
+        companion object {
+            fun create(toolchainCollection: ToolchainCollection<UnloadedToolchainContext?>?): Value {
+                return com.google.devtools.build.lib.skyframe.toolchains.ToolchainsForTargetsTest.Value(
+                    toolchainCollection
+                )
+            }
+        }
     }
 
-    private static class ComputeUnloadedToolchainContextsException extends SkyFunctionException {
-      ComputeUnloadedToolchainContextsException(Exception cause) {
-        super(cause, Transience.PERSISTENT); // We can generalize the transience if/when needed.
-      }
+    /**
+     * A mock [SkyFunction] that just calls [DependencyResolver.getDependencyContext] and
+     * returns its results.
+     */
+    internal class ComputeUnloadedToolchainContextsFunction(private val stateProvider: LateBoundStateProvider) :
+        SkyFunction {
+        @Throws(ComputeUnloadedToolchainContextsException::class, java.lang.InterruptedException::class)
+        public override fun compute(skyKey: SkyKey, env: Environment): SkyValue? {
+            val key = skyKey.argument() as Key
+            val state: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+                env.getState(
+                    { DependencyResolver.State.createForTesting(key.targetAndConfiguration()) })
+            val result: DependencyContext?
+            try {
+                result =
+                    getDependencyContext(
+                        state,
+                        key.configuredTargetKey(),
+                        stateProvider.lateBoundRuleClassProvider(),
+                        env,
+                        env.getListener()
+                    )
+            } catch (e: ToolchainException) {
+                throw ComputeUnloadedToolchainContextsException(e)
+            } catch (e: ConfiguredValueCreationException) {
+                throw ComputeUnloadedToolchainContextsException(e)
+            } catch (e: IncompatibleTargetException) {
+                throw ComputeUnloadedToolchainContextsException(e)
+            } catch (e: DependencyEvaluationException) {
+                throw ComputeUnloadedToolchainContextsException(e)
+            } catch (e: ExecGroupCollection.InvalidExecGroupException) {
+                throw ComputeUnloadedToolchainContextsException(e)
+            }
+            check(state.transitiveRootCauses().isEmpty()) {
+                "expected empty: " + state.transitiveRootCauses().build().toList()
+            }
+            if (result == null) {
+                return null
+            }
+            return com.google.devtools.build.lib.skyframe.toolchains.ToolchainsForTargetsTest.Value.Companion.create(
+                result.unloadedToolchainContexts()
+            )
+        }
+
+        private class ComputeUnloadedToolchainContextsException(cause: java.lang.Exception?) :
+            SkyFunctionException(cause, Transience.PERSISTENT)
+
+        companion object {
+            val SKYFUNCTION_NAME: SkyFunctionName? = SkyFunctionName.createHermetic(
+                "CONFIGURED_TARGET_FUNCTION_COMPUTE_UNLOADED_TOOLCHAIN_CONTEXTS"
+            )
+        }
     }
-  }
 
-  /**
-   * Provides build state to {@link ComputeUnloadedToolchainContextsFunction}. This needs to be
-   * late-bound (i.e. we can't just pass the contents directly) because of the way {@link
-   * AnalysisTestCase} works: the {@link AnalysisMock} instance that instantiates the function gets
-   * created before the rest of the build state. See {@link AnalysisTestCase#createMocks} for
-   * details.
-   */
-  private class LateBoundStateProvider {
-    RuleClassProvider lateBoundRuleClassProvider() {
-      return ruleClassProvider;
-    }
-  }
-
-  /**
-   * An {@link AnalysisMock} that injects {@link ComputeUnloadedToolchainContextsFunction} into the
-   * Skyframe executor.
-   */
-  private static final class AnalysisMockWithComputeDepsFunction extends AnalysisMock.Delegate {
-    private final LateBoundStateProvider stateProvider;
-
-    AnalysisMockWithComputeDepsFunction(AnalysisMock parent, LateBoundStateProvider stateProvider) {
-      super(parent);
-      this.stateProvider = stateProvider;
+    /**
+     * Provides build state to [ComputeUnloadedToolchainContextsFunction]. This needs to be
+     * late-bound (i.e. we can't just pass the contents directly) because of the way [ ] works: the [AnalysisMock] instance that instantiates the function gets
+     * created before the rest of the build state. See [AnalysisTestCase.createMocks] for
+     * details.
+     */
+    private inner class LateBoundStateProvider {
+        fun lateBoundRuleClassProvider(): RuleClassProvider? {
+            return ruleClassProvider
+        }
     }
 
-    @Override
-    public ImmutableMap<SkyFunctionName, SkyFunction> getSkyFunctions(
-        BlazeDirectories directories) {
-      return ImmutableMap.<SkyFunctionName, SkyFunction>builder()
-          .putAll(super.getSkyFunctions(directories))
-          .put(
-              ComputeUnloadedToolchainContextsFunction.SKYFUNCTION_NAME,
-              new ComputeUnloadedToolchainContextsFunction(stateProvider))
-          .buildOrThrow();
+    /**
+     * An [AnalysisMock] that injects [ComputeUnloadedToolchainContextsFunction] into the
+     * Skyframe executor.
+     */
+    private class AnalysisMockWithComputeDepsFunction(
+        parent: AnalysisMock,
+        private val stateProvider: LateBoundStateProvider
+    ) : com.google.devtools.build.lib.analysis.util.AnalysisMock.Delegate(parent) {
+        public override fun getSkyFunctions(
+            directories: BlazeDirectories
+        ): com.google.common.collect.ImmutableMap<SkyFunctionName?, SkyFunction?> {
+            return com.google.common.collect.ImmutableMap.builder<SkyFunctionName?, SkyFunction?>()
+                .putAll(super.getSkyFunctions(directories))
+                .put(
+                    ComputeUnloadedToolchainContextsFunction.Companion.SKYFUNCTION_NAME,
+                    ComputeUnloadedToolchainContextsFunction(stateProvider)
+                )
+                .buildOrThrow()
+        }
     }
-  }
 
-  @Override
-  protected AnalysisMock getAnalysisMock() {
-    return new AnalysisMockWithComputeDepsFunction(
-        super.getAnalysisMock(), new LateBoundStateProvider());
-  }
+    val analysisMock: AnalysisMock
+        get() = AnalysisMockWithComputeDepsFunction(
+            super.getAnalysisMock(), LateBoundStateProvider()
+        )
 
-  public ToolchainCollection<UnloadedToolchainContext> getToolchainCollection(
-      ConfiguredTarget configuredTarget, ConfiguredTargetKey configuredTargetKey)
-      throws InterruptedException {
-    String targetLabel = configuredTarget.getOriginalLabel().toString();
-    SkyKey key =
-        key(
-            new TargetAndConfiguration(getTarget(targetLabel), getConfiguration(configuredTarget)),
-            configuredTargetKey);
-    // Analysis phase ended after the update() call in getToolchainCollection. We must re-enable
-    // analysis so we can call ConfiguredTargetFunction again without raising an error.
-    skyframeExecutor.getSkyframeBuildView().enableAnalysis(true);
-    EvaluationResult<Value> evalResult =
-        SkyframeExecutorTestUtils.evaluate(skyframeExecutor, key, /*keepGoing=*/ false, reporter);
-    // Test call has finished, to reset the state.
-    skyframeExecutor.getSkyframeBuildView().enableAnalysis(false);
-    return evalResult.get(key).toolchainCollection();
-  }
+    @Throws(java.lang.InterruptedException::class)
+    fun getToolchainCollection(
+        configuredTarget: ConfiguredTarget, configuredTargetKey: ConfiguredTargetKey?
+    ): ToolchainCollection<UnloadedToolchainContext?> {
+        val targetLabel: String? = configuredTarget.getOriginalLabel().toString()
+        val key: SkyKey =
+            key(
+                TargetAndConfiguration(getTarget(targetLabel), getConfiguration(configuredTarget)),
+                configuredTargetKey
+            )
+        // Analysis phase ended after the update() call in getToolchainCollection. We must re-enable
+        // analysis so we can call ConfiguredTargetFunction again without raising an error.
+        skyframeExecutor.getSkyframeBuildView().enableAnalysis(true)
+        val evalResult: EvaluationResult<Value?> =
+            SkyframeExecutorTestUtils.evaluate<SkyValue?>(skyframeExecutor, key,  /*keepGoing=*/false, reporter)
+        // Test call has finished, to reset the state.
+        skyframeExecutor.getSkyframeBuildView().enableAnalysis(false)
+        return evalResult.get(key).toolchainCollection()
+    }
 
-  public ToolchainCollection<UnloadedToolchainContext> getToolchainCollection(String targetLabel)
-      throws Exception {
-    ConfiguredTarget target = Iterables.getOnlyElement(update(targetLabel).getTargetsToBuild());
-    return getToolchainCollection(
-        target,
-        ConfiguredTargetKey.builder()
-            .setLabel(target.getOriginalLabel())
-            .setConfigurationKey(target.getConfigurationKey())
-            .build());
-  }
+    @Throws(java.lang.Exception::class)
+    fun getToolchainCollection(targetLabel: String?): ToolchainCollection<UnloadedToolchainContext?> {
+        val target: ConfiguredTarget? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(update(targetLabel).getTargetsToBuild())
+        return getToolchainCollection(
+            target,
+            ConfiguredTargetKey.builder()
+                .setLabel(target.getOriginalLabel())
+                .setConfigurationKey(target.getConfigurationKey())
+                .build()
+        )
+    }
 
-  @Before
-  public void createToolchains() throws Exception {
-    scratch.appendFile("MODULE.bazel", "register_toolchains('//toolchains:all')");
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun createToolchains() {
+        scratch.appendFile("MODULE.bazel", "register_toolchains('//toolchains:all')")
 
-    scratch.file(
-        "toolchain/toolchain_def.bzl",
-        """
+        scratch.file(
+            "toolchain/toolchain_def.bzl",
+            """
         def _impl(ctx):
             toolchain = platform_common.ToolchainInfo(
                 data = ctx.attr.data,
@@ -264,13 +213,15 @@ public final class ToolchainsForTargetsTest extends AnalysisTestCase {
                 "data": attr.string(),
             },
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file("toolchain/BUILD", "toolchain_type(name = 'test_toolchain')");
+        scratch.file("toolchain/BUILD", "toolchain_type(name = 'test_toolchain')")
 
-    scratch.appendFile(
-        "toolchains/BUILD",
-        """
+        scratch.appendFile(
+            "toolchains/BUILD",
+            """
         load("//toolchain:toolchain_def.bzl", "test_toolchain")
 
         toolchain(
@@ -298,11 +249,13 @@ public final class ToolchainsForTargetsTest extends AnalysisTestCase {
             name = "toolchain_2_impl",
             data = "bar",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.appendFile(
-        "toolchain/rule.bzl",
-        """
+        scratch.appendFile(
+            "toolchain/rule.bzl",
+            """
         def _impl(ctx):
             data = ctx.toolchains["//toolchain:test_toolchain"].data
             return [
@@ -319,50 +272,58 @@ public final class ToolchainsForTargetsTest extends AnalysisTestCase {
             },
             toolchains = ["//toolchain:test_toolchain"],
         )
-        """);
-  }
+        
+        """.trimIndent()
+        )
+    }
 
-  // actual tests
-  @Test
-  public void basicToolchains() throws Exception {
-    scratch.file(
-        "a/BUILD",
-        """
+    // actual tests
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun basicToolchains() {
+        scratch.file(
+            "a/BUILD",
+            """
         load("//toolchain:rule.bzl", "my_rule")
 
         my_rule(name = "a")
-        """);
+        
+        """.trimIndent()
+        )
 
-    ToolchainCollection<UnloadedToolchainContext> toolchainCollection =
-        getToolchainCollection("//a");
-    assertThat(toolchainCollection).isNotNull();
-    assertThat(toolchainCollection).hasDefaultExecGroup();
-    assertThat(toolchainCollection)
-        .defaultToolchainContext()
-        .hasToolchainType("//toolchain:test_toolchain");
-    assertThat(toolchainCollection)
-        .defaultToolchainContext()
-        .hasResolvedToolchain("//toolchains:toolchain_1_impl");
-    Label toolchainType = Label.parseCanonicalUnchecked("//toolchain:test_toolchain");
-    assertThat(toolchainCollection)
-        .defaultToolchainContext()
-        .toolchainTypes()
-        .containsExactly(toolchainType, ToolchainTypeRequirement.create(toolchainType));
-  }
+        val toolchainCollection: ToolchainCollection<UnloadedToolchainContext?> =
+            getToolchainCollection("//a")
+        assertThat(toolchainCollection).isNotNull()
+        assertThat(toolchainCollection).hasDefaultExecGroup()
+        assertThat(toolchainCollection)
+            .defaultToolchainContext()
+            .hasToolchainType("//toolchain:test_toolchain")
+        assertThat(toolchainCollection)
+            .defaultToolchainContext()
+            .hasResolvedToolchain("//toolchains:toolchain_1_impl")
+        val toolchainType: Label? = Label.parseCanonicalUnchecked("//toolchain:test_toolchain")
+        assertThat(toolchainCollection)
+            .defaultToolchainContext()
+            .toolchainTypes()
+            .containsExactly(toolchainType, ToolchainTypeRequirement.create(toolchainType))
+    }
 
-  @Test
-  public void basicToolchainsWithAliasAutoExecGroups() throws Exception {
-    scratch.file(
-        "test/alias/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun basicToolchainsWithAliasAutoExecGroups() {
+        scratch.file(
+            "test/alias/BUILD",
+            """
         alias(
             name = "alias_toolchain_type",
             actual = "//toolchain:test_toolchain",
         )
-        """);
-    scratch.file(
-        "test/defs.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/defs.bzl",
+            """
         def _impl(ctx):
             print(ctx.toolchains["//test/alias:alias_toolchain_type"])
             print(ctx.toolchains["//toolchain:test_toolchain"])
@@ -372,34 +333,41 @@ public final class ToolchainsForTargetsTest extends AnalysisTestCase {
             implementation = _impl,
             toolchains = ["//test/alias:alias_toolchain_type"],
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load("//test:defs.bzl", "custom_rule")
 
         custom_rule(
             name = "custom_rule_name",
         )
-        """);
-    useConfiguration("--incompatible_auto_exec_groups");
+        
+        """.trimIndent()
+        )
+        useConfiguration("--incompatible_auto_exec_groups")
 
-    assertThat(update("//test:custom_rule_name").hasError()).isFalse();
-  }
+        assertThat(update("//test:custom_rule_name").hasError()).isFalse()
+    }
 
-  @Test
-  public void basicToolchainsWithAliasNoAutoExecGroups() throws Exception {
-    scratch.file(
-        "test/alias/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun basicToolchainsWithAliasNoAutoExecGroups() {
+        scratch.file(
+            "test/alias/BUILD",
+            """
         alias(
             name = "alias_toolchain_type",
             actual = "//toolchain:test_toolchain",
         )
-        """);
-    scratch.file(
-        "test/defs.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/defs.bzl",
+            """
         def _impl(ctx):
             print(ctx.toolchains["//test/alias:alias_toolchain_type"])
             print(ctx.toolchains["//toolchain:test_toolchain"])
@@ -409,26 +377,31 @@ public final class ToolchainsForTargetsTest extends AnalysisTestCase {
             implementation = _impl,
             toolchains = ["//test/alias:alias_toolchain_type"],
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load("//test:defs.bzl", "custom_rule")
 
         custom_rule(
             name = "custom_rule_name",
         )
-        """);
-    useConfiguration("--noincompatible_auto_exec_groups");
+        
+        """.trimIndent()
+        )
+        useConfiguration("--noincompatible_auto_exec_groups")
 
-    assertThat(update("//test:custom_rule_name").hasError()).isFalse();
-  }
+        assertThat(update("//test:custom_rule_name").hasError()).isFalse()
+    }
 
-  @Test
-  public void basicToolchainsWithAliasNoAutoExecGroups_test() throws Exception {
-    scratch.appendFile(
-        "toolchain/exec_group_rule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun basicToolchainsWithAliasNoAutoExecGroups_test() {
+        scratch.appendFile(
+            "toolchain/exec_group_rule.bzl",
+            """
         def _impl(ctx):
             if "//toolchain:test_toolchain" in ctx.toolchains:
                 fail("this is not expected, it's an exec gp toolchain")
@@ -444,53 +417,60 @@ public final class ToolchainsForTargetsTest extends AnalysisTestCase {
                 ),
             },
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "a/BUILD",
-        """
+        scratch.file(
+            "a/BUILD",
+            """
         load("//toolchain:exec_group_rule.bzl", "my_exec_group_rule")
 
         my_exec_group_rule(name = "a")
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration("--incompatible_auto_exec_groups");
+        useConfiguration("--incompatible_auto_exec_groups")
 
-    assertThat(update("//a:a").hasError()).isFalse();
-  }
+        assertThat(update("//a:a").hasError()).isFalse()
+    }
 
-  @Test
-  public void execPlatform() throws Exception {
-    // Add some platforms and custom constraints.
-    scratch.file("platforms/BUILD", "platform(name = 'local_platform_a')");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun execPlatform() {
+        // Add some platforms and custom constraints.
+        scratch.file("platforms/BUILD", "platform(name = 'local_platform_a')")
 
-    // Test normal resolution, and with a per-target exec constraint.
-    scratch.file(
-        "a/BUILD",
-        """
+        // Test normal resolution, and with a per-target exec constraint.
+        scratch.file(
+            "a/BUILD",
+            """
         load("//toolchain:rule.bzl", "my_rule")
 
         my_rule(name = "a")
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration("--extra_execution_platforms=//platforms:local_platform_a");
+        useConfiguration("--extra_execution_platforms=//platforms:local_platform_a")
 
-    ToolchainCollection<UnloadedToolchainContext> toolchainCollection =
-        getToolchainCollection("//a");
-    assertThat(toolchainCollection).isNotNull();
-    assertThat(toolchainCollection).hasDefaultExecGroup();
-    assertThat(toolchainCollection)
-        .defaultToolchainContext()
-        // First execution platform will be used.
-        .hasExecutionPlatform("//platforms:local_platform_a");
-  }
+        val toolchainCollection: ToolchainCollection<UnloadedToolchainContext?> =
+            getToolchainCollection("//a")
+        assertThat(toolchainCollection).isNotNull()
+        assertThat(toolchainCollection).hasDefaultExecGroup()
+        assertThat(toolchainCollection)
+            .defaultToolchainContext() // First execution platform will be used.
+            .hasExecutionPlatform("//platforms:local_platform_a")
+    }
 
-  @Test
-  public void execPlatform_withExecConstraint() throws Exception {
-    // Add some platforms and custom constraints.
-    scratch.file(
-        "platforms/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun execPlatform_withExecConstraint() {
+        // Add some platforms and custom constraints.
+        scratch.file(
+            "platforms/BUILD",
+            """
         constraint_setting(name = "local_setting")
 
         constraint_value(
@@ -512,39 +492,44 @@ public final class ToolchainsForTargetsTest extends AnalysisTestCase {
             name = "local_platform_b",
             constraint_values = [":local_value_b"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    // Test normal resolution, and with a per-target exec constraint.
-    scratch.file(
-        "a/BUILD",
-        """
+        // Test normal resolution, and with a per-target exec constraint.
+        scratch.file(
+            "a/BUILD",
+            """
         load("//toolchain:rule.bzl", "my_rule")
 
         my_rule(
             name = "a",
             exec_compatible_with = ["//platforms:local_value_b"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration(
-        "--extra_execution_platforms=//platforms:local_platform_a,//platforms:local_platform_b");
+        useConfiguration(
+            "--extra_execution_platforms=//platforms:local_platform_a,//platforms:local_platform_b"
+        )
 
-    ToolchainCollection<UnloadedToolchainContext> toolchainCollection =
-        getToolchainCollection("//a");
-    assertThat(toolchainCollection).isNotNull();
-    assertThat(toolchainCollection).hasDefaultExecGroup();
-    assertThat(toolchainCollection)
-        .defaultToolchainContext()
-        // Exec constraint forces the use of this exec platform.
-        .hasExecutionPlatform("//platforms:local_platform_b");
-  }
+        val toolchainCollection: ToolchainCollection<UnloadedToolchainContext?> =
+            getToolchainCollection("//a")
+        assertThat(toolchainCollection).isNotNull()
+        assertThat(toolchainCollection).hasDefaultExecGroup()
+        assertThat(toolchainCollection)
+            .defaultToolchainContext() // Exec constraint forces the use of this exec platform.
+            .hasExecutionPlatform("//platforms:local_platform_b")
+    }
 
-  @Test
-  public void execGroups_named() throws Exception {
-    // Write a rule with exec groups.
-    scratch.appendFile(
-        "toolchain/exec_group_rule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun execGroups_named() {
+        // Write a rule with exec groups.
+        scratch.appendFile(
+            "toolchain/exec_group_rule.bzl",
+            """
         def _impl(ctx):
             pass
 
@@ -556,44 +541,49 @@ public final class ToolchainsForTargetsTest extends AnalysisTestCase {
                 ),
             },
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "a/BUILD",
-        """
+        scratch.file(
+            "a/BUILD",
+            """
         load("//toolchain:exec_group_rule.bzl", "my_exec_group_rule")
 
         my_exec_group_rule(name = "a")
-        """);
+        
+        """.trimIndent()
+        )
 
-    ToolchainCollection<UnloadedToolchainContext> toolchainCollection =
-        getToolchainCollection("//a");
-    assertThat(toolchainCollection).isNotNull();
-    assertThat(toolchainCollection).hasDefaultExecGroup();
-    assertThat(toolchainCollection).defaultToolchainContext().toolchainTypes().isEmpty();
-    assertThat(toolchainCollection).defaultToolchainContext().resolvedToolchainLabels().isEmpty();
+        val toolchainCollection: ToolchainCollection<UnloadedToolchainContext?> =
+            getToolchainCollection("//a")
+        assertThat(toolchainCollection).isNotNull()
+        assertThat(toolchainCollection).hasDefaultExecGroup()
+        assertThat(toolchainCollection).defaultToolchainContext().toolchainTypes().isEmpty()
+        assertThat(toolchainCollection).defaultToolchainContext().resolvedToolchainLabels().isEmpty()
 
-    assertThat(toolchainCollection).hasExecGroup("temp");
-    assertThat(toolchainCollection)
-        .execGroup("temp")
-        .hasToolchainType("//toolchain:test_toolchain");
-    assertThat(toolchainCollection)
-        .execGroup("temp")
-        .hasResolvedToolchain("//toolchains:toolchain_1_impl");
-    assertThat(toolchainCollection)
-        .execGroup("temp")
-        .hasToolchainType("//toolchain:test_toolchain");
-    assertThat(toolchainCollection)
-        .execGroup("temp")
-        .hasResolvedToolchain("//toolchains:toolchain_1_impl");
-  }
+        assertThat(toolchainCollection).hasExecGroup("temp")
+        assertThat(toolchainCollection)
+            .execGroup("temp")
+            .hasToolchainType("//toolchain:test_toolchain")
+        assertThat(toolchainCollection)
+            .execGroup("temp")
+            .hasResolvedToolchain("//toolchains:toolchain_1_impl")
+        assertThat(toolchainCollection)
+            .execGroup("temp")
+            .hasToolchainType("//toolchain:test_toolchain")
+        assertThat(toolchainCollection)
+            .execGroup("temp")
+            .hasResolvedToolchain("//toolchains:toolchain_1_impl")
+    }
 
-  @Test
-  public void execGroups_defaultAndNamed() throws Exception {
-    // Add another toolchain type.
-    scratch.appendFile(
-        "extra/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun execGroups_defaultAndNamed() {
+        // Add another toolchain type.
+        scratch.appendFile(
+            "extra/BUILD",
+            """
         load("//toolchain:toolchain_def.bzl", "test_toolchain")
 
         toolchain_type(name = "extra_toolchain")
@@ -610,12 +600,14 @@ public final class ToolchainsForTargetsTest extends AnalysisTestCase {
             name = "toolchain_impl",
             data = "foo",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    // Write a rule with exec groups.
-    scratch.appendFile(
-        "toolchain/exec_group_rule.bzl",
-        """
+        // Write a rule with exec groups.
+        scratch.appendFile(
+            "toolchain/exec_group_rule.bzl",
+            """
         def _impl(ctx):
             pass
 
@@ -628,43 +620,48 @@ public final class ToolchainsForTargetsTest extends AnalysisTestCase {
                 ),
             },
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "a/BUILD",
-        """
+        scratch.file(
+            "a/BUILD",
+            """
         load("//toolchain:exec_group_rule.bzl", "my_exec_group_rule")
 
         my_exec_group_rule(name = "a")
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration("--extra_toolchains=//extra:toolchain");
-    ToolchainCollection<UnloadedToolchainContext> toolchainCollection =
-        getToolchainCollection("//a");
-    assertThat(toolchainCollection).isNotNull();
-    assertThat(toolchainCollection).hasDefaultExecGroup();
-    assertThat(toolchainCollection)
-        .defaultToolchainContext()
-        .hasToolchainType("//extra:extra_toolchain");
-    assertThat(toolchainCollection)
-        .defaultToolchainContext()
-        .hasResolvedToolchain("//extra:toolchain_impl");
+        useConfiguration("--extra_toolchains=//extra:toolchain")
+        val toolchainCollection: ToolchainCollection<UnloadedToolchainContext?> =
+            getToolchainCollection("//a")
+        assertThat(toolchainCollection).isNotNull()
+        assertThat(toolchainCollection).hasDefaultExecGroup()
+        assertThat(toolchainCollection)
+            .defaultToolchainContext()
+            .hasToolchainType("//extra:extra_toolchain")
+        assertThat(toolchainCollection)
+            .defaultToolchainContext()
+            .hasResolvedToolchain("//extra:toolchain_impl")
 
-    assertThat(toolchainCollection).hasExecGroup("temp");
-    assertThat(toolchainCollection)
-        .execGroup("temp")
-        .hasToolchainType("//toolchain:test_toolchain");
-    assertThat(toolchainCollection)
-        .execGroup("temp")
-        .hasResolvedToolchain("//toolchains:toolchain_1_impl");
-  }
+        assertThat(toolchainCollection).hasExecGroup("temp")
+        assertThat(toolchainCollection)
+            .execGroup("temp")
+            .hasToolchainType("//toolchain:test_toolchain")
+        assertThat(toolchainCollection)
+            .execGroup("temp")
+            .hasResolvedToolchain("//toolchains:toolchain_1_impl")
+    }
 
-  @Test
-  public void keepParentToolchainContext() throws Exception {
-    // Add some platforms and custom constraints.
-    scratch.file(
-        "platforms/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun keepParentToolchainContext() {
+        // Add some platforms and custom constraints.
+        scratch.file(
+            "platforms/BUILD",
+            """
         constraint_setting(name = "local_setting")
 
         constraint_value(
@@ -686,47 +683,55 @@ public final class ToolchainsForTargetsTest extends AnalysisTestCase {
             name = "local_platform_b",
             constraint_values = [":local_value_b"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    // Test normal resolution, and with a per-target exec constraint.
-    scratch.file(
-        "a/BUILD",
-        """
+        // Test normal resolution, and with a per-target exec constraint.
+        scratch.file(
+            "a/BUILD",
+            """
         load("//toolchain:rule.bzl", "my_rule")
 
         my_rule(name = "a")
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration(
-        "--extra_execution_platforms=//platforms:local_platform_a,//platforms:local_platform_b");
+        useConfiguration(
+            "--extra_execution_platforms=//platforms:local_platform_a,//platforms:local_platform_b"
+        )
 
-    ConfiguredTarget target = Iterables.getOnlyElement(update("//a").getTargetsToBuild());
-    ToolchainCollection<UnloadedToolchainContext> toolchainCollection =
-        getToolchainCollection(
-            target,
-            ConfiguredTargetKey.builder()
-                .setLabel(target.getOriginalLabel())
-                .setConfigurationKey(target.getConfigurationKey())
-                .setExecutionPlatformLabel(
-                    Label.parseCanonicalUnchecked("//platforms:local_platform_b"))
-                .build());
+        val target: ConfiguredTarget? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(update("//a").getTargetsToBuild())
+        val toolchainCollection: ToolchainCollection<UnloadedToolchainContext?> =
+            getToolchainCollection(
+                target,
+                ConfiguredTargetKey.builder()
+                    .setLabel(target.getOriginalLabel())
+                    .setConfigurationKey(target.getConfigurationKey())
+                    .setExecutionPlatformLabel(
+                        Label.parseCanonicalUnchecked("//platforms:local_platform_b")
+                    )
+                    .build()
+            )
 
-    assertThat(toolchainCollection).isNotNull();
-    assertThat(toolchainCollection).hasDefaultExecGroup();
+        assertThat(toolchainCollection).isNotNull()
+        assertThat(toolchainCollection).hasDefaultExecGroup()
 
-    // This should have the same exec platform as parentToolchainKey, which is local_platform_b.
-    assertThat(toolchainCollection)
-        .defaultToolchainContext()
-        .hasExecutionPlatform("//platforms:local_platform_b");
-  }
+        // This should have the same exec platform as parentToolchainKey, which is local_platform_b.
+        assertThat(toolchainCollection)
+            .defaultToolchainContext()
+            .hasExecutionPlatform("//platforms:local_platform_b")
+    }
 
-  /** Regression test for b/214105142, https://github.com/bazelbuild/bazel/issues/14521 */
-  @Test
-  public void toolchainWithDifferentExecutionPlatforms_doesNotGenerateConflictingCoverageAction()
-      throws Exception {
-    scratch.file(
-        "platforms/BUILD",
-        """
+    /** Regression test for b/214105142, https://github.com/bazelbuild/bazel/issues/14521  */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun toolchainWithDifferentExecutionPlatforms_doesNotGenerateConflictingCoverageAction() {
+        scratch.file(
+            "platforms/BUILD",
+            """
         constraint_setting(name = "local_setting")
 
         constraint_value(
@@ -748,10 +753,12 @@ public final class ToolchainsForTargetsTest extends AnalysisTestCase {
             name = "local_platform_b",
             constraint_values = [":local_value_b"],
         )
-        """);
-    scratch.file(
-        "a/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "a/BUILD",
+            """
         load("//toolchain:rule.bzl", "my_rule")
 
         my_rule(
@@ -765,53 +772,60 @@ public final class ToolchainsForTargetsTest extends AnalysisTestCase {
             srcs = ["b.c"],
             exec_compatible_with = ["//platforms:local_value_b"],
         )
-        """);
-    useConfiguration(
-        "--collect_code_coverage",
-        "--extra_execution_platforms=//platforms:local_platform_a,//platforms:local_platform_b");
+        
+        """.trimIndent()
+        )
+        useConfiguration(
+            "--collect_code_coverage",
+            "--extra_execution_platforms=//platforms:local_platform_a,//platforms:local_platform_b"
+        )
 
-    update("//a:a", "//a:b");
+        update("//a:a", "//a:b")
 
-    // Sanity check that a coverage action was generated for the rule itself.
-    assertHasBaselineCoverageAction("//a:a", "Writing file a/a/baseline_coverage.dat");
-    assertHasBaselineCoverageAction("//a:b", "Writing file a/b/baseline_coverage.dat");
-    assertThat(getActions("//toolchains:toolchain_1_impl")).isEmpty();
-    ToolchainContext toolchainAContext =
-        getToolchainCollection("//a:a").getDefaultToolchainContext();
-    assertThat(toolchainAContext).hasExecutionPlatform("//platforms:local_platform_a");
-    assertThat(toolchainAContext).hasToolchainType("//toolchain:test_toolchain");
-    assertThat(toolchainAContext).hasResolvedToolchain("//toolchains:toolchain_1_impl");
-    ToolchainContext toolchainBContext =
-        getToolchainCollection("//a:b").getDefaultToolchainContext();
-    assertThat(toolchainBContext).hasExecutionPlatform("//platforms:local_platform_b");
-    assertThat(toolchainBContext).hasToolchainType("//toolchain:test_toolchain");
-    assertThat(toolchainBContext).hasResolvedToolchain("//toolchains:toolchain_1_impl");
-  }
+        // Sanity check that a coverage action was generated for the rule itself.
+        assertHasBaselineCoverageAction("//a:a", "Writing file a/a/baseline_coverage.dat")
+        assertHasBaselineCoverageAction("//a:b", "Writing file a/b/baseline_coverage.dat")
+        Truth.assertThat(getActions("//toolchains:toolchain_1_impl")).isEmpty()
+        val toolchainAContext: ToolchainContext? =
+            getToolchainCollection("//a:a").getDefaultToolchainContext()
+        assertThat(toolchainAContext).hasExecutionPlatform("//platforms:local_platform_a")
+        assertThat(toolchainAContext).hasToolchainType("//toolchain:test_toolchain")
+        assertThat(toolchainAContext).hasResolvedToolchain("//toolchains:toolchain_1_impl")
+        val toolchainBContext: ToolchainContext? =
+            getToolchainCollection("//a:b").getDefaultToolchainContext()
+        assertThat(toolchainBContext).hasExecutionPlatform("//platforms:local_platform_b")
+        assertThat(toolchainBContext).hasToolchainType("//toolchain:test_toolchain")
+        assertThat(toolchainBContext).hasResolvedToolchain("//toolchains:toolchain_1_impl")
+    }
 
-  @CanIgnoreReturnValue
-  private AnalysisResult updateExplicitTarget(String label) throws Exception {
-    return update(
-        new EventBus(),
-        defaultFlags().with(Flag.KEEP_GOING),
-        /* explicitTargetPatterns= */ ImmutableSet.of(Label.parseCanonicalUnchecked(label)),
-        /* aspects= */ ImmutableList.of(),
-        /* aspectsParameters= */ ImmutableMap.of(),
-        label);
-  }
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    @Throws(java.lang.Exception::class)
+    private fun updateExplicitTarget(label: String?): AnalysisResult {
+        return update(
+            com.google.common.eventbus.EventBus(),
+            defaultFlags().with(com.google.devtools.build.lib.analysis.util.AnalysisTestCase.Flag.KEEP_GOING),  /* explicitTargetPatterns= */
+            com.google.common.collect.ImmutableSet.of<E?>(Label.parseCanonicalUnchecked(label)),  /* aspects= */
+            com.google.common.collect.ImmutableList.of<E?>(),  /* aspectsParameters= */
+            com.google.common.collect.ImmutableMap.of<K?, V?>(),
+            label
+        )
+    }
 
-  @Test
-  public void targetCompatibleWith_matchesExecCompatibleWith() throws Exception {
-    getAnalysisMock()
-        .ccSupport()
-        .setupCcToolchainConfig(
-            mockToolsConfig,
-            CcToolchainConfig.builder()
-                .withToolchainTargetConstraints("@@//platforms:local_value_a")
-                .withToolchainExecConstraints()
-                .withCpu("fake"));
-    scratch.file(
-        "platforms/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun targetCompatibleWith_matchesExecCompatibleWith() {
+        this.analysisMock
+            .ccSupport()
+            .setupCcToolchainConfig(
+                mockToolsConfig,
+                CcToolchainConfig.builder()
+                    .withToolchainTargetConstraints("@@//platforms:local_value_a")
+                    .withToolchainExecConstraints()
+                    .withCpu("fake")
+            )
+        scratch.file(
+            "platforms/BUILD",
+            """
         constraint_setting(name = "local_setting")
 
         constraint_value(
@@ -833,12 +847,15 @@ public final class ToolchainsForTargetsTest extends AnalysisTestCase {
             name = "local_platform_b",
             constraint_values = [":local_value_b"],
         )
-        """);
-    useConfiguration(
-        "--extra_execution_platforms=//platforms:local_platform_a,//platforms:local_platform_b");
-    scratch.file(
-        "foo/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        useConfiguration(
+            "--extra_execution_platforms=//platforms:local_platform_a,//platforms:local_platform_b"
+        )
+        scratch.file(
+            "foo/BUILD",
+            """
         load('//test_defs:foo_binary.bzl', 'foo_binary')
         foo_binary(
             name = "tool",
@@ -853,19 +870,22 @@ public final class ToolchainsForTargetsTest extends AnalysisTestCase {
             exec_compatible_with = ["//platforms:local_value_b"],
             tools = [":tool"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    AnalysisResult result = updateExplicitTarget("//foo:runtool");
+        val result: AnalysisResult = updateExplicitTarget("//foo:runtool")
 
-    assertThat(result.hasError()).isFalse();
-    assertNoEvents();
-  }
+        assertThat(result.hasError()).isFalse()
+        assertNoEvents()
+    }
 
-  @Test
-  public void targetCompatibleWith_mismatchesExecCompatibleWith() throws Exception {
-    scratch.file(
-        "platforms/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun targetCompatibleWith_mismatchesExecCompatibleWith() {
+        scratch.file(
+            "platforms/BUILD",
+            """
         constraint_setting(name = "local_setting")
 
         constraint_value(
@@ -887,12 +907,15 @@ public final class ToolchainsForTargetsTest extends AnalysisTestCase {
             name = "local_platform_b",
             constraint_values = [":local_value_b"],
         )
-        """);
-    useConfiguration(
-        "--extra_execution_platforms=//platforms:local_platform_a,//platforms:local_platform_b");
-    scratch.file(
-        "foo/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        useConfiguration(
+            "--extra_execution_platforms=//platforms:local_platform_a,//platforms:local_platform_b"
+        )
+        scratch.file(
+            "foo/BUILD",
+            """
         load('//test_defs:foo_binary.bzl', 'foo_binary')
         foo_binary(
             name = "tool",
@@ -907,27 +930,31 @@ public final class ToolchainsForTargetsTest extends AnalysisTestCase {
             exec_compatible_with = ["//platforms:local_value_b"],
             tools = [":tool"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    reporter.removeHandler(failFastHandler);
-    AnalysisResult result = updateExplicitTarget("//foo:runtool");
+        reporter.removeHandler(failFastHandler)
+        val result: AnalysisResult = updateExplicitTarget("//foo:runtool")
 
-    assertThat(result.hasError()).isTrue();
-    assertContainsEvent(
-        "Target //foo:runtool is incompatible and cannot be built, but was explicitly requested");
-  }
+        assertThat(result.hasError()).isTrue()
+        assertContainsEvent(
+            "Target //foo:runtool is incompatible and cannot be built, but was explicitly requested"
+        )
+    }
 
-  @Test
-  public void targetCompatibleWith_mismatchesExecCompatibleInDifferentPackage() throws Exception {
-    // Regression test for a case where incompatibility happens in an aspect tool in a different
-    // package over a Starlark target with
-    // --incompatible_visibility_private_attributes_at_definition
-    // The tool is replaced with a fake target {@link
-    // IncommpatibleTargetChecker#createIncompatibleRuleConfiguredTarget)
-    // and it's verified if the tool is visible to the Starlark target.
-    scratch.file(
-        "platforms/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun targetCompatibleWith_mismatchesExecCompatibleInDifferentPackage() {
+        // Regression test for a case where incompatibility happens in an aspect tool in a different
+        // package over a Starlark target with
+        // --incompatible_visibility_private_attributes_at_definition
+        // The tool is replaced with a fake target {@link
+        // IncommpatibleTargetChecker#createIncompatibleRuleConfiguredTarget)
+        // and it's verified if the tool is visible to the Starlark target.
+        scratch.file(
+            "platforms/BUILD",
+            """
         constraint_setting(name = "local_setting")
 
         constraint_value(
@@ -949,13 +976,16 @@ public final class ToolchainsForTargetsTest extends AnalysisTestCase {
             name = "local_platform_b",
             constraint_values = [":local_value_b"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration(
-        "--extra_execution_platforms=//platforms:local_platform_a,//platforms:local_platform_b");
-    scratch.file(
-        "foo/lib.bzl",
-        """
+        useConfiguration(
+            "--extra_execution_platforms=//platforms:local_platform_a,//platforms:local_platform_b"
+        )
+        scratch.file(
+            "foo/lib.bzl",
+            """
         def _impl(ctx):
             pass
 
@@ -963,40 +993,47 @@ public final class ToolchainsForTargetsTest extends AnalysisTestCase {
             _impl,
             attrs = {"_my_tool": attr.label(default = "//tool")},
         )
-        """);
-    scratch.file(
-        "tool/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "tool/BUILD",
+            """
         load('//test_defs:foo_binary.bzl', 'foo_binary')
         foo_binary(
             name = "tool",
             srcs = ["a.cc"],
             target_compatible_with = ["//platforms:local_value_a"],
         )
-        """);
-    scratch.file(
-        "foo/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "foo/BUILD",
+            """
         load(":lib.bzl", "my_rule")
 
         my_rule(name = "target_in_different_package")
-        """);
+        
+        """.trimIndent()
+        )
 
-    reporter.removeHandler(failFastHandler);
-    AnalysisResult result = updateExplicitTarget("//foo:target_in_different_package");
+        reporter.removeHandler(failFastHandler)
+        val result: AnalysisResult = updateExplicitTarget("//foo:target_in_different_package")
 
-    assertThat(result.hasError()).isTrue();
-    assertContainsEvent(
-        "Target //foo:target_in_different_package is incompatible and cannot be built, but was"
-            + " explicitly requested");
-  }
+        assertThat(result.hasError()).isTrue()
+        assertContainsEvent(
+            "Target //foo:target_in_different_package is incompatible and cannot be built, but was"
+                    + " explicitly requested"
+        )
+    }
 
-  @Test
-  public void targetCompatibleWith_mismatchesExecCompatibleDepInDifferentPackage()
-      throws Exception {
-    scratch.file(
-        "platforms/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun targetCompatibleWith_mismatchesExecCompatibleDepInDifferentPackage() {
+        scratch.file(
+            "platforms/BUILD",
+            """
         constraint_setting(name = "local_setting")
 
         constraint_value(
@@ -1018,13 +1055,16 @@ public final class ToolchainsForTargetsTest extends AnalysisTestCase {
             name = "local_platform_b",
             constraint_values = [":local_value_b"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration(
-        "--extra_execution_platforms=//platforms:local_platform_a,//platforms:local_platform_b");
-    scratch.file(
-        "foo/lib.bzl",
-        """
+        useConfiguration(
+            "--extra_execution_platforms=//platforms:local_platform_a,//platforms:local_platform_b"
+        )
+        scratch.file(
+            "foo/lib.bzl",
+            """
         def _impl(ctx):
             pass
 
@@ -1032,20 +1072,24 @@ public final class ToolchainsForTargetsTest extends AnalysisTestCase {
             _impl,
             attrs = {"_my_tool": attr.label(default = "//tool")},
         )
-        """);
-    scratch.file(
-        "tool/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "tool/BUILD",
+            """
         load('//test_defs:foo_binary.bzl', 'foo_binary')
         foo_binary(
             name = "tool",
             srcs = ["a.cc"],
             target_compatible_with = ["//platforms:local_value_a"],
         )
-        """);
-    scratch.file(
-        "foo/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "foo/BUILD",
+            """
         load(":lib.bzl", "my_rule")
 
         my_rule(name = "dep")
@@ -1054,28 +1098,32 @@ public final class ToolchainsForTargetsTest extends AnalysisTestCase {
             name = "target_with_dep",
             srcs = [":dep"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    reporter.removeHandler(failFastHandler);
-    AnalysisResult result = updateExplicitTarget("//foo:target_with_dep");
+        reporter.removeHandler(failFastHandler)
+        val result: AnalysisResult = updateExplicitTarget("//foo:target_with_dep")
 
-    assertThat(result.hasError()).isTrue();
-    assertContainsEvent(
-        "Target //foo:target_with_dep is incompatible and cannot be built, but was"
-            + " explicitly requested");
-  }
+        assertThat(result.hasError()).isTrue()
+        assertContainsEvent(
+            "Target //foo:target_with_dep is incompatible and cannot be built, but was"
+                    + " explicitly requested"
+        )
+    }
 
-  @Test
-  public void targetCompatibleWith_mismatchesExecCompatibleWithinAspect() throws Exception {
-    // Regression test for a case where incompatibility happens in an aspect tool in a different
-    // package over a Starlark target with
-    // --incompatible_visibility_private_attributes_at_definition
-    // The tool is replaced with a fake target {@link
-    // IncommpatibleTargetChecker#createIncompatibleRuleConfiguredTarget)
-    // and it's verified if the tool is visible to the Starlark target the aspect is over.
-    scratch.file(
-        "platforms/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun targetCompatibleWith_mismatchesExecCompatibleWithinAspect() {
+        // Regression test for a case where incompatibility happens in an aspect tool in a different
+        // package over a Starlark target with
+        // --incompatible_visibility_private_attributes_at_definition
+        // The tool is replaced with a fake target {@link
+        // IncommpatibleTargetChecker#createIncompatibleRuleConfiguredTarget)
+        // and it's verified if the tool is visible to the Starlark target the aspect is over.
+        scratch.file(
+            "platforms/BUILD",
+            """
         constraint_setting(name = "local_setting")
 
         constraint_value(
@@ -1097,13 +1145,16 @@ public final class ToolchainsForTargetsTest extends AnalysisTestCase {
             name = "local_platform_b",
             constraint_values = [":local_value_b"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration(
-        "--extra_execution_platforms=//platforms:local_platform_a,//platforms:local_platform_b");
-    scratch.file(
-        "foo/lib.bzl",
-        """
+        useConfiguration(
+            "--extra_execution_platforms=//platforms:local_platform_a,//platforms:local_platform_b"
+        )
+        scratch.file(
+            "foo/lib.bzl",
+            """
         def _impl_aspect(ctx, target):
             return []
 
@@ -1123,20 +1174,24 @@ public final class ToolchainsForTargetsTest extends AnalysisTestCase {
         simple_starlark_rule = rule(
             _impl,
         )
-        """);
-    scratch.file(
-        "tool/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "tool/BUILD",
+            """
         load('//test_defs:foo_binary.bzl', 'foo_binary')
         foo_binary(
             name = "tool",
             srcs = ["a.cc"],
             target_compatible_with = ["//platforms:local_value_b"],
         )
-        """);
-    scratch.file(
-        "foo/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "foo/BUILD",
+            """
         load(":lib.bzl", "my_rule", "simple_starlark_rule")
 
         simple_starlark_rule(name = "simple_dep")
@@ -1145,25 +1200,38 @@ public final class ToolchainsForTargetsTest extends AnalysisTestCase {
             name = "target_with_aspect",
             deps = [":simple_dep"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    reporter.removeHandler(failFastHandler);
-    AnalysisResult result = updateExplicitTarget("//foo:target_with_aspect");
+        reporter.removeHandler(failFastHandler)
+        val result: AnalysisResult = updateExplicitTarget("//foo:target_with_aspect")
 
-    // TODO(bazel-team): This should report an error similarly to {@code
-    // #targetCompatibleWith_mismatchesExecCompatibleDepInDifferentPackage}
-    assertThat(result.hasError()).isFalse();
-  }
+        // TODO(bazel-team): This should report an error similarly to {@code
+        // #targetCompatibleWith_mismatchesExecCompatibleDepInDifferentPackage}
+        assertThat(result.hasError()).isFalse()
+    }
 
-  private void assertHasBaselineCoverageAction(String label, String progressMessage)
-      throws InterruptedException {
-    Action coverageAction = Iterables.getOnlyElement(getActions(label));
-    assertThat(coverageAction).isInstanceOf(BaselineCoverageAction.class);
-    assertThat(coverageAction.getProgressMessage()).isEqualTo(progressMessage);
-  }
+    @Throws(java.lang.InterruptedException::class)
+    private fun assertHasBaselineCoverageAction(label: String?, progressMessage: String?) {
+        val coverageAction: Action? = com.google.common.collect.Iterables.getOnlyElement<Action?>(getActions(label))
+        assertThat(coverageAction).isInstanceOf(BaselineCoverageAction::class.java)
+        assertThat(coverageAction.getProgressMessage()).isEqualTo(progressMessage)
+    }
 
-  private ImmutableList<Action> getActions(String label) throws InterruptedException {
-    return ((RuleConfiguredTarget) getConfiguredTarget(label))
-        .getActions().stream().map(Action.class::cast).collect(toImmutableList());
-  }
+    @Throws(java.lang.InterruptedException::class)
+    private fun getActions(label: String?): com.google.common.collect.ImmutableList<Action?> {
+        return (getConfiguredTarget(label) as RuleConfiguredTarget)
+            .getActions().stream().map({ obj: Any? -> Action::class.java.cast(obj) })
+            .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
+    }
+
+    companion object {
+        /** Returns a [SkyKey] for a given <Target></Target>, BuildConfigurationValue> pair.  */
+        private fun key(
+            targetAndConfiguration: TargetAndConfiguration?, configuredTargetKey: ConfiguredTargetKey?
+        ): Key {
+            return AutoValue_ToolchainsForTargetsTest_Key(targetAndConfiguration, configuredTargetKey)
+        }
+    }
 }

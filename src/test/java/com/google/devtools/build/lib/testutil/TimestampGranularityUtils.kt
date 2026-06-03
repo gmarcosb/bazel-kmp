@@ -11,27 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.testutil;
+package com.google.devtools.build.lib.testutil
 
-import com.google.devtools.build.lib.clock.BlazeClock;
-import com.google.devtools.build.lib.util.io.OutErr;
-import com.google.devtools.build.lib.util.io.TimestampGranularityMonitor;
+import com.google.devtools.build.lib.util.io.OutErr
 
 /**
  * Test utilities that help waiting for the filesystem timestamp granularity.
- *
- * <p>It is necessary to wait for the timestamp granularity if a test asserts changes in the mtime
+ * 
+ * 
+ * It is necessary to wait for the timestamp granularity if a test asserts changes in the mtime
  * or ctime of a file.
  */
-public abstract class TimestampGranularityUtils {
-
-  private TimestampGranularityUtils() {}
-
-  /** Wait enough such that changes to a file with the given ctime will have observable effects. */
-  public static void waitForTimestampGranularity(long ctimeMillis, OutErr outErr) {
-    TimestampGranularityMonitor tsgm = new TimestampGranularityMonitor(BlazeClock.instance());
-    tsgm.setCommandStartTime();
-    tsgm.notifyDependenceOnFileTime(null, ctimeMillis);
-    tsgm.waitForTimestampGranularity(outErr);
-  }
+object TimestampGranularityUtils {
+    /** Wait enough such that changes to a file with the given ctime will have observable effects.  */
+    fun waitForTimestampGranularity(ctimeMillis: Long, outErr: OutErr?) {
+        val tsgm: TimestampGranularityMonitor =
+            TimestampGranularityMonitor(com.google.devtools.build.lib.clock.BlazeClock.instance())
+        tsgm.setCommandStartTime()
+        tsgm.notifyDependenceOnFileTime(null, ctimeMillis)
+        tsgm.waitForTimestampGranularity(outErr)
+    }
 }

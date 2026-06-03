@@ -11,351 +11,241 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.exec
 
-package com.google.devtools.build.lib.exec;
+import com.google.devtools.build.lib.actions.ActionContext
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.common.truth.Truth.assertThat;
-import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.atLeastOnce;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+/** Unit tests for [StandaloneTestStrategy].  */
+@RunWith(TestParameterInjector::class)
+class StandaloneTestStrategyTest : BuildViewTestCase() {
+    private class TestedStandaloneTestStrategy(
+        executionOptions: ExecutionOptions?,
+        testSummaryOptions: TestSummaryOptions?,
+        tmpDirRoot: Path?
+    ) : StandaloneTestStrategy(executionOptions, testSummaryOptions, tmpDirRoot) {
+        var postedResult: TestResult? = null
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.MoreCollectors;
-import com.google.devtools.build.lib.actions.ActionContext;
-import com.google.devtools.build.lib.actions.ActionExecutionContext;
-import com.google.devtools.build.lib.actions.ActionExecutionException;
-import com.google.devtools.build.lib.actions.ActionInputPrefetcher;
-import com.google.devtools.build.lib.actions.ActionKeyContext;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.DiscoveredModulesPruner;
-import com.google.devtools.build.lib.actions.InputMetadataProvider;
-import com.google.devtools.build.lib.actions.Spawn;
-import com.google.devtools.build.lib.actions.SpawnResult;
-import com.google.devtools.build.lib.actions.SpawnResult.Status;
-import com.google.devtools.build.lib.actions.SpawnStrategy;
-import com.google.devtools.build.lib.actions.ThreadStateReceiver;
-import com.google.devtools.build.lib.actions.cache.OutputMetadataStore;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.test.TestActionContext;
-import com.google.devtools.build.lib.analysis.test.TestActionContext.AttemptGroup;
-import com.google.devtools.build.lib.analysis.test.TestActionContext.ProcessedAttemptResult;
-import com.google.devtools.build.lib.analysis.test.TestActionContext.TestRunnerSpawn;
-import com.google.devtools.build.lib.analysis.test.TestAttempt;
-import com.google.devtools.build.lib.analysis.test.TestConfiguration.TestOptions.CancelConcurrentTests;
-import com.google.devtools.build.lib.analysis.test.TestProvider;
-import com.google.devtools.build.lib.analysis.test.TestResult;
-import com.google.devtools.build.lib.analysis.test.TestRunnerAction;
-import com.google.devtools.build.lib.analysis.test.TestStrategy;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.TestResult.ExecutionInfo;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.TestStatus;
-import com.google.devtools.build.lib.clock.BlazeClock;
-import com.google.devtools.build.lib.clock.Clock;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.EventKind;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.events.StoredEventHandler;
-import com.google.devtools.build.lib.exec.StandaloneTestStrategy.StandaloneProcessedAttemptResult;
-import com.google.devtools.build.lib.exec.util.FakeActionInputFileCache;
-import com.google.devtools.build.lib.exec.util.TestExecutorBuilder;
-import com.google.devtools.build.lib.runtime.TestSummaryOptions;
-import com.google.devtools.build.lib.server.FailureDetails;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.server.FailureDetails.Spawn.Code;
-import com.google.devtools.build.lib.util.AbruptExitException;
-import com.google.devtools.build.lib.util.io.FileOutErr;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import com.google.devtools.build.lib.view.test.TestStatus.BlazeTestStatus;
-import com.google.devtools.build.lib.view.test.TestStatus.TestResultData;
-import com.google.devtools.common.options.Options;
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.stream.Collectors;
-import javax.annotation.Nullable;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnit;
-import org.mockito.junit.MockitoRule;
-
-/** Unit tests for {@link StandaloneTestStrategy}. */
-@RunWith(TestParameterInjector.class)
-public final class StandaloneTestStrategyTest extends BuildViewTestCase {
-  private static final FailureDetail NON_ZERO_EXIT_DETAILS =
-      FailureDetail.newBuilder()
-          .setSpawn(FailureDetails.Spawn.newBuilder().setCode(Code.NON_ZERO_EXIT))
-          .build();
-  private static final SpawnResult FAILED_TEST_SPAWN =
-      new SpawnResult.Builder()
-          .setStatus(Status.NON_ZERO_EXIT)
-          .setExitCode(1)
-          .setFailureDetail(NON_ZERO_EXIT_DETAILS)
-          .setRunnerName("test")
-          .build();
-  private static final SpawnResult PASSED_TEST_SPAWN =
-      new SpawnResult.Builder().setStatus(Status.SUCCESS).setRunnerName("test").build();
-
-  private static class TestedStandaloneTestStrategy extends StandaloneTestStrategy {
-    TestResult postedResult = null;
-
-    TestedStandaloneTestStrategy(
-        ExecutionOptions executionOptions, TestSummaryOptions testSummaryOptions, Path tmpDirRoot) {
-      super(executionOptions, testSummaryOptions, tmpDirRoot);
+        protected override fun postTestResult(
+            actionExecutionContext: ActionExecutionContext?, result: TestResult?
+        ) {
+            postedResult = result
+        }
     }
 
-    @Override
-    protected void postTestResult(
-        ActionExecutionContext actionExecutionContext, TestResult result) {
-      postedResult = result;
-    }
-  }
+    private inner class FakeActionExecutionContext(
+        fileOutErr: FileOutErr?,
+        actionContextRegistry: ActionContext.ActionContextRegistry,
+        inputMetadataProvider: InputMetadataProvider?,
+        outputMetadataStore: OutputMetadataStore?
+    ) : ActionExecutionContext( /* executor= */
+        null,
+        inputMetadataProvider,
+        ActionInputPrefetcher.NONE,
+        ActionKeyContext(),  /* outputMetadataStore= */
+        outputMetadataStore,  /* rewindingEnabled= */
+        false,
+        LostInputsCheck.NONE,
+        fileOutErr,  /* eventHandler= */
+        null,  /* clientEnv= */
+        com.google.common.collect.ImmutableMap.of<K?, V?>("PATH", "/usr/bin:/bin"),  /* actionFileSystem= */
+        null,
+        DiscoveredModulesPruner.DEFAULT,
+        SyscallCache.NO_CACHE,
+        ThreadStateReceiver.NULL_INSTANCE
+    ) {
+        private val actionContextRegistry: ActionContext.ActionContextRegistry
 
-  private static ActionContext.ActionContextRegistry toContextRegistry(
-      SpawnStrategy spawnStrategy, FileSystem fileSystem, BlazeDirectories directories) {
-    try {
-      return new TestExecutorBuilder(fileSystem, directories)
-          .addStrategy(spawnStrategy, "mock")
-          .setDefaultStrategies("mock")
-          .build();
-    } catch (AbruptExitException e) {
-      throw new AssertionError(e);
-    }
-  }
+        internal constructor(
+            fileOutErr: FileOutErr?,
+            inputMetadataProvider: InputMetadataProvider?,
+            spawnStrategy: SpawnStrategy?
+        ) : this(
+            fileOutErr,
+            toContextRegistry(spawnStrategy, fileSystem, directories),
+            inputMetadataProvider,
+            org.mockito.Mockito.mock<OutputMetadataStore?>(OutputMetadataStore::class.java)
+        )
 
-  private class FakeActionExecutionContext extends ActionExecutionContext {
-    private final ActionContext.ActionContextRegistry actionContextRegistry;
+        init {
+            this.actionContextRegistry = actionContextRegistry
+        }
 
-    FakeActionExecutionContext(
-        FileOutErr fileOutErr,
-        InputMetadataProvider inputMetadataProvider,
-        SpawnStrategy spawnStrategy) {
-      this(
-          fileOutErr,
-          toContextRegistry(spawnStrategy, fileSystem, directories),
-          inputMetadataProvider,
-          org.mockito.Mockito.mock(OutputMetadataStore.class));
-    }
+        val clock: com.google.devtools.build.lib.clock.Clock
+            get() = com.google.devtools.build.lib.clock.BlazeClock.instance()
 
-    FakeActionExecutionContext(
-        FileOutErr fileOutErr,
-        ActionContext.ActionContextRegistry actionContextRegistry,
-        InputMetadataProvider inputMetadataProvider,
-        OutputMetadataStore outputMetadataStore) {
-      super(
-          /* executor= */ null,
-          inputMetadataProvider,
-          ActionInputPrefetcher.NONE,
-          new ActionKeyContext(),
-          /* outputMetadataStore= */ outputMetadataStore,
-          /* rewindingEnabled= */ false,
-          LostInputsCheck.NONE,
-          fileOutErr,
-          /* eventHandler= */ null,
-          /* clientEnv= */ ImmutableMap.of("PATH", "/usr/bin:/bin"),
-          /* actionFileSystem= */ null,
-          DiscoveredModulesPruner.DEFAULT,
-          SyscallCache.NO_CACHE,
-          ThreadStateReceiver.NULL_INSTANCE);
-      this.actionContextRegistry = actionContextRegistry;
-    }
+        public override fun <T : ActionContext?> getContext(type: java.lang.Class<T?>?): T? {
+            return actionContextRegistry.getContext(type)
+        }
 
-    @Override
-    public Clock getClock() {
-      return BlazeClock.instance();
-    }
+        val eventHandler: ExtendedEventHandler
+            get() = storedEvents
 
-    @Override
-    @Nullable
-    public <T extends ActionContext> T getContext(Class<T> type) {
-      return actionContextRegistry.getContext(type);
+        val execRoot: Path
+            get() = this@StandaloneTestStrategyTest.execRoot
+
+        public override fun withOutputsAsInputs(outputs: Iterable<Artifact?>?): ActionExecutionContext? {
+            return this
+        }
+
+        public override fun withFileOutErr(fileOutErr: FileOutErr?): ActionExecutionContext {
+            return FakeActionExecutionContext(
+                fileOutErr, actionContextRegistry, getInputMetadataProvider(), getOutputMetadataStore()
+            )
+        }
     }
 
-    @Override
-    public ExtendedEventHandler getEventHandler() {
-      return storedEvents;
+    @org.junit.Rule
+    val mocks: MockitoRule = MockitoJUnit.rule()
+
+    @org.mockito.Mock
+    private val spawnStrategy: SpawnStrategy? = null
+
+    private val storedEvents: StoredEventHandler = StoredEventHandler()
+
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun setUp() {
+        Mockito.`when`<T?>(spawnStrategy.canExec(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>()))
+            .thenReturn(true)
     }
 
-    @Override
-    public Path getExecRoot() {
-      return StandaloneTestStrategyTest.this.getExecRoot();
+    @Throws(java.lang.Exception::class)
+    private fun getTestAction(target: String?): TestRunnerAction {
+        val configuredTarget: ConfiguredTarget = getConfiguredTarget(target)
+        val testStatusArtifacts: com.google.common.collect.ImmutableList<Artifact.DerivedArtifact?> =
+            configuredTarget.getProvider(TestProvider::class.java).getTestParams().getTestStatusArtifacts()
+        val testStatusArtifact: Artifact? =
+            com.google.common.collect.Iterables.getOnlyElement<Artifact.DerivedArtifact?>(testStatusArtifacts)
+        val action: TestRunnerAction = getGeneratingAction(testStatusArtifact) as TestRunnerAction
+        action.getTestLog().getPath().getParentDirectory().createDirectoryAndParents()
+        return action
     }
 
-    @Override
-    public ActionExecutionContext withOutputsAsInputs(Iterable<Artifact> outputs) {
-      return this;
+    @Throws(java.lang.Exception::class)
+    private fun getTestActions(target: String?): com.google.common.collect.ImmutableList<TestRunnerAction> {
+        val configuredTarget: ConfiguredTarget = getConfiguredTarget(target)
+        val testStatusArtifacts: com.google.common.collect.ImmutableList<Artifact.DerivedArtifact?> =
+            configuredTarget.getProvider(TestProvider::class.java).getTestParams().getTestStatusArtifacts()
+        return testStatusArtifacts.stream()
+            .map<Any?> { a: Artifact.DerivedArtifact? ->
+                val action: TestRunnerAction = getGeneratingAction(a) as TestRunnerAction
+                try {
+                    action.getTestLog().getPath().getParentDirectory().createDirectoryAndParents()
+                } catch (e: IOException) {
+                    throw java.lang.IllegalStateException(e)
+                }
+                action
+            }
+            .collect(com.google.common.collect.ImmutableList.toImmutableList<Any?>())
     }
 
-    @Override
-    public ActionExecutionContext withFileOutErr(FileOutErr fileOutErr) {
-      return new FakeActionExecutionContext(
-          fileOutErr, actionContextRegistry, getInputMetadataProvider(), getOutputMetadataStore());
-    }
-  }
-
-  @Rule public final MockitoRule mocks = MockitoJUnit.rule();
-
-  @Mock private SpawnStrategy spawnStrategy;
-
-  private final StoredEventHandler storedEvents = new StoredEventHandler();
-
-  @Before
-  public void setUp() throws Exception {
-    when(spawnStrategy.canExec(any(), any())).thenReturn(true);
-  }
-
-  private static FileOutErr createTempOutErr(Path tmpDirRoot) {
-    Path outPath = tmpDirRoot.getRelative("test-out.txt");
-    Path errPath = tmpDirRoot.getRelative("test-err.txt");
-    return new FileOutErr(outPath, errPath);
-  }
-
-  private TestRunnerAction getTestAction(String target) throws Exception {
-    ConfiguredTarget configuredTarget = getConfiguredTarget(target);
-    ImmutableList<Artifact.DerivedArtifact> testStatusArtifacts =
-        configuredTarget.getProvider(TestProvider.class).getTestParams().getTestStatusArtifacts();
-    Artifact testStatusArtifact = Iterables.getOnlyElement(testStatusArtifacts);
-    TestRunnerAction action = (TestRunnerAction) getGeneratingAction(testStatusArtifact);
-    action.getTestLog().getPath().getParentDirectory().createDirectoryAndParents();
-    return action;
-  }
-
-  private ImmutableList<TestRunnerAction> getTestActions(String target) throws Exception {
-    ConfiguredTarget configuredTarget = getConfiguredTarget(target);
-    ImmutableList<Artifact.DerivedArtifact> testStatusArtifacts =
-        configuredTarget.getProvider(TestProvider.class).getTestParams().getTestStatusArtifacts();
-    return testStatusArtifacts.stream()
-        .map(
-            (a) -> {
-              TestRunnerAction action = (TestRunnerAction) getGeneratingAction(a);
-              try {
-                action.getTestLog().getPath().getParentDirectory().createDirectoryAndParents();
-              } catch (IOException e) {
-                throw new IllegalStateException(e);
-              }
-              return action;
-            })
-        .collect(toImmutableList());
-  }
-
-  private static ImmutableList<SpawnResult> execute(
-      TestRunnerAction testRunnerAction,
-      ActionExecutionContext actionExecutionContext,
-      TestActionContext testActionContext)
-      throws ActionExecutionException, InterruptedException {
-    return testRunnerAction.execute(actionExecutionContext, testActionContext).spawnResults();
-  }
-
-  @Test
-  public void testCreateTmpDirForTest() throws Exception {
-    // setup a test action
-    scratch.file("standalone/simple_test.sh", "this does not get executed, it is mocked out");
-    scratch.file(
-        "standalone/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCreateTmpDirForTest() {
+        // setup a test action
+        scratch.file("standalone/simple_test.sh", "this does not get executed, it is mocked out")
+        scratch.file(
+            "standalone/BUILD",
+            """
         load('//test_defs:foo_test.bzl', 'foo_test')
         foo_test(
             name = "simple_test",
             size = "small",
             srcs = ["simple_test.sh"],
         )
-        """);
-    TestRunnerAction testRunnerAction = getTestAction("//standalone:simple_test");
+        
+        """.trimIndent()
+        )
+        val testRunnerAction: TestRunnerAction = getTestAction("//standalone:simple_test")
 
-    String tmpDirName = TestStrategy.getTmpDirName(testRunnerAction);
-    // Make sure the length of tmpDirName doesn't change unexpectedy: it cannot be too long
-    // because Windows and macOS have limitations on file path length.
-    // Note: It's OK to update 32 to a smaller number if tmpDirName gets shorter.
-    assertThat(tmpDirName.length()).isEqualTo(32);
-  }
+        val tmpDirName: String = TestStrategy.getTmpDirName(testRunnerAction)
+        // Make sure the length of tmpDirName doesn't change unexpectedy: it cannot be too long
+        // because Windows and macOS have limitations on file path length.
+        // Note: It's OK to update 32 to a smaller number if tmpDirName gets shorter.
+        Truth.assertThat(tmpDirName.length).isEqualTo(32)
+    }
 
-  @Test
-  public void testRunTestOnce() throws Exception {
-    ExecutionOptions executionOptions = Options.getDefaults(ExecutionOptions.class);
-    TestSummaryOptions testSummaryOptions = TestSummaryOptions.DEFAULTS;
-    Path tmpDirRoot = TestStrategy.getTmpRoot(rootDirectory, outputBase, executionOptions);
-    TestedStandaloneTestStrategy standaloneTestStrategy =
-        new TestedStandaloneTestStrategy(executionOptions, testSummaryOptions, tmpDirRoot);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRunTestOnce() {
+        val executionOptions: ExecutionOptions? =
+            com.google.devtools.common.options.Options.getDefaults<O?>(ExecutionOptions::class.java)
+        val testSummaryOptions: TestSummaryOptions? = TestSummaryOptions.DEFAULTS
+        val tmpDirRoot: Path = TestStrategy.getTmpRoot(rootDirectory, outputBase, executionOptions)
+        val standaloneTestStrategy =
+            TestedStandaloneTestStrategy(executionOptions, testSummaryOptions, tmpDirRoot)
 
-    // setup a test action
-    scratch.file("standalone/simple_test.sh", "this does not get executed, it is mocked out");
-    scratch.file(
-        "standalone/BUILD",
-        """
+        // setup a test action
+        scratch.file("standalone/simple_test.sh", "this does not get executed, it is mocked out")
+        scratch.file(
+            "standalone/BUILD",
+            """
         load('//test_defs:foo_test.bzl', 'foo_test')
         foo_test(
             name = "simple_test",
             size = "small",
             srcs = ["simple_test.sh"],
         )
-        """);
-    TestRunnerAction testRunnerAction = getTestAction("//standalone:simple_test");
+        
+        """.trimIndent()
+        )
+        val testRunnerAction: TestRunnerAction = getTestAction("//standalone:simple_test")
 
-    SpawnResult expectedSpawnResult =
-        new SpawnResult.Builder()
-            .setStatus(Status.SUCCESS)
-            .setWallTimeInMs(10)
-            .setRunnerName("test")
-            .build();
-    when(spawnStrategy.exec(any(), any())).thenReturn(ImmutableList.of(expectedSpawnResult));
+        val expectedSpawnResult: SpawnResult =
+            Builder()
+                .setStatus(Status.SUCCESS)
+                .setWallTimeInMs(10)
+                .setRunnerName("test")
+                .build()
+        Mockito.`when`<T?>(spawnStrategy.exec(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>()))
+            .thenReturn(com.google.common.collect.ImmutableList.of<E?>(expectedSpawnResult))
 
-    ActionExecutionContext actionExecutionContext =
-        new FakeActionExecutionContext(
-            createTempOutErr(tmpDirRoot), inputMetadataFor(testRunnerAction), spawnStrategy);
+        val actionExecutionContext: ActionExecutionContext =
+            FakeActionExecutionContext(
+                createTempOutErr(tmpDirRoot), inputMetadataFor(testRunnerAction), spawnStrategy
+            )
 
-    // actual StandaloneTestStrategy execution
-    ImmutableList<SpawnResult> spawnResults =
-        execute(testRunnerAction, actionExecutionContext, standaloneTestStrategy);
+        // actual StandaloneTestStrategy execution
+        val spawnResults: com.google.common.collect.ImmutableList<SpawnResult> =
+            execute(testRunnerAction, actionExecutionContext, standaloneTestStrategy)
 
-    assertThat(spawnResults).contains(expectedSpawnResult);
-    TestResult result = standaloneTestStrategy.postedResult;
-    assertThat(result).isNotNull();
-    assertThat(result.isCached()).isFalse();
-    assertThat(result.getTestAction()).isSameInstanceAs(testRunnerAction);
-    assertThat(result.getData().getTestPassed()).isTrue();
-    assertThat(result.getData().getExitCode()).isEqualTo(0);
-    assertThat(result.getData().getRemotelyCached()).isFalse();
-    assertThat(result.getData().getIsRemoteStrategy()).isFalse();
-    assertThat(result.getData().getRunDurationMillis()).isEqualTo(10);
-    assertThat(result.getData().getTestTimesList()).containsExactly(10L);
-    TestAttempt attempt =
-        storedEvents.getPosts().stream()
-            .filter(TestAttempt.class::isInstance)
-            .map(TestAttempt.class::cast)
-            .collect(MoreCollectors.onlyElement());
-    assertThat(attempt.getExecutionInfo().getStrategy()).isEqualTo("test");
-    assertThat(attempt.getExecutionInfo().getHostname()).isEqualTo("");
-  }
+        Truth.assertThat(spawnResults).contains(expectedSpawnResult)
+        val result: TestResult? = standaloneTestStrategy.postedResult
+        assertThat(result).isNotNull()
+        assertThat(result.isCached()).isFalse()
+        assertThat(result.getTestAction()).isSameInstanceAs(testRunnerAction)
+        assertThat(result.getData().getTestPassed()).isTrue()
+        assertThat(result.getData().getExitCode()).isEqualTo(0)
+        assertThat(result.getData().getRemotelyCached()).isFalse()
+        assertThat(result.getData().getIsRemoteStrategy()).isFalse()
+        assertThat(result.getData().getRunDurationMillis()).isEqualTo(10)
+        assertThat(result.getData().getTestTimesList()).containsExactly(10L)
+        val attempt: TestAttempt =
+            storedEvents.getPosts().stream()
+                .filter { obj: Postable? -> TestAttempt::class.java.isInstance(obj) }
+                .map<TestAttempt?> { obj: Postable? -> TestAttempt::class.java.cast(obj) }
+                .collect(com.google.common.collect.MoreCollectors.onlyElement<TestAttempt>())
+        assertThat(attempt.getExecutionInfo().getStrategy()).isEqualTo("test")
+        assertThat(attempt.getExecutionInfo().getHostname()).isEqualTo("")
+    }
 
-  @Test
-  public void testRunFlakyTest() throws Exception {
-    ExecutionOptions executionOptions = Options.getDefaults(ExecutionOptions.class);
-    TestSummaryOptions testSummaryOptions = Options.getDefaults(TestSummaryOptions.class);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRunFlakyTest() {
+        val executionOptions: ExecutionOptions? =
+            com.google.devtools.common.options.Options.getDefaults<O?>(ExecutionOptions::class.java)
+        val testSummaryOptions: TestSummaryOptions? =
+            com.google.devtools.common.options.Options.getDefaults<O?>(TestSummaryOptions::class.java)
 
-    Path tmpDirRoot = TestStrategy.getTmpRoot(rootDirectory, outputBase, executionOptions);
-    TestedStandaloneTestStrategy standaloneTestStrategy =
-        new TestedStandaloneTestStrategy(executionOptions, testSummaryOptions, tmpDirRoot);
+        val tmpDirRoot: Path = TestStrategy.getTmpRoot(rootDirectory, outputBase, executionOptions)
+        val standaloneTestStrategy =
+            TestedStandaloneTestStrategy(executionOptions, testSummaryOptions, tmpDirRoot)
 
-    // setup a test action
-    scratch.file("standalone/simple_test.sh", "this does not get executed, it is mocked out");
-    scratch.file(
-        "standalone/BUILD",
-        """
+        // setup a test action
+        scratch.file("standalone/simple_test.sh", "this does not get executed, it is mocked out")
+        scratch.file(
+            "standalone/BUILD",
+            """
         load('//test_defs:foo_test.bzl', 'foo_test')
         foo_test(
             name = "simple_test",
@@ -363,285 +253,312 @@ public final class StandaloneTestStrategyTest extends BuildViewTestCase {
             srcs = ["simple_test.sh"],
             flaky = True,
         )
-        """);
-    TestRunnerAction testRunnerAction = getTestAction("//standalone:simple_test");
+        
+        """.trimIndent()
+        )
+        val testRunnerAction: TestRunnerAction = getTestAction("//standalone:simple_test")
 
-    SpawnResult failSpawnResult =
-        new SpawnResult.Builder()
-            .setStatus(Status.NON_ZERO_EXIT)
-            .setExitCode(1)
-            .setFailureDetail(NON_ZERO_EXIT_DETAILS)
-            .setWallTimeInMs(10)
-            .setRunnerName("test")
-            .build();
-    SpawnResult passSpawnResult =
-        new SpawnResult.Builder()
-            .setStatus(Status.SUCCESS)
-            .setWallTimeInMs(15)
-            .setRunnerName("test")
-            .build();
-    when(spawnStrategy.exec(any(), any()))
-        .thenThrow(new SpawnExecException("test failed", failSpawnResult, false))
-        // XML generation
-        .thenReturn(ImmutableList.of(passSpawnResult))
-        .thenReturn(ImmutableList.of(passSpawnResult))
-        // XML generation
-        .thenReturn(ImmutableList.of(passSpawnResult));
+        val failSpawnResult: SpawnResult? =
+            Builder()
+                .setStatus(Status.NON_ZERO_EXIT)
+                .setExitCode(1)
+                .setFailureDetail(NON_ZERO_EXIT_DETAILS)
+                .setWallTimeInMs(10)
+                .setRunnerName("test")
+                .build()
+        val passSpawnResult: SpawnResult =
+            Builder()
+                .setStatus(Status.SUCCESS)
+                .setWallTimeInMs(15)
+                .setRunnerName("test")
+                .build()
+        Mockito.`when`<T?>(spawnStrategy.exec(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>()))
+            .thenThrow(SpawnExecException("test failed", failSpawnResult, false)) // XML generation
+            .thenReturn(com.google.common.collect.ImmutableList.of<E?>(passSpawnResult))
+            .thenReturn(com.google.common.collect.ImmutableList.of<E?>(passSpawnResult)) // XML generation
+            .thenReturn(com.google.common.collect.ImmutableList.of<E?>(passSpawnResult))
 
-    ActionExecutionContext actionExecutionContext =
-        new FakeActionExecutionContext(
-            createTempOutErr(tmpDirRoot), inputMetadataFor(testRunnerAction), spawnStrategy);
+        val actionExecutionContext: ActionExecutionContext =
+            FakeActionExecutionContext(
+                createTempOutErr(tmpDirRoot), inputMetadataFor(testRunnerAction), spawnStrategy
+            )
 
-    // actual StandaloneTestStrategy execution
-    ImmutableList<SpawnResult> spawnResults =
-        execute(testRunnerAction, actionExecutionContext, standaloneTestStrategy);
+        // actual StandaloneTestStrategy execution
+        val spawnResults: com.google.common.collect.ImmutableList<SpawnResult> =
+            execute(testRunnerAction, actionExecutionContext, standaloneTestStrategy)
 
-    assertThat(spawnResults)
-        .containsExactly(failSpawnResult, passSpawnResult, passSpawnResult, passSpawnResult)
-        .inOrder();
+        Truth.assertThat(spawnResults)
+            .containsExactly(failSpawnResult, passSpawnResult, passSpawnResult, passSpawnResult)
+            .inOrder()
 
-    TestResult result = standaloneTestStrategy.postedResult;
-    assertThat(result).isNotNull();
-    assertThat(result.isCached()).isFalse();
-    assertThat(result.getTestAction()).isSameInstanceAs(testRunnerAction);
-    assertThat(result.getData().getStatus()).isEqualTo(BlazeTestStatus.FLAKY);
-    assertThat(result.getData().getTestPassed()).isTrue();
-    assertThat(result.getData().getExitCode()).isEqualTo(0);
-    assertThat(result.getData().getRemotelyCached()).isFalse();
-    assertThat(result.getData().getIsRemoteStrategy()).isFalse();
-    assertThat(result.getData().getRunDurationMillis()).isEqualTo(15L);
-    assertThat(result.getData().getTestTimesList()).containsExactly(10L, 15L);
-    ImmutableList<TestAttempt> attempts =
-        storedEvents.getPosts().stream()
-            .filter(TestAttempt.class::isInstance)
-            .map(TestAttempt.class::cast)
-            .collect(ImmutableList.toImmutableList());
-    assertThat(attempts).hasSize(2);
-    TestAttempt failedAttempt = attempts.get(0);
-    assertThat(failedAttempt.getExecutionInfo().getStrategy()).isEqualTo("test");
-    assertThat(failedAttempt.getExecutionInfo().getHostname()).isEqualTo("");
-    assertThat(failedAttempt.getStatus()).isEqualTo(TestStatus.FAILED);
-    assertThat(failedAttempt.getExecutionInfo().getExitCode()).isEqualTo(1);
-    assertThat(failedAttempt.getExecutionInfo().getCachedRemotely()).isFalse();
-    TestAttempt okAttempt = attempts.get(1);
-    assertThat(okAttempt.getStatus()).isEqualTo(TestStatus.PASSED);
-    assertThat(okAttempt.getExecutionInfo().getExitCode()).isEqualTo(0);
-    assertThat(okAttempt.getExecutionInfo().getStrategy()).isEqualTo("test");
-    assertThat(okAttempt.getExecutionInfo().getHostname()).isEqualTo("");
-  }
+        val result: TestResult? = standaloneTestStrategy.postedResult
+        assertThat(result).isNotNull()
+        assertThat(result.isCached()).isFalse()
+        assertThat(result.getTestAction()).isSameInstanceAs(testRunnerAction)
+        assertThat(result.getData().getStatus()).isEqualTo(BlazeTestStatus.FLAKY)
+        assertThat(result.getData().getTestPassed()).isTrue()
+        assertThat(result.getData().getExitCode()).isEqualTo(0)
+        assertThat(result.getData().getRemotelyCached()).isFalse()
+        assertThat(result.getData().getIsRemoteStrategy()).isFalse()
+        assertThat(result.getData().getRunDurationMillis()).isEqualTo(15L)
+        assertThat(result.getData().getTestTimesList()).containsExactly(10L, 15L)
+        val attempts: com.google.common.collect.ImmutableList<TestAttempt> =
+            storedEvents.getPosts().stream()
+                .filter { obj: Postable? -> TestAttempt::class.java.isInstance(obj) }
+                .map<TestAttempt?> { obj: Postable? -> TestAttempt::class.java.cast(obj) }
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<TestAttempt>())
+        Truth.assertThat(attempts).hasSize(2)
+        val failedAttempt: TestAttempt = attempts.get(0)
+        assertThat(failedAttempt.getExecutionInfo().getStrategy()).isEqualTo("test")
+        assertThat(failedAttempt.getExecutionInfo().getHostname()).isEqualTo("")
+        assertThat(failedAttempt.getStatus()).isEqualTo(TestStatus.FAILED)
+        assertThat(failedAttempt.getExecutionInfo().getExitCode()).isEqualTo(1)
+        assertThat(failedAttempt.getExecutionInfo().getCachedRemotely()).isFalse()
+        val okAttempt: TestAttempt = attempts.get(1)
+        assertThat(okAttempt.getStatus()).isEqualTo(TestStatus.PASSED)
+        assertThat(okAttempt.getExecutionInfo().getExitCode()).isEqualTo(0)
+        assertThat(okAttempt.getExecutionInfo().getStrategy()).isEqualTo("test")
+        assertThat(okAttempt.getExecutionInfo().getHostname()).isEqualTo("")
+    }
 
-  @Test
-  public void testRunTestRemotely() throws Exception {
-    ExecutionOptions executionOptions = Options.getDefaults(ExecutionOptions.class);
-    TestSummaryOptions testSummaryOptions = TestSummaryOptions.DEFAULTS;
-    Path tmpDirRoot = TestStrategy.getTmpRoot(rootDirectory, outputBase, executionOptions);
-    TestedStandaloneTestStrategy standaloneTestStrategy =
-        new TestedStandaloneTestStrategy(executionOptions, testSummaryOptions, tmpDirRoot);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRunTestRemotely() {
+        val executionOptions: ExecutionOptions? =
+            com.google.devtools.common.options.Options.getDefaults<O?>(ExecutionOptions::class.java)
+        val testSummaryOptions: TestSummaryOptions? = TestSummaryOptions.DEFAULTS
+        val tmpDirRoot: Path = TestStrategy.getTmpRoot(rootDirectory, outputBase, executionOptions)
+        val standaloneTestStrategy =
+            TestedStandaloneTestStrategy(executionOptions, testSummaryOptions, tmpDirRoot)
 
-    // setup a test action
-    scratch.file("standalone/simple_test.sh", "this does not get executed, it is mocked out");
-    scratch.file(
-        "standalone/BUILD",
-        """
+        // setup a test action
+        scratch.file("standalone/simple_test.sh", "this does not get executed, it is mocked out")
+        scratch.file(
+            "standalone/BUILD",
+            """
         load('//test_defs:foo_test.bzl', 'foo_test')
         foo_test(
             name = "simple_test",
             size = "small",
             srcs = ["simple_test.sh"],
         )
-        """);
-    TestRunnerAction testRunnerAction = getTestAction("//standalone:simple_test");
+        
+        """.trimIndent()
+        )
+        val testRunnerAction: TestRunnerAction = getTestAction("//standalone:simple_test")
 
-    SpawnResult expectedSpawnResult =
-        new SpawnResult.Builder()
-            .setStatus(Status.SUCCESS)
-            .setWallTimeInMs(10)
-            .setRunnerName("remote")
-            .setExecutorHostname("a-remote-host")
-            .build();
-    when(spawnStrategy.exec(any(), any())).thenReturn(ImmutableList.of(expectedSpawnResult));
+        val expectedSpawnResult: SpawnResult =
+            Builder()
+                .setStatus(Status.SUCCESS)
+                .setWallTimeInMs(10)
+                .setRunnerName("remote")
+                .setExecutorHostname("a-remote-host")
+                .build()
+        Mockito.`when`<T?>(spawnStrategy.exec(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>()))
+            .thenReturn(com.google.common.collect.ImmutableList.of<E?>(expectedSpawnResult))
 
-    ActionExecutionContext actionExecutionContext =
-        new FakeActionExecutionContext(
-            createTempOutErr(tmpDirRoot), inputMetadataFor(testRunnerAction), spawnStrategy);
+        val actionExecutionContext: ActionExecutionContext =
+            FakeActionExecutionContext(
+                createTempOutErr(tmpDirRoot), inputMetadataFor(testRunnerAction), spawnStrategy
+            )
 
-    // actual StandaloneTestStrategy execution
-    ImmutableList<SpawnResult> spawnResults =
-        execute(testRunnerAction, actionExecutionContext, standaloneTestStrategy);
+        // actual StandaloneTestStrategy execution
+        val spawnResults: com.google.common.collect.ImmutableList<SpawnResult> =
+            execute(testRunnerAction, actionExecutionContext, standaloneTestStrategy)
 
-    assertThat(spawnResults).contains(expectedSpawnResult);
+        Truth.assertThat(spawnResults).contains(expectedSpawnResult)
 
-    TestResult result = standaloneTestStrategy.postedResult;
-    assertThat(result).isNotNull();
-    assertThat(result.isCached()).isFalse();
-    assertThat(result.getTestAction()).isSameInstanceAs(testRunnerAction);
-    assertThat(result.getData().getTestPassed()).isTrue();
-    assertThat(result.getData().getExitCode()).isEqualTo(0);
-    assertThat(result.getData().getRemotelyCached()).isFalse();
-    assertThat(result.getData().getIsRemoteStrategy()).isTrue();
-    assertThat(result.getData().getRunDurationMillis()).isEqualTo(10);
-    assertThat(result.getData().getTestTimesList()).containsExactly(10L);
-    TestAttempt attempt =
-        storedEvents.getPosts().stream()
-            .filter(TestAttempt.class::isInstance)
-            .map(TestAttempt.class::cast)
-            .collect(MoreCollectors.onlyElement());
-    assertThat(attempt.getStatus()).isEqualTo(TestStatus.PASSED);
-    assertThat(attempt.getExecutionInfo().getExitCode()).isEqualTo(0);
-    assertThat(attempt.getExecutionInfo().getStrategy()).isEqualTo("remote");
-    assertThat(attempt.getExecutionInfo().getHostname()).isEqualTo("a-remote-host");
-  }
+        val result: TestResult? = standaloneTestStrategy.postedResult
+        assertThat(result).isNotNull()
+        assertThat(result.isCached()).isFalse()
+        assertThat(result.getTestAction()).isSameInstanceAs(testRunnerAction)
+        assertThat(result.getData().getTestPassed()).isTrue()
+        assertThat(result.getData().getExitCode()).isEqualTo(0)
+        assertThat(result.getData().getRemotelyCached()).isFalse()
+        assertThat(result.getData().getIsRemoteStrategy()).isTrue()
+        assertThat(result.getData().getRunDurationMillis()).isEqualTo(10)
+        assertThat(result.getData().getTestTimesList()).containsExactly(10L)
+        val attempt: TestAttempt =
+            storedEvents.getPosts().stream()
+                .filter { obj: Postable? -> TestAttempt::class.java.isInstance(obj) }
+                .map<TestAttempt?> { obj: Postable? -> TestAttempt::class.java.cast(obj) }
+                .collect(com.google.common.collect.MoreCollectors.onlyElement<TestAttempt>())
+        assertThat(attempt.getStatus()).isEqualTo(TestStatus.PASSED)
+        assertThat(attempt.getExecutionInfo().getExitCode()).isEqualTo(0)
+        assertThat(attempt.getExecutionInfo().getStrategy()).isEqualTo("remote")
+        assertThat(attempt.getExecutionInfo().getHostname()).isEqualTo("a-remote-host")
+    }
 
-  @Test
-  public void testRunRemotelyCachedTest() throws Exception {
-    ExecutionOptions executionOptions = Options.getDefaults(ExecutionOptions.class);
-    TestSummaryOptions testSummaryOptions = TestSummaryOptions.DEFAULTS;
-    Path tmpDirRoot = TestStrategy.getTmpRoot(rootDirectory, outputBase, executionOptions);
-    TestedStandaloneTestStrategy standaloneTestStrategy =
-        new TestedStandaloneTestStrategy(executionOptions, testSummaryOptions, tmpDirRoot);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRunRemotelyCachedTest() {
+        val executionOptions: ExecutionOptions? =
+            com.google.devtools.common.options.Options.getDefaults<O?>(ExecutionOptions::class.java)
+        val testSummaryOptions: TestSummaryOptions? = TestSummaryOptions.DEFAULTS
+        val tmpDirRoot: Path = TestStrategy.getTmpRoot(rootDirectory, outputBase, executionOptions)
+        val standaloneTestStrategy =
+            TestedStandaloneTestStrategy(executionOptions, testSummaryOptions, tmpDirRoot)
 
-    // setup a test action
-    scratch.file("standalone/simple_test.sh", "this does not get executed, it is mocked out");
-    scratch.file(
-        "standalone/BUILD",
-        """
+        // setup a test action
+        scratch.file("standalone/simple_test.sh", "this does not get executed, it is mocked out")
+        scratch.file(
+            "standalone/BUILD",
+            """
         load('//test_defs:foo_test.bzl', 'foo_test')
         foo_test(
             name = "simple_test",
             size = "small",
             srcs = ["simple_test.sh"],
         )
-        """);
-    TestRunnerAction testRunnerAction = getTestAction("//standalone:simple_test");
+        
+        """.trimIndent()
+        )
+        val testRunnerAction: TestRunnerAction = getTestAction("//standalone:simple_test")
 
-    SpawnResult expectedSpawnResult =
-        new SpawnResult.Builder()
-            .setStatus(Status.SUCCESS)
-            .setCacheHit(true)
-            .setWallTimeInMs(10)
-            .setRunnerName("remote cache")
-            .build();
-    when(spawnStrategy.exec(any(), any())).thenReturn(ImmutableList.of(expectedSpawnResult));
+        val expectedSpawnResult: SpawnResult =
+            Builder()
+                .setStatus(Status.SUCCESS)
+                .setCacheHit(true)
+                .setWallTimeInMs(10)
+                .setRunnerName("remote cache")
+                .build()
+        Mockito.`when`<T?>(spawnStrategy.exec(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>()))
+            .thenReturn(com.google.common.collect.ImmutableList.of<E?>(expectedSpawnResult))
 
-    ActionExecutionContext actionExecutionContext =
-        new FakeActionExecutionContext(
-            createTempOutErr(tmpDirRoot), inputMetadataFor(testRunnerAction), spawnStrategy);
+        val actionExecutionContext: ActionExecutionContext =
+            FakeActionExecutionContext(
+                createTempOutErr(tmpDirRoot), inputMetadataFor(testRunnerAction), spawnStrategy
+            )
 
-    // actual StandaloneTestStrategy execution
-    ImmutableList<SpawnResult> spawnResults =
-        execute(testRunnerAction, actionExecutionContext, standaloneTestStrategy);
+        // actual StandaloneTestStrategy execution
+        val spawnResults: com.google.common.collect.ImmutableList<SpawnResult> =
+            execute(testRunnerAction, actionExecutionContext, standaloneTestStrategy)
 
-    // check that the rigged SpawnResult was returned
-    assertThat(spawnResults).contains(expectedSpawnResult);
+        // check that the rigged SpawnResult was returned
+        Truth.assertThat(spawnResults).contains(expectedSpawnResult)
 
-    TestResult result = standaloneTestStrategy.postedResult;
-    assertThat(result).isNotNull();
-    assertThat(result.isCached()).isFalse();
-    assertThat(result.getTestAction()).isSameInstanceAs(testRunnerAction);
-    assertThat(result.getData().getTestPassed()).isTrue();
-    assertThat(result.getData().getExitCode()).isEqualTo(0);
-    assertThat(result.getData().getRemotelyCached()).isTrue();
-    assertThat(result.getData().getIsRemoteStrategy()).isFalse();
-    assertThat(result.getData().getRunDurationMillis()).isEqualTo(10);
-    assertThat(result.getData().getTestTimesList()).containsExactly(10L);
-    TestAttempt attempt =
-        storedEvents.getPosts().stream()
-            .filter(TestAttempt.class::isInstance)
-            .map(TestAttempt.class::cast)
-            .collect(MoreCollectors.onlyElement());
-    assertThat(attempt.getExecutionInfo().getStrategy()).isEqualTo("remote cache");
-    assertThat(attempt.getExecutionInfo().getHostname()).isEqualTo("");
-  }
+        val result: TestResult? = standaloneTestStrategy.postedResult
+        assertThat(result).isNotNull()
+        assertThat(result.isCached()).isFalse()
+        assertThat(result.getTestAction()).isSameInstanceAs(testRunnerAction)
+        assertThat(result.getData().getTestPassed()).isTrue()
+        assertThat(result.getData().getExitCode()).isEqualTo(0)
+        assertThat(result.getData().getRemotelyCached()).isTrue()
+        assertThat(result.getData().getIsRemoteStrategy()).isFalse()
+        assertThat(result.getData().getRunDurationMillis()).isEqualTo(10)
+        assertThat(result.getData().getTestTimesList()).containsExactly(10L)
+        val attempt: TestAttempt =
+            storedEvents.getPosts().stream()
+                .filter { obj: Postable? -> TestAttempt::class.java.isInstance(obj) }
+                .map<TestAttempt?> { obj: Postable? -> TestAttempt::class.java.cast(obj) }
+                .collect(com.google.common.collect.MoreCollectors.onlyElement<TestAttempt>())
+        assertThat(attempt.getExecutionInfo().getStrategy()).isEqualTo("remote cache")
+        assertThat(attempt.getExecutionInfo().getHostname()).isEqualTo("")
+    }
 
-  @Test
-  public void testThatTestLogAndOutputAreReturned() throws Exception {
-    ExecutionOptions executionOptions = Options.getDefaults(ExecutionOptions.class);
-    TestSummaryOptions testSummaryOptions = Options.getDefaults(TestSummaryOptions.class);
-    executionOptions.testOutput = ExecutionOptions.TestOutputFormat.ERRORS;
-    Path tmpDirRoot = TestStrategy.getTmpRoot(rootDirectory, outputBase, executionOptions);
-    TestedStandaloneTestStrategy standaloneTestStrategy =
-        new TestedStandaloneTestStrategy(executionOptions, testSummaryOptions, tmpDirRoot);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testThatTestLogAndOutputAreReturned() {
+        val executionOptions: ExecutionOptions =
+            com.google.devtools.common.options.Options.getDefaults<O>(ExecutionOptions::class.java)
+        val testSummaryOptions: TestSummaryOptions? =
+            com.google.devtools.common.options.Options.getDefaults<O?>(TestSummaryOptions::class.java)
+        executionOptions.testOutput = ExecutionOptions.TestOutputFormat.ERRORS
+        val tmpDirRoot: Path = TestStrategy.getTmpRoot(rootDirectory, outputBase, executionOptions)
+        val standaloneTestStrategy =
+            TestedStandaloneTestStrategy(executionOptions, testSummaryOptions, tmpDirRoot)
 
-    // setup a test action
-    scratch.file("standalone/failing_test.sh", "this does not get executed, it is mocked out");
-    scratch.file(
-        "standalone/BUILD",
-        """
+        // setup a test action
+        scratch.file("standalone/failing_test.sh", "this does not get executed, it is mocked out")
+        scratch.file(
+            "standalone/BUILD",
+            """
         load('//test_defs:foo_test.bzl', 'foo_test')
         foo_test(
             name = "failing_test",
             size = "small",
             srcs = ["failing_test.sh"],
         )
-        """);
-    TestRunnerAction testRunnerAction = getTestAction("//standalone:failing_test");
+        
+        """.trimIndent()
+        )
+        val testRunnerAction: TestRunnerAction = getTestAction("//standalone:failing_test")
 
-    SpawnResult expectedSpawnResult = FAILED_TEST_SPAWN;
-    when(spawnStrategy.exec(any(), any()))
-        .thenAnswer(
-            (invocation) -> {
-              Spawn spawn = invocation.getArgument(0);
-              if (spawn.getOutputFiles().size() != 1) {
-                ActionExecutionContext context = invocation.getArgument(1);
-                FileOutErr outErr = context.getFileOutErr();
-                try (OutputStream stream = outErr.getOutputStream()) {
-                  stream.write("This will not appear in the test output: bla\n".getBytes(UTF_8));
-                  stream.write((TestLogHelper.HEADER_DELIMITER + "\n").getBytes(UTF_8));
-                  stream.write("This will appear in the test output: foo\n".getBytes(UTF_8));
-                }
-                throw new SpawnExecException(
-                    "Failure!!",
-                    expectedSpawnResult,
-                    /* forciblyRunRemotely= */ false,
-                    /* catastrophe= */ false);
-              } else {
-                return ImmutableList.of(PASSED_TEST_SPAWN);
-              }
-            });
+        val expectedSpawnResult: SpawnResult? = FAILED_TEST_SPAWN
+        Mockito.`when`<T?>(spawnStrategy.exec(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>()))
+            .thenAnswer(
+                Answer { invocation: InvocationOnMock? ->
+                    val spawn: Spawn = invocation.getArgument<Spawn>(0)
+                    if (spawn.getOutputFiles().size() !== 1) {
+                        val context: ActionExecutionContext = invocation.getArgument<ActionExecutionContext>(1)
+                        val outErr: FileOutErr = context.getFileOutErr()
+                        outErr.getOutputStream().use { stream ->
+                            stream.write("This will not appear in the test output: bla\n".toByteArray(java.nio.charset.StandardCharsets.UTF_8))
+                            stream.write((TestLogHelper.HEADER_DELIMITER + "\n").toByteArray(java.nio.charset.StandardCharsets.UTF_8))
+                            stream.write("This will appear in the test output: foo\n".toByteArray(java.nio.charset.StandardCharsets.UTF_8))
+                        }
+                        throw SpawnExecException(
+                            "Failure!!",
+                            expectedSpawnResult,  /* forciblyRunRemotely= */
+                            false,  /* catastrophe= */
+                            false
+                        )
+                    } else {
+                        return@thenAnswer com.google.common.collect.ImmutableList.of<Any?>(PASSED_TEST_SPAWN)
+                    }
+                })
 
-    FileOutErr outErr = createTempOutErr(tmpDirRoot);
-    ActionExecutionContext actionExecutionContext =
-        new FakeActionExecutionContext(outErr, inputMetadataFor(testRunnerAction), spawnStrategy);
+        val outErr: FileOutErr = createTempOutErr(tmpDirRoot)
+        val actionExecutionContext: ActionExecutionContext =
+            FakeActionExecutionContext(outErr, inputMetadataFor(testRunnerAction), spawnStrategy)
 
-    // actual StandaloneTestStrategy execution
-    ImmutableList<SpawnResult> spawnResults =
-        execute(testRunnerAction, actionExecutionContext, standaloneTestStrategy);
+        // actual StandaloneTestStrategy execution
+        val spawnResults: com.google.common.collect.ImmutableList<SpawnResult> =
+            execute(testRunnerAction, actionExecutionContext, standaloneTestStrategy)
 
-    // check that the rigged SpawnResult was returned
-    assertThat(spawnResults).contains(expectedSpawnResult);
-    // check that the test log contains all the output
-    String logData = FileSystemUtils.readContent(testRunnerAction.getTestLog().getPath(), UTF_8);
-    assertThat(logData).contains("bla");
-    assertThat(logData).contains(TestLogHelper.HEADER_DELIMITER);
-    assertThat(logData).contains("foo");
-    // check that the test stdout contains all the expected output
-    outErr.close(); // Create the output files.
+        // check that the rigged SpawnResult was returned
+        Truth.assertThat(spawnResults).contains(expectedSpawnResult)
+        // check that the test log contains all the output
+        val logData: String? = FileSystemUtils.readContent(
+            testRunnerAction.getTestLog().getPath(),
+            java.nio.charset.StandardCharsets.UTF_8
+        )
+        Truth.assertThat(logData).contains("bla")
+        Truth.assertThat(logData).contains(TestLogHelper.HEADER_DELIMITER)
+        Truth.assertThat(logData).contains("foo")
+        // check that the test stdout contains all the expected output
+        outErr.close() // Create the output files.
 
-    String outData = FileSystemUtils.readContent(outErr.getOutputPath(), UTF_8);
-    assertThat(outData).contains("==================== Test output for //standalone:failing_test:");
-    assertThat(outData).doesNotContain("bla");
-    assertThat(outData).doesNotContain(TestLogHelper.HEADER_DELIMITER);
-    assertThat(outData).contains("foo");
-    assertThat(outData)
-        .contains(
-            "================================================================================");
-    assertThat(outErr.getErrorPath().exists()).isFalse();
-  }
+        val outData: String? =
+            FileSystemUtils.readContent(outErr.getOutputPath(), java.nio.charset.StandardCharsets.UTF_8)
+        Truth.assertThat(outData).contains("==================== Test output for //standalone:failing_test:")
+        Truth.assertThat(outData).doesNotContain("bla")
+        Truth.assertThat(outData).doesNotContain(TestLogHelper.HEADER_DELIMITER)
+        Truth.assertThat(outData).contains("foo")
+        Truth.assertThat(outData)
+            .contains(
+                "================================================================================"
+            )
+        assertThat(outErr.getErrorPath().exists()).isFalse()
+    }
 
-  @Test
-  public void testThatTestLogAndOutputAreReturnedWithSplitXmlGeneration() throws Exception {
-    ExecutionOptions executionOptions = Options.getDefaults(ExecutionOptions.class);
-    TestSummaryOptions testSummaryOptions = Options.getDefaults(TestSummaryOptions.class);
-    executionOptions.testOutput = ExecutionOptions.TestOutputFormat.ERRORS;
-    Path tmpDirRoot = TestStrategy.getTmpRoot(rootDirectory, outputBase, executionOptions);
-    TestedStandaloneTestStrategy standaloneTestStrategy =
-        new TestedStandaloneTestStrategy(executionOptions, testSummaryOptions, tmpDirRoot);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testThatTestLogAndOutputAreReturnedWithSplitXmlGeneration() {
+        val executionOptions: ExecutionOptions =
+            com.google.devtools.common.options.Options.getDefaults<O>(ExecutionOptions::class.java)
+        val testSummaryOptions: TestSummaryOptions? =
+            com.google.devtools.common.options.Options.getDefaults<O?>(TestSummaryOptions::class.java)
+        executionOptions.testOutput = ExecutionOptions.TestOutputFormat.ERRORS
+        val tmpDirRoot: Path = TestStrategy.getTmpRoot(rootDirectory, outputBase, executionOptions)
+        val standaloneTestStrategy =
+            TestedStandaloneTestStrategy(executionOptions, testSummaryOptions, tmpDirRoot)
 
-    // setup a test action
-    scratch.file("standalone/failing_test.sh", "this does not get executed, it is mocked out");
-    scratch.file(
-        "standalone/BUILD",
-        """
+        // setup a test action
+        scratch.file("standalone/failing_test.sh", "this does not get executed, it is mocked out")
+        scratch.file(
+            "standalone/BUILD",
+            """
         load('//test_defs:foo_test.bzl', 'foo_test')
         foo_test(
             name = "failing_test",
@@ -649,579 +566,712 @@ public final class StandaloneTestStrategyTest extends BuildViewTestCase {
             srcs = ["failing_test.sh"],
             tags = ["local"],
         )
-        """);
-    TestRunnerAction testRunnerAction = getTestAction("//standalone:failing_test");
-
-    SpawnResult testSpawnResult = FAILED_TEST_SPAWN;
-    SpawnResult xmlGeneratorSpawnResult = PASSED_TEST_SPAWN;
-    List<FileOutErr> called = new ArrayList<>();
-    when(spawnStrategy.exec(any(), any()))
-        .thenAnswer(
-            (invocation) -> {
-              Spawn spawn = invocation.getArgument(0);
-              // Test that both spawns have the local tag attached as a execution info
-              assertThat(spawn.getExecutionInfo()).containsKey("local");
-              ActionExecutionContext context = invocation.getArgument(1);
-              FileOutErr outErr = context.getFileOutErr();
-              called.add(outErr);
-              if (spawn.getOutputFiles().size() != 1) {
-                try (OutputStream stream = outErr.getOutputStream()) {
-                  stream.write("This will not appear in the test output: bla\n".getBytes(UTF_8));
-                  stream.write((TestLogHelper.HEADER_DELIMITER + "\n").getBytes(UTF_8));
-                  stream.write("This will appear in the test output: foo\n".getBytes(UTF_8));
-                }
-                throw new SpawnExecException(
-                    "Failure!!",
-                    testSpawnResult,
-                    /* forciblyRunRemotely= */ false,
-                    /* catastrophe= */ false);
-              } else {
-                String testName = "standalone/failing_test";
-                assertThat(spawn.getEnvironment()).containsEntry("TEST_BINARY", testName);
-                return ImmutableList.of(xmlGeneratorSpawnResult);
-              }
-            });
-
-    FileOutErr outErr = createTempOutErr(tmpDirRoot);
-    ActionExecutionContext actionExecutionContext =
-        new FakeActionExecutionContext(outErr, inputMetadataFor(testRunnerAction), spawnStrategy);
-
-    // actual StandaloneTestStrategy execution
-    ImmutableList<SpawnResult> spawnResults =
-        execute(testRunnerAction, actionExecutionContext, standaloneTestStrategy);
-
-    // check that the rigged SpawnResult was returned
-    assertThat(spawnResults).containsExactly(testSpawnResult, xmlGeneratorSpawnResult);
-    // check that the test log contains all the output
-    String logData = FileSystemUtils.readContent(testRunnerAction.getTestLog().getPath(), UTF_8);
-    assertThat(logData).contains("bla");
-    assertThat(logData).contains(TestLogHelper.HEADER_DELIMITER);
-    assertThat(logData).contains("foo");
-    // check that the test stdout contains all the expected output
-    outErr.close(); // Create the output files.
-    String outData = FileSystemUtils.readContent(outErr.getOutputPath(), UTF_8);
-    assertThat(outData).contains("==================== Test output for //standalone:failing_test:");
-    assertThat(outData).doesNotContain("bla");
-    assertThat(outData).doesNotContain(TestLogHelper.HEADER_DELIMITER);
-    assertThat(outData).contains("foo");
-    assertThat(outData)
-        .contains(
-            "================================================================================");
-    assertThat(outErr.getErrorPath().exists()).isFalse();
-    assertThat(called).hasSize(2);
-    assertThat(called).containsNoDuplicates();
-  }
-
-  @Test
-  public void testEmptyOutputCreatesEmptyLogFile() throws Exception {
-    ExecutionOptions executionOptions = Options.getDefaults(ExecutionOptions.class);
-    TestSummaryOptions testSummaryOptions = Options.getDefaults(TestSummaryOptions.class);
-    executionOptions.testOutput = ExecutionOptions.TestOutputFormat.ALL;
-    Path tmpDirRoot = TestStrategy.getTmpRoot(rootDirectory, outputBase, executionOptions);
-    TestedStandaloneTestStrategy standaloneTestStrategy =
-        new TestedStandaloneTestStrategy(executionOptions, testSummaryOptions, tmpDirRoot);
-
-    // setup a test action
-    scratch.file("standalone/empty_test.sh", "this does not get executed, it is mocked out");
-    scratch.file(
-        "standalone/BUILD",
-        """
-        load('//test_defs:foo_test.bzl', 'foo_test')
-        foo_test(
-            name = "empty_test",
-            size = "small",
-            srcs = ["empty_test.sh"],
+        
+        """.trimIndent()
         )
-        """);
-    TestRunnerAction testRunnerAction = getTestAction("//standalone:empty_test");
+        val testRunnerAction: TestRunnerAction = getTestAction("//standalone:failing_test")
 
-    SpawnResult expectedSpawnResult = PASSED_TEST_SPAWN;
-    when(spawnStrategy.exec(any(), any())).thenReturn(ImmutableList.of(expectedSpawnResult));
+        val testSpawnResult: SpawnResult? = FAILED_TEST_SPAWN
+        val xmlGeneratorSpawnResult: SpawnResult = PASSED_TEST_SPAWN
+        val called: MutableList<FileOutErr> = java.util.ArrayList<FileOutErr>()
+        Mockito.`when`<T?>(spawnStrategy.exec(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>()))
+            .thenAnswer(
+                Answer { invocation: InvocationOnMock? ->
+                    val spawn: Spawn = invocation.getArgument<Spawn>(0)
+                    // Test that both spawns have the local tag attached as a execution info
+                    assertThat(spawn.getExecutionInfo()).containsKey("local")
+                    val context: ActionExecutionContext = invocation.getArgument<ActionExecutionContext>(1)
+                    val outErr: FileOutErr = context.getFileOutErr()
+                    called.add(outErr)
+                    if (spawn.getOutputFiles().size() !== 1) {
+                        outErr.getOutputStream().use { stream ->
+                            stream.write("This will not appear in the test output: bla\n".toByteArray(java.nio.charset.StandardCharsets.UTF_8))
+                            stream.write((TestLogHelper.HEADER_DELIMITER + "\n").toByteArray(java.nio.charset.StandardCharsets.UTF_8))
+                            stream.write("This will appear in the test output: foo\n".toByteArray(java.nio.charset.StandardCharsets.UTF_8))
+                        }
+                        throw SpawnExecException(
+                            "Failure!!",
+                            testSpawnResult,  /* forciblyRunRemotely= */
+                            false,  /* catastrophe= */
+                            false
+                        )
+                    } else {
+                        val testName = "standalone/failing_test"
+                        assertThat(spawn.getEnvironment()).containsEntry("TEST_BINARY", testName)
+                        return@thenAnswer com.google.common.collect.ImmutableList.of<Any?>(xmlGeneratorSpawnResult)
+                    }
+                })
 
-    FileOutErr outErr = createTempOutErr(tmpDirRoot);
-    ActionExecutionContext actionExecutionContext =
-        new FakeActionExecutionContext(outErr, inputMetadataFor(testRunnerAction), spawnStrategy);
+        val outErr: FileOutErr = createTempOutErr(tmpDirRoot)
+        val actionExecutionContext: ActionExecutionContext =
+            FakeActionExecutionContext(outErr, inputMetadataFor(testRunnerAction), spawnStrategy)
 
-    // actual StandaloneTestStrategy execution
-    ImmutableList<SpawnResult> spawnResults =
-        execute(testRunnerAction, actionExecutionContext, standaloneTestStrategy);
+        // actual StandaloneTestStrategy execution
+        val spawnResults: com.google.common.collect.ImmutableList<SpawnResult> =
+            execute(testRunnerAction, actionExecutionContext, standaloneTestStrategy)
 
-    // check that the rigged SpawnResult was returned
-    assertThat(spawnResults).contains(expectedSpawnResult);
-    // check that the test log contains all the output
-    String logData = FileSystemUtils.readContent(testRunnerAction.getTestLog().getPath(), UTF_8);
-    assertThat(logData).isEmpty();
-    // check that the test stdout contains all the expected output
-    outErr.close(); // Create the output files.
-    String outData = FileSystemUtils.readContent(outErr.getOutputPath(), UTF_8);
-    String emptyOutput =
-        "==================== Test output for"
-            + " //standalone:empty_test:(\\s)*================================================================================(\\s)*";
-    assertThat(outData).matches(emptyOutput);
-    assertThat(outErr.getErrorPath().exists()).isFalse();
-  }
-
-  @Test
-  public void testAppendStdErrDoesNotBusyLoop() throws Exception {
-    ExecutionOptions executionOptions = Options.getDefaults(ExecutionOptions.class);
-    TestSummaryOptions testSummaryOptions = Options.getDefaults(TestSummaryOptions.class);
-    executionOptions.testOutput = ExecutionOptions.TestOutputFormat.ALL;
-    Path tmpDirRoot = TestStrategy.getTmpRoot(rootDirectory, outputBase, executionOptions);
-    TestedStandaloneTestStrategy standaloneTestStrategy =
-        new TestedStandaloneTestStrategy(executionOptions, testSummaryOptions, tmpDirRoot);
-
-    // setup a test action
-    scratch.file("standalone/empty_test.sh", "this does not get executed, it is mocked out");
-    scratch.file(
-        "standalone/BUILD",
-        """
-        load('//test_defs:foo_test.bzl', 'foo_test')
-        foo_test(
-            name = "empty_test",
-            size = "small",
-            srcs = ["empty_test.sh"],
+        // check that the rigged SpawnResult was returned
+        Truth.assertThat(spawnResults).containsExactly(testSpawnResult, xmlGeneratorSpawnResult)
+        // check that the test log contains all the output
+        val logData: String? = FileSystemUtils.readContent(
+            testRunnerAction.getTestLog().getPath(),
+            java.nio.charset.StandardCharsets.UTF_8
         )
-        """);
-    TestRunnerAction testRunnerAction = getTestAction("//standalone:empty_test");
-
-    when(spawnStrategy.exec(any(), any()))
-        .then(
-            (invocation) -> {
-              ((ActionExecutionContext) invocation.getArgument(1)).getFileOutErr().printErr("Foo");
-              return ImmutableList.of(PASSED_TEST_SPAWN);
-            });
-
-    FileOutErr outErr = createTempOutErr(tmpDirRoot);
-    ActionExecutionContext actionExecutionContext =
-        new FakeActionExecutionContext(outErr, inputMetadataFor(testRunnerAction), spawnStrategy);
-
-    // actual StandaloneTestStrategy execution
-    execute(testRunnerAction, actionExecutionContext, standaloneTestStrategy);
-
-    // check that the test stdout contains all the expected output
-    String outData = FileSystemUtils.readContent(outErr.getOutputPath(), UTF_8);
-    assertThat(outData).contains("Foo");
-  }
-
-  @Test
-  public void testExperimentalCancelConcurrentTests(
-      @TestParameter({"ON_PASSED", "ON_FAILED"}) CancelConcurrentTests cancelConcurrentTests)
-      throws Exception {
-    useConfiguration(
-        "--runs_per_test=2",
-        "--runs_per_test_detects_flakes",
-        "--experimental_cancel_concurrent_tests=" + cancelConcurrentTests);
-    boolean testOnPassed = cancelConcurrentTests == CancelConcurrentTests.ON_PASSED;
-    ExecutionOptions executionOptions = Options.getDefaults(ExecutionOptions.class);
-    TestSummaryOptions testSummaryOptions = Options.getDefaults(TestSummaryOptions.class);
-    Path tmpDirRoot = TestStrategy.getTmpRoot(rootDirectory, outputBase, executionOptions);
-    TestedStandaloneTestStrategy standaloneTestStrategy =
-        new TestedStandaloneTestStrategy(executionOptions, testSummaryOptions, tmpDirRoot);
-
-    scratch.file("standalone/empty_test.sh", "this does not get executed, it is mocked out");
-    scratch.file(
-        "standalone/BUILD",
-        """
-        load('//test_defs:foo_test.bzl', 'foo_test')
-        foo_test(
-            name = "empty_test",
-            size = "small",
-            srcs = ["empty_test.sh"],
-        )
-        """);
-    ImmutableList<TestRunnerAction> testRunnerActions = getTestActions("//standalone:empty_test");
-    assertThat(testRunnerActions).hasSize(2);
-
-    TestRunnerAction actionA = testRunnerActions.get(0);
-    TestRunnerAction actionB = testRunnerActions.get(1);
-    AttemptGroup attemptGroup =
-        standaloneTestStrategy.getAttemptGroup(actionA.getOwner(), actionA.getShardNum());
-    assertThat(attemptGroup)
-        .isSameInstanceAs(
-            standaloneTestStrategy.getAttemptGroup(actionB.getOwner(), actionB.getShardNum()));
-
-    when(spawnStrategy.exec(any(), any()))
-        .then(
-            (invocation) -> {
-              // Avoid triggering split XML generation by creating an empty XML file.
-              FileSystemUtils.touchFile(actionA.resolve(getExecRoot()).getXmlOutputPath());
-              if (testOnPassed) {
-                return ImmutableList.of(PASSED_TEST_SPAWN);
-              } else {
-                throw new SpawnExecException("", FAILED_TEST_SPAWN, false);
-              }
-            })
-        .thenThrow(new AssertionError("failure: this should not have been called"));
-
-    FakeActionInputFileCache inputMetadataProvider = new FakeActionInputFileCache();
-    inputMetadataProvider.putRunfilesTree(actionA.getRunfilesTree(), runfilesTreeFor(actionA));
-    inputMetadataProvider.putRunfilesTree(actionB.getRunfilesTree(), runfilesTreeFor(actionB));
-
-    ActionExecutionContext actionExecutionContext =
-        new FakeActionExecutionContext(
-            createTempOutErr(tmpDirRoot), inputMetadataProvider, spawnStrategy);
-    ImmutableList<SpawnResult> resultA =
-        execute(actionA, actionExecutionContext, standaloneTestStrategy);
-    assertThat(attemptGroup.cancelled()).isTrue();
-    verify(spawnStrategy).exec(any(), any());
-    assertThat(resultA).hasSize(1);
-    assertThat(standaloneTestStrategy.postedResult).isNotNull();
-    assertThat(standaloneTestStrategy.postedResult.getData().getStatus())
-        .isEqualTo(testOnPassed ? BlazeTestStatus.PASSED : BlazeTestStatus.FAILED);
-    assertThat(standaloneTestStrategy.postedResult.getData().getExitCode())
-        .isEqualTo(testOnPassed ? 0 : 1);
-    assertContainsPrefixedEvent(
-        storedEvents.getEvents(),
-        Event.of(
-            testOnPassed ? EventKind.PASS : EventKind.FAIL,
-            null,
-            "//standalone:empty_test (run 1 of 2)"));
-    // Reset postedResult.
-    standaloneTestStrategy.postedResult = null;
-
-    ImmutableList<SpawnResult> resultB =
-        execute(actionB, actionExecutionContext, standaloneTestStrategy);
-    assertThat(resultB).isEmpty();
-    assertThat(standaloneTestStrategy.postedResult).isNotNull();
-    assertThat(standaloneTestStrategy.postedResult.getData().getStatus())
-        .isEqualTo(BlazeTestStatus.INCOMPLETE);
-    assertThat(storedEvents.getEvents())
-        .contains(Event.of(EventKind.CANCELLED, null, "//standalone:empty_test (run 2 of 2)"));
-    // Check that there are no ERROR events.
-    assertThat(
-            storedEvents.getEvents().stream()
-                .filter((e) -> e.getKind() == EventKind.ERROR)
-                .collect(Collectors.toList()))
-        .isEmpty();
-  }
-
-  @Test
-  public void testExperimentalCancelConcurrentTestsDoesNotTriggerOnUnexpectedResult(
-      @TestParameter({"ON_PASSED", "ON_FAILED"}) CancelConcurrentTests cancelConcurrentTests)
-      throws Exception {
-    useConfiguration(
-        "--runs_per_test=2",
-        "--runs_per_test_detects_flakes",
-        "--experimental_cancel_concurrent_tests=" + cancelConcurrentTests);
-    boolean testOnPassed = cancelConcurrentTests == CancelConcurrentTests.ON_PASSED;
-    ExecutionOptions executionOptions = Options.getDefaults(ExecutionOptions.class);
-    TestSummaryOptions testSummaryOptions = Options.getDefaults(TestSummaryOptions.class);
-    Path tmpDirRoot = TestStrategy.getTmpRoot(rootDirectory, outputBase, executionOptions);
-    TestedStandaloneTestStrategy standaloneTestStrategy =
-        new TestedStandaloneTestStrategy(executionOptions, testSummaryOptions, tmpDirRoot);
-
-    scratch.file("standalone/empty_test.sh", "this does not get executed, it is mocked out");
-    scratch.file(
-        "standalone/BUILD",
-        """
-        load('//test_defs:foo_test.bzl', 'foo_test')
-        foo_test(
-            name = "empty_test",
-            size = "small",
-            srcs = ["empty_test.sh"],
-        )
-        """);
-    ImmutableList<TestRunnerAction> testRunnerActions = getTestActions("//standalone:empty_test");
-    assertThat(testRunnerActions).hasSize(2);
-
-    TestRunnerAction actionA = testRunnerActions.get(0);
-    TestRunnerAction actionB = testRunnerActions.get(1);
-    AttemptGroup attemptGroup =
-        standaloneTestStrategy.getAttemptGroup(actionA.getOwner(), actionA.getShardNum());
-    assertThat(attemptGroup)
-        .isSameInstanceAs(
-            standaloneTestStrategy.getAttemptGroup(actionB.getOwner(), actionB.getShardNum()));
-    assertThat(attemptGroup.cancelled()).isFalse();
-
-    when(spawnStrategy.exec(any(), any()))
-        .then(
-            (invocation) -> {
-              // Avoid triggering split XML generation by creating an empty XML file.
-              FileSystemUtils.touchFile(actionA.resolve(getExecRoot()).getXmlOutputPath());
-              if (testOnPassed) {
-                throw new SpawnExecException("", FAILED_TEST_SPAWN, false);
-              } else {
-                return ImmutableList.of(PASSED_TEST_SPAWN);
-              }
-            })
-        .then(
-            (invocation) -> {
-              // Avoid triggering split XML generation by creating an empty XML file.
-              FileSystemUtils.touchFile(actionB.resolve(getExecRoot()).getXmlOutputPath());
-              if (testOnPassed) {
-                return ImmutableList.of(PASSED_TEST_SPAWN);
-              } else {
-                throw new SpawnExecException("", FAILED_TEST_SPAWN, false);
-              }
-            });
-
-    FakeActionInputFileCache inputMetadataProvider = new FakeActionInputFileCache();
-    inputMetadataProvider.putRunfilesTree(actionA.getRunfilesTree(), runfilesTreeFor(actionA));
-    inputMetadataProvider.putRunfilesTree(actionB.getRunfilesTree(), runfilesTreeFor(actionB));
-
-    ActionExecutionContext actionExecutionContext =
-        new FakeActionExecutionContext(
-            createTempOutErr(tmpDirRoot), inputMetadataProvider, spawnStrategy);
-    ImmutableList<SpawnResult> resultA =
-        execute(actionA, actionExecutionContext, standaloneTestStrategy);
-    assertThat(attemptGroup.cancelled()).isFalse();
-    verify(spawnStrategy).exec(any(), any());
-    assertThat(resultA).hasSize(1);
-    assertThat(standaloneTestStrategy.postedResult).isNotNull();
-    assertThat(standaloneTestStrategy.postedResult.getData().getStatus())
-        .isEqualTo(testOnPassed ? BlazeTestStatus.FAILED : BlazeTestStatus.PASSED);
-    assertThat(standaloneTestStrategy.postedResult.getData().getExitCode())
-        .isEqualTo(testOnPassed ? 1 : 0);
-    assertContainsPrefixedEvent(
-        storedEvents.getEvents(),
-        Event.of(
-            testOnPassed ? EventKind.FAIL : EventKind.PASS,
-            null,
-            "//standalone:empty_test (run 1 of 2)"));
-    // Reset postedResult.
-    standaloneTestStrategy.postedResult = null;
-
-    ImmutableList<SpawnResult> resultB =
-        execute(actionB, actionExecutionContext, standaloneTestStrategy);
-    assertThat(attemptGroup.cancelled()).isTrue();
-    assertThat(resultB).hasSize(1);
-    assertThat(standaloneTestStrategy.postedResult).isNotNull();
-    assertThat(standaloneTestStrategy.postedResult.getData().getStatus())
-        .isEqualTo(testOnPassed ? BlazeTestStatus.PASSED : BlazeTestStatus.FAILED);
-    assertThat(standaloneTestStrategy.postedResult.getData().getExitCode())
-        .isEqualTo(testOnPassed ? 0 : 1);
-    assertContainsPrefixedEvent(
-        storedEvents.getEvents(),
-        Event.of(
-            testOnPassed ? EventKind.PASS : EventKind.FAIL,
-            null,
-            "//standalone:empty_test (run 2 of 2)"));
-  }
-
-  private static void assertContainsPrefixedEvent(Iterable<Event> events, Event event) {
-    for (Event e : events) {
-      if (e.getKind() == event.getKind() && e.getMessage().startsWith(event.getMessage())) {
-        return;
-      }
+        Truth.assertThat(logData).contains("bla")
+        Truth.assertThat(logData).contains(TestLogHelper.HEADER_DELIMITER)
+        Truth.assertThat(logData).contains("foo")
+        // check that the test stdout contains all the expected output
+        outErr.close() // Create the output files.
+        val outData: String? =
+            FileSystemUtils.readContent(outErr.getOutputPath(), java.nio.charset.StandardCharsets.UTF_8)
+        Truth.assertThat(outData).contains("==================== Test output for //standalone:failing_test:")
+        Truth.assertThat(outData).doesNotContain("bla")
+        Truth.assertThat(outData).doesNotContain(TestLogHelper.HEADER_DELIMITER)
+        Truth.assertThat(outData).contains("foo")
+        Truth.assertThat(outData)
+            .contains(
+                "================================================================================"
+            )
+        assertThat(outErr.getErrorPath().exists()).isFalse()
+        Truth.assertThat(called).hasSize(2)
+        Truth.assertThat(called).containsNoDuplicates()
     }
-    assertThat(events).contains(event);
-  }
 
-  @Test
-  public void testExperimentalCancelConcurrentTestsAllUnexpected(
-      @TestParameter({"ON_PASSED", "ON_FAILED"}) CancelConcurrentTests cancelConcurrentTests)
-      throws Exception {
-    useConfiguration(
-        "--runs_per_test=2",
-        "--runs_per_test_detects_flakes",
-        "--experimental_cancel_concurrent_tests=" + cancelConcurrentTests);
-    boolean testOnPassed = cancelConcurrentTests == CancelConcurrentTests.ON_PASSED;
-    ExecutionOptions executionOptions = Options.getDefaults(ExecutionOptions.class);
-    TestSummaryOptions testSummaryOptions = Options.getDefaults(TestSummaryOptions.class);
-    Path tmpDirRoot = TestStrategy.getTmpRoot(rootDirectory, outputBase, executionOptions);
-    TestedStandaloneTestStrategy standaloneTestStrategy =
-        new TestedStandaloneTestStrategy(executionOptions, testSummaryOptions, tmpDirRoot);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEmptyOutputCreatesEmptyLogFile() {
+        val executionOptions: ExecutionOptions =
+            com.google.devtools.common.options.Options.getDefaults<O>(ExecutionOptions::class.java)
+        val testSummaryOptions: TestSummaryOptions? =
+            com.google.devtools.common.options.Options.getDefaults<O?>(TestSummaryOptions::class.java)
+        executionOptions.testOutput = ExecutionOptions.TestOutputFormat.ALL
+        val tmpDirRoot: Path = TestStrategy.getTmpRoot(rootDirectory, outputBase, executionOptions)
+        val standaloneTestStrategy =
+            TestedStandaloneTestStrategy(executionOptions, testSummaryOptions, tmpDirRoot)
 
-    scratch.file("standalone/empty_test.sh", "this does not get executed, it is mocked out");
-    scratch.file(
-        "standalone/BUILD",
-        """
+        // setup a test action
+        scratch.file("standalone/empty_test.sh", "this does not get executed, it is mocked out")
+        scratch.file(
+            "standalone/BUILD",
+            """
         load('//test_defs:foo_test.bzl', 'foo_test')
         foo_test(
             name = "empty_test",
             size = "small",
             srcs = ["empty_test.sh"],
         )
-        """);
-    ImmutableList<TestRunnerAction> testRunnerActions = getTestActions("//standalone:empty_test");
-    assertThat(testRunnerActions).hasSize(2);
+        
+        """.trimIndent()
+        )
+        val testRunnerAction: TestRunnerAction = getTestAction("//standalone:empty_test")
 
-    TestRunnerAction actionA = testRunnerActions.get(0);
-    TestRunnerAction actionB = testRunnerActions.get(1);
-    AttemptGroup attemptGroup =
-        standaloneTestStrategy.getAttemptGroup(actionA.getOwner(), actionA.getShardNum());
-    assertThat(attemptGroup)
-        .isSameInstanceAs(
-            standaloneTestStrategy.getAttemptGroup(actionB.getOwner(), actionB.getShardNum()));
-    assertThat(attemptGroup.cancelled()).isFalse();
+        val expectedSpawnResult: SpawnResult = PASSED_TEST_SPAWN
+        Mockito.`when`<T?>(spawnStrategy.exec(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>()))
+            .thenReturn(com.google.common.collect.ImmutableList.of<E?>(expectedSpawnResult))
 
-    when(spawnStrategy.exec(any(), any()))
-        .then(
-            (invocation) -> {
-              // Avoid triggering split XML generation by creating an empty XML file.
-              FileSystemUtils.touchFile(actionA.resolve(getExecRoot()).getXmlOutputPath());
-              if (testOnPassed) {
-                throw new SpawnExecException("", FAILED_TEST_SPAWN, false);
-              } else {
-                return ImmutableList.of(PASSED_TEST_SPAWN);
-              }
-            })
-        .then(
-            (invocation) -> {
-              // Avoid triggering split XML generation by creating an empty XML file.
-              FileSystemUtils.touchFile(actionB.resolve(getExecRoot()).getXmlOutputPath());
-              if (testOnPassed) {
-                throw new SpawnExecException("", FAILED_TEST_SPAWN, false);
-              } else {
-                return ImmutableList.of(PASSED_TEST_SPAWN);
-              }
-            });
+        val outErr: FileOutErr = createTempOutErr(tmpDirRoot)
+        val actionExecutionContext: ActionExecutionContext =
+            FakeActionExecutionContext(outErr, inputMetadataFor(testRunnerAction), spawnStrategy)
 
-    FakeActionInputFileCache inputMetadataProvider = new FakeActionInputFileCache();
-    inputMetadataProvider.putRunfilesTree(actionA.getRunfilesTree(), runfilesTreeFor(actionA));
-    inputMetadataProvider.putRunfilesTree(actionB.getRunfilesTree(), runfilesTreeFor(actionB));
+        // actual StandaloneTestStrategy execution
+        val spawnResults: com.google.common.collect.ImmutableList<SpawnResult> =
+            execute(testRunnerAction, actionExecutionContext, standaloneTestStrategy)
 
-    ActionExecutionContext actionExecutionContext =
-        new FakeActionExecutionContext(
-            createTempOutErr(tmpDirRoot), inputMetadataProvider, spawnStrategy);
-    ImmutableList<SpawnResult> resultA =
-        execute(actionA, actionExecutionContext, standaloneTestStrategy);
-    assertThat(attemptGroup.cancelled()).isFalse();
-    verify(spawnStrategy).exec(any(), any());
-    assertThat(resultA).hasSize(1);
-    assertThat(standaloneTestStrategy.postedResult).isNotNull();
-    assertThat(standaloneTestStrategy.postedResult.getData().getStatus())
-        .isEqualTo(testOnPassed ? BlazeTestStatus.FAILED : BlazeTestStatus.PASSED);
-    assertThat(standaloneTestStrategy.postedResult.getData().getExitCode())
-        .isEqualTo(testOnPassed ? 1 : 0);
-    assertContainsPrefixedEvent(
-        storedEvents.getEvents(),
-        Event.of(
-            testOnPassed ? EventKind.FAIL : EventKind.PASS,
-            null,
-            "//standalone:empty_test (run 1 of 2)"));
-    // Reset postedResult.
-    standaloneTestStrategy.postedResult = null;
+        // check that the rigged SpawnResult was returned
+        Truth.assertThat(spawnResults).contains(expectedSpawnResult)
+        // check that the test log contains all the output
+        val logData: String? = FileSystemUtils.readContent(
+            testRunnerAction.getTestLog().getPath(),
+            java.nio.charset.StandardCharsets.UTF_8
+        )
+        Truth.assertThat(logData).isEmpty()
+        // check that the test stdout contains all the expected output
+        outErr.close() // Create the output files.
+        val outData: String? =
+            FileSystemUtils.readContent(outErr.getOutputPath(), java.nio.charset.StandardCharsets.UTF_8)
+        val emptyOutput =
+            ("==================== Test output for"
+                    + " //standalone:empty_test:(\\s)*================================================================================(\\s)*")
+        Truth.assertThat(outData).matches(emptyOutput)
+        assertThat(outErr.getErrorPath().exists()).isFalse()
+    }
 
-    ImmutableList<SpawnResult> resultB =
-        execute(actionB, actionExecutionContext, standaloneTestStrategy);
-    assertThat(attemptGroup.cancelled()).isFalse();
-    assertThat(resultB).hasSize(1);
-    assertThat(standaloneTestStrategy.postedResult).isNotNull();
-    assertThat(standaloneTestStrategy.postedResult.getData().getStatus())
-        .isEqualTo(testOnPassed ? BlazeTestStatus.FAILED : BlazeTestStatus.PASSED);
-    assertContainsPrefixedEvent(
-        storedEvents.getEvents(),
-        Event.of(
-            testOnPassed ? EventKind.FAIL : EventKind.PASS,
-            null,
-            "//standalone:empty_test (run 2 of 2)"));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAppendStdErrDoesNotBusyLoop() {
+        val executionOptions: ExecutionOptions =
+            com.google.devtools.common.options.Options.getDefaults<O>(ExecutionOptions::class.java)
+        val testSummaryOptions: TestSummaryOptions? =
+            com.google.devtools.common.options.Options.getDefaults<O?>(TestSummaryOptions::class.java)
+        executionOptions.testOutput = ExecutionOptions.TestOutputFormat.ALL
+        val tmpDirRoot: Path = TestStrategy.getTmpRoot(rootDirectory, outputBase, executionOptions)
+        val standaloneTestStrategy =
+            TestedStandaloneTestStrategy(executionOptions, testSummaryOptions, tmpDirRoot)
 
-  @Test
-  public void missingTestLogSpawnTestResultIsIncomplete() throws Exception {
-    ExecutionOptions executionOptions = Options.getDefaults(ExecutionOptions.class);
-    TestSummaryOptions testSummaryOptions = TestSummaryOptions.DEFAULTS;
-    Path tmpDirRoot = TestStrategy.getTmpRoot(rootDirectory, outputBase, executionOptions);
-    TestedStandaloneTestStrategy standaloneTestStrategy =
-        new TestedStandaloneTestStrategy(executionOptions, testSummaryOptions, tmpDirRoot);
+        // setup a test action
+        scratch.file("standalone/empty_test.sh", "this does not get executed, it is mocked out")
+        scratch.file(
+            "standalone/BUILD",
+            """
+        load('//test_defs:foo_test.bzl', 'foo_test')
+        foo_test(
+            name = "empty_test",
+            size = "small",
+            srcs = ["empty_test.sh"],
+        )
+        
+        """.trimIndent()
+        )
+        val testRunnerAction: TestRunnerAction = getTestAction("//standalone:empty_test")
 
-    // setup a test action
-    scratch.file("standalone/simple_test.sh", "this does not get executed, it is mocked out");
-    scratch.file(
-        "standalone/BUILD",
-        """
+        Mockito.`when`<T?>(spawnStrategy.exec(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>()))
+            .then(
+                Answer { invocation: InvocationOnMock? ->
+                    (invocation.getArgument<Any?>(1) as ActionExecutionContext).getFileOutErr().printErr("Foo")
+                    com.google.common.collect.ImmutableList.of<Any?>(PASSED_TEST_SPAWN)
+                })
+
+        val outErr: FileOutErr = createTempOutErr(tmpDirRoot)
+        val actionExecutionContext: ActionExecutionContext =
+            FakeActionExecutionContext(outErr, inputMetadataFor(testRunnerAction), spawnStrategy)
+
+        // actual StandaloneTestStrategy execution
+        execute(testRunnerAction, actionExecutionContext, standaloneTestStrategy)
+
+        // check that the test stdout contains all the expected output
+        val outData: String? =
+            FileSystemUtils.readContent(outErr.getOutputPath(), java.nio.charset.StandardCharsets.UTF_8)
+        Truth.assertThat(outData).contains("Foo")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExperimentalCancelConcurrentTests(
+        @TestParameter("ON_PASSED", "ON_FAILED") cancelConcurrentTests: CancelConcurrentTests?
+    ) {
+        useConfiguration(
+            "--runs_per_test=2",
+            "--runs_per_test_detects_flakes",
+            "--experimental_cancel_concurrent_tests=" + cancelConcurrentTests
+        )
+        val testOnPassed = cancelConcurrentTests === CancelConcurrentTests.ON_PASSED
+        val executionOptions: ExecutionOptions? =
+            com.google.devtools.common.options.Options.getDefaults<O?>(ExecutionOptions::class.java)
+        val testSummaryOptions: TestSummaryOptions? =
+            com.google.devtools.common.options.Options.getDefaults<O?>(TestSummaryOptions::class.java)
+        val tmpDirRoot: Path = TestStrategy.getTmpRoot(rootDirectory, outputBase, executionOptions)
+        val standaloneTestStrategy =
+            TestedStandaloneTestStrategy(executionOptions, testSummaryOptions, tmpDirRoot)
+
+        scratch.file("standalone/empty_test.sh", "this does not get executed, it is mocked out")
+        scratch.file(
+            "standalone/BUILD",
+            """
+        load('//test_defs:foo_test.bzl', 'foo_test')
+        foo_test(
+            name = "empty_test",
+            size = "small",
+            srcs = ["empty_test.sh"],
+        )
+        
+        """.trimIndent()
+        )
+        val testRunnerActions: com.google.common.collect.ImmutableList<TestRunnerAction> =
+            getTestActions("//standalone:empty_test")
+        Truth.assertThat(testRunnerActions).hasSize(2)
+
+        val actionA: TestRunnerAction = testRunnerActions.get(0)
+        val actionB: TestRunnerAction = testRunnerActions.get(1)
+        val attemptGroup: AttemptGroup =
+            standaloneTestStrategy.getAttemptGroup(actionA.getOwner(), actionA.getShardNum())
+        assertThat(attemptGroup)
+            .isSameInstanceAs(
+                standaloneTestStrategy.getAttemptGroup(actionB.getOwner(), actionB.getShardNum())
+            )
+
+        Mockito.`when`<T?>(spawnStrategy.exec(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>()))
+            .then(
+                Answer { invocation: InvocationOnMock? ->
+                    // Avoid triggering split XML generation by creating an empty XML file.
+                    FileSystemUtils.touchFile(actionA.resolve(execRoot).getXmlOutputPath())
+                    if (testOnPassed) {
+                        return@then com.google.common.collect.ImmutableList.of<Any?>(PASSED_TEST_SPAWN)
+                    } else {
+                        throw SpawnExecException("", FAILED_TEST_SPAWN, false)
+                    }
+                })
+            .thenThrow(java.lang.AssertionError("failure: this should not have been called"))
+
+        val inputMetadataProvider: com.google.devtools.build.lib.exec.util.FakeActionInputFileCache =
+            com.google.devtools.build.lib.exec.util.FakeActionInputFileCache()
+        inputMetadataProvider.putRunfilesTree(actionA.getRunfilesTree(), runfilesTreeFor(actionA))
+        inputMetadataProvider.putRunfilesTree(actionB.getRunfilesTree(), runfilesTreeFor(actionB))
+
+        val actionExecutionContext: ActionExecutionContext =
+            FakeActionExecutionContext(
+                createTempOutErr(tmpDirRoot), inputMetadataProvider, spawnStrategy
+            )
+        val resultA: com.google.common.collect.ImmutableList<SpawnResult> =
+            execute(actionA, actionExecutionContext, standaloneTestStrategy)
+        assertThat(attemptGroup.cancelled()).isTrue()
+        Mockito.verify<Any?>(spawnStrategy).exec(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>())
+        Truth.assertThat(resultA).hasSize(1)
+        assertThat(standaloneTestStrategy.postedResult).isNotNull()
+        assertThat(standaloneTestStrategy.postedResult.getData().getStatus())
+            .isEqualTo(if (testOnPassed) BlazeTestStatus.PASSED else BlazeTestStatus.FAILED)
+        assertThat(standaloneTestStrategy.postedResult.getData().getExitCode())
+            .isEqualTo(if (testOnPassed) 0 else 1)
+        assertContainsPrefixedEvent(
+            storedEvents.getEvents(),
+            com.google.devtools.build.lib.events.Event.of(
+                if (testOnPassed) com.google.devtools.build.lib.events.EventKind.PASS else com.google.devtools.build.lib.events.EventKind.FAIL,
+                null,
+                "//standalone:empty_test (run 1 of 2)"
+            )
+        )
+        // Reset postedResult.
+        standaloneTestStrategy.postedResult = null
+
+        val resultB: com.google.common.collect.ImmutableList<SpawnResult> =
+            execute(actionB, actionExecutionContext, standaloneTestStrategy)
+        Truth.assertThat(resultB).isEmpty()
+        assertThat(standaloneTestStrategy.postedResult).isNotNull()
+        assertThat(standaloneTestStrategy.postedResult.getData().getStatus())
+            .isEqualTo(BlazeTestStatus.INCOMPLETE)
+        Truth.assertThat(storedEvents.getEvents())
+            .contains(
+                com.google.devtools.build.lib.events.Event.of(
+                    com.google.devtools.build.lib.events.EventKind.CANCELLED,
+                    null,
+                    "//standalone:empty_test (run 2 of 2)"
+                )
+            )
+        // Check that there are no ERROR events.
+        Truth.assertThat(
+            storedEvents.getEvents().stream()
+                .filter { e: com.google.devtools.build.lib.events.Event? -> e.getKind() == com.google.devtools.build.lib.events.EventKind.ERROR }
+                .collect(Collectors.toList()))
+            .isEmpty()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExperimentalCancelConcurrentTestsDoesNotTriggerOnUnexpectedResult(
+        @TestParameter("ON_PASSED", "ON_FAILED") cancelConcurrentTests: CancelConcurrentTests?
+    ) {
+        useConfiguration(
+            "--runs_per_test=2",
+            "--runs_per_test_detects_flakes",
+            "--experimental_cancel_concurrent_tests=" + cancelConcurrentTests
+        )
+        val testOnPassed = cancelConcurrentTests === CancelConcurrentTests.ON_PASSED
+        val executionOptions: ExecutionOptions? =
+            com.google.devtools.common.options.Options.getDefaults<O?>(ExecutionOptions::class.java)
+        val testSummaryOptions: TestSummaryOptions? =
+            com.google.devtools.common.options.Options.getDefaults<O?>(TestSummaryOptions::class.java)
+        val tmpDirRoot: Path = TestStrategy.getTmpRoot(rootDirectory, outputBase, executionOptions)
+        val standaloneTestStrategy =
+            TestedStandaloneTestStrategy(executionOptions, testSummaryOptions, tmpDirRoot)
+
+        scratch.file("standalone/empty_test.sh", "this does not get executed, it is mocked out")
+        scratch.file(
+            "standalone/BUILD",
+            """
+        load('//test_defs:foo_test.bzl', 'foo_test')
+        foo_test(
+            name = "empty_test",
+            size = "small",
+            srcs = ["empty_test.sh"],
+        )
+        
+        """.trimIndent()
+        )
+        val testRunnerActions: com.google.common.collect.ImmutableList<TestRunnerAction> =
+            getTestActions("//standalone:empty_test")
+        Truth.assertThat(testRunnerActions).hasSize(2)
+
+        val actionA: TestRunnerAction = testRunnerActions.get(0)
+        val actionB: TestRunnerAction = testRunnerActions.get(1)
+        val attemptGroup: AttemptGroup =
+            standaloneTestStrategy.getAttemptGroup(actionA.getOwner(), actionA.getShardNum())
+        assertThat(attemptGroup)
+            .isSameInstanceAs(
+                standaloneTestStrategy.getAttemptGroup(actionB.getOwner(), actionB.getShardNum())
+            )
+        assertThat(attemptGroup.cancelled()).isFalse()
+
+        Mockito.`when`<T?>(spawnStrategy.exec(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>()))
+            .then(
+                Answer { invocation: InvocationOnMock? ->
+                    // Avoid triggering split XML generation by creating an empty XML file.
+                    FileSystemUtils.touchFile(actionA.resolve(execRoot).getXmlOutputPath())
+                    if (testOnPassed) {
+                        throw SpawnExecException("", FAILED_TEST_SPAWN, false)
+                    } else {
+                        return@then com.google.common.collect.ImmutableList.of<Any?>(PASSED_TEST_SPAWN)
+                    }
+                })
+            .then(
+                Answer { invocation: InvocationOnMock? ->
+                    // Avoid triggering split XML generation by creating an empty XML file.
+                    FileSystemUtils.touchFile(actionB.resolve(execRoot).getXmlOutputPath())
+                    if (testOnPassed) {
+                        return@then com.google.common.collect.ImmutableList.of<Any?>(PASSED_TEST_SPAWN)
+                    } else {
+                        throw SpawnExecException("", FAILED_TEST_SPAWN, false)
+                    }
+                })
+
+        val inputMetadataProvider: com.google.devtools.build.lib.exec.util.FakeActionInputFileCache =
+            com.google.devtools.build.lib.exec.util.FakeActionInputFileCache()
+        inputMetadataProvider.putRunfilesTree(actionA.getRunfilesTree(), runfilesTreeFor(actionA))
+        inputMetadataProvider.putRunfilesTree(actionB.getRunfilesTree(), runfilesTreeFor(actionB))
+
+        val actionExecutionContext: ActionExecutionContext =
+            FakeActionExecutionContext(
+                createTempOutErr(tmpDirRoot), inputMetadataProvider, spawnStrategy
+            )
+        val resultA: com.google.common.collect.ImmutableList<SpawnResult> =
+            execute(actionA, actionExecutionContext, standaloneTestStrategy)
+        assertThat(attemptGroup.cancelled()).isFalse()
+        Mockito.verify<Any?>(spawnStrategy).exec(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>())
+        Truth.assertThat(resultA).hasSize(1)
+        assertThat(standaloneTestStrategy.postedResult).isNotNull()
+        assertThat(standaloneTestStrategy.postedResult.getData().getStatus())
+            .isEqualTo(if (testOnPassed) BlazeTestStatus.FAILED else BlazeTestStatus.PASSED)
+        assertThat(standaloneTestStrategy.postedResult.getData().getExitCode())
+            .isEqualTo(if (testOnPassed) 1 else 0)
+        assertContainsPrefixedEvent(
+            storedEvents.getEvents(),
+            com.google.devtools.build.lib.events.Event.of(
+                if (testOnPassed) com.google.devtools.build.lib.events.EventKind.FAIL else com.google.devtools.build.lib.events.EventKind.PASS,
+                null,
+                "//standalone:empty_test (run 1 of 2)"
+            )
+        )
+        // Reset postedResult.
+        standaloneTestStrategy.postedResult = null
+
+        val resultB: com.google.common.collect.ImmutableList<SpawnResult> =
+            execute(actionB, actionExecutionContext, standaloneTestStrategy)
+        assertThat(attemptGroup.cancelled()).isTrue()
+        Truth.assertThat(resultB).hasSize(1)
+        assertThat(standaloneTestStrategy.postedResult).isNotNull()
+        assertThat(standaloneTestStrategy.postedResult.getData().getStatus())
+            .isEqualTo(if (testOnPassed) BlazeTestStatus.PASSED else BlazeTestStatus.FAILED)
+        assertThat(standaloneTestStrategy.postedResult.getData().getExitCode())
+            .isEqualTo(if (testOnPassed) 0 else 1)
+        assertContainsPrefixedEvent(
+            storedEvents.getEvents(),
+            com.google.devtools.build.lib.events.Event.of(
+                if (testOnPassed) com.google.devtools.build.lib.events.EventKind.PASS else com.google.devtools.build.lib.events.EventKind.FAIL,
+                null,
+                "//standalone:empty_test (run 2 of 2)"
+            )
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExperimentalCancelConcurrentTestsAllUnexpected(
+        @TestParameter("ON_PASSED", "ON_FAILED") cancelConcurrentTests: CancelConcurrentTests?
+    ) {
+        useConfiguration(
+            "--runs_per_test=2",
+            "--runs_per_test_detects_flakes",
+            "--experimental_cancel_concurrent_tests=" + cancelConcurrentTests
+        )
+        val testOnPassed = cancelConcurrentTests === CancelConcurrentTests.ON_PASSED
+        val executionOptions: ExecutionOptions? =
+            com.google.devtools.common.options.Options.getDefaults<O?>(ExecutionOptions::class.java)
+        val testSummaryOptions: TestSummaryOptions? =
+            com.google.devtools.common.options.Options.getDefaults<O?>(TestSummaryOptions::class.java)
+        val tmpDirRoot: Path = TestStrategy.getTmpRoot(rootDirectory, outputBase, executionOptions)
+        val standaloneTestStrategy =
+            TestedStandaloneTestStrategy(executionOptions, testSummaryOptions, tmpDirRoot)
+
+        scratch.file("standalone/empty_test.sh", "this does not get executed, it is mocked out")
+        scratch.file(
+            "standalone/BUILD",
+            """
+        load('//test_defs:foo_test.bzl', 'foo_test')
+        foo_test(
+            name = "empty_test",
+            size = "small",
+            srcs = ["empty_test.sh"],
+        )
+        
+        """.trimIndent()
+        )
+        val testRunnerActions: com.google.common.collect.ImmutableList<TestRunnerAction> =
+            getTestActions("//standalone:empty_test")
+        Truth.assertThat(testRunnerActions).hasSize(2)
+
+        val actionA: TestRunnerAction = testRunnerActions.get(0)
+        val actionB: TestRunnerAction = testRunnerActions.get(1)
+        val attemptGroup: AttemptGroup =
+            standaloneTestStrategy.getAttemptGroup(actionA.getOwner(), actionA.getShardNum())
+        assertThat(attemptGroup)
+            .isSameInstanceAs(
+                standaloneTestStrategy.getAttemptGroup(actionB.getOwner(), actionB.getShardNum())
+            )
+        assertThat(attemptGroup.cancelled()).isFalse()
+
+        Mockito.`when`<T?>(spawnStrategy.exec(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>()))
+            .then(
+                Answer { invocation: InvocationOnMock? ->
+                    // Avoid triggering split XML generation by creating an empty XML file.
+                    FileSystemUtils.touchFile(actionA.resolve(execRoot).getXmlOutputPath())
+                    if (testOnPassed) {
+                        throw SpawnExecException("", FAILED_TEST_SPAWN, false)
+                    } else {
+                        return@then com.google.common.collect.ImmutableList.of<Any?>(PASSED_TEST_SPAWN)
+                    }
+                })
+            .then(
+                Answer { invocation: InvocationOnMock? ->
+                    // Avoid triggering split XML generation by creating an empty XML file.
+                    FileSystemUtils.touchFile(actionB.resolve(execRoot).getXmlOutputPath())
+                    if (testOnPassed) {
+                        throw SpawnExecException("", FAILED_TEST_SPAWN, false)
+                    } else {
+                        return@then com.google.common.collect.ImmutableList.of<Any?>(PASSED_TEST_SPAWN)
+                    }
+                })
+
+        val inputMetadataProvider: com.google.devtools.build.lib.exec.util.FakeActionInputFileCache =
+            com.google.devtools.build.lib.exec.util.FakeActionInputFileCache()
+        inputMetadataProvider.putRunfilesTree(actionA.getRunfilesTree(), runfilesTreeFor(actionA))
+        inputMetadataProvider.putRunfilesTree(actionB.getRunfilesTree(), runfilesTreeFor(actionB))
+
+        val actionExecutionContext: ActionExecutionContext =
+            FakeActionExecutionContext(
+                createTempOutErr(tmpDirRoot), inputMetadataProvider, spawnStrategy
+            )
+        val resultA: com.google.common.collect.ImmutableList<SpawnResult> =
+            execute(actionA, actionExecutionContext, standaloneTestStrategy)
+        assertThat(attemptGroup.cancelled()).isFalse()
+        Mockito.verify<Any?>(spawnStrategy).exec(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>())
+        Truth.assertThat(resultA).hasSize(1)
+        assertThat(standaloneTestStrategy.postedResult).isNotNull()
+        assertThat(standaloneTestStrategy.postedResult.getData().getStatus())
+            .isEqualTo(if (testOnPassed) BlazeTestStatus.FAILED else BlazeTestStatus.PASSED)
+        assertThat(standaloneTestStrategy.postedResult.getData().getExitCode())
+            .isEqualTo(if (testOnPassed) 1 else 0)
+        assertContainsPrefixedEvent(
+            storedEvents.getEvents(),
+            com.google.devtools.build.lib.events.Event.of(
+                if (testOnPassed) com.google.devtools.build.lib.events.EventKind.FAIL else com.google.devtools.build.lib.events.EventKind.PASS,
+                null,
+                "//standalone:empty_test (run 1 of 2)"
+            )
+        )
+        // Reset postedResult.
+        standaloneTestStrategy.postedResult = null
+
+        val resultB: com.google.common.collect.ImmutableList<SpawnResult> =
+            execute(actionB, actionExecutionContext, standaloneTestStrategy)
+        assertThat(attemptGroup.cancelled()).isFalse()
+        Truth.assertThat(resultB).hasSize(1)
+        assertThat(standaloneTestStrategy.postedResult).isNotNull()
+        assertThat(standaloneTestStrategy.postedResult.getData().getStatus())
+            .isEqualTo(if (testOnPassed) BlazeTestStatus.FAILED else BlazeTestStatus.PASSED)
+        assertContainsPrefixedEvent(
+            storedEvents.getEvents(),
+            com.google.devtools.build.lib.events.Event.of(
+                if (testOnPassed) com.google.devtools.build.lib.events.EventKind.FAIL else com.google.devtools.build.lib.events.EventKind.PASS,
+                null,
+                "//standalone:empty_test (run 2 of 2)"
+            )
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun missingTestLogSpawnTestResultIsIncomplete() {
+        val executionOptions: ExecutionOptions? =
+            com.google.devtools.common.options.Options.getDefaults<O?>(ExecutionOptions::class.java)
+        val testSummaryOptions: TestSummaryOptions? = TestSummaryOptions.DEFAULTS
+        val tmpDirRoot: Path = TestStrategy.getTmpRoot(rootDirectory, outputBase, executionOptions)
+        val standaloneTestStrategy =
+            TestedStandaloneTestStrategy(executionOptions, testSummaryOptions, tmpDirRoot)
+
+        // setup a test action
+        scratch.file("standalone/simple_test.sh", "this does not get executed, it is mocked out")
+        scratch.file(
+            "standalone/BUILD",
+            """
         load('//test_defs:foo_test.bzl', 'foo_test')
         foo_test(
             name = "simple_test",
             size = "small",
             srcs = ["simple_test.sh"],
         )
-        """);
-    TestRunnerAction testRunnerAction = getTestAction("//standalone:simple_test");
-    ActionExecutionContext actionExecutionContext =
-        new FakeActionExecutionContext(
-            createTempOutErr(tmpDirRoot), inputMetadataFor(testRunnerAction), spawnStrategy);
-    TestRunnerSpawn spawn =
-        standaloneTestStrategy.createTestRunnerSpawn(testRunnerAction, actionExecutionContext);
+        
+        """.trimIndent()
+        )
+        val testRunnerAction: TestRunnerAction = getTestAction("//standalone:simple_test")
+        val actionExecutionContext: ActionExecutionContext =
+            FakeActionExecutionContext(
+                createTempOutErr(tmpDirRoot), inputMetadataFor(testRunnerAction), spawnStrategy
+            )
+        val spawn: TestRunnerSpawn =
+            standaloneTestStrategy.createTestRunnerSpawn(testRunnerAction, actionExecutionContext)
 
-    TestResultData.Builder builder =
-        TestResultData.newBuilder().setTestPassed(true).setStatus(BlazeTestStatus.PASSED);
-    StandaloneTestResult result =
-        StandaloneTestResult.builder()
-            .setSpawnResults(ImmutableList.of())
-            .setTestResultDataBuilder(builder)
-            .setExecutionInfo(ExecutionInfo.getDefaultInstance())
-            .build();
-    ProcessedAttemptResult failedResult = spawn.finalizeFailedTestAttempt(result, 0);
+        val builder: TestResultData.Builder? =
+            TestResultData.newBuilder().setTestPassed(true).setStatus(BlazeTestStatus.PASSED)
+        val result: StandaloneTestResult? =
+            StandaloneTestResult.builder()
+                .setSpawnResults(com.google.common.collect.ImmutableList.of<E?>())
+                .setTestResultDataBuilder(builder)
+                .setExecutionInfo(ExecutionInfo.getDefaultInstance())
+                .build()
+        val failedResult: ProcessedAttemptResult = spawn.finalizeFailedTestAttempt(result, 0)
 
-    assertThat(failedResult).isInstanceOf(StandaloneProcessedAttemptResult.class);
-    TestResultData data = ((StandaloneProcessedAttemptResult) failedResult).testResultData();
-    assertThat(data.getStatus()).isEqualTo(BlazeTestStatus.INCOMPLETE);
-    assertThat(data.getExitCode()).isEqualTo(0);
-  }
+        assertThat(failedResult).isInstanceOf(StandaloneProcessedAttemptResult::class.java)
+        val data: TestResultData = (failedResult as StandaloneProcessedAttemptResult).testResultData()
+        assertThat(data.getStatus()).isEqualTo(BlazeTestStatus.INCOMPLETE)
+        assertThat(data.getExitCode()).isEqualTo(0)
+    }
 
-  @Test
-  public void testMetadataResetOnRetry() throws Exception {
-    scratch.file("standalone/flaky_test.sh", "mocked");
-    scratch.file(
-        "standalone/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMetadataResetOnRetry() {
+        scratch.file("standalone/flaky_test.sh", "mocked")
+        scratch.file(
+            "standalone/BUILD",
+            """
         load('//test_defs:foo_test.bzl', 'foo_test')
         foo_test(
             name = "flaky_test",
             srcs = ["flaky_test.sh"],
             flaky = True,
         )
-        """);
-    TestRunnerAction testRunnerAction = getTestAction("//standalone:flaky_test");
+        
+        """.trimIndent()
+        )
+        val testRunnerAction: TestRunnerAction = getTestAction("//standalone:flaky_test")
 
-    OutputMetadataStore outputMetadataStore = org.mockito.Mockito.mock(OutputMetadataStore.class);
-    ActionExecutionContext context =
-        new FakeActionExecutionContext(
-            createTempOutErr(outputBase),
-            toContextRegistry(spawnStrategy, fileSystem, directories),
-            inputMetadataFor(testRunnerAction),
-            outputMetadataStore);
+        val outputMetadataStore: OutputMetadataStore? =
+            org.mockito.Mockito.mock<OutputMetadataStore?>(OutputMetadataStore::class.java)
+        val context: ActionExecutionContext =
+            FakeActionExecutionContext(
+                createTempOutErr(outputBase),
+                toContextRegistry(spawnStrategy, fileSystem, directories),
+                inputMetadataFor(testRunnerAction),
+                outputMetadataStore
+            )
 
-    when(spawnStrategy.exec(any(), any()))
-        .thenThrow(new SpawnExecException("failed", FAILED_TEST_SPAWN, false))
-        .thenReturn(ImmutableList.of(PASSED_TEST_SPAWN)) // attempt 2 pass
-        .thenReturn(ImmutableList.of(PASSED_TEST_SPAWN)); // XML generation
+        Mockito.`when`<T?>(spawnStrategy.exec(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>()))
+            .thenThrow(SpawnExecException("failed", FAILED_TEST_SPAWN, false))
+            .thenReturn(com.google.common.collect.ImmutableList.of<E?>(PASSED_TEST_SPAWN)) // attempt 2 pass
+            .thenReturn(com.google.common.collect.ImmutableList.of<E?>(PASSED_TEST_SPAWN)) // XML generation
 
-    execute(
-        testRunnerAction,
-        context,
-        new TestedStandaloneTestStrategy(
-            Options.getDefaults(ExecutionOptions.class),
-            Options.getDefaults(TestSummaryOptions.class),
-            outputBase));
+        execute(
+            testRunnerAction,
+            context,
+            TestedStandaloneTestStrategy(
+                com.google.devtools.common.options.Options.getDefaults<O?>(ExecutionOptions::class.java),
+                com.google.devtools.common.options.Options.getDefaults<O?>(TestSummaryOptions::class.java),
+                outputBase
+            )
+        )
 
-    verify(outputMetadataStore, atLeastOnce()).resetOutputs(any());
-  }
+        Mockito.verify<Any?>(outputMetadataStore, Mockito.atLeastOnce()).resetOutputs(ArgumentMatchers.any<T?>())
+    }
 
-  @Test
-  public void testSkipCoverageOnFailure() throws Exception {
-    useConfiguration("--collect_code_coverage", "--experimental_split_coverage_postprocessing");
-    scratch.file("standalone/fail_coverage.sh", "mocked");
-    scratch.file(
-        "standalone/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSkipCoverageOnFailure() {
+        useConfiguration("--collect_code_coverage", "--experimental_split_coverage_postprocessing")
+        scratch.file("standalone/fail_coverage.sh", "mocked")
+        scratch.file(
+            "standalone/BUILD",
+            """
         load('//test_defs:foo_test.bzl', 'foo_test')
         foo_test(
             name = "fail_coverage",
             srcs = ["fail_coverage.sh"],
         )
-        """);
-    TestRunnerAction testRunnerAction = getTestAction("//standalone:fail_coverage");
+        
+        """.trimIndent()
+        )
+        val testRunnerAction: TestRunnerAction = getTestAction("//standalone:fail_coverage")
 
-    when(spawnStrategy.exec(any(), any()))
-        .thenThrow(new SpawnExecException("failed", FAILED_TEST_SPAWN, false))
-        .thenReturn(ImmutableList.of(PASSED_TEST_SPAWN)); // XML generation
+        Mockito.`when`<T?>(spawnStrategy.exec(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>()))
+            .thenThrow(SpawnExecException("failed", FAILED_TEST_SPAWN, false))
+            .thenReturn(com.google.common.collect.ImmutableList.of<E?>(PASSED_TEST_SPAWN)) // XML generation
 
-    ActionExecutionContext context =
-        new FakeActionExecutionContext(
-            createTempOutErr(outputBase), inputMetadataFor(testRunnerAction), spawnStrategy);
+        val context: ActionExecutionContext =
+            FakeActionExecutionContext(
+                createTempOutErr(outputBase), inputMetadataFor(testRunnerAction), spawnStrategy
+            )
 
-    execute(
-        testRunnerAction,
-        context,
-        new TestedStandaloneTestStrategy(
-            Options.getDefaults(ExecutionOptions.class),
-            Options.getDefaults(TestSummaryOptions.class),
-            outputBase));
+        execute(
+            testRunnerAction,
+            context,
+            TestedStandaloneTestStrategy(
+                com.google.devtools.common.options.Options.getDefaults<O?>(ExecutionOptions::class.java),
+                com.google.devtools.common.options.Options.getDefaults<O?>(TestSummaryOptions::class.java),
+                outputBase
+            )
+        )
 
-    verify(spawnStrategy, times(2)).exec(any(), any()); // Only test + XML, no coverage merger.
-    assertThat(testRunnerAction.getCoverageData().getPath().exists()).isTrue();
-  }
+        Mockito.verify<Any?>(spawnStrategy, Mockito.times(2))
+            .exec(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>()) // Only test + XML, no coverage merger.
+        assertThat(testRunnerAction.getCoverageData().getPath().exists()).isTrue()
+    }
+
+    companion object {
+        private val NON_ZERO_EXIT_DETAILS: FailureDetail? = FailureDetail.newBuilder()
+            .setSpawn(FailureDetails.Spawn.newBuilder().setCode(Code.NON_ZERO_EXIT))
+            .build()
+        private val FAILED_TEST_SPAWN: SpawnResult? = Builder()
+            .setStatus(Status.NON_ZERO_EXIT)
+            .setExitCode(1)
+            .setFailureDetail(NON_ZERO_EXIT_DETAILS)
+            .setRunnerName("test")
+            .build()
+        private val PASSED_TEST_SPAWN: SpawnResult = Builder().setStatus(Status.SUCCESS).setRunnerName("test").build()
+
+        private fun toContextRegistry(
+            spawnStrategy: SpawnStrategy?, fileSystem: FileSystem?, directories: BlazeDirectories
+        ): ActionContext.ActionContextRegistry? {
+            try {
+                return TestExecutorBuilder(fileSystem, directories)
+                    .addStrategy(spawnStrategy, "mock")
+                    .setDefaultStrategies("mock")
+                    .build()
+            } catch (e: AbruptExitException) {
+                throw java.lang.AssertionError(e)
+            }
+        }
+
+        private fun createTempOutErr(tmpDirRoot: Path): FileOutErr {
+            val outPath: Path? = tmpDirRoot.getRelative("test-out.txt")
+            val errPath: Path? = tmpDirRoot.getRelative("test-err.txt")
+            return FileOutErr(outPath, errPath)
+        }
+
+        @Throws(ActionExecutionException::class, java.lang.InterruptedException::class)
+        private fun execute(
+            testRunnerAction: TestRunnerAction,
+            actionExecutionContext: ActionExecutionContext?,
+            testActionContext: TestActionContext?
+        ): com.google.common.collect.ImmutableList<SpawnResult> {
+            return testRunnerAction.execute(actionExecutionContext, testActionContext).spawnResults()
+        }
+
+        private fun assertContainsPrefixedEvent(
+            events: Iterable<com.google.devtools.build.lib.events.Event>,
+            event: com.google.devtools.build.lib.events.Event
+        ) {
+            for (e in events) {
+                if (e.getKind() == event.getKind() && e.getMessage().startsWith(event.getMessage())) {
+                    return
+                }
+            }
+            Truth.assertThat(events).contains(event)
+        }
+    }
 }

@@ -11,37 +11,32 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.vfs.util;
+package com.google.devtools.build.lib.vfs.util
 
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.UnixGlobPathDiscriminator;
-import com.google.errorprone.annotations.CheckReturnValue;
-import java.util.function.BiPredicate;
-import java.util.function.Predicate;
+import com.google.devtools.build.lib.vfs.Path
 
 /**
  * Test version of UnixGlobPathDiscriminator that accepts predicate/bipredicate for handling
  * specific use-cases without creating a new class.
  */
-@CheckReturnValue
-public final class TestUnixGlobPathDiscriminator implements UnixGlobPathDiscriminator {
+@com.google.errorprone.annotations.CheckReturnValue
+class TestUnixGlobPathDiscriminator(
+    traversalPredicate: java.util.function.Predicate<Path?>,
+    resultPredicate: java.util.function.BiPredicate<Path?, Boolean?>
+) : UnixGlobPathDiscriminator {
+    private val traversalPredicate: java.util.function.Predicate<Path?>
+    private val resultPredicate: java.util.function.BiPredicate<Path?, Boolean?>
 
-  private final Predicate<Path> traversalPredicate;
-  private final BiPredicate<Path, Boolean> resultPredicate;
+    init {
+        this.traversalPredicate = traversalPredicate
+        this.resultPredicate = resultPredicate
+    }
 
-  public TestUnixGlobPathDiscriminator(
-      Predicate<Path> traversalPredicate, BiPredicate<Path, Boolean> resultPredicate) {
-    this.traversalPredicate = traversalPredicate;
-    this.resultPredicate = resultPredicate;
-  }
+    public override fun shouldTraverseDirectory(path: Path?): Boolean {
+        return traversalPredicate.test(path)
+    }
 
-  @Override
-  public boolean shouldTraverseDirectory(Path path) {
-    return traversalPredicate.test(path);
-  }
-
-  @Override
-  public boolean shouldIncludePathInResult(Path path, boolean isDirectory) {
-    return resultPredicate.test(path, isDirectory);
-  }
+    public override fun shouldIncludePathInResult(path: Path?, isDirectory: Boolean): Boolean {
+        return resultPredicate.test(path, isDirectory)
+    }
 }

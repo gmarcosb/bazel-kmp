@@ -11,75 +11,56 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.io.BaseEncoding;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.clock.BlazeClock;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.packages.Rule;
-import com.google.devtools.build.lib.packages.RuleVisibility;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.pkgcache.PackageOptions;
-import com.google.devtools.build.lib.pkgcache.PathPackageLocator;
-import com.google.devtools.build.lib.runtime.QuiescingExecutorsImpl;
-import com.google.devtools.build.lib.skyframe.util.SkyframeExecutorTestUtils;
-import com.google.devtools.build.lib.util.io.TimestampGranularityMonitor;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.skyframe.EvaluationResult;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.common.options.Options;
-import java.util.Collection;
-import java.util.UUID;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.cmdline.PackageIdentifier
 
 /**
  * Tests for the hash code calculated for Starlark RuleClasses based on the transitive closure of
  * the imports of their respective definition StarlarkEnvironments.
  */
-@RunWith(JUnit4.class)
-public class StarlarkFileContentHashTests extends BuildViewTestCase {
+@RunWith(JUnit4::class)
+class StarlarkFileContentHashTests : BuildViewTestCase() {
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun createFiles() {
+        scratch.file("foo/BUILD")
+        scratch.file("bar/BUILD")
+        scratch.file("helper/BUILD")
 
-  @Before
-  public final void createFiles() throws Exception  {
-    scratch.file("foo/BUILD");
-    scratch.file("bar/BUILD");
-    scratch.file("helper/BUILD");
-
-    scratch.file(
-        "helper/ext.bzl",
-        """
+        scratch.file(
+            "helper/ext.bzl",
+            """
         def rule_impl(ctx):
             return None
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "foo/ext.bzl",
-        """
+        scratch.file(
+            "foo/ext.bzl",
+            """
         load("//helper:ext.bzl", "rule_impl")
 
         foo1 = rule(implementation = rule_impl)
         foo2 = rule(implementation = rule_impl)
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "bar/ext.bzl",
-        """
+        scratch.file(
+            "bar/ext.bzl",
+            """
         load("//helper:ext.bzl", "rule_impl")
 
         bar1 = rule(implementation = rule_impl)
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "pkg/BUILD",
-        """
+        scratch.file(
+            "pkg/BUILD",
+            """
         load("//bar:ext.bzl", "bar1")
         load("//foo:ext.bzl", "foo1", "foo2")
 
@@ -88,126 +69,150 @@ public class StarlarkFileContentHashTests extends BuildViewTestCase {
         foo2(name = "foo2")
 
         bar1(name = "bar1")
-        """);
-  }
+        
+        """.trimIndent()
+        )
+    }
 
-  @Test
-  public void testHashInvariance() throws Exception {
-    assertThat(getHash("pkg", "foo1")).isEqualTo(getHash("pkg", "foo1"));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testHashInvariance() {
+        Truth.assertThat(getHash("pkg", "foo1")).isEqualTo(getHash("pkg", "foo1"))
+    }
 
-  @Test
-  public void testHashInvarianceAfterOverwritingFileWithSameContents() throws Exception {
-    String bar1 = getHash("pkg", "bar1");
-    scratch.overwriteFile(
-        "bar/ext.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testHashInvarianceAfterOverwritingFileWithSameContents() {
+        val bar1 = getHash("pkg", "bar1")
+        scratch.overwriteFile(
+            "bar/ext.bzl",
+            """
         load("//helper:ext.bzl", "rule_impl")
 
         bar1 = rule(implementation = rule_impl)
-        """);
-    invalidatePackages();
-    assertThat(getHash("pkg", "bar1")).isEqualTo(bar1);
-  }
+        
+        """.trimIndent()
+        )
+        invalidatePackages()
+        Truth.assertThat(getHash("pkg", "bar1")).isEqualTo(bar1)
+    }
 
-  @Test
-  public void testHashSameForRulesDefinedInSameFile() throws Exception {
-    assertThat(getHash("pkg", "foo2")).isEqualTo(getHash("pkg", "foo1"));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testHashSameForRulesDefinedInSameFile() {
+        Truth.assertThat(getHash("pkg", "foo2")).isEqualTo(getHash("pkg", "foo1"))
+    }
 
-  @Test
-  public void testHashNotSameForRulesDefinedInDifferentFiles() throws Exception {
-    assertNotEquals(getHash("pkg", "foo1"), getHash("pkg", "bar1"));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testHashNotSameForRulesDefinedInDifferentFiles() {
+        assertNotEquals(getHash("pkg", "foo1"), getHash("pkg", "bar1"))
+    }
 
-  @Test
-  public void testImmediateFileChangeChangesHash() throws Exception {
-    String bar1 = getHash("pkg", "bar1");
-    scratch.overwriteFile(
-        "bar/ext.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testImmediateFileChangeChangesHash() {
+        val bar1 = getHash("pkg", "bar1")
+        scratch.overwriteFile(
+            "bar/ext.bzl",
+            """
         load("//helper:ext.bzl", "rule_impl")
         # Some comments to change file hash
 
         bar1 = rule(implementation = rule_impl)
-        """);
-    invalidatePackages();
-    assertNotEquals(bar1, getHash("pkg", "bar1"));
-  }
+        
+        """.trimIndent()
+        )
+        invalidatePackages()
+        assertNotEquals(bar1, getHash("pkg", "bar1"))
+    }
 
-  @Test
-  public void testTransitiveFileChangeChangesHash() throws Exception {
-    String bar1 = getHash("pkg", "bar1");
-    String foo1 = getHash("pkg", "foo1");
-    String foo2 = getHash("pkg", "foo2");
-    scratch.overwriteFile(
-        "helper/ext.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTransitiveFileChangeChangesHash() {
+        val bar1 = getHash("pkg", "bar1")
+        val foo1 = getHash("pkg", "foo1")
+        val foo2 = getHash("pkg", "foo2")
+        scratch.overwriteFile(
+            "helper/ext.bzl",
+            """
         # Some comments to change file hash
         def rule_impl(ctx):
             return None
-        """);
-    invalidatePackages();
-    assertNotEquals(bar1, getHash("pkg", "bar1"));
-    assertNotEquals(foo1, getHash("pkg", "foo1"));
-    assertNotEquals(foo2, getHash("pkg", "foo2"));
-  }
+        
+        """.trimIndent()
+        )
+        invalidatePackages()
+        assertNotEquals(bar1, getHash("pkg", "bar1"))
+        assertNotEquals(foo1, getHash("pkg", "foo1"))
+        assertNotEquals(foo2, getHash("pkg", "foo2"))
+    }
 
-  @Test
-  public void testFileChangeDoesNotAffectRulesDefinedOutsideOfTransitiveClosure() throws Exception {
-    String foo1 = getHash("pkg", "foo1");
-    String foo2 = getHash("pkg", "foo2");
-    scratch.overwriteFile(
-        "bar/ext.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFileChangeDoesNotAffectRulesDefinedOutsideOfTransitiveClosure() {
+        val foo1 = getHash("pkg", "foo1")
+        val foo2 = getHash("pkg", "foo2")
+        scratch.overwriteFile(
+            "bar/ext.bzl",
+            """
         load("//helper:ext.bzl", "rule_impl")
         # Some comments to change file hash
 
         bar1 = rule(implementation = rule_impl)
-        """);
-    invalidatePackages();
-    assertThat(getHash("pkg", "foo1")).isEqualTo(foo1);
-    assertThat(getHash("pkg", "foo2")).isEqualTo(foo2);
-  }
-
-  private static void assertNotEquals(String hash, String hash2) {
-    assertThat(hash.equals(hash2)).isFalse();
-  }
-
-  /**
-   * Returns the hash code of the rule target defined by the pkg and the target name parameters.
-   * Asserts that the targets and it's Starlark dependencies were loaded properly.
-   */
-  private String getHash(String pkg, String name) throws Exception {
-    PackageOptions packageOptions = Options.getDefaults(PackageOptions.class);
-    packageOptions.setDefaultVisibility(RuleVisibility.PUBLIC);
-    packageOptions.setShowLoadingProgress(true);
-    packageOptions.setGlobbingThreads(7);
-    getSkyframeExecutor()
-        .preparePackageLoading(
-            new PathPackageLocator(
-                outputBase,
-                ImmutableList.of(Root.fromPath(rootDirectory)),
-                BazelSkyframeExecutorConstants.BUILD_FILES_BY_PRIORITY),
-            packageOptions,
-            parseBuildLanguageOptions(),
-            UUID.randomUUID(),
-            ImmutableMap.<String, String>of(),
-            QuiescingExecutorsImpl.forTesting(),
-            new TimestampGranularityMonitor(BlazeClock.instance()));
-    skyframeExecutor.setActionEnv(ImmutableMap.<String, String>of());
-    SkyKey pkgLookupKey = PackageIdentifier.createInMainRepo(pkg);
-    EvaluationResult<PackageValue> result =
-        SkyframeExecutorTestUtils.evaluate(
-            getSkyframeExecutor(), pkgLookupKey, /*keepGoing=*/ false, reporter);
-    assertThat(result.hasError()).isFalse();
-    Collection<Target> targets = result.get(pkgLookupKey).getPackage().getTargets().values();
-    for (Target target : targets) {
-      if (target.getName().equals(name)) {
-        byte[] hash = ((Rule) target).getRuleClassObject().ruleDefinitionEnvironmentDigest;
-        return BaseEncoding.base16().lowerCase().encode(hash); // hexify
-      }
+        
+        """.trimIndent()
+        )
+        invalidatePackages()
+        Truth.assertThat(getHash("pkg", "foo1")).isEqualTo(foo1)
+        Truth.assertThat(getHash("pkg", "foo2")).isEqualTo(foo2)
     }
-    throw new IllegalStateException("target not found: " + name);
-  }
+
+    /**
+     * Returns the hash code of the rule target defined by the pkg and the target name parameters.
+     * Asserts that the targets and it's Starlark dependencies were loaded properly.
+     */
+    @Throws(java.lang.Exception::class)
+    private fun getHash(pkg: String?, name: String?): String {
+        val packageOptions: PackageOptions =
+            com.google.devtools.common.options.Options.getDefaults<O>(PackageOptions::class.java)
+        packageOptions.setDefaultVisibility(RuleVisibility.PUBLIC)
+        packageOptions.setShowLoadingProgress(true)
+        packageOptions.setGlobbingThreads(7)
+        getSkyframeExecutor()
+            .preparePackageLoading(
+                PathPackageLocator(
+                    outputBase,
+                    com.google.common.collect.ImmutableList.of<E?>(Root.fromPath(rootDirectory)),
+                    BazelSkyframeExecutorConstants.BUILD_FILES_BY_PRIORITY
+                ),
+                packageOptions,
+                parseBuildLanguageOptions(),
+                UUID.randomUUID(),
+                com.google.common.collect.ImmutableMap.of<String?, String?>(),
+                QuiescingExecutorsImpl.forTesting(),
+                TimestampGranularityMonitor(com.google.devtools.build.lib.clock.BlazeClock.instance())
+            )
+        skyframeExecutor.setActionEnv(com.google.common.collect.ImmutableMap.of<String?, String?>())
+        val pkgLookupKey: SkyKey? = PackageIdentifier.createInMainRepo(pkg)
+        val result: EvaluationResult<PackageValue?> =
+            SkyframeExecutorTestUtils.evaluate<T?>(
+                getSkyframeExecutor(), pkgLookupKey,  /*keepGoing=*/false, reporter
+            )
+        assertThat(result.hasError()).isFalse()
+        val targets: MutableCollection<Target> = result.get(pkgLookupKey).getPackage().getTargets().values()
+        for (target in targets) {
+            if (target.getName().equals(name)) {
+                val hash: ByteArray = (target as Rule).getRuleClassObject().ruleDefinitionEnvironmentDigest
+                return com.google.common.io.BaseEncoding.base16().lowerCase().encode(hash) // hexify
+            }
+        }
+        throw java.lang.IllegalStateException("target not found: " + name)
+    }
+
+    companion object {
+        private fun assertNotEquals(hash: String, hash2: String?) {
+            Truth.assertThat(hash == hash2).isFalse()
+        }
+    }
 }

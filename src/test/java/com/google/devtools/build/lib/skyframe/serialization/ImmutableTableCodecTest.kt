@@ -11,24 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester
 
-import com.google.common.collect.ImmutableTable;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link ImmutableTableCodec}. */
-@RunWith(JUnit4.class)
-public class ImmutableTableCodecTest {
-  @Test
-  public void smoke() throws Exception {
-    ImmutableTable.Builder<String, String, Integer> builder = ImmutableTable.builder();
-    builder.put("a", "b", 1);
-    builder.put("c", "d", -200);
-    builder.put("a", "d", 4);
-    new SerializationTester(ImmutableTable.of(), builder.buildOrThrow()).runTests();
-  }
+/** Tests for [ImmutableTableCodec].  */
+@RunWith(JUnit4::class)
+class ImmutableTableCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun smoke() {
+        val builder: com.google.common.collect.ImmutableTable.Builder<String?, String?, Int?> =
+            com.google.common.collect.ImmutableTable.builder<String?, String?, Int?>()
+        builder.put("a", "b", 1)
+        builder.put("c", "d", -200)
+        builder.put("a", "d", 4)
+        SerializationTester(
+            com.google.common.collect.ImmutableTable.of<R?, C?, V?>(),
+            builder.buildOrThrow()
+        ).runTests()
+    }
 }

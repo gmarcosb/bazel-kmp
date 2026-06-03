@@ -11,77 +11,64 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-import static org.mockito.Mockito.mock;
-
-import com.google.devtools.build.lib.analysis.TargetAndConfiguration;
-import com.google.devtools.build.lib.analysis.ViewCreationFailedException;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.skyframe.CyclesReporter;
-import com.google.devtools.build.skyframe.ErrorInfo;
-import com.google.devtools.build.skyframe.EvaluationResult;
-import com.google.devtools.build.skyframe.SkyFunctionException;
-import com.google.devtools.build.skyframe.SkyFunctionException.ReifiedSkyFunctionException;
-import com.google.devtools.build.skyframe.SkyFunctionException.Transience;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import com.google.devtools.build.lib.analysis.TargetAndConfiguration
 
 /**
- * Tests for {@link SkyframeErrorProcessor}.
- *
- * <p>TODO(b/221024798): Improve test coverage.
+ * Tests for [SkyframeErrorProcessor].
+ * 
+ * 
+ * TODO(b/221024798): Improve test coverage.
  */
-@RunWith(TestParameterInjector.class)
-public class SkyframeErrorProcessorTest {
+@RunWith(TestParameterInjector::class)
+class SkyframeErrorProcessorTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testProcessErrors_analysisErrorNoKeepGoing_throwsException(
+        @TestParameter includeExecutionPhase: Boolean
+    ) {
+        val analysisErrorKey: ConfiguredTargetKey? =
+            ConfiguredTargetKey.builder()
+                .setLabel(Label.parseCanonicalUnchecked("//analysis_err"))
+                .build()
+        val mockTargetAndConfiguration: TargetAndConfiguration =
+            TargetAndConfiguration(< T > mock < T ? > (Target::class.java),  /* configuration= */null)
+        val analysisException: ConfiguredValueCreationException =
+            ConfiguredValueCreationException(
+                mockTargetAndConfiguration.getTarget(), "analysis exception"
+            )
+        val analysisErrorInfo: ErrorInfo? =
+            ErrorInfo.fromException(
+                ReifiedSkyFunctionException(
+                    com.google.devtools.build.lib.skyframe.SkyframeErrorProcessorTest.DummySkyFunctionException(
+                        analysisException,
+                        Transience.PERSISTENT
+                    )
+                ),  /*isTransitivelyTransient=*/
+                false
+            )
 
-  @Test
-  public void testProcessErrors_analysisErrorNoKeepGoing_throwsException(
-      @TestParameter boolean includeExecutionPhase) throws Exception {
-    ConfiguredTargetKey analysisErrorKey =
-        ConfiguredTargetKey.builder()
-            .setLabel(Label.parseCanonicalUnchecked("//analysis_err"))
-            .build();
-    TargetAndConfiguration mockTargetAndConfiguration =
-        new TargetAndConfiguration(mock(Target.class), /* configuration= */ null);
-    ConfiguredValueCreationException analysisException =
-        new ConfiguredValueCreationException(
-            mockTargetAndConfiguration.getTarget(), "analysis exception");
-    ErrorInfo analysisErrorInfo =
-        ErrorInfo.fromException(
-            new ReifiedSkyFunctionException(
-                new DummySkyFunctionException(analysisException, Transience.PERSISTENT)),
-            /*isTransitivelyTransient=*/ false);
+        val result: EvaluationResult<SkyValue?>? =
+            EvaluationResult.builder().addError(analysisErrorKey, analysisErrorInfo).build()
 
-    EvaluationResult<SkyValue> result =
-        EvaluationResult.builder().addError(analysisErrorKey, analysisErrorInfo).build();
-
-    ViewCreationFailedException thrown =
-        assertThrows(
-            ViewCreationFailedException.class,
-            () ->
-                SkyframeErrorProcessor.processErrors(
-                    result,
-                    /* cyclesReporter= */ new CyclesReporter(),
-                    /* eventHandler= */ mock(ExtendedEventHandler.class),
-                    /* keepGoing= */ false,
-                    /* keepEdges= */ true,
-                    /* eventBus= */ null,
-                    /* bugReporter= */ null,
-                    includeExecutionPhase));
-    assertThat(thrown).hasCauseThat().isEqualTo(analysisException);
-  }
-
-  private static final class DummySkyFunctionException extends SkyFunctionException {
-    DummySkyFunctionException(Exception cause, Transience transience) {
-      super(cause, transience);
+        val thrown: ViewCreationFailedException? =
+            org.junit.Assert.assertThrows<T?>(
+                ViewCreationFailedException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    SkyframeErrorProcessor.processErrors(
+                        result,  /* cyclesReporter= */
+                        CyclesReporter(),  /* eventHandler= */
+                        < T > mock < T ? > (ExtendedEventHandler::class.java),  /* keepGoing= */
+                    false,  /* keepEdges= */
+                    true,  /* eventBus= */
+                    null,  /* bugReporter= */
+                    null,
+                    includeExecutionPhase)
+                })
+        assertThat(thrown).hasCauseThat().isEqualTo(analysisException)
     }
-  }
+
+    private class DummySkyFunctionException(cause: java.lang.Exception?, transience: Transience?) :
+        SkyFunctionException(cause, transience)
 }

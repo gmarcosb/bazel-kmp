@@ -11,47 +11,55 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.vfs.inmemoryfs;
+package com.google.devtools.build.lib.vfs.inmemoryfs
 
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.clock.BlazeClock.instance
+import com.google.devtools.build.lib.exec.util.SpawnBuilder.build
+import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryDirectoryInfo
+import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryDirectoryInfo.addChild
+import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryDirectoryInfo.removeChild
+import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileInfo
+import com.google.devtools.common.options.testing.ConverterTesterMap.Builder.build
+import net.starlark.java.syntax.FileOptions.Builder.build
+import org.junit.Before
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import com.google.devtools.build.lib.clock.BlazeClock;
-import com.google.devtools.build.lib.clock.Clock;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+@RunWith(JUnit4::class)
+class InMemoryContentInfoTest {
+    private var clock: com.google.devtools.build.lib.clock.Clock? = null
 
-@RunWith(JUnit4.class)
-public class InMemoryContentInfoTest {
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun createClock() {
+        clock = com.google.devtools.build.lib.clock.BlazeClock.instance()
+    }
 
-  private Clock clock;
+    @org.junit.Test
+    fun testDirectoryCannotAddNullChild() {
+        val directory: InMemoryDirectoryInfo = InMemoryDirectoryInfo(clock)
 
-  @Before
-  public final void createClock() throws Exception  {
-    clock = BlazeClock.instance();
-  }
+        org.junit.Assert.assertThrows<java.lang.NullPointerException?>(
+            java.lang.NullPointerException::class.java,
+            org.junit.function.ThrowingRunnable { directory.addChild("bar", null) })
+    }
 
-  @Test
-  public void testDirectoryCannotAddNullChild() {
-    InMemoryDirectoryInfo directory = new InMemoryDirectoryInfo(clock);
+    @org.junit.Test
+    fun testDirectoryCannotAddChildTwice() {
+        val directory: InMemoryDirectoryInfo = InMemoryDirectoryInfo(clock)
+        val otherFile: InMemoryFileInfo = InMemoryFileInfo(clock)
+        directory.addChild("bar", otherFile)
 
-    assertThrows(NullPointerException.class, () -> directory.addChild("bar", null));
-  }
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable { directory.addChild("bar", otherFile) })
+    }
 
-  @Test
-  public void testDirectoryCannotAddChildTwice() {
-    InMemoryDirectoryInfo directory = new InMemoryDirectoryInfo(clock);
-    InMemoryFileInfo otherFile = new InMemoryFileInfo(clock);
-    directory.addChild("bar", otherFile);
-
-    assertThrows(IllegalArgumentException.class, () -> directory.addChild("bar", otherFile));
-  }
-
-  @Test
-  public void testDirectoryRemoveNonExistingChild() {
-    InMemoryDirectoryInfo directory = new InMemoryDirectoryInfo(clock);
-    assertThrows(IllegalArgumentException.class, () -> directory.removeChild("bar"));
-  }
-
+    @org.junit.Test
+    fun testDirectoryRemoveNonExistingChild() {
+        val directory: InMemoryDirectoryInfo = InMemoryDirectoryInfo(clock)
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable { directory.removeChild("bar") })
+    }
 }

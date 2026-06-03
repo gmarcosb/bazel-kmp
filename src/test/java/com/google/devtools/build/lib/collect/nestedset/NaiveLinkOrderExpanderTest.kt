@@ -11,60 +11,48 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.collect.nestedset;
+package com.google.devtools.build.lib.collect.nestedset
 
-import com.google.common.collect.ImmutableList;
-
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-import java.util.List;
+import com.google.devtools.build.lib.collect.nestedset.ExpanderTestBase
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
 /**
- * Tests for {@link NaiveLinkOrderExpander}.
+ * Tests for [NaiveLinkOrderExpander].
  */
-@RunWith(JUnit4.class)
-public class NaiveLinkOrderExpanderTest extends ExpanderTestBase {
+@RunWith(JUnit4::class)
+class NaiveLinkOrderExpanderTest : ExpanderTestBase() {
+    override fun expanderOrder(): Order {
+        return Order.NAIVE_LINK_ORDER
+    }
 
-  @Override
-  protected Order expanderOrder() {
-    return Order.NAIVE_LINK_ORDER;
-  }
+    override fun nestedResult(): MutableList<String?> {
+        return com.google.common.collect.ImmutableList.of<String?>("b", "d", "c", "a", "e")
+    }
 
-  @Override
-  protected List<String> nestedResult() {
-    return ImmutableList.of("b", "d", "c", "a", "e");
-  }
+    override fun nestedDuplicatesResult(): MutableList<String?> {
+        return com.google.common.collect.ImmutableList.of<String?>("b", "d", "e", "c", "a")
+    }
 
-  @Override
-  protected List<String> nestedDuplicatesResult() {
-    return ImmutableList.of("b", "d", "e", "c", "a");
-  }
+    override fun chainResult(): MutableList<String?> {
+        return com.google.common.collect.ImmutableList.of<String?>("a", "b", "c")
+    }
 
-  @Override
-  protected List<String> chainResult() {
-    return ImmutableList.of("a", "b", "c");
-  }
+    override fun diamondResult(): MutableList<String?> {
+        // This case illustrates why this implementation is called "naive".
+        return com.google.common.collect.ImmutableList.of<String?>("a", "b", "d", "c")
+    }
 
-  @Override
-  protected List<String> diamondResult() {
-    // This case illustrates why this implementation is called "naive".
-    return ImmutableList.of("a", "b", "d", "c");
-  }
+    override fun orderConflictResult(): MutableList<String?> {
+        // Leftmost branch determines the order.
+        return com.google.common.collect.ImmutableList.of<String?>("a", "b")
+    }
 
-  @Override
-  protected List<String> orderConflictResult() {
-    // Leftmost branch determines the order.
-    return ImmutableList.of("a", "b");
-  }
+    override fun extendedDiamondResult(): MutableList<String?> {
+        return com.google.common.collect.ImmutableList.of<String?>("a", "b", "d", "e", "c")
+    }
 
-  @Override
-  protected List<String> extendedDiamondResult() {
-    return ImmutableList.of("a", "b", "d", "e", "c");
-  }
-
-  @Override
-  protected List<String> extendedDiamondRightArmResult() {
-    return ImmutableList.of("a", "b", "d", "e", "c", "c2");
-  }
+    override fun extendedDiamondRightArmResult(): MutableList<String?> {
+        return com.google.common.collect.ImmutableList.of<String?>("a", "b", "d", "e", "c", "c2")
+    }
 }

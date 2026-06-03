@@ -11,206 +11,214 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util;
+package com.google.devtools.build.lib.util
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.util.OptionsUtils.PathFragmentConverter
 
-import com.google.devtools.build.lib.util.OptionsUtils.PathFragmentConverter;
-import com.google.devtools.build.lib.util.OptionsUtils.PathFragmentListConverter;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionMetadataTag;
-import com.google.devtools.common.options.OptionPriority.PriorityCategory;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
-import com.google.devtools.common.options.OptionsParser;
-import com.google.devtools.common.options.OptionsParsingException;
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import java.util.Arrays;
-import java.util.List;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+/** Test for [OptionsUtils].  */
+@RunWith(TestParameterInjector::class)
+class OptionsUtilsTest {
+    @OptionsClass
+    abstract class IntrospectionExample : OptionsBase() {
+        @get:com.google.devtools.common.options.Option(
+            name = "alpha",
+            documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "alpha"
+        )
+        abstract val alpha: String?
 
-/** Test for {@link OptionsUtils}. */
-@RunWith(TestParameterInjector.class)
-public class OptionsUtilsTest {
+        @get:com.google.devtools.common.options.Option(
+            name = "beta",
+            documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "beta"
+        )
+        abstract val beta: String?
 
-  @OptionsClass
-  public abstract static class IntrospectionExample extends OptionsBase {
-    @Option(
-        name = "alpha",
-        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "alpha")
-    public abstract String getAlpha();
+        @get:com.google.devtools.common.options.Option(
+            name = "gamma",
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "gamma"
+        )
+        abstract val gamma: String?
 
-    @Option(
-        name = "beta",
-        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "beta")
-    public abstract String getBeta();
+        @get:com.google.devtools.common.options.Option(
+            name = "delta",
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "delta"
+        )
+        abstract val delta: String?
 
-    @Option(
-        name = "gamma",
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "gamma")
-    public abstract String getGamma();
+        @get:com.google.devtools.common.options.Option(
+            name = "echo",
+            metadataTags = [OptionMetadataTag.HIDDEN],
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "echo"
+        )
+        abstract val echo: String?
+    }
 
-    @Option(
-        name = "delta",
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "delta")
-    public abstract String getDelta();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun asStringOfExplicitOptions() {
+        val parser: OptionsParser =
+            OptionsParser.builder()
+                .optionsClasses(com.google.devtools.build.lib.util.OptionsUtilsTest.IntrospectionExample::class.java)
+                .build()
+        parser.parse("--alpha=no", "--gamma=no", "--echo=no")
+        assertThat(OptionsUtils.asShellEscapedString(parser)).isEqualTo("--alpha=no --gamma=no")
+        assertThat(OptionsUtils.asArgumentList(parser))
+            .containsExactly("--alpha=no", "--gamma=no")
+            .inOrder()
+    }
 
-    @Option(
-        name = "echo",
-        metadataTags = {OptionMetadataTag.HIDDEN},
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "echo")
-    public abstract String getEcho();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun asStringOfExplicitOptionsCorrectSortingByPriority() {
+        val parser: OptionsParser =
+            OptionsParser.builder()
+                .optionsClasses(com.google.devtools.build.lib.util.OptionsUtilsTest.IntrospectionExample::class.java)
+                .build()
+        parser.parse(PriorityCategory.COMMAND_LINE, null, mutableListOf<String?>("--alpha=no"))
+        parser.parse(PriorityCategory.COMPUTED_DEFAULT, null, mutableListOf<String?>("--beta=no"))
+        assertThat(OptionsUtils.asShellEscapedString(parser)).isEqualTo("--beta=no --alpha=no")
+        assertThat(OptionsUtils.asArgumentList(parser))
+            .containsExactly("--beta=no", "--alpha=no")
+            .inOrder()
+    }
 
-  @Test
-  public void asStringOfExplicitOptions() throws Exception {
-    OptionsParser parser =
-        OptionsParser.builder().optionsClasses(IntrospectionExample.class).build();
-    parser.parse("--alpha=no", "--gamma=no", "--echo=no");
-    assertThat(OptionsUtils.asShellEscapedString(parser)).isEqualTo("--alpha=no --gamma=no");
-    assertThat(OptionsUtils.asArgumentList(parser))
-        .containsExactly("--alpha=no", "--gamma=no")
-        .inOrder();
-  }
+    @OptionsClass
+    abstract class BooleanOpts : OptionsBase() {
+        @get:com.google.devtools.common.options.Option(
+            name = "b_one",
+            documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "true"
+        )
+        abstract val bOne: Boolean
 
-  @Test
-  public void asStringOfExplicitOptionsCorrectSortingByPriority() throws Exception {
-    OptionsParser parser =
-        OptionsParser.builder().optionsClasses(IntrospectionExample.class).build();
-    parser.parse(PriorityCategory.COMMAND_LINE, null, Arrays.asList("--alpha=no"));
-    parser.parse(PriorityCategory.COMPUTED_DEFAULT, null, Arrays.asList("--beta=no"));
-    assertThat(OptionsUtils.asShellEscapedString(parser)).isEqualTo("--beta=no --alpha=no");
-    assertThat(OptionsUtils.asArgumentList(parser))
-        .containsExactly("--beta=no", "--alpha=no")
-        .inOrder();
-  }
+        @get:com.google.devtools.common.options.Option(
+            name = "b_two",
+            documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "false"
+        )
+        abstract val bTwo: Boolean
+    }
 
-  @OptionsClass
-  public abstract static class BooleanOpts extends OptionsBase {
-    @Option(
-        name = "b_one",
-        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "true")
-    public abstract boolean getBOne();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun asStringOfExplicitOptionsWithBooleans() {
+        var parser: OptionsParser = OptionsParser.builder().optionsClasses(BooleanOpts::class.java).build()
+        parser.parse(PriorityCategory.COMMAND_LINE, null, mutableListOf<String?>("--b_one", "--nob_two"))
+        assertThat(OptionsUtils.asShellEscapedString(parser)).isEqualTo("--b_one --nob_two")
+        assertThat(OptionsUtils.asArgumentList(parser))
+            .containsExactly("--b_one", "--nob_two")
+            .inOrder()
 
-    @Option(
-        name = "b_two",
-        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "false")
-    public abstract boolean getBTwo();
-  }
+        parser = OptionsParser.builder().optionsClasses(BooleanOpts::class.java).build()
+        parser.parse(PriorityCategory.COMMAND_LINE, null, mutableListOf<String?>("--b_one=true", "--b_two=0"))
+        Truth.assertThat(parser.getOptions<BooleanOpts?>(BooleanOpts::class.java).getBOne()).isTrue()
+        Truth.assertThat(parser.getOptions<BooleanOpts?>(BooleanOpts::class.java).getBTwo()).isFalse()
+        assertThat(OptionsUtils.asShellEscapedString(parser)).isEqualTo("--b_one --nob_two")
+        assertThat(OptionsUtils.asArgumentList(parser))
+            .containsExactly("--b_one", "--nob_two")
+            .inOrder()
+    }
 
-  @Test
-  public void asStringOfExplicitOptionsWithBooleans() throws Exception {
-    OptionsParser parser = OptionsParser.builder().optionsClasses(BooleanOpts.class).build();
-    parser.parse(PriorityCategory.COMMAND_LINE, null, Arrays.asList("--b_one", "--nob_two"));
-    assertThat(OptionsUtils.asShellEscapedString(parser)).isEqualTo("--b_one --nob_two");
-    assertThat(OptionsUtils.asArgumentList(parser))
-        .containsExactly("--b_one", "--nob_two")
-        .inOrder();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun asStringOfExplicitOptionsMultipleOptionsAreMultipleTimes() {
+        val parser: OptionsParser =
+            OptionsParser.builder()
+                .optionsClasses(com.google.devtools.build.lib.util.OptionsUtilsTest.IntrospectionExample::class.java)
+                .build()
+        parser.parse(PriorityCategory.COMMAND_LINE, null, mutableListOf<String?>("--alpha=one"))
+        parser.parse(PriorityCategory.COMMAND_LINE, null, mutableListOf<String?>("--alpha=two"))
+        assertThat(OptionsUtils.asShellEscapedString(parser)).isEqualTo("--alpha=one --alpha=two")
+        assertThat(OptionsUtils.asArgumentList(parser))
+            .containsExactly("--alpha=one", "--alpha=two")
+            .inOrder()
+    }
 
-    parser = OptionsParser.builder().optionsClasses(BooleanOpts.class).build();
-    parser.parse(PriorityCategory.COMMAND_LINE, null, Arrays.asList("--b_one=true", "--b_two=0"));
-    assertThat(parser.getOptions(BooleanOpts.class).getBOne()).isTrue();
-    assertThat(parser.getOptions(BooleanOpts.class).getBTwo()).isFalse();
-    assertThat(OptionsUtils.asShellEscapedString(parser)).isEqualTo("--b_one --nob_two");
-    assertThat(OptionsUtils.asArgumentList(parser))
-        .containsExactly("--b_one", "--nob_two")
-        .inOrder();
-  }
+    private fun fragment(string: String?): PathFragment {
+        return PathFragment.create(string)
+    }
 
-  @Test
-  public void asStringOfExplicitOptionsMultipleOptionsAreMultipleTimes() throws Exception {
-    OptionsParser parser =
-        OptionsParser.builder().optionsClasses(IntrospectionExample.class).build();
-    parser.parse(PriorityCategory.COMMAND_LINE, null, Arrays.asList("--alpha=one"));
-    parser.parse(PriorityCategory.COMMAND_LINE, null, Arrays.asList("--alpha=two"));
-    assertThat(OptionsUtils.asShellEscapedString(parser)).isEqualTo("--alpha=one --alpha=two");
-    assertThat(OptionsUtils.asArgumentList(parser))
-        .containsExactly("--alpha=one", "--alpha=two")
-        .inOrder();
-  }
+    @Throws(java.lang.Exception::class)
+    private fun convert(input: String?): MutableList<PathFragment?> {
+        return PathFragmentListConverter().convert(input)
+    }
 
-  private PathFragment fragment(String string) {
-    return PathFragment.create(string);
-  }
+    @Throws(java.lang.Exception::class)
+    private fun convertOne(input: String?): PathFragment {
+        return PathFragmentConverter().convert(input)
+    }
 
-  private List<PathFragment> convert(String input) throws Exception {
-    return new PathFragmentListConverter().convert(input);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun emptyStringYieldsEmptyList() {
+        Truth.assertThat(convert("")).isEmpty()
+    }
 
-  private PathFragment convertOne(String input) throws Exception {
-    return new PathFragmentConverter().convert(input);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun lonelyDotYieldsLonelyDot() {
+        Truth.assertThat(convert(".")).containsExactly(fragment("."))
+    }
 
-  @Test
-  public void emptyStringYieldsEmptyList() throws Exception {
-    assertThat(convert("")).isEmpty();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun converterSkipsEmptyStrings() {
+        Truth.assertThat(convert("foo::bar:")).containsExactly(fragment("foo"), fragment("bar")).inOrder()
+    }
 
-  @Test
-  public void lonelyDotYieldsLonelyDot() throws Exception {
-    assertThat(convert(".")).containsExactly(fragment("."));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun multiplePaths() {
+        Truth.assertThat(convert("~/foo:foo:/bar/baz:.:/tmp/bang"))
+            .containsExactly(
+                fragment(java.lang.System.getProperty("user.home") + "/foo"),
+                fragment("foo"),
+                fragment("/bar/baz"),
+                fragment("."),
+                fragment("/tmp/bang")
+            )
+            .inOrder()
+    }
 
-  @Test
-  public void converterSkipsEmptyStrings() throws Exception {
-    assertThat(convert("foo::bar:")).containsExactly(fragment("foo"), fragment("bar")).inOrder();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun singlePath() {
+        assertThat(convertOne("foo")).isEqualTo(fragment("foo"))
+        assertThat(convertOne("foo/bar/baz")).isEqualTo(fragment("foo/bar/baz"))
+        assertThat(convertOne("~/foo")).isEqualTo(fragment(java.lang.System.getProperty("user.home") + "/foo"))
+    }
 
-  @Test
-  public void multiplePaths() throws Exception {
-    assertThat(convert("~/foo:foo:/bar/baz:.:/tmp/bang"))
-        .containsExactly(
-            fragment(System.getProperty("user.home") + "/foo"),
-            fragment("foo"),
-            fragment("/bar/baz"),
-            fragment("."),
-            fragment("/tmp/bang"))
-        .inOrder();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun absolutePathFragmentConverter_convertsAbsolutePath(
+        @TestParameter("/", "/dir/file") path: String?
+    ) {
+        val converter: OptionsUtils.AbsolutePathFragmentConverter =
+            AbsolutePathFragmentConverter()
+        assertThat(converter.convert(path)).isEqualTo(PathFragment.create(path))
+    }
 
-  @Test
-  public void singlePath() throws Exception {
-    assertThat(convertOne("foo")).isEqualTo(fragment("foo"));
-    assertThat(convertOne("foo/bar/baz")).isEqualTo(fragment("foo/bar/baz"));
-    assertThat(convertOne("~/foo")).isEqualTo(fragment(System.getProperty("user.home") + "/foo"));
-  }
+    @org.junit.Test
+    fun absolutePathFragmentConverter_failsForRelativePath() {
+        val converter: OptionsUtils.AbsolutePathFragmentConverter =
+            AbsolutePathFragmentConverter()
 
-  @Test
-  public void absolutePathFragmentConverter_convertsAbsolutePath(
-      @TestParameter({"/", "/dir/file"}) String path) throws Exception {
-    OptionsUtils.AbsolutePathFragmentConverter converter =
-        new OptionsUtils.AbsolutePathFragmentConverter();
-    assertThat(converter.convert(path)).isEqualTo(PathFragment.create(path));
-  }
+        val e: OptionsParsingException? =
+            org.junit.Assert.assertThrows<OptionsParsingException?>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable { converter.convert("relative/path") })
 
-  @Test
-  public void absolutePathFragmentConverter_failsForRelativePath() {
-    OptionsUtils.AbsolutePathFragmentConverter converter =
-        new OptionsUtils.AbsolutePathFragmentConverter();
-
-    OptionsParsingException e =
-        assertThrows(OptionsParsingException.class, () -> converter.convert("relative/path"));
-
-    assertThat(e).hasMessageThat().isEqualTo("Not an absolute path: 'relative/path'");
-  }
+        Truth.assertThat(e).hasMessageThat().isEqualTo("Not an absolute path: 'relative/path'")
+    }
 }

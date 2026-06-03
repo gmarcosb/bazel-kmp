@@ -11,361 +11,372 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.worker;
+package com.google.devtools.build.lib.worker
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.worker.WorkerTestUtils.createWorkerKey;
-import static org.junit.Assert.assertThrows;
-import static org.junit.Assume.assumeTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
+import com.google.devtools.build.lib.vfs.DigestHashFunction
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Maps;
-import com.google.devtools.build.lib.clock.BlazeClock;
-import com.google.devtools.build.lib.testutil.TestThread;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import com.google.devtools.build.lib.worker.WorkerProcessStatus.Status;
-import com.google.devtools.common.options.Options;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests WorkerPool.  */
+@RunWith(JUnit4::class)
+class WorkerPoolTest {
+    private var workerIds = 1
 
-/** Tests WorkerPool. */
-@RunWith(JUnit4.class)
-public class WorkerPoolTest {
+    private var workerPool: WorkerPool? = null
+    private var factoryMock: WorkerFactory? = null
 
-  public static final FileSystem fileSystem =
-      new InMemoryFileSystem(BlazeClock.instance(), DigestHashFunction.SHA256);
+    private class TestWorker(
+        workerKey: WorkerKey?,
+        workerId: Int,
+        workDir: Path?,
+        logFile: Path?,
+        options: WorkerOptions?
+    ) : SingleplexWorker(workerKey, workerId, workDir, logFile, options, null)
 
-  private int workerIds = 1;
-
-  private WorkerPool workerPool;
-  private WorkerFactory factoryMock;
-
-  private static final WorkerOptions options = Options.getDefaults(WorkerOptions.class);
-
-  private static class TestWorker extends SingleplexWorker {
-    TestWorker(
-        WorkerKey workerKey, int workerId, Path workDir, Path logFile, WorkerOptions options) {
-      super(workerKey, workerId, workDir, logFile, options, null);
-    }
-  }
-
-  @Before
-  public void setUp() throws Exception {
-    factoryMock = spy(new WorkerFactory(fileSystem.getPath("/outputbase/bazel-workers"), options));
-    workerPool =
-        new WorkerPoolImpl(
-            factoryMock,
-            new WorkerPoolConfig(
-                /* workerMaxInstances= */ ImmutableList.of(Maps.immutableEntry("mnem", 2)),
-                /* workerMaxMultiplexInstances= */ ImmutableList.of(
-                    Maps.immutableEntry("mnem", 2))));
-    doAnswer(
-            arg ->
-                new TestWorker(
-                    arg.getArgument(0),
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun setUp() {
+        factoryMock = spy(WorkerFactory(fileSystem.getPath("/outputbase/bazel-workers"), options))
+        workerPool =
+            WorkerPoolImpl(
+                factoryMock,
+                WorkerPoolConfig( /* workerMaxInstances= */
+                    com.google.common.collect.ImmutableList.of<E?>(
+                        com.google.common.collect.Maps.immutableEntry<String?, Int?>(
+                            "mnem",
+                            2
+                        )
+                    ),  /* workerMaxMultiplexInstances= */
+                    com.google.common.collect.ImmutableList.of<E?>(
+                        com.google.common.collect.Maps.immutableEntry<String?, Int?>("mnem", 2)
+                    )
+                )
+            )
+        Mockito.doAnswer(
+            Answer { arg: InvocationOnMock? ->
+                com.google.devtools.build.lib.worker.WorkerPoolTest.TestWorker(
+                    arg.getArgument<WorkerKey?>(0),
                     workerIds++,
                     fileSystem.getPath("/workDir"),
                     fileSystem.getPath("/logDir"),
-                    options))
-        .when(factoryMock)
-        .create(any());
-    doAnswer(
-            args -> {
-              Worker worker = args.getArgument(1);
-              return worker.getStatus().isValid();
+                    options
+                )
             })
-        .when(factoryMock)
-        .validateWorker(any(), any());
-    doAnswer(
-            args -> {
-              Worker worker = args.getArgument(1);
-              worker.destroy();
-              return null;
+            .`when`<Any?>(factoryMock)
+            .create(ArgumentMatchers.any<T?>())
+        Mockito.doAnswer(
+            Answer { args: InvocationOnMock? ->
+                val worker: Worker = args.getArgument<Worker>(1)
+                worker.getStatus().isValid()
             })
-        .when(factoryMock)
-        .destroyWorker(any(), any());
-  }
+            .`when`<Any?>(factoryMock)
+            .validateWorker(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>())
+        Mockito.doAnswer(
+            Answer { args: InvocationOnMock? ->
+                val worker: Worker = args.getArgument<Worker>(1)
+                worker.destroy()
+                null
+            })
+            .`when`<Any?>(factoryMock)
+            .destroyWorker(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>())
+    }
 
-  @Test
-  public void testBorrow_createsWhenNeeded() throws Exception {
-    WorkerKey workerKey = createWorkerKey(fileSystem, "mnem", false);
-    Worker worker1 = workerPool.borrowWorker(workerKey);
-    Worker worker2 = workerPool.borrowWorker(workerKey);
-    assertThat(worker1.workerId).isEqualTo(1);
-    assertThat(worker2.workerId).isEqualTo(2);
-    verify(factoryMock, times(2)).create(workerKey);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBorrow_createsWhenNeeded() {
+        val workerKey: WorkerKey? = WorkerTestUtils.createWorkerKey(fileSystem, "mnem", false)
+        val worker1: Worker = workerPool.borrowWorker(workerKey)
+        val worker2: Worker = workerPool.borrowWorker(workerKey)
+        assertThat(worker1.workerId).isEqualTo(1)
+        assertThat(worker2.workerId).isEqualTo(2)
+        Mockito.verify<Any?>(factoryMock, Mockito.times(2)).create(workerKey)
+    }
 
-  @Test
-  public void testBorrow_reusesWhenPossible() throws Exception {
-    WorkerKey workerKey = createWorkerKey(fileSystem, "mnem", false);
-    Worker worker1 = workerPool.borrowWorker(workerKey);
-    workerPool.returnWorker(workerKey, worker1);
-    Worker worker2 = workerPool.borrowWorker(workerKey);
-    assertThat(worker1).isSameInstanceAs(worker2);
-    verify(factoryMock).create(workerKey);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBorrow_reusesWhenPossible() {
+        val workerKey: WorkerKey? = WorkerTestUtils.createWorkerKey(fileSystem, "mnem", false)
+        val worker1: Worker? = workerPool.borrowWorker(workerKey)
+        workerPool.returnWorker(workerKey, worker1)
+        val worker2: Worker? = workerPool.borrowWorker(workerKey)
+        assertThat(worker1).isSameInstanceAs(worker2)
+        Mockito.verify<Any?>(factoryMock).create(workerKey)
+    }
 
-  @Test
-  public void testBorrow_nonSpecifiedKey() throws Exception {
-    WorkerKey workerKey1 = createWorkerKey(fileSystem, "mnem", false);
-    Worker worker1 = workerPool.borrowWorker(workerKey1);
-    Worker worker1a = workerPool.borrowWorker(workerKey1);
-    assertThat(worker1.workerId).isEqualTo(1);
-    assertThat(worker1a.workerId).isEqualTo(2);
-    WorkerKey workerKey2 = createWorkerKey(fileSystem, "other", false);
-    Worker worker2 = workerPool.borrowWorker(workerKey2);
-    assertThat(worker2.workerId).isEqualTo(3);
-    verify(factoryMock, times(2)).create(workerKey1);
-    verify(factoryMock).create(workerKey2);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBorrow_nonSpecifiedKey() {
+        val workerKey1: WorkerKey? = WorkerTestUtils.createWorkerKey(fileSystem, "mnem", false)
+        val worker1: Worker = workerPool.borrowWorker(workerKey1)
+        val worker1a: Worker = workerPool.borrowWorker(workerKey1)
+        assertThat(worker1.workerId).isEqualTo(1)
+        assertThat(worker1a.workerId).isEqualTo(2)
+        val workerKey2: WorkerKey? = WorkerTestUtils.createWorkerKey(fileSystem, "other", false)
+        val worker2: Worker = workerPool.borrowWorker(workerKey2)
+        assertThat(worker2.workerId).isEqualTo(3)
+        Mockito.verify<Any?>(factoryMock, Mockito.times(2)).create(workerKey1)
+        Mockito.verify<Any?>(factoryMock).create(workerKey2)
+    }
 
-  @Test
-  public void testBorrow_pooledByKey() throws Exception {
-    WorkerKey workerKey1 = createWorkerKey(fileSystem, "mnem", false);
-    Worker worker1 = workerPool.borrowWorker(workerKey1);
-    Worker worker1a = workerPool.borrowWorker(workerKey1);
-    assertThat(worker1.workerId).isEqualTo(1);
-    assertThat(worker1a.workerId).isEqualTo(2);
-    WorkerKey workerKey2 = createWorkerKey(fileSystem, "mnem", false, "arg1");
-    Worker worker2 = workerPool.borrowWorker(workerKey2);
-    assertThat(worker2.workerId).isEqualTo(3);
-    verify(factoryMock, times(2)).create(workerKey1);
-    verify(factoryMock).create(workerKey2);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBorrow_pooledByKey() {
+        val workerKey1: WorkerKey? = WorkerTestUtils.createWorkerKey(fileSystem, "mnem", false)
+        val worker1: Worker = workerPool.borrowWorker(workerKey1)
+        val worker1a: Worker = workerPool.borrowWorker(workerKey1)
+        assertThat(worker1.workerId).isEqualTo(1)
+        assertThat(worker1a.workerId).isEqualTo(2)
+        val workerKey2: WorkerKey? = WorkerTestUtils.createWorkerKey(fileSystem, "mnem", false, "arg1")
+        val worker2: Worker = workerPool.borrowWorker(workerKey2)
+        assertThat(worker2.workerId).isEqualTo(3)
+        Mockito.verify<Any?>(factoryMock, Mockito.times(2)).create(workerKey1)
+        Mockito.verify<Any?>(factoryMock).create(workerKey2)
+    }
 
-  @Test
-  public void testBorrow_separateMultiplexWorkers() throws Exception {
-    WorkerKey workerKey = createWorkerKey(fileSystem, "mnem", false);
-    Worker worker1 = workerPool.borrowWorker(workerKey);
-    assertThat(worker1.workerId).isEqualTo(1);
-    workerPool.returnWorker(workerKey, worker1);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBorrow_separateMultiplexWorkers() {
+        val workerKey: WorkerKey? = WorkerTestUtils.createWorkerKey(fileSystem, "mnem", false)
+        val worker1: Worker = workerPool.borrowWorker(workerKey)
+        assertThat(worker1.workerId).isEqualTo(1)
+        workerPool.returnWorker(workerKey, worker1)
 
-    WorkerKey multiplexKey = createWorkerKey(fileSystem, "mnem", true);
-    Worker multiplexWorker1 = workerPool.borrowWorker(multiplexKey);
-    Worker multiplexWorker2 = workerPool.borrowWorker(multiplexKey);
-    Worker worker1a = workerPool.borrowWorker(workerKey);
+        val multiplexKey: WorkerKey? = WorkerTestUtils.createWorkerKey(fileSystem, "mnem", true)
+        val multiplexWorker1: Worker = workerPool.borrowWorker(multiplexKey)
+        val multiplexWorker2: Worker = workerPool.borrowWorker(multiplexKey)
+        val worker1a: Worker = workerPool.borrowWorker(workerKey)
 
-    assertThat(multiplexWorker1.workerId).isEqualTo(2);
-    assertThat(multiplexWorker2.workerId).isEqualTo(3);
-    assertThat(worker1a.workerId).isEqualTo(1);
+        assertThat(multiplexWorker1.workerId).isEqualTo(2)
+        assertThat(multiplexWorker2.workerId).isEqualTo(3)
+        assertThat(worker1a.workerId).isEqualTo(1)
 
-    verify(factoryMock).create(workerKey);
-    verify(factoryMock, times(2)).create(multiplexKey);
-  }
+        Mockito.verify<Any?>(factoryMock).create(workerKey)
+        Mockito.verify<Any?>(factoryMock, Mockito.times(2)).create(multiplexKey)
+    }
 
-  @Test
-  public void testBorrow_doomedWorkers() throws Exception {
-    WorkerKey workerKey = createWorkerKey(fileSystem, "mnem", false);
-    Worker worker1 = workerPool.borrowWorker(workerKey);
-    Worker worker2 = workerPool.borrowWorker(workerKey);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBorrow_doomedWorkers() {
+        val workerKey: WorkerKey? = WorkerTestUtils.createWorkerKey(fileSystem, "mnem", false)
+        val worker1: Worker = workerPool.borrowWorker(workerKey)
+        val worker2: Worker = workerPool.borrowWorker(workerKey)
 
-    worker1.getStatus().maybeUpdateStatus(Status.PENDING_KILL_DUE_TO_MEMORY_PRESSURE);
+        worker1.getStatus().maybeUpdateStatus(Status.PENDING_KILL_DUE_TO_MEMORY_PRESSURE)
 
-    assertThat(worker1.getStatus().isKilled()).isFalse();
-    assertThat(worker2.getStatus().isKilled()).isFalse();
+        assertThat(worker1.getStatus().isKilled()).isFalse()
+        assertThat(worker2.getStatus().isKilled()).isFalse()
 
-    workerPool.returnWorker(workerKey, worker1);
+        workerPool.returnWorker(workerKey, worker1)
 
-    assertThat(worker1.getStatus().isKilled()).isTrue();
-    assertThat(worker2.getStatus().isKilled()).isFalse();
-  }
+        assertThat(worker1.getStatus().isKilled()).isTrue()
+        assertThat(worker2.getStatus().isKilled()).isFalse()
+    }
 
-  @Test
-  public void testBorrow_blocksWhenUnavailable() throws Exception {
-    WorkerKey workerKey = createWorkerKey(fileSystem, "mnem", false);
-    Worker unused1 = workerPool.borrowWorker(workerKey);
-    Worker unused2 = workerPool.borrowWorker(workerKey);
-    TestThread blockedBorrowThread =
-        new TestThread(
-            () -> {
-              Worker unused = workerPool.borrowWorker(workerKey);
-            });
-    blockedBorrowThread.start();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBorrow_blocksWhenUnavailable() {
+        val workerKey: WorkerKey? = WorkerTestUtils.createWorkerKey(fileSystem, "mnem", false)
+        val unused1: Worker? = workerPool.borrowWorker(workerKey)
+        val unused2: Worker? = workerPool.borrowWorker(workerKey)
+        val blockedBorrowThread: TestThread =
+            TestThread(
+                TestRunnable {
+                    val unused: Worker? = workerPool.borrowWorker(workerKey)
+                })
+        blockedBorrowThread.start()
 
-    AssertionError e =
-        assertThrows(AssertionError.class, () -> blockedBorrowThread.joinAndAssertState(1000));
-    assertThat(e).hasCauseThat().hasMessageThat().contains("is still alive");
-    assertThat(workerPool.getNumActive(workerKey)).isEqualTo(2);
-  }
+        val e: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { blockedBorrowThread.joinAndAssertState(1000) })
+        Truth.assertThat(e).hasCauseThat().hasMessageThat().contains("is still alive")
+        assertThat(workerPool.getNumActive(workerKey)).isEqualTo(2)
+    }
 
-  @Test
-  public void testBorrow_blockedThread_getsReturnedWorker() throws Exception {
-    WorkerKey workerKey = createWorkerKey(fileSystem, "mnem", false);
-    Worker worker1 = workerPool.borrowWorker(workerKey);
-    Worker unused2 = workerPool.borrowWorker(workerKey);
-    TestThread blockedBorrowThread =
-        new TestThread(
-            () -> {
-              // This blocks until worker1 returns its object.
-              Worker worker = workerPool.borrowWorker(workerKey);
-              assertThat(worker).isSameInstanceAs(worker1);
-            });
-    blockedBorrowThread.start();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBorrow_blockedThread_getsReturnedWorker() {
+        val workerKey: WorkerKey? = WorkerTestUtils.createWorkerKey(fileSystem, "mnem", false)
+        val worker1: Worker = workerPool.borrowWorker(workerKey)
+        val unused2: Worker? = workerPool.borrowWorker(workerKey)
+        val blockedBorrowThread: TestThread =
+            TestThread(
+                TestRunnable {
+                    // This blocks until worker1 returns its object.
+                    val worker: Worker? = workerPool.borrowWorker(workerKey)
+                    assertThat(worker).isSameInstanceAs(worker1)
+                })
+        blockedBorrowThread.start()
 
-    // We want to 3rd borrow to be blocked for some time.
-    Thread.sleep(500);
-    workerPool.returnWorker(worker1.getWorkerKey(), worker1);
+        // We want to 3rd borrow to be blocked for some time.
+        java.lang.Thread.sleep(500)
+        workerPool.returnWorker(worker1.getWorkerKey(), worker1)
 
-    blockedBorrowThread.joinAndAssertState(10000);
-    assertThat(workerPool.getNumActive(workerKey)).isEqualTo(2);
-  }
+        blockedBorrowThread.joinAndAssertState(10000)
+        assertThat(workerPool.getNumActive(workerKey)).isEqualTo(2)
+    }
 
-  @Test
-  public void testBorrow_blockedThread_createsWorkerWhenInvalidated() throws Exception {
-    WorkerKey workerKey = createWorkerKey(fileSystem, "mnem", false);
-    Worker worker1 = workerPool.borrowWorker(workerKey);
-    Worker unused2 = workerPool.borrowWorker(workerKey);
-    TestThread blockedBorrowThread =
-        new TestThread(
-            () -> {
-              Worker worker = workerPool.borrowWorker(workerKey);
-              // Create a new worker instead.
-              assertThat(worker.workerId).isEqualTo(3);
-            });
-    blockedBorrowThread.start();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBorrow_blockedThread_createsWorkerWhenInvalidated() {
+        val workerKey: WorkerKey? = WorkerTestUtils.createWorkerKey(fileSystem, "mnem", false)
+        val worker1: Worker? = workerPool.borrowWorker(workerKey)
+        val unused2: Worker? = workerPool.borrowWorker(workerKey)
+        val blockedBorrowThread: TestThread =
+            TestThread(
+                TestRunnable {
+                    val worker: Worker = workerPool.borrowWorker(workerKey)
+                    // Create a new worker instead.
+                    assertThat(worker.workerId).isEqualTo(3)
+                })
+        blockedBorrowThread.start()
 
-    // We want to 3rd borrow to be blocked for some time.
-    Thread.sleep(500);
-    workerPool.invalidateWorker(worker1);
+        // We want to 3rd borrow to be blocked for some time.
+        java.lang.Thread.sleep(500)
+        workerPool.invalidateWorker(worker1)
 
-    blockedBorrowThread.joinAndAssertState(10000);
-    assertThat(workerPool.getNumActive(workerKey)).isEqualTo(2);
-  }
+        blockedBorrowThread.joinAndAssertState(10000)
+        assertThat(workerPool.getNumActive(workerKey)).isEqualTo(2)
+    }
 
-  @Test
-  public void testBorrow_blockedThread_remainsBlockedWhenInvalidatedAndShrunk() throws Exception {
-    assumeTrue(workerPool instanceof WorkerPoolImpl);
-    WorkerKey workerKey = createWorkerKey(fileSystem, "mnem", false);
-    Worker worker1 = workerPool.borrowWorker(workerKey);
-    Worker unused2 = workerPool.borrowWorker(workerKey);
-    TestThread blockedBorrowThread =
-        new TestThread(
-            () -> {
-              Worker unused = workerPool.borrowWorker(workerKey);
-            });
-    blockedBorrowThread.start();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBorrow_blockedThread_remainsBlockedWhenInvalidatedAndShrunk() {
+        Assume.assumeTrue(workerPool is WorkerPoolImpl)
+        val workerKey: WorkerKey? = WorkerTestUtils.createWorkerKey(fileSystem, "mnem", false)
+        val worker1: Worker = workerPool.borrowWorker(workerKey)
+        val unused2: Worker? = workerPool.borrowWorker(workerKey)
+        val blockedBorrowThread: TestThread =
+            TestThread(
+                TestRunnable {
+                    val unused: Worker? = workerPool.borrowWorker(workerKey)
+                })
+        blockedBorrowThread.start()
 
-    // There's no need to wait here as it doesn't matter whether #invalidateObject gets called
-    // before or after the 3rd #borrowObject, the pool would not have the quota and borrowing will
-    // still get blocked.
-    worker1.getStatus().maybeUpdateStatus(Status.PENDING_KILL_DUE_TO_MEMORY_PRESSURE);
-    workerPool.invalidateWorker(worker1);
+        // There's no need to wait here as it doesn't matter whether #invalidateObject gets called
+        // before or after the 3rd #borrowObject, the pool would not have the quota and borrowing will
+        // still get blocked.
+        worker1.getStatus().maybeUpdateStatus(Status.PENDING_KILL_DUE_TO_MEMORY_PRESSURE)
+        workerPool.invalidateWorker(worker1)
 
-    AssertionError e =
-        assertThrows(AssertionError.class, () -> blockedBorrowThread.joinAndAssertState(1000));
-    assertThat(e).hasCauseThat().hasMessageThat().contains("is still alive");
-    assertThat(workerPool.getNumActive(workerKey)).isEqualTo(1);
-  }
+        val e: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { blockedBorrowThread.joinAndAssertState(1000) })
+        Truth.assertThat(e).hasCauseThat().hasMessageThat().contains("is still alive")
+        assertThat(workerPool.getNumActive(workerKey)).isEqualTo(1)
+    }
 
-  @Test
-  public void testEvict_evictsIdleWorkers() throws Exception {
-    WorkerKey workerKey = createWorkerKey(fileSystem, "mnem", false);
-    Worker worker1 = workerPool.borrowWorker(workerKey);
-    Worker worker2 = workerPool.borrowWorker(workerKey);
-    workerPool.returnWorker(workerKey, worker1);
-    workerPool.returnWorker(workerKey, worker2);
-    ImmutableSet<Integer> evicted =
-        workerPool.evictWorkers(ImmutableSet.of(worker1.workerId, worker2.workerId));
-    assertThat(evicted).containsExactly(worker1.workerId, worker2.workerId);
-    assertThat(workerPool.getNumActive(workerKey)).isEqualTo(0);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEvict_evictsIdleWorkers() {
+        val workerKey: WorkerKey? = WorkerTestUtils.createWorkerKey(fileSystem, "mnem", false)
+        val worker1: Worker = workerPool.borrowWorker(workerKey)
+        val worker2: Worker = workerPool.borrowWorker(workerKey)
+        workerPool.returnWorker(workerKey, worker1)
+        workerPool.returnWorker(workerKey, worker2)
+        val evicted: com.google.common.collect.ImmutableSet<Int?>? =
+            workerPool.evictWorkers(com.google.common.collect.ImmutableSet.of<E?>(worker1.workerId, worker2.workerId))
+        Truth.assertThat(evicted).containsExactly(worker1.workerId, worker2.workerId)
+        assertThat(workerPool.getNumActive(workerKey)).isEqualTo(0)
+    }
 
-  @Test
-  public void testEvict_doesNotEvictActiveWorkers() throws Exception {
-    WorkerKey workerKey = createWorkerKey(fileSystem, "mnem", false);
-    Worker worker1 = workerPool.borrowWorker(workerKey);
-    Worker worker2 = workerPool.borrowWorker(workerKey);
-    workerPool.returnWorker(workerKey, worker1);
-    ImmutableSet<Integer> evicted =
-        workerPool.evictWorkers(ImmutableSet.of(worker1.workerId, worker2.workerId));
-    // Worker2 does not get evicted because it is still active.
-    assertThat(evicted).containsExactly(worker1.workerId);
-    assertThat(workerPool.getNumActive(workerKey)).isEqualTo(1);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEvict_doesNotEvictActiveWorkers() {
+        val workerKey: WorkerKey? = WorkerTestUtils.createWorkerKey(fileSystem, "mnem", false)
+        val worker1: Worker = workerPool.borrowWorker(workerKey)
+        val worker2: Worker = workerPool.borrowWorker(workerKey)
+        workerPool.returnWorker(workerKey, worker1)
+        val evicted: com.google.common.collect.ImmutableSet<Int?>? =
+            workerPool.evictWorkers(com.google.common.collect.ImmutableSet.of<E?>(worker1.workerId, worker2.workerId))
+        // Worker2 does not get evicted because it is still active.
+        Truth.assertThat(evicted).containsExactly(worker1.workerId)
+        assertThat(workerPool.getNumActive(workerKey)).isEqualTo(1)
+    }
 
-  @Test
-  public void testGetIdleWorkers() throws Exception {
-    WorkerKey workerKey = createWorkerKey(fileSystem, "mnem", false);
-    Worker worker1 = workerPool.borrowWorker(workerKey);
-    Worker worker2 = workerPool.borrowWorker(workerKey);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGetIdleWorkers() {
+        val workerKey: WorkerKey? = WorkerTestUtils.createWorkerKey(fileSystem, "mnem", false)
+        val worker1: Worker = workerPool.borrowWorker(workerKey)
+        val worker2: Worker = workerPool.borrowWorker(workerKey)
 
-    assertThat(workerPool.idleWorkers).isEmpty();
-    workerPool.returnWorker(workerKey, worker1);
-    workerPool.returnWorker(workerKey, worker2);
+        assertThat(workerPool.idleWorkers).isEmpty()
+        workerPool.returnWorker(workerKey, worker1)
+        workerPool.returnWorker(workerKey, worker2)
 
-    assertThat(workerPool.idleWorkers)
-        .containsExactly(worker1.workerId, worker2.workerId);
-    assertThat(workerPool.getNumActive(workerKey)).isEqualTo(0);
-  }
+        assertThat(workerPool.idleWorkers)
+            .containsExactly(worker1.workerId, worker2.workerId)
+        assertThat(workerPool.getNumActive(workerKey)).isEqualTo(0)
+    }
 
-  @Test
-  public void testShrinkingPool_doesNotShrinkBelowOneWorker() throws Exception {
-    WorkerKey workerKey = createWorkerKey(fileSystem, "mnem", false);
-    assertThat(workerPool.getMaxTotalPerKey(workerKey)).isEqualTo(2);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testShrinkingPool_doesNotShrinkBelowOneWorker() {
+        val workerKey: WorkerKey? = WorkerTestUtils.createWorkerKey(fileSystem, "mnem", false)
+        assertThat(workerPool.getMaxTotalPerKey(workerKey)).isEqualTo(2)
 
-    Worker worker1 = workerPool.borrowWorker(workerKey);
-    // Shrink the worker pool by 1.
-    worker1.getStatus().maybeUpdateStatus(Status.PENDING_KILL_DUE_TO_MEMORY_PRESSURE);
-    workerPool.returnWorker(workerKey, worker1);
-    assertThat(workerPool.getMaxTotalPerKey(workerKey)).isEqualTo(1);
+        val worker1: Worker = workerPool.borrowWorker(workerKey)
+        // Shrink the worker pool by 1.
+        worker1.getStatus().maybeUpdateStatus(Status.PENDING_KILL_DUE_TO_MEMORY_PRESSURE)
+        workerPool.returnWorker(workerKey, worker1)
+        assertThat(workerPool.getMaxTotalPerKey(workerKey)).isEqualTo(1)
 
-    Worker worker2 = workerPool.borrowWorker(workerKey);
-    // Attempt to shrink the pool again.
-    worker2.getStatus().maybeUpdateStatus(Status.PENDING_KILL_DUE_TO_MEMORY_PRESSURE);
-    workerPool.returnWorker(workerKey, worker2);
-    // It should not be shrunk below 1.
-    assertThat(workerPool.getMaxTotalPerKey(workerKey)).isEqualTo(1);
-    assertThat(workerPool.getNumActive(workerKey)).isEqualTo(0);
-  }
+        val worker2: Worker = workerPool.borrowWorker(workerKey)
+        // Attempt to shrink the pool again.
+        worker2.getStatus().maybeUpdateStatus(Status.PENDING_KILL_DUE_TO_MEMORY_PRESSURE)
+        workerPool.returnWorker(workerKey, worker2)
+        // It should not be shrunk below 1.
+        assertThat(workerPool.getMaxTotalPerKey(workerKey)).isEqualTo(1)
+        assertThat(workerPool.getNumActive(workerKey)).isEqualTo(0)
+    }
 
-  @Test
-  public void testGetNumActive() throws Exception {
-    WorkerKey workerKey = createWorkerKey(fileSystem, "mnem", false);
-    assertThat(workerPool.getNumActive(workerKey)).isEqualTo(0);
-    Worker worker1 = workerPool.borrowWorker(workerKey);
-    Worker worker2 = workerPool.borrowWorker(workerKey);
-    assertThat(workerPool.getNumActive(workerKey)).isEqualTo(2);
-    workerPool.returnWorker(workerKey, worker1);
-    workerPool.returnWorker(workerKey, worker2);
-    assertThat(workerPool.getNumActive(workerKey)).isEqualTo(0);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGetNumActive() {
+        val workerKey: WorkerKey? = WorkerTestUtils.createWorkerKey(fileSystem, "mnem", false)
+        assertThat(workerPool.getNumActive(workerKey)).isEqualTo(0)
+        val worker1: Worker? = workerPool.borrowWorker(workerKey)
+        val worker2: Worker? = workerPool.borrowWorker(workerKey)
+        assertThat(workerPool.getNumActive(workerKey)).isEqualTo(2)
+        workerPool.returnWorker(workerKey, worker1)
+        workerPool.returnWorker(workerKey, worker2)
+        assertThat(workerPool.getNumActive(workerKey)).isEqualTo(0)
+    }
 
-  @Test
-  public void testReset_removesPreviouslyShrunkValues() throws Exception {
-    WorkerKey workerKey = createWorkerKey(fileSystem, "mnem", false);
-    assertThat(workerPool.getMaxTotalPerKey(workerKey)).isEqualTo(2);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testReset_removesPreviouslyShrunkValues() {
+        val workerKey: WorkerKey? = WorkerTestUtils.createWorkerKey(fileSystem, "mnem", false)
+        assertThat(workerPool.getMaxTotalPerKey(workerKey)).isEqualTo(2)
 
-    Worker worker1 = workerPool.borrowWorker(workerKey);
-    // Shrink the worker pool by 1.
-    worker1.getStatus().maybeUpdateStatus(Status.PENDING_KILL_DUE_TO_MEMORY_PRESSURE);
-    workerPool.returnWorker(workerKey, worker1);
-    assertThat(workerPool.getMaxTotalPerKey(workerKey)).isEqualTo(1);
+        val worker1: Worker = workerPool.borrowWorker(workerKey)
+        // Shrink the worker pool by 1.
+        worker1.getStatus().maybeUpdateStatus(Status.PENDING_KILL_DUE_TO_MEMORY_PRESSURE)
+        workerPool.returnWorker(workerKey, worker1)
+        assertThat(workerPool.getMaxTotalPerKey(workerKey)).isEqualTo(1)
 
-    workerPool.reset();
-    assertThat(workerPool.getMaxTotalPerKey(workerKey)).isEqualTo(2);
-  }
+        workerPool.reset()
+        assertThat(workerPool.getMaxTotalPerKey(workerKey)).isEqualTo(2)
+    }
 
-  @Test
-  public void testClose_destroysWorkers() throws Exception {
-    WorkerKey workerKey = createWorkerKey(fileSystem, "mnem", false);
-    Worker worker1 = workerPool.borrowWorker(workerKey);
-    Worker worker2 = workerPool.borrowWorker(workerKey);
-    workerPool.returnWorker(workerKey, worker1);
-    workerPool.returnWorker(workerKey, worker2);
-    workerPool.close();
-    verify(factoryMock).destroyWorker(workerKey, worker1);
-    verify(factoryMock).destroyWorker(workerKey, worker2);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testClose_destroysWorkers() {
+        val workerKey: WorkerKey? = WorkerTestUtils.createWorkerKey(fileSystem, "mnem", false)
+        val worker1: Worker? = workerPool.borrowWorker(workerKey)
+        val worker2: Worker? = workerPool.borrowWorker(workerKey)
+        workerPool.returnWorker(workerKey, worker1)
+        workerPool.returnWorker(workerKey, worker2)
+        workerPool.close()
+        Mockito.verify<Any?>(factoryMock).destroyWorker(workerKey, worker1)
+        Mockito.verify<Any?>(factoryMock).destroyWorker(workerKey, worker2)
+    }
+
+    companion object {
+        val fileSystem: FileSystem =
+            InMemoryFileSystem(com.google.devtools.build.lib.clock.BlazeClock.instance(), DigestHashFunction.SHA256)
+
+        private val options: WorkerOptions? =
+            com.google.devtools.common.options.Options.getDefaults<O?>(WorkerOptions::class.java)
+    }
 }

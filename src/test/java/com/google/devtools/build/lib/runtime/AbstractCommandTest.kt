@@ -11,131 +11,146 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
-import com.google.devtools.build.lib.packages.semantics.BuildLanguageOptions;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
-import com.google.devtools.common.options.OptionsParser;
-import com.google.devtools.common.options.OptionsParsingResult;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider
 
 /**
- * Tests {@link BlazeCommand}.
+ * Tests [BlazeCommand].
  */
-@RunWith(JUnit4.class)
-public class AbstractCommandTest {
-
-  @OptionsClass
-  public abstract static class FooOptions extends OptionsBase {
-    @Option(
-        name = "foo",
-        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "0")
-    public abstract int getFoo();
-  }
-
-  @OptionsClass
-  public abstract static class BarOptions extends OptionsBase {
-    @Option(
-        name = "bar",
-        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "42")
-    public abstract int getFoo();
-
-    @Option(
-        name = "baz",
-        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "oops")
-    public abstract String getBaz();
-  }
-
-  private static class ConcreteCommand implements BlazeCommand {
-    @Override
-    public BlazeCommandResult exec(CommandEnvironment env, OptionsParsingResult options) {
-      throw new UnsupportedOperationException();
+@RunWith(JUnit4::class)
+class AbstractCommandTest {
+    @OptionsClass
+    abstract class FooOptions : OptionsBase() {
+        @get:com.google.devtools.common.options.Option(
+            name = "foo",
+            documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "0"
+        )
+        abstract val foo: Int
     }
 
-    @Override
-    public void editOptions(OptionsParser optionsParser) {}
-  }
+    @OptionsClass
+    abstract class BarOptions : OptionsBase() {
+        @get:com.google.devtools.common.options.Option(
+            name = "bar",
+            documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "42"
+        )
+        abstract val foo: Int
 
-  @Command(name = "test_name",
-          help = "Usage: some funny usage for %{command} ...;\n\n%{options}; end",
-          options = {FooOptions.class, BarOptions.class},
-          shortDescription = "a short description",
-          allowResidue = false)
-  private static class TestCommand extends ConcreteCommand {}
+        @get:com.google.devtools.common.options.Option(
+            name = "baz",
+            documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "oops"
+        )
+        abstract val baz: String?
+    }
 
-  @Test
-  public void testGetNameYieldsAnnotatedName() {
-    assertThat(new TestCommand().getClass().getAnnotation(Command.class).name())
-        .isEqualTo("test_name");
-  }
+    private open class ConcreteCommand : BlazeCommand {
+        public override fun exec(env: CommandEnvironment?, options: OptionsParsingResult?): BlazeCommandResult? {
+            throw java.lang.UnsupportedOperationException()
+        }
 
-  @Test
-  public void testGetOptionsYieldsAnnotatedOptions() {
-    ConfiguredRuleClassProvider ruleClassProvider = new ConfiguredRuleClassProvider.Builder()
-        .setToolsRepository(TestConstants.TOOLS_REPOSITORY)
-        .build();
+        public override fun editOptions(optionsParser: OptionsParser?) {}
+    }
 
-    assertThat(
-            BlazeCommandUtils.getOptions(TestCommand.class, ImmutableList.of(), ruleClassProvider))
-        .containsExactlyElementsIn(optionClassesWithDefault(FooOptions.class, BarOptions.class));
-  }
+    @Command(
+        name = "test_name",
+        help = "Usage: some funny usage for %{command} ...;\n\n%{options}; end",
+        options = [com.google.devtools.build.lib.runtime.AbstractCommandTest.FooOptions::class, BarOptions::class],
+        shortDescription = "a short description",
+        allowResidue = false
+    )
+    private class TestCommand : ConcreteCommand()
 
-  /***************************************************************************
-   * The tests below test how a command interacts with the dispatcher except *
-   * for execution, which is tested in {@link BlazeCommandDispatcherTest}.   *
-   ***************************************************************************/
+    @org.junit.Test
+    fun testGetNameYieldsAnnotatedName() {
+        assertThat(TestCommand().javaClass.getAnnotation<A?>(Command::class.java).name())
+            .isEqualTo("test_name")
+    }
 
-  @Command(name = "a", options = {FooOptions.class}, shortDescription = "", help = "")
-  private static class CommandA extends ConcreteCommand {}
+    @org.junit.Test
+    fun testGetOptionsYieldsAnnotatedOptions() {
+        val ruleClassProvider: ConfiguredRuleClassProvider? = Builder()
+            .setToolsRepository(TestConstants.TOOLS_REPOSITORY)
+            .build()
 
-  @Command(
-      name = "b",
-      options = {BarOptions.class},
-      inheritsOptionsFrom = {CommandA.class},
-      shortDescription = "",
-      help = "")
-  private static class CommandB extends ConcreteCommand {}
+        assertThat(
+            BlazeCommandUtils.getOptions(
+                TestCommand::class.java,
+                com.google.common.collect.ImmutableList.of<E?>(),
+                ruleClassProvider
+            )
+        )
+            .containsExactlyElementsIn(
+                optionClassesWithDefault(
+                    com.google.devtools.build.lib.runtime.AbstractCommandTest.FooOptions::class.java,
+                    BarOptions::class.java
+                )
+            )
+    }
 
-  @Test
-  public void testOptionsAreInherited() {
-    ConfiguredRuleClassProvider ruleClassProvider = new ConfiguredRuleClassProvider.Builder()
-        .setToolsRepository(TestConstants.TOOLS_REPOSITORY)
-        .build();
-    assertThat(BlazeCommandUtils.getOptions(CommandA.class, ImmutableList.of(), ruleClassProvider))
-        .containsExactlyElementsIn(optionClassesWithDefault(FooOptions.class));
-    assertThat(BlazeCommandUtils.getOptions(CommandB.class, ImmutableList.of(), ruleClassProvider))
-        .containsExactlyElementsIn(optionClassesWithDefault(FooOptions.class, BarOptions.class));
-  }
+    /***************************************************************************
+     * The tests below test how a command interacts with the dispatcher except *
+     * for execution, which is tested in [BlazeCommandDispatcherTest].   *
+     */
+    @Command(
+        name = "a",
+        options = [com.google.devtools.build.lib.runtime.AbstractCommandTest.FooOptions::class],
+        shortDescription = "",
+        help = ""
+    )
+    private class CommandA : ConcreteCommand()
 
-  private Collection<Class<?>> optionClassesWithDefault(Class<?>... optionClasses) {
-    List<Class<?>> result = new ArrayList<>();
-    Collections.addAll(result, optionClasses);
-    result.add(UiOptions.class);
-    result.add(CommonCommandOptions.class);
-    result.add(KeepStateAfterBuildOption.class);
-    result.add(ClientOptions.class);
-    result.add(BuildLanguageOptions.class);
-    return result;
-  }
+    @Command(
+        name = "b",
+        options = [BarOptions::class],
+        inheritsOptionsFrom = [CommandA::class],
+        shortDescription = "",
+        help = ""
+    )
+    private class CommandB : ConcreteCommand()
+
+    @org.junit.Test
+    fun testOptionsAreInherited() {
+        val ruleClassProvider: ConfiguredRuleClassProvider? = Builder()
+            .setToolsRepository(TestConstants.TOOLS_REPOSITORY)
+            .build()
+        assertThat(
+            BlazeCommandUtils.getOptions(
+                CommandA::class.java,
+                com.google.common.collect.ImmutableList.of<E?>(),
+                ruleClassProvider
+            )
+        )
+            .containsExactlyElementsIn(optionClassesWithDefault(com.google.devtools.build.lib.runtime.AbstractCommandTest.FooOptions::class.java))
+        assertThat(
+            BlazeCommandUtils.getOptions(
+                CommandB::class.java,
+                com.google.common.collect.ImmutableList.of<E?>(),
+                ruleClassProvider
+            )
+        )
+            .containsExactlyElementsIn(
+                optionClassesWithDefault(
+                    com.google.devtools.build.lib.runtime.AbstractCommandTest.FooOptions::class.java,
+                    BarOptions::class.java
+                )
+            )
+    }
+
+    private fun optionClassesWithDefault(vararg optionClasses: java.lang.Class<*>?): MutableCollection<java.lang.Class<*>?> {
+        val result: MutableList<java.lang.Class<*>?> = java.util.ArrayList<java.lang.Class<*>?>()
+        Collections.addAll<java.lang.Class<*>?>(result, *optionClasses)
+        result.add(UiOptions::class.java)
+        result.add(CommonCommandOptions::class.java)
+        result.add(KeepStateAfterBuildOption::class.java)
+        result.add(ClientOptions::class.java)
+        result.add(BuildLanguageOptions::class.java)
+        return result
+    }
 }

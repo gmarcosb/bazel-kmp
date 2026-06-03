@@ -11,53 +11,43 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.buildtool;
+package com.google.devtools.build.lib.buildtool
 
-import com.google.devtools.build.lib.buildtool.util.BuildIntegrationTestCase;
-import com.google.devtools.build.lib.unix.NativePosixFilesServiceImpl;
-import com.google.devtools.build.lib.unix.UnixFileSystem;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.io.IOException;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.unix.NativePosixFilesServiceImpl
 
 /**
  * Simple test that Blaze is resilient to an IOException that incorrectly indicates the parent
  * exists (but is not a directory) when trying to create an output file's parent directory.
  */
-@RunWith(JUnit4.class)
-public class InconsistentFilesystemTest extends BuildIntegrationTestCase {
+@RunWith(JUnit4::class)
+class InconsistentFilesystemTest : BuildIntegrationTestCase() {
+    override fun realFileSystem(): Boolean {
+        // Must have real filesystem for MockTools to give us an environment we can execute actions in.
+        return true
+    }
 
-  @Override
-  protected boolean realFileSystem() {
-    // Must have real filesystem for MockTools to give us an environment we can execute actions in.
-    return true;
-  }
+    override fun createFileSystem(): FileSystem? {
+        return object : UnixFileSystem(
+            DigestHashFunction.SHA256,  /* hashAttributeName= */"", NativePosixFilesServiceImpl()
+        ) {
+            var threwException: Boolean = false
 
-  @Override
-  protected FileSystem createFileSystem() {
-    return new UnixFileSystem(
-        DigestHashFunction.SHA256, /* hashAttributeName= */ "", new NativePosixFilesServiceImpl()) {
-      boolean threwException = false;
-
-      @Override
-      public boolean createDirectory(PathFragment path) throws IOException {
-        String pathString = path.getPathString();
-        if (pathString.endsWith("foo") && pathString.contains("blaze-out") && !threwException) {
-          threwException = true;
-          throw new IOException(path.getPathString() + " (File exists)");
+            @Throws(IOException::class)
+            public override fun createDirectory(path: PathFragment): Boolean {
+                val pathString: String = path.getPathString()
+                if (pathString.endsWith("foo") && pathString.contains("blaze-out") && !threwException) {
+                    threwException = true
+                    throw IOException(path.getPathString() + " (File exists)")
+                }
+                return super.createDirectory(path)
+            }
         }
-        return super.createDirectory(path);
-      }
-    };
-  }
+    }
 
-  @Test
-  public void testOutputDirFirstThrowsThenDoesntExist() throws Exception {
-    write("foo/BUILD", "genrule(name = 'foo', outs = ['out'], cmd = 'touch $@')");
-    buildTarget("//foo:foo");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testOutputDirFirstThrowsThenDoesntExist() {
+        write("foo/BUILD", "genrule(name = 'foo', outs = ['out'], cmd = 'touch $@')")
+        buildTarget("//foo:foo")
+    }
 }

@@ -11,37 +11,39 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.common.options;
+package com.google.devtools.common.options
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.common.truth.Truth
+import com.google.devtools.common.options.OptionsParsingException
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import com.google.devtools.common.options.Converters.EmptyToNullStringConverter;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+@RunWith(JUnit4::class)
+class EmptyToNullStringConverterTest {
+    private val converter: com.google.devtools.common.options.Converters.EmptyToNullStringConverter =
+        com.google.devtools.common.options.Converters.EmptyToNullStringConverter()
 
-@RunWith(JUnit4.class)
-public class EmptyToNullStringConverterTest {
+    @org.junit.Test
+    @Throws(OptionsParsingException::class)
+    fun emptyStringReturnsNull() {
+        Truth.assertThat(converter.convert("")).isNull()
+    }
 
-  private final EmptyToNullStringConverter converter = new EmptyToNullStringConverter();
+    @org.junit.Test
+    @Throws(OptionsParsingException::class)
+    fun literalNullStringPassesThrough() {
+        Truth.assertThat(converter.convert("null")).isEqualTo("null")
+    }
 
-  @Test
-  public void emptyStringReturnsNull() throws OptionsParsingException {
-    assertThat(converter.convert("")).isNull();
-  }
+    @org.junit.Test
+    @Throws(OptionsParsingException::class)
+    fun regularPathPassesThrough() {
+        Truth.assertThat(converter.convert("/path/to/cert.pem")).isEqualTo("/path/to/cert.pem")
+    }
 
-  @Test
-  public void literalNullStringPassesThrough() throws OptionsParsingException {
-    assertThat(converter.convert("null")).isEqualTo("null");
-  }
-
-  @Test
-  public void regularPathPassesThrough() throws OptionsParsingException {
-    assertThat(converter.convert("/path/to/cert.pem")).isEqualTo("/path/to/cert.pem");
-  }
-
-  @Test
-  public void arbitraryStringPassesThrough() throws OptionsParsingException {
-    assertThat(converter.convert("some-value")).isEqualTo("some-value");
-  }
+    @org.junit.Test
+    @Throws(OptionsParsingException::class)
+    fun arbitraryStringPassesThrough() {
+        Truth.assertThat(converter.convert("some-value")).isEqualTo("some-value")
+    }
 }

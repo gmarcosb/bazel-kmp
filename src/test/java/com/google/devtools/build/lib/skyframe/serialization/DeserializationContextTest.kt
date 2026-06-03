@@ -11,204 +11,213 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
+import com.google.devtools.build.lib.skyframe.serialization.ObjectCodec.MemoizationStrategy
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
-
-import com.google.common.collect.ImmutableClassToInstanceMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.skyframe.serialization.ObjectCodec.MemoizationStrategy;
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import java.io.IOException;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-
-/** Tests for {@link DeserializationContext}. */
-@RunWith(TestParameterInjector.class)
-public final class DeserializationContextTest {
-
-  @Test
-  public void nullDeserialize(@TestParameter boolean useLeaf) throws Exception {
-    ObjectCodecRegistry registry = mock(ObjectCodecRegistry.class);
-    CodedInputStream codedInputStream = mock(CodedInputStream.class);
-    when(codedInputStream.readSInt32()).thenReturn(0);
-    DeserializationContext deserializationContext =
-        new ImmutableDeserializationContext(registry, ImmutableClassToInstanceMap.of());
-    if (useLeaf) {
-      // Deserialization doesn't touch the codec if the value is null.
-      assertThat(
-              deserializationContext.<Object>deserializeLeaf(codedInputStream, /* codec= */ null))
-          .isNull();
-    } else {
-      assertThat((Object) deserializationContext.deserialize(codedInputStream)).isNull();
-    }
-    verify(codedInputStream).readSInt32();
-    verifyNoInteractions(registry);
-  }
-
-  @Test
-  public void constantDeserialize(@TestParameter boolean useLeaf) throws Exception {
-    ObjectCodecRegistry registry = mock(ObjectCodecRegistry.class);
-    String constant = "abcdef";
-    when(registry.maybeGetConstantByTag(1)).thenReturn(constant);
-    CodedInputStream codedInputStream = mock(CodedInputStream.class);
-    when(codedInputStream.readSInt32()).thenReturn(1);
-    DeserializationContext deserializationContext =
-        new ImmutableDeserializationContext(registry, ImmutableClassToInstanceMap.of());
-    if (useLeaf) {
-      assertThat(
-              deserializationContext.deserializeLeaf(
-                  codedInputStream, LeafCodecForCastingOnly.INSTANCE))
-          .isSameInstanceAs(constant);
-    } else {
-      assertThat((Object) deserializationContext.deserialize(codedInputStream))
-          .isSameInstanceAs(constant);
-    }
-    verify(codedInputStream).readSInt32();
-    verify(registry).maybeGetConstantByTag(1);
-  }
-
-  private static final class LeafCodecForCastingOnly extends LeafObjectCodec<String> {
-    private static final LeafCodecForCastingOnly INSTANCE = new LeafCodecForCastingOnly();
-
-    @Override
-    public boolean autoRegister() {
-      return false;
+/** Tests for [DeserializationContext].  */
+@RunWith(TestParameterInjector::class)
+class DeserializationContextTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun nullDeserialize(@TestParameter useLeaf: Boolean) {
+        val registry: ObjectCodecRegistry? = Mockito.mock<ObjectCodecRegistry?>(ObjectCodecRegistry::class.java)
+        val codedInputStream: CodedInputStream = Mockito.mock<CodedInputStream>(CodedInputStream::class.java)
+        Mockito.`when`<Int?>(codedInputStream.readSInt32()).thenReturn(0)
+        val deserializationContext: DeserializationContext =
+            ImmutableDeserializationContext(registry, com.google.common.collect.ImmutableClassToInstanceMap.of<B?>())
+        if (useLeaf) {
+            // Deserialization doesn't touch the codec if the value is null.
+            assertThat(
+                deserializationContext.< Object > deserializeLeaf < kotlin . Any ? > (codedInputStream,  /* codec= */
+                null
+            ))
+            .isNull()
+        } else {
+            Truth.assertThat(deserializationContext.deserialize(codedInputStream) as Any?).isNull()
+        }
+        Mockito.verify<CodedInputStream?>(codedInputStream).readSInt32()
+        Mockito.verifyNoInteractions(registry)
     }
 
-    @Override
-    public Class<String> getEncodedClass() {
-      return String.class;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun constantDeserialize(@TestParameter useLeaf: Boolean) {
+        val registry: ObjectCodecRegistry = Mockito.mock<ObjectCodecRegistry>(ObjectCodecRegistry::class.java)
+        val constant = "abcdef"
+        Mockito.`when`<T?>(registry.maybeGetConstantByTag(1)).thenReturn(constant)
+        val codedInputStream: CodedInputStream = Mockito.mock<CodedInputStream>(CodedInputStream::class.java)
+        Mockito.`when`<Int?>(codedInputStream.readSInt32()).thenReturn(1)
+        val deserializationContext: DeserializationContext =
+            ImmutableDeserializationContext(registry, com.google.common.collect.ImmutableClassToInstanceMap.of<B?>())
+        if (useLeaf) {
+            assertThat(
+                deserializationContext.deserializeLeaf(
+                    codedInputStream, LeafCodecForCastingOnly.Companion.INSTANCE
+                )
+            )
+                .isSameInstanceAs(constant)
+        } else {
+            Truth.assertThat(deserializationContext.deserialize(codedInputStream) as Any?)
+                .isSameInstanceAs(constant)
+        }
+        Mockito.verify<CodedInputStream?>(codedInputStream).readSInt32()
+        Mockito.verify<Any?>(registry).maybeGetConstantByTag(1)
     }
 
-    @Override
-    public void serialize(
-        LeafSerializationContext context, String obj, CodedOutputStream codedOut) {
-      throw new UnsupportedOperationException();
+    private class LeafCodecForCastingOnly : LeafObjectCodec<String?>() {
+        public override fun autoRegister(): Boolean {
+            return false
+        }
+
+        val encodedClass: java.lang.Class<String?>
+            get() = String::class.java
+
+        public override fun serialize(
+            context: LeafSerializationContext?, obj: String?, codedOut: CodedOutputStream?
+        ) {
+            throw java.lang.UnsupportedOperationException()
+        }
+
+        public override fun deserialize(context: LeafDeserializationContext?, codedIn: CodedInputStream?): String? {
+            throw java.lang.UnsupportedOperationException()
+        }
+
+        companion object {
+            private val INSTANCE = LeafCodecForCastingOnly()
+        }
     }
 
-    @Override
-    public String deserialize(LeafDeserializationContext context, CodedInputStream codedIn) {
-      throw new UnsupportedOperationException();
+    @org.junit.Test
+    @Throws(SerializationException::class, IOException::class)
+    fun memoizingDeserialize_null() {
+        val registry: ObjectCodecRegistry? = Mockito.mock<ObjectCodecRegistry?>(ObjectCodecRegistry::class.java)
+        val codedInputStream: CodedInputStream = Mockito.mock<CodedInputStream>(CodedInputStream::class.java)
+        val codecs: ObjectCodecs =
+            ObjectCodecs(registry, com.google.common.collect.ImmutableClassToInstanceMap.of<B?>())
+        Mockito.`when`<Int?>(codedInputStream.readSInt32()).thenReturn(0)
+        Truth.assertThat(
+            codecs.getMemoizingDeserializationContextForTesting().deserialize(codedInputStream) as Any?
+        )
+            .isEqualTo(null)
+        Mockito.verify<CodedInputStream?>(codedInputStream).readSInt32()
+        Mockito.verifyNoInteractions(registry)
     }
-  }
 
-  @Test
-  public void memoizingDeserialize_null() throws SerializationException, IOException {
-    ObjectCodecRegistry registry = mock(ObjectCodecRegistry.class);
-    CodedInputStream codedInputStream = mock(CodedInputStream.class);
-    ObjectCodecs codecs = new ObjectCodecs(registry, ImmutableClassToInstanceMap.of());
-    when(codedInputStream.readSInt32()).thenReturn(0);
-    assertThat(
-            (Object)
-                codecs.getMemoizingDeserializationContextForTesting().deserialize(codedInputStream))
-        .isEqualTo(null);
-    verify(codedInputStream).readSInt32();
-    verifyNoInteractions(registry);
-  }
+    @org.junit.Test
+    @Throws(SerializationException::class, IOException::class)
+    fun memoizingDeserialize_constant() {
+        val constant = Any()
+        val registry: ObjectCodecRegistry = Mockito.mock<ObjectCodecRegistry>(ObjectCodecRegistry::class.java)
+        Mockito.`when`<T?>(registry.maybeGetConstantByTag(1)).thenReturn(constant)
+        val codedInputStream: CodedInputStream = Mockito.mock<CodedInputStream>(CodedInputStream::class.java)
+        val codecs: ObjectCodecs =
+            ObjectCodecs(registry, com.google.common.collect.ImmutableClassToInstanceMap.of<B?>())
+        Mockito.`when`<Int?>(codedInputStream.readSInt32()).thenReturn(1)
+        Truth.assertThat(
+            codecs.getMemoizingDeserializationContextForTesting().deserialize(codedInputStream) as Any?
+        )
+            .isEqualTo(constant)
+        Mockito.verify<CodedInputStream?>(codedInputStream).readSInt32()
+        Mockito.verify<Any?>(registry).maybeGetConstantByTag(1)
+    }
 
-  @Test
-  public void memoizingDeserialize_constant() throws SerializationException, IOException {
-    Object constant = new Object();
-    ObjectCodecRegistry registry = mock(ObjectCodecRegistry.class);
-    when(registry.maybeGetConstantByTag(1)).thenReturn(constant);
-    CodedInputStream codedInputStream = mock(CodedInputStream.class);
-    ObjectCodecs codecs = new ObjectCodecs(registry, ImmutableClassToInstanceMap.of());
-    when(codedInputStream.readSInt32()).thenReturn(1);
-    assertThat(
-            (Object)
-                codecs.getMemoizingDeserializationContextForTesting().deserialize(codedInputStream))
-        .isEqualTo(constant);
-    verify(codedInputStream).readSInt32();
-    verify(registry).maybeGetConstantByTag(1);
-  }
+    @org.junit.Test
+    @Throws(SerializationException::class, IOException::class)
+    fun memoizingDeserialize_codec() {
+        val returned = Any()
+        val codec: ObjectCodec<Any?> = Mockito.mock<ObjectCodec>(ObjectCodec::class.java)
+        Mockito.`when`<T?>(codec.getStrategy()).thenReturn(MemoizationStrategy.MEMOIZE_AFTER)
+        Mockito.`when`<T?>(codec.getEncodedClass()).thenAnswer(Answer { unused: InvocationOnMock? -> Any::class.java })
+        Mockito.`when`<T?>(codec.additionalEncodedClasses()).thenReturn(com.google.common.collect.ImmutableSet.of<E?>())
+        Mockito.`when`<T?>(codec.safeCast(ArgumentMatchers.any<T?>()))
+            .thenAnswer(Answer { invocation: InvocationOnMock? -> invocation.getArgument<Any?>(0) })
+        val codecDescriptor: ObjectCodecRegistry.CodecDescriptor =
+            CodecDescriptor( /* tag= */1, codec)
+        val registry: ObjectCodecRegistry = Mockito.mock<ObjectCodecRegistry>(ObjectCodecRegistry::class.java)
+        Mockito.`when`<T?>(registry.getCodecDescriptorByTag(1)).thenReturn(codecDescriptor)
+        val codedInputStream: CodedInputStream = Mockito.mock<CodedInputStream>(CodedInputStream::class.java)
+        val deserializationContext: DeserializationContext =
+            ObjectCodecs(registry).getMemoizingDeserializationContextForTesting()
+        Mockito.`when`<T?>(codec.deserialize(deserializationContext, codedInputStream)).thenReturn(returned)
+        Mockito.`when`<Int?>(codedInputStream.readSInt32()).thenReturn(1)
+        Truth.assertThat(deserializationContext.deserialize(codedInputStream) as Any?).isEqualTo(returned)
+        Mockito.verify<CodedInputStream?>(codedInputStream).readSInt32()
+        Mockito.verify<Any?>(registry).maybeGetConstantByTag(1)
+        Mockito.verify<Any?>(registry).getCodecDescriptorByTag(1)
+        Mockito.verify<Any?>(codec).deserialize(deserializationContext, codedInputStream)
+    }
 
-  @Test
-  public void memoizingDeserialize_codec() throws SerializationException, IOException {
-    Object returned = new Object();
-    @SuppressWarnings("unchecked")
-    ObjectCodec<Object> codec = mock(ObjectCodec.class);
-    when(codec.getStrategy()).thenReturn(MemoizationStrategy.MEMOIZE_AFTER);
-    when(codec.getEncodedClass()).thenAnswer(unused -> Object.class);
-    when(codec.additionalEncodedClasses()).thenReturn(ImmutableSet.of());
-    when(codec.safeCast(any())).thenAnswer(invocation -> invocation.getArgument(0));
-    ObjectCodecRegistry.CodecDescriptor codecDescriptor =
-        new ObjectCodecRegistry.CodecDescriptor(/* tag= */ 1, codec);
-    ObjectCodecRegistry registry = mock(ObjectCodecRegistry.class);
-    when(registry.getCodecDescriptorByTag(1)).thenReturn(codecDescriptor);
-    CodedInputStream codedInputStream = mock(CodedInputStream.class);
-    DeserializationContext deserializationContext =
-        new ObjectCodecs(registry).getMemoizingDeserializationContextForTesting();
-    when(codec.deserialize(deserializationContext, codedInputStream)).thenReturn(returned);
-    when(codedInputStream.readSInt32()).thenReturn(1);
-    assertThat((Object) deserializationContext.deserialize(codedInputStream)).isEqualTo(returned);
-    verify(codedInputStream).readSInt32();
-    verify(registry).maybeGetConstantByTag(1);
-    verify(registry).getCodecDescriptorByTag(1);
-    verify(codec).deserialize(deserializationContext, codedInputStream);
-  }
+    @get:org.junit.Test
+    val dependency: Unit
+        get() {
+            val context: DeserializationContext =
+                ImmutableDeserializationContext(
+                    < T > mock < T ? > (ObjectCodecRegistry::class.java), com.google.common.collect.ImmutableClassToInstanceMap.of<B?, T?>(kotlin.String::class.java, "abc"))
+            assertThat(context.getDependency(String::class.java)).isEqualTo("abc")
+        }
 
-  @Test
-  public void getDependency() {
-    DeserializationContext context =
-        new ImmutableDeserializationContext(
-            mock(ObjectCodecRegistry.class), ImmutableClassToInstanceMap.of(String.class, "abc"));
-    assertThat(context.getDependency(String.class)).isEqualTo("abc");
-  }
+    @get:org.junit.Test
+    val dependency_notPresent: Unit
+        get() {
+            val context: DeserializationContext =
+                ImmutableDeserializationContext(
+                    < T > mock < T ? > (ObjectCodecRegistry::class.java), com.google.common.collect.ImmutableClassToInstanceMap.of<B?>())
+            val e: java.lang.Exception? =
+                org.junit.Assert.assertThrows<java.lang.NullPointerException?>(
+                    java.lang.NullPointerException::class.java,
+                    org.junit.function.ThrowingRunnable { context.getDependency(String::class.java) })
+            Truth.assertThat(e).hasMessageThat().contains("Missing dependency of type " + String::class.java)
+        }
 
-  @Test
-  public void getDependency_notPresent() {
-    DeserializationContext context =
-        new ImmutableDeserializationContext(
-            mock(ObjectCodecRegistry.class), ImmutableClassToInstanceMap.of());
-    Exception e =
-        assertThrows(NullPointerException.class, () -> context.getDependency(String.class));
-    assertThat(e).hasMessageThat().contains("Missing dependency of type " + String.class);
-  }
+    @org.junit.Test
+    fun dependencyOverrides_alreadyPresent() {
+        val codecs: ObjectCodecs =
+            ObjectCodecs(
+                < T > mock < T ? > (ObjectCodecRegistry::class.java), com.google.common.collect.ImmutableClassToInstanceMap.of<B?, T?>(kotlin.String::class.java, "abc"))
+        val overridden: DeserializationContext =
+            codecs
+                .withDependencyOverridesForTesting(
+                    com.google.common.collect.ImmutableClassToInstanceMap.of<B?, T?>(
+                        String::class.java,
+                        "xyz"
+                    )
+                )
+                .getDeserializationContextForTesting()
+        assertThat(overridden.getDependency(String::class.java)).isEqualTo("xyz")
+    }
 
-  @Test
-  public void dependencyOverrides_alreadyPresent() {
-    ObjectCodecs codecs =
-        new ObjectCodecs(
-            mock(ObjectCodecRegistry.class), ImmutableClassToInstanceMap.of(String.class, "abc"));
-    DeserializationContext overridden =
-        codecs
-            .withDependencyOverridesForTesting(ImmutableClassToInstanceMap.of(String.class, "xyz"))
-            .getDeserializationContextForTesting();
-    assertThat(overridden.getDependency(String.class)).isEqualTo("xyz");
-  }
+    @org.junit.Test
+    fun dependencyOverrides_new() {
+        val codecs: ObjectCodecs =
+            ObjectCodecs(
+                < T > mock < T ? > (ObjectCodecRegistry::class.java), com.google.common.collect.ImmutableClassToInstanceMap.of<B?, T?>(kotlin.String::class.java, "abc"))
+        val overridden: DeserializationContext =
+            codecs
+                .withDependencyOverridesForTesting(
+                    com.google.common.collect.ImmutableClassToInstanceMap.of<B?, T?>(
+                        Int::class.java,
+                        1
+                    )
+                )
+                .getDeserializationContextForTesting()
+        assertThat(overridden.getDependency(Int::class.java)).isEqualTo(1)
+    }
 
-  @Test
-  public void dependencyOverrides_new() {
-    ObjectCodecs codecs =
-        new ObjectCodecs(
-            mock(ObjectCodecRegistry.class), ImmutableClassToInstanceMap.of(String.class, "abc"));
-    DeserializationContext overridden =
-        codecs
-            .withDependencyOverridesForTesting(ImmutableClassToInstanceMap.of(Integer.class, 1))
-            .getDeserializationContextForTesting();
-    assertThat(overridden.getDependency(Integer.class)).isEqualTo(1);
-  }
-
-  @Test
-  public void dependencyOverrides_unchanged() {
-    ObjectCodecs codecs =
-        new ObjectCodecs(
-            mock(ObjectCodecRegistry.class), ImmutableClassToInstanceMap.of(String.class, "abc"));
-    DeserializationContext overridden =
-        codecs
-            .withDependencyOverridesForTesting(ImmutableClassToInstanceMap.of(Integer.class, 1))
-            .getDeserializationContextForTesting();
-    assertThat(overridden.getDependency(String.class)).isEqualTo("abc");
-  }
+    @org.junit.Test
+    fun dependencyOverrides_unchanged() {
+        val codecs: ObjectCodecs =
+            ObjectCodecs(
+                < T > mock < T ? > (ObjectCodecRegistry::class.java), com.google.common.collect.ImmutableClassToInstanceMap.of<B?, T?>(kotlin.String::class.java, "abc"))
+        val overridden: DeserializationContext =
+            codecs
+                .withDependencyOverridesForTesting(
+                    com.google.common.collect.ImmutableClassToInstanceMap.of<B?, T?>(
+                        Int::class.java,
+                        1
+                    )
+                )
+                .getDeserializationContextForTesting()
+        assertThat(overridden.getDependency(String::class.java)).isEqualTo("abc")
+    }
 }

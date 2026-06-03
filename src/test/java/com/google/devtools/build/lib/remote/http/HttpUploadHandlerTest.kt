@@ -11,137 +11,133 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.remote.http
 
-package com.google.devtools.build.lib.remote.http;
+import com.google.common.collect.ImmutableList
+import com.google.common.net.HttpHeaders
+import com.google.common.truth.Truth
+import io.netty.buffer.ByteBufAllocator
+import io.netty.buffer.ByteBufUtil
+import io.netty.channel.embedded.EmbeddedChannel
+import io.netty.handler.codec.http.*
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.io.ByteArrayInputStream
+import java.net.URI
 
-import static com.google.common.truth.Truth.assertThat;
+/** Tests for [HttpUploadHandler].  */
+@RunWith(JUnit4::class)
+class HttpUploadHandlerTest {
+    /**
+     * Test that uploading blobs works to both the Action Cache and the CAS. Also test that the
+     * handler is reusable.
+     */
+    @Test
+    @Throws(Exception::class)
+    fun uploadsShouldWork() {
+        val ch =
+            EmbeddedChannel(HttpUploadHandler(null, ImmutableList.of<MutableMap.MutableEntry<String?, String?>?>()))
+        val statuses: Array<HttpResponseStatus?> =
+            arrayOf<HttpResponseStatus>(
+                HttpResponseStatus.OK,
+                HttpResponseStatus.CREATED,
+                HttpResponseStatus.ACCEPTED,
+                HttpResponseStatus.NO_CONTENT
+            )
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.net.HttpHeaders;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufAllocator;
-import io.netty.buffer.ByteBufUtil;
-import io.netty.channel.ChannelPromise;
-import io.netty.channel.embedded.EmbeddedChannel;
-import io.netty.handler.codec.http.DefaultFullHttpResponse;
-import io.netty.handler.codec.http.FullHttpResponse;
-import io.netty.handler.codec.http.HttpChunkedInput;
-import io.netty.handler.codec.http.HttpHeaderNames;
-import io.netty.handler.codec.http.HttpHeaderValues;
-import io.netty.handler.codec.http.HttpMethod;
-import io.netty.handler.codec.http.HttpRequest;
-import io.netty.handler.codec.http.HttpResponseStatus;
-import io.netty.handler.codec.http.HttpVersion;
-import java.io.ByteArrayInputStream;
-import java.net.URI;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link HttpUploadHandler}. */
-@RunWith(JUnit4.class)
-@SuppressWarnings("FutureReturnValueIgnored")
-public class HttpUploadHandlerTest {
-
-  private static final URI CACHE_URI = URI.create("http://storage.googleapis.com:80/cache-bucket");
-
-  /**
-   * Test that uploading blobs works to both the Action Cache and the CAS. Also test that the
-   * handler is reusable.
-   */
-  @Test
-  public void uploadsShouldWork() throws Exception {
-    EmbeddedChannel ch = new EmbeddedChannel(new HttpUploadHandler(null, ImmutableList.of()));
-    HttpResponseStatus[] statuses =
-        new HttpResponseStatus[] {
-          HttpResponseStatus.OK,
-          HttpResponseStatus.CREATED,
-          HttpResponseStatus.ACCEPTED,
-          HttpResponseStatus.NO_CONTENT
-        };
-
-    for (HttpResponseStatus status : statuses) {
-      uploadsShouldWork(true, ch, status);
-      uploadsShouldWork(false, ch, status);
+        for (status in statuses) {
+            uploadsShouldWork(true, ch, status)
+            uploadsShouldWork(false, ch, status)
+        }
     }
-  }
 
-  private void uploadsShouldWork(boolean casUpload, EmbeddedChannel ch, HttpResponseStatus status)
-      throws Exception {
-    ByteArrayInputStream data = new ByteArrayInputStream(new byte[] {1, 2, 3, 4, 5});
-    ChannelPromise writePromise = ch.newPromise();
-    ch.writeOneOutbound(new UploadCommand(CACHE_URI, casUpload, "abcdef", data, 5), writePromise);
+    @Throws(Exception::class)
+    private fun uploadsShouldWork(casUpload: Boolean, ch: EmbeddedChannel, status: HttpResponseStatus?) {
+        val data = ByteArrayInputStream(byteArrayOf(1, 2, 3, 4, 5))
+        val writePromise = ch.newPromise()
+        ch.writeOneOutbound(UploadCommand(CACHE_URI, casUpload, "abcdef", data, 5), writePromise)
 
-    HttpRequest request = ch.readOutbound();
-    assertThat(request.method()).isEqualTo(HttpMethod.PUT);
-    assertThat(request.headers().get(HttpHeaders.CONNECTION))
-        .isEqualTo(HttpHeaderValues.KEEP_ALIVE.toString());
+        val request = ch.readOutbound<HttpRequest>()
+        Truth.assertThat<HttpMethod?>(request.method()).isEqualTo(HttpMethod.PUT)
+        Truth.assertThat(request.headers().get(HttpHeaders.CONNECTION))
+            .isEqualTo(HttpHeaderValues.KEEP_ALIVE.toString())
 
-    HttpChunkedInput content = ch.readOutbound();
-    assertThat(content.readChunk(ByteBufAllocator.DEFAULT).content().readableBytes()).isEqualTo(5);
+        val content = ch.readOutbound<HttpChunkedInput>()
+        Truth.assertThat(content.readChunk(ByteBufAllocator.DEFAULT).content().readableBytes()).isEqualTo(5)
 
-    FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status);
-    response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.KEEP_ALIVE);
+        val response: FullHttpResponse = DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status)
+        response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.KEEP_ALIVE)
 
-    ch.writeInbound(response);
+        ch.writeInbound(response)
 
-    assertThat(writePromise.isDone()).isTrue();
-    assertThat(ch.isOpen()).isTrue();
-  }
+        Truth.assertThat(writePromise.isDone()).isTrue()
+        Truth.assertThat(ch.isOpen()).isTrue()
+    }
 
-  /** Test that the handler correctly supports http error codes i.e. 404 (NOT FOUND). */
-  @Test
-  public void httpErrorsAreSupported() {
-    EmbeddedChannel ch = new EmbeddedChannel(new HttpUploadHandler(null, ImmutableList.of()));
-    ByteArrayInputStream data = new ByteArrayInputStream(new byte[] {1, 2, 3, 4, 5});
-    ChannelPromise writePromise = ch.newPromise();
-    ch.writeOneOutbound(new UploadCommand(CACHE_URI, true, "abcdef", data, 5), writePromise);
+    /** Test that the handler correctly supports http error codes i.e. 404 (NOT FOUND).  */
+    @Test
+    fun httpErrorsAreSupported() {
+        val ch =
+            EmbeddedChannel(HttpUploadHandler(null, ImmutableList.of<MutableMap.MutableEntry<String?, String?>?>()))
+        val data = ByteArrayInputStream(byteArrayOf(1, 2, 3, 4, 5))
+        val writePromise = ch.newPromise()
+        ch.writeOneOutbound(UploadCommand(CACHE_URI, true, "abcdef", data, 5), writePromise)
 
-    HttpRequest request = ch.readOutbound();
-    assertThat(request).isInstanceOf(HttpRequest.class);
-    HttpChunkedInput content = ch.readOutbound();
-    assertThat(content).isInstanceOf(HttpChunkedInput.class);
+        val request = ch.readOutbound<HttpRequest?>()
+        Truth.assertThat(request).isInstanceOf(HttpRequest::class.java)
+        val content = ch.readOutbound<HttpChunkedInput?>()
+        Truth.assertThat(content).isInstanceOf(HttpChunkedInput::class.java)
 
-    FullHttpResponse response =
-        new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.FORBIDDEN);
-    response.headers().set(HttpHeaders.CONNECTION, HttpHeaderValues.CLOSE);
+        val response: FullHttpResponse =
+            DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.FORBIDDEN)
+        response.headers().set(HttpHeaders.CONNECTION, HttpHeaderValues.CLOSE)
 
-    ch.writeInbound(response);
+        ch.writeInbound(response)
 
-    assertThat(writePromise.isDone()).isTrue();
-    assertThat(writePromise.cause()).isInstanceOf(HttpException.class);
-    assertThat(((HttpException) writePromise.cause()).response().status())
-        .isEqualTo(HttpResponseStatus.FORBIDDEN);
-    assertThat(ch.isOpen()).isFalse();
-  }
+        Truth.assertThat(writePromise.isDone()).isTrue()
+        Truth.assertThat(writePromise.cause()).isInstanceOf(HttpException::class.java)
+        HttpResponseStatus > Truth.assertThat<HttpResponseStatus?>(
+            (writePromise.cause() as HttpException).response()!!.status()
+        )
+            .isEqualTo(HttpResponseStatus.FORBIDDEN)
+        Truth.assertThat(ch.isOpen()).isFalse()
+    }
 
-  /**
-   * Test that the handler correctly supports http error codes i.e. 404 (NOT FOUND) with a
-   * Content-Length header.
-   */
-  @Test
-  public void httpErrorsWithContentAreSupported() {
-    EmbeddedChannel ch = new EmbeddedChannel(new HttpUploadHandler(null, ImmutableList.of()));
-    ByteArrayInputStream data = new ByteArrayInputStream(new byte[] {1, 2, 3, 4, 5});
-    ChannelPromise writePromise = ch.newPromise();
-    ch.writeOneOutbound(new UploadCommand(CACHE_URI, true, "abcdef", data, 5), writePromise);
+    /**
+     * Test that the handler correctly supports http error codes i.e. 404 (NOT FOUND) with a
+     * Content-Length header.
+     */
+    @Test
+    fun httpErrorsWithContentAreSupported() {
+        val ch =
+            EmbeddedChannel(HttpUploadHandler(null, ImmutableList.of<MutableMap.MutableEntry<String?, String?>?>()))
+        val data = ByteArrayInputStream(byteArrayOf(1, 2, 3, 4, 5))
+        val writePromise = ch.newPromise()
+        ch.writeOneOutbound(UploadCommand(CACHE_URI, true, "abcdef", data, 5), writePromise)
 
-    HttpRequest request = ch.readOutbound();
-    assertThat(request).isInstanceOf(HttpRequest.class);
-    HttpChunkedInput content = ch.readOutbound();
-    assertThat(content).isInstanceOf(HttpChunkedInput.class);
+        val request = ch.readOutbound<HttpRequest?>()
+        Truth.assertThat(request).isInstanceOf(HttpRequest::class.java)
+        val content = ch.readOutbound<HttpChunkedInput?>()
+        Truth.assertThat(content).isInstanceOf(HttpChunkedInput::class.java)
 
-    ByteBuf errorMsg = ByteBufUtil.writeAscii(ch.alloc(), "error message");
-    FullHttpResponse response =
-        new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.NOT_FOUND, errorMsg);
-    response.headers().set(HttpHeaders.CONNECTION, HttpHeaderValues.KEEP_ALIVE);
+        val errorMsg = ByteBufUtil.writeAscii(ch.alloc(), "error message")
+        val response: FullHttpResponse =
+            DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.NOT_FOUND, errorMsg)
+        response.headers().set(HttpHeaders.CONNECTION, HttpHeaderValues.KEEP_ALIVE)
 
-    ch.writeInbound(response);
+        ch.writeInbound(response)
 
-    assertThat(writePromise.isDone()).isTrue();
-    assertThat(writePromise.cause()).isInstanceOf(HttpException.class);
-    assertThat(((HttpException) writePromise.cause()).response().status())
-        .isEqualTo(HttpResponseStatus.NOT_FOUND);
-    assertThat(ch.isOpen()).isTrue();
-  }
+        Truth.assertThat(writePromise.isDone()).isTrue()
+        Truth.assertThat(writePromise.cause()).isInstanceOf(HttpException::class.java)
+        HttpResponseStatus > Truth.assertThat<HttpResponseStatus?>(
+            (writePromise.cause() as HttpException).response()!!.status()
+        )
+            .isEqualTo(HttpResponseStatus.NOT_FOUND)
+        Truth.assertThat(ch.isOpen()).isTrue()
+    }
+
+    companion object {
+        private val CACHE_URI: URI = URI.create("http://storage.googleapis.com:80/cache-bucket")
+    }
 }

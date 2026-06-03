@@ -11,1868 +11,2084 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote;
-
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.truth.extensions.proto.ProtoTruth.assertThat;
-import static org.junit.Assert.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.atLeastOnce;
-import static org.mockito.Mockito.doNothing;
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.inOrder;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoMoreInteractions;
-import static org.mockito.Mockito.when;
-
-import build.bazel.remote.execution.v2.ActionResult;
-import build.bazel.remote.execution.v2.Digest;
-import build.bazel.remote.execution.v2.ExecuteOperationMetadata;
-import build.bazel.remote.execution.v2.ExecuteRequest;
-import build.bazel.remote.execution.v2.ExecuteResponse;
-import build.bazel.remote.execution.v2.ExecutedActionMetadata;
-import build.bazel.remote.execution.v2.ExecutionCapabilities;
-import build.bazel.remote.execution.v2.ExecutionStage.Value;
-import build.bazel.remote.execution.v2.LogFile;
-import build.bazel.remote.execution.v2.OutputFile;
-import build.bazel.remote.execution.v2.ServerCapabilities;
-import com.google.common.collect.ClassToInstanceMap;
-import com.google.common.collect.ImmutableClassToInstanceMap;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Sets;
-import com.google.common.io.ByteStreams;
-import com.google.common.util.concurrent.ListeningScheduledExecutorService;
-import com.google.common.util.concurrent.MoreExecutors;
-import com.google.common.util.concurrent.SettableFuture;
-import com.google.devtools.build.lib.actions.ActionContext;
-import com.google.devtools.build.lib.actions.ActionInput;
-import com.google.devtools.build.lib.actions.ActionInputMap;
-import com.google.devtools.build.lib.actions.ActionOutputDirectoryHelper;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.ArtifactRoot;
-import com.google.devtools.build.lib.actions.ArtifactRoot.RootType;
-import com.google.devtools.build.lib.actions.CommandLines.ParamFileActionInput;
-import com.google.devtools.build.lib.actions.ExecException;
-import com.google.devtools.build.lib.actions.ExecutionRequirements;
-import com.google.devtools.build.lib.actions.ParameterFile.ParameterFileType;
-import com.google.devtools.build.lib.actions.ResourceSet;
-import com.google.devtools.build.lib.actions.SimpleSpawn;
-import com.google.devtools.build.lib.actions.Spawn;
-import com.google.devtools.build.lib.actions.SpawnMetrics;
-import com.google.devtools.build.lib.actions.SpawnResult;
-import com.google.devtools.build.lib.actions.SpawnResult.Status;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
-import com.google.devtools.build.lib.clock.JavaClock;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.events.EventBusEventHandler;
-import com.google.devtools.build.lib.events.Reporter;
-import com.google.devtools.build.lib.exec.AbstractSpawnStrategy;
-import com.google.devtools.build.lib.exec.ExecutionOptions;
-import com.google.devtools.build.lib.exec.RemoteLocalFallbackRegistry;
-import com.google.devtools.build.lib.exec.SpawnCheckingCacheEvent;
-import com.google.devtools.build.lib.exec.SpawnExecutingEvent;
-import com.google.devtools.build.lib.exec.SpawnRunner;
-import com.google.devtools.build.lib.exec.SpawnRunner.SpawnExecutionContext;
-import com.google.devtools.build.lib.exec.SpawnSchedulingEvent;
-import com.google.devtools.build.lib.exec.util.FakeOwner;
-import com.google.devtools.build.lib.remote.CombinedCache.CachedActionResult;
-import com.google.devtools.build.lib.remote.RemoteExecutionService.RemoteActionResult;
-import com.google.devtools.build.lib.remote.common.ActionKey;
-import com.google.devtools.build.lib.remote.common.BulkTransferException;
-import com.google.devtools.build.lib.remote.common.CacheNotFoundException;
-import com.google.devtools.build.lib.remote.common.OperationObserver;
-import com.google.devtools.build.lib.remote.common.RemoteActionExecutionContext;
-import com.google.devtools.build.lib.remote.common.RemoteExecutionCapabilitiesException;
-import com.google.devtools.build.lib.remote.common.RemoteExecutionClient;
-import com.google.devtools.build.lib.remote.common.RemotePathResolver;
-import com.google.devtools.build.lib.remote.common.RemotePathResolver.SiblingRepositoryLayoutResolver;
-import com.google.devtools.build.lib.remote.options.RemoteOptions;
-import com.google.devtools.build.lib.remote.options.RemoteOutputsMode;
-import com.google.devtools.build.lib.remote.util.DigestUtil;
-import com.google.devtools.build.lib.remote.util.FakeSpawnExecutionContext;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import com.google.devtools.build.lib.testutil.TestUtils;
-import com.google.devtools.build.lib.util.ExitCode;
-import com.google.devtools.build.lib.util.TempPathGenerator;
-import com.google.devtools.build.lib.util.io.FileOutErr;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.OutputPermissions;
-import com.google.devtools.build.lib.vfs.OutputService;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import com.google.devtools.common.options.Options;
-import com.google.longrunning.Operation;
-import com.google.protobuf.Any;
-import com.google.protobuf.Timestamp;
-import com.google.protobuf.util.Durations;
-import com.google.protobuf.util.Timestamps;
-import com.google.rpc.Code;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
-import java.time.Duration;
-import java.time.Instant;
-import java.util.List;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-import javax.annotation.Nullable;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-import org.mockito.ArgumentCaptor;
-import org.mockito.InOrder;
-import org.mockito.Mock;
-import org.mockito.Mockito;
-import org.mockito.MockitoAnnotations;
-import org.mockito.junit.MockitoJUnit;
-import org.mockito.junit.MockitoRule;
-
-/** Tests for {@link com.google.devtools.build.lib.remote.RemoteSpawnRunner} */
-@RunWith(JUnit4.class)
-public class RemoteSpawnRunnerTest {
-  @Rule public final MockitoRule mockito = MockitoJUnit.rule();
-
-  @Mock private RemoteOutputChecker remoteOutputChecker; // download nothing by default.
-
-  private final Reporter reporter = new Reporter(EventBusEventHandler.createWithNewEventBus());
-  private static final ImmutableMap<String, String> NO_CACHE =
-      ImmutableMap.of(ExecutionRequirements.NO_CACHE, "");
-  private ListeningScheduledExecutorService retryService;
-
-  private FileSystem fs;
-  private Path execRoot;
-  private ArtifactRoot artifactRoot;
-  private TempPathGenerator tempPathGenerator;
-  private Path logDir;
-  private DigestUtil digestUtil;
-  private FakeActionInputFileCache fakeFileCache;
-  private FileOutErr outErr;
-
-  private RemoteOptions remoteOptions;
-
-  @Mock private RemoteExecutionCache cache;
-
-  @Mock private RemoteExecutionClient executor;
-
-  @Mock private SpawnRunner localRunner;
-
-  // The action key of the Spawn returned by newSimpleSpawn().
-  private static final String SIMPLE_ACTION_ID =
-      "31aea267dc597b047a9b6993100415b6406f82822318dc8988e4164a535b51ee";
-
-  private final ServerCapabilities remoteExecutorCapabilities =
-      ServerCapabilities.newBuilder()
-          .setLowApiVersion(ApiVersion.low.toSemVer())
-          .setHighApiVersion(ApiVersion.high.toSemVer())
-          .setExecutionCapabilities(ExecutionCapabilities.newBuilder().setExecEnabled(true).build())
-          .build();
-
-  @Before
-  public final void setUp() throws Exception {
-    MockitoAnnotations.initMocks(this);
-    digestUtil = new DigestUtil(SyscallCache.NO_CACHE, DigestHashFunction.SHA256);
-    fs = new InMemoryFileSystem(new JavaClock(), DigestHashFunction.SHA256);
-    execRoot = fs.getPath("/exec/root");
-    execRoot.createDirectoryAndParents();
-    artifactRoot = ArtifactRoot.asDerivedRoot(execRoot, RootType.OUTPUT, "outputs");
-    artifactRoot.getRoot().asPath().createDirectoryAndParents();
-    tempPathGenerator = new TempPathGenerator(fs.getPath("/execroot/_tmp/actions/remote"));
-    logDir = fs.getPath("/server-logs");
-    fakeFileCache = new FakeActionInputFileCache(execRoot);
-
-    Path stdout = fs.getPath("/tmp/stdout");
-    Path stderr = fs.getPath("/tmp/stderr");
-    stdout.getParentDirectory().createDirectoryAndParents();
-    stderr.getParentDirectory().createDirectoryAndParents();
-    outErr = new FileOutErr(stdout, stderr);
-
-    remoteOptions = Options.getDefaults(RemoteOptions.class);
-
-    retryService = MoreExecutors.listeningDecorator(Executors.newScheduledThreadPool(1));
-    when(cache.hasRemoteCache()).thenReturn(true);
-    doReturn(remoteExecutorCapabilities).when(cache).getRemoteServerCapabilities();
-    when(executor.getServerCapabilities()).thenReturn(remoteExecutorCapabilities);
-    when(cache.remoteActionCacheSupportsUpdate()).thenReturn(true);
-  }
-
-  @After
-  public void afterEverything() throws InterruptedException {
-    retryService.shutdownNow();
-    retryService.awaitTermination(TestUtils.WAIT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-  }
-
-  @Test
-  public void nonCachableSpawnsShouldNotBeCached_remote() throws Exception {
-    // Test that if a spawn is marked "NO_CACHE" then it's not fetched from a remote cache.
-    // It should be executed remotely, but marked non-cacheable to remote execution, so that
-    // the action result is not saved in the remote cache.
-
-    remoteOptions.setRemoteAcceptCached(true);
-    remoteOptions.setRemoteLocalFallback(false);
-    remoteOptions.setRemoteUploadLocalResults(true);
-    remoteOptions.setRemoteResultCachePriority(1);
-    remoteOptions.setRemoteExecutionPriority(2);
-
-    RemoteSpawnRunner runner = newSpawnRunner();
-    RemoteExecutionService service = runner.getRemoteExecutionService();
-
-    ExecuteResponse succeeded =
-        ExecuteResponse.newBuilder()
-            .setResult(ActionResult.newBuilder().setExitCode(0).build())
-            .build();
-    when(executor.executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class)))
-        .thenReturn(succeeded);
-
-    Spawn spawn = simpleSpawnWithExecutionInfo(NO_CACHE);
-    SpawnExecutionContext policy = getSpawnContext(spawn);
-
-    runner.exec(spawn, policy);
-
-    ArgumentCaptor<ExecuteRequest> requestCaptor = ArgumentCaptor.forClass(ExecuteRequest.class);
-    verify(executor)
-        .executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            requestCaptor.capture(),
-            any(OperationObserver.class));
-    assertThat(requestCaptor.getValue().getSkipCacheLookup()).isTrue();
-    assertThat(requestCaptor.getValue().getResultsCachePolicy().getPriority()).isEqualTo(1);
-    assertThat(requestCaptor.getValue().getExecutionPolicy().getPriority()).isEqualTo(2);
-    // TODO(olaola): verify that the uploaded action has the doNotCache set.
-
-    verify(service, never()).lookupCache(any());
-    verify(service, never()).uploadOutputs(any(), any(), any(), any());
-    verifyNoMoreInteractions(localRunner);
-  }
-
-  private FakeSpawnExecutionContext getSpawnContext(Spawn spawn) {
-    AbstractSpawnStrategy fakeLocalStrategy =
-        new AbstractSpawnStrategy(localRunner, Options.getDefaults(ExecutionOptions.class)) {};
-    ClassToInstanceMap<ActionContext> actionContextRegistry =
-        ImmutableClassToInstanceMap.of(
-            RemoteLocalFallbackRegistry.class, (spawnInput) -> fakeLocalStrategy);
-
-    var actionInputFetcher =
-        new RemoteActionInputFetcher(
-            new Reporter(EventBusEventHandler.createWithNewEventBus()),
-            "none",
-            "none",
-            cache,
-            execRoot,
-            tempPathGenerator,
-            remoteOutputChecker,
-            ActionOutputDirectoryHelper.createForTesting(),
-            OutputPermissions.READONLY);
-
-    var actionFileSystem =
-        new RemoteActionFileSystem(
-            fs,
-            execRoot.asFragment(),
-            artifactRoot.getRoot().asPath().relativeTo(execRoot).getPathString(),
-            new ActionInputMap(0),
-            actionInputFetcher);
-
-    return new FakeSpawnExecutionContext(
-        spawn, fakeFileCache, execRoot, outErr, actionContextRegistry, actionFileSystem);
-  }
-
-  @Test
-  public void nonCachableSpawnsShouldNotBeCached_localFallback() throws Exception {
-    // Test that if a non-cachable spawn is executed locally due to the local fallback,
-    // that its result is not uploaded to the remote cache.
-
-    remoteOptions.setRemoteAcceptCached(true);
-    remoteOptions.setRemoteLocalFallback(true);
-    remoteOptions.setRemoteUploadLocalResults(true);
-
-    RemoteSpawnRunner runner = newSpawnRunner();
-
-    // Throw an IOException to trigger the local fallback.
-    when(executor.executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class)))
-        .thenThrow(IOException.class);
-
-    Spawn spawn = simpleSpawnWithExecutionInfo(NO_CACHE);
-    SpawnExecutionContext policy = getSpawnContext(spawn);
-
-    runner.exec(spawn, policy);
-
-    verify(localRunner).exec(spawn, policy);
-    verify(cache).getRemoteServerCapabilities();
-    verify(cache).ensureInputsPresent(any(), any(), any(), anyBoolean(), any());
-    verify(cache, atLeastOnce()).hasRemoteCache();
-    verify(cache, atLeastOnce()).hasDiskCache();
-    verifyNoMoreInteractions(cache);
-  }
-
-  @Test
-  public void cachableSpawnsShouldBeCached_localFallback() throws Exception {
-    // Test that if a cacheable spawn is executed locally due to the local fallback,
-    // that its result is uploaded to the remote cache.
-
-    remoteOptions.setRemoteAcceptCached(true);
-    remoteOptions.setRemoteLocalFallback(true);
-    remoteOptions.setRemoteUploadLocalResults(true);
-
-    RemoteSpawnRunner runner = spy(newSpawnRunner());
-    RemoteExecutionService service = runner.getRemoteExecutionService();
-    doNothing().when(service).uploadOutputs(any(), any(), any(), any());
-
-    // Throw an IOException to trigger the local fallback.
-    when(executor.executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class)))
-        .thenThrow(IOException.class);
-
-    SpawnResult res =
-        new SpawnResult.Builder()
-            .setStatus(Status.SUCCESS)
-            .setExitCode(0)
-            .setRunnerName("test")
-            .build();
-    when(localRunner.exec(any(Spawn.class), any(SpawnExecutionContext.class))).thenReturn(res);
-
-    Spawn spawn = newSimpleSpawn();
-    SpawnExecutionContext policy = getSpawnContext(spawn);
-
-    SpawnResult result = runner.exec(spawn, policy);
-    assertThat(result.exitCode()).isEqualTo(0);
-    assertThat(result.status()).isEqualTo(Status.SUCCESS);
-    verify(localRunner).exec(eq(spawn), eq(policy));
-    verify(runner)
-        .execLocallyAndUpload(any(), eq(spawn), eq(policy), /* uploadLocalResults= */ eq(true));
-    verify(service).uploadOutputs(any(), eq(res), any(), any());
-  }
-
-  @Test
-  public void failedLocalActionShouldNotBeUploaded() throws Exception {
-    // Test that the outputs of a locally executed action that failed are not uploaded.
-
-    remoteOptions.setRemoteLocalFallback(true);
-    remoteOptions.setRemoteUploadLocalResults(true);
-
-    RemoteSpawnRunner runner = spy(newSpawnRunner());
-    RemoteExecutionService service = runner.getRemoteExecutionService();
-
-    // Throw an IOException to trigger the local fallback.
-    when(executor.executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class)))
-        .thenThrow(IOException.class);
-
-    Spawn spawn = newSimpleSpawn();
-    SpawnExecutionContext policy = getSpawnContext(spawn);
-
-    SpawnResult res = Mockito.mock(SpawnResult.class);
-    when(res.exitCode()).thenReturn(1);
-    when(res.status()).thenReturn(Status.EXECUTION_FAILED);
-    when(localRunner.exec(eq(spawn), eq(policy))).thenReturn(res);
-
-    assertThat(runner.exec(spawn, policy)).isSameInstanceAs(res);
-
-    verify(localRunner).exec(eq(spawn), eq(policy));
-    verify(runner)
-        .execLocallyAndUpload(any(), eq(spawn), eq(policy), /* uploadLocalResults= */ eq(true));
-    verify(service, never()).uploadOutputs(any(), any(), any(), any());
-  }
-
-  @Test
-  public void treatFailedCachedActionAsCacheMiss_local() throws Exception {
-    // Test that bazel treats failed cache action as a cache miss and attempts to execute action
-    // locally
-
-    remoteOptions.setRemoteLocalFallback(true);
-    remoteOptions.setRemoteUploadLocalResults(true);
-
-    CachedActionResult failedAction =
-        CachedActionResult.remote(ActionResult.newBuilder().setExitCode(1).build());
-    when(cache.downloadActionResult(
-            any(RemoteActionExecutionContext.class),
-            any(ActionKey.class),
-            /* inlineOutErr= */ eq(false),
-            /* inlineOutputFiles= */ eq(ImmutableSet.of())))
-        .thenReturn(failedAction);
-
-    RemoteSpawnRunner runner = spy(newSpawnRunner());
-    RemoteExecutionService service = runner.getRemoteExecutionService();
-    // Throw an IOException to trigger the local fallback.
-    when(executor.executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class)))
-        .thenThrow(IOException.class);
-    doNothing().when(service).uploadOutputs(any(), any(), any(), any());
-
-    Spawn spawn = newSimpleSpawn();
-    SpawnExecutionContext policy = getSpawnContext(spawn);
-
-    SpawnResult succeeded =
-        new SpawnResult.Builder()
-            .setStatus(Status.SUCCESS)
-            .setExitCode(0)
-            .setRunnerName("test")
-            .build();
-    when(localRunner.exec(eq(spawn), eq(policy))).thenReturn(succeeded);
-
-    SpawnResult result = runner.exec(spawn, policy);
-
-    verify(localRunner).exec(eq(spawn), eq(policy));
-    verify(runner)
-        .execLocallyAndUpload(any(), eq(spawn), eq(policy), /* uploadLocalResults= */ eq(true));
-    verify(service).uploadOutputs(any(), eq(result), any(), any());
-    verify(service, never()).downloadOutputs(any(), any());
-  }
-
-  @Test
-  public void remoteLocalFallback_buildRemoteActionFailure() throws Exception {
-    remoteOptions.setRemoteLocalFallback(true);
-
-    RemoteSpawnRunner runner = spy(newSpawnRunner());
-    RemoteExecutionService service = runner.getRemoteExecutionService();
-    doThrow(new RemoteExecutionCapabilitiesException(new IOException("capabilities failed")))
-        .when(service)
-        .buildRemoteAction(any(), any(), any());
-
-    Spawn spawn = newSimpleSpawn();
-    SpawnExecutionContext policy = getSpawnContext(spawn);
-
-    SpawnResult localResult =
-        new SpawnResult.Builder()
-            .setExitCode(0)
-            .setStatus(Status.SUCCESS)
-            .setRunnerName("local")
-            .build();
-    when(localRunner.exec(spawn, policy)).thenReturn(localResult);
-
-    SpawnResult result = runner.exec(spawn, policy);
-
-    assertThat(result).isEqualTo(localResult);
-    verify(localRunner).exec(spawn, policy);
-    verify(service, never()).uploadOutputs(any(), any(), any(), any());
-  }
-
-  @Test
-  public void buildRemoteActionFailure_noLocalFallback_shouldThrow() throws Exception {
-    remoteOptions.setRemoteLocalFallback(false);
-
-    RemoteSpawnRunner runner = spy(newSpawnRunner());
-    RemoteExecutionService service = runner.getRemoteExecutionService();
-    doThrow(new RemoteExecutionCapabilitiesException(new IOException("capabilities failed")))
-        .when(service)
-        .buildRemoteAction(any(), any(), any());
-
-    Spawn spawn = newSimpleSpawn();
-    SpawnExecutionContext policy = getSpawnContext(spawn);
-
-    assertThrows(ExecException.class, () -> runner.exec(spawn, policy));
-  }
-
-  @Test
-  public void treatFailedCachedActionAsCacheMiss_remote() throws Exception {
-    // Test that bazel treats failed cache action as a cache miss and attempts to execute action
-    // remotely
-
-    CachedActionResult failedAction =
-        CachedActionResult.remote(ActionResult.newBuilder().setExitCode(1).build());
-    when(cache.downloadActionResult(
-            any(RemoteActionExecutionContext.class),
-            any(ActionKey.class),
-            /* inlineOutErr= */ eq(false),
-            /* inlineOutputFiles= */ eq(ImmutableSet.of())))
-        .thenReturn(failedAction);
-
-    RemoteSpawnRunner runner = newSpawnRunner();
-    RemoteExecutionService service = runner.getRemoteExecutionService();
-
-    ExecuteResponse succeeded =
-        ExecuteResponse.newBuilder()
-            .setResult(ActionResult.newBuilder().setExitCode(0).build())
-            .build();
-    when(executor.executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class)))
-        .thenReturn(succeeded);
-    Spawn spawn = newSimpleSpawn();
-    SpawnExecutionContext policy = getSpawnContext(spawn);
-
-    runner.exec(spawn, policy);
-
-    verify(service).executeRemotely(any(), eq(false), any());
-  }
-
-  @Test
-  public void treatCachedActionWithMissingOutputAsCacheMiss_duringRemoteCacheCheck()
-      throws Exception {
-    // Test that bazel treats a cached action with missing mandatory outputs as a cache miss and
-    // attempts to execute the action remotely.
-
-    var runner = newSpawnRunner();
-    var service = runner.getRemoteExecutionService();
-    var actionWithoutOutputs = CachedActionResult.remote(ActionResult.getDefaultInstance());
-    doReturn(RemoteActionResult.createFromCache(actionWithoutOutputs))
-        .when(service)
-        .lookupCache(any(RemoteAction.class));
-
-    var output =
-        ActionsTestUtil.createArtifactWithExecPath(
-            artifactRoot, PathFragment.create("outputs/out"));
-    var successfulResponse =
-        ExecuteResponse.newBuilder()
-            .setResult(
-                ActionResult.newBuilder()
-                    .setExitCode(0)
-                    .addOutputFiles(
-                        OutputFile.newBuilder()
-                            .setPath(output.getExecPathString())
-                            .setDigest(digestUtil.computeAsUtf8("content")))
-                    .build())
-            .build();
-    when(executor.executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class)))
-        .thenReturn(successfulResponse);
-    var spawn = newSimpleSpawn(output);
-    var spawnExecutionContext = getSpawnContext(spawn);
-
-    var result = runner.exec(spawn, spawnExecutionContext);
-    assertThat(result.status()).isEqualTo(Status.SUCCESS);
-
-    verify(service).executeRemotely(any(), eq(false), any());
-  }
-
-  @Test
-  public void treatCachedActionWithMissingOutputAsCacheMiss_duringRemoteExecution()
-      throws Exception {
-    // Test that bazel treats a cached execute result with missing mandatory outputs as a cache miss
-    // and reattempts to execute the action remotely, this time ignoring cached results.
-
-    var runner = newSpawnRunner();
-    var service = runner.getRemoteExecutionService();
-    // Ensure that the initial cache lookup doesn't already return a result with missing outputs -
-    // this case is covered by the previous test.
-    doReturn(null).when(service).lookupCache(any(RemoteAction.class));
-
-    var actionWithoutOutputs = CachedActionResult.remote(ActionResult.getDefaultInstance());
-    when(cache.downloadActionResult(
-            any(RemoteActionExecutionContext.class),
-            any(ActionKey.class),
-            /* inlineOutErr= */ eq(false),
-            /* inlineOutputFiles= */ eq(ImmutableSet.of())))
-        .thenReturn(actionWithoutOutputs);
-
-    var output =
-        ActionsTestUtil.createArtifactWithExecPath(
-            artifactRoot, PathFragment.create("outputs/out"));
-    var responseWithoutOutput =
-        ExecuteResponse.newBuilder()
-            .setResult(ActionResult.newBuilder().setExitCode(0).build())
-            .setCachedResult(true)
-            .build();
-    var responseWithOutput =
-        ExecuteResponse.newBuilder()
-            .setResult(
-                ActionResult.newBuilder()
-                    .setExitCode(0)
-                    .addOutputFiles(
-                        OutputFile.newBuilder()
-                            .setPath(output.getExecPathString())
-                            .setDigest(digestUtil.computeAsUtf8("content")))
-                    .build())
-            .build();
-    when(executor.executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class)))
-        .thenAnswer(
-            answer ->
-                answer.getArgument(1, ExecuteRequest.class).getSkipCacheLookup()
-                    ? responseWithOutput
-                    : responseWithoutOutput);
-    var spawn = newSimpleSpawn(output);
-    var spawnExecutionContext = getSpawnContext(spawn);
-
-    var result = runner.exec(spawn, spawnExecutionContext);
-    assertThat(result.status()).isEqualTo(Status.SUCCESS);
-
-    // The first execution attempt hits the cache and returns the result with missing outputs, the
-    // second attempt forcibly re-executes the action.
-    verify(service).executeRemotely(any(), eq(true), any());
-    verify(service).executeRemotely(any(), eq(false), any());
-  }
-
-  @Test
-  public void noRemoteExecutorFallbackFails() throws Exception {
-    // Errors from the fallback runner should be propagated out of the remote runner.
-
-    remoteOptions.setRemoteUploadLocalResults(true);
-    remoteOptions.setRemoteLocalFallback(true);
-
-    RemoteSpawnRunner runner = newSpawnRunner();
-    // Trigger local fallback
-    when(executor.executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class)))
-        .thenThrow(new IOException());
-
-    Spawn spawn = newSimpleSpawn();
-    SpawnExecutionContext policy = getSpawnContext(spawn);
-
-    when(cache.downloadActionResult(
-            any(RemoteActionExecutionContext.class),
-            any(ActionKey.class),
-            /* inlineOutErr= */ eq(false),
-            /* inlineOutputFiles= */ eq(ImmutableSet.of())))
-        .thenReturn(null);
-
-    IOException err = new IOException("local execution error");
-    when(localRunner.exec(eq(spawn), eq(policy))).thenThrow(err);
-
-    IOException e = assertThrows(IOException.class, () -> runner.exec(spawn, policy));
-    assertThat(e).isSameInstanceAs(err);
-
-    verify(localRunner).exec(eq(spawn), eq(policy));
-  }
-
-  @Test
-  public void remoteCacheErrorFallbackFails() throws Exception {
-    // Errors from the fallback runner should be propagated out of the remote runner.
-
-    remoteOptions.setRemoteUploadLocalResults(true);
-    remoteOptions.setRemoteLocalFallback(true);
-
-    RemoteSpawnRunner runner = newSpawnRunner();
-    // Trigger local fallback
-    when(executor.executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class)))
-        .thenThrow(new IOException());
-
-    Spawn spawn = newSimpleSpawn();
-    SpawnExecutionContext policy = getSpawnContext(spawn);
-
-    when(cache.downloadActionResult(
-            any(RemoteActionExecutionContext.class),
-            any(ActionKey.class),
-            /* inlineOutErr= */ eq(false),
-            /* inlineOutputFiles= */ eq(ImmutableSet.of())))
-        .thenThrow(new IOException());
-
-    IOException err = new IOException("local execution error");
-    when(localRunner.exec(eq(spawn), eq(policy))).thenThrow(err);
-
-    IOException e = assertThrows(IOException.class, () -> runner.exec(spawn, policy));
-    assertThat(e).isSameInstanceAs(err);
-
-    verify(localRunner).exec(eq(spawn), eq(policy));
-  }
-
-  @Test
-  public void testLocalFallbackFailureRemoteExecutorFailure() throws Exception {
-    remoteOptions.setRemoteLocalFallback(true);
-
-    RemoteSpawnRunner runner = newSpawnRunner();
-
-    when(cache.downloadActionResult(
-            any(RemoteActionExecutionContext.class),
-            any(ActionKey.class),
-            /* inlineOutErr= */ eq(false),
-            /* inlineOutputFiles= */ eq(ImmutableSet.of())))
-        .thenReturn(null);
-    when(executor.executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class)))
-        .thenThrow(new IOException());
-
-    Spawn spawn = newSimpleSpawn();
-    SpawnExecutionContext policy = getSpawnContext(spawn);
-
-    IOException err = new IOException("local execution error");
-    when(localRunner.exec(eq(spawn), eq(policy))).thenThrow(err);
-
-    IOException e = assertThrows(IOException.class, () -> runner.exec(spawn, policy));
-    assertThat(e).isSameInstanceAs(err);
-
-    verify(localRunner).exec(eq(spawn), eq(policy));
-  }
-
-  @Test
-  public void testHumanReadableServerLogsSavedForFailingAction() throws Exception {
-    RemoteSpawnRunner runner = newSpawnRunner();
-    RemoteExecutionService service = runner.getRemoteExecutionService();
-    Digest logDigest = digestUtil.computeAsUtf8("bla");
-    Path logPath = logDir.getRelative(SIMPLE_ACTION_ID).getRelative("logname");
-    ExecuteResponse resp =
-        ExecuteResponse.newBuilder()
-            .putServerLogs(
-                "logname", LogFile.newBuilder().setHumanReadable(true).setDigest(logDigest).build())
-            .setResult(ActionResult.newBuilder().setExitCode(31).build())
-            .build();
-    when(executor.executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class)))
-        .thenReturn(resp);
-    SettableFuture<Void> completed = SettableFuture.create();
-    completed.set(null);
-    when(cache.downloadFile(any(RemoteActionExecutionContext.class), eq(logPath), eq(logDigest)))
-        .thenReturn(completed);
-
-    Spawn spawn = newSimpleSpawn();
-    SpawnExecutionContext policy = getSpawnContext(spawn);
-
-    SpawnResult res = runner.exec(spawn, policy);
-    assertThat(res.status()).isEqualTo(Status.NON_ZERO_EXIT);
-
-    verify(executor)
-        .executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class));
-    verify(service).maybeDownloadServerLogs(any(), eq(resp), eq(logDir));
-    verify(cache).downloadFile(any(RemoteActionExecutionContext.class), eq(logPath), eq(logDigest));
-  }
-
-  @Test
-  public void testHumanReadableServerLogsSavedForFailingActionWithSiblingRepositoryLayout()
-      throws Exception {
-    RemoteSpawnRunner runner = newSpawnRunner(new SiblingRepositoryLayoutResolver(execRoot));
-    RemoteExecutionService service = runner.getRemoteExecutionService();
-    Digest logDigest = digestUtil.computeAsUtf8("bla");
-    Path logPath =
-        logDir
-            .getRelative("e0a5a3561464123504c1240b3587779cdfd6adee20f72aa136e388ecfd570c12")
-            .getRelative("logname");
-    ExecuteResponse resp =
-        ExecuteResponse.newBuilder()
-            .putServerLogs(
-                "logname", LogFile.newBuilder().setHumanReadable(true).setDigest(logDigest).build())
-            .setResult(ActionResult.newBuilder().setExitCode(31).build())
-            .build();
-    when(executor.executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class)))
-        .thenReturn(resp);
-    SettableFuture<Void> completed = SettableFuture.create();
-    completed.set(null);
-    when(cache.downloadFile(any(RemoteActionExecutionContext.class), eq(logPath), eq(logDigest)))
-        .thenReturn(completed);
-
-    Spawn spawn = newSimpleSpawn();
-    SpawnExecutionContext policy = getSpawnContext(spawn);
-
-    SpawnResult res = runner.exec(spawn, policy);
-    assertThat(res.status()).isEqualTo(Status.NON_ZERO_EXIT);
-
-    verify(executor)
-        .executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class));
-    verify(service).maybeDownloadServerLogs(any(), eq(resp), eq(logDir));
-    verify(cache).downloadFile(any(RemoteActionExecutionContext.class), eq(logPath), eq(logDigest));
-  }
-
-  @Test
-  public void testHumanReadableServerLogsSavedForFailingActionWithStatus() throws Exception {
-    RemoteSpawnRunner runner = newSpawnRunner();
-    RemoteExecutionService service = runner.getRemoteExecutionService();
-    Digest logDigest = digestUtil.computeAsUtf8("bla");
-    Path logPath = logDir.getRelative(SIMPLE_ACTION_ID).getRelative("logname");
-    com.google.rpc.Status timeoutStatus =
-        com.google.rpc.Status.newBuilder().setCode(Code.DEADLINE_EXCEEDED.getNumber()).build();
-    ExecuteResponse resp =
-        ExecuteResponse.newBuilder()
-            .putServerLogs(
-                "logname", LogFile.newBuilder().setHumanReadable(true).setDigest(logDigest).build())
-            .setStatus(timeoutStatus)
-            .build();
-    when(executor.executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class)))
-        .thenThrow(new IOException(new ExecutionStatusException(resp.getStatus(), resp)));
-    SettableFuture<Void> completed = SettableFuture.create();
-    completed.set(null);
-    when(cache.downloadFile(any(RemoteActionExecutionContext.class), eq(logPath), eq(logDigest)))
-        .thenReturn(completed);
-
-    Spawn spawn = newSimpleSpawn();
-    SpawnExecutionContext policy = getSpawnContext(spawn);
-
-    SpawnResult res = runner.exec(spawn, policy);
-    assertThat(res.status()).isEqualTo(Status.TIMEOUT);
-
-    verify(executor)
-        .executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class));
-    verify(service).maybeDownloadServerLogs(any(), eq(resp), eq(logDir));
-    verify(cache).downloadFile(any(RemoteActionExecutionContext.class), eq(logPath), eq(logDigest));
-  }
-
-  @Test
-  public void testNonHumanReadableServerLogsNotSaved() throws Exception {
-    // arrange
-    RemoteSpawnRunner runner = newSpawnRunner();
-    RemoteExecutionService service = runner.getRemoteExecutionService();
-
-    Digest logDigest = digestUtil.computeAsUtf8("bla");
-    ActionResult result = ActionResult.newBuilder().setExitCode(31).build();
-    ExecuteResponse resp =
-        ExecuteResponse.newBuilder()
-            .putServerLogs("logname", LogFile.newBuilder().setDigest(logDigest).build())
-            .setResult(result)
-            .build();
-    when(executor.executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class)))
-        .thenReturn(resp);
-
-    Spawn spawn = newSimpleSpawn();
-    FakeSpawnExecutionContext policy = getSpawnContext(spawn);
-
-    // act
-    SpawnResult res = runner.exec(spawn, policy);
-
-    // asset
-    assertThat(res.status()).isEqualTo(Status.NON_ZERO_EXIT);
-
-    verify(executor)
-        .executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class));
-    verify(service).maybeDownloadServerLogs(any(), eq(resp), eq(logDir));
-    verify(cache, never())
-        .downloadFile(any(RemoteActionExecutionContext.class), any(Path.class), any(Digest.class));
-  }
-
-  @Test
-  public void testServerLogsNotSavedForSuccessfulAction() throws Exception {
-    RemoteSpawnRunner runner = newSpawnRunner();
-    RemoteExecutionService service = runner.getRemoteExecutionService();
-
-    Digest logDigest = digestUtil.computeAsUtf8("bla");
-    ActionResult result = ActionResult.newBuilder().setExitCode(0).build();
-    ExecuteResponse resp =
-        ExecuteResponse.newBuilder()
-            .putServerLogs(
-                "logname", LogFile.newBuilder().setHumanReadable(true).setDigest(logDigest).build())
-            .setResult(result)
-            .build();
-    when(executor.executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class)))
-        .thenReturn(resp);
-
-    Spawn spawn = newSimpleSpawn();
-    FakeSpawnExecutionContext policy = getSpawnContext(spawn);
-
-    SpawnResult res = runner.exec(spawn, policy);
-    assertThat(res.status()).isEqualTo(Status.SUCCESS);
-
-    verify(executor)
-        .executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class));
-    verify(service).downloadOutputs(any(), eq(RemoteActionResult.createFromResponse(resp)));
-    verify(service).maybeDownloadServerLogs(any(), eq(resp), eq(logDir));
-    verify(cache, never())
-        .downloadFile(any(RemoteActionExecutionContext.class), any(Path.class), any(Digest.class));
-  }
-
-  @Test
-  public void cacheDownloadFailureTriggersRemoteExecution() throws Exception {
-    // If downloading a cached action fails, remote execution should be tried.
-
-    // arrange
-    RemoteSpawnRunner runner = newSpawnRunner();
-    RemoteExecutionService service = runner.getRemoteExecutionService();
-
-    CachedActionResult cachedResult =
-        CachedActionResult.remote(ActionResult.newBuilder().setExitCode(0).build());
-    when(cache.downloadActionResult(
-            any(RemoteActionExecutionContext.class),
-            any(ActionKey.class),
-            /* inlineOutErr= */ eq(false),
-            /* inlineOutputFiles= */ eq(ImmutableSet.of())))
-        .thenReturn(cachedResult);
-    Exception downloadFailure =
-        new BulkTransferException(new CacheNotFoundException(Digest.getDefaultInstance()));
-    doThrow(downloadFailure)
-        .when(service)
-        .downloadOutputs(any(), eq(RemoteActionResult.createFromCache(cachedResult)));
-    ActionResult execResult = ActionResult.newBuilder().setExitCode(31).build();
-    ExecuteResponse succeeded = ExecuteResponse.newBuilder().setResult(execResult).build();
-    when(executor.executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class)))
-        .thenReturn(succeeded);
-    doReturn(null)
-        .when(service)
-        .downloadOutputs(any(), eq(RemoteActionResult.createFromResponse(succeeded)));
-
-    Spawn spawn = newSimpleSpawn();
-
-    SpawnExecutionContext policy = getSpawnContext(spawn);
-
-    // act
-    SpawnResult res = runner.exec(spawn, policy);
-
-    // assert
-    assertThat(res.status()).isEqualTo(Status.NON_ZERO_EXIT);
-    assertThat(res.exitCode()).isEqualTo(31);
-
-    verify(executor)
-        .executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class));
-  }
-
-  @Test
-  public void resultsDownloadFailureTriggersRemoteExecutionWithSkipCacheLookup() throws Exception {
-    // If downloading an action result fails, remote execution should be retried
-    // with skip cache lookup enabled
-
-    // arrange
-    RemoteSpawnRunner runner = newSpawnRunner();
-    RemoteExecutionService service = runner.getRemoteExecutionService();
-
-    when(cache.downloadActionResult(
-            any(RemoteActionExecutionContext.class),
-            any(ActionKey.class),
-            /* inlineOutErr= */ eq(false),
-            /* inlineOutputFiles= */ eq(ImmutableSet.of())))
-        .thenReturn(null);
-    ActionResult cachedResult = ActionResult.newBuilder().setExitCode(0).build();
-    ActionResult execResult = ActionResult.newBuilder().setExitCode(31).build();
-    ExecuteResponse cachedResponse =
-        ExecuteResponse.newBuilder().setResult(cachedResult).setCachedResult(true).build();
-    ExecuteResponse executedResponse = ExecuteResponse.newBuilder().setResult(execResult).build();
-    when(executor.executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class)))
-        .thenReturn(cachedResponse)
-        .thenReturn(executedResponse);
-    Exception downloadFailure =
-        new BulkTransferException(new CacheNotFoundException(Digest.getDefaultInstance()));
-    doThrow(downloadFailure)
-        .when(service)
-        .downloadOutputs(any(), eq(RemoteActionResult.createFromResponse(cachedResponse)));
-    doReturn(null)
-        .when(service)
-        .downloadOutputs(any(), eq(RemoteActionResult.createFromResponse(executedResponse)));
-
-    Spawn spawn = newSimpleSpawn();
-
-    SpawnExecutionContext policy = getSpawnContext(spawn);
-
-    // act
-    SpawnResult res = runner.exec(spawn, policy);
-
-    // assert
-    assertThat(res.status()).isEqualTo(Status.NON_ZERO_EXIT);
-    assertThat(res.exitCode()).isEqualTo(31);
-
-    ArgumentCaptor<ExecuteRequest> requestCaptor = ArgumentCaptor.forClass(ExecuteRequest.class);
-    verify(executor, times(2))
-        .executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            requestCaptor.capture(),
-            any(OperationObserver.class));
-    List<ExecuteRequest> requests = requestCaptor.getAllValues();
-    // first request should have been executed without skip cache lookup
-    assertThat(requests.get(0).getSkipCacheLookup()).isFalse();
-    // second should have been executed with skip cache lookup
-    assertThat(requests.get(1).getSkipCacheLookup()).isTrue();
-  }
-
-  @Test
-  public void testRemoteExecutionTimeout() throws Exception {
-    // If remote execution times out the SpawnResult status should be TIMEOUT.
-
-    remoteOptions.setRemoteLocalFallback(false);
-
-    RemoteSpawnRunner runner = newSpawnRunner();
-    RemoteExecutionService service = runner.getRemoteExecutionService();
-
-    ActionResult cachedResult = ActionResult.newBuilder().setExitCode(0).build();
-    when(cache.downloadActionResult(
-            any(RemoteActionExecutionContext.class),
-            any(ActionKey.class),
-            /* inlineOutErr= */ eq(false),
-            /* inlineOutputFiles= */ eq(ImmutableSet.of())))
-        .thenReturn(null);
-    ExecuteResponse resp =
-        ExecuteResponse.newBuilder()
-            .setResult(cachedResult)
-            .setStatus(
-                com.google.rpc.Status.newBuilder()
-                    .setCode(Code.DEADLINE_EXCEEDED.getNumber())
-                    .build())
-            .build();
-    when(executor.executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class)))
-        .thenThrow(new IOException(new ExecutionStatusException(resp.getStatus(), resp)));
-
-    Spawn spawn = newSimpleSpawn();
-
-    SpawnExecutionContext policy = getSpawnContext(spawn);
-
-    SpawnResult res = runner.exec(spawn, policy);
-    assertThat(res.status()).isEqualTo(Status.TIMEOUT);
-
-    verify(executor)
-        .executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class));
-    verify(service).downloadOutputs(any(), eq(RemoteActionResult.createFromResponse(resp)));
-  }
-
-  @Test
-  public void testRemoteExecutionTimeoutTimings() throws Exception {
-    // If remote execution times out the SpawnResult should still have the start and wall times
-    // reported correctly.
-
-    remoteOptions.setRemoteLocalFallback(false);
-
-    RemoteSpawnRunner runner = newSpawnRunner();
-    RemoteExecutionService service = runner.getRemoteExecutionService();
-
-    com.google.protobuf.Duration oneSecond = Durations.fromMillis(1000);
-    Timestamp executionStart = Timestamp.getDefaultInstance();
-    Timestamp executionCompleted = Timestamps.add(executionStart, oneSecond);
-    ExecutedActionMetadata executedMetadata =
-        ExecutedActionMetadata.newBuilder()
-            .setExecutionStartTimestamp(executionStart)
-            .setExecutionCompletedTimestamp(executionCompleted)
-            .build();
-
-    ActionResult cachedResult =
-        ActionResult.newBuilder().setExitCode(0).setExecutionMetadata(executedMetadata).build();
-    when(cache.downloadActionResult(
-            any(RemoteActionExecutionContext.class),
-            any(ActionKey.class),
-            /* inlineOutErr= */ eq(false),
-            /* inlineOutputFiles= */ eq(ImmutableSet.of())))
-        .thenReturn(null);
-    ExecuteResponse resp =
-        ExecuteResponse.newBuilder()
-            .setResult(cachedResult)
-            .setStatus(
-                com.google.rpc.Status.newBuilder()
-                    .setCode(Code.DEADLINE_EXCEEDED.getNumber())
-                    .build())
-            .build();
-    when(executor.executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class)))
-        .thenThrow(new IOException(new ExecutionStatusException(resp.getStatus(), resp)));
-
-    Spawn spawn = newSimpleSpawn();
-
-    SpawnExecutionContext policy = getSpawnContext(spawn);
-
-    SpawnResult res = runner.exec(spawn, policy);
-    assertThat(res.status()).isEqualTo(Status.TIMEOUT);
-    assertThat(res.getWallTimeInMs()).isEqualTo(1000);
-    assertThat(res.getStartTime())
-        .isEqualTo(Instant.ofEpochSecond(executionStart.getSeconds(), executionStart.getNanos()));
-
-    verify(executor)
-        .executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class));
-    verify(service).downloadOutputs(any(), eq(RemoteActionResult.createFromResponse(resp)));
-  }
-
-  @Test
-  public void testRemoteExecutionTimeoutDoesNotTriggerFallback() throws Exception {
-    // If remote execution times out the SpawnResult status should be TIMEOUT, regardess of local
-    // fallback option.
-
-    remoteOptions.setRemoteLocalFallback(true);
-
-    RemoteSpawnRunner runner = newSpawnRunner();
-    RemoteExecutionService service = runner.getRemoteExecutionService();
-
-    ActionResult cachedResult = ActionResult.newBuilder().setExitCode(0).build();
-    when(cache.downloadActionResult(
-            any(RemoteActionExecutionContext.class),
-            any(ActionKey.class),
-            /* inlineOutErr= */ eq(false),
-            /* inlineOutputFiles= */ eq(ImmutableSet.of())))
-        .thenReturn(null);
-    ExecuteResponse resp =
-        ExecuteResponse.newBuilder()
-            .setResult(cachedResult)
-            .setStatus(
-                com.google.rpc.Status.newBuilder()
-                    .setCode(Code.DEADLINE_EXCEEDED.getNumber())
-                    .build())
-            .build();
-    when(executor.executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class)))
-        .thenThrow(new IOException(new ExecutionStatusException(resp.getStatus(), resp)));
-
-    Spawn spawn = newSimpleSpawn();
-
-    SpawnExecutionContext policy = getSpawnContext(spawn);
-
-    SpawnResult res = runner.exec(spawn, policy);
-    assertThat(res.status()).isEqualTo(Status.TIMEOUT);
-
-    verify(executor)
-        .executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class));
-    verify(service).downloadOutputs(any(), eq(RemoteActionResult.createFromResponse(resp)));
-    verify(localRunner, never()).exec(eq(spawn), eq(policy));
-  }
-
-  @Test
-  public void testRemoteExecutionCommandFailureDoesNotTriggerFallback() throws Exception {
-    remoteOptions.setRemoteLocalFallback(true);
-
-    RemoteSpawnRunner runner = newSpawnRunner();
-    RemoteExecutionService service = runner.getRemoteExecutionService();
-
-    when(cache.downloadActionResult(
-            any(RemoteActionExecutionContext.class),
-            any(ActionKey.class),
-            /* inlineOutErr= */ eq(false),
-            /* inlineOutputFiles= */ eq(ImmutableSet.of())))
-        .thenReturn(null);
-    ExecuteResponse failed =
-        ExecuteResponse.newBuilder()
-            .setResult(ActionResult.newBuilder().setExitCode(33).build())
-            .build();
-    when(executor.executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class)))
-        .thenReturn(failed);
-
-    Spawn spawn = newSimpleSpawn();
-
-    SpawnExecutionContext policy = getSpawnContext(spawn);
-
-    SpawnResult res = runner.exec(spawn, policy);
-    assertThat(res.status()).isEqualTo(Status.NON_ZERO_EXIT);
-    assertThat(res.exitCode()).isEqualTo(33);
-
-    verify(executor)
-        .executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class));
-    verify(service).downloadOutputs(any(), eq(RemoteActionResult.createFromResponse(failed)));
-    verify(localRunner, never()).exec(eq(spawn), eq(policy));
-  }
-
-  @Test
-  public void testExitCode_executorfailure() throws Exception {
-    // If we get a failure due to the remote cache not working, the exit code should be
-    // ExitCode.REMOTE_ERROR.
-
-    remoteOptions.setRemoteLocalFallback(false);
-
-    RemoteSpawnRunner runner = newSpawnRunner();
-
-    when(cache.downloadActionResult(
-            any(RemoteActionExecutionContext.class),
-            any(ActionKey.class),
-            /* inlineOutErr= */ eq(false),
-            /* inlineOutputFiles= */ eq(ImmutableSet.of())))
-        .thenReturn(null);
-    when(executor.executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class)))
-        .thenThrow(new IOException("reasons"));
-
-    Spawn spawn = newSimpleSpawn();
-    SpawnExecutionContext policy = getSpawnContext(spawn);
-
-    SpawnResult result = runner.exec(spawn, policy);
-    assertThat(result.exitCode()).isEqualTo(ExitCode.REMOTE_ERROR.numericExitCode);
-    assertThat(result.getFailureMessage()).contains("reasons");
-  }
-
-  @Test
-  public void testExitCode_executionfailure() throws Exception {
-    // If we get a failure due to the remote executor not working, the exit code should be
-    // ExitCode.REMOTE_ERROR.
-
-    remoteOptions.setRemoteLocalFallback(false);
-
-    RemoteSpawnRunner runner = newSpawnRunner();
-
-    when(cache.downloadActionResult(
-            any(RemoteActionExecutionContext.class),
-            any(ActionKey.class),
-            /* inlineOutErr= */ eq(false),
-            /* inlineOutputFiles= */ eq(ImmutableSet.of())))
-        .thenThrow(new IOException("reasons"));
-
-    Spawn spawn = newSimpleSpawn();
-    SpawnExecutionContext policy = getSpawnContext(spawn);
-
-    SpawnResult result = runner.exec(spawn, policy);
-    assertThat(result.exitCode()).isEqualTo(ExitCode.REMOTE_ERROR.numericExitCode);
-    assertThat(result.getFailureMessage()).contains("reasons");
-  }
-
-  @Test
-  public void testExitCode_remoteMessage() throws Exception {
-    remoteOptions.setRemoteLocalFallback(false);
-
-    RemoteSpawnRunner runner = newSpawnRunner();
-
-    ExecutionStatusException cause =
-        new ExecutionStatusException(
-            com.google.rpc.Status.getDefaultInstance(),
-            ExecuteResponse.newBuilder().setMessage("beep and indeed boop").build());
-
-    when(cache.downloadActionResult(
-            any(RemoteActionExecutionContext.class),
-            any(ActionKey.class),
-            /* inlineOutErr= */ eq(false),
-            /* inlineOutputFiles= */ eq(ImmutableSet.of())))
-        .thenReturn(null);
-    when(executor.executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class)))
-        .thenThrow(new IOException("reasons", cause));
-
-    Spawn spawn = newSimpleSpawn();
-    SpawnExecutionContext policy = getSpawnContext(spawn);
-
-    SpawnResult result = runner.exec(spawn, policy);
-    assertThat(result.exitCode()).isEqualTo(ExitCode.REMOTE_ERROR.numericExitCode);
-    assertThat(result.getFailureMessage()).contains("beep and indeed boop");
-  }
-
-  @Test
-  public void testMaterializeParamFiles() throws Exception {
-    testParamFilesAreMaterializedForFlag("--materialize_param_files");
-  }
-
-  @Test
-  public void testMaterializeParamFilesIsImpliedBySubcommands() throws Exception {
-    testParamFilesAreMaterializedForFlag("--subcommands");
-  }
-
-  private void testParamFilesAreMaterializedForFlag(String flag) throws Exception {
-    RemoteOptions remoteOptions = Options.getDefaults(RemoteOptions.class);
-    ExecutionOptions executionOptions = Options.parse(ExecutionOptions.class, flag).options;
-    RemoteExecutionService remoteExecutionService =
-        new RemoteExecutionService(
-            reporter,
-            /* verboseFailures= */ true,
-            execRoot,
-            RemotePathResolver.createDefault(execRoot),
-            "build-req-id",
-            "command-id",
-            TestConstants.WORKSPACE_NAME,
-            digestUtil,
-            remoteOptions,
-            executionOptions,
-            cache,
-            executor,
-            tempPathGenerator,
-            /* captureCorruptedOutputsDir= */ null,
-            remoteOutputChecker,
-            mock(OutputService.class),
-            Sets.newConcurrentHashSet());
-    RemoteSpawnRunner runner =
-        new RemoteSpawnRunner(
-            remoteOptions,
-            /* verboseFailures= */ true,
-            /* cmdlineReporter= */ null,
-            retryService,
-            logDir,
-            remoteExecutionService,
-            digestUtil);
-
-    ExecuteResponse succeeded =
-        ExecuteResponse.newBuilder()
-            .setResult(ActionResult.newBuilder().setExitCode(0).build())
-            .build();
-    when(executor.executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class)))
-        .thenReturn(succeeded);
-
-    ImmutableList<String> args = ImmutableList.of("--foo", "--bar");
-    ParamFileActionInput input =
-        new ParamFileActionInput(
-            PathFragment.create("out/param_file"), args, ParameterFileType.UNQUOTED);
-    Spawn spawn =
-        new SimpleSpawn(
-            new FakeOwner("foo", "bar", "//dummy:label"),
-            /* arguments= */ ImmutableList.of(),
-            /* environment= */ ImmutableMap.of(),
-            /* executionInfo= */ ImmutableMap.of(),
-            /* inputs= */ NestedSetBuilder.create(Order.STABLE_ORDER, input),
-            /* outputs= */ ImmutableSet.<ActionInput>of(),
-            ResourceSet.ZERO);
-    SpawnExecutionContext policy = getSpawnContext(spawn);
-    SpawnResult res = runner.exec(spawn, policy);
-    assertThat(res.status()).isEqualTo(Status.SUCCESS);
-    Path paramFile = execRoot.getRelative("out/param_file");
-    assertThat(paramFile.exists()).isTrue();
-    try (InputStream inputStream = paramFile.getInputStream()) {
-      assertThat(
-              new String(ByteStreams.toByteArray(inputStream), StandardCharsets.UTF_8).split("\n"))
-          .asList()
-          .containsExactly("--foo", "--bar");
+package com.google.devtools.build.lib.remote
+
+import build.bazel.remote.execution.v2.ActionResult
+
+/** Tests for [com.google.devtools.build.lib.remote.RemoteSpawnRunner]  */
+@RunWith(JUnit4::class)
+class RemoteSpawnRunnerTest {
+    @org.junit.Rule
+    val mockito: MockitoRule = MockitoJUnit.rule()
+
+    @org.mockito.Mock
+    private val remoteOutputChecker: RemoteOutputChecker? = null // download nothing by default.
+
+    private val reporter: com.google.devtools.build.lib.events.Reporter =
+        com.google.devtools.build.lib.events.Reporter(EventBusEventHandler.createWithNewEventBus())
+    private var retryService: com.google.common.util.concurrent.ListeningScheduledExecutorService? = null
+
+    private var fs: FileSystem? = null
+    private var execRoot: Path? = null
+    private var artifactRoot: ArtifactRoot? = null
+    private var tempPathGenerator: TempPathGenerator? = null
+    private var logDir: Path? = null
+    private var digestUtil: DigestUtil? = null
+    private var fakeFileCache: com.google.devtools.build.lib.remote.FakeActionInputFileCache? = null
+    private var outErr: FileOutErr? = null
+
+    private var remoteOptions: RemoteOptions? = null
+
+    @org.mockito.Mock
+    private val cache: RemoteExecutionCache? = null
+
+    @org.mockito.Mock
+    private val executor: RemoteExecutionClient? = null
+
+    @org.mockito.Mock
+    private val localRunner: SpawnRunner? = null
+
+    private val remoteExecutorCapabilities: ServerCapabilities? = ServerCapabilities.newBuilder()
+        .setLowApiVersion(ApiVersion.low.toSemVer())
+        .setHighApiVersion(ApiVersion.high.toSemVer())
+        .setExecutionCapabilities(ExecutionCapabilities.newBuilder().setExecEnabled(true).build())
+        .build()
+
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun setUp() {
+        MockitoAnnotations.initMocks(this)
+        digestUtil = DigestUtil(SyscallCache.NO_CACHE, DigestHashFunction.SHA256)
+        fs = InMemoryFileSystem(com.google.devtools.build.lib.clock.JavaClock(), DigestHashFunction.SHA256)
+        execRoot = fs.getPath("/exec/root")
+        execRoot.createDirectoryAndParents()
+        artifactRoot = ArtifactRoot.asDerivedRoot(execRoot, RootType.OUTPUT, "outputs")
+        artifactRoot.getRoot().asPath().createDirectoryAndParents()
+        tempPathGenerator = TempPathGenerator(fs.getPath("/execroot/_tmp/actions/remote"))
+        logDir = fs.getPath("/server-logs")
+        fakeFileCache = com.google.devtools.build.lib.remote.FakeActionInputFileCache(execRoot)
+
+        val stdout: Path = fs.getPath("/tmp/stdout")
+        val stderr: Path = fs.getPath("/tmp/stderr")
+        stdout.getParentDirectory().createDirectoryAndParents()
+        stderr.getParentDirectory().createDirectoryAndParents()
+        outErr = FileOutErr(stdout, stderr)
+
+        remoteOptions = com.google.devtools.common.options.Options.getDefaults<O>(RemoteOptions::class.java)
+
+        retryService =
+            com.google.common.util.concurrent.MoreExecutors.listeningDecorator(Executors.newScheduledThreadPool(1))
+        Mockito.`when`<T?>(cache.hasRemoteCache()).thenReturn(true)
+        Mockito.doReturn(remoteExecutorCapabilities).`when`<Any?>(cache).getRemoteServerCapabilities()
+        Mockito.`when`<T?>(executor.getServerCapabilities()).thenReturn(remoteExecutorCapabilities)
+        Mockito.`when`<T?>(cache.remoteActionCacheSupportsUpdate()).thenReturn(true)
     }
-  }
 
-  @Test
-  public void testDownloadMinimalOnCacheHit() throws Exception {
-    // arrange
-    remoteOptions.setRemoteOutputsMode(RemoteOutputsMode.MINIMAL);
-
-    ActionResult succeededAction = ActionResult.newBuilder().setExitCode(0).build();
-    RemoteActionResult actionResult =
-        RemoteActionResult.createFromCache(CachedActionResult.remote(succeededAction));
-
-    RemoteSpawnRunner runner = newSpawnRunner();
-    RemoteExecutionService service = runner.getRemoteExecutionService();
-    doReturn(actionResult).when(service).lookupCache(any());
-    doReturn(null).when(service).downloadOutputs(any(), any());
-
-    Spawn spawn = newSimpleSpawn();
-    SpawnExecutionContext policy = getSpawnContext(spawn);
-
-    // act
-    SpawnResult result = runner.exec(spawn, policy);
-    assertThat(result.exitCode()).isEqualTo(0);
-    assertThat(result.status()).isEqualTo(Status.SUCCESS);
-
-    // assert
-    verify(service).downloadOutputs(any(), eq(actionResult));
-  }
-
-  @Test
-  public void testDownloadMinimalOnCacheMiss() throws Exception {
-    // arrange
-    remoteOptions.setRemoteOutputsMode(RemoteOutputsMode.MINIMAL);
-
-    ActionResult succeededAction = ActionResult.newBuilder().setExitCode(0).build();
-    ExecuteResponse succeeded = ExecuteResponse.newBuilder().setResult(succeededAction).build();
-    when(executor.executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class)))
-        .thenReturn(succeeded);
-
-    RemoteSpawnRunner runner = newSpawnRunner();
-    RemoteExecutionService service = runner.getRemoteExecutionService();
-    doReturn(null).when(service).downloadOutputs(any(), any());
-
-    Spawn spawn = newSimpleSpawn();
-    FakeSpawnExecutionContext policy = getSpawnContext(spawn);
-
-    // act
-    SpawnResult result = runner.exec(spawn, policy);
-    assertThat(result.exitCode()).isEqualTo(0);
-    assertThat(result.status()).isEqualTo(Status.SUCCESS);
-
-    // assert
-    verify(executor)
-        .executeRemotely(
-            any(RemoteActionExecutionContext.class), any(), any(OperationObserver.class));
-    verify(service).downloadOutputs(any(), eq(RemoteActionResult.createFromResponse(succeeded)));
-  }
-
-  @Test
-  public void testDownloadMinimalIoError() throws Exception {
-    // arrange
-    remoteOptions.setRemoteOutputsMode(RemoteOutputsMode.MINIMAL);
-
-    ActionResult succeededAction = ActionResult.newBuilder().setExitCode(0).build();
-    RemoteActionResult cachedActionResult =
-        RemoteActionResult.createFromCache(CachedActionResult.remote(succeededAction));
-    IOException downloadFailure = new IOException("downloadMinimal failed");
-
-    RemoteSpawnRunner runner = newSpawnRunner();
-    RemoteExecutionService service = runner.getRemoteExecutionService();
-
-    doReturn(RemoteActionResult.createFromCache(CachedActionResult.remote(succeededAction)))
-        .when(service)
-        .lookupCache(any());
-    doThrow(downloadFailure).when(service).downloadOutputs(any(), eq(cachedActionResult));
-
-    Spawn spawn = newSimpleSpawn();
-    FakeSpawnExecutionContext policy = getSpawnContext(spawn);
-
-    // act
-    SpawnResult result = runner.exec(spawn, policy);
-    assertThat(result.getFailureMessage()).isEqualTo(downloadFailure.getMessage());
-
-    // assert
-    verify(service).downloadOutputs(any(), eq(cachedActionResult));
-  }
-
-  @Test
-  public void testDigest() throws Exception {
-    RemoteSpawnRunner runner = newSpawnRunner();
-    RemoteExecutionService service = runner.getRemoteExecutionService();
-
-    ExecuteResponse resp =
-        ExecuteResponse.newBuilder()
-            .setResult(ActionResult.newBuilder().setExitCode(0).build())
-            .build();
-    when(executor.executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class)))
-        .thenReturn(resp);
-
-    Spawn spawn = newSimpleSpawn();
-    FakeSpawnExecutionContext policy = getSpawnContext(spawn);
-
-    SpawnResult res = runner.exec(spawn, policy);
-    assertThat(res.status()).isEqualTo(Status.SUCCESS);
-
-    ArgumentCaptor<RemoteAction> requestCaptor = ArgumentCaptor.forClass(RemoteAction.class);
-
-    verify(service)
-        .executeRemotely(requestCaptor.capture(), anyBoolean(), any(OperationObserver.class));
-
-    assertThat(policy.getDigest())
-        .isEqualTo(digestUtil.asSpawnLogProto(requestCaptor.getValue().getActionKey()));
-
-    assertThat(res.getDigest())
-        .isEqualTo(digestUtil.asSpawnLogProto(requestCaptor.getValue().getActionKey()));
-  }
-
-  @Test
-  public void accountingDisabledWithoutWorker() {
-    SpawnMetrics.Builder spawnMetrics = Mockito.mock(SpawnMetrics.Builder.class);
-    RemoteSpawnRunner.spawnMetricsAccounting(
-        spawnMetrics, ExecutedActionMetadata.getDefaultInstance());
-    verifyNoMoreInteractions(spawnMetrics);
-  }
-
-  @Test
-  public void accountingAddsDurationsForStages() {
-    SpawnMetrics.Builder builder =
-        SpawnMetrics.Builder.forRemoteExec()
-            .setQueueTimeInMs(1 * 1000)
-            .setSetupTimeInMs(2 * 1000)
-            .setExecutionWallTimeInMs(2 * 1000)
-            .setProcessOutputsTimeInMs(2 * 1000);
-    Timestamp queued = Timestamp.getDefaultInstance();
-    com.google.protobuf.Duration oneSecond = Durations.fromMillis(1000);
-    Timestamp workerStart = Timestamps.add(queued, oneSecond);
-    Timestamp executionStart = Timestamps.add(workerStart, oneSecond);
-    Timestamp executionCompleted = Timestamps.add(executionStart, oneSecond);
-    Timestamp outputUploadStart = Timestamps.add(executionCompleted, oneSecond);
-    Timestamp outputUploadComplete = Timestamps.add(outputUploadStart, oneSecond);
-    ExecutedActionMetadata executedMetadata =
-        ExecutedActionMetadata.newBuilder()
-            .setWorker("test worker")
-            .setQueuedTimestamp(queued)
-            .setWorkerStartTimestamp(workerStart)
-            .setExecutionStartTimestamp(executionStart)
-            .setExecutionCompletedTimestamp(executionCompleted)
-            .setOutputUploadStartTimestamp(outputUploadStart)
-            .setOutputUploadCompletedTimestamp(outputUploadComplete)
-            .build();
-    RemoteSpawnRunner.spawnMetricsAccounting(builder, executedMetadata);
-    SpawnMetrics spawnMetrics = builder.build();
-    // remote queue time is accumulated
-    assertThat(spawnMetrics.queueTimeInMs()).isEqualTo(2 * 1000L);
-    // setup time is substituted
-    assertThat(spawnMetrics.setupTimeInMs()).isEqualTo(1 * 1000L);
-    // execution time is unspecified, assume substituted
-    assertThat(spawnMetrics.executionWallTimeInMs()).isEqualTo(1 * 1000L);
-    // ProcessOutputs time is unspecified, assume substituted
-    assertThat(spawnMetrics.processOutputsTimeInMs()).isEqualTo(1 * 1000L);
-  }
-
-  @Test
-  public void shouldReportCheckingCacheBeforeScheduling() throws Exception {
-    // Prepare a faked/mocked remote SpawnExecutionContext.
-    RemoteSpawnRunner runner = newSpawnRunner();
-    RemoteExecutionService service = runner.getRemoteExecutionService();
-    ExecuteResponse succeeded =
-        ExecuteResponse.newBuilder()
-            .setResult(ActionResult.newBuilder().setExitCode(0).build())
-            .build();
-
-    Spawn spawn = newSimpleSpawn();
-    SpawnExecutionContext policy = mock(SpawnExecutionContext.class);
-    when(policy.timeout).thenReturn(Duration.ZERO);
-
-    when(executor.executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class)))
-        .thenAnswer(
-            invocationOnMock -> {
-              OperationObserver receiver = invocationOnMock.getArgument(2);
-              receiver.onNext(Operation.getDefaultInstance());
-              return succeeded;
-            });
-
-    doReturn(null).when(service).downloadOutputs(any(), any());
-
-    // Run the faked spawn.
-    SpawnResult res = runner.exec(spawn, policy);
-
-    // Verify expected behavior with mocked remote SpawnExecutionContext.
-    assertThat(res.status()).isEqualTo(Status.SUCCESS);
-    verify(executor)
-        .executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class));
-    InOrder reportOrder = inOrder(policy);
-    reportOrder.verify(policy, times(1)).report(SpawnCheckingCacheEvent.create("remote"));
-    reportOrder.verify(policy, times(1)).report(SpawnSchedulingEvent.create("remote"));
-    reportOrder.verify(policy, times(1)).report(SpawnExecutingEvent.create("remote"));
-  }
-
-  @Test
-  public void shouldReportExecutingStatusWithoutMetadata() throws Exception {
-    // arrange
-    RemoteSpawnRunner runner = newSpawnRunner();
-    RemoteExecutionService service = runner.getRemoteExecutionService();
-    ExecuteResponse succeeded =
-        ExecuteResponse.newBuilder()
-            .setResult(ActionResult.newBuilder().setExitCode(0).build())
-            .build();
-
-    Spawn spawn = newSimpleSpawn();
-    SpawnExecutionContext policy = mock(SpawnExecutionContext.class);
-    when(policy.timeout).thenReturn(Duration.ZERO);
-
-    when(executor.executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class)))
-        .thenAnswer(
-            invocationOnMock -> {
-              OperationObserver receiver = invocationOnMock.getArgument(2);
-              verify(policy, never()).report(SpawnExecutingEvent.create("remote"));
-              receiver.onNext(Operation.getDefaultInstance());
-              return succeeded;
-            });
-
-    doReturn(null).when(service).downloadOutputs(any(), any());
-
-    // act
-    SpawnResult res = runner.exec(spawn, policy);
-    assertThat(res.status()).isEqualTo(Status.SUCCESS);
-
-    // assert
-    verify(executor)
-        .executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class));
-    InOrder reportOrder = inOrder(policy);
-    reportOrder.verify(policy, times(1)).report(SpawnSchedulingEvent.create("remote"));
-    reportOrder.verify(policy, times(1)).report(SpawnExecutingEvent.create("remote"));
-  }
-
-  @Test
-  public void shouldReportExecutingStatusAfterGotExecutingStageFromMetadata() throws Exception {
-    // arrange
-    RemoteSpawnRunner runner = newSpawnRunner();
-    RemoteExecutionService service = runner.getRemoteExecutionService();
-    ExecuteResponse succeeded =
-        ExecuteResponse.newBuilder()
-            .setResult(ActionResult.newBuilder().setExitCode(0).build())
-            .build();
-
-    Spawn spawn = newSimpleSpawn();
-    SpawnExecutionContext policy = mock(SpawnExecutionContext.class);
-    when(policy.timeout).thenReturn(Duration.ZERO);
-
-    when(executor.executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class)))
-        .thenAnswer(
-            invocationOnMock -> {
-              OperationObserver receiver = invocationOnMock.getArgument(2);
-              Operation queued =
-                  Operation.newBuilder()
-                      .setMetadata(
-                          Any.pack(
-                              ExecuteOperationMetadata.newBuilder().setStage(Value.QUEUED).build()))
-                      .build();
-              receiver.onNext(queued);
-              verify(policy, never()).report(SpawnExecutingEvent.create("remote"));
-
-              Operation executing =
-                  Operation.newBuilder()
-                      .setMetadata(
-                          Any.pack(
-                              ExecuteOperationMetadata.newBuilder()
-                                  .setStage(Value.EXECUTING)
-                                  .build()))
-                      .build();
-              receiver.onNext(executing);
-
-              return succeeded;
-            });
-
-    doReturn(null).when(service).downloadOutputs(any(), any());
-
-    // act
-    SpawnResult res = runner.exec(spawn, policy);
-    assertThat(res.status()).isEqualTo(Status.SUCCESS);
-
-    // assert
-    verify(executor)
-        .executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class));
-    InOrder reportOrder = inOrder(policy);
-    reportOrder.verify(policy, times(1)).report(SpawnSchedulingEvent.create("remote"));
-    reportOrder.verify(policy, times(1)).report(SpawnExecutingEvent.create("remote"));
-  }
-
-  @Test
-  public void shouldIgnoreInvalidMetadata() throws Exception {
-    // arrange
-    RemoteSpawnRunner runner = newSpawnRunner();
-    RemoteExecutionService service = runner.getRemoteExecutionService();
-    ExecuteResponse succeeded =
-        ExecuteResponse.newBuilder()
-            .setResult(ActionResult.newBuilder().setExitCode(0).build())
-            .build();
-
-    Spawn spawn = newSimpleSpawn();
-    SpawnExecutionContext policy = mock(SpawnExecutionContext.class);
-    when(policy.timeout).thenReturn(Duration.ZERO);
-
-    when(executor.executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class)))
-        .thenAnswer(
-            invocationOnMock -> {
-              OperationObserver receiver = invocationOnMock.getArgument(2);
-              Operation operation =
-                  Operation.newBuilder()
-                      .setMetadata(
-                          // Anything that is not ExecutionOperationMetadata
-                          Any.pack(Operation.getDefaultInstance()))
-                      .build();
-              receiver.onNext(operation);
-              return succeeded;
-            });
-
-    doReturn(null).when(service).downloadOutputs(any(), any());
-
-    // act
-    SpawnResult res = runner.exec(spawn, policy);
-    assertThat(res.status()).isEqualTo(Status.SUCCESS);
-
-    // assert
-    verify(executor)
-        .executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class));
-    InOrder reportOrder = inOrder(policy);
-    reportOrder.verify(policy, times(1)).report(SpawnSchedulingEvent.create("remote"));
-    reportOrder.verify(policy, times(1)).report(SpawnExecutingEvent.create("remote"));
-  }
-
-  @Test
-  public void shouldReportExecutingStatusIfNoExecutingStatusFromMetadata() throws Exception {
-    // arrange
-    RemoteSpawnRunner runner = newSpawnRunner();
-    RemoteExecutionService service = runner.getRemoteExecutionService();
-    ExecuteResponse succeeded =
-        ExecuteResponse.newBuilder()
-            .setResult(ActionResult.newBuilder().setExitCode(0).build())
-            .build();
-
-    Spawn spawn = newSimpleSpawn();
-    SpawnExecutionContext policy = mock(SpawnExecutionContext.class);
-    when(policy.timeout).thenReturn(Duration.ZERO);
-
-    when(executor.executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class)))
-        .thenAnswer(
-            invocationOnMock -> {
-              OperationObserver receiver = invocationOnMock.getArgument(2);
-              Operation completed =
-                  Operation.newBuilder()
-                      .setMetadata(
-                          Any.pack(
-                              ExecuteOperationMetadata.newBuilder()
-                                  .setStage(Value.COMPLETED)
-                                  .build()))
-                      .build();
-              receiver.onNext(completed);
-              return succeeded;
-            });
-    doReturn(null).when(service).downloadOutputs(any(), any());
-
-    // act
-    SpawnResult res = runner.exec(spawn, policy);
-    assertThat(res.status()).isEqualTo(Status.SUCCESS);
-
-    // assert
-    verify(executor)
-        .executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class));
-    InOrder reportOrder = inOrder(policy);
-    reportOrder.verify(policy, times(1)).report(SpawnSchedulingEvent.create("remote"));
-    reportOrder.verify(policy, times(1)).report(SpawnExecutingEvent.create("remote"));
-  }
-
-  @Test
-  public void shouldReportExecutingStatusEvenNoOperationFromServer() throws Exception {
-    // arrange
-    RemoteSpawnRunner runner = newSpawnRunner();
-    RemoteExecutionService service = runner.getRemoteExecutionService();
-    ExecuteResponse succeeded =
-        ExecuteResponse.newBuilder()
-            .setResult(ActionResult.newBuilder().setExitCode(0).build())
-            .build();
-
-    Spawn spawn = newSimpleSpawn();
-    SpawnExecutionContext policy = mock(SpawnExecutionContext.class);
-    when(policy.timeout).thenReturn(Duration.ZERO);
-
-    when(executor.executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class)))
-        .thenReturn(succeeded);
-    doReturn(null).when(service).downloadOutputs(any(), any());
-
-    // act
-    SpawnResult res = runner.exec(spawn, policy);
-    assertThat(res.status()).isEqualTo(Status.SUCCESS);
-
-    // assert
-    verify(executor)
-        .executeRemotely(
-            any(RemoteActionExecutionContext.class),
-            any(ExecuteRequest.class),
-            any(OperationObserver.class));
-    InOrder reportOrder = inOrder(policy);
-    reportOrder.verify(policy, times(1)).report(SpawnSchedulingEvent.create("remote"));
-    reportOrder.verify(policy, times(1)).report(SpawnExecutingEvent.create("remote"));
-  }
-
-  private static Spawn newSimpleSpawn(Artifact... outputs) {
-    return simpleSpawnWithExecutionInfo(ImmutableMap.of(), outputs);
-  }
-
-  private static SimpleSpawn simpleSpawnWithExecutionInfo(
-      ImmutableMap<String, String> executionInfo, Artifact... outputs) {
-    return new SimpleSpawn(
-        new FakeOwner("foo", "bar", "//dummy:label"),
-        /* arguments= */ ImmutableList.of(),
-        /* environment= */ ImmutableMap.of(),
-        /* executionInfo= */ executionInfo,
-        /* inputs= */ NestedSetBuilder.emptySet(Order.STABLE_ORDER),
-        /* outputs= */ ImmutableSet.copyOf(outputs),
-        ResourceSet.ZERO);
-  }
-
-  private RemoteSpawnRunner newSpawnRunner() {
-    return newSpawnRunner(executor, RemotePathResolver.createDefault(execRoot));
-  }
-
-  private RemoteSpawnRunner newSpawnRunner(RemotePathResolver remotePathResolver) {
-    return newSpawnRunner(executor, remotePathResolver);
-  }
-
-  private RemoteSpawnRunner newSpawnRunner(
-      @Nullable RemoteExecutionClient executor, RemotePathResolver remotePathResolver) {
-    RemoteExecutionService service =
-        spy(
-            new RemoteExecutionService(
-                reporter,
-                /* verboseFailures= */ true,
+    @org.junit.After
+    @Throws(java.lang.InterruptedException::class)
+    fun afterEverything() {
+        retryService.shutdownNow()
+        retryService.awaitTermination(
+            com.google.devtools.build.lib.testutil.TestUtils.WAIT_TIMEOUT_SECONDS,
+            TimeUnit.SECONDS
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun nonCachableSpawnsShouldNotBeCached_remote() {
+        // Test that if a spawn is marked "NO_CACHE" then it's not fetched from a remote cache.
+        // It should be executed remotely, but marked non-cacheable to remote execution, so that
+        // the action result is not saved in the remote cache.
+
+        remoteOptions.remoteAcceptCached = true
+        remoteOptions.remoteLocalFallback = false
+        remoteOptions.remoteUploadLocalResults = true
+        remoteOptions.remoteResultCachePriority = 1
+        remoteOptions.remoteExecutionPriority = 2
+
+        val runner: RemoteSpawnRunner = newSpawnRunner()
+        val service: RemoteExecutionService? = runner.getRemoteExecutionService()
+
+        val succeeded: ExecuteResponse? =
+            ExecuteResponse.newBuilder()
+                .setResult(ActionResult.newBuilder().setExitCode(0).build())
+                .build()
+        Mockito.`when`<T?>(
+            executor.executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        )
+            .thenReturn(succeeded)
+
+        val spawn: Spawn = simpleSpawnWithExecutionInfo(NO_CACHE)
+        val policy: SpawnExecutionContext = getSpawnContext(spawn)
+
+        runner.exec(spawn, policy)
+
+        val requestCaptor: ArgumentCaptor<ExecuteRequest?> =
+            ArgumentCaptor.forClass<ExecuteRequest?, ExecuteRequest?>(ExecuteRequest::class.java)
+        Mockito.verify<Any?>(executor)
+            .executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                requestCaptor.capture(),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        assertThat(requestCaptor.getValue().getSkipCacheLookup()).isTrue()
+        assertThat(requestCaptor.getValue().getResultsCachePolicy().getPriority()).isEqualTo(1)
+        assertThat(requestCaptor.getValue().getExecutionPolicy().getPriority()).isEqualTo(2)
+
+        // TODO(olaola): verify that the uploaded action has the doNotCache set.
+        Mockito.verify<Any?>(service, Mockito.never()).lookupCache(ArgumentMatchers.any<T?>())
+        Mockito.verify<Any?>(service, Mockito.never()).uploadOutputs(
+            ArgumentMatchers.any<T?>(),
+            ArgumentMatchers.any<T?>(),
+            ArgumentMatchers.any<T?>(),
+            ArgumentMatchers.any<T?>()
+        )
+        Mockito.verifyNoMoreInteractions(localRunner)
+    }
+
+    private fun getSpawnContext(spawn: Spawn?): FakeSpawnExecutionContext {
+        val fakeLocalStrategy: AbstractSpawnStrategy =
+            object : AbstractSpawnStrategy(
+                localRunner,
+                com.google.devtools.common.options.Options.getDefaults<O?>(ExecutionOptions::class.java)
+            ) {}
+        val actionContextRegistry: com.google.common.collect.ClassToInstanceMap<ActionContext?> =
+            com.google.common.collect.ImmutableClassToInstanceMap.of<B?, RemoteLocalFallbackRegistry?>(
+                RemoteLocalFallbackRegistry::class.java,
+                RemoteLocalFallbackRegistry { spawnInput -> fakeLocalStrategy })
+
+        val actionInputFetcher: RemoteActionInputFetcher =
+            RemoteActionInputFetcher(
+                com.google.devtools.build.lib.events.Reporter(EventBusEventHandler.createWithNewEventBus()),
+                "none",
+                "none",
+                cache,
                 execRoot,
-                remotePathResolver,
+                tempPathGenerator,
+                remoteOutputChecker,
+                ActionOutputDirectoryHelper.createForTesting(),
+                OutputPermissions.READONLY
+            )
+
+        val actionFileSystem: RemoteActionFileSystem =
+            RemoteActionFileSystem(
+                fs,
+                execRoot.asFragment(),
+                artifactRoot.getRoot().asPath().relativeTo(execRoot).getPathString(),
+                ActionInputMap(0),
+                actionInputFetcher
+            )
+
+        return FakeSpawnExecutionContext(
+            spawn, fakeFileCache, execRoot, outErr, actionContextRegistry, actionFileSystem
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun nonCachableSpawnsShouldNotBeCached_localFallback() {
+        // Test that if a non-cachable spawn is executed locally due to the local fallback,
+        // that its result is not uploaded to the remote cache.
+
+        remoteOptions.remoteAcceptCached = true
+        remoteOptions.remoteLocalFallback = true
+        remoteOptions.remoteUploadLocalResults = true
+
+        val runner: RemoteSpawnRunner = newSpawnRunner()
+
+        // Throw an IOException to trigger the local fallback.
+        Mockito.`when`<T?>(
+            executor.executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        )
+            .thenThrow(IOException::class.java)
+
+        val spawn: Spawn = simpleSpawnWithExecutionInfo(NO_CACHE)
+        val policy: SpawnExecutionContext = getSpawnContext(spawn)
+
+        runner.exec(spawn, policy)
+
+        Mockito.verify<Any?>(localRunner).exec(spawn, policy)
+        Mockito.verify<Any?>(cache).getRemoteServerCapabilities()
+        Mockito.verify<Any?>(cache).ensureInputsPresent(
+            ArgumentMatchers.any<T?>(),
+            ArgumentMatchers.any<T?>(),
+            ArgumentMatchers.any<T?>(),
+            ArgumentMatchers.anyBoolean(),
+            ArgumentMatchers.any<T?>()
+        )
+        Mockito.verify<Any?>(cache, Mockito.atLeastOnce()).hasRemoteCache()
+        Mockito.verify<Any?>(cache, Mockito.atLeastOnce()).hasDiskCache()
+        Mockito.verifyNoMoreInteractions(cache)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun cachableSpawnsShouldBeCached_localFallback() {
+        // Test that if a cacheable spawn is executed locally due to the local fallback,
+        // that its result is uploaded to the remote cache.
+
+        remoteOptions.remoteAcceptCached = true
+        remoteOptions.remoteLocalFallback = true
+        remoteOptions.remoteUploadLocalResults = true
+
+        val runner: RemoteSpawnRunner = spy(newSpawnRunner())
+        val service: RemoteExecutionService? = runner.getRemoteExecutionService()
+        Mockito.doNothing().`when`<Any?>(service).uploadOutputs(
+            ArgumentMatchers.any<T?>(),
+            ArgumentMatchers.any<T?>(),
+            ArgumentMatchers.any<T?>(),
+            ArgumentMatchers.any<T?>()
+        )
+
+        // Throw an IOException to trigger the local fallback.
+        Mockito.`when`<T?>(
+            executor.executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        )
+            .thenThrow(IOException::class.java)
+
+        val res: SpawnResult? =
+            Builder()
+                .setStatus(Status.SUCCESS)
+                .setExitCode(0)
+                .setRunnerName("test")
+                .build()
+        Mockito.`when`<T?>(
+            localRunner.exec(
+                ArgumentMatchers.any<T?>(Spawn::class.java),
+                ArgumentMatchers.any<T?>(SpawnExecutionContext::class.java)
+            )
+        ).thenReturn(res)
+
+        val spawn: Spawn = newSimpleSpawn()
+        val policy: SpawnExecutionContext = getSpawnContext(spawn)
+
+        val result: SpawnResult = runner.exec(spawn, policy)
+        assertThat(result.exitCode()).isEqualTo(0)
+        assertThat(result.status()).isEqualTo(Status.SUCCESS)
+        Mockito.verify<Any?>(localRunner).exec(< T > eq < T ? > (spawn), <T>eq<T?>(policy))
+        Mockito.verify<Any?>(runner)
+            .execLocallyAndUpload(ArgumentMatchers.any<T?>(), < T > eq < T ? > (spawn), <T>eq<T?>(policy),  /* uploadLocalResults= */ArgumentMatchers.eq(true))
+        Mockito.verify<Any?>(service)
+            .uploadOutputs(ArgumentMatchers.any<T?>(), < T > eq < T ? > (res), ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>())
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun failedLocalActionShouldNotBeUploaded() {
+        // Test that the outputs of a locally executed action that failed are not uploaded.
+
+        remoteOptions.remoteLocalFallback = true
+        remoteOptions.remoteUploadLocalResults = true
+
+        val runner: RemoteSpawnRunner = spy(newSpawnRunner())
+        val service: RemoteExecutionService? = runner.getRemoteExecutionService()
+
+        // Throw an IOException to trigger the local fallback.
+        Mockito.`when`<T?>(
+            executor.executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        )
+            .thenThrow(IOException::class.java)
+
+        val spawn: Spawn = newSimpleSpawn()
+        val policy: SpawnExecutionContext = getSpawnContext(spawn)
+
+        val res: SpawnResult = Mockito.mock<SpawnResult>(SpawnResult::class.java)
+        Mockito.`when`<T?>(res.exitCode()).thenReturn(1)
+        Mockito.`when`<T?>(res.status()).thenReturn(Status.EXECUTION_FAILED)
+        Mockito.`when`<T?>(localRunner.exec(< T > eq < T ? > (spawn), < T > eq < T ? > (policy))).thenReturn(res)
+
+        assertThat(runner.exec(spawn, policy)).isSameInstanceAs(res)
+
+        Mockito.verify<Any?>(localRunner).exec(< T > eq < T ? > (spawn), <T>eq<T?>(policy))
+        Mockito.verify<Any?>(runner)
+            .execLocallyAndUpload(ArgumentMatchers.any<T?>(), < T > eq < T ? > (spawn), <T>eq<T?>(policy),  /* uploadLocalResults= */ArgumentMatchers.eq(true))
+        Mockito.verify<Any?>(service, Mockito.never()).uploadOutputs(
+            ArgumentMatchers.any<T?>(),
+            ArgumentMatchers.any<T?>(),
+            ArgumentMatchers.any<T?>(),
+            ArgumentMatchers.any<T?>()
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun treatFailedCachedActionAsCacheMiss_local() {
+        // Test that bazel treats failed cache action as a cache miss and attempts to execute action
+        // locally
+
+        remoteOptions.remoteLocalFallback = true
+        remoteOptions.remoteUploadLocalResults = true
+
+        val failedAction: CachedActionResult? =
+            CachedActionResult.remote(ActionResult.newBuilder().setExitCode(1).build())
+        Mockito.`when`<T?>(
+            cache.downloadActionResult(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ActionKey::class.java),  /* inlineOutErr= */
+                ArgumentMatchers.eq(false),  /* inlineOutputFiles= */
+                < T > eq < T ? > (com.google.common.collect.ImmutableSet.of<Any?>())
+        ))
+        .thenReturn(failedAction)
+
+        val runner: RemoteSpawnRunner = spy(newSpawnRunner())
+        val service: RemoteExecutionService? = runner.getRemoteExecutionService()
+        // Throw an IOException to trigger the local fallback.
+        Mockito.`when`<T?>(
+            executor.executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        )
+            .thenThrow(IOException::class.java)
+        Mockito.doNothing().`when`<Any?>(service).uploadOutputs(
+            ArgumentMatchers.any<T?>(),
+            ArgumentMatchers.any<T?>(),
+            ArgumentMatchers.any<T?>(),
+            ArgumentMatchers.any<T?>()
+        )
+
+        val spawn: Spawn = newSimpleSpawn()
+        val policy: SpawnExecutionContext = getSpawnContext(spawn)
+
+        val succeeded: SpawnResult? =
+            Builder()
+                .setStatus(Status.SUCCESS)
+                .setExitCode(0)
+                .setRunnerName("test")
+                .build()
+        Mockito.`when`<T?>(localRunner.exec(< T > eq < T ? > (spawn), < T > eq < T ? > (policy))).thenReturn(succeeded)
+
+        val result: SpawnResult? = runner.exec(spawn, policy)
+
+        Mockito.verify<Any?>(localRunner).exec(< T > eq < T ? > (spawn), <T>eq<T?>(policy))
+        Mockito.verify<Any?>(runner)
+            .execLocallyAndUpload(ArgumentMatchers.any<T?>(), < T > eq < T ? > (spawn), <T>eq<T?>(policy),  /* uploadLocalResults= */ArgumentMatchers.eq(true))
+        Mockito.verify<Any?>(service)
+            .uploadOutputs(ArgumentMatchers.any<T?>(), < T > eq < T ? > (result), ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>())
+        Mockito.verify<Any?>(service, Mockito.never())
+            .downloadOutputs(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>())
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun remoteLocalFallback_buildRemoteActionFailure() {
+        remoteOptions.remoteLocalFallback = true
+
+        val runner: RemoteSpawnRunner = spy(newSpawnRunner())
+        val service: RemoteExecutionService? = runner.getRemoteExecutionService()
+        doThrow(RemoteExecutionCapabilitiesException(IOException("capabilities failed")))
+            .`when`<Any?>(service)
+            .buildRemoteAction(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>())
+
+        val spawn: Spawn = newSimpleSpawn()
+        val policy: SpawnExecutionContext = getSpawnContext(spawn)
+
+        val localResult: SpawnResult? =
+            Builder()
+                .setExitCode(0)
+                .setStatus(Status.SUCCESS)
+                .setRunnerName("local")
+                .build()
+        Mockito.`when`<T?>(localRunner.exec(spawn, policy)).thenReturn(localResult)
+
+        val result: SpawnResult? = runner.exec(spawn, policy)
+
+        assertThat(result).isEqualTo(localResult)
+        Mockito.verify<Any?>(localRunner).exec(spawn, policy)
+        Mockito.verify<Any?>(service, Mockito.never()).uploadOutputs(
+            ArgumentMatchers.any<T?>(),
+            ArgumentMatchers.any<T?>(),
+            ArgumentMatchers.any<T?>(),
+            ArgumentMatchers.any<T?>()
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun buildRemoteActionFailure_noLocalFallback_shouldThrow() {
+        remoteOptions.remoteLocalFallback = false
+
+        val runner: RemoteSpawnRunner = spy(newSpawnRunner())
+        val service: RemoteExecutionService? = runner.getRemoteExecutionService()
+        doThrow(RemoteExecutionCapabilitiesException(IOException("capabilities failed")))
+            .`when`<Any?>(service)
+            .buildRemoteAction(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>())
+
+        val spawn: Spawn = newSimpleSpawn()
+        val policy: SpawnExecutionContext = getSpawnContext(spawn)
+
+        org.junit.Assert.assertThrows<T?>(
+            ExecException::class.java,
+            org.junit.function.ThrowingRunnable { runner.exec(spawn, policy) })
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun treatFailedCachedActionAsCacheMiss_remote() {
+        // Test that bazel treats failed cache action as a cache miss and attempts to execute action
+        // remotely
+
+        val failedAction: CachedActionResult? =
+            CachedActionResult.remote(ActionResult.newBuilder().setExitCode(1).build())
+        Mockito.`when`<T?>(
+            cache.downloadActionResult(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ActionKey::class.java),  /* inlineOutErr= */
+                ArgumentMatchers.eq(false),  /* inlineOutputFiles= */
+                < T > eq < T ? > (com.google.common.collect.ImmutableSet.of<Any?>())
+        ))
+        .thenReturn(failedAction)
+
+        val runner: RemoteSpawnRunner = newSpawnRunner()
+        val service: RemoteExecutionService? = runner.getRemoteExecutionService()
+
+        val succeeded: ExecuteResponse? =
+            ExecuteResponse.newBuilder()
+                .setResult(ActionResult.newBuilder().setExitCode(0).build())
+                .build()
+        Mockito.`when`<T?>(
+            executor.executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        )
+            .thenReturn(succeeded)
+        val spawn: Spawn = newSimpleSpawn()
+        val policy: SpawnExecutionContext = getSpawnContext(spawn)
+
+        runner.exec(spawn, policy)
+
+        Mockito.verify<Any?>(service)
+            .executeRemotely(ArgumentMatchers.any<T?>(), ArgumentMatchers.eq(false), ArgumentMatchers.any<T?>())
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun treatCachedActionWithMissingOutputAsCacheMiss_duringRemoteCacheCheck() {
+        // Test that bazel treats a cached action with missing mandatory outputs as a cache miss and
+        // attempts to execute the action remotely.
+
+        val runner: RemoteSpawnRunner = newSpawnRunner()
+        val service: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            runner.getRemoteExecutionService()
+        val actionWithoutOutputs: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            CachedActionResult.remote(ActionResult.getDefaultInstance())
+        doReturn(RemoteActionResult.createFromCache(actionWithoutOutputs))
+            .`when`<Any?>(service)
+            .lookupCache(ArgumentMatchers.any<T?>(RemoteAction::class.java))
+
+        val output: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            ActionsTestUtil.createArtifactWithExecPath(
+                artifactRoot, PathFragment.create("outputs/out")
+            )
+        val successfulResponse: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            ExecuteResponse.newBuilder()
+                .setResult(
+                    ActionResult.newBuilder()
+                        .setExitCode(0)
+                        .addOutputFiles(
+                            OutputFile.newBuilder()
+                                .setPath(output.getExecPathString())
+                                .setDigest(digestUtil.computeAsUtf8("content"))
+                        )
+                        .build()
+                )
+                .build()
+        Mockito.`when`<T?>(
+            executor.executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        )
+            .thenReturn(successfulResponse)
+        val spawn: Spawn = newSimpleSpawn(output)
+        val spawnExecutionContext: FakeSpawnExecutionContext = getSpawnContext(spawn)
+
+        val result: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            runner.exec(spawn, spawnExecutionContext)
+        assertThat(result.status()).isEqualTo(Status.SUCCESS)
+
+        Mockito.verify<Any?>(service)
+            .executeRemotely(ArgumentMatchers.any<T?>(), ArgumentMatchers.eq(false), ArgumentMatchers.any<T?>())
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun treatCachedActionWithMissingOutputAsCacheMiss_duringRemoteExecution() {
+        // Test that bazel treats a cached execute result with missing mandatory outputs as a cache miss
+        // and reattempts to execute the action remotely, this time ignoring cached results.
+
+        val runner: RemoteSpawnRunner = newSpawnRunner()
+        val service: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            runner.getRemoteExecutionService()
+        // Ensure that the initial cache lookup doesn't already return a result with missing outputs -
+        // this case is covered by the previous test.
+        Mockito.doReturn(null).`when`<Any?>(service).lookupCache(ArgumentMatchers.any<T?>(RemoteAction::class.java))
+
+        val actionWithoutOutputs: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            CachedActionResult.remote(ActionResult.getDefaultInstance())
+        Mockito.`when`<T?>(
+            cache.downloadActionResult(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ActionKey::class.java),  /* inlineOutErr= */
+                ArgumentMatchers.eq(false),  /* inlineOutputFiles= */
+                < T > eq < T ? > (com.google.common.collect.ImmutableSet.of<Any?>())
+        ))
+        .thenReturn(actionWithoutOutputs)
+
+        val output: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            ActionsTestUtil.createArtifactWithExecPath(
+                artifactRoot, PathFragment.create("outputs/out")
+            )
+        val responseWithoutOutput: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            ExecuteResponse.newBuilder()
+                .setResult(ActionResult.newBuilder().setExitCode(0).build())
+                .setCachedResult(true)
+                .build()
+        val responseWithOutput: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            ExecuteResponse.newBuilder()
+                .setResult(
+                    ActionResult.newBuilder()
+                        .setExitCode(0)
+                        .addOutputFiles(
+                            OutputFile.newBuilder()
+                                .setPath(output.getExecPathString())
+                                .setDigest(digestUtil.computeAsUtf8("content"))
+                        )
+                        .build()
+                )
+                .build()
+        Mockito.`when`<T?>(
+            executor.executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        )
+            .thenAnswer(
+                Answer { answer: InvocationOnMock? ->
+                    if (answer.getArgument<ExecuteRequest?>(1, ExecuteRequest::class.java).getSkipCacheLookup())
+                        responseWithOutput
+                    else
+                        responseWithoutOutput
+                })
+        val spawn: Spawn = newSimpleSpawn(output)
+        val spawnExecutionContext: FakeSpawnExecutionContext = getSpawnContext(spawn)
+
+        val result: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            runner.exec(spawn, spawnExecutionContext)
+        assertThat(result.status()).isEqualTo(Status.SUCCESS)
+
+        // The first execution attempt hits the cache and returns the result with missing outputs, the
+        // second attempt forcibly re-executes the action.
+        Mockito.verify<Any?>(service)
+            .executeRemotely(ArgumentMatchers.any<T?>(), ArgumentMatchers.eq(true), ArgumentMatchers.any<T?>())
+        Mockito.verify<Any?>(service)
+            .executeRemotely(ArgumentMatchers.any<T?>(), ArgumentMatchers.eq(false), ArgumentMatchers.any<T?>())
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun noRemoteExecutorFallbackFails() {
+        // Errors from the fallback runner should be propagated out of the remote runner.
+
+        remoteOptions.remoteUploadLocalResults = true
+        remoteOptions.remoteLocalFallback = true
+
+        val runner: RemoteSpawnRunner = newSpawnRunner()
+        // Trigger local fallback
+        Mockito.`when`<T?>(
+            executor.executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        )
+            .thenThrow(IOException())
+
+        val spawn: Spawn = newSimpleSpawn()
+        val policy: SpawnExecutionContext = getSpawnContext(spawn)
+
+        Mockito.`when`<T?>(
+            cache.downloadActionResult(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ActionKey::class.java),  /* inlineOutErr= */
+                ArgumentMatchers.eq(false),  /* inlineOutputFiles= */
+                < T > eq < T ? > (com.google.common.collect.ImmutableSet.of<Any?>())
+        ))
+        .thenReturn(null)
+
+        val err: IOException = IOException("local execution error")
+        Mockito.`when`<T?>(localRunner.exec(< T > eq < T ? > (spawn), < T > eq < T ? > (policy))).thenThrow(err)
+
+        val e: IOException? = org.junit.Assert.assertThrows<IOException?>(
+            IOException::class.java,
+            org.junit.function.ThrowingRunnable { runner.exec(spawn, policy) })
+        Truth.assertThat(e).isSameInstanceAs(err)
+
+        Mockito.verify<Any?>(localRunner).exec(< T > eq < T ? > (spawn), <T>eq<T?>(policy))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun remoteCacheErrorFallbackFails() {
+        // Errors from the fallback runner should be propagated out of the remote runner.
+
+        remoteOptions.remoteUploadLocalResults = true
+        remoteOptions.remoteLocalFallback = true
+
+        val runner: RemoteSpawnRunner = newSpawnRunner()
+        // Trigger local fallback
+        Mockito.`when`<T?>(
+            executor.executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        )
+            .thenThrow(IOException())
+
+        val spawn: Spawn = newSimpleSpawn()
+        val policy: SpawnExecutionContext = getSpawnContext(spawn)
+
+        Mockito.`when`<T?>(
+            cache.downloadActionResult(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ActionKey::class.java),  /* inlineOutErr= */
+                ArgumentMatchers.eq(false),  /* inlineOutputFiles= */
+                < T > eq < T ? > (com.google.common.collect.ImmutableSet.of<Any?>())
+        ))
+        .thenThrow(IOException())
+
+        val err: IOException = IOException("local execution error")
+        Mockito.`when`<T?>(localRunner.exec(< T > eq < T ? > (spawn), < T > eq < T ? > (policy))).thenThrow(err)
+
+        val e: IOException? = org.junit.Assert.assertThrows<IOException?>(
+            IOException::class.java,
+            org.junit.function.ThrowingRunnable { runner.exec(spawn, policy) })
+        Truth.assertThat(e).isSameInstanceAs(err)
+
+        Mockito.verify<Any?>(localRunner).exec(< T > eq < T ? > (spawn), <T>eq<T?>(policy))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLocalFallbackFailureRemoteExecutorFailure() {
+        remoteOptions.remoteLocalFallback = true
+
+        val runner: RemoteSpawnRunner = newSpawnRunner()
+
+        Mockito.`when`<T?>(
+            cache.downloadActionResult(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ActionKey::class.java),  /* inlineOutErr= */
+                ArgumentMatchers.eq(false),  /* inlineOutputFiles= */
+                < T > eq < T ? > (com.google.common.collect.ImmutableSet.of<Any?>())
+        ))
+        .thenReturn(null)
+        Mockito.`when`<T?>(
+            executor.executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        )
+            .thenThrow(IOException())
+
+        val spawn: Spawn = newSimpleSpawn()
+        val policy: SpawnExecutionContext = getSpawnContext(spawn)
+
+        val err: IOException = IOException("local execution error")
+        Mockito.`when`<T?>(localRunner.exec(< T > eq < T ? > (spawn), < T > eq < T ? > (policy))).thenThrow(err)
+
+        val e: IOException? = org.junit.Assert.assertThrows<IOException?>(
+            IOException::class.java,
+            org.junit.function.ThrowingRunnable { runner.exec(spawn, policy) })
+        Truth.assertThat(e).isSameInstanceAs(err)
+
+        Mockito.verify<Any?>(localRunner).exec(< T > eq < T ? > (spawn), <T>eq<T?>(policy))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testHumanReadableServerLogsSavedForFailingAction() {
+        val runner: RemoteSpawnRunner = newSpawnRunner()
+        val service: RemoteExecutionService? = runner.getRemoteExecutionService()
+        val logDigest: Digest? = digestUtil.computeAsUtf8("bla")
+        val logPath: Path? = logDir.getRelative(SIMPLE_ACTION_ID).getRelative("logname")
+        val resp: ExecuteResponse? =
+            ExecuteResponse.newBuilder()
+                .putServerLogs(
+                    "logname", LogFile.newBuilder().setHumanReadable(true).setDigest(logDigest).build()
+                )
+                .setResult(ActionResult.newBuilder().setExitCode(31).build())
+                .build()
+        Mockito.`when`<T?>(
+            executor.executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        )
+            .thenReturn(resp)
+        val completed: com.google.common.util.concurrent.SettableFuture<java.lang.Void?> =
+            com.google.common.util.concurrent.SettableFuture.create<java.lang.Void?>()
+        completed.set(null)
+        Mockito.`when`<T?>(cache.downloadFile(ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java), < T > eq < T ? > (logPath), < T > eq < T ? > (logDigest)))
+        .thenReturn(completed)
+
+        val spawn: Spawn = newSimpleSpawn()
+        val policy: SpawnExecutionContext = getSpawnContext(spawn)
+
+        val res: SpawnResult = runner.exec(spawn, policy)
+        assertThat(res.status()).isEqualTo(Status.NON_ZERO_EXIT)
+
+        Mockito.verify<Any?>(executor)
+            .executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        Mockito.verify<Any?>(service)
+            .maybeDownloadServerLogs(ArgumentMatchers.any<T?>(), < T > eq < T ? > (resp), <T>eq<T?>(logDir))
+        Mockito.verify<Any?>(cache)
+            .downloadFile(ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java), < T > eq < T ? > (logPath), <T>eq<T?>(logDigest))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testHumanReadableServerLogsSavedForFailingActionWithSiblingRepositoryLayout() {
+        val runner: RemoteSpawnRunner = newSpawnRunner(SiblingRepositoryLayoutResolver(execRoot))
+        val service: RemoteExecutionService? = runner.getRemoteExecutionService()
+        val logDigest: Digest? = digestUtil.computeAsUtf8("bla")
+        val logPath: Path? =
+            logDir
+                .getRelative("e0a5a3561464123504c1240b3587779cdfd6adee20f72aa136e388ecfd570c12")
+                .getRelative("logname")
+        val resp: ExecuteResponse? =
+            ExecuteResponse.newBuilder()
+                .putServerLogs(
+                    "logname", LogFile.newBuilder().setHumanReadable(true).setDigest(logDigest).build()
+                )
+                .setResult(ActionResult.newBuilder().setExitCode(31).build())
+                .build()
+        Mockito.`when`<T?>(
+            executor.executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        )
+            .thenReturn(resp)
+        val completed: com.google.common.util.concurrent.SettableFuture<java.lang.Void?> =
+            com.google.common.util.concurrent.SettableFuture.create<java.lang.Void?>()
+        completed.set(null)
+        Mockito.`when`<T?>(cache.downloadFile(ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java), < T > eq < T ? > (logPath), < T > eq < T ? > (logDigest)))
+        .thenReturn(completed)
+
+        val spawn: Spawn = newSimpleSpawn()
+        val policy: SpawnExecutionContext = getSpawnContext(spawn)
+
+        val res: SpawnResult = runner.exec(spawn, policy)
+        assertThat(res.status()).isEqualTo(Status.NON_ZERO_EXIT)
+
+        Mockito.verify<Any?>(executor)
+            .executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        Mockito.verify<Any?>(service)
+            .maybeDownloadServerLogs(ArgumentMatchers.any<T?>(), < T > eq < T ? > (resp), <T>eq<T?>(logDir))
+        Mockito.verify<Any?>(cache)
+            .downloadFile(ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java), < T > eq < T ? > (logPath), <T>eq<T?>(logDigest))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testHumanReadableServerLogsSavedForFailingActionWithStatus() {
+        val runner: RemoteSpawnRunner = newSpawnRunner()
+        val service: RemoteExecutionService? = runner.getRemoteExecutionService()
+        val logDigest: Digest? = digestUtil.computeAsUtf8("bla")
+        val logPath: Path? = logDir.getRelative(SIMPLE_ACTION_ID).getRelative("logname")
+        val timeoutStatus: com.google.rpc.Status? =
+            com.google.rpc.Status.newBuilder().setCode(Code.DEADLINE_EXCEEDED.getNumber()).build()
+        val resp: ExecuteResponse =
+            ExecuteResponse.newBuilder()
+                .putServerLogs(
+                    "logname", LogFile.newBuilder().setHumanReadable(true).setDigest(logDigest).build()
+                )
+                .setStatus(timeoutStatus)
+                .build()
+        Mockito.`when`<T?>(
+            executor.executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        )
+            .thenThrow(IOException(ExecutionStatusException(resp.getStatus(), resp)))
+        val completed: com.google.common.util.concurrent.SettableFuture<java.lang.Void?> =
+            com.google.common.util.concurrent.SettableFuture.create<java.lang.Void?>()
+        completed.set(null)
+        Mockito.`when`<T?>(cache.downloadFile(ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java), < T > eq < T ? > (logPath), < T > eq < T ? > (logDigest)))
+        .thenReturn(completed)
+
+        val spawn: Spawn = newSimpleSpawn()
+        val policy: SpawnExecutionContext = getSpawnContext(spawn)
+
+        val res: SpawnResult = runner.exec(spawn, policy)
+        assertThat(res.status()).isEqualTo(Status.TIMEOUT)
+
+        Mockito.verify<Any?>(executor)
+            .executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        Mockito.verify<Any?>(service)
+            .maybeDownloadServerLogs(ArgumentMatchers.any<T?>(), < T > eq < T ? > (resp), <T>eq<T?>(logDir))
+        Mockito.verify<Any?>(cache)
+            .downloadFile(ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java), < T > eq < T ? > (logPath), <T>eq<T?>(logDigest))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNonHumanReadableServerLogsNotSaved() {
+        // arrange
+        val runner: RemoteSpawnRunner = newSpawnRunner()
+        val service: RemoteExecutionService? = runner.getRemoteExecutionService()
+
+        val logDigest: Digest? = digestUtil.computeAsUtf8("bla")
+        val result: ActionResult? = ActionResult.newBuilder().setExitCode(31).build()
+        val resp: ExecuteResponse? =
+            ExecuteResponse.newBuilder()
+                .putServerLogs("logname", LogFile.newBuilder().setDigest(logDigest).build())
+                .setResult(result)
+                .build()
+        Mockito.`when`<T?>(
+            executor.executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        )
+            .thenReturn(resp)
+
+        val spawn: Spawn = newSimpleSpawn()
+        val policy: FakeSpawnExecutionContext = getSpawnContext(spawn)
+
+        // act
+        val res: SpawnResult = runner.exec(spawn, policy)
+
+        // asset
+        assertThat(res.status()).isEqualTo(Status.NON_ZERO_EXIT)
+
+        Mockito.verify<Any?>(executor)
+            .executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        Mockito.verify<Any?>(service)
+            .maybeDownloadServerLogs(ArgumentMatchers.any<T?>(), < T > eq < T ? > (resp), <T>eq<T?>(logDir))
+        Mockito.verify<Any?>(cache, Mockito.never())
+            .downloadFile(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(Path::class.java),
+                ArgumentMatchers.any<T?>(Digest::class.java)
+            )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testServerLogsNotSavedForSuccessfulAction() {
+        val runner: RemoteSpawnRunner = newSpawnRunner()
+        val service: RemoteExecutionService? = runner.getRemoteExecutionService()
+
+        val logDigest: Digest? = digestUtil.computeAsUtf8("bla")
+        val result: ActionResult? = ActionResult.newBuilder().setExitCode(0).build()
+        val resp: ExecuteResponse? =
+            ExecuteResponse.newBuilder()
+                .putServerLogs(
+                    "logname", LogFile.newBuilder().setHumanReadable(true).setDigest(logDigest).build()
+                )
+                .setResult(result)
+                .build()
+        Mockito.`when`<T?>(
+            executor.executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        )
+            .thenReturn(resp)
+
+        val spawn: Spawn = newSimpleSpawn()
+        val policy: FakeSpawnExecutionContext = getSpawnContext(spawn)
+
+        val res: SpawnResult = runner.exec(spawn, policy)
+        assertThat(res.status()).isEqualTo(Status.SUCCESS)
+
+        Mockito.verify<Any?>(executor)
+            .executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        Mockito.verify<Any?>(service)
+            .downloadOutputs(ArgumentMatchers.any<T?>(), eq(RemoteActionResult.createFromResponse(resp)))
+        Mockito.verify<Any?>(service)
+            .maybeDownloadServerLogs(ArgumentMatchers.any<T?>(), < T > eq < T ? > (resp), <T>eq<T?>(logDir))
+        Mockito.verify<Any?>(cache, Mockito.never())
+            .downloadFile(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(Path::class.java),
+                ArgumentMatchers.any<T?>(Digest::class.java)
+            )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun cacheDownloadFailureTriggersRemoteExecution() {
+        // If downloading a cached action fails, remote execution should be tried.
+
+        // arrange
+
+        val runner: RemoteSpawnRunner = newSpawnRunner()
+        val service: RemoteExecutionService? = runner.getRemoteExecutionService()
+
+        val cachedResult: CachedActionResult? =
+            CachedActionResult.remote(ActionResult.newBuilder().setExitCode(0).build())
+        Mockito.`when`<T?>(
+            cache.downloadActionResult(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ActionKey::class.java),  /* inlineOutErr= */
+                ArgumentMatchers.eq(false),  /* inlineOutputFiles= */
+                < T > eq < T ? > (com.google.common.collect.ImmutableSet.of<Any?>())
+        ))
+        .thenReturn(cachedResult)
+        val downloadFailure: java.lang.Exception =
+            BulkTransferException(CacheNotFoundException(Digest.getDefaultInstance()))
+        Mockito.doThrow(downloadFailure)
+            .`when`<Any?>(service)
+            .downloadOutputs(ArgumentMatchers.any<T?>(), eq(RemoteActionResult.createFromCache(cachedResult)))
+        val execResult: ActionResult? = ActionResult.newBuilder().setExitCode(31).build()
+        val succeeded: ExecuteResponse? = ExecuteResponse.newBuilder().setResult(execResult).build()
+        Mockito.`when`<T?>(
+            executor.executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        )
+            .thenReturn(succeeded)
+        Mockito.doReturn(null)
+            .`when`<Any?>(service)
+            .downloadOutputs(ArgumentMatchers.any<T?>(), eq(RemoteActionResult.createFromResponse(succeeded)))
+
+        val spawn: Spawn = newSimpleSpawn()
+
+        val policy: SpawnExecutionContext = getSpawnContext(spawn)
+
+        // act
+        val res: SpawnResult = runner.exec(spawn, policy)
+
+        // assert
+        assertThat(res.status()).isEqualTo(Status.NON_ZERO_EXIT)
+        assertThat(res.exitCode()).isEqualTo(31)
+
+        Mockito.verify<Any?>(executor)
+            .executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resultsDownloadFailureTriggersRemoteExecutionWithSkipCacheLookup() {
+        // If downloading an action result fails, remote execution should be retried
+        // with skip cache lookup enabled
+
+        // arrange
+
+        val runner: RemoteSpawnRunner = newSpawnRunner()
+        val service: RemoteExecutionService? = runner.getRemoteExecutionService()
+
+        Mockito.`when`<T?>(
+            cache.downloadActionResult(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ActionKey::class.java),  /* inlineOutErr= */
+                ArgumentMatchers.eq(false),  /* inlineOutputFiles= */
+                < T > eq < T ? > (com.google.common.collect.ImmutableSet.of<Any?>())
+        ))
+        .thenReturn(null)
+        val cachedResult: ActionResult? = ActionResult.newBuilder().setExitCode(0).build()
+        val execResult: ActionResult? = ActionResult.newBuilder().setExitCode(31).build()
+        val cachedResponse: ExecuteResponse? =
+            ExecuteResponse.newBuilder().setResult(cachedResult).setCachedResult(true).build()
+        val executedResponse: ExecuteResponse? = ExecuteResponse.newBuilder().setResult(execResult).build()
+        Mockito.`when`<T?>(
+            executor.executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        )
+            .thenReturn(cachedResponse)
+            .thenReturn(executedResponse)
+        val downloadFailure: java.lang.Exception =
+            BulkTransferException(CacheNotFoundException(Digest.getDefaultInstance()))
+        Mockito.doThrow(downloadFailure)
+            .`when`<Any?>(service)
+            .downloadOutputs(ArgumentMatchers.any<T?>(), eq(RemoteActionResult.createFromResponse(cachedResponse)))
+        Mockito.doReturn(null)
+            .`when`<Any?>(service)
+            .downloadOutputs(ArgumentMatchers.any<T?>(), eq(RemoteActionResult.createFromResponse(executedResponse)))
+
+        val spawn: Spawn = newSimpleSpawn()
+
+        val policy: SpawnExecutionContext = getSpawnContext(spawn)
+
+        // act
+        val res: SpawnResult = runner.exec(spawn, policy)
+
+        // assert
+        assertThat(res.status()).isEqualTo(Status.NON_ZERO_EXIT)
+        assertThat(res.exitCode()).isEqualTo(31)
+
+        val requestCaptor: ArgumentCaptor<ExecuteRequest?> =
+            ArgumentCaptor.forClass<ExecuteRequest?, ExecuteRequest?>(ExecuteRequest::class.java)
+        Mockito.verify<Any?>(executor, Mockito.times(2))
+            .executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                requestCaptor.capture(),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        val requests: MutableList<ExecuteRequest?> = requestCaptor.getAllValues()
+        // first request should have been executed without skip cache lookup
+        assertThat(requests.get(0).getSkipCacheLookup()).isFalse()
+        // second should have been executed with skip cache lookup
+        assertThat(requests.get(1).getSkipCacheLookup()).isTrue()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRemoteExecutionTimeout() {
+        // If remote execution times out the SpawnResult status should be TIMEOUT.
+
+        remoteOptions.remoteLocalFallback = false
+
+        val runner: RemoteSpawnRunner = newSpawnRunner()
+        val service: RemoteExecutionService? = runner.getRemoteExecutionService()
+
+        val cachedResult: ActionResult? = ActionResult.newBuilder().setExitCode(0).build()
+        Mockito.`when`<T?>(
+            cache.downloadActionResult(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ActionKey::class.java),  /* inlineOutErr= */
+                ArgumentMatchers.eq(false),  /* inlineOutputFiles= */
+                < T > eq < T ? > (com.google.common.collect.ImmutableSet.of<Any?>())
+        ))
+        .thenReturn(null)
+        val resp: ExecuteResponse =
+            ExecuteResponse.newBuilder()
+                .setResult(cachedResult)
+                .setStatus(
+                    com.google.rpc.Status.newBuilder()
+                        .setCode(Code.DEADLINE_EXCEEDED.getNumber())
+                        .build()
+                )
+                .build()
+        Mockito.`when`<T?>(
+            executor.executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        )
+            .thenThrow(IOException(ExecutionStatusException(resp.getStatus(), resp)))
+
+        val spawn: Spawn = newSimpleSpawn()
+
+        val policy: SpawnExecutionContext = getSpawnContext(spawn)
+
+        val res: SpawnResult = runner.exec(spawn, policy)
+        assertThat(res.status()).isEqualTo(Status.TIMEOUT)
+
+        Mockito.verify<Any?>(executor)
+            .executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        Mockito.verify<Any?>(service)
+            .downloadOutputs(ArgumentMatchers.any<T?>(), eq(RemoteActionResult.createFromResponse(resp)))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRemoteExecutionTimeoutTimings() {
+        // If remote execution times out the SpawnResult should still have the start and wall times
+        // reported correctly.
+
+        remoteOptions.remoteLocalFallback = false
+
+        val runner: RemoteSpawnRunner = newSpawnRunner()
+        val service: RemoteExecutionService? = runner.getRemoteExecutionService()
+
+        val oneSecond: com.google.protobuf.Duration? = Durations.fromMillis(1000)
+        val executionStart: Timestamp = Timestamp.getDefaultInstance()
+        val executionCompleted: Timestamp? = Timestamps.add(executionStart, oneSecond)
+        val executedMetadata: ExecutedActionMetadata? =
+            ExecutedActionMetadata.newBuilder()
+                .setExecutionStartTimestamp(executionStart)
+                .setExecutionCompletedTimestamp(executionCompleted)
+                .build()
+
+        val cachedResult: ActionResult? =
+            ActionResult.newBuilder().setExitCode(0).setExecutionMetadata(executedMetadata).build()
+        Mockito.`when`<T?>(
+            cache.downloadActionResult(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ActionKey::class.java),  /* inlineOutErr= */
+                ArgumentMatchers.eq(false),  /* inlineOutputFiles= */
+                < T > eq < T ? > (com.google.common.collect.ImmutableSet.of<Any?>())
+        ))
+        .thenReturn(null)
+        val resp: ExecuteResponse =
+            ExecuteResponse.newBuilder()
+                .setResult(cachedResult)
+                .setStatus(
+                    com.google.rpc.Status.newBuilder()
+                        .setCode(Code.DEADLINE_EXCEEDED.getNumber())
+                        .build()
+                )
+                .build()
+        Mockito.`when`<T?>(
+            executor.executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        )
+            .thenThrow(IOException(ExecutionStatusException(resp.getStatus(), resp)))
+
+        val spawn: Spawn = newSimpleSpawn()
+
+        val policy: SpawnExecutionContext = getSpawnContext(spawn)
+
+        val res: SpawnResult = runner.exec(spawn, policy)
+        assertThat(res.status()).isEqualTo(Status.TIMEOUT)
+        assertThat(res.getWallTimeInMs()).isEqualTo(1000)
+        assertThat(res.getStartTime())
+            .isEqualTo(Instant.ofEpochSecond(executionStart.getSeconds(), executionStart.getNanos()))
+
+        Mockito.verify<Any?>(executor)
+            .executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        Mockito.verify<Any?>(service)
+            .downloadOutputs(ArgumentMatchers.any<T?>(), eq(RemoteActionResult.createFromResponse(resp)))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRemoteExecutionTimeoutDoesNotTriggerFallback() {
+        // If remote execution times out the SpawnResult status should be TIMEOUT, regardess of local
+        // fallback option.
+
+        remoteOptions.remoteLocalFallback = true
+
+        val runner: RemoteSpawnRunner = newSpawnRunner()
+        val service: RemoteExecutionService? = runner.getRemoteExecutionService()
+
+        val cachedResult: ActionResult? = ActionResult.newBuilder().setExitCode(0).build()
+        Mockito.`when`<T?>(
+            cache.downloadActionResult(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ActionKey::class.java),  /* inlineOutErr= */
+                ArgumentMatchers.eq(false),  /* inlineOutputFiles= */
+                < T > eq < T ? > (com.google.common.collect.ImmutableSet.of<Any?>())
+        ))
+        .thenReturn(null)
+        val resp: ExecuteResponse =
+            ExecuteResponse.newBuilder()
+                .setResult(cachedResult)
+                .setStatus(
+                    com.google.rpc.Status.newBuilder()
+                        .setCode(Code.DEADLINE_EXCEEDED.getNumber())
+                        .build()
+                )
+                .build()
+        Mockito.`when`<T?>(
+            executor.executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        )
+            .thenThrow(IOException(ExecutionStatusException(resp.getStatus(), resp)))
+
+        val spawn: Spawn = newSimpleSpawn()
+
+        val policy: SpawnExecutionContext = getSpawnContext(spawn)
+
+        val res: SpawnResult = runner.exec(spawn, policy)
+        assertThat(res.status()).isEqualTo(Status.TIMEOUT)
+
+        Mockito.verify<Any?>(executor)
+            .executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        Mockito.verify<Any?>(service)
+            .downloadOutputs(ArgumentMatchers.any<T?>(), eq(RemoteActionResult.createFromResponse(resp)))
+        Mockito.verify<Any?>(localRunner, Mockito.never()).exec(< T > eq < T ? > (spawn), <T>eq<T?>(policy))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRemoteExecutionCommandFailureDoesNotTriggerFallback() {
+        remoteOptions.remoteLocalFallback = true
+
+        val runner: RemoteSpawnRunner = newSpawnRunner()
+        val service: RemoteExecutionService? = runner.getRemoteExecutionService()
+
+        Mockito.`when`<T?>(
+            cache.downloadActionResult(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ActionKey::class.java),  /* inlineOutErr= */
+                ArgumentMatchers.eq(false),  /* inlineOutputFiles= */
+                < T > eq < T ? > (com.google.common.collect.ImmutableSet.of<Any?>())
+        ))
+        .thenReturn(null)
+        val failed: ExecuteResponse? =
+            ExecuteResponse.newBuilder()
+                .setResult(ActionResult.newBuilder().setExitCode(33).build())
+                .build()
+        Mockito.`when`<T?>(
+            executor.executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        )
+            .thenReturn(failed)
+
+        val spawn: Spawn = newSimpleSpawn()
+
+        val policy: SpawnExecutionContext = getSpawnContext(spawn)
+
+        val res: SpawnResult = runner.exec(spawn, policy)
+        assertThat(res.status()).isEqualTo(Status.NON_ZERO_EXIT)
+        assertThat(res.exitCode()).isEqualTo(33)
+
+        Mockito.verify<Any?>(executor)
+            .executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        Mockito.verify<Any?>(service)
+            .downloadOutputs(ArgumentMatchers.any<T?>(), eq(RemoteActionResult.createFromResponse(failed)))
+        Mockito.verify<Any?>(localRunner, Mockito.never()).exec(< T > eq < T ? > (spawn), <T>eq<T?>(policy))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExitCode_executorfailure() {
+        // If we get a failure due to the remote cache not working, the exit code should be
+        // ExitCode.REMOTE_ERROR.
+
+        remoteOptions.remoteLocalFallback = false
+
+        val runner: RemoteSpawnRunner = newSpawnRunner()
+
+        Mockito.`when`<T?>(
+            cache.downloadActionResult(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ActionKey::class.java),  /* inlineOutErr= */
+                ArgumentMatchers.eq(false),  /* inlineOutputFiles= */
+                < T > eq < T ? > (com.google.common.collect.ImmutableSet.of<Any?>())
+        ))
+        .thenReturn(null)
+        Mockito.`when`<T?>(
+            executor.executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        )
+            .thenThrow(IOException("reasons"))
+
+        val spawn: Spawn = newSimpleSpawn()
+        val policy: SpawnExecutionContext = getSpawnContext(spawn)
+
+        val result: SpawnResult = runner.exec(spawn, policy)
+        assertThat(result.exitCode()).isEqualTo(ExitCode.REMOTE_ERROR.numericExitCode)
+        com.google.common.truth.Subject.contains("reasons")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExitCode_executionfailure() {
+        // If we get a failure due to the remote executor not working, the exit code should be
+        // ExitCode.REMOTE_ERROR.
+
+        remoteOptions.remoteLocalFallback = false
+
+        val runner: RemoteSpawnRunner = newSpawnRunner()
+
+        Mockito.`when`<T?>(
+            cache.downloadActionResult(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ActionKey::class.java),  /* inlineOutErr= */
+                ArgumentMatchers.eq(false),  /* inlineOutputFiles= */
+                < T > eq < T ? > (com.google.common.collect.ImmutableSet.of<Any?>())
+        ))
+        .thenThrow(IOException("reasons"))
+
+        val spawn: Spawn = newSimpleSpawn()
+        val policy: SpawnExecutionContext = getSpawnContext(spawn)
+
+        val result: SpawnResult = runner.exec(spawn, policy)
+        assertThat(result.exitCode()).isEqualTo(ExitCode.REMOTE_ERROR.numericExitCode)
+        com.google.common.truth.Subject.contains("reasons")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExitCode_remoteMessage() {
+        remoteOptions.remoteLocalFallback = false
+
+        val runner: RemoteSpawnRunner = newSpawnRunner()
+
+        val cause: ExecutionStatusException =
+            ExecutionStatusException(
+                com.google.rpc.Status.getDefaultInstance(),
+                ExecuteResponse.newBuilder().setMessage("beep and indeed boop").build()
+            )
+
+        Mockito.`when`<T?>(
+            cache.downloadActionResult(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ActionKey::class.java),  /* inlineOutErr= */
+                ArgumentMatchers.eq(false),  /* inlineOutputFiles= */
+                < T > eq < T ? > (com.google.common.collect.ImmutableSet.of<Any?>())
+        ))
+        .thenReturn(null)
+        Mockito.`when`<T?>(
+            executor.executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        )
+            .thenThrow(IOException("reasons", cause))
+
+        val spawn: Spawn = newSimpleSpawn()
+        val policy: SpawnExecutionContext = getSpawnContext(spawn)
+
+        val result: SpawnResult = runner.exec(spawn, policy)
+        assertThat(result.exitCode()).isEqualTo(ExitCode.REMOTE_ERROR.numericExitCode)
+        com.google.common.truth.Subject.contains("beep and indeed boop")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMaterializeParamFiles() {
+        testParamFilesAreMaterializedForFlag("--materialize_param_files")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMaterializeParamFilesIsImpliedBySubcommands() {
+        testParamFilesAreMaterializedForFlag("--subcommands")
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun testParamFilesAreMaterializedForFlag(flag: String?) {
+        val remoteOptions: RemoteOptions? =
+            com.google.devtools.common.options.Options.getDefaults<O?>(RemoteOptions::class.java)
+        val executionOptions: ExecutionOptions? =
+            com.google.devtools.common.options.Options.parse(ExecutionOptions::class.java, flag).options
+        val remoteExecutionService: RemoteExecutionService =
+            RemoteExecutionService(
+                reporter,  /* verboseFailures= */
+                true,
+                execRoot,
+                RemotePathResolver.createDefault(execRoot),
                 "build-req-id",
                 "command-id",
                 TestConstants.WORKSPACE_NAME,
                 digestUtil,
                 remoteOptions,
-                Options.getDefaults(ExecutionOptions.class),
+                executionOptions,
                 cache,
                 executor,
-                tempPathGenerator,
-                /* captureCorruptedOutputsDir= */ null,
+                tempPathGenerator,  /* captureCorruptedOutputsDir= */
+                null,
                 remoteOutputChecker,
-                mock(OutputService.class),
-                Sets.newConcurrentHashSet()));
+                < T > mock < T ? > (OutputService::class.java),
+        com.google.common.collect.Sets.newConcurrentHashSet<E?>())
+        val runner: RemoteSpawnRunner =
+            RemoteSpawnRunner(
+                remoteOptions,  /* verboseFailures= */
+                true,  /* cmdlineReporter= */
+                null,
+                retryService,
+                logDir,
+                remoteExecutionService,
+                digestUtil
+            )
 
-    return new RemoteSpawnRunner(
-        remoteOptions,
-        /* verboseFailures= */ false,
-        reporter,
-        retryService,
-        logDir,
-        service,
-        digestUtil);
-  }
+        val succeeded: ExecuteResponse? =
+            ExecuteResponse.newBuilder()
+                .setResult(ActionResult.newBuilder().setExitCode(0).build())
+                .build()
+        Mockito.`when`<T?>(
+            executor.executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        )
+            .thenReturn(succeeded)
+
+        val args: com.google.common.collect.ImmutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>("--foo", "--bar")
+        val input: ParamFileActionInput =
+            ParamFileActionInput(
+                PathFragment.create("out/param_file"), args, ParameterFileType.UNQUOTED
+            )
+        val spawn: Spawn =
+            SimpleSpawn(
+                FakeOwner("foo", "bar", "//dummy:label"),  /* arguments= */
+                com.google.common.collect.ImmutableList.of<E?>(),  /* environment= */
+                com.google.common.collect.ImmutableMap.of<K?, V?>(),  /* executionInfo= */
+                com.google.common.collect.ImmutableMap.of<K?, V?>(),  /* inputs= */
+                NestedSetBuilder.create(Order.STABLE_ORDER, input),  /* outputs= */
+                com.google.common.collect.ImmutableSet.of<ActionInput?>(),
+                ResourceSet.ZERO
+            )
+        val policy: SpawnExecutionContext = getSpawnContext(spawn)
+        val res: SpawnResult = runner.exec(spawn, policy)
+        assertThat(res.status()).isEqualTo(Status.SUCCESS)
+        val paramFile: Path = execRoot.getRelative("out/param_file")
+        assertThat(paramFile.exists()).isTrue()
+        paramFile.getInputStream().use { inputStream ->
+            Truth.assertThat<String?>(
+                String(
+                    com.google.common.io.ByteStreams.toByteArray(inputStream),
+                    java.nio.charset.StandardCharsets.UTF_8
+                ).split("\n")
+            )
+                .asList()
+                .containsExactly("--foo", "--bar")
+        }
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDownloadMinimalOnCacheHit() {
+        // arrange
+        remoteOptions.remoteOutputsMode = RemoteOutputsMode.MINIMAL
+
+        val succeededAction: ActionResult? = ActionResult.newBuilder().setExitCode(0).build()
+        val actionResult: RemoteActionResult? =
+            RemoteActionResult.createFromCache(CachedActionResult.remote(succeededAction))
+
+        val runner: RemoteSpawnRunner = newSpawnRunner()
+        val service: RemoteExecutionService? = runner.getRemoteExecutionService()
+        Mockito.doReturn(actionResult).`when`<Any?>(service).lookupCache(ArgumentMatchers.any<T?>())
+        Mockito.doReturn(null).`when`<Any?>(service)
+            .downloadOutputs(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>())
+
+        val spawn: Spawn = newSimpleSpawn()
+        val policy: SpawnExecutionContext = getSpawnContext(spawn)
+
+        // act
+        val result: SpawnResult = runner.exec(spawn, policy)
+        assertThat(result.exitCode()).isEqualTo(0)
+        assertThat(result.status()).isEqualTo(Status.SUCCESS)
+
+        // assert
+        Mockito.verify<Any?>(service).downloadOutputs(ArgumentMatchers.any<T?>(), < T > eq < T ? > (actionResult))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDownloadMinimalOnCacheMiss() {
+        // arrange
+        remoteOptions.remoteOutputsMode = RemoteOutputsMode.MINIMAL
+
+        val succeededAction: ActionResult? = ActionResult.newBuilder().setExitCode(0).build()
+        val succeeded: ExecuteResponse? = ExecuteResponse.newBuilder().setResult(succeededAction).build()
+        Mockito.`when`<T?>(
+            executor.executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        )
+            .thenReturn(succeeded)
+
+        val runner: RemoteSpawnRunner = newSpawnRunner()
+        val service: RemoteExecutionService? = runner.getRemoteExecutionService()
+        Mockito.doReturn(null).`when`<Any?>(service)
+            .downloadOutputs(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>())
+
+        val spawn: Spawn = newSimpleSpawn()
+        val policy: FakeSpawnExecutionContext = getSpawnContext(spawn)
+
+        // act
+        val result: SpawnResult = runner.exec(spawn, policy)
+        assertThat(result.exitCode()).isEqualTo(0)
+        assertThat(result.status()).isEqualTo(Status.SUCCESS)
+
+        // assert
+        Mockito.verify<Any?>(executor)
+            .executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        Mockito.verify<Any?>(service)
+            .downloadOutputs(ArgumentMatchers.any<T?>(), eq(RemoteActionResult.createFromResponse(succeeded)))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDownloadMinimalIoError() {
+        // arrange
+        remoteOptions.remoteOutputsMode = RemoteOutputsMode.MINIMAL
+
+        val succeededAction: ActionResult? = ActionResult.newBuilder().setExitCode(0).build()
+        val cachedActionResult: RemoteActionResult? =
+            RemoteActionResult.createFromCache(CachedActionResult.remote(succeededAction))
+        val downloadFailure: IOException = IOException("downloadMinimal failed")
+
+        val runner: RemoteSpawnRunner = newSpawnRunner()
+        val service: RemoteExecutionService? = runner.getRemoteExecutionService()
+
+        doReturn(RemoteActionResult.createFromCache(CachedActionResult.remote(succeededAction)))
+            .`when`<Any?>(service)
+            .lookupCache(ArgumentMatchers.any<T?>())
+        Mockito.doThrow(downloadFailure).`when`<Any?>(service)
+            .downloadOutputs(ArgumentMatchers.any<T?>(), < T > eq < T ? > (cachedActionResult))
+
+        val spawn: Spawn = newSimpleSpawn()
+        val policy: FakeSpawnExecutionContext = getSpawnContext(spawn)
+
+        // act
+        val result: SpawnResult = runner.exec(spawn, policy)
+        assertThat(result.getFailureMessage()).isEqualTo(downloadFailure.getMessage())
+
+        // assert
+        Mockito.verify<Any?>(service).downloadOutputs(ArgumentMatchers.any<T?>(), < T > eq < T ? > (cachedActionResult))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDigest() {
+        val runner: RemoteSpawnRunner = newSpawnRunner()
+        val service: RemoteExecutionService? = runner.getRemoteExecutionService()
+
+        val resp: ExecuteResponse? =
+            ExecuteResponse.newBuilder()
+                .setResult(ActionResult.newBuilder().setExitCode(0).build())
+                .build()
+        Mockito.`when`<T?>(
+            executor.executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        )
+            .thenReturn(resp)
+
+        val spawn: Spawn = newSimpleSpawn()
+        val policy: FakeSpawnExecutionContext = getSpawnContext(spawn)
+
+        val res: SpawnResult = runner.exec(spawn, policy)
+        assertThat(res.status()).isEqualTo(Status.SUCCESS)
+
+        val requestCaptor: ArgumentCaptor<RemoteAction?> =
+            ArgumentCaptor.forClass<RemoteAction?, RemoteAction?>(RemoteAction::class.java)
+
+        Mockito.verify<Any?>(service)
+            .executeRemotely(
+                requestCaptor.capture(),
+                ArgumentMatchers.anyBoolean(),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+
+        assertThat(policy.getDigest())
+            .isEqualTo(digestUtil.asSpawnLogProto(requestCaptor.getValue().getActionKey()))
+
+        assertThat(res.getDigest())
+            .isEqualTo(digestUtil.asSpawnLogProto(requestCaptor.getValue().getActionKey()))
+    }
+
+    @org.junit.Test
+    fun accountingDisabledWithoutWorker() {
+        val spawnMetrics: SpawnMetrics.Builder? = Mockito.mock<SpawnMetrics.Builder?>(SpawnMetrics.Builder::class.java)
+        RemoteSpawnRunner.spawnMetricsAccounting(
+            spawnMetrics, ExecutedActionMetadata.getDefaultInstance()
+        )
+        Mockito.verifyNoMoreInteractions(spawnMetrics)
+    }
+
+    @org.junit.Test
+    fun accountingAddsDurationsForStages() {
+        val builder: SpawnMetrics.Builder =
+            SpawnMetrics.Builder.forRemoteExec()
+                .setQueueTimeInMs(1 * 1000)
+                .setSetupTimeInMs(2 * 1000)
+                .setExecutionWallTimeInMs(2 * 1000)
+                .setProcessOutputsTimeInMs(2 * 1000)
+        val queued: Timestamp? = Timestamp.getDefaultInstance()
+        val oneSecond: com.google.protobuf.Duration? = Durations.fromMillis(1000)
+        val workerStart: Timestamp? = Timestamps.add(queued, oneSecond)
+        val executionStart: Timestamp? = Timestamps.add(workerStart, oneSecond)
+        val executionCompleted: Timestamp? = Timestamps.add(executionStart, oneSecond)
+        val outputUploadStart: Timestamp? = Timestamps.add(executionCompleted, oneSecond)
+        val outputUploadComplete: Timestamp? = Timestamps.add(outputUploadStart, oneSecond)
+        val executedMetadata: ExecutedActionMetadata? =
+            ExecutedActionMetadata.newBuilder()
+                .setWorker("test worker")
+                .setQueuedTimestamp(queued)
+                .setWorkerStartTimestamp(workerStart)
+                .setExecutionStartTimestamp(executionStart)
+                .setExecutionCompletedTimestamp(executionCompleted)
+                .setOutputUploadStartTimestamp(outputUploadStart)
+                .setOutputUploadCompletedTimestamp(outputUploadComplete)
+                .build()
+        RemoteSpawnRunner.spawnMetricsAccounting(builder, executedMetadata)
+        val spawnMetrics: SpawnMetrics = builder.build()
+        // remote queue time is accumulated
+        assertThat(spawnMetrics.queueTimeInMs()).isEqualTo(2 * 1000L)
+        // setup time is substituted
+        assertThat(spawnMetrics.setupTimeInMs()).isEqualTo(1 * 1000L)
+        // execution time is unspecified, assume substituted
+        assertThat(spawnMetrics.executionWallTimeInMs()).isEqualTo(1 * 1000L)
+        // ProcessOutputs time is unspecified, assume substituted
+        assertThat(spawnMetrics.processOutputsTimeInMs()).isEqualTo(1 * 1000L)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun shouldReportCheckingCacheBeforeScheduling() {
+        // Prepare a faked/mocked remote SpawnExecutionContext.
+        val runner: RemoteSpawnRunner = newSpawnRunner()
+        val service: RemoteExecutionService? = runner.getRemoteExecutionService()
+        val succeeded: ExecuteResponse? =
+            ExecuteResponse.newBuilder()
+                .setResult(ActionResult.newBuilder().setExitCode(0).build())
+                .build()
+
+        val spawn: Spawn = newSimpleSpawn()
+        val policy: SpawnExecutionContext = Mockito.mock<SpawnExecutionContext>(SpawnExecutionContext::class.java)
+        Mockito.`when`<Any?>(policy.timeout).thenReturn(java.time.Duration.ZERO)
+
+        Mockito.`when`<T?>(
+            executor.executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        )
+            .thenAnswer(
+                Answer { invocationOnMock: InvocationOnMock? ->
+                    val receiver: OperationObserver = invocationOnMock.getArgument<OperationObserver>(2)
+                    receiver.onNext(Operation.getDefaultInstance())
+                    succeeded
+                })
+
+        Mockito.doReturn(null).`when`<Any?>(service)
+            .downloadOutputs(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>())
+
+        // Run the faked spawn.
+        val res: SpawnResult = runner.exec(spawn, policy)
+
+        // Verify expected behavior with mocked remote SpawnExecutionContext.
+        assertThat(res.status()).isEqualTo(Status.SUCCESS)
+        Mockito.verify<Any?>(executor)
+            .executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        val reportOrder: InOrder = Mockito.inOrder(policy)
+        reportOrder.verify<Any?>(policy, Mockito.times(1)).report(SpawnCheckingCacheEvent.create("remote"))
+        reportOrder.verify<Any?>(policy, Mockito.times(1)).report(SpawnSchedulingEvent.create("remote"))
+        reportOrder.verify<Any?>(policy, Mockito.times(1)).report(SpawnExecutingEvent.create("remote"))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun shouldReportExecutingStatusWithoutMetadata() {
+        // arrange
+        val runner: RemoteSpawnRunner = newSpawnRunner()
+        val service: RemoteExecutionService? = runner.getRemoteExecutionService()
+        val succeeded: ExecuteResponse? =
+            ExecuteResponse.newBuilder()
+                .setResult(ActionResult.newBuilder().setExitCode(0).build())
+                .build()
+
+        val spawn: Spawn = newSimpleSpawn()
+        val policy: SpawnExecutionContext = Mockito.mock<SpawnExecutionContext>(SpawnExecutionContext::class.java)
+        Mockito.`when`<Any?>(policy.timeout).thenReturn(java.time.Duration.ZERO)
+
+        Mockito.`when`<T?>(
+            executor.executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        )
+            .thenAnswer(
+                Answer { invocationOnMock: InvocationOnMock? ->
+                    val receiver: OperationObserver = invocationOnMock.getArgument<OperationObserver>(2)
+                    Mockito.verify<Any?>(policy, Mockito.never()).report(SpawnExecutingEvent.create("remote"))
+                    receiver.onNext(Operation.getDefaultInstance())
+                    succeeded
+                })
+
+        Mockito.doReturn(null).`when`<Any?>(service)
+            .downloadOutputs(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>())
+
+        // act
+        val res: SpawnResult = runner.exec(spawn, policy)
+        assertThat(res.status()).isEqualTo(Status.SUCCESS)
+
+        // assert
+        Mockito.verify<Any?>(executor)
+            .executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        val reportOrder: InOrder = Mockito.inOrder(policy)
+        reportOrder.verify<Any?>(policy, Mockito.times(1)).report(SpawnSchedulingEvent.create("remote"))
+        reportOrder.verify<Any?>(policy, Mockito.times(1)).report(SpawnExecutingEvent.create("remote"))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun shouldReportExecutingStatusAfterGotExecutingStageFromMetadata() {
+        // arrange
+        val runner: RemoteSpawnRunner = newSpawnRunner()
+        val service: RemoteExecutionService? = runner.getRemoteExecutionService()
+        val succeeded: ExecuteResponse? =
+            ExecuteResponse.newBuilder()
+                .setResult(ActionResult.newBuilder().setExitCode(0).build())
+                .build()
+
+        val spawn: Spawn = newSimpleSpawn()
+        val policy: SpawnExecutionContext = Mockito.mock<SpawnExecutionContext>(SpawnExecutionContext::class.java)
+        Mockito.`when`<Any?>(policy.timeout).thenReturn(java.time.Duration.ZERO)
+
+        Mockito.`when`<T?>(
+            executor.executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        )
+            .thenAnswer(
+                Answer { invocationOnMock: InvocationOnMock? ->
+                    val receiver: OperationObserver = invocationOnMock.getArgument<OperationObserver>(2)
+                    val queued: Operation? =
+                        Operation.newBuilder()
+                            .setMetadata(
+                                Any.pack(
+                                    ExecuteOperationMetadata.newBuilder().setStage(Value.QUEUED).build()
+                                )
+                            )
+                            .build()
+                    receiver.onNext(queued)
+                    Mockito.verify<Any?>(policy, Mockito.never()).report(SpawnExecutingEvent.create("remote"))
+
+                    val executing: Operation? =
+                        Operation.newBuilder()
+                            .setMetadata(
+                                Any.pack(
+                                    ExecuteOperationMetadata.newBuilder()
+                                        .setStage(Value.EXECUTING)
+                                        .build()
+                                )
+                            )
+                            .build()
+                    receiver.onNext(executing)
+                    succeeded
+                })
+
+        Mockito.doReturn(null).`when`<Any?>(service)
+            .downloadOutputs(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>())
+
+        // act
+        val res: SpawnResult = runner.exec(spawn, policy)
+        assertThat(res.status()).isEqualTo(Status.SUCCESS)
+
+        // assert
+        Mockito.verify<Any?>(executor)
+            .executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        val reportOrder: InOrder = Mockito.inOrder(policy)
+        reportOrder.verify<Any?>(policy, Mockito.times(1)).report(SpawnSchedulingEvent.create("remote"))
+        reportOrder.verify<Any?>(policy, Mockito.times(1)).report(SpawnExecutingEvent.create("remote"))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun shouldIgnoreInvalidMetadata() {
+        // arrange
+        val runner: RemoteSpawnRunner = newSpawnRunner()
+        val service: RemoteExecutionService? = runner.getRemoteExecutionService()
+        val succeeded: ExecuteResponse? =
+            ExecuteResponse.newBuilder()
+                .setResult(ActionResult.newBuilder().setExitCode(0).build())
+                .build()
+
+        val spawn: Spawn = newSimpleSpawn()
+        val policy: SpawnExecutionContext = Mockito.mock<SpawnExecutionContext>(SpawnExecutionContext::class.java)
+        Mockito.`when`<Any?>(policy.timeout).thenReturn(java.time.Duration.ZERO)
+
+        Mockito.`when`<T?>(
+            executor.executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        )
+            .thenAnswer(
+                Answer { invocationOnMock: InvocationOnMock? ->
+                    val receiver: OperationObserver = invocationOnMock.getArgument<OperationObserver>(2)
+                    val operation: Operation? =
+                        Operation.newBuilder()
+                            .setMetadata( // Anything that is not ExecutionOperationMetadata
+                                Any.pack(Operation.getDefaultInstance())
+                            )
+                            .build()
+                    receiver.onNext(operation)
+                    succeeded
+                })
+
+        Mockito.doReturn(null).`when`<Any?>(service)
+            .downloadOutputs(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>())
+
+        // act
+        val res: SpawnResult = runner.exec(spawn, policy)
+        assertThat(res.status()).isEqualTo(Status.SUCCESS)
+
+        // assert
+        Mockito.verify<Any?>(executor)
+            .executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        val reportOrder: InOrder = Mockito.inOrder(policy)
+        reportOrder.verify<Any?>(policy, Mockito.times(1)).report(SpawnSchedulingEvent.create("remote"))
+        reportOrder.verify<Any?>(policy, Mockito.times(1)).report(SpawnExecutingEvent.create("remote"))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun shouldReportExecutingStatusIfNoExecutingStatusFromMetadata() {
+        // arrange
+        val runner: RemoteSpawnRunner = newSpawnRunner()
+        val service: RemoteExecutionService? = runner.getRemoteExecutionService()
+        val succeeded: ExecuteResponse? =
+            ExecuteResponse.newBuilder()
+                .setResult(ActionResult.newBuilder().setExitCode(0).build())
+                .build()
+
+        val spawn: Spawn = newSimpleSpawn()
+        val policy: SpawnExecutionContext = Mockito.mock<SpawnExecutionContext>(SpawnExecutionContext::class.java)
+        Mockito.`when`<Any?>(policy.timeout).thenReturn(java.time.Duration.ZERO)
+
+        Mockito.`when`<T?>(
+            executor.executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        )
+            .thenAnswer(
+                Answer { invocationOnMock: InvocationOnMock? ->
+                    val receiver: OperationObserver = invocationOnMock.getArgument<OperationObserver>(2)
+                    val completed: Operation? =
+                        Operation.newBuilder()
+                            .setMetadata(
+                                Any.pack(
+                                    ExecuteOperationMetadata.newBuilder()
+                                        .setStage(Value.COMPLETED)
+                                        .build()
+                                )
+                            )
+                            .build()
+                    receiver.onNext(completed)
+                    succeeded
+                })
+        Mockito.doReturn(null).`when`<Any?>(service)
+            .downloadOutputs(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>())
+
+        // act
+        val res: SpawnResult = runner.exec(spawn, policy)
+        assertThat(res.status()).isEqualTo(Status.SUCCESS)
+
+        // assert
+        Mockito.verify<Any?>(executor)
+            .executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        val reportOrder: InOrder = Mockito.inOrder(policy)
+        reportOrder.verify<Any?>(policy, Mockito.times(1)).report(SpawnSchedulingEvent.create("remote"))
+        reportOrder.verify<Any?>(policy, Mockito.times(1)).report(SpawnExecutingEvent.create("remote"))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun shouldReportExecutingStatusEvenNoOperationFromServer() {
+        // arrange
+        val runner: RemoteSpawnRunner = newSpawnRunner()
+        val service: RemoteExecutionService? = runner.getRemoteExecutionService()
+        val succeeded: ExecuteResponse? =
+            ExecuteResponse.newBuilder()
+                .setResult(ActionResult.newBuilder().setExitCode(0).build())
+                .build()
+
+        val spawn: Spawn = newSimpleSpawn()
+        val policy: SpawnExecutionContext = Mockito.mock<SpawnExecutionContext>(SpawnExecutionContext::class.java)
+        Mockito.`when`<Any?>(policy.timeout).thenReturn(java.time.Duration.ZERO)
+
+        Mockito.`when`<T?>(
+            executor.executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        )
+            .thenReturn(succeeded)
+        Mockito.doReturn(null).`when`<Any?>(service)
+            .downloadOutputs(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>())
+
+        // act
+        val res: SpawnResult = runner.exec(spawn, policy)
+        assertThat(res.status()).isEqualTo(Status.SUCCESS)
+
+        // assert
+        Mockito.verify<Any?>(executor)
+            .executeRemotely(
+                ArgumentMatchers.any<T?>(RemoteActionExecutionContext::class.java),
+                ArgumentMatchers.any<T?>(ExecuteRequest::class.java),
+                ArgumentMatchers.any<T?>(OperationObserver::class.java)
+            )
+        val reportOrder: InOrder = Mockito.inOrder(policy)
+        reportOrder.verify<Any?>(policy, Mockito.times(1)).report(SpawnSchedulingEvent.create("remote"))
+        reportOrder.verify<Any?>(policy, Mockito.times(1)).report(SpawnExecutingEvent.create("remote"))
+    }
+
+    private fun newSpawnRunner(): RemoteSpawnRunner {
+        return newSpawnRunner(executor, RemotePathResolver.createDefault(execRoot))
+    }
+
+    private fun newSpawnRunner(remotePathResolver: RemotePathResolver?): RemoteSpawnRunner {
+        return newSpawnRunner(executor, remotePathResolver)
+    }
+
+    private fun newSpawnRunner(
+        executor: RemoteExecutionClient?, remotePathResolver: RemotePathResolver?
+    ): RemoteSpawnRunner {
+        val service: RemoteExecutionService? =
+            spy(
+                RemoteExecutionService(
+                    reporter,  /* verboseFailures= */
+                    true,
+                    execRoot,
+                    remotePathResolver,
+                    "build-req-id",
+                    "command-id",
+                    TestConstants.WORKSPACE_NAME,
+                    digestUtil,
+                    remoteOptions,
+                    com.google.devtools.common.options.Options.getDefaults<O?>(ExecutionOptions::class.java),
+                    cache,
+                    executor,
+                    tempPathGenerator,  /* captureCorruptedOutputsDir= */
+                    null,
+                    remoteOutputChecker,
+                    < T > mock < T ? > (OutputService::class.java),
+                com.google.common.collect.Sets.newConcurrentHashSet<E?>()
+            ))
+
+        return RemoteSpawnRunner(
+            remoteOptions,  /* verboseFailures= */
+            false,
+            reporter,
+            retryService,
+            logDir,
+            service,
+            digestUtil
+        )
+    }
+
+    companion object {
+        private val NO_CACHE: com.google.common.collect.ImmutableMap<String?, String?> =
+            com.google.common.collect.ImmutableMap.of<String?, String?>(ExecutionRequirements.NO_CACHE, "")
+
+        // The action key of the Spawn returned by newSimpleSpawn().
+        private const val SIMPLE_ACTION_ID = "31aea267dc597b047a9b6993100415b6406f82822318dc8988e4164a535b51ee"
+
+        private fun newSimpleSpawn(vararg outputs: Artifact?): Spawn {
+            return simpleSpawnWithExecutionInfo(com.google.common.collect.ImmutableMap.of<String?, String?>(), *outputs)
+        }
+
+        private fun simpleSpawnWithExecutionInfo(
+            executionInfo: com.google.common.collect.ImmutableMap<String?, String?>?, vararg outputs: Artifact?
+        ): SimpleSpawn {
+            return SimpleSpawn(
+                FakeOwner("foo", "bar", "//dummy:label"),  /* arguments= */
+                com.google.common.collect.ImmutableList.of<E?>(),  /* environment= */
+                com.google.common.collect.ImmutableMap.of<K?, V?>(),  /* executionInfo= */
+                executionInfo,  /* inputs= */
+                NestedSetBuilder.emptySet(Order.STABLE_ORDER),  /* outputs= */
+                com.google.common.collect.ImmutableSet.< E > copyOf < E ? > (outputs),
+                ResourceSet.ZERO
+            )
+        }
+    }
 }

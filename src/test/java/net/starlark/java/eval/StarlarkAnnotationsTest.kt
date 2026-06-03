@@ -11,277 +11,295 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.eval
 
-package net.starlark.java.eval;
+import net.starlark.java.annot.StarlarkAnnotations
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+/** Test Starlark annotations and utilities.  */
+@RunWith(JUnit4::class)
+class StarlarkAnnotationsTest {
+    /** MockClassA  */
+    @StarlarkBuiltin(name = "MockClassA", doc = "MockClassA")
+    open class MockClassA : StarlarkValue {
+        @StarlarkMethod(name = "foo", doc = "MockClassA#foo")
+        open fun foo() {
+        }
 
-import java.lang.reflect.Method;
-import net.starlark.java.annot.StarlarkAnnotations;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+        @StarlarkMethod(name = "bar", doc = "MockClassA#bar")
+        open fun bar() {
+        }
 
-/** Test Starlark annotations and utilities. */
-@RunWith(JUnit4.class)
-public class StarlarkAnnotationsTest {
+        open fun baz() {}
+    }
 
-  /** MockClassA */
-  @StarlarkBuiltin(name = "MockClassA", doc = "MockClassA")
-  public static class MockClassA implements StarlarkValue {
-    @StarlarkMethod(name = "foo", doc = "MockClassA#foo")
-    public void foo() {}
+    /** MockInterfaceB1  */
+    @StarlarkBuiltin(name = "MockInterfaceB1", doc = "MockInterfaceB1")
+    interface MockInterfaceB1 : StarlarkValue {
+        @StarlarkMethod(name = "foo", doc = "MockInterfaceB1#foo")
+        fun foo()
 
-    @StarlarkMethod(name = "bar", doc = "MockClassA#bar")
-    public void bar() {}
+        @StarlarkMethod(name = "bar", doc = "MockInterfaceB1#bar")
+        fun bar()
 
-    public void baz() {}
-  }
+        @StarlarkMethod(name = "baz", doc = "MockInterfaceB1#baz")
+        fun baz()
+    }
 
-  /** MockInterfaceB1 */
-  @StarlarkBuiltin(name = "MockInterfaceB1", doc = "MockInterfaceB1")
-  public static interface MockInterfaceB1 extends StarlarkValue {
-    @StarlarkMethod(name = "foo", doc = "MockInterfaceB1#foo")
-    void foo();
+    /** MockInterfaceB2  */
+    @StarlarkBuiltin(name = "MockInterfaceB2", doc = "MockInterfaceB2")
+    interface MockInterfaceB2 : StarlarkValue {
+        @StarlarkMethod(name = "baz", doc = "MockInterfaceB2#baz")
+        fun baz()
 
-    @StarlarkMethod(name = "bar", doc = "MockInterfaceB1#bar")
-    void bar();
+        @StarlarkMethod(name = "qux", doc = "MockInterfaceB2#qux")
+        fun qux()
+    }
 
-    @StarlarkMethod(name = "baz", doc = "MockInterfaceB1#baz")
-    void baz();
-  }
+    /** MockClassC  */
+    @StarlarkBuiltin(name = "MockClassC", doc = "MockClassC")
+    open class MockClassC : MockClassA(), MockInterfaceB1, MockInterfaceB2 {
+        @StarlarkMethod(name = "foo", doc = "MockClassC#foo")
+        override fun foo() {
+        }
 
-  /** MockInterfaceB2 */
-  @StarlarkBuiltin(name = "MockInterfaceB2", doc = "MockInterfaceB2")
-  public static interface MockInterfaceB2 extends StarlarkValue {
-    @StarlarkMethod(name = "baz", doc = "MockInterfaceB2#baz")
-    void baz();
+        override fun bar() {}
+        override fun baz() {}
+        override fun qux() {}
+    }
 
-    @StarlarkMethod(name = "qux", doc = "MockInterfaceB2#qux")
-    void qux();
-  }
+    /** MockClassD  */
+    class MockClassD : MockClassC() {
+        @StarlarkMethod(name = "foo", doc = "MockClassD#foo")
+        override fun foo() {
+        }
+    }
 
-  /** MockClassC */
-  @StarlarkBuiltin(name = "MockClassC", doc = "MockClassC")
-  public static class MockClassC extends MockClassA implements MockInterfaceB1, MockInterfaceB2 {
-    @Override
-    @StarlarkMethod(name = "foo", doc = "MockClassC#foo")
-    public void foo() {}
+    /**
+     * A mock class that implements two unrelated module interfaces. This is invalid as the Starlark
+     * type of such an object is ambiguous.
+     */
+    class ImplementsTwoUnrelatedInterfaceModules
 
-    @Override
-    public void bar() {}
-    @Override
-    public void baz() {}
-    @Override
-    public void qux() {}
-  }
+        : MockInterfaceB1, MockInterfaceB2 {
+        override fun foo() {}
+        override fun bar() {}
+        override fun baz() {}
+        override fun qux() {}
+    }
 
-  /** MockClassD */
-  public static class MockClassD extends MockClassC {
-    @Override
-    @StarlarkMethod(name = "foo", doc = "MockClassD#foo")
-    public void foo() {}
-  }
+    /** ClassAModule test class  */
+    @StarlarkBuiltin(name = "ClassAModule", doc = "ClassAModule")
+    open class ClassAModule : StarlarkValue
 
-  /**
-   * A mock class that implements two unrelated module interfaces. This is invalid as the Starlark
-   * type of such an object is ambiguous.
-   */
-  public static class ImplementsTwoUnrelatedInterfaceModules
-      implements MockInterfaceB1, MockInterfaceB2 {
-    @Override
-    public void foo() {}
-    @Override
-    public void bar() {}
-    @Override
-    public void baz() {}
-    @Override
-    public void qux() {}
-  }
+    /** ExtendsClassA test class  */
+    open class ExtendsClassA : ClassAModule()
 
-  /** ClassAModule test class */
-  @StarlarkBuiltin(name = "ClassAModule", doc = "ClassAModule")
-  public static class ClassAModule implements StarlarkValue {}
+    /** InterfaceBModule test interface  */
+    @StarlarkBuiltin(name = "InterfaceBModule", doc = "InterfaceBModule")
+    interface InterfaceBModule : StarlarkValue
 
-  /** ExtendsClassA test class */
-  public static class ExtendsClassA extends ClassAModule {}
+    /** ExtendsInterfaceB test interface  */
+    interface ExtendsInterfaceB : InterfaceBModule
 
-  /** InterfaceBModule test interface */
-  @StarlarkBuiltin(name = "InterfaceBModule", doc = "InterfaceBModule")
-  public static interface InterfaceBModule extends StarlarkValue {}
+    /**
+     * A mock class which has two transitive superclasses ([ClassAModule] and [ ])) which are unrelated modules. This is invalid as the Starlark type of such
+     * an object is ambiguous.
+     * 
+     * 
+     * In other words: AmbiguousClass -> ClassAModule AmbiguousClass -> InterfaceBModule ... but
+     * ClassAModule and InterfaceBModule have no relation.
+     */
+    class AmbiguousClass : ExtendsClassA(), ExtendsInterfaceB
 
-  /** ExtendsInterfaceB test interface */
-  public static interface ExtendsInterfaceB extends InterfaceBModule {}
+    /** SubclassOfBoth test interface  */
+    @StarlarkBuiltin(name = "SubclassOfBoth", doc = "SubclassOfBoth")
+    open class SubclassOfBoth : ExtendsClassA(), ExtendsInterfaceB
 
-  /**
-   * A mock class which has two transitive superclasses ({@link ClassAModule} and {@link
-   * InterfaceBModule})) which are unrelated modules. This is invalid as the Starlark type of such
-   * an object is ambiguous.
-   *
-   * <p>In other words: AmbiguousClass -> ClassAModule AmbiguousClass -> InterfaceBModule ... but
-   * ClassAModule and InterfaceBModule have no relation.
-   */
-  public static class AmbiguousClass extends ExtendsClassA implements ExtendsInterfaceB {}
+    /**
+     * A mock class similar to [AmbiugousClass] in that it has two separate superclass-paths to
+     * Starlark modules, but is resolvable.
+     * 
+     * 
+     * Concretely: UnambiguousClass -> SubclassOfBoth UnambiguousClass -> InterfaceBModule
+     * SubclassOfBoth -> InterfaceBModule
+     * 
+     * 
+     * ... so UnambiguousClass is of type SubclassOfBoth.
+     */
+    class UnambiguousClass : SubclassOfBoth(), ExtendsInterfaceB
 
-  /** SubclassOfBoth test interface */
-  @StarlarkBuiltin(name = "SubclassOfBoth", doc = "SubclassOfBoth")
-  public static class SubclassOfBoth extends ExtendsClassA implements ExtendsInterfaceB {}
+    /** MockClassZ  */
+    class MockClassZ
 
-  /**
-   * A mock class similar to {@link AmbiugousClass} in that it has two separate superclass-paths to
-   * Starlark modules, but is resolvable.
-   *
-   * <p>Concretely: UnambiguousClass -> SubclassOfBoth UnambiguousClass -> InterfaceBModule
-   * SubclassOfBoth -> InterfaceBModule
-   *
-   * <p>... so UnambiguousClass is of type SubclassOfBoth.
-   */
-  public static class UnambiguousClass extends SubclassOfBoth implements ExtendsInterfaceB {}
+    // The tests for getStarlarkBuiltin() double as tests for getParentWithStarlarkBuiltin(),
+    // since they share an implementation.
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGetStarlarkBuiltinBasic() {
+        // Normal case.
+        val ann: StarlarkBuiltin =
+            StarlarkAnnotations.getStarlarkBuiltin(net.starlark.java.eval.StarlarkAnnotationsTest.MockClassA::class.java)
+        val cls: java.lang.Class<*>? =
+            StarlarkAnnotations.getParentWithStarlarkBuiltin(net.starlark.java.eval.StarlarkAnnotationsTest.MockClassA::class.java)
+        assertThat(ann).isNotNull()
+        assertThat(ann.doc()).isEqualTo("MockClassA")
+        Truth.assertThat(cls).isNotNull()
+        Truth.assertThat(cls).isEqualTo(net.starlark.java.eval.StarlarkAnnotationsTest.MockClassA::class.java)
+    }
 
-  /** MockClassZ */
-  public static class MockClassZ {
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGetStarlarkBuiltinSubclass() {
+        // Subclass's annotation is used.
+        val ann: StarlarkBuiltin = StarlarkAnnotations.getStarlarkBuiltin(MockClassC::class.java)
+        val cls: java.lang.Class<*>? = StarlarkAnnotations.getParentWithStarlarkBuiltin(MockClassC::class.java)
+        assertThat(ann).isNotNull()
+        assertThat(ann.doc()).isEqualTo("MockClassC")
+        Truth.assertThat(cls).isNotNull()
+        Truth.assertThat(cls).isEqualTo(MockClassC::class.java)
+    }
 
-  // The tests for getStarlarkBuiltin() double as tests for getParentWithStarlarkBuiltin(),
-  // since they share an implementation.
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGetStarlarkBuiltinSubclassNoSubannotation() {
+        // Falls back on superclass's annotation.
+        val ann: StarlarkBuiltin = StarlarkAnnotations.getStarlarkBuiltin(MockClassD::class.java)
+        val cls: java.lang.Class<*>? = StarlarkAnnotations.getParentWithStarlarkBuiltin(MockClassD::class.java)
+        assertThat(ann).isNotNull()
+        assertThat(ann.doc()).isEqualTo("MockClassC")
+        Truth.assertThat(cls).isNotNull()
+        Truth.assertThat(cls).isEqualTo(MockClassC::class.java)
+    }
 
-  @Test
-  public void testGetStarlarkBuiltinBasic() throws Exception {
-    // Normal case.
-    StarlarkBuiltin ann = StarlarkAnnotations.getStarlarkBuiltin(MockClassA.class);
-    Class<?> cls = StarlarkAnnotations.getParentWithStarlarkBuiltin(MockClassA.class);
-    assertThat(ann).isNotNull();
-    assertThat(ann.doc()).isEqualTo("MockClassA");
-    assertThat(cls).isNotNull();
-    assertThat(cls).isEqualTo(MockClassA.class);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGetStarlarkBuiltinNotFound() {
+        // Doesn't exist.
+        val ann: StarlarkBuiltin? = StarlarkAnnotations.getStarlarkBuiltin(MockClassZ::class.java)
+        val cls: java.lang.Class<*>? = StarlarkAnnotations.getParentWithStarlarkBuiltin(MockClassZ::class.java)
+        assertThat(ann).isNull()
+        Truth.assertThat(cls).isNull()
+    }
 
-  @Test
-  public void testGetStarlarkBuiltinSubclass() throws Exception {
-    // Subclass's annotation is used.
-    StarlarkBuiltin ann = StarlarkAnnotations.getStarlarkBuiltin(MockClassC.class);
-    Class<?> cls = StarlarkAnnotations.getParentWithStarlarkBuiltin(MockClassC.class);
-    assertThat(ann).isNotNull();
-    assertThat(ann.doc()).isEqualTo("MockClassC");
-    assertThat(cls).isNotNull();
-    assertThat(cls).isEqualTo(MockClassC.class);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGetStarlarkBuiltinAmbiguous() {
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable {
+                StarlarkAnnotations.getStarlarkBuiltin(
+                    ImplementsTwoUnrelatedInterfaceModules::class.java
+                )
+            })
+    }
 
-  @Test
-  public void testGetStarlarkBuiltinSubclassNoSubannotation() throws Exception {
-    // Falls back on superclass's annotation.
-    StarlarkBuiltin ann = StarlarkAnnotations.getStarlarkBuiltin(MockClassD.class);
-    Class<?> cls = StarlarkAnnotations.getParentWithStarlarkBuiltin(MockClassD.class);
-    assertThat(ann).isNotNull();
-    assertThat(ann.doc()).isEqualTo("MockClassC");
-    assertThat(cls).isNotNull();
-    assertThat(cls).isEqualTo(MockClassC.class);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGetStarlarkBuiltinTransitivelyAmbiguous() {
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable { StarlarkAnnotations.getStarlarkBuiltin(AmbiguousClass::class.java) })
+    }
 
-  @Test
-  public void testGetStarlarkBuiltinNotFound() throws Exception {
-    // Doesn't exist.
-    StarlarkBuiltin ann = StarlarkAnnotations.getStarlarkBuiltin(MockClassZ.class);
-    Class<?> cls = StarlarkAnnotations.getParentWithStarlarkBuiltin(MockClassZ.class);
-    assertThat(ann).isNull();
-    assertThat(cls).isNull();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGetStarlarkBuiltinUnambiguousComplex() {
+        assertThat(StarlarkAnnotations.getStarlarkBuiltin(SubclassOfBoth::class.java))
+            .isEqualTo(SubclassOfBoth::class.java.getAnnotation<A?>(StarlarkBuiltin::class.java))
 
-  @Test
-  public void testGetStarlarkBuiltinAmbiguous() throws Exception {
-    assertThrows(
-        IllegalArgumentException.class,
-        () -> StarlarkAnnotations.getStarlarkBuiltin(ImplementsTwoUnrelatedInterfaceModules.class));
-  }
+        assertThat(StarlarkAnnotations.getStarlarkBuiltin(UnambiguousClass::class.java))
+            .isEqualTo(SubclassOfBoth::class.java.getAnnotation<A?>(StarlarkBuiltin::class.java))
+    }
 
-  @Test
-  public void testGetStarlarkBuiltinTransitivelyAmbiguous() throws Exception {
-    assertThrows(
-        IllegalArgumentException.class,
-        () -> StarlarkAnnotations.getStarlarkBuiltin(AmbiguousClass.class));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGetStarlarkCallableBasic() {
+        // Normal case. Ensure two-arg form is consistent with one-arg form.
+        val method: java.lang.reflect.Method? =
+            net.starlark.java.eval.StarlarkAnnotationsTest.MockClassA::class.java.getMethod("foo")
+        val ann: StarlarkMethod = StarlarkAnnotations.getStarlarkMethod(method)
+        assertThat(ann).isNotNull()
+        assertThat(ann.doc()).isEqualTo("MockClassA#foo")
 
-  @Test
-  public void testGetStarlarkBuiltinUnambiguousComplex() throws Exception {
-    assertThat(StarlarkAnnotations.getStarlarkBuiltin(SubclassOfBoth.class))
-        .isEqualTo(SubclassOfBoth.class.getAnnotation(StarlarkBuiltin.class));
+        val ann2: StarlarkMethod? = StarlarkAnnotations.getStarlarkMethod(
+            net.starlark.java.eval.StarlarkAnnotationsTest.MockClassA::class.java,
+            method
+        )
+        assertThat(ann2).isEqualTo(ann)
+    }
 
-    assertThat(StarlarkAnnotations.getStarlarkBuiltin(UnambiguousClass.class))
-        .isEqualTo(SubclassOfBoth.class.getAnnotation(StarlarkBuiltin.class));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGetStarlarkCallableSubclass() {
+        // Subclass's annotation is used.
+        val method: java.lang.reflect.Method? = MockClassC::class.java.getMethod("foo")
+        val ann: StarlarkMethod = StarlarkAnnotations.getStarlarkMethod(method)
+        assertThat(ann).isNotNull()
+        assertThat(ann.doc()).isEqualTo("MockClassC#foo")
+    }
 
-  @Test
-  public void testGetStarlarkCallableBasic() throws Exception {
-    // Normal case. Ensure two-arg form is consistent with one-arg form.
-    Method method = MockClassA.class.getMethod("foo");
-    StarlarkMethod ann = StarlarkAnnotations.getStarlarkMethod(method);
-    assertThat(ann).isNotNull();
-    assertThat(ann.doc()).isEqualTo("MockClassA#foo");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGetStarlarkCallableSubclassNoSubannotation() {
+        // Falls back on superclass's annotation. Superclass takes precedence over interface.
+        val method: java.lang.reflect.Method? = MockClassC::class.java.getMethod("bar")
+        val ann: StarlarkMethod = StarlarkAnnotations.getStarlarkMethod(method)
+        assertThat(ann).isNotNull()
+        assertThat(ann.doc()).isEqualTo("MockClassA#bar")
+    }
 
-    StarlarkMethod ann2 = StarlarkAnnotations.getStarlarkMethod(MockClassA.class, method);
-    assertThat(ann2).isEqualTo(ann);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGetStarlarkCallableTwoargForm() {
+        // Ensure that when passing superclass in directly, we bypass subclass's annotation.
+        val method: java.lang.reflect.Method? = MockClassC::class.java.getMethod("foo")
+        val ann: StarlarkMethod = StarlarkAnnotations.getStarlarkMethod(
+            net.starlark.java.eval.StarlarkAnnotationsTest.MockClassA::class.java,
+            method
+        )
+        assertThat(ann).isNotNull()
+        assertThat(ann.doc()).isEqualTo("MockClassA#foo")
+    }
 
-  @Test
-  public void testGetStarlarkCallableSubclass() throws Exception {
-    // Subclass's annotation is used.
-    Method method = MockClassC.class.getMethod("foo");
-    StarlarkMethod ann = StarlarkAnnotations.getStarlarkMethod(method);
-    assertThat(ann).isNotNull();
-    assertThat(ann.doc()).isEqualTo("MockClassC#foo");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGetStarlarkCallableNotFound() {
+        // Null result when no annotation present...
+        var method: java.lang.reflect.Method? =
+            net.starlark.java.eval.StarlarkAnnotationsTest.MockClassA::class.java.getMethod("baz")
+        var ann: StarlarkMethod? = StarlarkAnnotations.getStarlarkMethod(method)
+        assertThat(ann).isNull()
 
-  @Test
-  public void testGetStarlarkCallableSubclassNoSubannotation() throws Exception {
-    // Falls back on superclass's annotation. Superclass takes precedence over interface.
-    Method method = MockClassC.class.getMethod("bar");
-    StarlarkMethod ann = StarlarkAnnotations.getStarlarkMethod(method);
-    assertThat(ann).isNotNull();
-    assertThat(ann.doc()).isEqualTo("MockClassA#bar");
-  }
+        // ... including when it's only present in a subclass that was bypassed...
+        method = MockClassC::class.java.getMethod("baz")
+        ann = StarlarkAnnotations.getStarlarkMethod(
+            net.starlark.java.eval.StarlarkAnnotationsTest.MockClassA::class.java,
+            method
+        )
+        assertThat(ann).isNull()
 
-  @Test
-  public void testGetStarlarkCallableTwoargForm() throws Exception {
-    // Ensure that when passing superclass in directly, we bypass subclass's annotation.
-    Method method = MockClassC.class.getMethod("foo");
-    StarlarkMethod ann = StarlarkAnnotations.getStarlarkMethod(MockClassA.class, method);
-    assertThat(ann).isNotNull();
-    assertThat(ann.doc()).isEqualTo("MockClassA#foo");
-  }
+        // ... or when the method itself is only in the subclass that was bypassed.
+        method = MockClassC::class.java.getMethod("qux")
+        ann = StarlarkAnnotations.getStarlarkMethod(
+            net.starlark.java.eval.StarlarkAnnotationsTest.MockClassA::class.java,
+            method
+        )
+        assertThat(ann).isNull()
+    }
 
-  @Test
-  public void testGetStarlarkCallableNotFound() throws Exception {
-    // Null result when no annotation present...
-    Method method = MockClassA.class.getMethod("baz");
-    StarlarkMethod ann = StarlarkAnnotations.getStarlarkMethod(method);
-    assertThat(ann).isNull();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGetStarlarkCallableInterface() {
+        // Search through parent interfaces. First interface takes priority.
+        var method: java.lang.reflect.Method? = MockClassC::class.java.getMethod("baz")
+        var ann: StarlarkMethod = StarlarkAnnotations.getStarlarkMethod(method)
+        assertThat(ann).isNotNull()
+        assertThat(ann.doc()).isEqualTo("MockInterfaceB1#baz")
 
-    // ... including when it's only present in a subclass that was bypassed...
-    method = MockClassC.class.getMethod("baz");
-    ann = StarlarkAnnotations.getStarlarkMethod(MockClassA.class, method);
-    assertThat(ann).isNull();
-
-    // ... or when the method itself is only in the subclass that was bypassed.
-    method = MockClassC.class.getMethod("qux");
-    ann = StarlarkAnnotations.getStarlarkMethod(MockClassA.class, method);
-    assertThat(ann).isNull();
-  }
-
-  @Test
-  public void testGetStarlarkCallableInterface() throws Exception {
-    // Search through parent interfaces. First interface takes priority.
-    Method method = MockClassC.class.getMethod("baz");
-    StarlarkMethod ann = StarlarkAnnotations.getStarlarkMethod(method);
-    assertThat(ann).isNotNull();
-    assertThat(ann.doc()).isEqualTo("MockInterfaceB1#baz");
-
-    // Make sure both are still traversed.
-    method = MockClassC.class.getMethod("qux");
-    ann = StarlarkAnnotations.getStarlarkMethod(method);
-    assertThat(ann).isNotNull();
-    assertThat(ann.doc()).isEqualTo("MockInterfaceB2#qux");
-  }
+        // Make sure both are still traversed.
+        method = MockClassC::class.java.getMethod("qux")
+        ann = StarlarkAnnotations.getStarlarkMethod(method)
+        assertThat(ann).isNotNull()
+        assertThat(ann.doc()).isEqualTo("MockInterfaceB2#qux")
+    }
 }

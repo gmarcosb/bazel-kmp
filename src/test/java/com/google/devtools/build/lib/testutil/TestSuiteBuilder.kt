@@ -11,120 +11,110 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.testutil;
+package com.google.devtools.build.lib.testutil
 
-import com.google.common.base.Predicate;
-import com.google.common.base.Predicates;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Sets;
-import com.google.devtools.build.lib.util.Classpath;
-import com.google.devtools.build.lib.util.Classpath.ClassPathException;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.lang.reflect.Modifier;
-import java.util.Comparator;
-import java.util.LinkedHashSet;
-import java.util.Set;
-import junit.framework.TestCase;
-import org.junit.runner.RunWith;
+import com.google.devtools.build.lib.util.Classpath
 
 /**
- * A collector for test classes, for both JUnit 3 and 4. To be used in combination with {@link
- * CustomSuite}.
+ * A collector for test classes, for both JUnit 3 and 4. To be used in combination with [ ].
  */
-public final class TestSuiteBuilder {
+class TestSuiteBuilder {
+    private val testClasses: MutableSet<java.lang.Class<*>?> =
+        com.google.common.collect.Sets.newTreeSet<java.lang.Class<*>?>(TestClassNameComparator())
+    private var matchClassPredicate: com.google.common.base.Predicate<java.lang.Class<*>?> =
+        com.google.common.base.Predicates.alwaysTrue<java.lang.Class<*>?>()
 
-  private Set<Class<?>> testClasses = Sets.newTreeSet(new TestClassNameComparator());
-  private Predicate<Class<?>> matchClassPredicate = Predicates.alwaysTrue();
-
-  /**
-   * Adds the tests found (directly) in class {@code c} to the set of tests this builder will
-   * search.
-   */
-  @CanIgnoreReturnValue
-  public TestSuiteBuilder addTestClass(Class<?> c) {
-    testClasses.add(c);
-    return this;
-  }
-
-  /**
-   * Adds all the test classes (top-level or nested) found in package {@code pkgName} or its
-   * subpackages to the set of tests this builder will search.
-   */
-  @CanIgnoreReturnValue
-  public TestSuiteBuilder addPackageRecursive(String pkgName) {
-    for (Class<?> c : getClassesRecursive(pkgName)) {
-      addTestClass(c);
+    /**
+     * Adds the tests found (directly) in class `c` to the set of tests this builder will
+     * search.
+     */
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun addTestClass(c: java.lang.Class<*>?): TestSuiteBuilder {
+        testClasses.add(c)
+        return this
     }
-    return this;
-  }
 
-  private Set<Class<?>> getClassesRecursive(String pkgName) {
-    Set<Class<?>> result = new LinkedHashSet<>();
-    try {
-      for (Class<?> clazz : Classpath.findClasses(pkgName)) {
-        if (isTestClass(clazz)) {
-          result.add(clazz);
+    /**
+     * Adds all the test classes (top-level or nested) found in package `pkgName` or its
+     * subpackages to the set of tests this builder will search.
+     */
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun addPackageRecursive(pkgName: String?): TestSuiteBuilder {
+        for (c in getClassesRecursive(pkgName)) {
+            addTestClass(c)
         }
-      }
-    } catch (ClassPathException e) {
-      throw new AssertionError("Cannot retrieve classes: " + e.getMessage());
+        return this
     }
-    return result;
-  }
 
-  /** Specifies a predicate returns false for classes we want to exclude. */
-  @CanIgnoreReturnValue
-  public TestSuiteBuilder matchClasses(Predicate<Class<?>> predicate) {
-    matchClassPredicate = predicate;
-    return this;
-  }
-
-  /**
-   * Creates and returns a TestSuite containing the tests from the given
-   * classes and/or packages which matched the given tags.
-   */
-  public Set<Class<?>> create() {
-    Set<Class<?>> result = new LinkedHashSet<>();
-    for (Class<?> testClass : Iterables.filter(testClasses, matchClassPredicate)) {
-      result.add(testClass);
+    private fun getClassesRecursive(pkgName: String?): MutableSet<java.lang.Class<*>?> {
+        val result: MutableSet<java.lang.Class<*>?> = LinkedHashSet<java.lang.Class<*>?>()
+        try {
+            for (clazz in Classpath.findClasses(pkgName)) {
+                if (isTestClass(clazz)) {
+                    result.add(clazz)
+                }
+            }
+        } catch (e: ClassPathException) {
+            throw java.lang.AssertionError("Cannot retrieve classes: " + e.getMessage())
+        }
+        return result
     }
-    return result;
-  }
 
-  /**
-   * Determines if a given class is a test class.
-   *
-   * @param container class to test
-   * @return <code>true</code> if the test is a test class.
-   */
-  private static boolean isTestClass(Class<?> container) {
-    return (isJunit4Test(container) || isJunit3Test(container))
-        && !isSuite(container)
-        && !Modifier.isAbstract(container.getModifiers());
-  }
-
-  private static boolean isJunit4Test(Class<?> container) {
-    return container.isAnnotationPresent(RunWith.class);
-  }
-
-  private static boolean isJunit3Test(Class<?> container) {
-    return TestCase.class.isAssignableFrom(container);
-  }
-
-  /**
-   * Classes that have a {@code RunWith} annotation for {@link ClasspathSuite} or {@link
-   * CustomSuite} are automatically excluded to avoid picking up the suite class itself.
-   */
-  private static boolean isSuite(Class<?> container) {
-    RunWith runWith = container.getAnnotation(RunWith.class);
-    return (runWith != null)
-        && ((runWith.value() == ClasspathSuite.class) || (runWith.value() == CustomSuite.class));
-  }
-
-  private static class TestClassNameComparator implements Comparator<Class<?>> {
-    @Override
-    public int compare(Class<?> o1, Class<?> o2) {
-      return o1.getName().compareTo(o2.getName());
+    /** Specifies a predicate returns false for classes we want to exclude.  */
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun matchClasses(predicate: com.google.common.base.Predicate<java.lang.Class<*>?>): TestSuiteBuilder {
+        matchClassPredicate = predicate
+        return this
     }
-  }
+
+    /**
+     * Creates and returns a TestSuite containing the tests from the given
+     * classes and/or packages which matched the given tags.
+     */
+    fun create(): MutableSet<java.lang.Class<*>?> {
+        val result: MutableSet<java.lang.Class<*>?> = LinkedHashSet<java.lang.Class<*>?>()
+        for (testClass in com.google.common.collect.Iterables.filter<java.lang.Class<*>?>(
+            testClasses,
+            matchClassPredicate
+        )) {
+            result.add(testClass)
+        }
+        return result
+    }
+
+    private class TestClassNameComparator : java.util.Comparator<java.lang.Class<*>?> {
+        override fun compare(o1: java.lang.Class<*>, o2: java.lang.Class<*>): Int {
+            return o1.getName().compareTo(o2.getName())
+        }
+    }
+
+    companion object {
+        /**
+         * Determines if a given class is a test class.
+         * 
+         * @param container class to test
+         * @return `true` if the test is a test class.
+         */
+        private fun isTestClass(container: java.lang.Class<*>): Boolean {
+            return (isJunit4Test(container) || isJunit3Test(container))
+                    && !isSuite(container) && !java.lang.reflect.Modifier.isAbstract(container.getModifiers())
+        }
+
+        private fun isJunit4Test(container: java.lang.Class<*>): Boolean {
+            return container.isAnnotationPresent(RunWith::class.java)
+        }
+
+        private fun isJunit3Test(container: java.lang.Class<*>?): Boolean {
+            return TestCase::class.java.isAssignableFrom(container)
+        }
+
+        /**
+         * Classes that have a `RunWith` annotation for [ClasspathSuite] or [ ] are automatically excluded to avoid picking up the suite class itself.
+         */
+        private fun isSuite(container: java.lang.Class<*>): Boolean {
+            val runWith: RunWith? = container.getAnnotation<RunWith?>(RunWith::class.java)
+            return (runWith != null)
+                    && ((runWith.value == ClasspathSuite::class.java) || (runWith.value == CustomSuite::class.java))
+        }
+    }
 }

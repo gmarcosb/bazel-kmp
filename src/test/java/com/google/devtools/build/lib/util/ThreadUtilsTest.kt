@@ -11,118 +11,122 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.util
 
-package com.google.devtools.build.lib.util;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.analysis.util.ConfigurationTestCase.create
+import com.google.devtools.build.lib.bugreport.BugReporter
+import com.google.devtools.build.lib.bugreport.Crash
+import com.google.devtools.build.lib.bugreport.CrashContext
+import com.google.devtools.build.lib.packages.util.MockToolsConfig.create
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.atomic.AtomicReference
 
-import static com.google.common.truth.Truth.assertThat;
+/** Tests for [ThreadUtils].  */
+@RunWith(JUnit4::class)
+class ThreadUtilsTest {
+    // TODO(b/150299871): inspecting the output of GoogleLogger or mocking it seems too hard for now.
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun smoke() {
+        val future: com.google.common.util.concurrent.SettableFuture<Int?> =
+            com.google.common.util.concurrent.SettableFuture.create<Int?>()
+        val numParkThreads = 11
+        val waitForThreads: CountDownLatch = CountDownLatch(numParkThreads + 2)
+        val parkThreads: MutableList<java.lang.Thread> = java.util.ArrayList<java.lang.Thread>(numParkThreads)
+        for (i in 0..<numParkThreads) {
+            parkThreads.add(
+                java.lang.Thread(
+                    java.lang.Runnable { recursiveMethodPark(0, future, waitForThreads) },
+                    "parkthread" + i
+                )
+            )
+        }
+        val noParkRunnable: java.lang.Runnable = java.lang.Runnable { recursiveMethodNoPark(0, waitForThreads) }
+        val noParkThread: java.lang.Thread = java.lang.Thread(noParkRunnable, "noparkthread1")
+        val noParkThread2: java.lang.Thread = java.lang.Thread(noParkRunnable, "noparkthread2")
+        val reportedException: AtomicReference<Throwable?> = AtomicReference<Throwable?>()
+        val bugReporter: BugReporter =
+            object : BugReporter() {
+                override fun sendBugReport(exception: Throwable?, args: MutableList<String?>?, vararg values: String?) {
+                    Truth.assertThat(reportedException.get()).isNull()
+                    reportedException.set(exception)
+                }
 
-import com.google.common.util.concurrent.SettableFuture;
-import com.google.devtools.build.lib.bugreport.BugReporter;
-import com.google.devtools.build.lib.bugreport.Crash;
-import com.google.devtools.build.lib.bugreport.CrashContext;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.atomic.AtomicReference;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+                override fun sendNonFatalBugReport(exception: Throwable?) {
+                    throw java.lang.UnsupportedOperationException()
+                }
 
-/** Tests for {@link ThreadUtils}. */
-@RunWith(JUnit4.class)
-public class ThreadUtilsTest {
-  // TODO(b/150299871): inspecting the output of GoogleLogger or mocking it seems too hard for now.
-  @Test
-  public void smoke() throws Exception {
-    SettableFuture<Integer> future = SettableFuture.create();
-    int numParkThreads = 11;
-    CountDownLatch waitForThreads = new CountDownLatch(numParkThreads + 2);
-    List<Thread> parkThreads = new ArrayList<>(numParkThreads);
-    for (int i = 0; i < numParkThreads; i++) {
-      parkThreads.add(
-          new Thread(() -> recursiveMethodPark(0, future, waitForThreads), "parkthread" + i));
+                override fun handleCrash(crash: Crash?, ctx: CrashContext?) {
+                    BugReporter.defaultInstance().handleCrash(crash, ctx)
+                }
+            }
+        parkThreads.forEach(java.util.function.Consumer { obj: java.lang.Thread? -> obj.start() })
+        noParkThread.start()
+        noParkThread2.start()
+        waitForThreads.await()
+        ThreadUtils.warnAboutSlowInterrupt("interrupt message", bugReporter)
+        Truth.assertThat(reportedException.get())
+            .hasCauseThat()
+            .hasMessageThat()
+            .isEqualTo("(Wrapper exception for longest stack trace) interrupt message")
+        // The topmost method is either "sleep" or "sleep0" or "sleepNanos0". For example, in JDK 21,
+        // "Thread.sleep" calls "sleepNanos" which then calls a "sleepNanos0" native method.
+        val stackTrace: Array<java.lang.StackTraceElement?> = reportedException.get().cause.getStackTrace()
+        if (stackTrace[0].getMethodName() == "sleepNanos0") {
+            Truth.assertThat(stackTrace[1].getMethodName()).isEqualTo("sleepNanos")
+            Truth.assertThat(stackTrace[2].getMethodName()).isEqualTo("sleep")
+            Truth.assertThat(stackTrace[3].getMethodName()).isEqualTo("recursiveMethodNoPark")
+        } else if (stackTrace[0].getMethodName() == "sleep0") {
+            Truth.assertThat(stackTrace[1].getMethodName()).isEqualTo("sleep")
+            Truth.assertThat(stackTrace[2].getMethodName()).isEqualTo("recursiveMethodNoPark")
+        } else {
+            Truth.assertThat(stackTrace[0].getMethodName()).isEqualTo("sleep")
+            Truth.assertThat(stackTrace[1].getMethodName()).isEqualTo("recursiveMethodNoPark")
+        }
+
+        future.set(1)
+        for (thread in parkThreads) {
+            thread.join()
+        }
+        noParkThread.interrupt()
+        noParkThread.join()
+        noParkThread2.interrupt()
+        noParkThread2.join()
     }
-    Runnable noParkRunnable = () -> recursiveMethodNoPark(0, waitForThreads);
-    Thread noParkThread = new Thread(noParkRunnable, "noparkthread1");
-    Thread noParkThread2 = new Thread(noParkRunnable, "noparkthread2");
-    AtomicReference<Throwable> reportedException = new AtomicReference<>();
-    BugReporter bugReporter =
-        new BugReporter() {
-          @Override
-          public void sendBugReport(Throwable exception, List<String> args, String... values) {
-            assertThat(reportedException.get()).isNull();
-            reportedException.set(exception);
-          }
 
-          @Override
-          public void sendNonFatalBugReport(Throwable exception) {
-            throw new UnsupportedOperationException();
-          }
+    companion object {
+        private fun recursiveMethodPark(
+            depth: Int, future: com.google.common.util.concurrent.SettableFuture<Int?>, waitForThreads: CountDownLatch
+        ) {
+            if (depth < 100) {
+                recursiveMethodPark(depth + 1, future, waitForThreads)
+                return
+            }
+            waitForThreads.countDown()
+            try {
+                future.get()
+            } catch (e: java.lang.InterruptedException) {
+                throw java.lang.IllegalStateException(e)
+            } catch (e: ExecutionException) {
+                throw java.lang.IllegalStateException(e)
+            }
+        }
 
-          @Override
-          public void handleCrash(Crash crash, CrashContext ctx) {
-            BugReporter.defaultInstance().handleCrash(crash, ctx);
-          }
-        };
-    parkThreads.forEach(Thread::start);
-    noParkThread.start();
-    noParkThread2.start();
-    waitForThreads.await();
-    ThreadUtils.warnAboutSlowInterrupt("interrupt message", bugReporter);
-    assertThat(reportedException.get())
-        .hasCauseThat()
-        .hasMessageThat()
-        .isEqualTo("(Wrapper exception for longest stack trace) interrupt message");
-    // The topmost method is either "sleep" or "sleep0" or "sleepNanos0". For example, in JDK 21,
-    // "Thread.sleep" calls "sleepNanos" which then calls a "sleepNanos0" native method.
-    StackTraceElement[] stackTrace = reportedException.get().getCause().getStackTrace();
-    if (stackTrace[0].getMethodName().equals("sleepNanos0")) {
-      assertThat(stackTrace[1].getMethodName()).isEqualTo("sleepNanos");
-      assertThat(stackTrace[2].getMethodName()).isEqualTo("sleep");
-      assertThat(stackTrace[3].getMethodName()).isEqualTo("recursiveMethodNoPark");
-    } else if (stackTrace[0].getMethodName().equals("sleep0")) {
-      assertThat(stackTrace[1].getMethodName()).isEqualTo("sleep");
-      assertThat(stackTrace[2].getMethodName()).isEqualTo("recursiveMethodNoPark");
-    } else {
-      assertThat(stackTrace[0].getMethodName()).isEqualTo("sleep");
-      assertThat(stackTrace[1].getMethodName()).isEqualTo("recursiveMethodNoPark");
+        private fun recursiveMethodNoPark(depth: Int, waitForThreads: CountDownLatch) {
+            if (depth < 50) {
+                recursiveMethodNoPark(depth + 1, waitForThreads)
+                return
+            }
+            waitForThreads.countDown()
+            try {
+                java.lang.Thread.sleep(Long.Companion.MAX_VALUE)
+            } catch (e: java.lang.InterruptedException) {
+                // Ignored.
+            }
+        }
     }
-
-    future.set(1);
-    for (Thread thread : parkThreads) {
-      thread.join();
-    }
-    noParkThread.interrupt();
-    noParkThread.join();
-    noParkThread2.interrupt();
-    noParkThread2.join();
-  }
-
-  private static void recursiveMethodPark(
-      int depth, SettableFuture<Integer> future, CountDownLatch waitForThreads) {
-    if (depth < 100) {
-      recursiveMethodPark(depth + 1, future, waitForThreads);
-      return;
-    }
-    waitForThreads.countDown();
-    try {
-      future.get();
-    } catch (InterruptedException | ExecutionException e) {
-      throw new IllegalStateException(e);
-    }
-  }
-
-  private static void recursiveMethodNoPark(int depth, CountDownLatch waitForThreads) {
-    if (depth < 50) {
-      recursiveMethodNoPark(depth + 1, waitForThreads);
-      return;
-    }
-    waitForThreads.countDown();
-    try {
-      Thread.sleep(Long.MAX_VALUE);
-    } catch (InterruptedException e) {
-      // Ignored.
-    }
-  }
 }

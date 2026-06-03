@@ -11,459 +11,485 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote;
+package com.google.devtools.build.lib.remote
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import build.bazel.remote.execution.v2.Digest
 
-import build.bazel.remote.execution.v2.Digest;
-import build.bazel.remote.execution.v2.SplitBlobResponse;
-import com.google.common.util.concurrent.Futures;
-import com.google.common.util.concurrent.SettableFuture;
-import com.google.devtools.build.lib.remote.common.CacheNotFoundException;
-import com.google.devtools.build.lib.remote.common.OutputDigestMismatchException;
-import com.google.devtools.build.lib.remote.common.RemoteActionExecutionContext;
-import com.google.devtools.build.lib.remote.util.DigestUtil;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnit;
-import org.mockito.junit.MockitoRule;
+/** Tests for [ChunkedBlobDownloader].  */
+@RunWith(JUnit4::class)
+class ChunkedBlobDownloaderTest {
+    @org.junit.Rule
+    val mockito: MockitoRule = MockitoJUnit.rule()
 
-/** Tests for {@link ChunkedBlobDownloader}. */
-@RunWith(JUnit4.class)
-public class ChunkedBlobDownloaderTest {
-  private static final DigestUtil DIGEST_UTIL =
-      new DigestUtil(SyscallCache.NO_CACHE, DigestHashFunction.SHA256);
-  private static final int MAX_IN_FLIGHT_CHUNK_DOWNLOADS = 16;
+    @org.mockito.Mock
+    private val grpcCacheClient: GrpcCacheClient? = null
 
-  @Rule public final MockitoRule mockito = MockitoJUnit.rule();
+    @org.mockito.Mock
+    private val combinedCache: CombinedCache? = null
 
-  @Mock private GrpcCacheClient grpcCacheClient;
-  @Mock private CombinedCache combinedCache;
-  @Mock private RemoteActionExecutionContext context;
+    @org.mockito.Mock
+    private val context: RemoteActionExecutionContext? = null
 
-  private ChunkedBlobDownloader downloader;
+    private var downloader: ChunkedBlobDownloader? = null
 
-  @Before
-  public void setUp() {
-    when(grpcCacheClient.shouldVerifyDownloads()).thenReturn(true);
-    downloader = new ChunkedBlobDownloader(grpcCacheClient, combinedCache, DIGEST_UTIL);
-  }
-
-  @Test
-  public void downloadChunked_splitBlobReturnsNull_throwsCacheNotFound() {
-    Digest blobDigest = DIGEST_UTIL.compute(new byte[] {1, 2, 3});
-    when(grpcCacheClient.splitBlob(any(), eq(blobDigest))).thenReturn(null);
-
-    assertThrows(
-        CacheNotFoundException.class,
-        () -> downloader.downloadChunked(context, blobDigest, new ByteArrayOutputStream()));
-  }
-
-  @Test
-  public void downloadChunked_singleChunk_downloadsAndReassembles() throws Exception {
-    byte[] chunkData = new byte[] {1, 2, 3, 4, 5};
-    Digest chunkDigest = DIGEST_UTIL.compute(chunkData);
-    Digest blobDigest = chunkDigest;
-
-    SplitBlobResponse splitResponse =
-        SplitBlobResponse.newBuilder().addChunkDigests(chunkDigest).build();
-    when(grpcCacheClient.splitBlob(any(), eq(blobDigest)))
-        .thenReturn(Futures.immediateFuture(splitResponse));
-    when(combinedCache.downloadBlob(any(), eq(chunkDigest)))
-        .thenReturn(Futures.immediateFuture(chunkData));
-
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    downloader.downloadChunked(context, blobDigest, out);
-
-    assertThat(out.toByteArray()).isEqualTo(chunkData);
-  }
-
-  @Test
-  public void downloadChunked_multipleChunks_downloadsAndReassemblesInOrder() throws Exception {
-    byte[] chunk1Data = new byte[] {1, 2, 3};
-    byte[] chunk2Data = new byte[] {4, 5, 6};
-    byte[] chunk3Data = new byte[] {7, 8, 9};
-    Digest chunk1Digest = DIGEST_UTIL.compute(chunk1Data);
-    Digest chunk2Digest = DIGEST_UTIL.compute(chunk2Data);
-    Digest chunk3Digest = DIGEST_UTIL.compute(chunk3Data);
-    Digest blobDigest = DIGEST_UTIL.compute(new byte[] {1, 2, 3, 4, 5, 6, 7, 8, 9});
-
-    SplitBlobResponse splitResponse =
-        SplitBlobResponse.newBuilder()
-            .addChunkDigests(chunk1Digest)
-            .addChunkDigests(chunk2Digest)
-            .addChunkDigests(chunk3Digest)
-            .build();
-    when(grpcCacheClient.splitBlob(any(), eq(blobDigest)))
-        .thenReturn(Futures.immediateFuture(splitResponse));
-    when(combinedCache.downloadBlob(any(), eq(chunk1Digest)))
-        .thenReturn(Futures.immediateFuture(chunk1Data));
-    when(combinedCache.downloadBlob(any(), eq(chunk2Digest)))
-        .thenReturn(Futures.immediateFuture(chunk2Data));
-    when(combinedCache.downloadBlob(any(), eq(chunk3Digest)))
-        .thenReturn(Futures.immediateFuture(chunk3Data));
-
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    downloader.downloadChunked(context, blobDigest, out);
-
-    assertThat(out.toByteArray()).isEqualTo(new byte[] {1, 2, 3, 4, 5, 6, 7, 8, 9});
-    verify(combinedCache).downloadBlob(any(), eq(chunk1Digest));
-    verify(combinedCache).downloadBlob(any(), eq(chunk2Digest));
-    verify(combinedCache).downloadBlob(any(), eq(chunk3Digest));
-  }
-
-  @Test
-  public void downloadChunked_windowRefillsAfterOneChunkCompletes() throws Exception {
-    List<Digest> chunkDigests = new ArrayList<>(MAX_IN_FLIGHT_CHUNK_DOWNLOADS + 1);
-    List<SettableFuture<byte[]>> chunkFutures = new ArrayList<>(MAX_IN_FLIGHT_CHUNK_DOWNLOADS + 1);
-    byte[] expectedData = new byte[MAX_IN_FLIGHT_CHUNK_DOWNLOADS + 1];
-    SplitBlobResponse.Builder splitResponse = SplitBlobResponse.newBuilder();
-    for (int i = 0; i < MAX_IN_FLIGHT_CHUNK_DOWNLOADS + 1; i++) {
-      byte[] chunkData = new byte[] {(byte) (i + 1)};
-      expectedData[i] = chunkData[0];
-      chunkDigests.add(DIGEST_UTIL.compute(chunkData));
-      chunkFutures.add(SettableFuture.create());
-      splitResponse.addChunkDigests(chunkDigests.get(i));
+    @Before
+    fun setUp() {
+        Mockito.`when`<T?>(grpcCacheClient.shouldVerifyDownloads()).thenReturn(true)
+        downloader = ChunkedBlobDownloader(grpcCacheClient, combinedCache, DIGEST_UTIL)
     }
-    Digest blobDigest = DIGEST_UTIL.compute(expectedData);
 
-    when(grpcCacheClient.splitBlob(any(), eq(blobDigest)))
-        .thenReturn(Futures.immediateFuture(splitResponse.build()));
+    @org.junit.Test
+    fun downloadChunked_splitBlobReturnsNull_throwsCacheNotFound() {
+        val blobDigest: Digest? = DIGEST_UTIL.compute(byteArrayOf(1, 2, 3))
+        Mockito.`when`<T?>(grpcCacheClient.splitBlob(ArgumentMatchers.any<T?>(), < T > eq < T ? > (blobDigest))).thenReturn(null)
 
-    CountDownLatch firstWindowRequested = new CountDownLatch(MAX_IN_FLIGHT_CHUNK_DOWNLOADS);
-    CountDownLatch overflowChunkRequested = new CountDownLatch(1);
-
-    when(combinedCache.downloadBlob(any(), any(Digest.class)))
-        .thenAnswer(
-            invocation -> {
-              Digest digest = invocation.getArgument(1);
-              int chunkIndex = chunkDigests.indexOf(digest);
-              if (chunkIndex < MAX_IN_FLIGHT_CHUNK_DOWNLOADS) {
-                firstWindowRequested.countDown();
-              } else if (chunkIndex == MAX_IN_FLIGHT_CHUNK_DOWNLOADS) {
-                overflowChunkRequested.countDown();
-              }
-              return chunkFutures.get(chunkIndex);
-            });
-
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    Thread downloadThread =
-        Thread.ofVirtual()
-            .unstarted(
-                () -> {
-                  try {
-                    downloader.downloadChunked(context, blobDigest, out);
-                  } catch (IOException | InterruptedException e) {
-                    throw new RuntimeException(e);
-                  }
-                });
-    downloadThread.start();
-
-    assertThat(firstWindowRequested.await(1, TimeUnit.SECONDS)).isTrue();
-    assertThat(overflowChunkRequested.await(100, TimeUnit.MILLISECONDS)).isFalse();
-
-    chunkFutures.get(0).set(new byte[] {expectedData[0]});
-    assertThat(overflowChunkRequested.await(1, TimeUnit.SECONDS)).isTrue();
-
-    for (int i = 0; i < chunkFutures.size(); i++) {
-      SettableFuture<byte[]> future = chunkFutures.get(i);
-      if (!future.isDone()) {
-        future.set(new byte[] {expectedData[i]});
-      }
+        org.junit.Assert.assertThrows<T?>(
+            CacheNotFoundException::class.java,
+            org.junit.function.ThrowingRunnable {
+                downloader.downloadChunked(
+                    context,
+                    blobDigest,
+                    java.io.ByteArrayOutputStream()
+                )
+            })
     }
-    downloadThread.join(TimeUnit.SECONDS.toMillis(1));
 
-    assertThat(downloadThread.isAlive()).isFalse();
-    assertThat(out.toByteArray()).isEqualTo(expectedData);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun downloadChunked_singleChunk_downloadsAndReassembles() {
+        val chunkData = byteArrayOf(1, 2, 3, 4, 5)
+        val chunkDigest: Digest? = DIGEST_UTIL.compute(chunkData)
+        val blobDigest: Digest? = chunkDigest
 
-  @Test
-  public void downloadChunked_duplicateInFlightChunks_reusesDownload() throws Exception {
-    byte[] chunkData = new byte[] {1, 2, 3};
-    Digest chunkDigest = DIGEST_UTIL.compute(chunkData);
-    Digest blobDigest = DIGEST_UTIL.compute(new byte[] {1, 2, 3, 1, 2, 3});
+        val splitResponse: SplitBlobResponse? =
+            SplitBlobResponse.newBuilder().addChunkDigests(chunkDigest).build()
+        Mockito.`when`<T?>(grpcCacheClient.splitBlob(ArgumentMatchers.any<T?>(), < T > eq < T ? > (blobDigest)))
+        .thenReturn(com.google.common.util.concurrent.Futures.immediateFuture<V?>(splitResponse))
+        Mockito.`when`<T?>(combinedCache.downloadBlob(ArgumentMatchers.any<T?>(), < T > eq < T ? > (chunkDigest)))
+        .thenReturn(com.google.common.util.concurrent.Futures.immediateFuture<V?>(chunkData))
 
-    SplitBlobResponse splitResponse =
-        SplitBlobResponse.newBuilder()
-            .addChunkDigests(chunkDigest)
-            .addChunkDigests(chunkDigest)
-            .build();
-    when(grpcCacheClient.splitBlob(any(), eq(blobDigest)))
-        .thenReturn(Futures.immediateFuture(splitResponse));
+        val out: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        downloader.downloadChunked(context, blobDigest, out)
 
-    SettableFuture<byte[]> chunkFuture = SettableFuture.create();
-    when(combinedCache.downloadBlob(any(), eq(chunkDigest))).thenReturn(chunkFuture);
-
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    Thread downloadThread =
-        Thread.ofVirtual()
-            .unstarted(
-                () -> {
-                  try {
-                    downloader.downloadChunked(context, blobDigest, out);
-                  } catch (IOException | InterruptedException e) {
-                    throw new RuntimeException(e);
-                  }
-                });
-    downloadThread.start();
-
-    chunkFuture.set(chunkData);
-    downloadThread.join(TimeUnit.SECONDS.toMillis(1));
-
-    assertThat(downloadThread.isAlive()).isFalse();
-    assertThat(out.toByteArray()).isEqualTo(new byte[] {1, 2, 3, 1, 2, 3});
-    verify(combinedCache, times(1)).downloadBlob(any(), eq(chunkDigest));
-  }
-
-  @Test
-  public void downloadChunked_longDuplicateRun_resumesAfterDrain() throws Exception {
-    byte[] firstChunkData = new byte[] {1};
-    byte[] duplicateChunkData = new byte[] {2};
-    byte[] finalChunkData = new byte[] {3};
-    Digest firstChunkDigest = DIGEST_UTIL.compute(firstChunkData);
-    Digest duplicateChunkDigest = DIGEST_UTIL.compute(duplicateChunkData);
-    Digest finalChunkDigest = DIGEST_UTIL.compute(finalChunkData);
-
-    byte[] blobData = new byte[MAX_IN_FLIGHT_CHUNK_DOWNLOADS + 1];
-    blobData[0] = firstChunkData[0];
-    for (int i = 1; i < MAX_IN_FLIGHT_CHUNK_DOWNLOADS; i++) {
-      blobData[i] = duplicateChunkData[0];
+        Truth.assertThat(out.toByteArray()).isEqualTo(chunkData)
     }
-    blobData[MAX_IN_FLIGHT_CHUNK_DOWNLOADS] = finalChunkData[0];
-    Digest blobDigest = DIGEST_UTIL.compute(blobData);
 
-    SplitBlobResponse.Builder splitResponse = SplitBlobResponse.newBuilder();
-    splitResponse.addChunkDigests(firstChunkDigest);
-    for (int i = 1; i < MAX_IN_FLIGHT_CHUNK_DOWNLOADS; i++) {
-      splitResponse.addChunkDigests(duplicateChunkDigest);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun downloadChunked_multipleChunks_downloadsAndReassemblesInOrder() {
+        val chunk1Data = byteArrayOf(1, 2, 3)
+        val chunk2Data = byteArrayOf(4, 5, 6)
+        val chunk3Data = byteArrayOf(7, 8, 9)
+        val chunk1Digest: Digest? = DIGEST_UTIL.compute(chunk1Data)
+        val chunk2Digest: Digest? = DIGEST_UTIL.compute(chunk2Data)
+        val chunk3Digest: Digest? = DIGEST_UTIL.compute(chunk3Data)
+        val blobDigest: Digest? = DIGEST_UTIL.compute(byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8, 9))
+
+        val splitResponse: SplitBlobResponse? =
+            SplitBlobResponse.newBuilder()
+                .addChunkDigests(chunk1Digest)
+                .addChunkDigests(chunk2Digest)
+                .addChunkDigests(chunk3Digest)
+                .build()
+        Mockito.`when`<T?>(grpcCacheClient.splitBlob(ArgumentMatchers.any<T?>(), < T > eq < T ? > (blobDigest)))
+        .thenReturn(com.google.common.util.concurrent.Futures.immediateFuture<V?>(splitResponse))
+        Mockito.`when`<T?>(combinedCache.downloadBlob(ArgumentMatchers.any<T?>(), < T > eq < T ? > (chunk1Digest)))
+        .thenReturn(com.google.common.util.concurrent.Futures.immediateFuture<V?>(chunk1Data))
+        Mockito.`when`<T?>(combinedCache.downloadBlob(ArgumentMatchers.any<T?>(), < T > eq < T ? > (chunk2Digest)))
+        .thenReturn(com.google.common.util.concurrent.Futures.immediateFuture<V?>(chunk2Data))
+        Mockito.`when`<T?>(combinedCache.downloadBlob(ArgumentMatchers.any<T?>(), < T > eq < T ? > (chunk3Digest)))
+        .thenReturn(com.google.common.util.concurrent.Futures.immediateFuture<V?>(chunk3Data))
+
+        val out: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        downloader.downloadChunked(context, blobDigest, out)
+
+        Truth.assertThat(out.toByteArray()).isEqualTo(byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8, 9))
+        Mockito.verify<Any?>(combinedCache).downloadBlob(ArgumentMatchers.any<T?>(), < T > eq < T ? > (chunk1Digest))
+        Mockito.verify<Any?>(combinedCache).downloadBlob(ArgumentMatchers.any<T?>(), < T > eq < T ? > (chunk2Digest))
+        Mockito.verify<Any?>(combinedCache).downloadBlob(ArgumentMatchers.any<T?>(), < T > eq < T ? > (chunk3Digest))
     }
-    splitResponse.addChunkDigests(finalChunkDigest);
-    when(grpcCacheClient.splitBlob(any(), eq(blobDigest)))
-        .thenReturn(Futures.immediateFuture(splitResponse.build()));
 
-    SettableFuture<byte[]> firstChunkFuture = SettableFuture.create();
-    SettableFuture<byte[]> duplicateChunkFuture = SettableFuture.create();
-    SettableFuture<byte[]> finalChunkFuture = SettableFuture.create();
-    CountDownLatch initialDownloadsRequested = new CountDownLatch(2);
-    CountDownLatch finalChunkRequested = new CountDownLatch(1);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun downloadChunked_windowRefillsAfterOneChunkCompletes() {
+        val chunkDigests: MutableList<Digest?> = java.util.ArrayList<Digest?>(MAX_IN_FLIGHT_CHUNK_DOWNLOADS + 1)
+        val chunkFutures: MutableList<com.google.common.util.concurrent.SettableFuture<ByteArray?>> =
+            java.util.ArrayList<com.google.common.util.concurrent.SettableFuture<ByteArray?>>(
+                MAX_IN_FLIGHT_CHUNK_DOWNLOADS + 1
+            )
+        val expectedData = ByteArray(MAX_IN_FLIGHT_CHUNK_DOWNLOADS + 1)
+        val splitResponse: SplitBlobResponse.Builder = SplitBlobResponse.newBuilder()
+        for (i in 0..<MAX_IN_FLIGHT_CHUNK_DOWNLOADS + 1) {
+            val chunkData = byteArrayOf((i + 1).toByte())
+            expectedData[i] = chunkData[0]
+            chunkDigests.add(DIGEST_UTIL.compute(chunkData))
+            chunkFutures.add(com.google.common.util.concurrent.SettableFuture.create<ByteArray?>())
+            splitResponse.addChunkDigests(chunkDigests.get(i))
+        }
+        val blobDigest: Digest? = DIGEST_UTIL.compute(expectedData)
 
-    when(combinedCache.downloadBlob(any(), eq(firstChunkDigest)))
+        Mockito.`when`<T?>(grpcCacheClient.splitBlob(ArgumentMatchers.any<T?>(), < T > eq < T ? > (blobDigest)))
+        .thenReturn(com.google.common.util.concurrent.Futures.immediateFuture<V?>(splitResponse.build()))
+
+        val firstWindowRequested: CountDownLatch = CountDownLatch(MAX_IN_FLIGHT_CHUNK_DOWNLOADS)
+        val overflowChunkRequested: CountDownLatch = CountDownLatch(1)
+
+        Mockito.`when`<T?>(
+            combinedCache.downloadBlob(
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>(Digest::class.java)
+            )
+        )
+            .thenAnswer(
+                Answer { invocation: InvocationOnMock? ->
+                    val digest: Digest? = invocation.getArgument<Digest?>(1)
+                    val chunkIndex = chunkDigests.indexOf(digest)
+                    if (chunkIndex < MAX_IN_FLIGHT_CHUNK_DOWNLOADS) {
+                        firstWindowRequested.countDown()
+                    } else if (chunkIndex == MAX_IN_FLIGHT_CHUNK_DOWNLOADS) {
+                        overflowChunkRequested.countDown()
+                    }
+                    chunkFutures.get(chunkIndex)
+                })
+
+        val out: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        val downloadThread: java.lang.Thread =
+            java.lang.Thread.ofVirtual()
+                .unstarted(
+                    java.lang.Runnable {
+                        try {
+                            downloader.downloadChunked(context, blobDigest, out)
+                        } catch (e: IOException) {
+                            throw java.lang.RuntimeException(e)
+                        } catch (e: java.lang.InterruptedException) {
+                            throw java.lang.RuntimeException(e)
+                        }
+                    })
+        downloadThread.start()
+
+        Truth.assertThat(firstWindowRequested.await(1, TimeUnit.SECONDS)).isTrue()
+        Truth.assertThat(overflowChunkRequested.await(100, TimeUnit.MILLISECONDS)).isFalse()
+
+        chunkFutures.get(0).set(byteArrayOf(expectedData[0]))
+        Truth.assertThat(overflowChunkRequested.await(1, TimeUnit.SECONDS)).isTrue()
+
+        for (i in chunkFutures.indices) {
+            val future: com.google.common.util.concurrent.SettableFuture<ByteArray?> = chunkFutures.get(i)
+            if (!future.isDone()) {
+                future.set(byteArrayOf(expectedData[i]))
+            }
+        }
+        downloadThread.join(TimeUnit.SECONDS.toMillis(1))
+
+        Truth.assertThat(downloadThread.isAlive()).isFalse()
+        Truth.assertThat(out.toByteArray()).isEqualTo(expectedData)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun downloadChunked_duplicateInFlightChunks_reusesDownload() {
+        val chunkData = byteArrayOf(1, 2, 3)
+        val chunkDigest: Digest? = DIGEST_UTIL.compute(chunkData)
+        val blobDigest: Digest? = DIGEST_UTIL.compute(byteArrayOf(1, 2, 3, 1, 2, 3))
+
+        val splitResponse: SplitBlobResponse? =
+            SplitBlobResponse.newBuilder()
+                .addChunkDigests(chunkDigest)
+                .addChunkDigests(chunkDigest)
+                .build()
+        Mockito.`when`<T?>(grpcCacheClient.splitBlob(ArgumentMatchers.any<T?>(), < T > eq < T ? > (blobDigest)))
+        .thenReturn(com.google.common.util.concurrent.Futures.immediateFuture<V?>(splitResponse))
+
+        val chunkFuture: com.google.common.util.concurrent.SettableFuture<ByteArray?> =
+            com.google.common.util.concurrent.SettableFuture.create<ByteArray?>()
+        Mockito.`when`<T?>(combinedCache.downloadBlob(ArgumentMatchers.any<T?>(), < T > eq < T ? > (chunkDigest))).thenReturn(chunkFuture)
+
+        val out: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        val downloadThread: java.lang.Thread =
+            java.lang.Thread.ofVirtual()
+                .unstarted(
+                    java.lang.Runnable {
+                        try {
+                            downloader.downloadChunked(context, blobDigest, out)
+                        } catch (e: IOException) {
+                            throw java.lang.RuntimeException(e)
+                        } catch (e: java.lang.InterruptedException) {
+                            throw java.lang.RuntimeException(e)
+                        }
+                    })
+        downloadThread.start()
+
+        chunkFuture.set(chunkData)
+        downloadThread.join(TimeUnit.SECONDS.toMillis(1))
+
+        Truth.assertThat(downloadThread.isAlive()).isFalse()
+        Truth.assertThat(out.toByteArray()).isEqualTo(byteArrayOf(1, 2, 3, 1, 2, 3))
+        Mockito.verify<Any?>(combinedCache, Mockito.times(1))
+            .downloadBlob(ArgumentMatchers.any<T?>(), < T > eq < T ? > (chunkDigest))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun downloadChunked_longDuplicateRun_resumesAfterDrain() {
+        val firstChunkData = byteArrayOf(1)
+        val duplicateChunkData = byteArrayOf(2)
+        val finalChunkData = byteArrayOf(3)
+        val firstChunkDigest: Digest? = DIGEST_UTIL.compute(firstChunkData)
+        val duplicateChunkDigest: Digest? = DIGEST_UTIL.compute(duplicateChunkData)
+        val finalChunkDigest: Digest? = DIGEST_UTIL.compute(finalChunkData)
+
+        val blobData = ByteArray(MAX_IN_FLIGHT_CHUNK_DOWNLOADS + 1)
+        blobData[0] = firstChunkData[0]
+        for (i in 1..<MAX_IN_FLIGHT_CHUNK_DOWNLOADS) {
+            blobData[i] = duplicateChunkData[0]
+        }
+        blobData[MAX_IN_FLIGHT_CHUNK_DOWNLOADS] = finalChunkData[0]
+        val blobDigest: Digest? = DIGEST_UTIL.compute(blobData)
+
+        val splitResponse: SplitBlobResponse.Builder = SplitBlobResponse.newBuilder()
+        splitResponse.addChunkDigests(firstChunkDigest)
+        for (i in 1..<MAX_IN_FLIGHT_CHUNK_DOWNLOADS) {
+            splitResponse.addChunkDigests(duplicateChunkDigest)
+        }
+        splitResponse.addChunkDigests(finalChunkDigest)
+        Mockito.`when`<T?>(grpcCacheClient.splitBlob(ArgumentMatchers.any<T?>(), < T > eq < T ? > (blobDigest)))
+        .thenReturn(com.google.common.util.concurrent.Futures.immediateFuture<V?>(splitResponse.build()))
+
+        val firstChunkFuture: com.google.common.util.concurrent.SettableFuture<ByteArray?> =
+            com.google.common.util.concurrent.SettableFuture.create<ByteArray?>()
+        val duplicateChunkFuture: com.google.common.util.concurrent.SettableFuture<ByteArray?> =
+            com.google.common.util.concurrent.SettableFuture.create<ByteArray?>()
+        val finalChunkFuture: com.google.common.util.concurrent.SettableFuture<ByteArray?> =
+            com.google.common.util.concurrent.SettableFuture.create<ByteArray?>()
+        val initialDownloadsRequested: CountDownLatch = CountDownLatch(2)
+        val finalChunkRequested: CountDownLatch = CountDownLatch(1)
+
+        Mockito.`when`<T?>(combinedCache.downloadBlob(ArgumentMatchers.any<T?>(), < T > eq < T ? > (firstChunkDigest)))
         .thenAnswer(
-            invocation -> {
-              initialDownloadsRequested.countDown();
-              return firstChunkFuture;
-            });
-    when(combinedCache.downloadBlob(any(), eq(duplicateChunkDigest)))
+            Answer { invocation: InvocationOnMock? ->
+                initialDownloadsRequested.countDown()
+                firstChunkFuture
+            })
+        Mockito.`when`<T?>(combinedCache.downloadBlob(ArgumentMatchers.any<T?>(), < T > eq < T ? > (duplicateChunkDigest)))
         .thenAnswer(
-            invocation -> {
-              initialDownloadsRequested.countDown();
-              return duplicateChunkFuture;
-            });
-    when(combinedCache.downloadBlob(any(), eq(finalChunkDigest)))
+            Answer { invocation: InvocationOnMock? ->
+                initialDownloadsRequested.countDown()
+                duplicateChunkFuture
+            })
+        Mockito.`when`<T?>(combinedCache.downloadBlob(ArgumentMatchers.any<T?>(), < T > eq < T ? > (finalChunkDigest)))
         .thenAnswer(
-            invocation -> {
-              finalChunkRequested.countDown();
-              return finalChunkFuture;
-            });
+            Answer { invocation: InvocationOnMock? ->
+                finalChunkRequested.countDown()
+                finalChunkFuture
+            })
 
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    Thread downloadThread =
-        Thread.ofVirtual()
-            .unstarted(
-                () -> {
-                  try {
-                    downloader.downloadChunked(context, blobDigest, out);
-                  } catch (IOException | InterruptedException e) {
-                    throw new RuntimeException(e);
-                  }
-                });
-    downloadThread.start();
+        val out: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        val downloadThread: java.lang.Thread =
+            java.lang.Thread.ofVirtual()
+                .unstarted(
+                    java.lang.Runnable {
+                        try {
+                            downloader.downloadChunked(context, blobDigest, out)
+                        } catch (e: IOException) {
+                            throw java.lang.RuntimeException(e)
+                        } catch (e: java.lang.InterruptedException) {
+                            throw java.lang.RuntimeException(e)
+                        }
+                    })
+        downloadThread.start()
 
-    assertThat(initialDownloadsRequested.await(1, TimeUnit.SECONDS)).isTrue();
-    assertThat(finalChunkRequested.await(100, TimeUnit.MILLISECONDS)).isFalse();
+        Truth.assertThat(initialDownloadsRequested.await(1, TimeUnit.SECONDS)).isTrue()
+        Truth.assertThat(finalChunkRequested.await(100, TimeUnit.MILLISECONDS)).isFalse()
 
-    duplicateChunkFuture.set(duplicateChunkData);
-    assertThat(finalChunkRequested.await(100, TimeUnit.MILLISECONDS)).isFalse();
+        duplicateChunkFuture.set(duplicateChunkData)
+        Truth.assertThat(finalChunkRequested.await(100, TimeUnit.MILLISECONDS)).isFalse()
 
-    firstChunkFuture.set(firstChunkData);
-    assertThat(finalChunkRequested.await(1, TimeUnit.SECONDS)).isTrue();
+        firstChunkFuture.set(firstChunkData)
+        Truth.assertThat(finalChunkRequested.await(1, TimeUnit.SECONDS)).isTrue()
 
-    finalChunkFuture.set(finalChunkData);
-    downloadThread.join(TimeUnit.SECONDS.toMillis(1));
+        finalChunkFuture.set(finalChunkData)
+        downloadThread.join(TimeUnit.SECONDS.toMillis(1))
 
-    assertThat(downloadThread.isAlive()).isFalse();
-    assertThat(out.toByteArray()).isEqualTo(blobData);
-  }
+        Truth.assertThat(downloadThread.isAlive()).isFalse()
+        Truth.assertThat(out.toByteArray()).isEqualTo(blobData)
+    }
 
-  @Test
-  public void downloadChunked_emptyChunkList_producesEmptyOutput() throws Exception {
-    Digest blobDigest = DIGEST_UTIL.compute(new byte[0]);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun downloadChunked_emptyChunkList_producesEmptyOutput() {
+        val blobDigest: Digest? = DIGEST_UTIL.compute(ByteArray(0))
 
-    SplitBlobResponse splitResponse = SplitBlobResponse.getDefaultInstance();
-    when(grpcCacheClient.splitBlob(any(), eq(blobDigest)))
-        .thenReturn(Futures.immediateFuture(splitResponse));
+        val splitResponse: SplitBlobResponse? = SplitBlobResponse.getDefaultInstance()
+        Mockito.`when`<T?>(grpcCacheClient.splitBlob(ArgumentMatchers.any<T?>(), < T > eq < T ? > (blobDigest)))
+        .thenReturn(com.google.common.util.concurrent.Futures.immediateFuture<V?>(splitResponse))
 
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    downloader.downloadChunked(context, blobDigest, out);
+        val out: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        downloader.downloadChunked(context, blobDigest, out)
 
-    assertThat(out.toByteArray()).isEmpty();
-  }
+        Truth.assertThat(out.toByteArray()).isEmpty()
+    }
 
-  @Test
-  public void downloadChunked_chunkFails_throwsIOException() throws Exception {
-    byte[] chunk1Data = new byte[] {1, 2, 3};
-    byte[] chunk2Data = new byte[] {4, 5, 6};
-    Digest chunk1Digest = DIGEST_UTIL.compute(chunk1Data);
-    Digest chunk2Digest = DIGEST_UTIL.compute(chunk2Data);
-    Digest blobDigest = DIGEST_UTIL.compute(new byte[] {1, 2, 3, 4, 5, 6});
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun downloadChunked_chunkFails_throwsIOException() {
+        val chunk1Data = byteArrayOf(1, 2, 3)
+        val chunk2Data = byteArrayOf(4, 5, 6)
+        val chunk1Digest: Digest? = DIGEST_UTIL.compute(chunk1Data)
+        val chunk2Digest: Digest? = DIGEST_UTIL.compute(chunk2Data)
+        val blobDigest: Digest? = DIGEST_UTIL.compute(byteArrayOf(1, 2, 3, 4, 5, 6))
 
-    SplitBlobResponse splitResponse =
-        SplitBlobResponse.newBuilder()
-            .addChunkDigests(chunk1Digest)
-            .addChunkDigests(chunk2Digest)
-            .build();
-    when(grpcCacheClient.splitBlob(any(), eq(blobDigest)))
-        .thenReturn(Futures.immediateFuture(splitResponse));
-    when(combinedCache.downloadBlob(any(), eq(chunk1Digest)))
-        .thenReturn(Futures.immediateFuture(chunk1Data));
-    when(combinedCache.downloadBlob(any(), eq(chunk2Digest)))
-        .thenReturn(Futures.immediateFailedFuture(new IOException("connection reset")));
+        val splitResponse: SplitBlobResponse? =
+            SplitBlobResponse.newBuilder()
+                .addChunkDigests(chunk1Digest)
+                .addChunkDigests(chunk2Digest)
+                .build()
+        Mockito.`when`<T?>(grpcCacheClient.splitBlob(ArgumentMatchers.any<T?>(), < T > eq < T ? > (blobDigest)))
+        .thenReturn(com.google.common.util.concurrent.Futures.immediateFuture<V?>(splitResponse))
+        Mockito.`when`<T?>(combinedCache.downloadBlob(ArgumentMatchers.any<T?>(), < T > eq < T ? > (chunk1Digest)))
+        .thenReturn(com.google.common.util.concurrent.Futures.immediateFuture<V?>(chunk1Data))
+        Mockito.`when`<T?>(combinedCache.downloadBlob(ArgumentMatchers.any<T?>(), < T > eq < T ? > (chunk2Digest)))
+        .thenReturn(com.google.common.util.concurrent.Futures.immediateFailedFuture<V?>(IOException("connection reset")))
 
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    assertThrows(IOException.class, () -> downloader.downloadChunked(context, blobDigest, out));
-  }
+        val out: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        org.junit.Assert.assertThrows<IOException?>(
+            IOException::class.java,
+            org.junit.function.ThrowingRunnable { downloader.downloadChunked(context, blobDigest, out) })
+    }
 
-  @Test
-  public void downloadChunked_blobDigestMismatch_throwsOutputDigestMismatch() throws Exception {
-    byte[] chunkData = new byte[] {1, 2, 3};
-    Digest chunkDigest = DIGEST_UTIL.compute(chunkData);
-    Digest blobDigest = DIGEST_UTIL.compute(new byte[] {4, 5, 6});
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun downloadChunked_blobDigestMismatch_throwsOutputDigestMismatch() {
+        val chunkData = byteArrayOf(1, 2, 3)
+        val chunkDigest: Digest = DIGEST_UTIL.compute(chunkData)
+        val blobDigest: Digest = DIGEST_UTIL.compute(byteArrayOf(4, 5, 6))
 
-    SplitBlobResponse splitResponse =
-        SplitBlobResponse.newBuilder().addChunkDigests(chunkDigest).build();
-    when(grpcCacheClient.splitBlob(any(), eq(blobDigest)))
-        .thenReturn(Futures.immediateFuture(splitResponse));
-    when(combinedCache.downloadBlob(any(), eq(chunkDigest)))
-        .thenReturn(Futures.immediateFuture(chunkData));
+        val splitResponse: SplitBlobResponse? =
+            SplitBlobResponse.newBuilder().addChunkDigests(chunkDigest).build()
+        Mockito.`when`<T?>(grpcCacheClient.splitBlob(ArgumentMatchers.any<T?>(), < T > eq < T ? > (blobDigest)))
+        .thenReturn(com.google.common.util.concurrent.Futures.immediateFuture<V?>(splitResponse))
+        Mockito.`when`<T?>(combinedCache.downloadBlob(ArgumentMatchers.any<T?>(), < T > eq < T ? > (chunkDigest)))
+        .thenReturn(com.google.common.util.concurrent.Futures.immediateFuture<V?>(chunkData))
 
-    OutputDigestMismatchException e =
-        assertThrows(
-            OutputDigestMismatchException.class,
-            () -> downloader.downloadChunked(context, blobDigest, new ByteArrayOutputStream()));
+        val e: OutputDigestMismatchException? =
+            org.junit.Assert.assertThrows<T?>(
+                OutputDigestMismatchException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    downloader.downloadChunked(
+                        context,
+                        blobDigest,
+                        java.io.ByteArrayOutputStream()
+                    )
+                })
 
-    assertThat(e).hasMessageThat().contains(blobDigest.getHash());
-    assertThat(e).hasMessageThat().contains(chunkDigest.getHash());
-  }
+        assertThat(e).hasMessageThat().contains(blobDigest.getHash())
+        assertThat(e).hasMessageThat().contains(chunkDigest.getHash())
+    }
 
-  @Test
-  public void downloadChunked_blobDigestMismatchVerificationDisabled_succeeds() throws Exception {
-    when(grpcCacheClient.shouldVerifyDownloads()).thenReturn(false);
-    byte[] chunkData = new byte[] {1, 2, 3};
-    Digest chunkDigest = DIGEST_UTIL.compute(chunkData);
-    Digest blobDigest = DIGEST_UTIL.compute(new byte[] {4, 5, 6});
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun downloadChunked_blobDigestMismatchVerificationDisabled_succeeds() {
+        Mockito.`when`<T?>(grpcCacheClient.shouldVerifyDownloads()).thenReturn(false)
+        val chunkData = byteArrayOf(1, 2, 3)
+        val chunkDigest: Digest? = DIGEST_UTIL.compute(chunkData)
+        val blobDigest: Digest? = DIGEST_UTIL.compute(byteArrayOf(4, 5, 6))
 
-    SplitBlobResponse splitResponse =
-        SplitBlobResponse.newBuilder().addChunkDigests(chunkDigest).build();
-    when(grpcCacheClient.splitBlob(any(), eq(blobDigest)))
-        .thenReturn(Futures.immediateFuture(splitResponse));
-    when(combinedCache.downloadBlob(any(), eq(chunkDigest)))
-        .thenReturn(Futures.immediateFuture(chunkData));
+        val splitResponse: SplitBlobResponse? =
+            SplitBlobResponse.newBuilder().addChunkDigests(chunkDigest).build()
+        Mockito.`when`<T?>(grpcCacheClient.splitBlob(ArgumentMatchers.any<T?>(), < T > eq < T ? > (blobDigest)))
+        .thenReturn(com.google.common.util.concurrent.Futures.immediateFuture<V?>(splitResponse))
+        Mockito.`when`<T?>(combinedCache.downloadBlob(ArgumentMatchers.any<T?>(), < T > eq < T ? > (chunkDigest)))
+        .thenReturn(com.google.common.util.concurrent.Futures.immediateFuture<V?>(chunkData))
 
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    downloader.downloadChunked(context, blobDigest, out);
+        val out: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        downloader.downloadChunked(context, blobDigest, out)
 
-    assertThat(out.toByteArray()).isEqualTo(chunkData);
-  }
+        Truth.assertThat(out.toByteArray()).isEqualTo(chunkData)
+    }
 
-  @Test
-  public void downloadChunked_cancelledChunk_throwsInterruptedException() throws Exception {
-    byte[] chunkData = new byte[] {1, 2, 3};
-    Digest chunkDigest = DIGEST_UTIL.compute(chunkData);
-    Digest blobDigest = chunkDigest;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun downloadChunked_cancelledChunk_throwsInterruptedException() {
+        val chunkData = byteArrayOf(1, 2, 3)
+        val chunkDigest: Digest? = DIGEST_UTIL.compute(chunkData)
+        val blobDigest: Digest? = chunkDigest
 
-    SplitBlobResponse splitResponse =
-        SplitBlobResponse.newBuilder().addChunkDigests(chunkDigest).build();
-    when(grpcCacheClient.splitBlob(any(), eq(blobDigest)))
-        .thenReturn(Futures.immediateFuture(splitResponse));
+        val splitResponse: SplitBlobResponse? =
+            SplitBlobResponse.newBuilder().addChunkDigests(chunkDigest).build()
+        Mockito.`when`<T?>(grpcCacheClient.splitBlob(ArgumentMatchers.any<T?>(), < T > eq < T ? > (blobDigest)))
+        .thenReturn(com.google.common.util.concurrent.Futures.immediateFuture<V?>(splitResponse))
 
-    SettableFuture<byte[]> cancelledDownload = SettableFuture.create();
-    cancelledDownload.cancel(/* mayInterruptIfRunning= */ true);
-    when(combinedCache.downloadBlob(any(), eq(chunkDigest))).thenReturn(cancelledDownload);
+        val cancelledDownload: com.google.common.util.concurrent.SettableFuture<ByteArray?> =
+            com.google.common.util.concurrent.SettableFuture.create<ByteArray?>()
+        cancelledDownload.cancel( /* mayInterruptIfRunning= */true)
+        Mockito.`when`<T?>(combinedCache.downloadBlob(ArgumentMatchers.any<T?>(), < T > eq < T ? > (chunkDigest))).thenReturn(cancelledDownload)
 
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    assertThrows(
-        InterruptedException.class, () -> downloader.downloadChunked(context, blobDigest, out));
-  }
+        val out: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        org.junit.Assert.assertThrows<java.lang.InterruptedException?>(
+            java.lang.InterruptedException::class.java,
+            org.junit.function.ThrowingRunnable { downloader.downloadChunked(context, blobDigest, out) })
+    }
 
-  @Test
-  public void downloadChunked_chunkFails_cancelsOtherInFlightDownloads() throws Exception {
-    byte[] chunk1Data = new byte[] {1, 2, 3};
-    byte[] chunk2Data = new byte[] {4, 5, 6};
-    Digest chunk1Digest = DIGEST_UTIL.compute(chunk1Data);
-    Digest chunk2Digest = DIGEST_UTIL.compute(chunk2Data);
-    Digest blobDigest = DIGEST_UTIL.compute(new byte[] {1, 2, 3, 4, 5, 6});
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun downloadChunked_chunkFails_cancelsOtherInFlightDownloads() {
+        val chunk1Data = byteArrayOf(1, 2, 3)
+        val chunk2Data = byteArrayOf(4, 5, 6)
+        val chunk1Digest: Digest? = DIGEST_UTIL.compute(chunk1Data)
+        val chunk2Digest: Digest? = DIGEST_UTIL.compute(chunk2Data)
+        val blobDigest: Digest? = DIGEST_UTIL.compute(byteArrayOf(1, 2, 3, 4, 5, 6))
 
-    SplitBlobResponse splitResponse =
-        SplitBlobResponse.newBuilder()
-            .addChunkDigests(chunk1Digest)
-            .addChunkDigests(chunk2Digest)
-            .build();
-    when(grpcCacheClient.splitBlob(any(), eq(blobDigest)))
-        .thenReturn(Futures.immediateFuture(splitResponse));
+        val splitResponse: SplitBlobResponse? =
+            SplitBlobResponse.newBuilder()
+                .addChunkDigests(chunk1Digest)
+                .addChunkDigests(chunk2Digest)
+                .build()
+        Mockito.`when`<T?>(grpcCacheClient.splitBlob(ArgumentMatchers.any<T?>(), < T > eq < T ? > (blobDigest)))
+        .thenReturn(com.google.common.util.concurrent.Futures.immediateFuture<V?>(splitResponse))
 
-    SettableFuture<byte[]> failedDownload = SettableFuture.create();
-    SettableFuture<byte[]> cancelledDownload = SettableFuture.create();
-    CountDownLatch downloadsStarted = new CountDownLatch(2);
-    when(combinedCache.downloadBlob(any(), eq(chunk1Digest)))
+        val failedDownload: com.google.common.util.concurrent.SettableFuture<ByteArray?> =
+            com.google.common.util.concurrent.SettableFuture.create<ByteArray?>()
+        val cancelledDownload: com.google.common.util.concurrent.SettableFuture<ByteArray?> =
+            com.google.common.util.concurrent.SettableFuture.create<ByteArray?>()
+        val downloadsStarted: CountDownLatch = CountDownLatch(2)
+        Mockito.`when`<T?>(combinedCache.downloadBlob(ArgumentMatchers.any<T?>(), < T > eq < T ? > (chunk1Digest)))
         .thenAnswer(
-            invocation -> {
-              downloadsStarted.countDown();
-              return failedDownload;
-            });
-    when(combinedCache.downloadBlob(any(), eq(chunk2Digest)))
+            Answer { invocation: InvocationOnMock? ->
+                downloadsStarted.countDown()
+                failedDownload
+            })
+        Mockito.`when`<T?>(combinedCache.downloadBlob(ArgumentMatchers.any<T?>(), < T > eq < T ? > (chunk2Digest)))
         .thenAnswer(
-            invocation -> {
-              downloadsStarted.countDown();
-              return cancelledDownload;
-            });
+            Answer { invocation: InvocationOnMock? ->
+                downloadsStarted.countDown()
+                cancelledDownload
+            })
 
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    Thread downloadThread =
-        Thread.ofVirtual()
-            .unstarted(
-                () -> {
-                  try {
-                    downloader.downloadChunked(context, blobDigest, out);
-                  } catch (IOException | InterruptedException e) {
-                    throw new RuntimeException(e);
-                  }
-                });
-    downloadThread.start();
+        val out: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        val downloadThread: java.lang.Thread =
+            java.lang.Thread.ofVirtual()
+                .unstarted(
+                    java.lang.Runnable {
+                        try {
+                            downloader.downloadChunked(context, blobDigest, out)
+                        } catch (e: IOException) {
+                            throw java.lang.RuntimeException(e)
+                        } catch (e: java.lang.InterruptedException) {
+                            throw java.lang.RuntimeException(e)
+                        }
+                    })
+        downloadThread.start()
 
-    assertThat(downloadsStarted.await(1, TimeUnit.SECONDS)).isTrue();
-    failedDownload.setException(new IOException("connection reset"));
+        Truth.assertThat(downloadsStarted.await(1, TimeUnit.SECONDS)).isTrue()
+        failedDownload.setException(IOException("connection reset"))
 
-    downloadThread.join(TimeUnit.SECONDS.toMillis(1));
+        downloadThread.join(TimeUnit.SECONDS.toMillis(1))
 
-    assertThat(downloadThread.isAlive()).isFalse();
-    assertThat(cancelledDownload.isCancelled()).isTrue();
-  }
+        Truth.assertThat(downloadThread.isAlive()).isFalse()
+        Truth.assertThat(cancelledDownload.isCancelled()).isTrue()
+    }
+
+    companion object {
+        private val DIGEST_UTIL: DigestUtil = DigestUtil(SyscallCache.NO_CACHE, DigestHashFunction.SHA256)
+        private const val MAX_IN_FLIGHT_CHUNK_DOWNLOADS = 16
+    }
 }

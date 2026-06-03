@@ -11,125 +11,119 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlark.util
 
-package com.google.devtools.build.lib.starlark.util;
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.Iterables
+import com.google.devtools.build.lib.pkgcache.LoadingOptions
+import java.util.*
 
-import static com.google.common.truth.Truth.assertThat;
+/** Helper base class for testing the use of Starlark-style flags.  */
+open class StarlarkOptionsTestCase : BuildViewTestCase() {
+    protected var optionsParser: OptionsParser? = null
+    private var starlarkOptionsParser: StarlarkOptionsParser? = null
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.packages.semantics.BuildLanguageOptions;
-import com.google.devtools.build.lib.pkgcache.LoadingOptions;
-import com.google.devtools.build.lib.pkgcache.PackageOptions;
-import com.google.devtools.build.lib.runtime.BlazeOptionHandler;
-import com.google.devtools.build.lib.runtime.ClientOptions;
-import com.google.devtools.build.lib.runtime.CommonCommandOptions;
-import com.google.devtools.build.lib.runtime.KeepGoingOption;
-import com.google.devtools.build.lib.runtime.StarlarkOptionsParser;
-import com.google.devtools.build.lib.runtime.UiOptions;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.common.options.OptionPriority.PriorityCategory;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsParser;
-import com.google.devtools.common.options.OptionsParsingResult;
-import java.util.Arrays;
-import java.util.List;
-import org.junit.Before;
-
-/** Helper base class for testing the use of Starlark-style flags. */
-public class StarlarkOptionsTestCase extends BuildViewTestCase {
-
-  private static final ImmutableList<Class<? extends OptionsBase>> REQUIRED_OPTIONS_CLASSES =
-      ImmutableList.of(
-          PackageOptions.class,
-          BuildLanguageOptions.class,
-          KeepGoingOption.class,
-          LoadingOptions.class,
-          ClientOptions.class,
-          UiOptions.class,
-          CommonCommandOptions.class);
-
-  protected OptionsParser optionsParser;
-  private StarlarkOptionsParser starlarkOptionsParser;
-
-  @Before
-  public void setUp() throws Exception {
-    optionsParser =
-        OptionsParser.builder()
-            .optionsClasses(
-                Iterables.concat(
-                    REQUIRED_OPTIONS_CLASSES,
-                    ruleClassProvider.getFragmentRegistry().getOptionsClasses()))
-            .skipStarlarkOptionPrefixes()
-            .build();
-    starlarkOptionsParser =
-        StarlarkOptionsParser.builder()
-            .buildSettingLoader(
-                new BlazeOptionHandler.SkyframeExecutorTargetLoader(
-                    skyframeExecutor, PathFragment.EMPTY_FRAGMENT, reporter))
-            .nativeOptionsParser(optionsParser)
-            .build();
-  }
-
-  protected OptionsParsingResult parseStarlarkOptions(String options) throws Exception {
-    return parseStarlarkOptions(options, /* onlyStarlarkParser= */ false);
-  }
-
-  protected OptionsParsingResult parseStarlarkOptions(String options, boolean onlyStarlarkParser)
-      throws Exception {
-    List<String> asList = Arrays.asList(options.split(" "));
-    if (!onlyStarlarkParser) {
-      optionsParser.parse(asList);
+    @Before
+    @Throws(Exception::class)
+    fun setUp() {
+        optionsParser =
+            OptionsParser.builder()
+                .optionsClasses(
+                    Iterables.concat(
+                        REQUIRED_OPTIONS_CLASSES,
+                        ruleClassProvider.getFragmentRegistry().getOptionsClasses()
+                    )
+                )
+                .skipStarlarkOptionPrefixes()
+                .build()
+        starlarkOptionsParser =
+            StarlarkOptionsParser.builder()
+                .buildSettingLoader(
+                    SkyframeExecutorTargetLoader(
+                        skyframeExecutor, PathFragment.EMPTY_FRAGMENT, reporter
+                    )
+                )
+                .nativeOptionsParser(optionsParser)
+                .build()
     }
-    assertThat(starlarkOptionsParser.parseGivenArgs(asList)).isTrue();
-    return optionsParser;
-  }
 
-  protected OptionsParsingResult parseStarlarkOptions(
-      String commandLineOptions, String bazelrcOptions) throws Exception {
-    List<String> commandLineOptionsList = Arrays.asList(commandLineOptions.split(" "));
-    List<String> bazelrcOptionsList = Arrays.asList(bazelrcOptions.split(" "));
-    optionsParser.parse(PriorityCategory.COMMAND_LINE, /* source= */ null, commandLineOptionsList);
-    optionsParser.parse(PriorityCategory.RC_FILE, "fake.bazelrc", bazelrcOptionsList);
-    assertThat(
+    @Throws(Exception::class)
+    protected fun parseStarlarkOptions(options: String, onlyStarlarkParser: Boolean = false): OptionsParsingResult {
+        val asList = Arrays.asList<String?>(*options.split(" ".toRegex()).dropLastWhile { it.isEmpty() }.toTypedArray())
+        if (!onlyStarlarkParser) {
+            optionsParser.parse(asList)
+        }
+        assertThat(starlarkOptionsParser.parseGivenArgs(asList)).isTrue()
+        return optionsParser
+    }
+
+    @Throws(Exception::class)
+    protected fun parseStarlarkOptions(
+        commandLineOptions: String, bazelrcOptions: String
+    ): OptionsParsingResult {
+        val commandLineOptionsList =
+            Arrays.asList<String?>(*commandLineOptions.split(" ".toRegex()).dropLastWhile { it.isEmpty() }
+                .toTypedArray())
+        val bazelrcOptionsList =
+            Arrays.asList<String?>(*bazelrcOptions.split(" ".toRegex()).dropLastWhile { it.isEmpty() }.toTypedArray())
+        optionsParser.parse(PriorityCategory.COMMAND_LINE,  /* source= */null, commandLineOptionsList)
+        optionsParser.parse(PriorityCategory.RC_FILE, "fake.bazelrc", bazelrcOptionsList)
+        assertThat(
             starlarkOptionsParser.parseGivenArgs(
-                ImmutableList.<String>builder()
+                ImmutableList.builder<String?>()
                     .addAll(commandLineOptionsList)
                     .addAll(bazelrcOptionsList)
-                    .build()))
-        .isTrue();
-    return optionsParser;
-  }
+                    .build()
+            )
+        )
+            .isTrue()
+        return optionsParser
+    }
 
-  private void writeBuildSetting(String type, String defaultValue, boolean isFlag)
-      throws Exception {
-    String flag = isFlag ? "True" : "False";
+    @Throws(Exception::class)
+    private fun writeBuildSetting(type: String?, defaultValue: String?, isFlag: Boolean) {
+        val flag = if (isFlag) "True" else "False"
 
-    scratch.file(
-        "test/build_setting.bzl",
-        "def _build_setting_impl(ctx):",
-        "  return []",
-        type + "_setting = rule(",
-        "  implementation = _build_setting_impl,",
-        "  build_setting = config." + type + "(flag=" + flag + ")",
-        ")");
-    scratch.file(
-        "test/BUILD",
-        "load('//test:build_setting.bzl', '" + type + "_setting')",
-        type
-            + "_setting(name = 'my_"
-            + type
-            + "_setting', build_setting_default = "
-            + defaultValue
-            + ")");
-  }
+        scratch.file(
+            "test/build_setting.bzl",
+            "def _build_setting_impl(ctx):",
+            "  return []",
+            type + "_setting = rule(",
+            "  implementation = _build_setting_impl,",
+            "  build_setting = config." + type + "(flag=" + flag + ")",
+            ")"
+        )
+        scratch.file(
+            "test/BUILD",
+            "load('//test:build_setting.bzl', '" + type + "_setting')",
+            (type
+                    + "_setting(name = 'my_"
+                    + type
+                    + "_setting', build_setting_default = "
+                    + defaultValue
+                    + ")")
+        )
+    }
 
-  protected void writeBasicIntFlag() throws Exception {
-    writeBuildSetting("int", "42", true);
-  }
+    @Throws(Exception::class)
+    protected fun writeBasicIntFlag() {
+        writeBuildSetting("int", "42", true)
+    }
 
-  protected void writeBasicBoolFlag() throws Exception {
-    writeBuildSetting("bool", "True", true);
-  }
+    @Throws(Exception::class)
+    protected fun writeBasicBoolFlag() {
+        writeBuildSetting("bool", "True", true)
+    }
+
+    companion object {
+        private val REQUIRED_OPTIONS_CLASSES: ImmutableList<Class<out OptionsBase?>?> = ImmutableList.of<E?>(
+            PackageOptions::class.java,
+            BuildLanguageOptions::class.java,
+            KeepGoingOption::class.java,
+            LoadingOptions::class.java,
+            ClientOptions::class.java,
+            UiOptions::class.java,
+            CommonCommandOptions::class.java
+        )
+    }
 }

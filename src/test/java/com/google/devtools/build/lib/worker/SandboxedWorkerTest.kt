@@ -11,112 +11,102 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.worker;
+package com.google.devtools.build.lib.worker
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.actions.ExecutionRequirements.WorkerProtocolFormat
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.ImmutableSortedMap;
-import com.google.common.hash.HashCode;
-import com.google.devtools.build.lib.actions.ExecutionRequirements.WorkerProtocolFormat;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [SandboxedWorker].  */
+@RunWith(JUnit4::class)
+class SandboxedWorkerTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testWritableDirs_withoutDevShm() {
+        val fs: FileSystem = InMemoryFileSystem(DigestHashFunction.SHA256)
+        val workDir: Path = fs.getPath("/base/workDir")
+        workDir.createDirectoryAndParents()
 
-/** Tests for {@link SandboxedWorker}. */
-@RunWith(JUnit4.class)
-public class SandboxedWorkerTest {
+        // /dev/shm DOES NOT exist on this InMemoryFileSystem.
+        val workerKey: WorkerKey = createWorkerKey(fs)
+        val sandboxOptions: SandboxedWorker.WorkerSandboxOptions = createSandboxOptions(fs)
 
-  @Test
-  public void testWritableDirs_withoutDevShm() throws Exception {
-    FileSystem fs = new InMemoryFileSystem(DigestHashFunction.SHA256);
-    Path workDir = fs.getPath("/base/workDir");
-    workDir.createDirectoryAndParents();
+        val worker: SandboxedWorker =
+            SandboxedWorker(
+                workerKey,
+                1,
+                workDir,
+                fs.getPath("/logFile"),
+                WorkerOptions.DEFAULTS,
+                sandboxOptions,  /* treeDeleter= */
+                null,
+                false,  /* cgroupFactory= */
+                null
+            )
 
-    // /dev/shm DOES NOT exist on this InMemoryFileSystem.
+        val writableDirs: com.google.common.collect.ImmutableSet<Path?>? = worker.getWritableDirs(workDir)
 
-    WorkerKey workerKey = createWorkerKey(fs);
-    SandboxedWorker.WorkerSandboxOptions sandboxOptions = createSandboxOptions(fs);
+        Truth.assertThat(writableDirs).contains(fs.getPath("/tmp"))
+        Truth.assertThat(writableDirs).doesNotContain(fs.getPath("/dev/shm"))
+    }
 
-    SandboxedWorker worker =
-        new SandboxedWorker(
-            workerKey,
-            1,
-            workDir,
-            fs.getPath("/logFile"),
-            WorkerOptions.DEFAULTS,
-            sandboxOptions,
-            /* treeDeleter= */ null,
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testWritableDirs_withDevShm() {
+        val fs: FileSystem = InMemoryFileSystem(DigestHashFunction.SHA256)
+        val workDir: Path = fs.getPath("/base/workDir")
+        workDir.createDirectoryAndParents()
+
+        // Create /dev/shm
+        fs.getPath("/dev/shm").createDirectoryAndParents()
+
+        val workerKey: WorkerKey = createWorkerKey(fs)
+        val sandboxOptions: SandboxedWorker.WorkerSandboxOptions = createSandboxOptions(fs)
+
+        val worker: SandboxedWorker =
+            SandboxedWorker(
+                workerKey,
+                1,
+                workDir,
+                fs.getPath("/logFile"),
+                WorkerOptions.DEFAULTS,
+                sandboxOptions,  /* treeDeleter= */
+                null,
+                false,  /* cgroupFactory= */
+                null
+            )
+
+        val writableDirs: com.google.common.collect.ImmutableSet<Path?>? = worker.getWritableDirs(workDir)
+
+        Truth.assertThat(writableDirs).contains(fs.getPath("/tmp"))
+        Truth.assertThat(writableDirs).contains(fs.getPath("/dev/shm"))
+    }
+
+    private fun createWorkerKey(fs: FileSystem): WorkerKey {
+        return WorkerKey(
+            com.google.common.collect.ImmutableList.of<E?>(),
+            com.google.common.collect.ImmutableMap.of<K?, V?>(),
+            fs.getPath("/execRoot"),
+            "dummy",
+            com.google.common.hash.HashCode.fromInt(0),
+            com.google.common.collect.ImmutableSortedMap.of<K?, V?>(),
+            true,
             false,
-            /* cgroupFactory= */ null);
-
-    ImmutableSet<Path> writableDirs = worker.getWritableDirs(workDir);
-
-    assertThat(writableDirs).contains(fs.getPath("/tmp"));
-    assertThat(writableDirs).doesNotContain(fs.getPath("/dev/shm"));
-  }
-
-  @Test
-  public void testWritableDirs_withDevShm() throws Exception {
-    FileSystem fs = new InMemoryFileSystem(DigestHashFunction.SHA256);
-    Path workDir = fs.getPath("/base/workDir");
-    workDir.createDirectoryAndParents();
-
-    // Create /dev/shm
-    fs.getPath("/dev/shm").createDirectoryAndParents();
-
-    WorkerKey workerKey = createWorkerKey(fs);
-    SandboxedWorker.WorkerSandboxOptions sandboxOptions = createSandboxOptions(fs);
-
-    SandboxedWorker worker =
-        new SandboxedWorker(
-            workerKey,
-            1,
-            workDir,
-            fs.getPath("/logFile"),
-            WorkerOptions.DEFAULTS,
-            sandboxOptions,
-            /* treeDeleter= */ null,
             false,
-            /* cgroupFactory= */ null);
+            false,
+            WorkerProtocolFormat.PROTO
+        )
+    }
 
-    ImmutableSet<Path> writableDirs = worker.getWritableDirs(workDir);
-
-    assertThat(writableDirs).contains(fs.getPath("/tmp"));
-    assertThat(writableDirs).contains(fs.getPath("/dev/shm"));
-  }
-
-  private WorkerKey createWorkerKey(FileSystem fs) {
-    return new WorkerKey(
-        ImmutableList.of(),
-        ImmutableMap.of(),
-        fs.getPath("/execRoot"),
-        "dummy",
-        HashCode.fromInt(0),
-        ImmutableSortedMap.of(),
-        true,
-        false,
-        false,
-        false,
-        WorkerProtocolFormat.PROTO);
-  }
-
-  private SandboxedWorker.WorkerSandboxOptions createSandboxOptions(FileSystem fs) {
-    return new SandboxedWorker.WorkerSandboxOptions(
-        fs.getPath("/sandboxBinary"),
-        false,
-        false,
-        false,
-        ImmutableSet.of(),
-        ImmutableSet.of(),
-        0,
-        ImmutableSet.of(),
-        ImmutableMap.of());
-  }
+    private fun createSandboxOptions(fs: FileSystem): SandboxedWorker.WorkerSandboxOptions {
+        return WorkerSandboxOptions(
+            fs.getPath("/sandboxBinary"),
+            false,
+            false,
+            false,
+            com.google.common.collect.ImmutableSet.of<E?>(),
+            com.google.common.collect.ImmutableSet.of<E?>(),
+            0,
+            com.google.common.collect.ImmutableSet.of<E?>(),
+            com.google.common.collect.ImmutableMap.of<K?, V?>()
+        )
+    }
 }

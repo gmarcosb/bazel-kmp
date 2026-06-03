@@ -11,63 +11,51 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.platform
 
-package com.google.devtools.build.lib.platform;
+import com.google.devtools.build.lib.runtime.BlazeModule
 
-import static com.google.common.truth.Truth.assertThat;
+/** Tests for [SystemSuspensionEvent].  */
+@RunWith(JUnit4::class)
+class SystemSuspensionEventTest : BuildIntegrationTestCase() {
+    internal class SystemSuspensionEventListener : BlazeModule() {
+        var suspensionEventCount: Int = 0
 
-import com.google.common.eventbus.Subscribe;
-import com.google.devtools.build.lib.buildtool.util.BuildIntegrationTestCase;
-import com.google.devtools.build.lib.runtime.BlazeModule;
-import com.google.devtools.build.lib.runtime.BlazeRuntime;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.util.OS;
-import org.junit.Assume;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+        public override fun beforeCommand(env: CommandEnvironment) {
+            env.getEventBus().register(this)
+        }
 
-/** Tests for {@link SystemSuspensionEvent}. */
-@RunWith(JUnit4.class)
-public final class SystemSuspensionEventTest extends BuildIntegrationTestCase {
-  static class SystemSuspensionEventListener extends BlazeModule {
-    public int suspensionEventCount = 0;
-
-    @Override
-    public void beforeCommand(CommandEnvironment env) {
-      env.getEventBus().register(this);
+        @com.google.common.eventbus.Subscribe
+        fun suspensionEvent(event: SystemSuspensionEvent) {
+            assertThat(event.reason()).isEqualTo(SystemSuspensionEvent.Reason.SIGCONT)
+            assertThat(event.logString()).isEqualTo("SystemSuspensionEvent: Signal SIGCONT")
+            ++suspensionEventCount
+        }
     }
 
-    @Subscribe
-    public void suspensionEvent(SystemSuspensionEvent event) {
-      assertThat(event.reason()).isEqualTo(SystemSuspensionEvent.Reason.SIGCONT);
-      assertThat(event.logString()).isEqualTo("SystemSuspensionEvent: Signal SIGCONT");
-      ++suspensionEventCount;
+    private val eventListener = SystemSuspensionEventListener()
+
+    @get:Throws(java.lang.Exception::class)
+    val runtimeBuilder: BlazeRuntime.Builder
+        get() = super.runtimeBuilder
+            .addBlazeModule(eventListener)
+            .addBlazeModule(SystemSuspensionModule())
+            .addBlazeService(PlatformNativeDepsServiceImpl())
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSuspendCounter() {
+        Assume.assumeTrue(com.google.devtools.build.lib.util.OS.getCurrent() == com.google.devtools.build.lib.util.OS.DARWIN)
+        // Send a SIGCONT to ourselves which should cause our signal handler to fire.
+        write(
+            "system_suspension_event/BUILD",
+            "genrule(",
+            "  name = 'signal',",
+            "  outs = ['signal.out'],",
+            "  cmd = '/bin/kill -s CONT " + java.lang.ProcessHandle.current().pid() + " > $@',",
+            ")"
+        )
+        buildTarget("//system_suspension_event:signal")
+        Truth.assertThat(eventListener.suspensionEventCount).isEqualTo(1)
     }
-  }
-
-  private final SystemSuspensionEventListener eventListener = new SystemSuspensionEventListener();
-
-  @Override
-  protected BlazeRuntime.Builder getRuntimeBuilder() throws Exception {
-    return super.getRuntimeBuilder()
-        .addBlazeModule(eventListener)
-        .addBlazeModule(new SystemSuspensionModule())
-        .addBlazeService(new PlatformNativeDepsServiceImpl());
-  }
-
-  @Test
-  public void testSuspendCounter() throws Exception {
-    Assume.assumeTrue(OS.getCurrent() == OS.DARWIN);
-    // Send a SIGCONT to ourselves which should cause our signal handler to fire.
-    write(
-        "system_suspension_event/BUILD",
-        "genrule(",
-        "  name = 'signal',",
-        "  outs = ['signal.out'],",
-        "  cmd = '/bin/kill -s CONT " + ProcessHandle.current().pid() + " > $@',",
-        ")");
-    buildTarget("//system_suspension_event:signal");
-    assertThat(eventListener.suspensionEventCount).isEqualTo(1);
-  }
 }

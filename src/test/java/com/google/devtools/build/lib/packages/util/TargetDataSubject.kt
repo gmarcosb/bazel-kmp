@@ -11,48 +11,53 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages.util;
+package com.google.devtools.build.lib.packages.util
 
-import com.google.common.collect.ImmutableMap;
-import com.google.common.truth.FailureMetadata;
-import com.google.common.truth.Subject;
-import com.google.common.truth.Truth;
-import com.google.devtools.build.lib.packages.TargetData;
-import java.util.Optional;
+import com.google.common.collect.ImmutableMap
+import com.google.common.truth.Subject
+import com.google.devtools.build.lib.packages.TargetData
+import java.util.*
 
-/** Truth subject for {@link TargetData}. */
-public final class TargetDataSubject extends Subject {
-  private final TargetData targetData;
+/** Truth subject for [TargetData].  */
+class TargetDataSubject private constructor(failureMetadata: FailureMetadata?, targetData: TargetData) :
+    Subject(failureMetadata, targetData) {
+    private val targetData: TargetData
 
-  private TargetDataSubject(FailureMetadata failureMetadata, TargetData targetData) {
-    super(failureMetadata, targetData);
-    this.targetData = targetData;
-  }
+    init {
+        this.targetData = targetData
+    }
 
-  public static TargetDataSubject assertThat(TargetData targetData) {
-    return Truth.assertAbout(TargetDataSubject::new).that(targetData);
-  }
+    fun hasSamePropertiesAs(that: TargetData) {
+        Truth.assertThat(toMap(targetData)).isEqualTo(toMap(that))
+    }
 
-  public void hasSamePropertiesAs(TargetData that) {
-    Truth.assertThat(toMap(targetData)).isEqualTo(toMap(that));
-  }
+    companion object {
+        fun assertThat(targetData: TargetData?): TargetDataSubject? {
+            return Truth.assertAbout<TargetDataSubject?, TargetData?>(Subject.Factory { failureMetadata: FailureMetadata?, targetData: TargetData? ->
+                TargetDataSubject(
+                    failureMetadata,
+                    targetData
+                )
+            }).that(targetData)
+        }
 
-  /** A test helper to help verify that two {@link TargetData} instances are the same. */
-  private static ImmutableMap<String, Object> toMap(TargetData targetData) {
-    return ImmutableMap.<String, Object>builder()
-        .put("targetKind", targetData.getTargetKind())
-        .put("ruleClass", targetData.getRuleClass())
-        .put("label", targetData.getLabel())
-        .put("isRule", targetData.isRule())
-        .put("isFile", targetData.isFile())
-        .put("isInputFile", targetData.isInputFile())
-        .put("isOutputFile", targetData.isOutputFile())
-        .put("generatingRuleLabel", Optional.ofNullable(targetData.getGeneratingRuleLabel()))
-        .put("inputPath", Optional.ofNullable(targetData.getInputPath()))
-        .put("deprecationWarning", Optional.ofNullable(targetData.getDeprecationWarning()))
-        .put("isTestOnly", targetData.isTestOnly())
-        .put("testTimeout", Optional.ofNullable(targetData.getTestTimeout()))
-        .put("advertisedProviders", targetData.getAdvertisedProviders())
-        .buildOrThrow();
-  }
+        /** A test helper to help verify that two [TargetData] instances are the same.  */
+        private fun toMap(targetData: TargetData): ImmutableMap<String?, Any?> {
+            return ImmutableMap.builder<String?, Any?>()
+                .put("targetKind", targetData.getTargetKind())
+                .put("ruleClass", targetData.getRuleClass())
+                .put("label", targetData.getLabel())
+                .put("isRule", targetData.isRule())
+                .put("isFile", targetData.isFile())
+                .put("isInputFile", targetData.isInputFile())
+                .put("isOutputFile", targetData.isOutputFile())
+                .put("generatingRuleLabel", Optional.ofNullable<T?>(targetData.getGeneratingRuleLabel()))
+                .put("inputPath", Optional.ofNullable<T?>(targetData.getInputPath()))
+                .put("deprecationWarning", Optional.ofNullable<T?>(targetData.getDeprecationWarning()))
+                .put("isTestOnly", targetData.isTestOnly())
+                .put("testTimeout", Optional.ofNullable<T?>(targetData.getTestTimeout()))
+                .put("advertisedProviders", targetData.getAdvertisedProviders())
+                .buildOrThrow()
+        }
+    }
 }

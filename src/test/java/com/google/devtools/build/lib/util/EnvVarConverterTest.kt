@@ -11,47 +11,47 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.util
 
-package com.google.devtools.build.lib.util;
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import static com.google.common.truth.Truth.assertThat;
+/** Tests for [EnvVar.Converter].  */
+@RunWith(JUnit4::class)
+class EnvVarConverterTest {
+    private val converter: EnvVar.Converter = Converter()
 
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @Throws(java.lang.Exception::class)
+    private fun convert(input: String?): EnvVar {
+        return converter.convert(input)
+    }
 
-/** Tests for {@link EnvVar.Converter}. */
-@RunWith(JUnit4.class)
-public class EnvVarConverterTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun assignment() {
+        assertThat(convert("A=1")).isEqualTo(Set("A", "1"))
+        assertThat(convert("A=ABC")).isEqualTo(Set("A", "ABC"))
+        assertThat(convert("A=")).isEqualTo(Set("A", ""))
+        assertThat(convert("A=B,C=D")).isEqualTo(Set("A", "B,C=D"))
+    }
 
-  private EnvVar.Converter converter = new EnvVar.Converter();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun missingName() {
+        assertThat(convert("=NAME")).isEqualTo(Unset("NAME"))
+    }
 
-  private EnvVar convert(String input) throws Exception {
-    return converter.convert(input);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun missingValue() {
+        assertThat(convert("NAME")).isEqualTo(Inherit("NAME"))
+    }
 
-  @Test
-  public void assignment() throws Exception {
-    assertThat(convert("A=1")).isEqualTo(new EnvVar.Set("A", "1"));
-    assertThat(convert("A=ABC")).isEqualTo(new EnvVar.Set("A", "ABC"));
-    assertThat(convert("A=")).isEqualTo(new EnvVar.Set("A", ""));
-    assertThat(convert("A=B,C=D")).isEqualTo(new EnvVar.Set("A", "B,C=D"));
-  }
-
-  @Test
-  public void missingName() throws Exception {
-    assertThat(convert("=NAME")).isEqualTo(new EnvVar.Unset("NAME"));
-  }
-
-  @Test
-  public void missingValue() throws Exception {
-    assertThat(convert("NAME")).isEqualTo(new EnvVar.Inherit("NAME"));
-  }
-
-  @Test
-  public void reverseConversionForStarlark() throws Exception {
-    assertThat(converter.reverseForStarlark(converter.convert("a"))).isEqualTo("a");
-    assertThat(converter.reverseForStarlark(converter.convert("a=1"))).isEqualTo("a=1");
-    assertThat(converter.reverseForStarlark(converter.convert("=a"))).isEqualTo("=a");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun reverseConversionForStarlark() {
+        assertThat(converter.reverseForStarlark(converter.convert("a"))).isEqualTo("a")
+        assertThat(converter.reverseForStarlark(converter.convert("a=1"))).isEqualTo("a=1")
+        assertThat(converter.reverseForStarlark(converter.convert("=a"))).isEqualTo("=a")
+    }
 }

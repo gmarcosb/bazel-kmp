@@ -11,149 +11,176 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util;
+package com.google.devtools.build.lib.util
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import com.google.common.testing.EqualsTester
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.exec.util.SpawnBuilder.build
+import com.google.devtools.common.options.testing.ConverterTester.addEqualityGroup
+import com.google.devtools.common.options.testing.ConverterTesterMap.Builder.build
+import net.starlark.java.syntax.FileOptions.Builder.build
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import com.google.common.testing.EqualsTester;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-@RunWith(JUnit4.class)
-public final class ValueOrExceptionTest {
-
-  @Test
-  public void factoryMethods_requireNonNull() {
-    assertThrows(NullPointerException.class, () -> ValueOrException.ofValue(null));
-    assertThrows(NullPointerException.class, () -> ValueOrException.ofException(null));
-  }
-
-  @Test
-  public void isPresent_basicBehavior() {
-    assertThat(ValueOrException.ofValue(new TestValue(123)).isPresent).isTrue();
-    assertThat(
-            ValueOrException.ofValue(new TestException("error") /* as value, not as exception */).isPresent)
-        .isTrue();
-    assertThat(ValueOrException.ofException(new TestException("error")).isPresent).isFalse();
-  }
-
-  @Test
-  public void get_ofValue_succeeds() throws Exception {
-    TestValue value = new TestValue(42);
-    ValueOrException<TestValue, TestException> valueOrException = ValueOrException.ofValue(value);
-    assertThat(valueOrException.get()).isSameInstanceAs(value);
-    assertThat(valueOrException.getUnchecked()).isSameInstanceAs(value);
-  }
-
-  @Test
-  public void get_ofException_throws() {
-    TestException exception = new TestException("i/o error");
-    ValueOrException<TestValue, TestException> valueOrException =
-        ValueOrException.ofException(exception);
-    assertThat(assertThrows(TestException.class, valueOrException::get))
-        .isSameInstanceAs(exception);
-    assertThat(assertThrows(IllegalStateException.class, valueOrException::getUnchecked))
-        .hasCauseThat()
-        .isSameInstanceAs(exception);
-  }
-
-  @Test
-  public void getException_basicBehavior() {
-    TestValue value = new TestValue(42);
-    TestException exception = new TestException("i/o error");
-    assertThrows(IllegalStateException.class, () -> ValueOrException.ofValue(value).exception);
-    assertThrows(
-        IllegalStateException.class,
-        () -> ValueOrException.ofValue(exception /* as value, not as exception */).exception);
-    assertThat(ValueOrException.ofException(exception).exception).isSameInstanceAs(exception);
-  }
-
-  @Test
-  public void toString_basicFunctionality() {
-    assertThat(ValueOrException.ofValue(new TestValue(42)).toString())
-        .isEqualTo("ValueOrException.OfValue[TestValue(42)]");
-    assertThat(ValueOrException.ofValue(new TestException("failure")).toString())
-        .isEqualTo("ValueOrException.OfValue[TestException('failure')]");
-    assertThat(ValueOrException.ofException(new TestException("failure")).toString())
-        .isEqualTo("ValueOrException.OfException[TestException('failure')]");
-  }
-
-  @Test
-  public void hashCode_basicFunctionality() {
-    int unused = ValueOrException.ofValue(new TestValue(42)).hashCode(); // Should not throw.
-    int unused2 =
-        ValueOrException.ofException(new TestException("fail")).hashCode(); // Should not throw.
-  }
-
-  @Test
-  public void equals() {
-    TestValue value12345 = new TestValue(12345);
-    TestException failure = new TestException("failure");
-
-    new EqualsTester()
-        .addEqualityGroup(
-            ValueOrException.ofValue(value12345), ValueOrException.ofValue(new TestValue(12345)))
-        .addEqualityGroup(ValueOrException.ofValue(new TestValue(12346)))
-        .addEqualityGroup(
-            ValueOrException.ofException(failure),
-            ValueOrException.ofException(new TestException("failure")))
-        .addEqualityGroup(ValueOrException.ofValue(failure /* as _value_, not exception! */))
-        .addEqualityGroup(ValueOrException.ofException(new TestException("other failure")))
-        .testEquals();
-  }
-
-  private static final class TestValue {
-    private final int content;
-
-    TestValue(int content) {
-      this.content = content;
+@RunWith(JUnit4::class)
+class ValueOrExceptionTest {
+    @org.junit.Test
+    fun factoryMethods_requireNonNull() {
+        org.junit.Assert.assertThrows<java.lang.NullPointerException?>(
+            java.lang.NullPointerException::class.java,
+            org.junit.function.ThrowingRunnable { ValueOrException.ofValue(null) })
+        org.junit.Assert.assertThrows<java.lang.NullPointerException?>(
+            java.lang.NullPointerException::class.java,
+            org.junit.function.ThrowingRunnable { ValueOrException.ofException(null) })
     }
 
-    @Override
-    public boolean equals(Object o) {
-      if (o instanceof TestValue testValue) {
-        return testValue.content == content;
-      } else {
-        return false;
-      }
+    @get:org.junit.Test
+    val isPresent_basicBehavior: Unit
+        get() {
+            assertThat(ValueOrException.ofValue(TestValue(123)).isPresent).isTrue()
+            assertThat(
+                ValueOrException.ofValue(com.google.devtools.build.lib.util.ValueOrExceptionTest.TestException("error") /* as value, not as exception */).isPresent
+            )
+                .isTrue()
+            assertThat(
+                ValueOrException.ofException(
+                    com.google.devtools.build.lib.util.ValueOrExceptionTest.TestException(
+                        "error"
+                    )
+                ).isPresent
+            ).isFalse()
+        }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun get_ofValue_succeeds() {
+        val value = TestValue(42)
+        val valueOrException: ValueOrException<TestValue?, TestException?> = ValueOrException.ofValue(value)
+        assertThat(valueOrException.get()).isSameInstanceAs(value)
+        assertThat(valueOrException.getUnchecked()).isSameInstanceAs(value)
     }
 
-    @Override
-    public int hashCode() {
-      return Integer.valueOf(content).hashCode();
+    @org.junit.Test
+    fun get_ofException_throws() {
+        val exception: TestException =
+            com.google.devtools.build.lib.util.ValueOrExceptionTest.TestException("i/o error")
+        val valueOrException: ValueOrException<TestValue?, TestException?> =
+            ValueOrException.ofException(exception)
+        Truth.assertThat(
+            org.junit.Assert.assertThrows<TestException?>(
+                com.google.devtools.build.lib.util.ValueOrExceptionTest.TestException::class.java,
+                valueOrException::get
+            )
+        )
+            .isSameInstanceAs(exception)
+        Truth.assertThat(
+            org.junit.Assert.assertThrows<java.lang.IllegalStateException?>(
+                java.lang.IllegalStateException::class.java,
+                valueOrException::getUnchecked
+            )
+        )
+            .hasCauseThat()
+            .isSameInstanceAs(exception)
     }
 
-    @Override
-    public String toString() {
-      return String.format("TestValue(%d)", content);
-    }
-  }
+    @get:org.junit.Test
+    val exception_basicBehavior: Unit
+        get() {
+            val value = TestValue(42)
+            val exception: TestException =
+                com.google.devtools.build.lib.util.ValueOrExceptionTest.TestException("i/o error")
+            org.junit.Assert.assertThrows<T?>(
+                java.lang.IllegalStateException::class.java,
+                org.junit.function.ThrowingRunnable { ValueOrException.ofValue(value).exception })
+            org.junit.Assert.assertThrows<T?>(
+                java.lang.IllegalStateException::class.java,
+                org.junit.function.ThrowingRunnable { ValueOrException.ofValue(exception /* as value, not as exception */).exception })
+            assertThat(ValueOrException.ofException(exception).exception).isSameInstanceAs(exception)
+        }
 
-  @SuppressWarnings("OverrideThrowableToString") // toString() overridden for testing
-  private static final class TestException extends Exception {
-    TestException(String message) {
-      super(message);
+    @org.junit.Test
+    fun toString_basicFunctionality() {
+        assertThat(ValueOrException.ofValue(TestValue(42)).toString())
+            .isEqualTo("ValueOrException.OfValue[TestValue(42)]")
+        assertThat(
+            ValueOrException.ofValue(com.google.devtools.build.lib.util.ValueOrExceptionTest.TestException("failure"))
+                .toString()
+        )
+            .isEqualTo("ValueOrException.OfValue[TestException('failure')]")
+        assertThat(
+            ValueOrException.ofException(com.google.devtools.build.lib.util.ValueOrExceptionTest.TestException("failure"))
+                .toString()
+        )
+            .isEqualTo("ValueOrException.OfException[TestException('failure')]")
     }
 
-    @Override
-    public boolean equals(Object o) {
-      if (o instanceof TestException testException) {
-        return testException.getMessage().equals(getMessage());
-      } else {
-        return false;
-      }
+    @org.junit.Test
+    fun hashCode_basicFunctionality() {
+        val unused: Int = ValueOrException.ofValue(TestValue(42)).hashCode() // Should not throw.
+        val unused2: Int =
+            ValueOrException.ofException(com.google.devtools.build.lib.util.ValueOrExceptionTest.TestException("fail"))
+                .hashCode() // Should not throw.
     }
 
-    @Override
-    public int hashCode() {
-      return getMessage().hashCode();
+    @org.junit.Test
+    fun equals() {
+        val value12345 = TestValue(12345)
+        val failure: TestException = com.google.devtools.build.lib.util.ValueOrExceptionTest.TestException("failure")
+
+        EqualsTester()
+            .addEqualityGroup(
+                ValueOrException.ofValue(value12345), ValueOrException.ofValue(TestValue(12345))
+            )
+            .addEqualityGroup(ValueOrException.ofValue(TestValue(12346)))
+            .addEqualityGroup(
+                ValueOrException.ofException(failure),
+                ValueOrException.ofException(com.google.devtools.build.lib.util.ValueOrExceptionTest.TestException("failure"))
+            )
+            .addEqualityGroup(ValueOrException.ofValue(failure /* as _value_, not exception! */))
+            .addEqualityGroup(
+                ValueOrException.ofException(
+                    com.google.devtools.build.lib.util.ValueOrExceptionTest.TestException(
+                        "other failure"
+                    )
+                )
+            )
+            .testEquals()
     }
 
-    @Override
-    public String toString() {
-      return String.format("TestException('%s')", getMessage());
+    private class TestValue(private val content: Int) {
+        override fun equals(o: Any?): Boolean {
+            if (o is TestValue) {
+                return o.content == content
+            } else {
+                return false
+            }
+        }
+
+        override fun hashCode(): Int {
+            return content.hashCode()
+        }
+
+        override fun toString(): String {
+            return String.format("TestValue(%d)", content)
+        }
     }
-  }
+
+    // toString() overridden for testing
+    private class TestException(message: String?) : java.lang.Exception(message) {
+        override fun equals(o: Any?): Boolean {
+            if (o is TestException) {
+                return o.message == message
+            } else {
+                return false
+            }
+        }
+
+        override fun hashCode(): Int {
+            return message.hashCode()
+        }
+
+        override fun toString(): String {
+            return String.format("TestException('%s')", message)
+        }
+    }
 }

@@ -11,64 +11,77 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.common.options;
+package com.google.devtools.common.options
 
-import static com.google.common.truth.Truth.assertThat;
+import OptionFilters.OptionEffectTag
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.exec.util.SpawnBuilder.build
+import com.google.devtools.common.options.MethodOptionDefinition
+import com.google.devtools.common.options.OptionDefinition
+import com.google.devtools.common.options.OptionDocumentationCategory
+import com.google.devtools.common.options.OptionEffectTag
+import com.google.devtools.common.options.OptionsBase
+import com.google.devtools.common.options.OptionsClass
+import com.google.devtools.common.options.OptionsParser
+import com.google.devtools.common.options.testing.ConverterTesterMap.Builder.build
+import net.starlark.java.syntax.FileOptions.Builder.build
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [MethodOptionDefinition].  */
+@RunWith(JUnit4::class)
+class MethodOptionDefinitionTest {
+    /** Dummy options class for testing method-based options.  */
+    @OptionsClass
+    abstract class MethodOptionsTest : OptionsBase() {
+        @get:com.google.devtools.common.options.Option(
+            name = "foo",
+            documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+            effectTags = [OptionEffectTag.AFFECTS_OUTPUTS],
+            defaultValue = "42"
+        )
+        abstract var foo: Int
+    }
 
-/** Tests for {@link MethodOptionDefinition}. */
-@RunWith(JUnit4.class)
-public class MethodOptionDefinitionTest {
-  /** Dummy options class for testing method-based options. */
-  @OptionsClass
-  public abstract static class MethodOptionsTest extends OptionsBase {
-    @Option(
-        name = "foo",
-        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-        effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
-        defaultValue = "42")
-    public abstract int getFoo();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMethodOptionParsing() {
+        val parser: OptionsParser = OptionsParser.builder().optionsClasses(MethodOptionsTest::class.java).build()
 
-    public abstract void setFoo(int foo);
-  }
+        parser.parse("--foo=123")
 
-  @Test
-  public void testMethodOptionParsing() throws Exception {
-    OptionsParser parser = OptionsParser.builder().optionsClasses(MethodOptionsTest.class).build();
+        val options: MethodOptionsTest? = parser.getOptions<MethodOptionsTest?>(MethodOptionsTest::class.java)
+        Truth.assertThat(options!!.foo).isEqualTo(123)
+    }
 
-    parser.parse("--foo=123");
+    @org.junit.Test
+    fun testGeneratedClassGettersAndSetters() {
+        val options: MethodOptionsTest = MethodOptionDefinitionTest_MethodOptionsTestImpl()
+        options.foo = 123
+        Truth.assertThat(options.foo).isEqualTo(123)
+    }
 
-    MethodOptionsTest options = parser.getOptions(MethodOptionsTest.class);
-    assertThat(options.getFoo()).isEqualTo(123);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMethodOptionDefinitionAccess() {
+        val options: MethodOptionsTest = MethodOptionDefinitionTest_MethodOptionsTestImpl()
+        val fooDefinition: OptionDefinition = MethodOptionDefinition.get(MethodOptionsTest::class.java, "getFoo")
 
-  @Test
-  public void testGeneratedClassGettersAndSetters() {
-    MethodOptionsTest options = new MethodOptionDefinitionTest_MethodOptionsTestImpl();
-    options.setFoo(123);
-    assertThat(options.getFoo()).isEqualTo(123);
-  }
+        fooDefinition.setValue(options, 456)
+        Truth.assertThat(options.foo).isEqualTo(456)
+        Truth.assertThat(fooDefinition.getRawValue(options)).isEqualTo(456)
+    }
 
-  @Test
-  public void testMethodOptionDefinitionAccess() throws Exception {
-    MethodOptionsTest options = new MethodOptionDefinitionTest_MethodOptionsTestImpl();
-    OptionDefinition fooDefinition = MethodOptionDefinition.get(MethodOptionsTest.class, "getFoo");
+    @get:Throws(java.lang.Exception::class)
+    @get:org.junit.Test
+    val declaringClass_returnsDeclaringClass: Unit
+        get() {
+            val definition: MethodOptionDefinition =
+                MethodOptionDefinition.get(MethodOptionsTest::class.java, "getFoo")
 
-    fooDefinition.setValue(options, 456);
-    assertThat(options.getFoo()).isEqualTo(456);
-    assertThat(fooDefinition.getRawValue(options)).isEqualTo(456);
-  }
-
-  @Test
-  public void getDeclaringClass_returnsDeclaringClass() throws Exception {
-    MethodOptionDefinition definition =
-        MethodOptionDefinition.get(MethodOptionsTest.class, "getFoo");
-
-    // The important part is that the return value of getDeclaringClass() can be passed to
-    // getOptions(), but it's nice to not have this test depend on OptionsParser.
-    assertThat(definition.getDeclaringClass(OptionsBase.class)).isEqualTo(MethodOptionsTest.class);
-  }
+            // The important part is that the return value of getDeclaringClass() can be passed to
+            // getOptions(), but it's nice to not have this test depend on OptionsParser.
+            Truth.assertThat(definition.getDeclaringClass<OptionsBase?>(OptionsBase::class.java))
+                .isEqualTo(MethodOptionsTest::class.java)
+        }
 }

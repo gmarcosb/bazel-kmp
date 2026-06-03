@@ -11,143 +11,158 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.shell;
+package com.google.devtools.build.lib.shell
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.shell.TestUtil
+import org.junit.Before
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.io.ByteArrayInputStream
+import java.util.Random
 
-import com.google.common.collect.ImmutableList;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.util.Random;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests the command class with large inputs */
-@RunWith(JUnit4.class)
-public class CommandLargeInputsTest {
-
-  @Before
-  public final void configureLogger() throws Exception {
-    // enable all log statements to ensure there are no problems with
-    // logging code
-    Logger.getLogger("com.google.devtools.build.lib.shell.Command").setLevel(Level.FINEST);
-  }
-
-  private byte[] getRandomBytes() {
-    byte[] randomBytes;
-    final Random rand = new Random(0xdeadbeef);
-    randomBytes = new byte[10000];
-    rand.nextBytes(randomBytes);
-    return randomBytes;
-  }
-
-  private byte[] getAllByteValues() {
-    byte[] allByteValues = new byte[Byte.MAX_VALUE - Byte.MIN_VALUE];
-    for (int i = 0; i < allByteValues.length; i++) {
-      allByteValues[i] = (byte) (i + Byte.MIN_VALUE);
+/** Tests the command class with large inputs  */
+@RunWith(JUnit4::class)
+class CommandLargeInputsTest {
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun configureLogger() {
+        // enable all log statements to ensure there are no problems with
+        // logging code
+        java.util.logging.Logger.getLogger("com.google.devtools.build.lib.shell.Command")
+            .setLevel(java.util.logging.Level.FINEST)
     }
-    return allByteValues;
-  }
 
-  @Test
-  public void testCatRandomBinaryToOutputStream() throws Exception {
-    final Command command = new Command(ImmutableList.of("cat"), System.getenv());
-    byte[] randomBytes = getRandomBytes();
-    ByteArrayInputStream in = new ByteArrayInputStream(randomBytes);
+    private val randomBytes: ByteArray
+        get() {
+            val randomBytes: ByteArray
+            val rand: Random = Random(-0x21524111)
+            randomBytes = ByteArray(10000)
+            rand.nextBytes(randomBytes)
+            return randomBytes
+        }
 
-    CommandResult result = command.executeAsync(in, Command.KILL_SUBPROCESS_ON_INTERRUPT).get();
-    assertThat(result.terminationStatus().getRawExitCode()).isEqualTo(0);
-    TestUtil.assertArrayEquals(randomBytes, result.getStdout());
-    assertThat(result.getStderr()).isEmpty();
-  }
+    private val allByteValues: ByteArray
+        get() {
+            val allByteValues = ByteArray(Byte.Companion.MAX_VALUE - Byte.Companion.MIN_VALUE)
+            for (i in allByteValues.indices) {
+                allByteValues[i] = (i + Byte.Companion.MIN_VALUE).toByte()
+            }
+            return allByteValues
+        }
 
-  @Test
-  public void testCatRandomBinaryToErrorStream() throws Exception {
-    final Command command =
-        new Command(ImmutableList.of("/bin/sh", "-c", "cat >&2"), System.getenv());
-    byte[] randomBytes = getRandomBytes();
-    ByteArrayInputStream in = new ByteArrayInputStream(randomBytes);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCatRandomBinaryToOutputStream() {
+        val command: Command = Command(com.google.common.collect.ImmutableList.of<E?>("cat"), java.lang.System.getenv())
+        val randomBytes = this.randomBytes
+        val `in`: ByteArrayInputStream = ByteArrayInputStream(randomBytes)
 
-    CommandResult result = command.executeAsync(in, Command.KILL_SUBPROCESS_ON_INTERRUPT).get();
-    assertThat(result.terminationStatus().getRawExitCode()).isEqualTo(0);
-    TestUtil.assertArrayEquals(randomBytes, result.getStderr());
-    assertThat(result.getStdout()).isEmpty();
-  }
-
-  @Test
-  public void testCatRandomBinaryFromInputStreamToOutputStream() throws Exception {
-    final Command command = new Command(ImmutableList.of("cat"), System.getenv());
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    ByteArrayOutputStream err = new ByteArrayOutputStream();
-    byte[] randomBytes = getRandomBytes();
-    ByteArrayInputStream in = new ByteArrayInputStream(randomBytes);
-
-    CommandResult result =
-        command.executeAsync(in, out, err, Command.KILL_SUBPROCESS_ON_INTERRUPT).get();
-    assertThat(result.terminationStatus().getRawExitCode()).isEqualTo(0);
-    assertThat(err.toByteArray()).isEmpty();
-    TestUtil.assertArrayEquals(randomBytes, out.toByteArray());
-    assertOutAndErrNotAvailable(result);
-  }
-
-  @Test
-  public void testCatRandomBinaryFromInputStreamToErrorStream() throws Exception {
-    final Command command =
-        new Command(ImmutableList.of("/bin/sh", "-c", "cat >&2"), System.getenv());
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    ByteArrayOutputStream err = new ByteArrayOutputStream();
-    byte[] randomBytes = getRandomBytes();
-    ByteArrayInputStream in = new ByteArrayInputStream(randomBytes);
-
-    CommandResult result =
-        command.executeAsync(in, out, err, Command.KILL_SUBPROCESS_ON_INTERRUPT).get();
-    assertThat(result.terminationStatus().getRawExitCode()).isEqualTo(0);
-    assertThat(out.toByteArray()).isEmpty();
-    TestUtil.assertArrayEquals(randomBytes, err.toByteArray());
-    assertOutAndErrNotAvailable(result);
-  }
-
-  @Test
-  public void testStdoutInterleavedWithStdErr() throws Exception {
-    final Command command =
-        new Command(
-            ImmutableList.of(
-                "/bin/bash",
-                "-c",
-                "for i in $( seq 0 999); do (echo OUT$i >&1) && (echo ERR$i  >&2); done"),
-            System.getenv());
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    ByteArrayOutputStream err = new ByteArrayOutputStream();
-    command.execute(out, err);
-    StringBuilder expectedOut = new StringBuilder();
-    StringBuilder expectedErr = new StringBuilder();
-    for (int i = 0; i < 1000; i++) {
-      expectedOut.append("OUT").append(i).append("\n");
-      expectedErr.append("ERR").append(i).append("\n");
+        val result: CommandResult = command.executeAsync(`in`, Command.KILL_SUBPROCESS_ON_INTERRUPT).get()
+        assertThat(result.terminationStatus().getRawExitCode()).isEqualTo(0)
+        TestUtil.assertArrayEquals(randomBytes, result.getStdout())
+        assertThat(result.getStderr()).isEmpty()
     }
-    assertThat(out.toString("UTF-8")).isEqualTo(expectedOut.toString());
-    assertThat(err.toString("UTF-8")).isEqualTo(expectedErr.toString());
-  }
 
-  private void assertOutAndErrNotAvailable(final CommandResult result) {
-    assertThrows(IllegalStateException.class, () -> result.getStdout());
-    assertThrows(IllegalStateException.class, () -> result.getStderr());
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCatRandomBinaryToErrorStream() {
+        val command: Command =
+            Command(
+                com.google.common.collect.ImmutableList.of<E?>("/bin/sh", "-c", "cat >&2"),
+                java.lang.System.getenv()
+            )
+        val randomBytes = this.randomBytes
+        val `in`: ByteArrayInputStream = ByteArrayInputStream(randomBytes)
 
-  @Test
-  public void testCatAllByteValues() throws Exception {
-    final Command command = new Command(ImmutableList.of("cat"), System.getenv());
-    byte[] allByteValues = getAllByteValues();
-    ByteArrayInputStream in = new ByteArrayInputStream(allByteValues);
+        val result: CommandResult = command.executeAsync(`in`, Command.KILL_SUBPROCESS_ON_INTERRUPT).get()
+        assertThat(result.terminationStatus().getRawExitCode()).isEqualTo(0)
+        TestUtil.assertArrayEquals(randomBytes, result.getStderr())
+        assertThat(result.getStdout()).isEmpty()
+    }
 
-    CommandResult result = command.executeAsync(in, Command.KILL_SUBPROCESS_ON_INTERRUPT).get();
-    assertThat(result.terminationStatus().getRawExitCode()).isEqualTo(0);
-    assertThat(result.getStderr()).isEmpty();
-    TestUtil.assertArrayEquals(allByteValues, result.getStdout());
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCatRandomBinaryFromInputStreamToOutputStream() {
+        val command: Command = Command(com.google.common.collect.ImmutableList.of<E?>("cat"), java.lang.System.getenv())
+        val out: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        val err: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        val randomBytes = this.randomBytes
+        val `in`: ByteArrayInputStream = ByteArrayInputStream(randomBytes)
+
+        val result: CommandResult =
+            command.executeAsync(`in`, out, err, Command.KILL_SUBPROCESS_ON_INTERRUPT).get()
+        assertThat(result.terminationStatus().getRawExitCode()).isEqualTo(0)
+        Truth.assertThat(err.toByteArray()).isEmpty()
+        TestUtil.assertArrayEquals(randomBytes, out.toByteArray())
+        assertOutAndErrNotAvailable(result)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCatRandomBinaryFromInputStreamToErrorStream() {
+        val command: Command =
+            Command(
+                com.google.common.collect.ImmutableList.of<E?>("/bin/sh", "-c", "cat >&2"),
+                java.lang.System.getenv()
+            )
+        val out: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        val err: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        val randomBytes = this.randomBytes
+        val `in`: ByteArrayInputStream = ByteArrayInputStream(randomBytes)
+
+        val result: CommandResult =
+            command.executeAsync(`in`, out, err, Command.KILL_SUBPROCESS_ON_INTERRUPT).get()
+        assertThat(result.terminationStatus().getRawExitCode()).isEqualTo(0)
+        Truth.assertThat(out.toByteArray()).isEmpty()
+        TestUtil.assertArrayEquals(randomBytes, err.toByteArray())
+        assertOutAndErrNotAvailable(result)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStdoutInterleavedWithStdErr() {
+        val command: Command =
+            Command(
+                com.google.common.collect.ImmutableList.of<E?>(
+                    "/bin/bash",
+                    "-c",
+                    "for i in $( seq 0 999); do (echo OUT\$i >&1) && (echo ERR\$i  >&2); done"
+                ),
+                java.lang.System.getenv()
+            )
+        val out: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        val err: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        command.execute(out, err)
+        val expectedOut: java.lang.StringBuilder = java.lang.StringBuilder()
+        val expectedErr: java.lang.StringBuilder = java.lang.StringBuilder()
+        for (i in 0..999) {
+            expectedOut.append("OUT").append(i).append("\n")
+            expectedErr.append("ERR").append(i).append("\n")
+        }
+        Truth.assertThat(out.toString("UTF-8")).isEqualTo(expectedOut.toString())
+        Truth.assertThat(err.toString("UTF-8")).isEqualTo(expectedErr.toString())
+    }
+
+    private fun assertOutAndErrNotAvailable(result: CommandResult) {
+        org.junit.Assert.assertThrows<java.lang.IllegalStateException?>(
+            java.lang.IllegalStateException::class.java,
+            org.junit.function.ThrowingRunnable { result.getStdout() })
+        org.junit.Assert.assertThrows<java.lang.IllegalStateException?>(
+            java.lang.IllegalStateException::class.java,
+            org.junit.function.ThrowingRunnable { result.getStderr() })
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCatAllByteValues() {
+        val command: Command = Command(com.google.common.collect.ImmutableList.of<E?>("cat"), java.lang.System.getenv())
+        val allByteValues = this.allByteValues
+        val `in`: ByteArrayInputStream = ByteArrayInputStream(allByteValues)
+
+        val result: CommandResult = command.executeAsync(`in`, Command.KILL_SUBPROCESS_ON_INTERRUPT).get()
+        assertThat(result.terminationStatus().getRawExitCode()).isEqualTo(0)
+        assertThat(result.getStderr()).isEmpty()
+        TestUtil.assertArrayEquals(allByteValues, result.getStdout())
+    }
 }

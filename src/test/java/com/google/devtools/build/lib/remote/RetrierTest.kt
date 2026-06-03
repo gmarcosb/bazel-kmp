@@ -11,444 +11,450 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.remote
 
-package com.google.devtools.build.lib.remote;
+import com.google.devtools.build.lib.remote.Retrier.Backoff
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+/** Tests for [Retrier].  */
+@RunWith(JUnit4::class)
+class RetrierTest {
+    @org.mockito.Mock
+    private val alwaysOpen: CircuitBreaker? = null
 
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.common.util.concurrent.ListeningScheduledExecutorService;
-import com.google.common.util.concurrent.MoreExecutors;
-import com.google.devtools.build.lib.remote.Retrier.Backoff;
-import com.google.devtools.build.lib.remote.Retrier.CircuitBreaker;
-import com.google.devtools.build.lib.remote.Retrier.CircuitBreaker.State;
-import com.google.devtools.build.lib.remote.Retrier.CircuitBreakerException;
-import com.google.devtools.build.lib.remote.Retrier.ResultClassifier;
-import com.google.devtools.build.lib.remote.Retrier.ResultClassifier.Result;
-import com.google.devtools.build.lib.remote.Retrier.ZeroBackoff;
-import com.google.devtools.build.lib.testutil.TestUtils;
-import io.grpc.Status;
-import io.grpc.StatusRuntimeException;
-import java.util.Arrays;
-import java.util.List;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Supplier;
-import javax.annotation.concurrent.ThreadSafe;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
+    private var retryService: com.google.common.util.concurrent.ListeningScheduledExecutorService? = null
 
-/** Tests for {@link Retrier}. */
-@RunWith(JUnit4.class)
-public class RetrierTest {
+    @Before
+    fun setup() {
+        MockitoAnnotations.initMocks(this)
+        Mockito.`when`<T?>(alwaysOpen.state()).thenReturn(State.ACCEPT_CALLS)
 
-  @Mock private CircuitBreaker alwaysOpen;
+        retryService =
+            com.google.common.util.concurrent.MoreExecutors.listeningDecorator(Executors.newScheduledThreadPool(1))
+    }
 
-  private static final ResultClassifier RETRY_ALL = (e) -> Result.TRANSIENT_FAILURE;
-  private static final ResultClassifier RETRY_NONE = (e) -> Result.SUCCESS;
+    @org.junit.After
+    @Throws(java.lang.InterruptedException::class)
+    fun afterEverything() {
+        retryService.shutdownNow()
+        retryService.awaitTermination(
+            com.google.devtools.build.lib.testutil.TestUtils.WAIT_TIMEOUT_SECONDS,
+            TimeUnit.SECONDS
+        )
+    }
 
-  private ListeningScheduledExecutorService retryService;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun retryShouldWork_failure() {
+        // Test that a call is retried according to the backoff.
+        // All calls fail.
 
-  @Before
-  public void setup() {
-    MockitoAnnotations.initMocks(this);
-    when(alwaysOpen.state()).thenReturn(State.ACCEPT_CALLS);
+        val s: java.util.function.Supplier<Backoff?> = java.util.function.Supplier { ZeroBackoff( /* maxRetries= */2) }
+        val r: Retrier = Retrier(s, RETRY_ALL, retryService, alwaysOpen)
+        val numCalls: AtomicInteger = AtomicInteger()
+        val e: java.lang.Exception? =
+            org.junit.Assert.assertThrows<java.lang.Exception?>(
+                java.lang.Exception::class.java,
+                org.junit.function.ThrowingRunnable {
+                    r.execute(
+                        {
+                            numCalls.incrementAndGet()
+                            throw java.lang.Exception("call failed")
+                        })
+                })
+        Truth.assertThat(e).hasMessageThat().isEqualTo("call failed")
 
-    retryService = MoreExecutors.listeningDecorator(Executors.newScheduledThreadPool(1));
-  }
+        Truth.assertThat(numCalls.get()).isEqualTo(3)
+        Mockito.verify<Any?>(alwaysOpen, Mockito.times(3)).recordFailure()
+        Mockito.verify<Any?>(alwaysOpen, Mockito.never()).recordSuccess()
+    }
 
-  @After
-  public void afterEverything() throws InterruptedException {
-    retryService.shutdownNow();
-    retryService.awaitTermination(TestUtils.WAIT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun retryShouldWorkNoRetries_failure() {
+        // Test that a non-retriable error is not retried.
+        // All calls fail.
 
-  @Test
-  public void retryShouldWork_failure() throws Exception {
-    // Test that a call is retried according to the backoff.
-    // All calls fail.
+        val s: java.util.function.Supplier<Backoff?> = java.util.function.Supplier { ZeroBackoff( /* maxRetries= */2) }
+        val r: Retrier = Retrier(s, RETRY_NONE, retryService, alwaysOpen)
+        val numCalls: AtomicInteger = AtomicInteger()
+        val e: java.lang.Exception? =
+            org.junit.Assert.assertThrows<java.lang.Exception?>(
+                java.lang.Exception::class.java,
+                org.junit.function.ThrowingRunnable {
+                    r.execute(
+                        {
+                            numCalls.incrementAndGet()
+                            throw java.lang.Exception("call failed")
+                        })
+                })
+        Truth.assertThat(e).hasMessageThat().isEqualTo("call failed")
 
-    Supplier<Backoff> s = () -> new ZeroBackoff(/* maxRetries= */ 2);
-    Retrier r = new Retrier(s, RETRY_ALL, retryService, alwaysOpen);
-    AtomicInteger numCalls = new AtomicInteger();
-    Exception e =
-        assertThrows(
-            Exception.class,
-            () ->
+        Truth.assertThat(numCalls.get()).isEqualTo(1)
+        Mockito.verify<Any?>(alwaysOpen, Mockito.never()).recordFailure()
+        Mockito.verify<Any?>(alwaysOpen, Mockito.times(1)).recordSuccess()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun retryShouldWork_success() {
+        // Test that a call is retried according to the backoff.
+        // The last call succeeds.
+
+        val s: java.util.function.Supplier<Backoff?> = java.util.function.Supplier { ZeroBackoff( /* maxRetries= */2) }
+        val r: Retrier = Retrier(s, RETRY_ALL, retryService, alwaysOpen)
+        val numCalls: AtomicInteger = AtomicInteger()
+        val `val`: Int =
+            r.execute(
+                {
+                    numCalls.incrementAndGet()
+                    if (numCalls.get() == 3) {
+                        return@execute 1
+                    }
+                    throw java.lang.Exception("call failed")
+                })
+        Truth.assertThat(`val`).isEqualTo(1)
+
+        Mockito.verify<Any?>(alwaysOpen, Mockito.times(2)).recordFailure()
+        Mockito.verify<Any?>(alwaysOpen, Mockito.times(1)).recordSuccess()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun nestedRetriesShouldWork() {
+        // Test that nested calls using retries compose as expected.
+
+        val s: java.util.function.Supplier<Backoff?> = java.util.function.Supplier { ZeroBackoff( /* maxRetries= */1) }
+        val r: Retrier = Retrier(s, RETRY_ALL, retryService, alwaysOpen)
+
+        val attemptsLvl0: AtomicInteger = AtomicInteger()
+        val attemptsLvl1: AtomicInteger = AtomicInteger()
+        val attemptsLvl2: AtomicInteger = AtomicInteger()
+        try {
+            val unused: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
                 r.execute(
-                    () -> {
-                      numCalls.incrementAndGet();
-                      throw new Exception("call failed");
-                    }));
-    assertThat(e).hasMessageThat().isEqualTo("call failed");
+                    {
+                        attemptsLvl0.incrementAndGet()
+                        r.execute(
+                            {
+                                attemptsLvl1.incrementAndGet()
+                                r.execute(
+                                    {
+                                        attemptsLvl2.incrementAndGet()
+                                        throw java.lang.Exception("failure message")
+                                    })
+                            })
+                    })
+        } catch (e: java.lang.Exception) {
+            Truth.assertThat(e).hasMessageThat().isEqualTo("failure message")
+            Truth.assertThat(attemptsLvl0.get()).isEqualTo(2)
+            Truth.assertThat(attemptsLvl1.get()).isEqualTo(4)
+            Truth.assertThat(attemptsLvl2.get()).isEqualTo(8)
+        }
+    }
 
-    assertThat(numCalls.get()).isEqualTo(3);
-    verify(alwaysOpen, times(3)).recordFailure();
-    verify(alwaysOpen, never()).recordSuccess();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun circuitBreakerShouldTrip() {
+        // Test that a circuit breaker can trip.
 
-  @Test
-  public void retryShouldWorkNoRetries_failure() throws Exception {
-    // Test that a non-retriable error is not retried.
-    // All calls fail.
+        val s: java.util.function.Supplier<Backoff?> = java.util.function.Supplier { ZeroBackoff( /* maxRetries= */3) }
+        val cb = TripAfterNCircuitBreaker( /* maxConsecutiveFailures= */2)
+        val r: Retrier = Retrier(s, RETRY_ALL, retryService, cb)
 
-    Supplier<Backoff> s = () -> new ZeroBackoff(/* maxRetries= */ 2);
-    Retrier r = new Retrier(s, RETRY_NONE, retryService, alwaysOpen);
-    AtomicInteger numCalls = new AtomicInteger();
-    Exception e =
-        assertThrows(
-            Exception.class,
-            () ->
+        org.junit.Assert.assertThrows<T?>(
+            CircuitBreakerException::class.java,
+            org.junit.function.ThrowingRunnable {
                 r.execute(
-                    () -> {
-                      numCalls.incrementAndGet();
-                      throw new Exception("call failed");
-                    }));
-    assertThat(e).hasMessageThat().isEqualTo("call failed");
+                    {
+                        throw java.lang.Exception("call failed")
+                    })
+            })
 
-    assertThat(numCalls.get()).isEqualTo(1);
-    verify(alwaysOpen, never()).recordFailure();
-    verify(alwaysOpen, times(1)).recordSuccess();
-  }
-
-  @Test
-  public void retryShouldWork_success() throws Exception {
-    // Test that a call is retried according to the backoff.
-    // The last call succeeds.
-
-    Supplier<Backoff> s = () -> new ZeroBackoff(/* maxRetries= */ 2);
-    Retrier r = new Retrier(s, RETRY_ALL, retryService, alwaysOpen);
-    AtomicInteger numCalls = new AtomicInteger();
-    int val =
-        r.execute(
-            () -> {
-              numCalls.incrementAndGet();
-              if (numCalls.get() == 3) {
-                return 1;
-              }
-              throw new Exception("call failed");
-            });
-    assertThat(val).isEqualTo(1);
-
-    verify(alwaysOpen, times(2)).recordFailure();
-    verify(alwaysOpen, times(1)).recordSuccess();
-  }
-
-  @Test
-  public void nestedRetriesShouldWork() throws Exception {
-    // Test that nested calls using retries compose as expected.
-
-    Supplier<Backoff> s = () -> new ZeroBackoff(/* maxRetries= */ 1);
-    Retrier r = new Retrier(s, RETRY_ALL, retryService, alwaysOpen);
-
-    AtomicInteger attemptsLvl0 = new AtomicInteger();
-    AtomicInteger attemptsLvl1 = new AtomicInteger();
-    AtomicInteger attemptsLvl2 = new AtomicInteger();
-    try {
-      var unused =
-          r.execute(
-              () -> {
-                attemptsLvl0.incrementAndGet();
-                return r.execute(
-                    () -> {
-                      attemptsLvl1.incrementAndGet();
-                      return r.execute(
-                          () -> {
-                            attemptsLvl2.incrementAndGet();
-                            throw new Exception("failure message");
-                          });
-                    });
-              });
-    } catch (Exception e) {
-      assertThat(e).hasMessageThat().isEqualTo("failure message");
-      assertThat(attemptsLvl0.get()).isEqualTo(2);
-      assertThat(attemptsLvl1.get()).isEqualTo(4);
-      assertThat(attemptsLvl2.get()).isEqualTo(8);
-    }
-  }
-
-  @Test
-  public void circuitBreakerShouldTrip() throws Exception {
-    // Test that a circuit breaker can trip.
-
-    Supplier<Backoff> s = () -> new ZeroBackoff(/* maxRetries= */ 3);
-    TripAfterNCircuitBreaker cb = new TripAfterNCircuitBreaker(/* maxConsecutiveFailures= */ 2);
-    Retrier r = new Retrier(s, RETRY_ALL, retryService, cb);
-
-    assertThrows(
-        CircuitBreakerException.class,
-        () ->
-            r.execute(
-                () -> {
-                  throw new Exception("call failed");
-                }));
-
-    assertThat(cb.state()).isEqualTo(State.REJECT_CALLS);
-    assertThat(cb.consecutiveFailures).isEqualTo(2);
-  }
-
-  @Test
-  public void circuitBreakerCanRecover() throws Exception {
-    // Test that a circuit breaker can recover from REJECT_CALLS to ACCEPT_CALLS by
-    // utilizing the TRIAL_CALL state.
-
-    Supplier<Backoff> s = () -> new ZeroBackoff(/* maxRetries= */ 3);
-    TripAfterNCircuitBreaker cb = new TripAfterNCircuitBreaker(/* maxConsecutiveFailures= */ 2);
-    Retrier r = new Retrier(s, RETRY_ALL, retryService, cb);
-
-    cb.trialCall();
-
-    assertThat(cb.state()).isEqualTo(State.TRIAL_CALL);
-
-    int val = r.execute(() -> 10);
-    assertThat(val).isEqualTo(10);
-    assertThat(cb.state()).isEqualTo(State.ACCEPT_CALLS);
-  }
-
-  @Test
-  public void circuitBreakerHalfOpenIsNotRetried() throws Exception {
-    // Test that a call executed in TRIAL_CALL state is not retried
-    // in case of failure.
-
-    Supplier<Backoff> s = () -> new ZeroBackoff(/* maxRetries= */ 3);
-    TripAfterNCircuitBreaker cb = new TripAfterNCircuitBreaker(/* maxConsecutiveFailures= */ 2);
-    Retrier r = new Retrier(s, RETRY_ALL, retryService, cb);
-
-    cb.trialCall();
-
-    try {
-      var unused =
-          r.execute(
-              () -> {
-                throw new Exception("call failed");
-              });
-    } catch (Exception expected) {
-      // Intentionally left empty.
+        assertThat(cb.state()).isEqualTo(State.REJECT_CALLS)
+        Truth.assertThat(cb.consecutiveFailures).isEqualTo(2)
     }
 
-    assertThat(cb.consecutiveFailures).isEqualTo(1);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun circuitBreakerCanRecover() {
+        // Test that a circuit breaker can recover from REJECT_CALLS to ACCEPT_CALLS by
+        // utilizing the TRIAL_CALL state.
 
-  @Test
-  public void interruptsShouldNotBeRetried_flag() throws Exception {
-    // Test that a call is not executed / retried if the current thread
-    // is interrupted.
+        val s: java.util.function.Supplier<Backoff?> = java.util.function.Supplier { ZeroBackoff( /* maxRetries= */3) }
+        val cb = TripAfterNCircuitBreaker( /* maxConsecutiveFailures= */2)
+        val r: Retrier = Retrier(s, RETRY_ALL, retryService, cb)
 
-    Supplier<Backoff> s = () -> new ZeroBackoff(/* maxRetries= */ 3);
-    TripAfterNCircuitBreaker cb = new TripAfterNCircuitBreaker(/* maxConsecutiveFailures= */ 2);
-    Retrier r = new Retrier(s, RETRY_ALL, retryService, cb);
+        cb.trialCall()
 
-    AtomicInteger numCalls = new AtomicInteger();
-    Thread.currentThread().interrupt();
-    assertThrows(
-        InterruptedException.class,
-        () ->
-            r.execute(
-                () -> {
-                  numCalls.incrementAndGet();
-                  return 10;
-                }));
-    assertThat(numCalls.get()).isEqualTo(0);
-  }
+        assertThat(cb.state()).isEqualTo(State.TRIAL_CALL)
 
-  @Test
-  public void interruptsShouldNotBeRetried_exception() throws Exception {
-    // Test that a call is not retried if an InterruptedException is thrown.
-
-    Supplier<Backoff> s = () -> new ZeroBackoff(/* maxRetries= */ 3);
-    TripAfterNCircuitBreaker cb = new TripAfterNCircuitBreaker(/* maxConsecutiveFailures= */ 2);
-    Retrier r = new Retrier(s, RETRY_ALL, retryService, cb);
-
-    AtomicInteger numCalls = new AtomicInteger();
-    assertThrows(
-        InterruptedException.class,
-        () ->
-            r.execute(
-                () -> {
-                  numCalls.incrementAndGet();
-                  throw new InterruptedException();
-                }));
-    assertThat(numCalls.get()).isEqualTo(1);
-  }
-
-  @Test
-  public void asyncRetryExhaustRetries() throws Exception {
-    // Test that a call is retried according to the backoff.
-    // All calls fail.
-
-    Supplier<Backoff> s = () -> new ZeroBackoff(/* maxRetries= */ 2);
-    Retrier r = new Retrier(s, RETRY_ALL, retryService, alwaysOpen);
-    AtomicInteger numCalls = new AtomicInteger();
-    ListenableFuture<Void> res =
-        r.executeAsync(
-            () -> {
-              numCalls.incrementAndGet();
-              throw new Exception("call failed");
-            });
-    ExecutionException e = assertThrows(ExecutionException.class, () -> res.get());
-    assertThat(numCalls.get()).isEqualTo(3);
-    assertThat(e).hasCauseThat().hasMessageThat().isEqualTo("call failed");
-  }
-
-  @Test
-  public void asyncRetryNonRetriable() throws Exception {
-    // Test that a call is retried according to the backoff.
-    // All calls fail.
-
-    Supplier<Backoff> s = () -> new ZeroBackoff(/* maxRetries= */ 2);
-    Retrier r = new Retrier(s, RETRY_NONE, retryService, alwaysOpen);
-    AtomicInteger numCalls = new AtomicInteger();
-    ListenableFuture<Void> res =
-        r.executeAsync(
-            () -> {
-              numCalls.incrementAndGet();
-              throw new Exception("call failed");
-            });
-    ExecutionException e = assertThrows(ExecutionException.class, () -> res.get());
-    assertThat(e).hasCauseThat().hasMessageThat().isEqualTo("call failed");
-    assertThat(numCalls.get()).isEqualTo(1);
-  }
-
-  @Test
-  public void asyncRetryEmptyError() throws Exception {
-    // Test that a call is retried according to the backoff.
-    // All calls fail.
-
-    Supplier<Backoff> s = () -> new ZeroBackoff(/* maxRetries= */ 2);
-    Retrier r = new Retrier(s, RETRY_NONE, retryService, alwaysOpen);
-    ListenableFuture<Void> res =
-        r.executeAsync(
-            () -> {
-              throw new Exception("");
-            });
-    ExecutionException e = assertThrows(ExecutionException.class, () -> res.get());
-    assertThat(e).hasCauseThat().hasMessageThat().isEqualTo("");
-  }
-
-  @Test
-  public void testCircuitBreakerRetriableFailures() {
-    int maxRetries = 2;
-    Supplier<Backoff> s = () -> new ZeroBackoff(maxRetries);
-    List<Status> retriableStatuses =
-        Arrays.asList(Status.ABORTED, Status.UNKNOWN, Status.DEADLINE_EXCEEDED);
-    List<Status> successfulStatuses = Arrays.asList(Status.NOT_FOUND, Status.ALREADY_EXISTS);
-    TripAfterNCircuitBreaker cb =
-        new TripAfterNCircuitBreaker(retriableStatuses.size() * (maxRetries + 1));
-    Retrier r = new Retrier(s, RemoteRetrier.EXPERIMENTAL_GRPC_RESULT_CLASSIFIER, retryService, cb);
-
-    int expectedConsecutiveFailures = 0;
-
-    for (Status status : retriableStatuses) {
-      assertThat(cb.state).isEqualTo(State.ACCEPT_CALLS);
-      ListenableFuture<Void> res =
-          r.executeAsync(
-              () -> {
-                throw new StatusRuntimeException(status);
-              });
-      expectedConsecutiveFailures += maxRetries + 1;
-      assertThrows(ExecutionException.class, res::get);
-      assertThat(cb.consecutiveFailures).isEqualTo(expectedConsecutiveFailures);
+        val `val`: Int = r.execute({ 10 })
+        Truth.assertThat(`val`).isEqualTo(10)
+        assertThat(cb.state()).isEqualTo(State.ACCEPT_CALLS)
     }
 
-    assertThat(cb.state).isEqualTo(State.REJECT_CALLS);
-    cb.trialCall();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun circuitBreakerHalfOpenIsNotRetried() {
+        // Test that a call executed in TRIAL_CALL state is not retried
+        // in case of failure.
 
-    for (Status status : successfulStatuses) {
-      ListenableFuture<Void> res =
-          r.executeAsync(
-              () -> {
-                throw new StatusRuntimeException(status);
-              });
-      assertThat(cb.consecutiveFailures).isEqualTo(0);
-      assertThrows(ExecutionException.class, res::get);
-      assertThat(cb.state).isEqualTo(State.ACCEPT_CALLS);
-    }
-  }
+        val s: java.util.function.Supplier<Backoff?> = java.util.function.Supplier { ZeroBackoff( /* maxRetries= */3) }
+        val cb = TripAfterNCircuitBreaker( /* maxConsecutiveFailures= */2)
+        val r: Retrier = Retrier(s, RETRY_ALL, retryService, cb)
 
-  @Test
-  public void testCircuitBreakerNonRetriableFailures() {
-    Supplier<Backoff> s = () -> new ZeroBackoff(/* maxRetries= */ 2);
-    List<Status> nonRetriableStatuses =
-        Arrays.asList(
-            Status.PERMISSION_DENIED, Status.UNIMPLEMENTED, Status.DATA_LOSS, Status.OUT_OF_RANGE);
-    List<Status> successfulStatues = Arrays.asList(Status.NOT_FOUND, Status.ALREADY_EXISTS);
-    TripAfterNCircuitBreaker cb = new TripAfterNCircuitBreaker(nonRetriableStatuses.size());
-    Retrier r = new Retrier(s, RemoteRetrier.EXPERIMENTAL_GRPC_RESULT_CLASSIFIER, retryService, cb);
+        cb.trialCall()
 
-    int expectedConsecutiveFailures = 0;
+        try {
+            val unused: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+                r.execute(
+                    {
+                        throw java.lang.Exception("call failed")
+                    })
+        } catch (expected: java.lang.Exception) {
+            // Intentionally left empty.
+        }
 
-    for (Status status : nonRetriableStatuses) {
-      ListenableFuture<Void> res =
-          r.executeAsync(
-              () -> {
-                throw new StatusRuntimeException(status);
-              });
-      expectedConsecutiveFailures += 1;
-      assertThrows(ExecutionException.class, res::get);
-      assertThat(cb.consecutiveFailures).isEqualTo(expectedConsecutiveFailures);
+        Truth.assertThat(cb.consecutiveFailures).isEqualTo(1)
     }
 
-    assertThat(cb.state).isEqualTo(State.REJECT_CALLS);
-    cb.trialCall();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun interruptsShouldNotBeRetried_flag() {
+        // Test that a call is not executed / retried if the current thread
+        // is interrupted.
 
-    for (Status status : successfulStatues) {
-      ListenableFuture<Void> res =
-          r.executeAsync(
-              () -> {
-                throw new StatusRuntimeException(status);
-              });
-      assertThat(cb.consecutiveFailures).isEqualTo(0);
-      assertThrows(ExecutionException.class, res::get);
-      assertThat(cb.state).isEqualTo(State.ACCEPT_CALLS);
-    }
-  }
+        val s: java.util.function.Supplier<Backoff?> = java.util.function.Supplier { ZeroBackoff( /* maxRetries= */3) }
+        val cb = TripAfterNCircuitBreaker( /* maxConsecutiveFailures= */2)
+        val r: Retrier = Retrier(s, RETRY_ALL, retryService, cb)
 
-  /** Simple circuit breaker that trips after N consecutive failures. */
-  @ThreadSafe
-  private static class TripAfterNCircuitBreaker implements CircuitBreaker {
-
-    private final int maxConsecutiveFailures;
-
-    private State state = State.ACCEPT_CALLS;
-    private int consecutiveFailures;
-
-    TripAfterNCircuitBreaker(int maxConsecutiveFailures) {
-      this.maxConsecutiveFailures = maxConsecutiveFailures;
+        val numCalls: AtomicInteger = AtomicInteger()
+        java.lang.Thread.currentThread().interrupt()
+        org.junit.Assert.assertThrows<java.lang.InterruptedException?>(
+            java.lang.InterruptedException::class.java,
+            org.junit.function.ThrowingRunnable {
+                r.execute(
+                    {
+                        numCalls.incrementAndGet()
+                        10
+                    })
+            })
+        Truth.assertThat(numCalls.get()).isEqualTo(0)
     }
 
-    @Override
-    public synchronized State state() {
-      return state;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun interruptsShouldNotBeRetried_exception() {
+        // Test that a call is not retried if an InterruptedException is thrown.
+
+        val s: java.util.function.Supplier<Backoff?> = java.util.function.Supplier { ZeroBackoff( /* maxRetries= */3) }
+        val cb = TripAfterNCircuitBreaker( /* maxConsecutiveFailures= */2)
+        val r: Retrier = Retrier(s, RETRY_ALL, retryService, cb)
+
+        val numCalls: AtomicInteger = AtomicInteger()
+        org.junit.Assert.assertThrows<java.lang.InterruptedException?>(
+            java.lang.InterruptedException::class.java,
+            org.junit.function.ThrowingRunnable {
+                r.execute(
+                    {
+                        numCalls.incrementAndGet()
+                        throw java.lang.InterruptedException()
+                    })
+            })
+        Truth.assertThat(numCalls.get()).isEqualTo(1)
     }
 
-    @Override
-    public synchronized void recordFailure() {
-      consecutiveFailures++;
-      if (consecutiveFailures >= maxConsecutiveFailures) {
-        state = State.REJECT_CALLS;
-      }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun asyncRetryExhaustRetries() {
+        // Test that a call is retried according to the backoff.
+        // All calls fail.
+
+        val s: java.util.function.Supplier<Backoff?> = java.util.function.Supplier { ZeroBackoff( /* maxRetries= */2) }
+        val r: Retrier = Retrier(s, RETRY_ALL, retryService, alwaysOpen)
+        val numCalls: AtomicInteger = AtomicInteger()
+        val res: com.google.common.util.concurrent.ListenableFuture<java.lang.Void?> =
+            r.executeAsync(
+                {
+                    numCalls.incrementAndGet()
+                    throw java.lang.Exception("call failed")
+                })
+        val e: ExecutionException? = org.junit.Assert.assertThrows<ExecutionException?>(
+            ExecutionException::class.java,
+            org.junit.function.ThrowingRunnable { res.get() })
+        Truth.assertThat(numCalls.get()).isEqualTo(3)
+        Truth.assertThat(e).hasCauseThat().hasMessageThat().isEqualTo("call failed")
     }
 
-    @Override
-    public synchronized void recordSuccess() {
-      consecutiveFailures = 0;
-      state = State.ACCEPT_CALLS;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun asyncRetryNonRetriable() {
+        // Test that a call is retried according to the backoff.
+        // All calls fail.
+
+        val s: java.util.function.Supplier<Backoff?> = java.util.function.Supplier { ZeroBackoff( /* maxRetries= */2) }
+        val r: Retrier = Retrier(s, RETRY_NONE, retryService, alwaysOpen)
+        val numCalls: AtomicInteger = AtomicInteger()
+        val res: com.google.common.util.concurrent.ListenableFuture<java.lang.Void?> =
+            r.executeAsync(
+                {
+                    numCalls.incrementAndGet()
+                    throw java.lang.Exception("call failed")
+                })
+        val e: ExecutionException? = org.junit.Assert.assertThrows<ExecutionException?>(
+            ExecutionException::class.java,
+            org.junit.function.ThrowingRunnable { res.get() })
+        Truth.assertThat(e).hasCauseThat().hasMessageThat().isEqualTo("call failed")
+        Truth.assertThat(numCalls.get()).isEqualTo(1)
     }
 
-    void trialCall() {
-      state = State.TRIAL_CALL;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun asyncRetryEmptyError() {
+        // Test that a call is retried according to the backoff.
+        // All calls fail.
+
+        val s: java.util.function.Supplier<Backoff?> = java.util.function.Supplier { ZeroBackoff( /* maxRetries= */2) }
+        val r: Retrier = Retrier(s, RETRY_NONE, retryService, alwaysOpen)
+        val res: com.google.common.util.concurrent.ListenableFuture<java.lang.Void?> =
+            r.executeAsync(
+                {
+                    throw java.lang.Exception("")
+                })
+        val e: ExecutionException? = org.junit.Assert.assertThrows<ExecutionException?>(
+            ExecutionException::class.java,
+            org.junit.function.ThrowingRunnable { res.get() })
+        Truth.assertThat(e).hasCauseThat().hasMessageThat().isEqualTo("")
     }
-  }
+
+    @org.junit.Test
+    fun testCircuitBreakerRetriableFailures() {
+        val maxRetries = 2
+        val s: java.util.function.Supplier<Backoff?> = java.util.function.Supplier { ZeroBackoff(maxRetries) }
+        val retriableStatuses: MutableList<io.grpc.Status> =
+            java.util.Arrays.asList<io.grpc.Status?>(
+                io.grpc.Status.ABORTED,
+                io.grpc.Status.UNKNOWN,
+                io.grpc.Status.DEADLINE_EXCEEDED
+            )
+        val successfulStatuses: MutableList<io.grpc.Status> =
+            java.util.Arrays.asList<io.grpc.Status?>(io.grpc.Status.NOT_FOUND, io.grpc.Status.ALREADY_EXISTS)
+        val cb =
+            TripAfterNCircuitBreaker(retriableStatuses.size() * (maxRetries + 1))
+        val r: Retrier = Retrier(s, RemoteRetrier.EXPERIMENTAL_GRPC_RESULT_CLASSIFIER, retryService, cb)
+
+        var expectedConsecutiveFailures = 0
+
+        for (status in retriableStatuses) {
+            assertThat(cb.state).isEqualTo(State.ACCEPT_CALLS)
+            val res: com.google.common.util.concurrent.ListenableFuture<java.lang.Void?> =
+                r.executeAsync(
+                    {
+                        throw StatusRuntimeException(status)
+                    })
+            expectedConsecutiveFailures += maxRetries + 1
+            org.junit.Assert.assertThrows<ExecutionException?>(
+                ExecutionException::class.java,
+                org.junit.function.ThrowingRunnable { res.get() })
+            Truth.assertThat(cb.consecutiveFailures).isEqualTo(expectedConsecutiveFailures)
+        }
+
+        assertThat(cb.state).isEqualTo(State.REJECT_CALLS)
+        cb.trialCall()
+
+        for (status in successfulStatuses) {
+            val res: com.google.common.util.concurrent.ListenableFuture<java.lang.Void?> =
+                r.executeAsync(
+                    {
+                        throw StatusRuntimeException(status)
+                    })
+            Truth.assertThat(cb.consecutiveFailures).isEqualTo(0)
+            org.junit.Assert.assertThrows<ExecutionException?>(
+                ExecutionException::class.java,
+                org.junit.function.ThrowingRunnable { res.get() })
+            assertThat(cb.state).isEqualTo(State.ACCEPT_CALLS)
+        }
+    }
+
+    @org.junit.Test
+    fun testCircuitBreakerNonRetriableFailures() {
+        val s: java.util.function.Supplier<Backoff?> = java.util.function.Supplier { ZeroBackoff( /* maxRetries= */2) }
+        val nonRetriableStatuses: MutableList<io.grpc.Status> =
+            java.util.Arrays.asList<io.grpc.Status?>(
+                io.grpc.Status.PERMISSION_DENIED,
+                io.grpc.Status.UNIMPLEMENTED,
+                io.grpc.Status.DATA_LOSS,
+                io.grpc.Status.OUT_OF_RANGE
+            )
+        val successfulStatues: MutableList<io.grpc.Status> =
+            java.util.Arrays.asList<io.grpc.Status?>(io.grpc.Status.NOT_FOUND, io.grpc.Status.ALREADY_EXISTS)
+        val cb = TripAfterNCircuitBreaker(nonRetriableStatuses.size())
+        val r: Retrier = Retrier(s, RemoteRetrier.EXPERIMENTAL_GRPC_RESULT_CLASSIFIER, retryService, cb)
+
+        var expectedConsecutiveFailures = 0
+
+        for (status in nonRetriableStatuses) {
+            val res: com.google.common.util.concurrent.ListenableFuture<java.lang.Void?> =
+                r.executeAsync(
+                    {
+                        throw StatusRuntimeException(status)
+                    })
+            expectedConsecutiveFailures += 1
+            org.junit.Assert.assertThrows<ExecutionException?>(
+                ExecutionException::class.java,
+                org.junit.function.ThrowingRunnable { res.get() })
+            Truth.assertThat(cb.consecutiveFailures).isEqualTo(expectedConsecutiveFailures)
+        }
+
+        assertThat(cb.state).isEqualTo(State.REJECT_CALLS)
+        cb.trialCall()
+
+        for (status in successfulStatues) {
+            val res: com.google.common.util.concurrent.ListenableFuture<java.lang.Void?> =
+                r.executeAsync(
+                    {
+                        throw StatusRuntimeException(status)
+                    })
+            Truth.assertThat(cb.consecutiveFailures).isEqualTo(0)
+            org.junit.Assert.assertThrows<ExecutionException?>(
+                ExecutionException::class.java,
+                org.junit.function.ThrowingRunnable { res.get() })
+            assertThat(cb.state).isEqualTo(State.ACCEPT_CALLS)
+        }
+    }
+
+    /** Simple circuit breaker that trips after N consecutive failures.  */
+    @javax.annotation.concurrent.ThreadSafe
+    private class TripAfterNCircuitBreaker(private val maxConsecutiveFailures: Int) : CircuitBreaker {
+        private var state: State? = State.ACCEPT_CALLS
+        private var consecutiveFailures = 0
+
+        @kotlin.jvm.Synchronized
+        public override fun state(): State? {
+            return state
+        }
+
+        @kotlin.jvm.Synchronized
+        public override fun recordFailure() {
+            consecutiveFailures++
+            if (consecutiveFailures >= maxConsecutiveFailures) {
+                state = State.REJECT_CALLS
+            }
+        }
+
+        @kotlin.jvm.Synchronized
+        public override fun recordSuccess() {
+            consecutiveFailures = 0
+            state = State.ACCEPT_CALLS
+        }
+
+        fun trialCall() {
+            state = State.TRIAL_CALL
+        }
+    }
+
+    companion object {
+        private val RETRY_ALL: ResultClassifier = ResultClassifier { e -> Result.TRANSIENT_FAILURE }
+        private val RETRY_NONE: ResultClassifier = ResultClassifier { e -> Result.SUCCESS }
+    }
 }

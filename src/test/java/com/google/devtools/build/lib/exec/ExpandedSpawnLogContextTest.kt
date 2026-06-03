@@ -11,151 +11,144 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.exec;
+package com.google.devtools.build.lib.exec
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.actions.Spawn
 
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.actions.Spawn;
-import com.google.devtools.build.lib.exec.ExpandedSpawnLogContext.Encoding;
-import com.google.devtools.build.lib.exec.Protos.SpawnExec;
-import com.google.devtools.build.lib.exec.util.SpawnBuilder;
-import com.google.devtools.build.lib.remote.options.RemoteOptions;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import com.google.devtools.common.options.Options;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import java.io.BufferedOutputStream;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.function.Predicate;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+/** Tests for [ExpandedSpawnLogContext].  */
+@RunWith(TestParameterInjector::class)
+class ExpandedSpawnLogContextTest : SpawnLogContextTestBase() {
+    private val logPath: Path = fs.getPath("/log")
+    private val tempPath: Path? = fs.getPath("/temp")
 
-/** Tests for {@link ExpandedSpawnLogContext}. */
-@RunWith(TestParameterInjector.class)
-public final class ExpandedSpawnLogContextTest extends SpawnLogContextTestBase {
-  private final Path logPath = fs.getPath("/log");
-  private final Path tempPath = fs.getPath("/temp");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMnemonicFilter() {
+        val spawn1: SpawnBuilder = SpawnLogContextTestBase.Companion.defaultSpawnBuilder().withMnemonic("Mnemonic1")
+        val spawn2: SpawnBuilder = SpawnLogContextTestBase.Companion.defaultSpawnBuilder().withMnemonic("Mnemonic2")
 
-  @Test
-  public void testMnemonicFilter() throws Exception {
-    SpawnBuilder spawn1 = defaultSpawnBuilder().withMnemonic("Mnemonic1");
-    SpawnBuilder spawn2 = defaultSpawnBuilder().withMnemonic("Mnemonic2");
+        val context: SpawnLogContext =
+            createSpawnLogContext(java.util.function.Predicate { spawn: Spawn? ->
+                spawn.getMnemonic().equals("Mnemonic1")
+            })
 
-    SpawnLogContext context =
-        createSpawnLogContext(spawn -> spawn.getMnemonic().equals("Mnemonic1"));
+        context.logSpawn(
+            spawn1.build(),
+            SpawnLogContextTestBase.Companion.createInputMetadataProvider(),
+            SpawnLogContextTestBase.Companion.createInputMap(),
+            fs,
+            SpawnLogContextTestBase.Companion.defaultTimeout(),
+            SpawnLogContextTestBase.Companion.defaultSpawnResult()
+        )
+        context.logSpawn(
+            spawn2.build(),
+            SpawnLogContextTestBase.Companion.createInputMetadataProvider(),
+            SpawnLogContextTestBase.Companion.createInputMap(),
+            fs,
+            SpawnLogContextTestBase.Companion.defaultTimeout(),
+            SpawnLogContextTestBase.Companion.defaultSpawnResult()
+        )
 
-    context.logSpawn(
-        spawn1.build(),
-        createInputMetadataProvider(),
-        createInputMap(),
-        fs,
-        defaultTimeout(),
-        defaultSpawnResult());
-    context.logSpawn(
-        spawn2.build(),
-        createInputMetadataProvider(),
-        createInputMap(),
-        fs,
-        defaultTimeout(),
-        defaultSpawnResult());
+        closeAndAssertLog(
+            context,
+            SpawnLogContextTestBase.Companion.defaultSpawnExecBuilder().setMnemonic("Mnemonic1").build()
+        )
+    }
 
-    closeAndAssertLog(context, defaultSpawnExecBuilder().setMnemonic("Mnemonic1").build());
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStreaming() {
+        val spawn: SpawnBuilder = SpawnLogContextTestBase.Companion.defaultSpawnBuilder().withMnemonic("Mnemonic1")
 
-  @Test
-  public void testStreaming() throws Exception {
-    SpawnBuilder spawn = defaultSpawnBuilder().withMnemonic("Mnemonic1");
+        val baos: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        val out: BufferedOutputStream = BufferedOutputStream(baos)
 
-    ByteArrayOutputStream baos = new ByteArrayOutputStream();
-    BufferedOutputStream out = new BufferedOutputStream(baos);
+        val context: SpawnLogContext =
+            ExpandedSpawnLogContext(
+                out,
+                "stream",  /* outputPath= */
+                null,
+                tempPath,
+                Encoding.BINARY,  /* sorted= */
+                false,
+                execRoot.asFragment(),
+                com.google.devtools.common.options.Options.getDefaults<O?>(RemoteOptions::class.java),
+                DigestHashFunction.SHA256,
+                SyscallCache.NO_CACHE,  /* shouldPublish= */
+                false,  /* logSpawnPredicate= */
+                { s -> true })
 
-    SpawnLogContext context =
-        new ExpandedSpawnLogContext(
-            out,
-            "stream",
-            /* outputPath= */ null,
+        context.logSpawn(
+            spawn.build(),
+            SpawnLogContextTestBase.Companion.createInputMetadataProvider(),
+            SpawnLogContextTestBase.Companion.createInputMap(),
+            fs,
+            SpawnLogContextTestBase.Companion.defaultTimeout(),
+            SpawnLogContextTestBase.Companion.defaultSpawnResult()
+        )
+
+        context.close()
+
+        val actual: java.util.ArrayList<SpawnExec?> = java.util.ArrayList<SpawnExec?>()
+        ByteArrayInputStream(baos.toByteArray()).use { `in` ->
+            var ex: SpawnExec?
+            while ((SpawnExec.parseDelimitedFrom(`in`).also { ex = it }) != null) {
+                actual.add(ex)
+            }
+        }
+        Truth.assertThat(actual).containsExactly(
+            SpawnLogContextTestBase.Companion.defaultSpawnExecBuilder().setMnemonic("Mnemonic1").build()
+        )
+    }
+
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    override fun createSpawnLogContext(platformProperties: com.google.common.collect.ImmutableMap<String?, String?>): SpawnLogContext {
+        return createSpawnLogContext(
+            platformProperties,  /* logSpawnPredicate= */
+            java.util.function.Predicate { spawn: Spawn? -> true })
+    }
+
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    fun createSpawnLogContext(logSpawnPredicate: java.util.function.Predicate<Spawn?>?): SpawnLogContext {
+        return createSpawnLogContext(com.google.common.collect.ImmutableMap.of<String?, String?>(), logSpawnPredicate)
+    }
+
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    fun createSpawnLogContext(
+        platformProperties: com.google.common.collect.ImmutableMap<String?, String?>,
+        logSpawnPredicate: java.util.function.Predicate<Spawn?>?
+    ): SpawnLogContext {
+        val remoteOptions: RemoteOptions =
+            com.google.devtools.common.options.Options.getDefaults<O>(RemoteOptions::class.java)
+        remoteOptions.setRemoteDefaultExecPropertiesField(platformProperties.entries.asList())
+
+        return ExpandedSpawnLogContext(
+            BufferedOutputStream(logPath.getOutputStream()),
+            logPath.toString(),  /* outputPath= */
+            null,
             tempPath,
-            Encoding.BINARY,
-            /* sorted= */ false,
+            Encoding.BINARY,  /* sorted= */
+            false,
             execRoot.asFragment(),
-            Options.getDefaults(RemoteOptions.class),
+            remoteOptions,
             DigestHashFunction.SHA256,
-            SyscallCache.NO_CACHE,
-            /* shouldPublish= */ false,
-            /* logSpawnPredicate= */ s -> true);
-
-    context.logSpawn(
-        spawn.build(),
-        createInputMetadataProvider(),
-        createInputMap(),
-        fs,
-        defaultTimeout(),
-        defaultSpawnResult());
-
-    context.close();
-
-    ArrayList<SpawnExec> actual = new ArrayList<>();
-    try (InputStream in = new ByteArrayInputStream(baos.toByteArray())) {
-      SpawnExec ex;
-      while ((ex = SpawnExec.parseDelimitedFrom(in)) != null) {
-        actual.add(ex);
-      }
+            SyscallCache.NO_CACHE,  /* shouldPublish= */
+            false,
+            logSpawnPredicate
+        )
     }
 
-    assertThat(actual).containsExactly(defaultSpawnExecBuilder().setMnemonic("Mnemonic1").build());
-  }
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    override fun closeAndAssertLog(context: SpawnLogContext, vararg expected: SpawnExec?) {
+        context.close()
 
-  @Override
-  protected SpawnLogContext createSpawnLogContext(ImmutableMap<String, String> platformProperties)
-      throws IOException, InterruptedException {
-    return createSpawnLogContext(platformProperties, /* logSpawnPredicate= */ spawn -> true);
-  }
-
-  SpawnLogContext createSpawnLogContext(Predicate<Spawn> logSpawnPredicate)
-      throws IOException, InterruptedException {
-    return createSpawnLogContext(ImmutableMap.of(), logSpawnPredicate);
-  }
-
-  SpawnLogContext createSpawnLogContext(
-      ImmutableMap<String, String> platformProperties, Predicate<Spawn> logSpawnPredicate)
-      throws IOException, InterruptedException {
-    RemoteOptions remoteOptions = Options.getDefaults(RemoteOptions.class);
-    remoteOptions.setRemoteDefaultExecPropertiesField(platformProperties.entrySet().asList());
-
-    return new ExpandedSpawnLogContext(
-        new BufferedOutputStream(logPath.getOutputStream()),
-        logPath.toString(),
-        /* outputPath= */ null,
-        tempPath,
-        Encoding.BINARY,
-        /* sorted= */ false,
-        execRoot.asFragment(),
-        remoteOptions,
-        DigestHashFunction.SHA256,
-        SyscallCache.NO_CACHE,
-        /* shouldPublish= */ false,
-        logSpawnPredicate);
-  }
-
-  @Override
-  protected void closeAndAssertLog(SpawnLogContext context, SpawnExec... expected)
-      throws IOException, InterruptedException {
-    context.close();
-
-    ArrayList<SpawnExec> actual = new ArrayList<>();
-    try (InputStream in = logPath.getInputStream()) {
-      SpawnExec ex;
-      while ((ex = SpawnExec.parseDelimitedFrom(in)) != null) {
-        actual.add(ex);
-      }
+        val actual: java.util.ArrayList<SpawnExec?> = java.util.ArrayList<SpawnExec?>()
+        logPath.getInputStream().use { `in` ->
+            var ex: SpawnExec?
+            while ((SpawnExec.parseDelimitedFrom(`in`).also { ex = it }) != null) {
+                actual.add(ex)
+            }
+        }
+        Truth.assertThat(actual).containsExactlyElementsIn(expected).inOrder()
     }
-
-    assertThat(actual).containsExactlyElementsIn(expected).inOrder();
-  }
 }

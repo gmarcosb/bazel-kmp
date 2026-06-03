@@ -11,48 +11,45 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.outputfilter
 
-package com.google.devtools.build.lib.outputfilter;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.events.OutputFilter
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.util.regex.Pattern
 
-import static com.google.common.truth.Truth.assertThat;
+/** Tests for the `--output_filter` option.  */
+@RunWith(JUnit4::class)
+class OutputFilterTest {
+    @Test
+    fun testOutputEverythingAlwaysTrue() {
+        Truth.assertThat(OutputFilter.OUTPUT_EVERYTHING.showOutput("some tag")).isTrue()
+        Truth.assertThat(OutputFilter.OUTPUT_EVERYTHING.showOutput("literally anything")).isTrue()
+        Truth.assertThat(OutputFilter.OUTPUT_EVERYTHING.showOutput("even empty")).isTrue()
+        Truth.assertThat(OutputFilter.OUTPUT_EVERYTHING.showOutput("")).isTrue()
+    }
 
-import com.google.devtools.build.lib.events.OutputFilter;
-import java.util.regex.Pattern;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @Test
+    fun testOutputNothingAlwaysTrue() {
+        Truth.assertThat(OutputFilter.OUTPUT_NOTHING.showOutput("some tag")).isFalse()
+        Truth.assertThat(OutputFilter.OUTPUT_NOTHING.showOutput("literally anything")).isFalse()
+        Truth.assertThat(OutputFilter.OUTPUT_NOTHING.showOutput("even empty")).isFalse()
+        Truth.assertThat(OutputFilter.OUTPUT_NOTHING.showOutput("")).isFalse()
+    }
 
-/** Tests for the {@code --output_filter} option. */
-@RunWith(JUnit4.class)
-public class OutputFilterTest {
+    @Test
+    fun testRegexpFilterShowOutputMatchTagReturnsTrue() {
+        val underTest =
+            OutputFilter.RegexOutputFilter.forPattern(Pattern.compile("^//some/target"))
+        Truth.assertThat(underTest.showOutput("//some/target")).isTrue()
+    }
 
-  @Test
-  public void testOutputEverythingAlwaysTrue() {
-    assertThat(OutputFilter.OUTPUT_EVERYTHING.showOutput("some tag")).isTrue();
-    assertThat(OutputFilter.OUTPUT_EVERYTHING.showOutput("literally anything")).isTrue();
-    assertThat(OutputFilter.OUTPUT_EVERYTHING.showOutput("even empty")).isTrue();
-    assertThat(OutputFilter.OUTPUT_EVERYTHING.showOutput("")).isTrue();
-  }
-
-  @Test
-  public void testOutputNothingAlwaysTrue() {
-    assertThat(OutputFilter.OUTPUT_NOTHING.showOutput("some tag")).isFalse();
-    assertThat(OutputFilter.OUTPUT_NOTHING.showOutput("literally anything")).isFalse();
-    assertThat(OutputFilter.OUTPUT_NOTHING.showOutput("even empty")).isFalse();
-    assertThat(OutputFilter.OUTPUT_NOTHING.showOutput("")).isFalse();
-  }
-
-  @Test
-  public void testRegexpFilterShowOutputMatchTagReturnsTrue() {
-    OutputFilter underTest =
-        OutputFilter.RegexOutputFilter.forPattern(Pattern.compile("^//some/target"));
-    assertThat(underTest.showOutput("//some/target")).isTrue();
-  }
-
-  @Test
-  public void testRegexpFilterShowOutputNonMatchTagReturnsFalse() {
-    OutputFilter underTest =
-        OutputFilter.RegexOutputFilter.forPattern(Pattern.compile("^//some/target"));
-    assertThat(underTest.showOutput("//not/some/target")).isFalse();
-  }
+    @Test
+    fun testRegexpFilterShowOutputNonMatchTagReturnsFalse() {
+        val underTest =
+            OutputFilter.RegexOutputFilter.forPattern(Pattern.compile("^//some/target"))
+        Truth.assertThat(underTest.showOutput("//not/some/target")).isFalse()
+    }
 }

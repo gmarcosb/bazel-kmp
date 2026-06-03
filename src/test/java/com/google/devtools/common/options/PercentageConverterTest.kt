@@ -11,51 +11,52 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.common.options
 
-package com.google.devtools.common.options;
-
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertThrows;
-
-import com.google.devtools.common.options.Converters.PercentageConverter;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.common.truth.Truth
+import com.google.devtools.common.options.Converters.PercentageConverter
+import com.google.devtools.common.options.OptionsParsingException
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
 /**
- * A test for {@link PercentageConverter}.
+ * A test for [PercentageConverter].
  */
-@RunWith(JUnit4.class)
-public final class PercentageConverterTest {
+@RunWith(JUnit4::class)
+class PercentageConverterTest {
+    private val converter: PercentageConverter = PercentageConverter()
 
-  private final PercentageConverter converter = new PercentageConverter();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun shouldReturnIntegerValue() {
+        val percentage = 50
+        org.junit.Assert.assertEquals(percentage, converter.convert(percentage.toString()))
+    }
 
-  @Test
-  public void shouldReturnIntegerValue() throws Exception {
-    Integer percentage = 50;
-    assertEquals(percentage, converter.convert(Integer.toString(percentage)));
-  }
+    @org.junit.Test
+    fun throwsExceptionWhenInputIsLessThanZero() {
+        val e: OptionsParsingException? =
+            org.junit.Assert.assertThrows<OptionsParsingException?>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable { converter.convert("-1") })
+        Truth.assertThat(e).hasMessageThat().isEqualTo("'-1' should be >= 0")
+    }
 
-  @Test
-  public void throwsExceptionWhenInputIsLessThanZero() {
-    OptionsParsingException e =
-        assertThrows(OptionsParsingException.class, () -> converter.convert("-1"));
-    assertThat(e).hasMessageThat().isEqualTo("'-1' should be >= 0");
-  }
+    @org.junit.Test
+    fun throwsExceptionWhenInputIsGreaterThanHundred() {
+        val e: OptionsParsingException? =
+            org.junit.Assert.assertThrows<OptionsParsingException?>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable { converter.convert("101") })
+        Truth.assertThat(e).hasMessageThat().isEqualTo("'101' should be <= 100")
+    }
 
-  @Test
-  public void throwsExceptionWhenInputIsGreaterThanHundred() {
-    OptionsParsingException e =
-        assertThrows(OptionsParsingException.class, () -> converter.convert("101"));
-    assertThat(e).hasMessageThat().isEqualTo("'101' should be <= 100");
-  }
-
-  @Test
-  public void throwsExceptionWhenInputIsNotANumber() {
-    OptionsParsingException e =
-        assertThrows(
-            OptionsParsingException.class, () -> converter.convert("oops - not a number."));
-    assertThat(e).hasMessageThat().isEqualTo("'oops - not a number.' is not an int");
-  }
+    @org.junit.Test
+    fun throwsExceptionWhenInputIsNotANumber() {
+        val e: OptionsParsingException? =
+            org.junit.Assert.assertThrows<OptionsParsingException?>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable { converter.convert("oops - not a number.") })
+        Truth.assertThat(e).hasMessageThat().isEqualTo("'oops - not a number.' is not an int")
+    }
 }

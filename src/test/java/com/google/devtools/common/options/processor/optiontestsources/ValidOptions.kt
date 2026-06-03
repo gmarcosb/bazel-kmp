@@ -11,22 +11,21 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.common.options.processor.optiontestsources;
+package com.google.devtools.common.options.processor.optiontestsources
 
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
+import OptionFilters.OptionEffectTag
+import com.google.devtools.common.options.OptionDocumentationCategory
+import com.google.devtools.common.options.OptionEffectTag
+import com.google.devtools.common.options.OptionsBase
+import com.google.devtools.common.options.OptionsClass
 
 @OptionsClass
-public abstract class ValidOptions extends OptionsBase {
-  @Option(
-      name = "foo",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
-      defaultValue = "42")
-  public abstract int getFoo();
-
-  public abstract void setFoo(int foo);
+abstract class ValidOptions : OptionsBase() {
+    @get:com.google.devtools.common.options.Option(
+        name = "foo",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.AFFECTS_OUTPUTS],
+        defaultValue = "42"
+    )
+    abstract var foo: Int
 }

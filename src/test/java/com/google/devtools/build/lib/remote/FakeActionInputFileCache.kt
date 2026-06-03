@@ -11,146 +11,122 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote;
+package com.google.devtools.build.lib.remote
 
-import build.bazel.remote.execution.v2.Digest;
-import build.bazel.remote.execution.v2.Tree;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.actions.ActionInput;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.FileArtifactValue;
-import com.google.devtools.build.lib.actions.FileContentsProxy;
-import com.google.devtools.build.lib.actions.FilesetOutputTree;
-import com.google.devtools.build.lib.actions.InputMetadataProvider;
-import com.google.devtools.build.lib.actions.RunfilesArtifactValue;
-import com.google.devtools.build.lib.actions.RunfilesTree;
-import com.google.devtools.build.lib.remote.util.DigestUtil;
-import com.google.devtools.build.lib.skyframe.TreeArtifactValue;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import javax.annotation.Nullable;
+import build.bazel.remote.execution.v2.Digest
 
-/** A fake implementation of the {@link InputMetadataProvider} interface. */
-final class FakeActionInputFileCache implements InputMetadataProvider {
-  private final Path execRoot;
-  private final Map<PathFragment, FileArtifactValue> cas = new HashMap<>();
-  private final Map<ActionInput, RunfilesArtifactValue> runfilesMap = new HashMap<>();
-  private final Map<ActionInput, TreeArtifactValue> trees = new HashMap<>();
-  private final List<RunfilesTree> runfilesTrees = new ArrayList<>();
-  private final DigestUtil digestUtil;
+/** A fake implementation of the [InputMetadataProvider] interface.  */
+internal class FakeActionInputFileCache(execRoot: Path) : InputMetadataProvider {
+    private val execRoot: Path
+    private val cas: MutableMap<PathFragment?, FileArtifactValue?> = HashMap<PathFragment?, FileArtifactValue?>()
+    private val runfilesMap: MutableMap<ActionInput?, RunfilesArtifactValue?> =
+        HashMap<ActionInput?, RunfilesArtifactValue?>()
+    private val trees: MutableMap<ActionInput?, TreeArtifactValue?> = HashMap<ActionInput?, TreeArtifactValue?>()
+    private val runfilesTrees: MutableList<RunfilesTree?> = java.util.ArrayList<RunfilesTree?>()
+    private val digestUtil: DigestUtil
 
-  FakeActionInputFileCache(Path execRoot) {
-    this.execRoot = execRoot;
-    this.digestUtil =
-        new DigestUtil(SyscallCache.NO_CACHE, execRoot.getFileSystem().getDigestFunction());
-  }
+    init {
+        this.execRoot = execRoot
+        this.digestUtil =
+            DigestUtil(SyscallCache.NO_CACHE, execRoot.getFileSystem().getDigestFunction())
+    }
 
-  @Override
-  public FileArtifactValue getInputMetadataChecked(ActionInput input) {
-    return Preconditions.checkNotNull(
-        cas.get(input.getExecPath()),
-        "No metadata for input '%s' (exec path: '%s')",
-        input,
-        input.getExecPath());
-  }
+    public override fun getInputMetadataChecked(input: ActionInput): FileArtifactValue? {
+        return com.google.common.base.Preconditions.checkNotNull(
+            cas.get(input.getExecPath()),
+            "No metadata for input '%s' (exec path: '%s')",
+            input,
+            input.getExecPath()
+        )
+    }
 
-  @Nullable
-  @Override
-  public TreeArtifactValue getTreeMetadata(ActionInput actionInput) {
-    return trees.get(actionInput);
-  }
+    public override fun getTreeMetadata(actionInput: ActionInput?): TreeArtifactValue? {
+        return trees.get(actionInput)
+    }
 
-  @Nullable
-  @Override
-  public TreeArtifactValue getEnclosingTreeMetadata(PathFragment execPath) {
-    throw new UnsupportedOperationException();
-  }
+    public override fun getEnclosingTreeMetadata(execPath: PathFragment?): TreeArtifactValue? {
+        throw java.lang.UnsupportedOperationException()
+    }
 
-  @Override
-  @Nullable
-  public FilesetOutputTree getFileset(ActionInput input) {
-    throw new UnsupportedOperationException();
-  }
+    public override fun getFileset(input: ActionInput?): FilesetOutputTree? {
+        throw java.lang.UnsupportedOperationException()
+    }
 
-  @Override
-  public Map<Artifact, FilesetOutputTree> getFilesets() {
-    throw new UnsupportedOperationException();
-  }
+    val filesets: MutableMap<Artifact, FilesetOutputTree>?
+        get() {
+            throw java.lang.UnsupportedOperationException()
+        }
 
-  @Override
-  @Nullable
-  public RunfilesArtifactValue getRunfilesMetadata(ActionInput input) {
-    return runfilesMap.get(input);
-  }
+    public override fun getRunfilesMetadata(input: ActionInput?): RunfilesArtifactValue? {
+        return runfilesMap.get(input)
+    }
 
-  @Override
-  public ImmutableList<RunfilesTree> getRunfilesTrees() {
-    return ImmutableList.copyOf(runfilesTrees);
-  }
+    public override fun getRunfilesTrees(): com.google.common.collect.ImmutableList<RunfilesTree?> {
+        return com.google.common.collect.ImmutableList.copyOf<RunfilesTree?>(runfilesTrees)
+    }
 
-  @Override
-  public ActionInput getInput(PathFragment execPath) {
-    throw new UnsupportedOperationException();
-  }
+    public override fun getInput(execPath: PathFragment?): ActionInput? {
+        throw java.lang.UnsupportedOperationException()
+    }
 
-  private void setMetadata(ActionInput input, FileArtifactValue metadata) {
-    cas.put(input.getExecPath(), metadata);
-  }
+    private fun setMetadata(input: ActionInput, metadata: FileArtifactValue?) {
+        cas.put(input.getExecPath(), metadata)
+    }
 
-  public void addTreeArtifact(ActionInput treeArtifact, TreeArtifactValue value) {
-    trees.put(treeArtifact, value);
-  }
+    fun addTreeArtifact(treeArtifact: ActionInput?, value: TreeArtifactValue?) {
+        trees.put(treeArtifact, value)
+    }
 
-  public void addRunfilesTree(ActionInput runfilesTreeArtifact, RunfilesTree runfilesTree) {
-    runfilesMap.put(
-        runfilesTreeArtifact,
-        new RunfilesArtifactValue(
-            runfilesTree,
-            ImmutableList.of(),
-            ImmutableList.of(),
-            ImmutableList.of(),
-            ImmutableList.of(),
-            ImmutableList.of(),
-            ImmutableList.of()));
-    runfilesTrees.add(runfilesTree);
-  }
+    fun addRunfilesTree(runfilesTreeArtifact: ActionInput?, runfilesTree: RunfilesTree?) {
+        runfilesMap.put(
+            runfilesTreeArtifact,
+            RunfilesArtifactValue(
+                runfilesTree,
+                com.google.common.collect.ImmutableList.of<E?>(),
+                com.google.common.collect.ImmutableList.of<E?>(),
+                com.google.common.collect.ImmutableList.of<E?>(),
+                com.google.common.collect.ImmutableList.of<E?>(),
+                com.google.common.collect.ImmutableList.of<E?>(),
+                com.google.common.collect.ImmutableList.of<E?>()
+            )
+        )
+        runfilesTrees.add(runfilesTree)
+    }
 
-  public Digest createScratchInput(ActionInput input, String content) throws IOException {
-    Path inputFile = execRoot.getRelative(input.getExecPath());
-    inputFile.getParentDirectory().createDirectoryAndParents();
-    FileSystemUtils.writeContentAsLatin1(inputFile, content);
-    Digest digest = digestUtil.compute(inputFile);
-    setMetadata(
-        input,
-        FileArtifactValue.createForNormalFile(
-            DigestUtil.toBinaryDigest(digest),
-            FileContentsProxy.create(inputFile.stat()),
-            content.length()));
-    return digest;
-  }
+    @Throws(IOException::class)
+    fun createScratchInput(input: ActionInput, content: String): Digest? {
+        val inputFile: Path = execRoot.getRelative(input.getExecPath())
+        inputFile.getParentDirectory().createDirectoryAndParents()
+        FileSystemUtils.writeContentAsLatin1(inputFile, content)
+        val digest: Digest? = digestUtil.compute(inputFile)
+        setMetadata(
+            input,
+            FileArtifactValue.createForNormalFile(
+                DigestUtil.toBinaryDigest(digest),
+                FileContentsProxy.create(inputFile.stat()),
+                content.length
+            )
+        )
+        return digest
+    }
 
-  public Digest createScratchInputDirectory(ActionInput input, Tree content) throws IOException {
-    Path inputFile = execRoot.getRelative(input.getExecPath());
-    inputFile.createDirectoryAndParents();
-    Digest digest = digestUtil.compute(content);
-    setMetadata(
-        input, FileArtifactValue.createForDirectoryWithHash(DigestUtil.toBinaryDigest(digest)));
-    return digest;
-  }
+    @Throws(IOException::class)
+    fun createScratchInputDirectory(input: ActionInput, content: Tree?): Digest? {
+        val inputFile: Path = execRoot.getRelative(input.getExecPath())
+        inputFile.createDirectoryAndParents()
+        val digest: Digest? = digestUtil.compute(content)
+        setMetadata(
+            input, FileArtifactValue.createForDirectoryWithHash(DigestUtil.toBinaryDigest(digest))
+        )
+        return digest
+    }
 
-  public void createScratchInputSymlink(Artifact input, String target) throws IOException {
-    Preconditions.checkArgument(input.isSymlink());
-    Path inputFile = input.getPath();
-    inputFile.getParentDirectory().createDirectoryAndParents();
-    inputFile.createSymbolicLink(PathFragment.create(target));
-    setMetadata(input, FileArtifactValue.createForUnresolvedSymlink(input));
-  }
+    @Throws(IOException::class)
+    fun createScratchInputSymlink(input: Artifact, target: String?) {
+        com.google.common.base.Preconditions.checkArgument(input.isSymlink())
+        val inputFile: Path = input.getPath()
+        inputFile.getParentDirectory().createDirectoryAndParents()
+        inputFile.createSymbolicLink(PathFragment.create(target))
+        setMetadata(input, FileArtifactValue.createForUnresolvedSymlink(input))
+    }
 }

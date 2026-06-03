@@ -11,245 +11,195 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.common.options;
+package com.google.devtools.common.options
 
-import com.google.devtools.common.options.InvocationPolicyEnforcerTestBase.ToListConverter;
-import java.util.List;
+import OptionFilters.OptionEffectTag
+import com.google.devtools.common.options.InvocationPolicyEnforcerTestBase.ToListConverter
+import com.google.devtools.common.options.OptionDocumentationCategory
+import com.google.devtools.common.options.OptionEffectTag
+import com.google.devtools.common.options.OptionsBase
+import com.google.devtools.common.options.OptionsClass
 
-/** Options for testing. */
+/** Options for testing.  */
 @OptionsClass
-public abstract class TestOptions extends OptionsBase {
+abstract class TestOptions : OptionsBase() {
+    @get:Option(
+        name = "test_string",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.NO_OP],
+        defaultValue = com.google.devtools.common.options.TestOptions.Companion.TEST_STRING_DEFAULT,
+        help = "a string-valued option to test simple option operations"
+    )
+    abstract val testString: String?
 
-  /*
-   * Basic types
-   */
+    @get:Option(
+        name = "test_string_null_by_default",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.NO_OP],
+        defaultValue = "null",
+        help = "a string-valued option that has the special string 'null' as its default."
+    )
+    abstract val testStringNullByDefault: String?
 
-  public static final String TEST_STRING_DEFAULT = "test string default";
+    @get:Option(
+        name = "test_multiple_string",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.NO_OP],
+        defaultValue = "null",
+        allowMultiple = true,
+        help = "a repeatable string-valued flag with its own unhelpful help text"
+    )
+    abstract val testMultipleString: MutableList<String?>?
 
-  @Option(
-      name = "test_string",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.NO_OP},
-      defaultValue = TEST_STRING_DEFAULT,
-      help = "a string-valued option to test simple option operations")
-  public abstract String getTestString();
+    @get:Option(
+        name = "test_list_converters",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.NO_OP],
+        defaultValue = "null",
+        allowMultiple = true,
+        converter = ToListConverter::class,
+        help = ("a repeatable flag that accepts lists, but doesn't want to have lists of lists "
+                + "as a final type")
+    )
+    abstract val testListConverters: MutableList<String?>?
 
-  @Option(
-      name = "test_string_null_by_default",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.NO_OP},
-      defaultValue = "null",
-      help = "a string-valued option that has the special string 'null' as its default.")
-  public abstract String getTestStringNullByDefault();
+    @get:Option(
+        name = "test_expansion",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.NO_OP],
+        defaultValue = "null",
+        expansion = ["--noexpanded_a", "--expanded_b=false", "--expanded_c", "42", "--expanded_d", "bar"
+        ],
+        help = "this expands to an alphabet soup."
+    )
+    abstract val testExpansion: java.lang.Void?
 
-  /*
-   * Repeated flags
-   */
+    @get:Option(
+        name = "test_recursive_expansion_top_level",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.NO_OP],
+        defaultValue = "null",
+        expansion = ["--test_recursive_expansion_middle1", "--test_recursive_expansion_middle2"
+        ],
+        help = "Lets the children do all the work."
+    )
+    abstract val testRecursiveExpansionTopLevel: java.lang.Void?
 
-  @Option(
-      name = "test_multiple_string",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.NO_OP},
-      defaultValue = "null",
-      allowMultiple = true,
-      help = "a repeatable string-valued flag with its own unhelpful help text")
-  public abstract List<String> getTestMultipleString();
+    @get:Option(
+        name = "test_recursive_expansion_middle1",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.NO_OP],
+        defaultValue = "null",
+        expansion = ["--expanded_a=false", "--expanded_c=56"
+        ]
+    )
+    abstract val testRecursiveExpansionMiddle1: java.lang.Void?
 
-  /*
-   * Flags with converters that return lists
-   */
+    @get:Option(
+        name = "test_recursive_expansion_middle2",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.NO_OP],
+        defaultValue = "null",
+        expansion = ["--expanded_b=false", "--expanded_d=baz"
+        ]
+    )
+    abstract val testRecursiveExpansionMiddle2: java.lang.Void?
 
-  @Option(
-      name = "test_list_converters",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.NO_OP},
-      defaultValue = "null",
-      allowMultiple = true,
-      converter = ToListConverter.class,
-      help =
-          "a repeatable flag that accepts lists, but doesn't want to have lists of lists "
-              + "as a final type")
-  public abstract List<String> getTestListConverters();
+    @get:Option(
+        name = "expanded_a",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.UNKNOWN],
+        defaultValue = "true",
+        help = "A boolean flag with unknown effect to test tagless usage text."
+    )
+    abstract val expandedA: Boolean
 
-  /*
-   * Expansion flags
-   */
+    @get:Option(
+        name = "expanded_b",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.NO_OP],
+        defaultValue = "true"
+    )
+    abstract val expandedB: Boolean
 
-  public static final boolean EXPANDED_A_TEST_EXPANSION = false;
-  public static final boolean EXPANDED_B_TEST_EXPANSION = false;
-  public static final int EXPANDED_C_TEST_EXPANSION = 42;
-  public static final String EXPANDED_D_TEST_EXPANSION = "bar";
+    @get:Option(
+        name = "expanded_c",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.NO_OP],
+        defaultValue = "12",
+        help = "an int-value'd flag used to test expansion logic"
+    )
+    abstract val expandedC: Int
 
-  @Option(
-      name = "test_expansion",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.NO_OP},
-      defaultValue = "null",
-      expansion = {
-        "--noexpanded_a",
-        "--expanded_b=false",
-        "--expanded_c",
-        "42",
-        "--expanded_d",
-        "bar"
-      },
-      help = "this expands to an alphabet soup.")
-  public abstract Void getTestExpansion();
+    @get:Option(
+        name = "expanded_d",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.NO_OP],
+        defaultValue = "foo"
+    )
+    abstract val expandedD: String?
 
-  public static final boolean EXPANDED_A_TEST_RECURSIVE_EXPANSION = false;
-  public static final boolean EXPANDED_B_TEST_RECURSIVE_EXPANSION = false;
-  public static final int EXPANDED_C_TEST_RECURSIVE_EXPANSION = 56;
-  public static final String EXPANDED_D_TEST_RECURSIVE_EXPANSION = "baz";
+    @get:Option(
+        name = "test_expansion_to_repeatable",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.NO_OP],
+        defaultValue = "null",
+        expansion = ["--test_multiple_string=expandedFirstValue", "--test_multiple_string=expandedSecondValue"
+        ],
+        help = "Go forth and multiply, they said."
+    )
+    abstract val testExpansionToRepeatable: java.lang.Void?
 
-  @Option(
-      name = "test_recursive_expansion_top_level",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.NO_OP},
-      defaultValue = "null",
-      expansion = {
-        "--test_recursive_expansion_middle1",
-        "--test_recursive_expansion_middle2",
-      },
-      help = "Lets the children do all the work.")
-  public abstract Void getTestRecursiveExpansionTopLevel();
+    @get:Option(
+        name = "test_implicit_requirement",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.NO_OP],
+        defaultValue = com.google.devtools.common.options.TestOptions.Companion.TEST_IMPLICIT_REQUIREMENT_DEFAULT,
+        implicitRequirements = ["--implicit_requirement_a=" + com.google.devtools.common.options.TestOptions.Companion.IMPLICIT_REQUIREMENT_A_REQUIRED],
+        help = "this option really needs that other one, isolation of purpose has failed."
+    )
+    abstract val testImplicitRequirement: String?
 
-  @Option(
-      name = "test_recursive_expansion_middle1",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.NO_OP},
-      defaultValue = "null",
-      expansion = {
-        "--expanded_a=false",
-        "--expanded_c=56",
-      })
-  public abstract Void getTestRecursiveExpansionMiddle1();
+    @get:Option(
+        name = "implicit_requirement_a",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.NO_OP],
+        defaultValue = com.google.devtools.common.options.TestOptions.Companion.IMPLICIT_REQUIREMENT_A_DEFAULT
+    )
+    abstract val implicitRequirementA: String?
 
-  @Option(
-      name = "test_recursive_expansion_middle2",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.NO_OP},
-      defaultValue = "null",
-      expansion = {
-        "--expanded_b=false",
-        "--expanded_d=baz",
-      })
-  public abstract Void getTestRecursiveExpansionMiddle2();
+    @get:Option(
+        name = "test_recursive_implicit_requirement",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.NO_OP],
+        defaultValue = com.google.devtools.common.options.TestOptions.Companion.TEST_RECURSIVE_IMPLICIT_REQUIREMENT_DEFAULT,
+        implicitRequirements = ["--test_implicit_requirement=" + com.google.devtools.common.options.TestOptions.Companion.TEST_IMPLICIT_REQUIREMENT_REQUIRED]
+    )
+    abstract val testRecursiveImplicitRequirement: String?
 
-  public static final boolean EXPANDED_A_DEFAULT = true;
+    @get:Option(
+        name = "test_deprecated",
+        defaultValue = "default",
+        deprecationWarning = "Flag for testing deprecation behavior.",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.NO_OP]
+    )
+    abstract val testDeprecated: String?
 
-  @Option(
-      name = "expanded_a",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      defaultValue = "true",
-      help = "A boolean flag with unknown effect to test tagless usage text.")
-  public abstract boolean getExpandedA();
+    @get:Option(
+        name = "test_new_and_old_name",
+        oldName = "test_old_name",
+        defaultValue = "default",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.NO_OP],
+        help = "A test option with both a new name and an old name."
+    )
+    abstract val testNewAndOldName: String?
 
-  public static final boolean EXPANDED_B_DEFAULT = true;
-
-  @Option(
-      name = "expanded_b",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.NO_OP},
-      defaultValue = "true")
-  public abstract boolean getExpandedB();
-
-  public static final int EXPANDED_C_DEFAULT = 12;
-
-  @Option(
-      name = "expanded_c",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.NO_OP},
-      defaultValue = "12",
-      help = "an int-value'd flag used to test expansion logic")
-  public abstract int getExpandedC();
-
-  public static final String EXPANDED_D_DEFAULT = "foo";
-
-  @Option(
-      name = "expanded_d",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.NO_OP},
-      defaultValue = "foo")
-  public abstract String getExpandedD();
-
-  /*
-   * Expansion into repeatable flags.
-   */
-
-  public static final String EXPANDED_MULTIPLE_1 = "expandedFirstValue";
-  public static final String EXPANDED_MULTIPLE_2 = "expandedSecondValue";
-
-  @Option(
-      name = "test_expansion_to_repeatable",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.NO_OP},
-      defaultValue = "null",
-      expansion = {
-        "--test_multiple_string=expandedFirstValue",
-        "--test_multiple_string=expandedSecondValue"
-      },
-      help = "Go forth and multiply, they said.")
-  public abstract Void getTestExpansionToRepeatable();
-
-  /*
-   * Implicit requirement flags
-   */
-
-  public static final String TEST_IMPLICIT_REQUIREMENT_DEFAULT = "direct implicit";
-  public static final String IMPLICIT_REQUIREMENT_A_REQUIRED = "implicit requirement, required";
-
-  @Option(
-      name = "test_implicit_requirement",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.NO_OP},
-      defaultValue = TEST_IMPLICIT_REQUIREMENT_DEFAULT,
-      implicitRequirements = {"--implicit_requirement_a=" + IMPLICIT_REQUIREMENT_A_REQUIRED},
-      help = "this option really needs that other one, isolation of purpose has failed.")
-  public abstract String getTestImplicitRequirement();
-
-  public static final String IMPLICIT_REQUIREMENT_A_DEFAULT = "implicit requirement, unrequired";
-
-  @Option(
-      name = "implicit_requirement_a",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.NO_OP},
-      defaultValue = IMPLICIT_REQUIREMENT_A_DEFAULT)
-  public abstract String getImplicitRequirementA();
-
-  public static final String TEST_RECURSIVE_IMPLICIT_REQUIREMENT_DEFAULT = "recursive implicit";
-  public static final String TEST_IMPLICIT_REQUIREMENT_REQUIRED = "intermediate, required";
-
-  @Option(
-      name = "test_recursive_implicit_requirement",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.NO_OP},
-      defaultValue = TEST_RECURSIVE_IMPLICIT_REQUIREMENT_DEFAULT,
-      implicitRequirements = {"--test_implicit_requirement=" + TEST_IMPLICIT_REQUIREMENT_REQUIRED})
-  public abstract String getTestRecursiveImplicitRequirement();
-
-  @Option(
-      name = "test_deprecated",
-      defaultValue = "default",
-      deprecationWarning = "Flag for testing deprecation behavior.",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.NO_OP})
-  public abstract String getTestDeprecated();
-
-  @Option(
-      name = "test_new_and_old_name",
-      oldName = "test_old_name",
-      defaultValue = "default",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.NO_OP},
-      help = "A test option with both a new name and an old name.")
-  public abstract String getTestNewAndOldName();
-
-  @Option(
-      name = "markdown_in_help",
-      defaultValue = "default",
-      help =
-          """
+    @get:Option(
+        name = "markdown_in_help",
+        defaultValue = "default",
+        help = """
           normal
           `code span`
           *emphasis*
@@ -258,7 +208,7 @@ public abstract class TestOptions extends OptionsBase {
           [reference link][ref]
           [shorthand reference link]
           [`complex` shorthand reference link]
-          hard line\\
+          hard line\
           break
           ```
           code block
@@ -277,8 +227,55 @@ public abstract class TestOptions extends OptionsBase {
           [ref]: /url (title)
           [shorthand reference link]: /url (title)
           [`complex` shorthand reference link]: /url (title)
-          """,
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.NO_OP})
-  public abstract String getMarkdownInHelp();
+          
+          """.trimIndent(),
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.NO_OP]
+    )
+    abstract val markdownInHelp: String?
+
+    companion object {
+        /*
+   * Basic types
+   */
+        const val TEST_STRING_DEFAULT: String = "test string default"
+
+        /*
+   * Expansion flags
+   */
+        const val EXPANDED_A_TEST_EXPANSION: Boolean = false
+        const val EXPANDED_B_TEST_EXPANSION: Boolean = false
+        const val EXPANDED_C_TEST_EXPANSION: Int = 42
+        const val EXPANDED_D_TEST_EXPANSION: String = "bar"
+
+        const val EXPANDED_A_TEST_RECURSIVE_EXPANSION: Boolean = false
+        const val EXPANDED_B_TEST_RECURSIVE_EXPANSION: Boolean = false
+        const val EXPANDED_C_TEST_RECURSIVE_EXPANSION: Int = 56
+        const val EXPANDED_D_TEST_RECURSIVE_EXPANSION: String = "baz"
+
+        const val EXPANDED_A_DEFAULT: Boolean = true
+
+        const val EXPANDED_B_DEFAULT: Boolean = true
+
+        const val EXPANDED_C_DEFAULT: Int = 12
+
+        const val EXPANDED_D_DEFAULT: String = "foo"
+
+        /*
+   * Expansion into repeatable flags.
+   */
+        const val EXPANDED_MULTIPLE_1: String = "expandedFirstValue"
+        const val EXPANDED_MULTIPLE_2: String = "expandedSecondValue"
+
+        /*
+   * Implicit requirement flags
+   */
+        const val TEST_IMPLICIT_REQUIREMENT_DEFAULT: String = "direct implicit"
+        const val IMPLICIT_REQUIREMENT_A_REQUIRED: String = "implicit requirement, required"
+
+        const val IMPLICIT_REQUIREMENT_A_DEFAULT: String = "implicit requirement, unrequired"
+
+        const val TEST_RECURSIVE_IMPLICIT_REQUIREMENT_DEFAULT: String = "recursive implicit"
+        const val TEST_IMPLICIT_REQUIREMENT_REQUIRED: String = "intermediate, required"
+    }
 }

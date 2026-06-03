@@ -11,32 +11,27 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.objc
 
-package com.google.devtools.build.lib.rules.objc;
-
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.testutil.Scratch;
-import java.io.IOException;
-import java.util.Set;
+import com.google.common.collect.ImmutableList
+import com.google.devtools.build.lib.testutil.Scratch
+import java.io.IOException
 
 /**
- * This exists for convenience for any rule type that requires only one file in {@code srcs} or
- * {@code non_arc_srcs}, and no other attributes.
+ * This exists for convenience for any rule type that requires only one file in `srcs` or
+ * `non_arc_srcs`, and no other attributes.
  */
-final class OnlyNeedsSourcesRuleType extends RuleType {
-  OnlyNeedsSourcesRuleType(String ruleTypeName) {
-    super(ruleTypeName);
-  }
-
-  @Override
-  Iterable<String> requiredAttributes(
-      Scratch scratch, String packageDir, Set<String> alreadyAdded) throws IOException {
-    ImmutableList.Builder<String> attributes = new ImmutableList.Builder<>();
-    if (!alreadyAdded.contains("srcs") && !alreadyAdded.contains("non_arc_srcs")) {
-      scratch.file(packageDir + "/a.m");
-      scratch.file(packageDir + "/private.h");
-      attributes.add("srcs = ['a.m', 'private.h']");
+internal class OnlyNeedsSourcesRuleType(ruleTypeName: String?) : RuleType(ruleTypeName) {
+    @Throws(IOException::class)
+    override fun requiredAttributes(
+        scratch: Scratch, packageDir: String?, alreadyAdded: MutableSet<String?>
+    ): Iterable<String?> {
+        val attributes = ImmutableList.Builder<String?>()
+        if (!alreadyAdded.contains("srcs") && !alreadyAdded.contains("non_arc_srcs")) {
+            scratch.file(packageDir + "/a.m")
+            scratch.file(packageDir + "/private.h")
+            attributes.add("srcs = ['a.m', 'private.h']")
+        }
+        return attributes.build()
     }
-    return attributes.build();
-  }
 }

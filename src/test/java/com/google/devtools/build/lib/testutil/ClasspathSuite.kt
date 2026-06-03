@@ -11,33 +11,34 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.testutil;
+package com.google.devtools.build.lib.testutil
 
-import org.junit.runners.Suite;
-import org.junit.runners.model.RunnerBuilder;
-
-import java.util.Set;
+import com.google.devtools.build.lib.analysis.util.ConfigurationTestCase.create
+import com.google.devtools.build.lib.packages.util.MockToolsConfig.create
+import com.google.devtools.build.lib.testutil.TestSuiteBuilder
+import org.junit.runners.Suite
+import org.junit.runners.model.RunnerBuilder
 
 /**
  * A suite implementation that finds all JUnit 3 and 4 classes on the current classpath in or below
- * the package of the annotated class, except classes that are annotated with {@code ClasspathSuite}
- * or {@link CustomSuite}.
- *
- * <p>If you need to specify a custom test class filter or a different package prefix, then use
- * {@link CustomSuite} instead.
+ * the package of the annotated class, except classes that are annotated with `ClasspathSuite`
+ * or [CustomSuite].
+ * 
+ * 
+ * If you need to specify a custom test class filter or a different package prefix, then use
+ * [CustomSuite] instead.
  */
-public final class ClasspathSuite extends Suite {
-
-  /**
-   * Only called reflectively. Do not use programmatically.
-   */
-  public ClasspathSuite(Class<?> klass, RunnerBuilder builder) throws Throwable {
-    super(builder, klass, getClasses(klass));
-  }
-
-  private static Class<?>[] getClasses(Class<?> klass) {
-    Set<Class<?>> result = new TestSuiteBuilder().addPackageRecursive(klass.getPackage().getName())
-        .create();
-    return result.toArray(new Class<?>[result.size()]);
-  }
+class ClasspathSuite
+/**
+ * Only called reflectively. Do not use programmatically.
+ */
+    (klass: java.lang.Class<*>, builder: RunnerBuilder) : Suite(builder, klass, getClasses(klass)) {
+    companion object {
+        private fun getClasses(klass: java.lang.Class<*>): Array<java.lang.Class<*>?> {
+            val result: MutableSet<java.lang.Class<*>?> =
+                TestSuiteBuilder().addPackageRecursive(klass.getPackage().getName())
+                    .create()
+            return result.toTypedArray<java.lang.Class<*>?>()
+        }
+    }
 }

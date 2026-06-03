@@ -11,124 +11,124 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.concurrent;
+package com.google.devtools.build.lib.concurrent
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.util.concurrent.Futures.immediateFuture;
-import static java.util.concurrent.ForkJoinPool.commonPool;
-import static org.junit.Assert.assertThrows;
+import com.google.common.truth.Truth
+import com.google.common.util.concurrent.Futures
+import org.junit.Assert
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.ForkJoinPool
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
+import java.util.function.BiConsumer
 
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.BiConsumer;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+@RunWith(JUnit4::class)
+class SettableFutureKeyedValueTest {
+    @kotlin.jvm.JvmRecord
+    private data class Value(val text: String?)
 
-@RunWith(JUnit4.class)
-public final class SettableFutureKeyedValueTest {
-  private record Value(String text) {}
+    private class FutureValue
+        (key: String?, consumer: BiConsumer<String?, Value?>?) :
+        SettableFutureKeyedValue<FutureValue?, String?, Value?>(key, consumer)
 
-  private static final class FutureValue
-      extends SettableFutureKeyedValue<FutureValue, String, Value> {
-    private FutureValue(String key, BiConsumer<String, Value> consumer) {
-      super(key, consumer);
+    @Test
+    @Throws(Exception::class)
+    fun takingOwnership_occursExactlyOnce() {
+        val future = FutureValue("key", BiConsumer { unusedA: String?, unusedB: Value? -> })
+        val tryOwnSuccessCount = AtomicInteger(0)
+        val taskCount = 100
+        val allDone = CountDownLatch(taskCount)
+        for (i in 0..<taskCount) {
+            ForkJoinPool.commonPool()
+                .execute(
+                    Runnable {
+                        if (future.tryTakeOwnership()) {
+                            tryOwnSuccessCount.getAndIncrement()
+                        }
+                        allDone.countDown()
+                    })
+        }
+        allDone.await()
+        Truth.assertThat(tryOwnSuccessCount.get()).isEqualTo(1)
     }
-  }
 
-  @Test
-  public void takingOwnership_occursExactlyOnce() throws Exception {
-    var future = new FutureValue("key", (unusedA, unusedB) -> {});
-    var tryOwnSuccessCount = new AtomicInteger(0);
-    final int taskCount = 100;
-    var allDone = new CountDownLatch(taskCount);
-    for (int i = 0; i < taskCount; i++) {
-      commonPool()
-          .execute(
-              () -> {
-                if (future.tryTakeOwnership()) {
-                  tryOwnSuccessCount.getAndIncrement();
-                }
-                allDone.countDown();
-              });
+    @Test
+    fun futureFails_ifUnset() {
+        val future = FutureValue("key", BiConsumer { unusedA: String?, unusedB: Value? -> })
+        future.verifyComplete()
+
+        val thrown = Assert.assertThrows<ExecutionException?>(ExecutionException::class.java, future::get)
+
+        Truth.assertThat(thrown)
+            .hasMessageThat()
+            .contains("future was unexpectedly unset for key, look for unchecked exceptions")
     }
-    allDone.await();
-    assertThat(tryOwnSuccessCount.get()).isEqualTo(1);
-  }
 
-  @Test
-  public void futureFails_ifUnset() {
-    var future = new FutureValue("key", (unusedA, unusedB) -> {});
-    future.verifyComplete();
+    @Test
+    @Throws(Exception::class)
+    fun completeWithValue_propagates() {
+        val setValue = AtomicReference<Value?>()
+        val future =
+            FutureValue(
+                "key",
+                BiConsumer { key: String?, value: Value? ->
+                    Truth.assertThat(key).isEqualTo("key")
+                    Truth.assertThat(setValue.compareAndSet(null, value)).isTrue()
+                })
+        val value = Value("value")
 
-    var thrown = assertThrows(ExecutionException.class, future::get);
+        assertThat(future.completeWith(value)).isEqualTo(value)
+        Truth.assertThat(setValue.get()).isEqualTo(value)
 
-    assertThat(thrown)
-        .hasMessageThat()
-        .contains("future was unexpectedly unset for key, look for unchecked exceptions");
-  }
+        future.verifyComplete()
+        assertThat(future.get()).isEqualTo(value)
+    }
 
-  @Test
-  public void completeWithValue_propagates() throws Exception {
-    var setValue = new AtomicReference<Value>();
-    var future =
-        new FutureValue(
-            "key",
-            (key, value) -> {
-              assertThat(key).isEqualTo("key");
-              assertThat(setValue.compareAndSet(null, value)).isTrue();
-            });
-    var value = new Value("value");
+    @Test
+    @Throws(Exception::class)
+    fun completeWithFuture_propagates() {
+        val setValue = AtomicReference<Value?>()
+        val future =
+            FutureValue(
+                "key",
+                BiConsumer { key: String?, value: Value? ->
+                    Truth.assertThat(key).isEqualTo("key")
+                    Truth.assertThat(setValue.compareAndSet(null, value)).isTrue()
+                })
+        val value = Value("value")
 
-    assertThat(future.completeWith(value)).isEqualTo(value);
-    assertThat(setValue.get()).isEqualTo(value);
+        assertThat(future.completeWith(Futures.immediateFuture<V?>(value)).get()).isEqualTo(value)
+        Truth.assertThat(setValue.get()).isEqualTo(value)
 
-    future.verifyComplete();
-    assertThat(future.get()).isEqualTo(value);
-  }
+        future.verifyComplete()
+        assertThat(future.get()).isEqualTo(value)
+    }
 
-  @Test
-  public void completeWithFuture_propagates() throws Exception {
-    var setValue = new AtomicReference<Value>();
-    var future =
-        new FutureValue(
-            "key",
-            (key, value) -> {
-              assertThat(key).isEqualTo("key");
-              assertThat(setValue.compareAndSet(null, value)).isTrue();
-            });
-    var value = new Value("value");
+    @Test
+    fun failWith_propagates() {
+        val setValue = AtomicReference<Value?>()
+        val future =
+            FutureValue(
+                "key",
+                BiConsumer { key: String?, value: Value? ->
+                    Truth.assertThat(key).isEqualTo("key")
+                    Truth.assertThat(setValue.compareAndSet(null, value)).isTrue()
+                })
 
-    assertThat(future.completeWith(immediateFuture(value)).get()).isEqualTo(value);
-    assertThat(setValue.get()).isEqualTo(value);
+        val result: FutureValue = future.failWith(IllegalStateException("injected failure"))
+        val thrown = Assert.assertThrows<ExecutionException>(ExecutionException::class.java, result::get)
 
-    future.verifyComplete();
-    assertThat(future.get()).isEqualTo(value);
-  }
+        Truth.assertThat(thrown).hasCauseThat().isInstanceOf(IllegalStateException::class.java)
+        Truth.assertThat(thrown).hasCauseThat().hasMessageThat().contains("injected failure")
 
-  @Test
-  public void failWith_propagates() {
-    var setValue = new AtomicReference<Value>();
-    var future =
-        new FutureValue(
-            "key",
-            (key, value) -> {
-              assertThat(key).isEqualTo("key");
-              assertThat(setValue.compareAndSet(null, value)).isTrue();
-            });
+        Truth.assertThat(setValue.get()).isNull()
 
-    FutureValue result = future.failWith(new IllegalStateException("injected failure"));
-    var thrown = assertThrows(ExecutionException.class, result::get);
-
-    assertThat(thrown).hasCauseThat().isInstanceOf(IllegalStateException.class);
-    assertThat(thrown).hasCauseThat().hasMessageThat().contains("injected failure");
-
-    assertThat(setValue.get()).isNull();
-
-    future.verifyComplete();
-    var thrown2 = assertThrows(ExecutionException.class, future::get);
-    assertThat(thrown2).hasCauseThat().isSameInstanceAs(thrown.getCause());
-  }
+        future.verifyComplete()
+        val thrown2 = Assert.assertThrows<ExecutionException?>(ExecutionException::class.java, future::get)
+        Truth.assertThat(thrown2).hasCauseThat().isSameInstanceAs(thrown.cause)
+    }
 }

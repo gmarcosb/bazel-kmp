@@ -11,32 +11,26 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.events;
+package com.google.devtools.build.lib.events
 
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.devtools.build.lib.testutil.MoreAsserts;
-import com.google.devtools.build.lib.util.io.RecordingOutErr;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.util.io.RecordingOutErr
 
 /**
- * Tests the {@link PrintingEventHandler}.
+ * Tests the [PrintingEventHandler].
  */
-@RunWith(JUnit4.class)
-public class PrintingEventHandlerTest extends EventTestTemplate {
-
-  @Test
-  public void collectsEvents() {
-    RecordingOutErr recordingOutErr = new RecordingOutErr();
-    PrintingEventHandler handler =
-        new PrintingEventHandler(recordingOutErr, EventKind.ERRORS_AND_WARNINGS);
-    handler.handle(event);
-    MoreAsserts.assertEqualsUnifyingLineEnds("WARNING: /path/to/workspace/my/sample/path.txt:3:4: "
-                 + "This is not an error message.\n",
-                 recordingOutErr.errAsLatin1());
-    assertThat(recordingOutErr.outAsLatin1()).isEmpty();
-  }
-
+@RunWith(JUnit4::class)
+class PrintingEventHandlerTest : EventTestTemplate() {
+    @org.junit.Test
+    fun collectsEvents() {
+        val recordingOutErr: RecordingOutErr = RecordingOutErr()
+        val handler: PrintingEventHandler =
+            PrintingEventHandler(recordingOutErr, com.google.devtools.build.lib.events.EventKind.ERRORS_AND_WARNINGS)
+        handler.handle(event)
+        MoreAsserts.assertEqualsUnifyingLineEnds(
+            "WARNING: /path/to/workspace/my/sample/path.txt:3:4: "
+                    + "This is not an error message.\n",
+            recordingOutErr.errAsLatin1()
+        )
+        assertThat(recordingOutErr.outAsLatin1()).isEmpty()
+    }
 }

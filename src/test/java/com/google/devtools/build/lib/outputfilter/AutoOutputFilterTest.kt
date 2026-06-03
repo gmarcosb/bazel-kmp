@@ -11,178 +11,177 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.outputfilter
 
-package com.google.devtools.build.lib.outputfilter;
+import com.google.common.collect.ArrayListMultimap
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.ListMultimap
+import com.google.devtools.build.lib.analysis.platform.PlatformConstants
+import com.google.devtools.build.lib.events.OutputFilter
+import org.junit.Test
+import org.junit.runners.Parameterized
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.truth.Truth.assertWithMessage;
-import static com.google.devtools.build.lib.outputfilter.AutoOutputFilter.ALL;
-import static com.google.devtools.build.lib.outputfilter.AutoOutputFilter.NONE;
-import static com.google.devtools.build.lib.outputfilter.AutoOutputFilter.PACKAGES;
-import static com.google.devtools.build.lib.outputfilter.AutoOutputFilter.SUBPACKAGES;
-
-import com.google.common.collect.ArrayListMultimap;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ListMultimap;
-import com.google.devtools.build.lib.analysis.platform.PlatformConstants;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.events.OutputFilter;
-import java.util.List;
-import org.junit.Test;
-import org.junit.experimental.runners.Enclosed;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
-import org.junit.runners.Parameterized.Parameter;
-import org.junit.runners.Parameterized.Parameters;
-
-/** Tests for the {@link AutoOutputFilter} class. */
-@RunWith(Enclosed.class)
-public class AutoOutputFilterTest {
-
-  @RunWith(Parameterized.class)
-  public static class NoneTest {
-    @Parameters(name = "{0}")
-    public static ImmutableList<Object[]> filters() {
-      return ImmutableList.of(
-          new Object[] {targets(), OutputFilter.OUTPUT_EVERYTHING},
-          new Object[] {targets("//a"), OutputFilter.OUTPUT_EVERYTHING},
-          new Object[] {targets("//a", "//b"), OutputFilter.OUTPUT_EVERYTHING});
+/** Tests for the [AutoOutputFilter] class.  */
+@RunWith(Enclosed::class)
+object AutoOutputFilterTest {
+    private fun assertFilter(
+        extractedRegex: String?, autoFilter: AutoOutputFilter, targetLabels: MutableList<Label?>?
+    ) {
+        val filter = autoFilter.getFilter(targetLabels)
+        val extraRegex =
+            if (autoFilter === AutoOutputFilter.NONE)
+                ""
+            else
+                "(unknown)|" + PlatformConstants.INTERNAL_PLATFORM.getCanonicalForm() + "|"
+        Truth.assertWithMessage("output filter %s returned wrong filter:", autoFilter)
+            .that(filter.toString())
+            .isEqualTo(extraRegex + extractedRegex)
     }
 
-    @Parameter(0)
-    public List<Label> targets;
+    private fun targets(vararg targetLabels: String?): ImmutableList<Label?> {
+        // Sort targets by package
+        val targetsPerPackage: ListMultimap<String?, String?> = ArrayListMultimap.create<String?, String?>()
+        for (targetName in targetLabels) {
+            val label: Label = Label.parseCanonicalUnchecked(targetName)
+            targetsPerPackage.put(label.getPackageName(), label.name)
+        }
 
-    @Parameter(1)
-    public OutputFilter expectedOutputFilter;
-
-    @Test
-    public void testFilter() {
-      assertThat(NONE.getFilter(this.targets)).isEqualTo(this.expectedOutputFilter);
-    }
-  }
-
-  @RunWith(Parameterized.class)
-  public static class AllTest {
-    @Parameters(name = "{0}")
-    public static ImmutableList<Object[]> filters() {
-      return ImmutableList.of(
-          new Object[] {targets(), OutputFilter.OUTPUT_NOTHING},
-          new Object[] {targets("//a"), OutputFilter.OUTPUT_NOTHING},
-          new Object[] {targets("//a", "//b"), OutputFilter.OUTPUT_NOTHING});
+        // Collect targets
+        val targets: ImmutableList.Builder<Label?> = ImmutableList.builder<Label?>()
+        for (targetName in targetLabels) {
+            targets.add(Label.parseCanonicalUnchecked(targetName))
+        }
+        return targets.build()
     }
 
-    @Parameter(0)
-    public List<Label> targets;
+    @RunWith(Parameterized::class)
+    class NoneTest {
+        @Parameterized.Parameter(0)
+        var targets: MutableList<Label?>? = null
 
-    @Parameter(1)
-    public OutputFilter expectedOutputFilter;
+        @Parameterized.Parameter(1)
+        var expectedOutputFilter: OutputFilter? = null
 
-    @Test
-    public void testFilter() {
-      assertThat(ALL.getFilter(this.targets)).isEqualTo(this.expectedOutputFilter);
-    }
-  }
+        @Test
+        fun testFilter() {
+            Truth.assertThat(AutoOutputFilter.NONE.getFilter(this.targets)).isEqualTo(this.expectedOutputFilter)
+        }
 
-  @RunWith(Parameterized.class)
-  public static class PackagesTest {
-    @Parameters(name = "{0}-{1}")
-    public static ImmutableList<Object[]> filters() {
-      return ImmutableList.of(
-          new Object[] {"^//():", targets()},
-          new Object[] {"^//(a):", targets("//a:b")},
-          new Object[] {"^//(a):", targets("//a:b", "//a:c")},
-          new Object[] {"^//(a|b):", targets("//a:a", "//a:b", "//b:c")},
-          new Object[] {"^//(a|b):", targets("//a:a", "//b:c", "//a:b")},
-          new Object[] {"^//(a/b|a/b/c):", targets("//a/b:b", "//a/b/c:c")},
-          new Object[] {"^//(java(tests)?/a):", targets("//java/a")},
-          new Object[] {"^//(java(tests)?/a):", targets("//javatests/a")},
-          new Object[] {"^//(java(tests)?/a):", targets("//java/a", "//javatests/a")},
-          new Object[] {
-            "^//(java(tests)?/a|java(tests)?/b):", targets("//java/a", "//javatests/b")
-          },
-          new Object[] {"^//(a/b|a/b/c):", targets("//a/b:b", "//a/b/c:c")},
-          new Object[] {"^//(a|a/b|a/b/c|b):", targets("//a", "//a/b", "//a/b/c", "//b")},
-          new Object[] {"^//(a|a/b/c|b|b/c/d):", targets("//a", "//a/b/c", "//b", "//b/c/d")},
-          new Object[] {
-            "^//(java(tests)?/a|java(tests)?/a/b):", targets("//java/a", "//javatests/a/b")
-          },
-          new Object[] {
-            "^//(java(tests)?/a|java(tests)?/a/b/c):", targets("//javatests/a", "//java/a/b/c")
-          });
+        companion object {
+            @Parameterized.Parameters(name = "{0}")
+            fun filters(): ImmutableList<Array<Any?>?> {
+                return ImmutableList.of<Array<Any?>?>(
+                    arrayOf<Any?>(targets(), OutputFilter.OUTPUT_EVERYTHING),
+                    arrayOf<Any?>(targets("//a"), OutputFilter.OUTPUT_EVERYTHING),
+                    arrayOf<Any?>(targets("//a", "//b"), OutputFilter.OUTPUT_EVERYTHING)
+                )
+            }
+        }
     }
 
-    @Parameter(0)
-    public String expectedRegex;
+    @RunWith(Parameterized::class)
+    class AllTest {
+        @Parameterized.Parameter(0)
+        var targets: MutableList<Label?>? = null
 
-    @Parameter(1)
-    public ImmutableList<Label> targetLabels;
+        @Parameterized.Parameter(1)
+        var expectedOutputFilter: OutputFilter? = null
 
-    @Test
-    public void testFilter() {
-      assertFilter(this.expectedRegex, PACKAGES, this.targetLabels);
-    }
-  }
+        @Test
+        fun testFilter() {
+            Truth.assertThat(AutoOutputFilter.ALL.getFilter(this.targets)).isEqualTo(this.expectedOutputFilter)
+        }
 
-  @RunWith(Parameterized.class)
-  public static class SubpackagesTest {
-    @Parameters(name = "{0}-{1}")
-    public static ImmutableList<Object[]> filters() {
-      return ImmutableList.of(
-          new Object[] {"^//()[/:]", targets()},
-          new Object[] {"^//(a)[/:]", targets("//a:b")},
-          new Object[] {"^//(a)[/:]", targets("//a:b", "//a:c")},
-          new Object[] {"^//(a|b)[/:]", targets("//a:a", "//a:b", "//b:c")},
-          new Object[] {"^//(a|b)[/:]", targets("//a:a", "//b:c", "//a:b")},
-          new Object[] {"^//(java(tests)?/a)[/:]", targets("//java/a")},
-          new Object[] {"^//(java(tests)?/a)[/:]", targets("//javatests/a")},
-          new Object[] {"^//(java(tests)?/a)[/:]", targets("//java/a", "//javatests/a")},
-          new Object[] {
-            "^//(java(tests)?/a|java(tests)?/b)[/:]", targets("//java/a", "//javatests/b")
-          },
-          new Object[] {"^//(a/b)[/:]", targets("//a/b:b", "//a/b/c:c")},
-          new Object[] {"^//(a|b)[/:]", targets("//a", "//a/b", "//a/b/c", "//b")},
-          new Object[] {"^//(a|b)[/:]", targets("//a", "//a/b/c", "//b", "//b/c/d")},
-          new Object[] {"^//(java(tests)?/a)[/:]", targets("//java/a", "//javatests/a/b")},
-          new Object[] {"^//(java(tests)?/a)[/:]", targets("//javatests/a", "//java/a/b/c")});
+        companion object {
+            @Parameterized.Parameters(name = "{0}")
+            fun filters(): ImmutableList<Array<Any?>?> {
+                return ImmutableList.of<Array<Any?>?>(
+                    arrayOf<Any?>(targets(), OutputFilter.OUTPUT_NOTHING),
+                    arrayOf<Any?>(targets("//a"), OutputFilter.OUTPUT_NOTHING),
+                    arrayOf<Any?>(targets("//a", "//b"), OutputFilter.OUTPUT_NOTHING)
+                )
+            }
+        }
     }
 
-    @Parameter(0)
-    public String expectedRegex;
+    @RunWith(Parameterized::class)
+    class PackagesTest {
+        @Parameterized.Parameter(0)
+        var expectedRegex: String? = null
 
-    @Parameter(1)
-    public ImmutableList<Label> targetLabels;
+        @Parameterized.Parameter(1)
+        var targetLabels: ImmutableList<Label?>? = null
 
-    @Test
-    public void testFilter() {
-      assertFilter(this.expectedRegex, SUBPACKAGES, this.targetLabels);
+        @Test
+        fun testFilter() {
+            assertFilter(this.expectedRegex, AutoOutputFilter.PACKAGES, this.targetLabels)
+        }
+
+        companion object {
+            @Parameterized.Parameters(name = "{0}-{1}")
+            fun filters(): ImmutableList<Array<Any?>?> {
+                return ImmutableList.of<Array<Any?>?>(
+                    arrayOf<Any>("^//():", targets()),
+                    arrayOf<Any>("^//(a):", targets("//a:b")),
+                    arrayOf<Any>("^//(a):", targets("//a:b", "//a:c")),
+                    arrayOf<Any>("^//(a|b):", targets("//a:a", "//a:b", "//b:c")),
+                    arrayOf<Any>("^//(a|b):", targets("//a:a", "//b:c", "//a:b")),
+                    arrayOf<Any>("^//(a/b|a/b/c):", targets("//a/b:b", "//a/b/c:c")),
+                    arrayOf<Any>("^//(java(tests)?/a):", targets("//java/a")),
+                    arrayOf<Any>("^//(java(tests)?/a):", targets("//javatests/a")),
+                    arrayOf<Any>("^//(java(tests)?/a):", targets("//java/a", "//javatests/a")),
+                    arrayOf<Any>(
+                        "^//(java(tests)?/a|java(tests)?/b):", targets("//java/a", "//javatests/b")
+                    ),
+                    arrayOf<Any>("^//(a/b|a/b/c):", targets("//a/b:b", "//a/b/c:c")),
+                    arrayOf<Any>("^//(a|a/b|a/b/c|b):", targets("//a", "//a/b", "//a/b/c", "//b")),
+                    arrayOf<Any>("^//(a|a/b/c|b|b/c/d):", targets("//a", "//a/b/c", "//b", "//b/c/d")),
+                    arrayOf<Any>(
+                        "^//(java(tests)?/a|java(tests)?/a/b):", targets("//java/a", "//javatests/a/b")
+                    ),
+                    arrayOf<Any>(
+                        "^//(java(tests)?/a|java(tests)?/a/b/c):", targets("//javatests/a", "//java/a/b/c")
+                    )
+                )
+            }
+        }
     }
-  }
 
-  private static void assertFilter(
-      String extractedRegex, AutoOutputFilter autoFilter, List<Label> targetLabels) {
-    OutputFilter filter = autoFilter.getFilter(targetLabels);
-    String extraRegex =
-        (autoFilter == AutoOutputFilter.NONE)
-            ? ""
-            : "(unknown)|" + PlatformConstants.INTERNAL_PLATFORM.getCanonicalForm() + "|";
-    assertWithMessage("output filter %s returned wrong filter:", autoFilter)
-        .that(filter.toString())
-        .isEqualTo(extraRegex + extractedRegex);
-  }
+    @RunWith(Parameterized::class)
+    class SubpackagesTest {
+        @Parameterized.Parameter(0)
+        var expectedRegex: String? = null
 
-  private static ImmutableList<Label> targets(String... targetLabels) {
-    // Sort targets by package
-    ListMultimap<String, String> targetsPerPackage = ArrayListMultimap.create();
-    for (String targetName : targetLabels) {
-      Label label = Label.parseCanonicalUnchecked(targetName);
-      targetsPerPackage.put(label.getPackageName(), label.name);
+        @Parameterized.Parameter(1)
+        var targetLabels: ImmutableList<Label?>? = null
+
+        @Test
+        fun testFilter() {
+            assertFilter(this.expectedRegex, AutoOutputFilter.SUBPACKAGES, this.targetLabels)
+        }
+
+        companion object {
+            @Parameterized.Parameters(name = "{0}-{1}")
+            fun filters(): ImmutableList<Array<Any?>?> {
+                return ImmutableList.of<Array<Any?>?>(
+                    arrayOf<Any>("^//()[/:]", targets()),
+                    arrayOf<Any>("^//(a)[/:]", targets("//a:b")),
+                    arrayOf<Any>("^//(a)[/:]", targets("//a:b", "//a:c")),
+                    arrayOf<Any>("^//(a|b)[/:]", targets("//a:a", "//a:b", "//b:c")),
+                    arrayOf<Any>("^//(a|b)[/:]", targets("//a:a", "//b:c", "//a:b")),
+                    arrayOf<Any>("^//(java(tests)?/a)[/:]", targets("//java/a")),
+                    arrayOf<Any>("^//(java(tests)?/a)[/:]", targets("//javatests/a")),
+                    arrayOf<Any>("^//(java(tests)?/a)[/:]", targets("//java/a", "//javatests/a")),
+                    arrayOf<Any>(
+                        "^//(java(tests)?/a|java(tests)?/b)[/:]", targets("//java/a", "//javatests/b")
+                    ),
+                    arrayOf<Any>("^//(a/b)[/:]", targets("//a/b:b", "//a/b/c:c")),
+                    arrayOf<Any>("^//(a|b)[/:]", targets("//a", "//a/b", "//a/b/c", "//b")),
+                    arrayOf<Any>("^//(a|b)[/:]", targets("//a", "//a/b/c", "//b", "//b/c/d")),
+                    arrayOf<Any>("^//(java(tests)?/a)[/:]", targets("//java/a", "//javatests/a/b")),
+                    arrayOf<Any>("^//(java(tests)?/a)[/:]", targets("//javatests/a", "//java/a/b/c"))
+                )
+            }
+        }
     }
-
-    // Collect targets
-    ImmutableList.Builder<Label> targets = ImmutableList.builder();
-    for (String targetName : targetLabels) {
-      targets.add(Label.parseCanonicalUnchecked(targetName));
-    }
-    return targets.build();
-  }
 }

@@ -11,196 +11,199 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util.io;
+package com.google.devtools.build.lib.util.io
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.runtime.commands.proto.BazelFlagsProto.FlagInfo
+import org.junit.After
+import org.junit.Assert
+import org.junit.Test
+import org.junit.function.ThrowingRunnable
+import java.io.ByteArrayOutputStream
+import java.io.OutputStream
+import java.util.concurrent.ThreadLocalRandom
+import kotlin.collections.ArrayList
 
-import com.google.devtools.build.lib.runtime.commands.proto.BazelFlagsProto.FlagInfo;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import com.google.protobuf.Message;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.util.ArrayList;
-import java.util.Random;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ThreadLocalRandom;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-import org.mockito.Mockito;
-import org.mockito.MockitoAnnotations;
+/** Tests [AsynchronousMessageOutputStream].  */
+@RunWith(JUnit4::class)
+class AsynchronousMessageOutputStreamTest {
+    private val random: Random = ThreadLocalRandom.current()
 
-/** Tests {@link AsynchronousMessageOutputStream}. */
-@RunWith(JUnit4.class)
-public class AsynchronousMessageOutputStreamTest {
-  private final Random random = ThreadLocalRandom.current();
-  private static final char[] RAND_CHARS = "abcdefghijklmnopqrstuvwxzy0123456789-".toCharArray();
-  private static final int RAND_STRING_LENGTH = 10;
-
-  @Before
-  public void initMocks() {
-    MockitoAnnotations.initMocks(this);
-  }
-
-  @After
-  public void validateMocks() {
-    Mockito.validateMockitoUsage();
-  }
-
-  private Message generateRandomMessage() {
-    FlagInfo.Builder b = FlagInfo.newBuilder();
-    b.setName(generateRandomString() + "a");  // Name is required, cannot be empty.
-    b.setHasNegativeFlag(random.nextBoolean());
-    b.setDocumentation(generateRandomString());
-    int commandsSize = random.nextInt(5);
-    for (int i = 0; i < commandsSize; ++i) {
-      b.addCommands(generateRandomString());
+    @Before
+    fun initMocks() {
+        MockitoAnnotations.initMocks(this)
     }
-    return b.build();
-  }
 
-  private String generateRandomString() {
-    int len = random.nextInt(RAND_STRING_LENGTH + 1);
-    char[] data = new char[len];
-    for (int i = 0; i < len; ++i) {
-      data[i] = RAND_CHARS[random.nextInt(RAND_CHARS.length)];
+    @After
+    fun validateMocks() {
+        Mockito.validateMockitoUsage()
     }
-    return new String(data);
-  }
 
-  @Test
-  public void testConcurrentProtoWrites() throws Exception {
-    final String filename = "/logFile";
-    FileSystem fileSystem = new InMemoryFileSystem(DigestHashFunction.SHA256);
-    Path logPath = fileSystem.getPath(filename);
-    AsynchronousMessageOutputStream<Message> out = new AsynchronousMessageOutputStream<>(logPath);
-    ArrayList<Message> messages = new ArrayList<>();
-    for (int i = 0; i < 100; ++i) {
-      messages.add(generateRandomMessage());
-    }
-    Thread[] writers = new Thread[messages.size() / 10];
-    final CountDownLatch start = new CountDownLatch(writers.length);
-    for (int i = 0; i < writers.length; ++i) {
-      int startIndex = i * 10;
-      Thread thread = new Thread() {
-        @Override
-        public void run() {
-          try {
-            start.countDown();
-            start.await();
-          } catch (InterruptedException e) {
-            return;
-          }
-          for (int j = startIndex; j < startIndex + 10; ++j) {
-            out.write(messages.get(j));
-          }
+    private fun generateRandomMessage(): Message {
+        val b: FlagInfo.Builder = FlagInfo.newBuilder()
+        b.setName(generateRandomString() + "a") // Name is required, cannot be empty.
+        b.setHasNegativeFlag(random.nextBoolean())
+        b.setDocumentation(generateRandomString())
+        val commandsSize = random.nextInt(5)
+        for (i in 0..<commandsSize) {
+            b.addCommands(generateRandomString())
         }
-      };
-      writers[i] = thread;
-      thread.start();
+        return b.build()
     }
-    for (int i = 0; i < writers.length; ++i) {
-      writers[i].join();
+
+    private fun generateRandomString(): String {
+        val len = random.nextInt(RAND_STRING_LENGTH + 1)
+        val data = CharArray(len)
+        for (i in 0..<len) {
+            data[i] = RAND_CHARS[random.nextInt(RAND_CHARS.size)]
+        }
+        return String(data)
     }
-    out.close();
-    ArrayList<Message> readMessages = new ArrayList<>();
-    try (InputStream in = fileSystem.getPath(filename).getInputStream()) {
-      for (int i = 0; i < messages.size(); ++i) {
-        readMessages.add(FlagInfo.parseDelimitedFrom(in));
-      }
+
+    @Test
+    @Throws(Exception::class)
+    fun testConcurrentProtoWrites() {
+        val filename = "/logFile"
+        val fileSystem: FileSystem = InMemoryFileSystem(DigestHashFunction.SHA256)
+        val logPath: Path? = fileSystem.getPath(filename)
+        val out: AsynchronousMessageOutputStream<Message?> = AsynchronousMessageOutputStream(logPath)
+        val messages: ArrayList<Message?> = ArrayList<Message?>()
+        for (i in 0..99) {
+            messages.add(generateRandomMessage())
+        }
+        val writers = arrayOfNulls<Thread>(messages.size / 10)
+        val start: CountDownLatch = CountDownLatch(writers.size)
+        for (i in writers.indices) {
+            val startIndex: Int = i * 10
+            val thread: Thread = object : Thread() {
+                override fun run() {
+                    try {
+                        start.countDown()
+                        start.await()
+                    } catch (e: InterruptedException) {
+                        return
+                    }
+                    for (j in startIndex..<startIndex + 10) {
+                        out.write(messages.get(j))
+                    }
+                }
+            }
+            writers[i] = thread
+            thread.start()
+        }
+        for (i in writers.indices) {
+            writers[i]!!.join()
+        }
+        out.close()
+        val readMessages: ArrayList<Message?> = ArrayList<Message?>()
+        fileSystem.getPath(filename).getInputStream().use { `in` ->
+            for (i in messages.indices) {
+                readMessages.add(FlagInfo.parseDelimitedFrom(`in`))
+            }
+        }
+        Truth.assertThat(readMessages).containsExactlyElementsIn(messages)
     }
-    assertThat(readMessages).containsExactlyElementsIn(messages);
-  }
 
-  @Test
-  public void testFailedClosePropagatesIOException() throws Exception {
-    OutputStream failingOutputStream = new OutputStream() {
-      @Override
-      public void write(int b) throws IOException {
-      }
-      @Override
-      public void close() throws IOException {
-        throw new IOException("foo");
-      }
-    };
-    AsynchronousMessageOutputStream<Message> out =
-        new AsynchronousMessageOutputStream<>("", failingOutputStream);
-    out.write(generateRandomMessage());
-    IOException expected = assertThrows(IOException.class, () -> out.close());
-    assertThat(expected).hasMessageThat().isEqualTo("foo");
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testFailedClosePropagatesIOException() {
+        val failingOutputStream: OutputStream = object : OutputStream() {
+            @Throws(IOException::class)
+            override fun write(b: Int) {
+            }
 
-  @Test
-  public void testFailedClosePropagatesUncheckedException() throws Exception {
-    OutputStream failingOutputStream = new OutputStream() {
-      @Override
-      public void write(int b) throws IOException {
-      }
-      @Override
-      public void close() throws IOException {
-        throw new RuntimeException("foo");
-      }
-    };
-    AsynchronousMessageOutputStream<Message> out =
-        new AsynchronousMessageOutputStream<>("", failingOutputStream);
-    out.write(generateRandomMessage());
-    RuntimeException expected = assertThrows(RuntimeException.class, () -> out.close());
-    assertThat(expected).hasMessageThat().isEqualTo("foo");
-  }
+            @Throws(IOException::class)
+            override fun close() {
+                throw IOException("foo")
+            }
+        }
+        val out: AsynchronousMessageOutputStream<Message?> =
+            AsynchronousMessageOutputStream("", failingOutputStream)
+        out.write(generateRandomMessage())
+        val expected: IOException? =
+            Assert.assertThrows<IOException?>(IOException::class.java, ThrowingRunnable { out.close() })
+        Truth.assertThat(expected).hasMessageThat().isEqualTo("foo")
+    }
 
-  @Test
-  public void testFailedWritePropagatesIOException() throws Exception {
-    OutputStream failingOutputStream = new OutputStream() {
-      @Override
-      public void write(int b) throws IOException {
-        throw new IOException("foo");
-      }
-      @Override
-      public void close() throws IOException {
-      }
-    };
-    AsynchronousMessageOutputStream<Message> out =
-        new AsynchronousMessageOutputStream<>("", failingOutputStream);
-    out.write(generateRandomMessage());
-    out.write(generateRandomMessage());
-    IOException expected = assertThrows(IOException.class, () -> out.close());
-    assertThat(expected).hasMessageThat().isEqualTo("foo");
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testFailedClosePropagatesUncheckedException() {
+        val failingOutputStream: OutputStream = object : OutputStream() {
+            @Throws(IOException::class)
+            override fun write(b: Int) {
+            }
 
-  @Test
-  public void testFailedWritePropagatesUncheckedException() throws Exception {
-    OutputStream failingOutputStream = new OutputStream() {
-      @Override
-      public void write(int b) throws IOException {
-        throw new RuntimeException("foo");
-      }
-      @Override
-      public void close() throws IOException {
-      }
-    };
-    AsynchronousMessageOutputStream<Message> out =
-        new AsynchronousMessageOutputStream<>("", failingOutputStream);
-    out.write(generateRandomMessage());
-    out.write(generateRandomMessage());
-    RuntimeException expected = assertThrows(RuntimeException.class, () -> out.close());
-    assertThat(expected).hasMessageThat().isEqualTo("foo");
-  }
+            @Throws(IOException::class)
+            override fun close() {
+                throw RuntimeException("foo")
+            }
+        }
+        val out: AsynchronousMessageOutputStream<Message?> =
+            AsynchronousMessageOutputStream("", failingOutputStream)
+        out.write(generateRandomMessage())
+        val expected =
+            Assert.assertThrows<RuntimeException?>(RuntimeException::class.java, ThrowingRunnable { out.close() })
+        Truth.assertThat(expected).hasMessageThat().isEqualTo("foo")
+    }
 
-  @Test
-  public void testWriteAfterCloseThrowsException() throws Exception {
-    AsynchronousMessageOutputStream<Message> out =
-        new AsynchronousMessageOutputStream<>("", new ByteArrayOutputStream());
-    out.write(generateRandomMessage());
-    out.close();
+    @Test
+    @Throws(Exception::class)
+    fun testFailedWritePropagatesIOException() {
+        val failingOutputStream: OutputStream = object : OutputStream() {
+            @Throws(IOException::class)
+            override fun write(b: Int) {
+                throw IOException("foo")
+            }
 
-    assertThrows(IllegalStateException.class, () -> out.write(generateRandomMessage()));
-  }
+            @Throws(IOException::class)
+            override fun close() {
+            }
+        }
+        val out: AsynchronousMessageOutputStream<Message?> =
+            AsynchronousMessageOutputStream("", failingOutputStream)
+        out.write(generateRandomMessage())
+        out.write(generateRandomMessage())
+        val expected: IOException? =
+            Assert.assertThrows<IOException?>(IOException::class.java, ThrowingRunnable { out.close() })
+        Truth.assertThat(expected).hasMessageThat().isEqualTo("foo")
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testFailedWritePropagatesUncheckedException() {
+        val failingOutputStream: OutputStream = object : OutputStream() {
+            @Throws(IOException::class)
+            override fun write(b: Int) {
+                throw RuntimeException("foo")
+            }
+
+            @Throws(IOException::class)
+            override fun close() {
+            }
+        }
+        val out: AsynchronousMessageOutputStream<Message?> =
+            AsynchronousMessageOutputStream("", failingOutputStream)
+        out.write(generateRandomMessage())
+        out.write(generateRandomMessage())
+        val expected =
+            Assert.assertThrows<RuntimeException?>(RuntimeException::class.java, ThrowingRunnable { out.close() })
+        Truth.assertThat(expected).hasMessageThat().isEqualTo("foo")
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testWriteAfterCloseThrowsException() {
+        val out: AsynchronousMessageOutputStream<Message?> =
+            AsynchronousMessageOutputStream("", ByteArrayOutputStream())
+        out.write(generateRandomMessage())
+        out.close()
+
+        Assert.assertThrows<IllegalStateException?>(
+            IllegalStateException::class.java,
+            ThrowingRunnable { out.write(generateRandomMessage()) })
+    }
+
+    companion object {
+        private val RAND_CHARS: CharArray = "abcdefghijklmnopqrstuvwxzy0123456789-".toCharArray()
+        private const val RAND_STRING_LENGTH = 10
+    }
 }

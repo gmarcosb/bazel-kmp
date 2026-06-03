@@ -11,361 +11,285 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.rules.cpp;
+package com.google.devtools.build.lib.rules.cpp
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.truth.TruthJUnit.assume;
-import static com.google.devtools.build.lib.actions.util.ActionsTestUtil.baseArtifactNames;
-import static com.google.devtools.build.lib.rules.cpp.CcToolchainFeaturesLib.actionConfigFromStarlark;
-import static com.google.devtools.build.lib.rules.cpp.CcToolchainFeaturesLib.artifactNamePatternFromStarlark;
-import static com.google.devtools.build.lib.rules.cpp.CcToolchainFeaturesLib.envEntryFromStarlark;
-import static com.google.devtools.build.lib.rules.cpp.CcToolchainFeaturesLib.envSetFromStarlark;
-import static com.google.devtools.build.lib.rules.cpp.CcToolchainFeaturesLib.featureFromStarlark;
-import static com.google.devtools.build.lib.rules.cpp.CcToolchainFeaturesLib.flagGroupFromStarlark;
-import static com.google.devtools.build.lib.rules.cpp.CcToolchainFeaturesLib.flagSetFromStarlark;
-import static com.google.devtools.build.lib.rules.cpp.CcToolchainFeaturesLib.makeVariableFromStarlark;
-import static com.google.devtools.build.lib.rules.cpp.CcToolchainFeaturesLib.toolFromStarlark;
-import static com.google.devtools.build.lib.rules.cpp.CcToolchainFeaturesLib.toolPathFromStarlark;
-import static com.google.devtools.build.lib.rules.cpp.CcToolchainFeaturesLib.variableWithValueFromStarlark;
-import static com.google.devtools.build.lib.rules.cpp.CcToolchainFeaturesLib.withFeatureSetFromStarlark;
-import static com.google.devtools.build.lib.rules.cpp.SolibSymlinkAction.MAX_FILENAME_LENGTH;
-import static com.google.devtools.build.lib.skyframe.BzlLoadValue.keyForBuild;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.rules.cpp.CcToolchainFeaturesLib.actionConfigFromStarlark
 
-import com.google.common.base.Joiner;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.CommandLineExpansionException;
-import com.google.devtools.build.lib.actions.PathMapper;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.RuleContext;
-import com.google.devtools.build.lib.analysis.actions.SpawnAction;
-import com.google.devtools.build.lib.analysis.util.AnalysisMock;
-import com.google.devtools.build.lib.analysis.util.AnalysisTestUtil;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.LabelSyntaxException;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.collect.nestedset.Depset;
-import com.google.devtools.build.lib.packages.Provider;
-import com.google.devtools.build.lib.packages.StarlarkInfo;
-import com.google.devtools.build.lib.packages.StarlarkProvider;
-import com.google.devtools.build.lib.packages.StarlarkProviderIdentifier;
-import com.google.devtools.build.lib.packages.StructImpl;
-import com.google.devtools.build.lib.packages.util.Crosstool.CcToolchainConfig;
-import com.google.devtools.build.lib.packages.util.MockCcSupport;
-import com.google.devtools.build.lib.packages.util.ResourceLoader;
-import com.google.devtools.build.lib.rules.cpp.CcCommon.Language;
-import com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.ActionConfig;
-import com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.EnvEntry;
-import com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.EnvSet;
-import com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.Feature;
-import com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.FeatureConfiguration;
-import com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.Flag.SingleChunkFlag;
-import com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.FlagGroup;
-import com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.FlagSet;
-import com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.Tool;
-import com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.VariableWithValue;
-import com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.WithFeatureSet;
-import com.google.devtools.build.lib.rules.cpp.CcToolchainVariables.StringValueParser;
-import com.google.devtools.build.lib.testutil.Scratch;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import com.google.devtools.build.lib.util.OS;
-import com.google.devtools.build.lib.util.Pair;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicBoolean;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.Mutability;
-import net.starlark.java.eval.Sequence;
-import net.starlark.java.eval.Starlark;
-import net.starlark.java.eval.StarlarkFunction;
-import net.starlark.java.eval.StarlarkSemantics;
-import net.starlark.java.eval.StarlarkThread;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Unit tests for the `cc_common` Starlark module.  */
+@RunWith(JUnit4::class)
+class StarlarkCcCommonTest : BuildViewTestCase() {
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun setUp() {
+        scratch.file("myinfo/myinfo.bzl", "MyInfo = provider()")
 
-/** Unit tests for the {@code cc_common} Starlark module. */
-@RunWith(JUnit4.class)
-public class StarlarkCcCommonTest extends BuildViewTestCase {
+        scratch.file("myinfo/BUILD")
+    }
 
-  private static final String REDACTED_ARTIFACT_PATH =
-      "tools/build_defs/build_info/redacted_file.h";
-  private static final String NON_REDACTED_ARTIFACT_PATH =
-      "tools/build_defs/build_info/volatile_file.h";
+    private fun getLinkCommandLine(cppLinkAction: SpawnAction): LinkCommandLine? {
+        val commandLines: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            cppLinkAction.getCommandLines().unpack()
+        assertThat(commandLines).hasSize(2)
+        assertThat(commandLines.get(1).commandLine).isInstanceOf(LinkCommandLine::class.java)
+        return commandLines.get(1).commandLine as LinkCommandLine?
+    }
 
-  @Before
-  public void setUp() throws Exception {
-    scratch.file("myinfo/myinfo.bzl", "MyInfo = provider()");
-
-    scratch.file("myinfo/BUILD");
-  }
-
-  private static StructImpl getMyInfoFromTarget(ConfiguredTarget configuredTarget)
-      throws LabelSyntaxException {
-    Provider.Key key =
-        new StarlarkProvider.Key(
-            keyForBuild(Label.parseCanonical("//myinfo:myinfo.bzl")), "MyInfo");
-    return (StructImpl) configuredTarget.get(key);
-  }
-
-  private static Iterable<Artifact> getArtifactsFromMyInfo(ConfiguredTarget target, String field)
-      throws Exception {
-    StructImpl myInfo = getMyInfoFromTarget(target);
-    @SuppressWarnings("unchecked")
-    Iterable<Artifact> artifacts = (Iterable<Artifact>) myInfo.getValue(field);
-    return artifacts;
-  }
-
-  private LinkCommandLine getLinkCommandLine(SpawnAction cppLinkAction) {
-    var commandLines = cppLinkAction.getCommandLines().unpack();
-    assertThat(commandLines).hasSize(2);
-    assertThat(commandLines.get(1).commandLine).isInstanceOf(LinkCommandLine.class);
-    return (LinkCommandLine) commandLines.get(1).commandLine;
-  }
-
-  @Test
-  public void testAllFiles() throws Exception {
-    scratch.file(
-        "a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAllFiles() {
+        scratch.file(
+            "a/BUILD",
+            """
         load("@rules_cc//cc/toolchains:cc_toolchain_alias.bzl", "cc_toolchain_alias")
         load(":rule.bzl", "crule")
 
         cc_toolchain_alias(name = "alias")
 
         crule(name = "r")
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "a/rule.bzl",
-        "load('//myinfo:myinfo.bzl', 'MyInfo')",
-        "load('"
-            + TestConstants.RULES_CC
-            + ":find_cc_toolchain.bzl', 'find_cc_toolchain', 'use_cc_toolchain')",
-        "def _impl(ctx):",
-        "  toolchain = find_cc_toolchain(ctx)",
-        "  return [MyInfo(all_files = toolchain.all_files)]",
-        "crule = rule(",
-        "  _impl,",
-        "  attrs = { ",
-        "    '_cc_toolchain': attr.label(default=Label('//a:alias'))",
-        "  },",
-        "  toolchains = use_cc_toolchain()",
-        ");");
+        scratch.file(
+            "a/rule.bzl",
+            "load('//myinfo:myinfo.bzl', 'MyInfo')",
+            ("load('"
+                    + TestConstants.RULES_CC
+                    + ":find_cc_toolchain.bzl', 'find_cc_toolchain', 'use_cc_toolchain')"),
+            "def _impl(ctx):",
+            "  toolchain = find_cc_toolchain(ctx)",
+            "  return [MyInfo(all_files = toolchain.all_files)]",
+            "crule = rule(",
+            "  _impl,",
+            "  attrs = { ",
+            "    '_cc_toolchain': attr.label(default=Label('//a:alias'))",
+            "  },",
+            "  toolchains = use_cc_toolchain()",
+            ");"
+        )
 
-    ConfiguredTarget r = getConfiguredTarget("//a:r");
-    Depset allFiles = (Depset) getMyInfoFromTarget(r).getValue("all_files");
-    RuleContext ruleContext = getRuleContext(r);
-    CcToolchainProvider toolchain = CppHelper.getToolchain(ruleContext);
-    assertThat(allFiles.getSet(Artifact.class)).isEqualTo(toolchain.getAllFiles());
-  }
+        val r: ConfiguredTarget = getConfiguredTarget("//a:r")
+        val allFiles: Depset = getMyInfoFromTarget(r).getValue("all_files") as Depset
+        val ruleContext: RuleContext = getRuleContext(r)
+        val toolchain: CcToolchainProvider = CppHelper.getToolchain(ruleContext)
+        assertThat(allFiles.getSet(Artifact::class.java)).isEqualTo(toolchain.getAllFiles())
+    }
 
-  @Test
-  public void testRuntimeLib() throws Exception {
-    scratch.file(
-        "a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRuntimeLib() {
+        scratch.file(
+            "a/BUILD",
+            """
         load("@rules_cc//cc/toolchains:cc_toolchain_alias.bzl", "cc_toolchain_alias")
         load(":rule.bzl", "crule")
 
         cc_toolchain_alias(name = "alias")
 
         crule(name = "r")
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "a/rule.bzl",
-        "load('"
-            + TestConstants.RULES_CC
-            + ":find_cc_toolchain.bzl', 'find_cc_toolchain', 'use_cc_toolchain')",
-        "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
-        "CruleInfo = provider(fields=['static', 'dynamic'])",
-        "def _impl(ctx):",
-        "  toolchain = find_cc_toolchain(ctx)",
-        "  feature_configuration = cc_common.configure_features(",
-        "    ctx = ctx,",
-        "    cc_toolchain = toolchain,",
-        "  )",
-        "  return [CruleInfo(",
-        "    static = toolchain.static_runtime_lib(feature_configuration = feature_configuration),",
-        "    dynamic = toolchain.dynamic_runtime_lib(",
-        "      feature_configuration = feature_configuration),",
-        "  )]",
-        "crule = rule(",
-        "  _impl,",
-        "  attrs = { ",
-        "    '_cc_toolchain': attr.label(default=Label('//a:alias'))",
-        "  },",
-        "  fragments = ['cpp'],",
-        "  toolchains = use_cc_toolchain()",
-        ");");
+        scratch.file(
+            "a/rule.bzl",
+            ("load('"
+                    + TestConstants.RULES_CC
+                    + ":find_cc_toolchain.bzl', 'find_cc_toolchain', 'use_cc_toolchain')"),
+            "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
+            "CruleInfo = provider(fields=['static', 'dynamic'])",
+            "def _impl(ctx):",
+            "  toolchain = find_cc_toolchain(ctx)",
+            "  feature_configuration = cc_common.configure_features(",
+            "    ctx = ctx,",
+            "    cc_toolchain = toolchain,",
+            "  )",
+            "  return [CruleInfo(",
+            "    static = toolchain.static_runtime_lib(feature_configuration = feature_configuration),",
+            "    dynamic = toolchain.dynamic_runtime_lib(",
+            "      feature_configuration = feature_configuration),",
+            "  )]",
+            "crule = rule(",
+            "  _impl,",
+            "  attrs = { ",
+            "    '_cc_toolchain': attr.label(default=Label('//a:alias'))",
+            "  },",
+            "  fragments = ['cpp'],",
+            "  toolchains = use_cc_toolchain()",
+            ");"
+        )
 
-    // 1. Build without static_link_cpp_runtimes
-    ConfiguredTarget r = getConfiguredTarget("//a:r");
-    Provider.Key key =
-        new StarlarkProvider.Key(
-            keyForBuild(Label.create(r.getLabel().getPackageIdentifier(), "rule.bzl")),
-            "CruleInfo");
-    StarlarkInfo cruleInfo = (StarlarkInfo) r.get(key);
-    Depset staticRuntimeLib = (Depset) cruleInfo.getValue("static");
-    Depset dynamicRuntimeLib = (Depset) cruleInfo.getValue("dynamic");
+        // 1. Build without static_link_cpp_runtimes
+        var r: ConfiguredTarget = getConfiguredTarget("//a:r")
+        val key: Provider.Key =
+            Key(
+                keyForBuild(Label.create(r.getLabel().getPackageIdentifier(), "rule.bzl")),
+                "CruleInfo"
+            )
+        var cruleInfo: StarlarkInfo = r.get(key) as StarlarkInfo
+        var staticRuntimeLib: Depset = cruleInfo.getValue("static") as Depset
+        var dynamicRuntimeLib: Depset = cruleInfo.getValue("dynamic") as Depset
 
-    assertThat(staticRuntimeLib.getSet(Artifact.class).toList()).isEmpty();
-    assertThat(dynamicRuntimeLib.getSet(Artifact.class).toList()).isEmpty();
+        assertThat(staticRuntimeLib.getSet(Artifact::class.java).toList()).isEmpty()
+        assertThat(dynamicRuntimeLib.getSet(Artifact::class.java).toList()).isEmpty()
 
-    // 2. Build with static_link_cpp_runtimes
-    getAnalysisMock()
-        .ccSupport()
-        .setupCcToolchainConfig(
-            mockToolsConfig,
-            CcToolchainConfig.builder().withFeatures(CppRuleClasses.STATIC_LINK_CPP_RUNTIMES));
-    invalidatePackages();
-    r = getConfiguredTarget("//a:r");
-    cruleInfo = (StarlarkInfo) r.get(key);
-    staticRuntimeLib = (Depset) cruleInfo.getValue("static");
-    dynamicRuntimeLib = (Depset) cruleInfo.getValue("dynamic");
+        // 2. Build with static_link_cpp_runtimes
+        getAnalysisMock()
+            .ccSupport()
+            .setupCcToolchainConfig(
+                mockToolsConfig,
+                CcToolchainConfig.builder().withFeatures(CppRuleClasses.STATIC_LINK_CPP_RUNTIMES)
+            )
+        invalidatePackages()
+        r = getConfiguredTarget("//a:r")
+        cruleInfo = r.get(key) as StarlarkInfo
+        staticRuntimeLib = cruleInfo.getValue("static") as Depset
+        dynamicRuntimeLib = cruleInfo.getValue("dynamic") as Depset
 
-    RuleContext ruleContext = getRuleContext(r);
-    CcToolchainProvider toolchain = CppHelper.getToolchain(ruleContext);
-    assertThat(staticRuntimeLib.getSet(Artifact.class))
-        .isEqualTo(toolchain.getStaticRuntimeLinkInputs());
-    assertThat(dynamicRuntimeLib.getSet(Artifact.class))
-        .isEqualTo(toolchain.getDynamicRuntimeLinkInputs());
-  }
+        val ruleContext: RuleContext = getRuleContext(r)
+        val toolchain: CcToolchainProvider = CppHelper.getToolchain(ruleContext)
+        assertThat(staticRuntimeLib.getSet(Artifact::class.java))
+            .isEqualTo(toolchain.getStaticRuntimeLinkInputs())
+        assertThat(dynamicRuntimeLib.getSet(Artifact::class.java))
+            .isEqualTo(toolchain.getDynamicRuntimeLinkInputs())
+    }
 
-  @Test
-  public void testGetValuesFromCcToolchain() throws Exception {
-    scratch.file(
-        "a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGetValuesFromCcToolchain() {
+        scratch.file(
+            "a/BUILD",
+            """
         load("@rules_cc//cc/toolchains:cc_toolchain_alias.bzl", "cc_toolchain_alias")
         load(":rule.bzl", "crule")
 
         cc_toolchain_alias(name = "alias")
 
         crule(name = "r")
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "a/rule.bzl",
-        "load('//myinfo:myinfo.bzl', 'MyInfo')",
-        "load('"
-            + TestConstants.RULES_CC
-            + ":find_cc_toolchain.bzl', 'find_cc_toolchain', 'use_cc_toolchain')",
-        "def _impl(ctx):",
-        "  toolchain = find_cc_toolchain(ctx)",
-        "  return [MyInfo(",
-        "    dynamic_runtime_solib_dir = toolchain.dynamic_runtime_solib_dir,",
-        "    toolchain_id = toolchain.toolchain_id,",
-        "  )]",
-        "crule = rule(",
-        "  _impl,",
-        "  attrs = { ",
-        "    '_cc_toolchain': attr.label(default=Label('//a:alias'))",
-        "  },",
-        "  fragments = ['cpp'],",
-        "  toolchains = use_cc_toolchain()",
-        ");");
+        scratch.file(
+            "a/rule.bzl",
+            "load('//myinfo:myinfo.bzl', 'MyInfo')",
+            ("load('"
+                    + TestConstants.RULES_CC
+                    + ":find_cc_toolchain.bzl', 'find_cc_toolchain', 'use_cc_toolchain')"),
+            "def _impl(ctx):",
+            "  toolchain = find_cc_toolchain(ctx)",
+            "  return [MyInfo(",
+            "    dynamic_runtime_solib_dir = toolchain.dynamic_runtime_solib_dir,",
+            "    toolchain_id = toolchain.toolchain_id,",
+            "  )]",
+            "crule = rule(",
+            "  _impl,",
+            "  attrs = { ",
+            "    '_cc_toolchain': attr.label(default=Label('//a:alias'))",
+            "  },",
+            "  fragments = ['cpp'],",
+            "  toolchains = use_cc_toolchain()",
+            ");"
+        )
 
-    ConfiguredTarget r = getConfiguredTarget("//a:r");
-    StructImpl info = getMyInfoFromTarget(r);
-    String dynamicRuntimeSolibDir = (String) info.getValue("dynamic_runtime_solib_dir");
-    String toolchainId = (String) info.getValue("toolchain_id");
+        val r: ConfiguredTarget = getConfiguredTarget("//a:r")
+        val info: StructImpl = getMyInfoFromTarget(r)
+        val dynamicRuntimeSolibDir = info.getValue("dynamic_runtime_solib_dir") as String?
+        val toolchainId = info.getValue("toolchain_id") as String?
 
-    RuleContext ruleContext = getRuleContext(r);
-    CcToolchainProvider toolchain = CppHelper.getToolchain(ruleContext);
+        val ruleContext: RuleContext = getRuleContext(r)
+        val toolchain: CcToolchainProvider = CppHelper.getToolchain(ruleContext)
 
-    assertThat(dynamicRuntimeSolibDir)
-        .isEqualTo(toolchain.getDynamicRuntimeSolibDir().getPathString());
-    assertThat(toolchainId).isEqualTo(toolchain.getToolchainIdentifier());
-  }
+        Truth.assertThat(dynamicRuntimeSolibDir)
+            .isEqualTo(toolchain.getDynamicRuntimeSolibDir().getPathString())
+        Truth.assertThat(toolchainId).isEqualTo(toolchain.getToolchainIdentifier())
+    }
 
-  @Test
-  public void testGetToolForAction() throws Exception {
-    scratch.file(
-        "a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGetToolForAction() {
+        scratch.file(
+            "a/BUILD",
+            """
         load("@rules_cc//cc/toolchains:cc_toolchain_alias.bzl", "cc_toolchain_alias")
         load(":rule.bzl", "crule")
 
         cc_toolchain_alias(name = "alias")
 
         crule(name = "r")
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "a/rule.bzl",
-        "load('//myinfo:myinfo.bzl', 'MyInfo')",
-        "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
-        "load('"
-            + TestConstants.RULES_CC
-            + ":find_cc_toolchain.bzl', 'find_cc_toolchain', 'use_cc_toolchain')",
-        "def _impl(ctx):",
-        "  toolchain = find_cc_toolchain(ctx)",
-        "  feature_configuration = cc_common.configure_features(",
-        "    ctx = ctx,",
-        "    cc_toolchain = toolchain,",
-        "  )",
-        "  return [MyInfo(",
-        "    action_tool_path = cc_common.get_tool_for_action(",
-        "        feature_configuration = feature_configuration,",
-        "        action_name = 'c++-compile'))]",
-        "crule = rule(",
-        "  _impl,",
-        "  attrs = { ",
-        "    '_cc_toolchain': attr.label(default=Label('//a:alias'))",
-        "  },",
-        "  fragments = ['cpp'],",
-        "  toolchains = use_cc_toolchain()",
-        ");");
+        scratch.file(
+            "a/rule.bzl",
+            "load('//myinfo:myinfo.bzl', 'MyInfo')",
+            "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
+            ("load('"
+                    + TestConstants.RULES_CC
+                    + ":find_cc_toolchain.bzl', 'find_cc_toolchain', 'use_cc_toolchain')"),
+            "def _impl(ctx):",
+            "  toolchain = find_cc_toolchain(ctx)",
+            "  feature_configuration = cc_common.configure_features(",
+            "    ctx = ctx,",
+            "    cc_toolchain = toolchain,",
+            "  )",
+            "  return [MyInfo(",
+            "    action_tool_path = cc_common.get_tool_for_action(",
+            "        feature_configuration = feature_configuration,",
+            "        action_name = 'c++-compile'))]",
+            "crule = rule(",
+            "  _impl,",
+            "  attrs = { ",
+            "    '_cc_toolchain': attr.label(default=Label('//a:alias'))",
+            "  },",
+            "  fragments = ['cpp'],",
+            "  toolchains = use_cc_toolchain()",
+            ");"
+        )
 
-    ConfiguredTarget r = getConfiguredTarget("//a:r");
-    String actionToolPath = (String) getMyInfoFromTarget(r).getValue("action_tool_path");
-    RuleContext ruleContext = getRuleContext(r);
-    CcToolchainProvider toolchain = CppHelper.getToolchain(ruleContext);
-    FeatureConfiguration featureConfiguration =
-        CcCommon.configureFeaturesOrThrowEvalException(
-            ImmutableSet.of(),
-            ImmutableSet.of(),
-            Language.CPP,
-            toolchain,
-            ruleContext.getFragment(CppConfiguration.class));
-    assertThat(actionToolPath)
-        .isEqualTo(featureConfiguration.getToolPathForAction(CppActionNames.CPP_COMPILE));
-  }
+        val r: ConfiguredTarget = getConfiguredTarget("//a:r")
+        val actionToolPath = getMyInfoFromTarget(r).getValue("action_tool_path") as String?
+        val ruleContext: RuleContext = getRuleContext(r)
+        val toolchain: CcToolchainProvider? = CppHelper.getToolchain(ruleContext)
+        val featureConfiguration: FeatureConfiguration =
+            CcCommon.configureFeaturesOrThrowEvalException(
+                com.google.common.collect.ImmutableSet.of<E?>(),
+                com.google.common.collect.ImmutableSet.of<E?>(),
+                Language.CPP,
+                toolchain,
+                ruleContext.getFragment(CppConfiguration::class.java)
+            )
+        Truth.assertThat(actionToolPath)
+            .isEqualTo(featureConfiguration.getToolPathForAction(CppActionNames.CPP_COMPILE))
+    }
 
-  @Test
-  public void testExecutionRequirements() throws Exception {
-    AnalysisMock.get()
-        .ccSupport()
-        .setupCcToolchainConfig(
-            mockToolsConfig,
-            CcToolchainConfig.builder()
-                .withFeatures(MockCcSupport.CPP_COMPILE_ACTION_WITH_REQUIREMENTS));
-    scratch.file(
-        "a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExecutionRequirements() {
+        AnalysisMock.get()
+            .ccSupport()
+            .setupCcToolchainConfig(
+                mockToolsConfig,
+                CcToolchainConfig.builder()
+                    .withFeatures(MockCcSupport.CPP_COMPILE_ACTION_WITH_REQUIREMENTS)
+            )
+        scratch.file(
+            "a/BUILD",
+            """
         load("@rules_cc//cc/toolchains:cc_toolchain_alias.bzl", "cc_toolchain_alias")
         load(":rule.bzl", "crule")
 
         cc_toolchain_alias(name = "alias")
 
         crule(name = "r")
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "a/rule.bzl",
-        """
+        scratch.file(
+            "a/rule.bzl",
+            """
         load("//myinfo:myinfo.bzl", "MyInfo")
         load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')
 
@@ -389,36 +313,41 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             },
             fragments = ["cpp"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget r = getConfiguredTarget("//a:r");
-    @SuppressWarnings("unchecked")
-    Sequence<String> requirements =
-        (Sequence<String>) getMyInfoFromTarget(r).getValue("requirements");
-    assertThat(requirements).containsExactly("requires-yolo");
-  }
+        val r: ConfiguredTarget = getConfiguredTarget("//a:r")
+        val requirements: net.starlark.java.eval.Sequence<String?>? =
+            getMyInfoFromTarget(r).getValue("requirements") as net.starlark.java.eval.Sequence<String?>?
+        Truth.assertThat(requirements).containsExactly("requires-yolo")
+    }
 
-  @Test
-  public void testFeatureConfigurationWithAdditionalEnabledFeature() throws Exception {
-    AnalysisMock.get()
-        .ccSupport()
-        .setupCcToolchainConfig(
-            mockToolsConfig, CcToolchainConfig.builder().withFeatures("foo_feature"));
-    useConfiguration();
-    scratch.file(
-        "a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFeatureConfigurationWithAdditionalEnabledFeature() {
+        AnalysisMock.get()
+            .ccSupport()
+            .setupCcToolchainConfig(
+                mockToolsConfig, CcToolchainConfig.builder().withFeatures("foo_feature")
+            )
+        useConfiguration()
+        scratch.file(
+            "a/BUILD",
+            """
         load("@rules_cc//cc/toolchains:cc_toolchain_alias.bzl", "cc_toolchain_alias")
         load(":rule.bzl", "crule")
 
         cc_toolchain_alias(name = "alias")
 
         crule(name = "r")
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "a/rule.bzl",
-        """
+        scratch.file(
+            "a/rule.bzl",
+            """
         load("//myinfo:myinfo.bzl", "MyInfo")
         load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')
 
@@ -443,34 +372,40 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             },
             fragments = ["cpp"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget r = getConfiguredTarget("//a:r");
-    boolean fooFeatureEnabled = (boolean) getMyInfoFromTarget(r).getValue("foo_feature_enabled");
-    assertThat(fooFeatureEnabled).isTrue();
-  }
+        val r: ConfiguredTarget = getConfiguredTarget("//a:r")
+        val fooFeatureEnabled = getMyInfoFromTarget(r).getValue("foo_feature_enabled") as Boolean
+        Truth.assertThat(fooFeatureEnabled).isTrue()
+    }
 
-  @Test
-  public void testFeatureConfigurationWithAdditionalUnsupportedFeature() throws Exception {
-    AnalysisMock.get()
-        .ccSupport()
-        .setupCcToolchainConfig(
-            mockToolsConfig, CcToolchainConfig.builder().withFeatures("foo_feature"));
-    useConfiguration("--features=foo_feature");
-    scratch.file(
-        "a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFeatureConfigurationWithAdditionalUnsupportedFeature() {
+        AnalysisMock.get()
+            .ccSupport()
+            .setupCcToolchainConfig(
+                mockToolsConfig, CcToolchainConfig.builder().withFeatures("foo_feature")
+            )
+        useConfiguration("--features=foo_feature")
+        scratch.file(
+            "a/BUILD",
+            """
         load("@rules_cc//cc/toolchains:cc_toolchain_alias.bzl", "cc_toolchain_alias")
         load(":rule.bzl", "crule")
 
         cc_toolchain_alias(name = "alias")
 
         crule(name = "r")
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "a/rule.bzl",
-        """
+        scratch.file(
+            "a/rule.bzl",
+            """
         load("//myinfo:myinfo.bzl", "MyInfo")
         load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')
 
@@ -495,147 +430,164 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             },
             fragments = ["cpp"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget r = getConfiguredTarget("//a:r");
-    boolean fooFeatureEnabled = (boolean) getMyInfoFromTarget(r).getValue("foo_feature_enabled");
-    assertThat(fooFeatureEnabled).isFalse();
-  }
+        val r: ConfiguredTarget = getConfiguredTarget("//a:r")
+        val fooFeatureEnabled = getMyInfoFromTarget(r).getValue("foo_feature_enabled") as Boolean
+        Truth.assertThat(fooFeatureEnabled).isFalse()
+    }
 
-  @Test
-  public void testGetCommandLine() throws Exception {
-    scratch.file(
-        "a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGetCommandLine() {
+        scratch.file(
+            "a/BUILD",
+            """
         load("@rules_cc//cc/toolchains:cc_toolchain_alias.bzl", "cc_toolchain_alias")
         load(":rule.bzl", "crule")
 
         cc_toolchain_alias(name = "alias")
 
         crule(name = "r")
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "a/rule.bzl",
-        "load('//myinfo:myinfo.bzl', 'MyInfo')",
-        "load('"
-            + TestConstants.RULES_CC
-            + ":find_cc_toolchain.bzl', 'find_cc_toolchain', 'use_cc_toolchain')",
-        "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
-        "def _impl(ctx):",
-        "  toolchain = find_cc_toolchain(ctx)",
-        "  feature_configuration = cc_common.configure_features(",
-        "    ctx = ctx,",
-        "    cc_toolchain = toolchain,",
-        "  )",
-        "  return [MyInfo(",
-        "    command_line = cc_common.get_memory_inefficient_command_line(",
-        "        feature_configuration = feature_configuration,",
-        "        action_name = 'c++-link-executable',",
-        "        variables = cc_common.empty_variables()))]",
-        "crule = rule(",
-        "  _impl,",
-        "  attrs = { ",
-        "    '_cc_toolchain': attr.label(default=Label('//a:alias'))",
-        "  },",
-        "  fragments = ['cpp'],",
-        "  toolchains = use_cc_toolchain()",
-        ");");
+        scratch.file(
+            "a/rule.bzl",
+            "load('//myinfo:myinfo.bzl', 'MyInfo')",
+            ("load('"
+                    + TestConstants.RULES_CC
+                    + ":find_cc_toolchain.bzl', 'find_cc_toolchain', 'use_cc_toolchain')"),
+            "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
+            "def _impl(ctx):",
+            "  toolchain = find_cc_toolchain(ctx)",
+            "  feature_configuration = cc_common.configure_features(",
+            "    ctx = ctx,",
+            "    cc_toolchain = toolchain,",
+            "  )",
+            "  return [MyInfo(",
+            "    command_line = cc_common.get_memory_inefficient_command_line(",
+            "        feature_configuration = feature_configuration,",
+            "        action_name = 'c++-link-executable',",
+            "        variables = cc_common.empty_variables()))]",
+            "crule = rule(",
+            "  _impl,",
+            "  attrs = { ",
+            "    '_cc_toolchain': attr.label(default=Label('//a:alias'))",
+            "  },",
+            "  fragments = ['cpp'],",
+            "  toolchains = use_cc_toolchain()",
+            ");"
+        )
 
-    ConfiguredTarget r = getConfiguredTarget("//a:r");
-    @SuppressWarnings("unchecked")
-    Sequence<String> commandLine =
-        (Sequence<String>) getMyInfoFromTarget(r).getValue("command_line");
-    RuleContext ruleContext = getRuleContext(r);
-    CcToolchainProvider toolchain = CppHelper.getToolchain(ruleContext);
-    FeatureConfiguration featureConfiguration =
-        CcCommon.configureFeaturesOrThrowEvalException(
-            ImmutableSet.of(),
-            ImmutableSet.of(),
-            Language.CPP,
-            toolchain,
-            ruleContext.getFragment(CppConfiguration.class));
-    assertThat(commandLine)
-        .containsExactlyElementsIn(
-            featureConfiguration.getCommandLine(
-                "c++-link-executable", CcToolchainVariables.empty()));
-  }
+        val r: ConfiguredTarget = getConfiguredTarget("//a:r")
+        val commandLine: net.starlark.java.eval.Sequence<String?>? =
+            getMyInfoFromTarget(r).getValue("command_line") as net.starlark.java.eval.Sequence<String?>?
+        val ruleContext: RuleContext = getRuleContext(r)
+        val toolchain: CcToolchainProvider? = CppHelper.getToolchain(ruleContext)
+        val featureConfiguration: FeatureConfiguration =
+            CcCommon.configureFeaturesOrThrowEvalException(
+                com.google.common.collect.ImmutableSet.of<E?>(),
+                com.google.common.collect.ImmutableSet.of<E?>(),
+                Language.CPP,
+                toolchain,
+                ruleContext.getFragment(CppConfiguration::class.java)
+            )
+        Truth.assertThat(commandLine)
+            .containsExactlyElementsIn(
+                featureConfiguration.getCommandLine(
+                    "c++-link-executable", CcToolchainVariables.empty()
+                )
+            )
+    }
 
-  @Test
-  public void testGetEnvironment() throws Exception {
-    scratch.file(
-        "a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGetEnvironment() {
+        scratch.file(
+            "a/BUILD",
+            """
         load("@rules_cc//cc/toolchains:cc_toolchain_alias.bzl", "cc_toolchain_alias")
         load(":rule.bzl", "crule")
 
         cc_toolchain_alias(name = "alias")
 
         crule(name = "r")
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "a/rule.bzl",
-        "load('"
-            + TestConstants.RULES_CC
-            + ":find_cc_toolchain.bzl', 'find_cc_toolchain', 'use_cc_toolchain')",
-        "load('//myinfo:myinfo.bzl', 'MyInfo')",
-        "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
-        "def _impl(ctx):",
-        "  toolchain = find_cc_toolchain(ctx)",
-        "  feature_configuration = cc_common.configure_features(",
-        "    ctx = ctx,",
-        "    cc_toolchain = toolchain,",
-        "  )",
-        "  return [MyInfo(",
-        "    environment_variables = cc_common.get_environment_variables(",
-        "        feature_configuration = feature_configuration,",
-        "        action_name = 'c++-compile',",
-        "        variables = cc_common.empty_variables()))]",
-        "crule = rule(",
-        "  _impl,",
-        "  attrs = { ",
-        "    '_cc_toolchain': attr.label(default=Label('//a:alias'))",
-        "  },",
-        "  fragments = ['cpp'],",
-        "  toolchains = use_cc_toolchain()",
-        ");");
+        scratch.file(
+            "a/rule.bzl",
+            ("load('"
+                    + TestConstants.RULES_CC
+                    + ":find_cc_toolchain.bzl', 'find_cc_toolchain', 'use_cc_toolchain')"),
+            "load('//myinfo:myinfo.bzl', 'MyInfo')",
+            "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
+            "def _impl(ctx):",
+            "  toolchain = find_cc_toolchain(ctx)",
+            "  feature_configuration = cc_common.configure_features(",
+            "    ctx = ctx,",
+            "    cc_toolchain = toolchain,",
+            "  )",
+            "  return [MyInfo(",
+            "    environment_variables = cc_common.get_environment_variables(",
+            "        feature_configuration = feature_configuration,",
+            "        action_name = 'c++-compile',",
+            "        variables = cc_common.empty_variables()))]",
+            "crule = rule(",
+            "  _impl,",
+            "  attrs = { ",
+            "    '_cc_toolchain': attr.label(default=Label('//a:alias'))",
+            "  },",
+            "  fragments = ['cpp'],",
+            "  toolchains = use_cc_toolchain()",
+            ");"
+        )
 
-    ConfiguredTarget r = getConfiguredTarget("//a:r");
-    @SuppressWarnings("unchecked")
-    Map<String, String> environmentVariables =
-        (Map<String, String>) getMyInfoFromTarget(r).getValue("environment_variables");
-    RuleContext ruleContext = getRuleContext(r);
-    CcToolchainProvider toolchain = CppHelper.getToolchain(ruleContext);
-    FeatureConfiguration featureConfiguration =
-        CcCommon.configureFeaturesOrThrowEvalException(
-            ImmutableSet.of(),
-            ImmutableSet.of(),
-            Language.CPP,
-            toolchain,
-            ruleContext.getFragment(CppConfiguration.class));
-    assertThat(environmentVariables)
-        .containsExactlyEntriesIn(
-            featureConfiguration.getEnvironmentVariables(
-                CppActionNames.CPP_COMPILE, CcToolchainVariables.empty(), PathMapper.NOOP));
-  }
+        val r: ConfiguredTarget = getConfiguredTarget("//a:r")
+        val environmentVariables =
+            getMyInfoFromTarget(r).getValue("environment_variables") as MutableMap<String?, String?>?
+        val ruleContext: RuleContext = getRuleContext(r)
+        val toolchain: CcToolchainProvider? = CppHelper.getToolchain(ruleContext)
+        val featureConfiguration: FeatureConfiguration =
+            CcCommon.configureFeaturesOrThrowEvalException(
+                com.google.common.collect.ImmutableSet.of<E?>(),
+                com.google.common.collect.ImmutableSet.of<E?>(),
+                Language.CPP,
+                toolchain,
+                ruleContext.getFragment(CppConfiguration::class.java)
+            )
+        Truth.assertThat(environmentVariables)
+            .containsExactlyEntriesIn(
+                featureConfiguration.getEnvironmentVariables(
+                    CppActionNames.CPP_COMPILE, CcToolchainVariables.empty(), PathMapper.NOOP
+                )
+            )
+    }
 
-  @Test
-  public void testActionIsEnabled() throws Exception {
-    scratch.file(
-        "a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testActionIsEnabled() {
+        scratch.file(
+            "a/BUILD",
+            """
         load("@rules_cc//cc/toolchains:cc_toolchain_alias.bzl", "cc_toolchain_alias")
         load(":rule.bzl", "crule")
 
         cc_toolchain_alias(name = "alias")
 
         crule(name = "r")
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "a/rule.bzl",
-        """
+        scratch.file(
+            "a/rule.bzl",
+            """
         load("//myinfo:myinfo.bzl", "MyInfo")
         load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')
 
@@ -663,31 +615,36 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             },
             fragments = ["cpp"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    StructImpl myInfo = getMyInfoFromTarget(getConfiguredTarget("//a:r"));
-    boolean enabledActionIsEnabled = (boolean) myInfo.getValue("enabled_action");
-    boolean disabledActionIsDisabled = (boolean) myInfo.getValue("disabled_action");
-    assertThat(enabledActionIsEnabled).isTrue();
-    assertThat(disabledActionIsDisabled).isFalse();
-  }
+        val myInfo: StructImpl = getMyInfoFromTarget(getConfiguredTarget("//a:r"))
+        val enabledActionIsEnabled = myInfo.getValue("enabled_action") as Boolean
+        val disabledActionIsDisabled = myInfo.getValue("disabled_action") as Boolean
+        Truth.assertThat(enabledActionIsEnabled).isTrue()
+        Truth.assertThat(disabledActionIsDisabled).isFalse()
+    }
 
-  @Test
-  public void testIsEnabled() throws Exception {
-    scratch.file(
-        "a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testIsEnabled() {
+        scratch.file(
+            "a/BUILD",
+            """
         load("@rules_cc//cc/toolchains:cc_toolchain_alias.bzl", "cc_toolchain_alias")
         load(":rule.bzl", "crule")
 
         cc_toolchain_alias(name = "alias")
 
         crule(name = "r")
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "a/rule.bzl",
-        """
+        scratch.file(
+            "a/rule.bzl",
+            """
         load("//myinfo:myinfo.bzl", "MyInfo")
         load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')
 
@@ -715,32 +672,37 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             },
             fragments = ["cpp"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    StructImpl myInfo = getMyInfoFromTarget(getConfiguredTarget("//a:r"));
+        val myInfo: StructImpl = getMyInfoFromTarget(getConfiguredTarget("//a:r"))
 
-    boolean enabledFeatureIsEnabled = (boolean) myInfo.getValue("enabled_feature");
-    boolean disabledFeatureIsDisabled = (boolean) myInfo.getValue("disabled_feature");
-    assertThat(enabledFeatureIsEnabled).isTrue();
-    assertThat(disabledFeatureIsDisabled).isFalse();
-  }
+        val enabledFeatureIsEnabled = myInfo.getValue("enabled_feature") as Boolean
+        val disabledFeatureIsDisabled = myInfo.getValue("disabled_feature") as Boolean
+        Truth.assertThat(enabledFeatureIsEnabled).isTrue()
+        Truth.assertThat(disabledFeatureIsDisabled).isFalse()
+    }
 
-  @Test
-  public void testFeatureConfigurationRequiresCtx() throws Exception {
-    scratch.file(
-        "a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFeatureConfigurationRequiresCtx() {
+        scratch.file(
+            "a/BUILD",
+            """
         load("@rules_cc//cc/toolchains:cc_toolchain_alias.bzl", "cc_toolchain_alias")
         load(":rule.bzl", "crule")
 
         cc_toolchain_alias(name = "alias")
 
         crule(name = "r")
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "a/rule.bzl",
-        """
+        scratch.file(
+            "a/rule.bzl",
+            """
         load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')
         def _impl(ctx):
             toolchain = ctx.attr._cc_toolchain[cc_common.CcToolchainInfo]
@@ -753,34 +715,41 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             },
             fragments = ["cpp"],
         )
-        """);
-    reporter.removeHandler(failFastHandler);
+        
+        """.trimIndent()
+        )
+        reporter.removeHandler(failFastHandler)
 
-    getConfiguredTarget("//a:r");
-    assertContainsEvent("configure_features() missing 1 required keyword-only argument: ctx");
-  }
+        getConfiguredTarget("//a:r")
+        assertContainsEvent("configure_features() missing 1 required keyword-only argument: ctx")
+    }
 
-  @Test
-  public void testActionNames() throws Exception {
-    scratch.file(
-        "a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testActionNames() {
+        scratch.file(
+            "a/BUILD",
+            """
         load("@rules_cc//cc/toolchains:cc_toolchain_alias.bzl", "cc_toolchain_alias")
         load(":rule.bzl", "crule")
 
         cc_toolchain_alias(name = "alias")
 
         crule(name = "r")
-        """);
-    scratch.overwriteFile("tools/build_defs/cc/BUILD");
-    scratch.overwriteFile(
-        "tools/build_defs/cc/action_names.bzl",
-        ResourceLoader.readFromResources(
-            TestConstants.RULES_CC_REPOSITORY_EXECROOT + "cc/action_names.bzl"));
+        
+        """.trimIndent()
+        )
+        scratch.overwriteFile("tools/build_defs/cc/BUILD")
+        scratch.overwriteFile(
+            "tools/build_defs/cc/action_names.bzl",
+            com.google.devtools.build.lib.packages.util.ResourceLoader.readFromResources(
+                TestConstants.RULES_CC_REPOSITORY_EXECROOT + "cc/action_names.bzl"
+            )
+        )
 
-    scratch.file(
-        "a/rule.bzl",
-        """
+        scratch.file(
+            "a/rule.bzl",
+            """
         load("//myinfo:myinfo.bzl", "MyInfo")
         load(
             "//tools/build_defs/cc:action_names.bzl",
@@ -837,174 +806,204 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             },
             fragments = ["cpp"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertThat(getTarget("//a:r")).isNotNull();
+        assertThat(getTarget("//a:r")).isNotNull()
 
-    StructImpl myInfo = getMyInfoFromTarget(getConfiguredTarget("//a:r"));
+        val myInfo: StructImpl = getMyInfoFromTarget(getConfiguredTarget("//a:r"))
 
-    assertThat(myInfo.getValue("c_compile_action_name")).isEqualTo(CppActionNames.C_COMPILE);
-    assertThat(myInfo.getValue("cpp_compile_action_name")).isEqualTo(CppActionNames.CPP_COMPILE);
-    assertThat(myInfo.getValue("linkstamp_compile_action_name"))
-        .isEqualTo(CppActionNames.LINKSTAMP_COMPILE);
-    assertThat(myInfo.getValue("cc_flags_make_variable_action_name_action_name"))
-        .isEqualTo(CppActionNames.CC_FLAGS_MAKE_VARIABLE);
-    assertThat(myInfo.getValue("cpp_module_codegen_action_name"))
-        .isEqualTo(CppActionNames.CPP_MODULE_CODEGEN);
-    assertThat(myInfo.getValue("cpp_header_parsing_action_name"))
-        .isEqualTo(CppActionNames.CPP_HEADER_PARSING);
-    assertThat(myInfo.getValue("cpp_module_compile_action_name"))
-        .isEqualTo(CppActionNames.CPP_MODULE_COMPILE);
-    assertThat(myInfo.getValue("assemble_action_name")).isEqualTo(CppActionNames.ASSEMBLE);
-    assertThat(myInfo.getValue("preprocess_assemble_action_name"))
-        .isEqualTo(CppActionNames.PREPROCESS_ASSEMBLE);
-    assertThat(myInfo.getValue("lto_indexing_action_name")).isEqualTo(CppActionNames.LTO_INDEXING);
-    assertThat(myInfo.getValue("lto_backend_action_name")).isEqualTo(CppActionNames.LTO_BACKEND);
-    assertThat(myInfo.getValue("cpp_link_executable_action_name"))
-        .isEqualTo(CppActionNames.CPP_LINK_EXECUTABLE);
-    assertThat(myInfo.getValue("cpp_link_dynamic_library_action_name"))
-        .isEqualTo(CppActionNames.CPP_LINK_DYNAMIC_LIBRARY);
-    assertThat(myInfo.getValue("cpp_link_nodeps_dynamic_library_action_name"))
-        .isEqualTo(CppActionNames.CPP_LINK_NODEPS_DYNAMIC_LIBRARY);
-    assertThat(myInfo.getValue("cpp_link_static_library_action_name"))
-        .isEqualTo(CppActionNames.CPP_LINK_STATIC_LIBRARY);
-    assertThat(myInfo.getValue("strip_action_name")).isEqualTo(CppActionNames.STRIP);
-  }
+        assertThat(myInfo.getValue("c_compile_action_name")).isEqualTo(CppActionNames.C_COMPILE)
+        assertThat(myInfo.getValue("cpp_compile_action_name")).isEqualTo(CppActionNames.CPP_COMPILE)
+        assertThat(myInfo.getValue("linkstamp_compile_action_name"))
+            .isEqualTo(CppActionNames.LINKSTAMP_COMPILE)
+        assertThat(myInfo.getValue("cc_flags_make_variable_action_name_action_name"))
+            .isEqualTo(CppActionNames.CC_FLAGS_MAKE_VARIABLE)
+        assertThat(myInfo.getValue("cpp_module_codegen_action_name"))
+            .isEqualTo(CppActionNames.CPP_MODULE_CODEGEN)
+        assertThat(myInfo.getValue("cpp_header_parsing_action_name"))
+            .isEqualTo(CppActionNames.CPP_HEADER_PARSING)
+        assertThat(myInfo.getValue("cpp_module_compile_action_name"))
+            .isEqualTo(CppActionNames.CPP_MODULE_COMPILE)
+        assertThat(myInfo.getValue("assemble_action_name")).isEqualTo(CppActionNames.ASSEMBLE)
+        assertThat(myInfo.getValue("preprocess_assemble_action_name"))
+            .isEqualTo(CppActionNames.PREPROCESS_ASSEMBLE)
+        assertThat(myInfo.getValue("lto_indexing_action_name")).isEqualTo(CppActionNames.LTO_INDEXING)
+        assertThat(myInfo.getValue("lto_backend_action_name")).isEqualTo(CppActionNames.LTO_BACKEND)
+        assertThat(myInfo.getValue("cpp_link_executable_action_name"))
+            .isEqualTo(CppActionNames.CPP_LINK_EXECUTABLE)
+        assertThat(myInfo.getValue("cpp_link_dynamic_library_action_name"))
+            .isEqualTo(CppActionNames.CPP_LINK_DYNAMIC_LIBRARY)
+        assertThat(myInfo.getValue("cpp_link_nodeps_dynamic_library_action_name"))
+            .isEqualTo(CppActionNames.CPP_LINK_NODEPS_DYNAMIC_LIBRARY)
+        assertThat(myInfo.getValue("cpp_link_static_library_action_name"))
+            .isEqualTo(CppActionNames.CPP_LINK_STATIC_LIBRARY)
+        assertThat(myInfo.getValue("strip_action_name")).isEqualTo(CppActionNames.STRIP)
+    }
 
-  @Test
-  public void testCompileBuildVariablesWithSourceFile() throws Exception {
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCompileBuildVariablesWithSourceFile() {
+        Truth.assertThat(
             commandLineForVariables(
                 CppActionNames.CPP_COMPILE,
                 "cc_common.create_compile_variables(",
                 "feature_configuration = feature_configuration,",
                 "cc_toolchain = toolchain,",
                 "source_file = 'foo/bar/hello'",
-                ")"))
-        .containsAtLeast("-c", "foo/bar/hello")
-        .inOrder();
-  }
+                ")"
+            )
+        )
+            .containsAtLeast("-c", "foo/bar/hello")
+            .inOrder()
+    }
 
-  @Test
-  public void testCompileBuildVariablesWithOutputFile() throws Exception {
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCompileBuildVariablesWithOutputFile() {
+        Truth.assertThat(
             commandLineForVariables(
                 CppActionNames.CPP_COMPILE,
                 "cc_common.create_compile_variables(",
                 "feature_configuration = feature_configuration,",
                 "cc_toolchain = toolchain,",
                 "output_file = 'foo/bar/hello.o'",
-                ")"))
-        .containsAtLeast("-o", "foo/bar/hello.o")
-        .inOrder();
-  }
+                ")"
+            )
+        )
+            .containsAtLeast("-o", "foo/bar/hello.o")
+            .inOrder()
+    }
 
-  @Test
-  public void testCompileBuildVariablesForIncludes() throws Exception {
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCompileBuildVariablesForIncludes() {
+        Truth.assertThat(
             commandLineForVariables(
                 CppActionNames.CPP_COMPILE,
                 "cc_common.create_compile_variables(",
                 "feature_configuration = feature_configuration,",
                 "cc_toolchain = toolchain,",
                 "include_directories = depset(['foo/bar/include'])",
-                ")"))
-        .contains("-Ifoo/bar/include");
-  }
+                ")"
+            )
+        )
+            .contains("-Ifoo/bar/include")
+    }
 
-  @Test
-  public void testCompileBuildVariablesForFrameworkIncludes() throws Exception {
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCompileBuildVariablesForFrameworkIncludes() {
+        Truth.assertThat(
             commandLineForVariables(
                 CppActionNames.CPP_COMPILE,
                 "cc_common.create_compile_variables(",
                 "feature_configuration = feature_configuration,",
                 "cc_toolchain = toolchain,",
                 "framework_include_directories = depset(['foo/bar'])",
-                ")"))
-        .contains("-Ffoo/bar");
-  }
+                ")"
+            )
+        )
+            .contains("-Ffoo/bar")
+    }
 
-  @Test
-  public void testCompileBuildVariablesForDefines() throws Exception {
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCompileBuildVariablesForDefines() {
+        Truth.assertThat(
             commandLineForVariables(
                 CppActionNames.CPP_COMPILE,
                 "cc_common.create_compile_variables(",
                 "feature_configuration = feature_configuration,",
                 "cc_toolchain = toolchain,",
                 "preprocessor_defines = depset(['DEBUG_FOO'])",
-                ")"))
-        .contains("-DDEBUG_FOO");
-  }
+                ")"
+            )
+        )
+            .contains("-DDEBUG_FOO")
+    }
 
-  @Test
-  public void testCompileBuildVariablesForPic() throws Exception {
-    AnalysisMock.get()
-        .ccSupport()
-        .setupCcToolchainConfig(
-            mockToolsConfig,
-            CcToolchainConfig.builder()
-                .withFeatures(CppRuleClasses.SUPPORTS_PIC, CppRuleClasses.PIC));
-    useConfiguration();
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCompileBuildVariablesForPic() {
+        AnalysisMock.get()
+            .ccSupport()
+            .setupCcToolchainConfig(
+                mockToolsConfig,
+                CcToolchainConfig.builder()
+                    .withFeatures(CppRuleClasses.SUPPORTS_PIC, CppRuleClasses.PIC)
+            )
+        useConfiguration()
+        Truth.assertThat(
             commandLineForVariables(
                 CppActionNames.CPP_COMPILE,
                 "cc_common.create_compile_variables(",
                 "feature_configuration = feature_configuration,",
                 "cc_toolchain = toolchain,",
                 "use_pic = True",
-                ")"))
-        .contains("-fPIC");
-  }
+                ")"
+            )
+        )
+            .contains("-fPIC")
+    }
 
-  @Test
-  public void testUserCompileFlags() throws Exception {
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testUserCompileFlags() {
+        Truth.assertThat(
             commandLineForVariables(
                 CppActionNames.CPP_COMPILE,
                 "cc_common.create_compile_variables(",
                 "feature_configuration = feature_configuration,",
                 "cc_toolchain = toolchain,",
                 "user_compile_flags = ['-foo']",
-                ")"))
-        .contains("-foo");
-  }
+                ")"
+            )
+        )
+            .contains("-foo")
+    }
 
-  @Test
-  public void testCompileBuildVariablesForDummyLtoBackendAction() throws Exception {
-    AnalysisMock.get()
-        .ccSupport()
-        .setupCcToolchainConfig(
-            mockToolsConfig, CcToolchainConfig.builder().withFeatures(CppRuleClasses.THIN_LTO));
-    useConfiguration("--features=thin_lto");
-    Sequence<String> commandLine =
-        commandLineForVariables(
-            CppActionNames.LTO_BACKEND,
-            "cc_common.create_compile_variables(",
-            "feature_configuration = feature_configuration,",
-            "cc_toolchain = toolchain,",
-            "thinlto_input_bitcode_file = 'path/to/input',",
-            "thinlto_output_object_file = 'path/to/output',",
-            "thinlto_index = '/dev/null'",
-            ")");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCompileBuildVariablesForDummyLtoBackendAction() {
+        AnalysisMock.get()
+            .ccSupport()
+            .setupCcToolchainConfig(
+                mockToolsConfig, CcToolchainConfig.builder().withFeatures(CppRuleClasses.THIN_LTO)
+            )
+        useConfiguration("--features=thin_lto")
+        val commandLine: net.starlark.java.eval.Sequence<String?>? =
+            commandLineForVariables(
+                CppActionNames.LTO_BACKEND,
+                "cc_common.create_compile_variables(",
+                "feature_configuration = feature_configuration,",
+                "cc_toolchain = toolchain,",
+                "thinlto_input_bitcode_file = 'path/to/input',",
+                "thinlto_output_object_file = 'path/to/output',",
+                "thinlto_index = '/dev/null'",
+                ")"
+            )
 
-    assertThat(commandLine)
-        .containsAtLeast(
-            "thinlto_index=/dev/null",
-            "thinlto_output_object_file=path/to/output",
-            "thinlto_input_bitcode_file=path/to/input");
-  }
+        Truth.assertThat(commandLine)
+            .containsAtLeast(
+                "thinlto_index=/dev/null",
+                "thinlto_output_object_file=path/to/output",
+                "thinlto_input_bitcode_file=path/to/input"
+            )
+    }
 
-  @Test
-  public void testCompileBuildVariablesWithVariablesExtension() throws Exception {
-    AnalysisMock.get()
-        .ccSupport()
-        .setupCcToolchainConfig(
-            mockToolsConfig,
-            CcToolchainConfig.builder().withFeatures("check_additional_variables_feature"));
-    useConfiguration("--features=check_additional_variables_feature");
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCompileBuildVariablesWithVariablesExtension() {
+        AnalysisMock.get()
+            .ccSupport()
+            .setupCcToolchainConfig(
+                mockToolsConfig,
+                CcToolchainConfig.builder().withFeatures("check_additional_variables_feature")
+            )
+        useConfiguration("--features=check_additional_variables_feature")
+        Truth.assertThat(
             commandLineForVariables(
                 CppActionNames.CPP_COMPILE,
                 "cc_common.create_compile_variables(",
@@ -1014,146 +1013,178 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
                 "        'string_variable': 'foo',",
                 "        'list_variable': ['bar', 'baz']",
                 "    }",
-                ")"))
-        .containsAtLeast("--my_string=foo", "--my_list_element=bar", "--my_list_element=baz");
-  }
+                ")"
+            )
+        )
+            .containsAtLeast("--my_string=foo", "--my_list_element=bar", "--my_list_element=baz")
+    }
 
-  @Test
-  public void testEmptyLinkVariables() throws Exception {
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEmptyLinkVariables() {
+        Truth.assertThat(
             commandLineForVariables(
                 CppActionNames.CPP_LINK_EXECUTABLE,
                 "cc_common.create_link_variables(",
                 "feature_configuration = feature_configuration,",
                 "cc_toolchain = toolchain,",
                 "user_link_flags = [ '-foo' ],",
-                ")"))
-        .contains("-foo");
-  }
+                ")"
+            )
+        )
+            .contains("-foo")
+    }
 
-  @Test
-  public void testEmptyLinkVariablesContainSysroot() throws Exception {
-    AnalysisMock.get()
-        .ccSupport()
-        .setupCcToolchainConfig(
-            mockToolsConfig, CcToolchainConfig.builder().withSysroot("/foo/bar/sysroot"));
-    useConfiguration();
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEmptyLinkVariablesContainSysroot() {
+        AnalysisMock.get()
+            .ccSupport()
+            .setupCcToolchainConfig(
+                mockToolsConfig, CcToolchainConfig.builder().withSysroot("/foo/bar/sysroot")
+            )
+        useConfiguration()
+        Truth.assertThat(
             commandLineForVariables(
                 CppActionNames.CPP_LINK_EXECUTABLE,
                 "cc_common.create_link_variables(",
                 "feature_configuration = feature_configuration,",
                 "cc_toolchain = toolchain,",
-                ")"))
-        .contains("--sysroot=/foo/bar/sysroot");
-  }
+                ")"
+            )
+        )
+            .contains("--sysroot=/foo/bar/sysroot")
+    }
 
-  @Test
-  public void testLibrarySearchDirectoriesLinkVariables() throws Exception {
-    AnalysisMock.get()
-        .ccSupport()
-        .setupCcToolchainConfig(
-            mockToolsConfig,
-            CcToolchainConfig.builder().withFeatures("library_search_directories"));
-    useConfiguration();
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLibrarySearchDirectoriesLinkVariables() {
+        AnalysisMock.get()
+            .ccSupport()
+            .setupCcToolchainConfig(
+                mockToolsConfig,
+                CcToolchainConfig.builder().withFeatures("library_search_directories")
+            )
+        useConfiguration()
+        Truth.assertThat(
             commandLineForVariables(
                 CppActionNames.CPP_LINK_EXECUTABLE,
                 "cc_common.create_link_variables(",
                 "feature_configuration = feature_configuration,",
                 "cc_toolchain = toolchain,",
                 "library_search_directories = depset([ 'a', 'b', 'c' ]),",
-                ")"))
-        .containsAtLeast("--library=a", "--library=b", "--library=c")
-        .inOrder();
-  }
+                ")"
+            )
+        )
+            .containsAtLeast("--library=a", "--library=b", "--library=c")
+            .inOrder()
+    }
 
-  @Test
-  public void testRuntimeLibrarySearchDirectoriesLinkVariables() throws Exception {
-    AnalysisMock.get()
-        .ccSupport()
-        .setupCcToolchainConfig(
-            mockToolsConfig,
-            CcToolchainConfig.builder().withFeatures("runtime_library_search_directories"));
-    useConfiguration();
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRuntimeLibrarySearchDirectoriesLinkVariables() {
+        AnalysisMock.get()
+            .ccSupport()
+            .setupCcToolchainConfig(
+                mockToolsConfig,
+                CcToolchainConfig.builder().withFeatures("runtime_library_search_directories")
+            )
+        useConfiguration()
+        Truth.assertThat(
             commandLineForVariables(
                 CppActionNames.CPP_LINK_EXECUTABLE,
                 "cc_common.create_link_variables(",
                 "feature_configuration = feature_configuration,",
                 "cc_toolchain = toolchain,",
                 "runtime_library_search_directories = depset([ 'a', 'b', 'c' ]),",
-                ")"))
-        .containsAtLeast("--runtime_library=a", "--runtime_library=b", "--runtime_library=c")
-        .inOrder();
-  }
+                ")"
+            )
+        )
+            .containsAtLeast("--runtime_library=a", "--runtime_library=b", "--runtime_library=c")
+            .inOrder()
+    }
 
-  @Test
-  public void testUserLinkFlagsLinkVariables() throws Exception {
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testUserLinkFlagsLinkVariables() {
+        Truth.assertThat(
             commandLineForVariables(
                 CppActionNames.CPP_LINK_EXECUTABLE,
                 "cc_common.create_link_variables(",
                 "feature_configuration = feature_configuration,",
                 "cc_toolchain = toolchain,",
                 "user_link_flags = [ '-avocado' ],",
-                ")"))
-        .contains("-avocado");
-  }
+                ")"
+            )
+        )
+            .contains("-avocado")
+    }
 
-  @Test
-  public void testIfsoRelatedVariablesAreNotExposed() throws Exception {
-    AnalysisMock.get()
-        .ccSupport()
-        .setupCcToolchainConfig(
-            mockToolsConfig, CcToolchainConfig.builder().withFeatures("uses_ifso_variables"));
-    useConfiguration();
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testIfsoRelatedVariablesAreNotExposed() {
+        AnalysisMock.get()
+            .ccSupport()
+            .setupCcToolchainConfig(
+                mockToolsConfig, CcToolchainConfig.builder().withFeatures("uses_ifso_variables")
+            )
+        useConfiguration()
+        Truth.assertThat(
             commandLineForVariables(
                 CppActionNames.CPP_LINK_DYNAMIC_LIBRARY,
                 "cc_common.create_link_variables(",
                 "feature_configuration = feature_configuration,",
                 "cc_toolchain = toolchain,",
-                ")"))
-        .doesNotContain("--generate_interface_library_was_available");
-  }
+                ")"
+            )
+        )
+            .doesNotContain("--generate_interface_library_was_available")
+    }
 
-  @Test
-  public void testOutputFileLinkVariables() throws Exception {
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testOutputFileLinkVariables() {
+        Truth.assertThat(
             commandLineForVariables(
                 CppActionNames.CPP_LINK_EXECUTABLE,
                 "cc_common.create_link_variables(",
                 "feature_configuration = feature_configuration,",
                 "cc_toolchain = toolchain,",
                 "output_file = 'foo/bar/executable',",
-                ")"))
-        .contains("foo/bar/executable");
-  }
+                ")"
+            )
+        )
+            .contains("foo/bar/executable")
+    }
 
-  @Test
-  public void testParamFileLinkVariables() throws Exception {
-    AnalysisMock.get().ccSupport().setupCcToolchainConfig(mockToolsConfig);
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testParamFileLinkVariables() {
+        AnalysisMock.get().ccSupport().setupCcToolchainConfig(mockToolsConfig)
+        Truth.assertThat(
             commandLineForVariables(
                 CppActionNames.CPP_LINK_EXECUTABLE,
                 "cc_common.create_link_variables(",
                 "feature_configuration = feature_configuration,",
                 "cc_toolchain = toolchain,",
                 "param_file = 'foo/bar/params',",
-                ")"))
-        .contains("@foo/bar/params");
-  }
+                ")"
+            )
+        )
+            .contains("@foo/bar/params")
+    }
 
-  @Test
-  public void testMustKeepDebugLinkVariables() throws Exception {
-    AnalysisMock.get()
-        .ccSupport()
-        .setupCcToolchainConfig(
-            mockToolsConfig, CcToolchainConfig.builder().withFeatures("strip_debug_symbols"));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMustKeepDebugLinkVariables() {
+        AnalysisMock.get()
+            .ccSupport()
+            .setupCcToolchainConfig(
+                mockToolsConfig, CcToolchainConfig.builder().withFeatures("strip_debug_symbols")
+            )
 
-    useConfiguration();
-    assertThat(
+        useConfiguration()
+        Truth.assertThat(
             commandLineForVariables(
                 CppActionNames.CPP_LINK_EXECUTABLE,
                 0,
@@ -1161,9 +1192,11 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
                 "feature_configuration = feature_configuration,",
                 "cc_toolchain = toolchain,",
                 "must_keep_debug = False,",
-                ")"))
-        .contains("-strip_stuff");
-    assertThat(
+                ")"
+            )
+        )
+            .contains("-strip_stuff")
+        Truth.assertThat(
             commandLineForVariables(
                 CppActionNames.CPP_LINK_EXECUTABLE,
                 1,
@@ -1171,14 +1204,17 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
                 "feature_configuration = feature_configuration,",
                 "cc_toolchain = toolchain,",
                 "must_keep_debug = True,",
-                ")"))
-        .doesNotContain("-strip_stuff");
-  }
+                ")"
+            )
+        )
+            .doesNotContain("-strip_stuff")
+    }
 
-  @Test
-  public void testIsLinkingDynamicLibraryLinkVariables() throws Exception {
-    useConfiguration("--linkopt=-pie");
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testIsLinkingDynamicLibraryLinkVariables() {
+        useConfiguration("--linkopt=-pie")
+        Truth.assertThat(
             commandLineForVariables(
                 CppActionNames.CPP_LINK_EXECUTABLE,
                 0,
@@ -1187,9 +1223,11 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
                 "cc_toolchain = toolchain,",
                 "is_linking_dynamic_library = True,",
                 "user_link_flags = [ '-pie' ],",
-                ")"))
-        .doesNotContain("-pie");
-    assertThat(
+                ")"
+            )
+        )
+            .doesNotContain("-pie")
+        Truth.assertThat(
             commandLineForVariables(
                 CppActionNames.CPP_LINK_EXECUTABLE,
                 1,
@@ -1198,13 +1236,16 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
                 "cc_toolchain = toolchain,",
                 "is_linking_dynamic_library = False,",
                 "user_link_flags = [ '-pie' ],",
-                ")"))
-        .contains("-pie");
-  }
+                ")"
+            )
+        )
+            .contains("-pie")
+    }
 
-  @Test
-  public void testIsUsingLinkerLinkVariables() throws Exception {
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testIsUsingLinkerLinkVariables() {
+        Truth.assertThat(
             commandLineForVariables(
                 CppActionNames.CPP_LINK_EXECUTABLE,
                 0,
@@ -1213,9 +1254,11 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
                 "cc_toolchain = toolchain,",
                 "is_using_linker = True,",
                 "user_link_flags = [ '-i_dont_want_to_see_this_on_archiver_command_line' ],",
-                ")"))
-        .contains("-i_dont_want_to_see_this_on_archiver_command_line");
-    assertThat(
+                ")"
+            )
+        )
+            .contains("-i_dont_want_to_see_this_on_archiver_command_line")
+        Truth.assertThat(
             commandLineForVariables(
                 CppActionNames.CPP_LINK_EXECUTABLE,
                 1,
@@ -1224,69 +1267,79 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
                 "cc_toolchain = toolchain,",
                 "is_using_linker = False,",
                 "user_link_flags = [ '-i_dont_want_to_see_this_on_archiver_command_line' ],",
-                ")"))
-        .doesNotContain("-i_dont_want_to_see_this_on_archiver_command_line");
-  }
-
-  private Sequence<String> commandLineForVariables(String actionName, String... variables)
-      throws Exception {
-    return commandLineForVariables(actionName, 0, variables);
-  }
-
-  // This method is only there to change the package to fix multiple runs of this method in a single
-  // test.
-  // TODO(b/109917616): Remove pkgSuffix argument when bzl files are not cached within single test
-  private Sequence<String> commandLineForVariables(
-      String actionName, int pkgSuffix, String... variables) throws Exception {
-    scratch.file(
-        "a" + pkgSuffix + "/BUILD",
-        "load('@rules_cc//cc/toolchains:cc_toolchain_alias.bzl',"
-            + " 'cc_toolchain_alias')",
-        "load(':rule.bzl', 'crule')",
-        "cc_toolchain_alias(name='alias')",
-        "crule(name='r')");
-
-    scratch.file(
-        "a" + pkgSuffix + "/rule.bzl",
-        "load('//myinfo:myinfo.bzl', 'MyInfo')",
-        "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
-        "def _impl(ctx):",
-        "  toolchain = ctx.attr._cc_toolchain[cc_common.CcToolchainInfo]",
-        "  feature_configuration = cc_common.configure_features(",
-        "    ctx = ctx,",
-        "    cc_toolchain = toolchain,",
-        "    requested_features = ctx.features,",
-        "  )",
-        "  variables = " + Joiner.on("\n").join(variables),
-        "  return [MyInfo(",
-        "    command_line = cc_common.get_memory_inefficient_command_line(",
-        "        feature_configuration = feature_configuration,",
-        "        action_name = '" + actionName + "',",
-        "        variables = variables))]",
-        "crule = rule(",
-        "  _impl,",
-        "  attrs = { ",
-        "    '_cc_toolchain': attr.label(default=Label('//a" + pkgSuffix + ":alias'))",
-        "  },",
-        "  fragments = ['cpp'],",
-        ");");
-
-    /* Calling {@link #getTarget} to get loading errors */
-    getTarget("//a" + pkgSuffix + ":r");
-    ConfiguredTarget r = getConfiguredTarget("//a" + pkgSuffix + ":r");
-    if (r == null) {
-      return null;
+                ")"
+            )
+        )
+            .doesNotContain("-i_dont_want_to_see_this_on_archiver_command_line")
     }
-    @SuppressWarnings("unchecked")
-    Sequence<String> result = (Sequence<String>) getMyInfoFromTarget(r).getValue("command_line");
-    return result;
-  }
 
-  @Test
-  public void testCcCompilationProvider() throws Exception {
-    scratch.file(
-        "a/BUILD",
-        """
+    @Throws(java.lang.Exception::class)
+    private fun commandLineForVariables(
+        actionName: String?,
+        vararg variables: String?
+    ): net.starlark.java.eval.Sequence<String?>? {
+        return commandLineForVariables(actionName, 0, *variables)
+    }
+
+    // This method is only there to change the package to fix multiple runs of this method in a single
+    // test.
+    // TODO(b/109917616): Remove pkgSuffix argument when bzl files are not cached within single test
+    @Throws(java.lang.Exception::class)
+    private fun commandLineForVariables(
+        actionName: String?, pkgSuffix: Int, vararg variables: String?
+    ): net.starlark.java.eval.Sequence<String?>? {
+        scratch.file(
+            "a" + pkgSuffix + "/BUILD",
+            "load('@rules_cc//cc/toolchains:cc_toolchain_alias.bzl',"
+                    + " 'cc_toolchain_alias')",
+            "load(':rule.bzl', 'crule')",
+            "cc_toolchain_alias(name='alias')",
+            "crule(name='r')"
+        )
+
+        scratch.file(
+            "a" + pkgSuffix + "/rule.bzl",
+            "load('//myinfo:myinfo.bzl', 'MyInfo')",
+            "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
+            "def _impl(ctx):",
+            "  toolchain = ctx.attr._cc_toolchain[cc_common.CcToolchainInfo]",
+            "  feature_configuration = cc_common.configure_features(",
+            "    ctx = ctx,",
+            "    cc_toolchain = toolchain,",
+            "    requested_features = ctx.features,",
+            "  )",
+            "  variables = " + com.google.common.base.Joiner.on("\n").join(variables),
+            "  return [MyInfo(",
+            "    command_line = cc_common.get_memory_inefficient_command_line(",
+            "        feature_configuration = feature_configuration,",
+            "        action_name = '" + actionName + "',",
+            "        variables = variables))]",
+            "crule = rule(",
+            "  _impl,",
+            "  attrs = { ",
+            "    '_cc_toolchain': attr.label(default=Label('//a" + pkgSuffix + ":alias'))",
+            "  },",
+            "  fragments = ['cpp'],",
+            ");"
+        )
+
+        /* Calling {@link #getTarget} to get loading errors */
+        getTarget("//a" + pkgSuffix + ":r")
+        val r: ConfiguredTarget = getConfiguredTarget("//a" + pkgSuffix + ":r")
+        if (r == null) {
+            return null
+        }
+        val result: net.starlark.java.eval.Sequence<String?>? =
+            getMyInfoFromTarget(r).getValue("command_line") as net.starlark.java.eval.Sequence<String?>?
+        return result
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCcCompilationProvider() {
+        scratch.file(
+            "a/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         load("//tools/build_defs/cc:rule.bzl", "crule")
 
@@ -1317,11 +1370,13 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
         )
 
         crule(name = "r")
-        """);
-    scratch.overwriteFile("tools/build_defs/cc/BUILD", "");
-    scratch.file(
-        "tools/build_defs/cc/rule.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.overwriteFile("tools/build_defs/cc/BUILD", "")
+        scratch.file(
+            "tools/build_defs/cc/rule.bzl",
+            """
         load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
         load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')
         load("//myinfo:myinfo.bzl", "MyInfo")
@@ -1387,88 +1442,95 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             },
             fragments = ["cpp"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget lib = getConfiguredTarget("//a:lib");
-    CcCompilationContext ccCompilationContext = CcInfo.get(lib).getCcCompilationContext();
-    assertThat(
+        val lib: ConfiguredTarget = getConfiguredTarget("//a:lib")
+        val ccCompilationContext: CcCompilationContext = CcInfo.get(lib).getCcCompilationContext()
+        assertThat(
             ccCompilationContext.getDeclaredIncludeSrcs().toList().stream()
                 .map(Artifact::getFilename)
-                .collect(ImmutableList.toImmutableList()))
-        .containsExactly("lib.h", "header.h", "dep1.h", "dep2.h");
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
+        )
+            .containsExactly("lib.h", "header.h", "dep1.h", "dep2.h")
 
-    StructImpl myInfo = getMyInfoFromTarget(getConfiguredTarget("//a:r"));
+        val myInfo: StructImpl = getMyInfoFromTarget(getConfiguredTarget("//a:r"))
 
-    List<Artifact> mergedHeaders =
-        ((Depset) myInfo.getValue("merged_headers")).getSet(Artifact.class).toList();
-    assertThat(
+        val mergedHeaders: MutableList<Artifact?> =
+            (myInfo.getValue("merged_headers") as Depset).getSet(Artifact::class.java).toList()
+        Truth.assertThat(
             mergedHeaders.stream()
-                .map(Artifact::getFilename)
-                .collect(ImmutableList.toImmutableList()))
-        .containsAtLeast("header.h", "dep1.h", "dep2.h");
+                .map<Any?>(Artifact::getFilename)
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<Any?>())
+        )
+            .containsAtLeast("header.h", "dep1.h", "dep2.h")
 
-    @SuppressWarnings("unchecked")
-    List<Artifact> textualHeaders =
-        ((Sequence<Artifact>) myInfo.getValue("textual_headers")).getImmutableList();
-    assertThat(
+        val textualHeaders: MutableList<Artifact?> =
+            (myInfo.getValue("textual_headers") as net.starlark.java.eval.Sequence<Artifact?>).getImmutableList()
+        Truth.assertThat(
             textualHeaders.stream()
-                .map(Artifact::getFilename)
-                .collect(ImmutableList.toImmutableList()))
-        .contains("textual_header.h");
-    @SuppressWarnings("unchecked")
-    List<Artifact> publicHeaders =
-        ((Sequence<Artifact>) myInfo.getValue("public_headers")).getImmutableList();
-    assertThat(
+                .map<Any?>(Artifact::getFilename)
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<Any?>())
+        )
+            .contains("textual_header.h")
+        val publicHeaders: MutableList<Artifact?> =
+            (myInfo.getValue("public_headers") as net.starlark.java.eval.Sequence<Artifact?>).getImmutableList()
+        Truth.assertThat(
             publicHeaders.stream()
-                .map(Artifact::getFilename)
-                .collect(ImmutableList.toImmutableList()))
-        .contains("public_header.h");
-    @SuppressWarnings("unchecked")
-    List<Artifact> privateHeaders =
-        ((Sequence<Artifact>) myInfo.getValue("private_headers")).getImmutableList();
-    assertThat(
+                .map<Any?>(Artifact::getFilename)
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<Any?>())
+        )
+            .contains("public_header.h")
+        val privateHeaders: MutableList<Artifact?> =
+            (myInfo.getValue("private_headers") as net.starlark.java.eval.Sequence<Artifact?>).getImmutableList()
+        Truth.assertThat(
             privateHeaders.stream()
-                .map(Artifact::getFilename)
-                .collect(ImmutableList.toImmutableList()))
-        .contains("private_header.h");
+                .map<Any?>(Artifact::getFilename)
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<Any?>())
+        )
+            .contains("private_header.h")
 
-    List<String> mergedDefines =
-        ((Depset) myInfo.getValue("merged_defines")).getSet(String.class).toList();
-    assertThat(mergedDefines).containsAtLeast("MYDEFINE", "DEP1", "DEP2");
-    assertThat(mergedDefines).doesNotContain("LOCALDEP1");
+        val mergedDefines: MutableList<String?>? =
+            (myInfo.getValue("merged_defines") as Depset).getSet(String::class.java).toList()
+        Truth.assertThat(mergedDefines).containsAtLeast("MYDEFINE", "DEP1", "DEP2")
+        Truth.assertThat(mergedDefines).doesNotContain("LOCALDEP1")
 
-    List<String> mergedSystemIncludes =
-        ((Depset) myInfo.getValue("merged_system_includes")).getSet(String.class).toList();
-    assertThat(mergedSystemIncludes).contains("foo/bar");
+        val mergedSystemIncludes: MutableList<String?>? =
+            (myInfo.getValue("merged_system_includes") as Depset).getSet(String::class.java).toList()
+        Truth.assertThat(mergedSystemIncludes).contains("foo/bar")
 
-    List<String> mergedIncludes =
-        ((Depset) myInfo.getValue("merged_includes")).getSet(String.class).toList();
-    assertThat(mergedIncludes).containsAtLeast("baz/qux", "a/dep1/baz", "a/dep2/qux");
+        val mergedIncludes: MutableList<String?>? =
+            (myInfo.getValue("merged_includes") as Depset).getSet(String::class.java).toList()
+        Truth.assertThat(mergedIncludes).containsAtLeast("baz/qux", "a/dep1/baz", "a/dep2/qux")
 
-    List<String> mergedQuoteIncludes =
-        ((Depset) myInfo.getValue("merged_quote_includes")).getSet(String.class).toList();
-    assertThat(mergedQuoteIncludes).contains("quux/abc");
+        val mergedQuoteIncludes: MutableList<String?>? =
+            (myInfo.getValue("merged_quote_includes") as Depset).getSet(String::class.java).toList()
+        Truth.assertThat(mergedQuoteIncludes).contains("quux/abc")
 
-    List<String> mergedFrameworkIncludes =
-        ((Depset) myInfo.getValue("merged_framework_includes")).getSet(String.class).toList();
-    assertThat(mergedFrameworkIncludes).contains("fuux/fgh");
-  }
+        val mergedFrameworkIncludes: MutableList<String?>? =
+            (myInfo.getValue("merged_framework_includes") as Depset).getSet(String::class.java).toList()
+        Truth.assertThat(mergedFrameworkIncludes).contains("fuux/fgh")
+    }
 
-  @Test
-  public void testCcCompilationProviderDefaultValues() throws Exception {
-    scratch.file(
-        "a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCcCompilationProviderDefaultValues() {
+        scratch.file(
+            "a/BUILD",
+            """
         load("//tools/build_defs/cc:rule.bzl", "crule")
 
         licenses(["notice"])
 
         crule(name = "r")
-        """);
-    scratch.overwriteFile("tools/build_defs/cc/BUILD", "");
-    scratch.file(
-        "tools/build_defs/cc/rule.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.overwriteFile("tools/build_defs/cc/BUILD", "")
+        scratch.file(
+            "tools/build_defs/cc/rule.bzl",
+            """
         load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')
         def _impl(ctx):
             compilation_context = cc_common.create_compilation_context()
@@ -1477,27 +1539,32 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             _impl,
             fragments = ["cpp"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertThat(getConfiguredTarget("//a:r")).isNotNull();
-  }
+        assertThat(getConfiguredTarget("//a:r")).isNotNull()
+    }
 
-  @Test
-  public void testCcCompilationProviderInvalidValues() throws Exception {
-    reporter.removeHandler(failFastHandler);
-    scratch.file(
-        "a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCcCompilationProviderInvalidValues() {
+        reporter.removeHandler(failFastHandler)
+        scratch.file(
+            "a/BUILD",
+            """
         load("//tools/build_defs/cc:rule.bzl", "crule")
 
         licenses(["notice"])
 
         crule(name = "r")
-        """);
-    scratch.overwriteFile("tools/build_defs/cc/BUILD", "");
-    scratch.file(
-        "tools/build_defs/cc/rule.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.overwriteFile("tools/build_defs/cc/BUILD", "")
+        scratch.file(
+            "tools/build_defs/cc/rule.bzl",
+            """
         load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')
         def _impl(ctx):
             compilation_context = cc_common.create_compilation_context(headers = [])
@@ -1506,25 +1573,30 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             _impl,
             fragments = ["cpp"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    getConfiguredTarget("//a:r");
-    assertContainsEvent("for headers, got list, want a depset of File");
-  }
+        getConfiguredTarget("//a:r")
+        assertContainsEvent("for headers, got list, want a depset of File")
+    }
 
-  @Test
-  public void testCreateCompilationOutputs_invalidDepset() throws Exception {
-    reporter.removeHandler(failFastHandler);
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCreateCompilationOutputs_invalidDepset() {
+        reporter.removeHandler(failFastHandler)
+        scratch.file(
+            "test/BUILD",
+            """
         load(":my_rule.bzl", "my_rule")
 
         my_rule(name = "x")
-        """);
-    scratch.file(
-        "test/my_rule.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/my_rule.bzl",
+            """
         load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')
         def _impl(ctx):
             cc_common.create_compilation_outputs(
@@ -1535,24 +1607,29 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
         my_rule = rule(
             _impl,
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertThat(getConfiguredTarget("//test:x")).isNull();
-    assertContainsEvent("for 'objects', got a depset of 'int', expected a depset of 'File'");
-  }
+        assertThat(getConfiguredTarget("//test:x")).isNull()
+        assertContainsEvent("for 'objects', got a depset of 'int', expected a depset of 'File'")
+    }
 
-  @Test
-  public void testCreateCompilationOutputs_empty() throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCreateCompilationOutputs_empty() {
+        scratch.file(
+            "test/BUILD",
+            """
         load(":my_rule.bzl", "my_rule")
 
         my_rule(name = "x")
-        """);
-    scratch.file(
-        "test/my_rule.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/my_rule.bzl",
+            """
         load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')
         def _impl(ctx):
             cc_common.create_compilation_outputs()
@@ -1560,139 +1637,204 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
         my_rule = rule(
             _impl,
         )
-        """);
-
-    assertThat(getConfiguredTarget("//test:x")).isNotNull();
-  }
-
-  @Test
-  public void testCreateLtoCompilationContextIsPrivate() throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
-        load(":my_rule.bzl", "my_rule")
-
-        my_rule(name = "x")
-        """);
-    scratch.file(
-        "test/my_rule.bzl",
-        """
-        load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')
-        def _impl(ctx):
-            obj = ctx.actions.declare_file("foo.o")
-            thin_link_obj = ctx.actions.declare_file("foo.indexing.o")
-            ctx.actions.write(obj, "this string is not a valid object file")
-            ctx.actions.write(thin_link_obj, "this string is not a valid thin link object file")
-            cc_common.create_lto_compilation_context(objects = {obj: (thin_link_obj, ["-O3"])})
-
-        my_rule = rule(
-            _impl,
+        
+        """.trimIndent()
         )
-        """);
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//test:x"));
-    assertThat(e).hasMessageThat().contains("cannot use private API");
-  }
 
-  @Test
-  public void testCreateLtoCompilationContext() throws Exception {
-    String rustPrefix = "third_party/bazel_rules/rules_rust/rust/private";
-    scratch.file(
-        rustPrefix + "/BUILD",
-        """
-        load(":my_rule.bzl", "my_rule")
-
-        my_rule(name = "x")
-        """);
-    scratch.file(
-        rustPrefix + "/my_rule.bzl",
-        """
-        load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')
-        def _impl(ctx):
-            obj = ctx.actions.declare_file("foo.o")
-            thin_link_obj = ctx.actions.declare_file("foo.indexing.o")
-            ctx.actions.write(obj, "this string is not a valid object file")
-            ctx.actions.write(thin_link_obj, "this string is not a valid thin link object file")
-            cc_common.create_lto_compilation_context(objects = {obj: (thin_link_obj, ["-O3"])})
-
-        my_rule = rule(
-            _impl,
-        )
-        """);
-    getConfiguredTarget("//" + rustPrefix + ":x");
-    assertNoEvents();
-  }
-
-  @Test
-  public void testCcLinkingContextOnWindows() throws Exception {
-    if (!AnalysisMock.get().isThisBazel()) {
-      return;
+        assertThat(getConfiguredTarget("//test:x")).isNotNull()
     }
-    AnalysisMock.get()
-        .ccSupport()
-        .setupCcToolchainConfig(
-            mockToolsConfig,
-            CcToolchainConfig.builder()
-                .withFeatures(
-                    CppRuleClasses.COPY_DYNAMIC_LIBRARIES_TO_BINARY,
-                    CppRuleClasses.TARGETS_WINDOWS,
-                    CppRuleClasses.SUPPORTS_DYNAMIC_LINKER));
-    doTestCcLinkingContext(
-        ImmutableList.of("a.a", "libdep2.a", "b.rlib", "c.a", "d.a", "libdep1.a"),
-        ImmutableList.of("a.pic.a", "b.rlib", "c.pic.a", "e.pic.a"),
-        // The suffix of dynamic library is calculated based on repository name and package path
-        // to avoid conflicts with dynamic library from other packages.
-        ImmutableList.of("a.so", "libdep2_61.so", "b.so", "e.so", "libdep1_61.so"));
-  }
 
-  @Test
-  public void testCcLinkingContext() throws Exception {
-    AnalysisMock.get()
-        .ccSupport()
-        .setupCcToolchainConfig(
-            mockToolsConfig,
-            CcToolchainConfig.builder()
-                .withFeatures(
-                    CppRuleClasses.PIC,
-                    CppRuleClasses.SUPPORTS_PIC,
-                    CppRuleClasses.SUPPORTS_DYNAMIC_LINKER));
-    var picStaticLibraries =
-        ImmutableList.of("a.pic.a", "b.rlib", "e.pic.a", "libdep1.a", "c.pic.a", "libdep2.a");
-    doTestCcLinkingContext(
-        ImmutableList.of("a.a", "b.rlib", "c.a", "d.a"),
-        picStaticLibraries,
-        ImmutableList.of("a.so", "liba_Slibdep2.so", "b.so", "e.so", "liba_Slibdep1.so"));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCreateLtoCompilationContextIsPrivate() {
+        scratch.file(
+            "test/BUILD",
+            """
+        load(":my_rule.bzl", "my_rule")
 
-  @Test
-  public void testCcLinkingContextForExperimentalCcSharedLibrary() throws Exception {
-    AnalysisMock.get()
-        .ccSupport()
-        .setupCcToolchainConfig(
-            mockToolsConfig,
-            CcToolchainConfig.builder()
-                .withFeatures(
-                    CppRuleClasses.PIC,
-                    CppRuleClasses.SUPPORTS_PIC,
-                    CppRuleClasses.SUPPORTS_DYNAMIC_LINKER));
-    var picStaticLibraries =
-        ImmutableList.of("a.pic.a", "libdep2.a", "b.rlib", "c.pic.a", "e.pic.a", "libdep1.a");
-    doTestCcLinkingContext(
-        ImmutableList.of("a.a", "b.rlib", "c.a", "d.a"),
-        picStaticLibraries,
-        ImmutableList.of("a.so", "liba_Slibdep2.so", "b.so", "e.so", "liba_Slibdep1.so"));
-  }
+        my_rule(name = "x")
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/my_rule.bzl",
+            """
+        load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')
+        def _impl(ctx):
+            obj = ctx.actions.declare_file("foo.o")
+            thin_link_obj = ctx.actions.declare_file("foo.indexing.o")
+            ctx.actions.write(obj, "this string is not a valid object file")
+            ctx.actions.write(thin_link_obj, "this string is not a valid thin link object file")
+            cc_common.create_lto_compilation_context(objects = {obj: (thin_link_obj, ["-O3"])})
 
-  private static String getSolibRelativePath(Artifact library, CcToolchainProvider toolchain)
-      throws EvalException {
-    return library.getRootRelativePath().relativeTo(toolchain.getSolibDirectory()).toString();
-  }
+        my_rule = rule(
+            _impl,
+        )
+        
+        """.trimIndent()
+        )
+        val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//test:x") })
+        Truth.assertThat(e).hasMessageThat().contains("cannot use private API")
+    }
 
-  @Test
-  public void testSolibLinkDefault() throws Exception {
-    setUpCcLinkingContextTest();
-    scratch.file(
-        "foo/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCreateLtoCompilationContext() {
+        val rustPrefix = "third_party/bazel_rules/rules_rust/rust/private"
+        scratch.file(
+            rustPrefix + "/BUILD",
+            """
+        load(":my_rule.bzl", "my_rule")
+
+        my_rule(name = "x")
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            rustPrefix + "/my_rule.bzl",
+            """
+        load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')
+        def _impl(ctx):
+            obj = ctx.actions.declare_file("foo.o")
+            thin_link_obj = ctx.actions.declare_file("foo.indexing.o")
+            ctx.actions.write(obj, "this string is not a valid object file")
+            ctx.actions.write(thin_link_obj, "this string is not a valid thin link object file")
+            cc_common.create_lto_compilation_context(objects = {obj: (thin_link_obj, ["-O3"])})
+
+        my_rule = rule(
+            _impl,
+        )
+        
+        """.trimIndent()
+        )
+        getConfiguredTarget("//" + rustPrefix + ":x")
+        assertNoEvents()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCcLinkingContextOnWindows() {
+        if (!AnalysisMock.get().isThisBazel()) {
+            return
+        }
+        AnalysisMock.get()
+            .ccSupport()
+            .setupCcToolchainConfig(
+                mockToolsConfig,
+                CcToolchainConfig.builder()
+                    .withFeatures(
+                        CppRuleClasses.COPY_DYNAMIC_LIBRARIES_TO_BINARY,
+                        CppRuleClasses.TARGETS_WINDOWS,
+                        CppRuleClasses.SUPPORTS_DYNAMIC_LINKER
+                    )
+            )
+        doTestCcLinkingContext(
+            com.google.common.collect.ImmutableList.of<String?>(
+                "a.a",
+                "libdep2.a",
+                "b.rlib",
+                "c.a",
+                "d.a",
+                "libdep1.a"
+            ),
+            com.google.common.collect.ImmutableList.of<String?>(
+                "a.pic.a",
+                "b.rlib",
+                "c.pic.a",
+                "e.pic.a"
+            ),  // The suffix of dynamic library is calculated based on repository name and package path
+            // to avoid conflicts with dynamic library from other packages.
+            com.google.common.collect.ImmutableList.of<String?>(
+                "a.so",
+                "libdep2_61.so",
+                "b.so",
+                "e.so",
+                "libdep1_61.so"
+            )
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCcLinkingContext() {
+        AnalysisMock.get()
+            .ccSupport()
+            .setupCcToolchainConfig(
+                mockToolsConfig,
+                CcToolchainConfig.builder()
+                    .withFeatures(
+                        CppRuleClasses.PIC,
+                        CppRuleClasses.SUPPORTS_PIC,
+                        CppRuleClasses.SUPPORTS_DYNAMIC_LINKER
+                    )
+            )
+        val picStaticLibraries: com.google.common.collect.ImmutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>(
+                "a.pic.a",
+                "b.rlib",
+                "e.pic.a",
+                "libdep1.a",
+                "c.pic.a",
+                "libdep2.a"
+            )
+        doTestCcLinkingContext(
+            com.google.common.collect.ImmutableList.of<String?>("a.a", "b.rlib", "c.a", "d.a"),
+            picStaticLibraries,
+            com.google.common.collect.ImmutableList.of<String?>(
+                "a.so",
+                "liba_Slibdep2.so",
+                "b.so",
+                "e.so",
+                "liba_Slibdep1.so"
+            )
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCcLinkingContextForExperimentalCcSharedLibrary() {
+        AnalysisMock.get()
+            .ccSupport()
+            .setupCcToolchainConfig(
+                mockToolsConfig,
+                CcToolchainConfig.builder()
+                    .withFeatures(
+                        CppRuleClasses.PIC,
+                        CppRuleClasses.SUPPORTS_PIC,
+                        CppRuleClasses.SUPPORTS_DYNAMIC_LINKER
+                    )
+            )
+        val picStaticLibraries: com.google.common.collect.ImmutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>(
+                "a.pic.a",
+                "libdep2.a",
+                "b.rlib",
+                "c.pic.a",
+                "e.pic.a",
+                "libdep1.a"
+            )
+        doTestCcLinkingContext(
+            com.google.common.collect.ImmutableList.of<String?>("a.a", "b.rlib", "c.a", "d.a"),
+            picStaticLibraries,
+            com.google.common.collect.ImmutableList.of<String?>(
+                "a.so",
+                "liba_Slibdep2.so",
+                "b.so",
+                "e.so",
+                "liba_Slibdep1.so"
+            )
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSolibLinkDefault() {
+        setUpCcLinkingContextTest()
+        scratch.file(
+            "foo/BUILD",
+            """
         load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
         load("//tools/build_defs/cc:rule.bzl", "crule")
 
@@ -1706,37 +1848,44 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             dynamic_library = "a.so",
             interface_library = "a.ifso",
         )
-        """);
-    ConfiguredTarget a = getConfiguredTarget("//foo:a");
-    RuleContext ruleContext = getRuleContext(a);
-    CcToolchainProvider toolchain = CppHelper.getToolchain(ruleContext);
-    StructImpl info = ((StructImpl) getMyInfoFromTarget(a).getValue("info"));
-    Depset librariesToLink = info.getValue("libraries_to_link", Depset.class);
-    ImmutableList.Builder<String> dynamicLibSolibRelativePathsBuilder = ImmutableList.builder();
-    ImmutableList.Builder<String> interfaceLibSolibRelativePathsBuilder = ImmutableList.builder();
-    for (StarlarkInfo libraryToLinkStr : librariesToLink.toList(StarlarkInfo.class)) {
-      LibraryToLink libraryToLink = LibraryToLink.wrap(libraryToLinkStr);
-      if (libraryToLink.getDynamicLibrary() != null) {
-        dynamicLibSolibRelativePathsBuilder.add(
-            getSolibRelativePath(libraryToLink.getDynamicLibrary(), toolchain));
-      }
-      if (libraryToLink.getInterfaceLibrary() != null) {
-        interfaceLibSolibRelativePathsBuilder.add(
-            getSolibRelativePath(libraryToLink.getInterfaceLibrary(), toolchain));
-      }
+        
+        """.trimIndent()
+        )
+        val a: ConfiguredTarget = getConfiguredTarget("//foo:a")
+        val ruleContext: RuleContext = getRuleContext(a)
+        val toolchain: CcToolchainProvider = CppHelper.getToolchain(ruleContext)
+        val info: StructImpl = (getMyInfoFromTarget(a).getValue("info") as StructImpl)
+        val librariesToLink: Depset = info.getValue("libraries_to_link", Depset::class.java)
+        val dynamicLibSolibRelativePathsBuilder: com.google.common.collect.ImmutableList.Builder<String?> =
+            com.google.common.collect.ImmutableList.builder<String?>()
+        val interfaceLibSolibRelativePathsBuilder: com.google.common.collect.ImmutableList.Builder<String?> =
+            com.google.common.collect.ImmutableList.builder<String?>()
+        for (libraryToLinkStr in librariesToLink.toList(StarlarkInfo::class.java)) {
+            val libraryToLink: LibraryToLink = LibraryToLink.wrap(libraryToLinkStr)
+            if (libraryToLink.getDynamicLibrary() != null) {
+                dynamicLibSolibRelativePathsBuilder.add(
+                    getSolibRelativePath(libraryToLink.getDynamicLibrary(), toolchain)
+                )
+            }
+            if (libraryToLink.getInterfaceLibrary() != null) {
+                interfaceLibSolibRelativePathsBuilder.add(
+                    getSolibRelativePath(libraryToLink.getInterfaceLibrary(), toolchain)
+                )
+            }
+        }
+        Truth.assertThat(dynamicLibSolibRelativePathsBuilder.build())
+            .containsExactly("_U_S_Sfoo_Ca___Ufoo/a.so")
+        Truth.assertThat(interfaceLibSolibRelativePathsBuilder.build())
+            .containsExactly("_U_S_Sfoo_Ca___Ufoo/a.ifso")
     }
-    assertThat(dynamicLibSolibRelativePathsBuilder.build())
-        .containsExactly("_U_S_Sfoo_Ca___Ufoo/a.so");
-    assertThat(interfaceLibSolibRelativePathsBuilder.build())
-        .containsExactly("_U_S_Sfoo_Ca___Ufoo/a.ifso");
-  }
 
-  @Test
-  public void testSolibLinkCustom() throws Exception {
-    setUpCcLinkingContextTest();
-    scratch.file(
-        "foo/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSolibLinkCustom() {
+        setUpCcLinkingContextTest()
+        scratch.file(
+            "foo/BUILD",
+            """
         load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
         load("//tools/build_defs/cc:rule.bzl", "crule")
 
@@ -1752,147 +1901,151 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             interface_library = "a.ifso",
             interface_library_symlink_path = "libcustom.ifso",
         )
-        """);
-    ConfiguredTarget a = getConfiguredTarget("//foo:a");
-    RuleContext ruleContext = getRuleContext(a);
-    CcToolchainProvider toolchain = CppHelper.getToolchain(ruleContext);
-    StructImpl info = ((StructImpl) getMyInfoFromTarget(a).getValue("info"));
-    Depset librariesToLink = info.getValue("libraries_to_link", Depset.class);
-    String solibDir = toolchain.getSolibDirectory();
-    assertThat(
-            librariesToLink.toList(StarlarkInfo.class).stream()
+        
+        """.trimIndent()
+        )
+        val a: ConfiguredTarget = getConfiguredTarget("//foo:a")
+        val ruleContext: RuleContext = getRuleContext(a)
+        val toolchain: CcToolchainProvider = CppHelper.getToolchain(ruleContext)
+        val info: StructImpl = (getMyInfoFromTarget(a).getValue("info") as StructImpl)
+        val librariesToLink: Depset = info.getValue("libraries_to_link", Depset::class.java)
+        val solibDir: String? = toolchain.getSolibDirectory()
+        assertThat(
+            librariesToLink.toList(StarlarkInfo::class.java).stream()
                 .map(LibraryToLink::wrap)
-                .filter(x -> x.getDynamicLibrary() != null)
+                .filter({ x -> x.getDynamicLibrary() != null })
                 .map(
-                    x ->
+                    { x ->
                         x.getDynamicLibrary()
                             .getRootRelativePath()
                             .relativeTo(solibDir)
-                            .toString()))
-        .containsExactly("custom/libcustom.so");
-    assertThat(
-            librariesToLink.toList(StarlarkInfo.class).stream()
+                            .toString()
+                    })
+        )
+            .containsExactly("custom/libcustom.so")
+        assertThat(
+            librariesToLink.toList(StarlarkInfo::class.java).stream()
                 .map(LibraryToLink::wrap)
-                .filter(x -> x.getInterfaceLibrary() != null)
+                .filter({ x -> x.getInterfaceLibrary() != null })
                 .map(
-                    x ->
+                    { x ->
                         x.getInterfaceLibrary()
                             .getRootRelativePath()
                             .relativeTo(solibDir)
-                            .toString()))
-        .containsExactly("libcustom.ifso");
-  }
-
-  @Test
-  public void testReallyLongSolibLink() throws Exception {
-    setUpCcLinkingContextTest();
-
-    String longpath =
-        "this/is/a/really/really/really/really/really/really/really/really/really/really/"
-            + "really/really/really/really/really/really/really/really/really/really/really/"
-            + "really/really/long/path/that/generates/really/long/solib/link/path";
-    scratch.file(
-        longpath + "/BUILD",
-        "load('//tools/build_defs/cc:rule.bzl', 'crule')",
-        "crule(name='a',",
-        "   dynamic_library = 'a.so',",
-        ")");
-
-    ConfiguredTarget a = getConfiguredTarget("//" + longpath + ":a");
-    StructImpl info = ((StructImpl) getMyInfoFromTarget(a).getValue("info"));
-    Depset librariesToLink = info.getValue("libraries_to_link", Depset.class);
-    ImmutableList<String> dynamicLibraryParentDirectories =
-        librariesToLink.toList(StarlarkInfo.class).stream()
-            .map(LibraryToLink::wrap)
-            .filter(x -> x.getDynamicLibrary() != null)
-            .map(
-                x -> x.getDynamicLibrary().getRootRelativePath().getParentDirectory().getBaseName())
-            .collect(ImmutableList.toImmutableList());
-    for (String dynamicLibraryParentDirectory : dynamicLibraryParentDirectories) {
-      assertThat(dynamicLibraryParentDirectory.length()).isLessThan(MAX_FILENAME_LENGTH + 1);
+                            .toString()
+                    })
+        )
+            .containsExactly("libcustom.ifso")
     }
-  }
 
-  private static Artifact getLinkstampFile(StarlarkInfo linkstamp) {
-    try (Mutability mu = Mutability.create()) {
-      StarlarkFunction func = linkstamp.getValue("file", StarlarkFunction.class);
-      StarlarkThread thread = StarlarkThread.createTransient(mu, StarlarkSemantics.DEFAULT);
-      return (Artifact) Starlark.positionalOnlyCall(thread, func);
-    } catch (EvalException | InterruptedException e) {
-      throw new RuntimeException(e);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testReallyLongSolibLink() {
+        setUpCcLinkingContextTest()
+
+        val longpath =
+            ("this/is/a/really/really/really/really/really/really/really/really/really/really/"
+                    + "really/really/really/really/really/really/really/really/really/really/really/"
+                    + "really/really/long/path/that/generates/really/long/solib/link/path")
+        scratch.file(
+            longpath + "/BUILD",
+            "load('//tools/build_defs/cc:rule.bzl', 'crule')",
+            "crule(name='a',",
+            "   dynamic_library = 'a.so',",
+            ")"
+        )
+
+        val a: ConfiguredTarget = getConfiguredTarget("//" + longpath + ":a")
+        val info: StructImpl = (getMyInfoFromTarget(a).getValue("info") as StructImpl)
+        val librariesToLink: Depset = info.getValue("libraries_to_link", Depset::class.java)
+        val dynamicLibraryParentDirectories: com.google.common.collect.ImmutableList<String> =
+            librariesToLink.toList(StarlarkInfo::class.java).stream()
+                .map(LibraryToLink::wrap)
+                .filter({ x -> x.getDynamicLibrary() != null })
+                .map(
+                    { x -> x.getDynamicLibrary().getRootRelativePath().getParentDirectory().getBaseName() })
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
+        for (dynamicLibraryParentDirectory in dynamicLibraryParentDirectories) {
+            Truth.assertThat(dynamicLibraryParentDirectory.length).isLessThan(MAX_FILENAME_LENGTH + 1)
+        }
     }
-  }
 
-  private void doTestCcLinkingContext(
-      List<String> staticLibraryList,
-      List<String> picStaticLibraryList,
-      List<String> dynamicLibraryList)
-      throws Exception {
-    useConfiguration("--features=-supports_interface_shared_libraries");
-    setUpCcLinkingContextTest();
-    ConfiguredTarget a = getConfiguredTarget("//a:a");
+    @Throws(java.lang.Exception::class)
+    private fun doTestCcLinkingContext(
+        staticLibraryList: MutableList<String?>,
+        picStaticLibraryList: MutableList<String?>,
+        dynamicLibraryList: MutableList<String?>
+    ) {
+        useConfiguration("--features=-supports_interface_shared_libraries")
+        setUpCcLinkingContextTest()
+        val a: ConfiguredTarget = getConfiguredTarget("//a:a")
 
-    StructImpl info = ((StructImpl) getMyInfoFromTarget(a).getValue("info"));
-    @SuppressWarnings("unchecked")
-    Sequence<String> userLinkFlags =
-        (Sequence<String>) info.getValue("user_link_flags", Sequence.class);
-    assertThat(userLinkFlags.getImmutableList())
-        .containsExactly("-la", "-lc2", "-DEP2_LINKOPT", "-lc1", "-lc2", "-DEP1_LINKOPT");
-    Depset additionalInputs = info.getValue("additional_inputs", Depset.class);
-    assertThat(additionalInputs.toList(Artifact.class).stream().map(Artifact::getFilename))
-        .containsAtLeast("b.lds", "d.lds"); // On Windows also .def files
-    Depset linkstamps = info.getValue("linkstamps", Depset.class);
-    assertThat(
+        val info: StructImpl = (getMyInfoFromTarget(a).getValue("info") as StructImpl)
+        val userLinkFlags: net.starlark.java.eval.Sequence<String?> =
+            info.getValue(
+                "user_link_flags",
+                net.starlark.java.eval.Sequence::class.java
+            ) as net.starlark.java.eval.Sequence<String?>
+        Truth.assertThat(userLinkFlags.getImmutableList())
+            .containsExactly("-la", "-lc2", "-DEP2_LINKOPT", "-lc1", "-lc2", "-DEP1_LINKOPT")
+        val additionalInputs: Depset = info.getValue("additional_inputs", Depset::class.java)
+        assertThat(additionalInputs.toList(Artifact::class.java).stream().map(Artifact::getFilename))
+            .containsAtLeast("b.lds", "d.lds") // On Windows also .def files
+        val linkstamps: Depset = info.getValue("linkstamps", Depset::class.java)
+        Truth.assertThat(
             artifactsToStrings(
-                linkstamps.toList(StarlarkInfo.class).stream()
-                    .map(StarlarkCcCommonTest::getLinkstampFile)
-                    .collect(ImmutableList.toImmutableList())))
-        .containsExactly("src a/linkstamp.cc");
-    ImmutableList<StarlarkInfo> librariesToLink =
-        info.getValue("libraries_to_link", Depset.class).toList(StarlarkInfo.class);
-    assertThat(
+                linkstamps.toList(StarlarkInfo::class.java).stream()
+                    .map({ linkstamp: StarlarkInfo -> getLinkstampFile(linkstamp) })
+                    .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
+            )
+        )
+            .containsExactly("src a/linkstamp.cc")
+        val librariesToLink: com.google.common.collect.ImmutableList<StarlarkInfo?> =
+            info.getValue("libraries_to_link", Depset::class.java).toList(StarlarkInfo::class.java)
+        Truth.assertThat(
             librariesToLink.stream()
-                .map(LibraryToLink::wrap)
-                .filter(x -> x.getStaticLibrary() != null)
-                .map(x -> x.getStaticLibrary().getFilename()))
-        .containsExactlyElementsIn(staticLibraryList);
-    assertThat(
+                .map<Any?>(LibraryToLink::wrap)
+                .filter { x: Any? -> x.getStaticLibrary() != null }
+                .map<Any?> { x: Any? -> x.getStaticLibrary().getFilename() })
+            .containsExactlyElementsIn(staticLibraryList)
+        Truth.assertThat(
             librariesToLink.stream()
-                .map(LibraryToLink::wrap)
-                .filter(x -> x.getPicStaticLibrary() != null)
-                .map(x -> x.getPicStaticLibrary().getFilename()))
-        .containsExactlyElementsIn(picStaticLibraryList);
-    assertThat(
+                .map<Any?>(LibraryToLink::wrap)
+                .filter { x: Any? -> x.getPicStaticLibrary() != null }
+                .map<Any?> { x: Any? -> x.getPicStaticLibrary().getFilename() })
+            .containsExactlyElementsIn(picStaticLibraryList)
+        Truth.assertThat(
             librariesToLink.stream()
-                .map(LibraryToLink::wrap)
-                .filter(x -> x.getDynamicLibrary() != null)
-                .map(x -> x.getDynamicLibrary().getFilename()))
-        .containsExactlyElementsIn(dynamicLibraryList);
-    assertThat(
+                .map<Any?>(LibraryToLink::wrap)
+                .filter { x: Any? -> x.getDynamicLibrary() != null }
+                .map<Any?> { x: Any? -> x.getDynamicLibrary().getFilename() })
+            .containsExactlyElementsIn(dynamicLibraryList)
+        Truth.assertThat(
             librariesToLink.stream()
-                .map(LibraryToLink::wrap)
-                .filter(x -> x.getInterfaceLibrary() != null)
-                .map(x -> x.getInterfaceLibrary().getFilename()))
-        .containsExactly("a.ifso");
-    Artifact staticLibrary = info.getValue("static_library", Artifact.class);
-    assertThat(staticLibrary.getFilename()).isEqualTo("a.a");
-    Artifact picStaticLibrary = info.getValue("pic_static_library", Artifact.class);
-    assertThat(picStaticLibrary.getFilename()).isEqualTo("a.pic.a");
-    Artifact dynamicLibrary = info.getValue("dynamic_library", Artifact.class);
-    assertThat(dynamicLibrary.getFilename()).isEqualTo("a.so");
-    Artifact interfaceLibrary = info.getValue("interface_library", Artifact.class);
-    assertThat(interfaceLibrary.getFilename()).isEqualTo("a.ifso");
-    boolean alwayslink = info.getValue("alwayslink", Boolean.class);
-    assertThat(alwayslink).isTrue();
+                .map<Any?>(LibraryToLink::wrap)
+                .filter { x: Any? -> x.getInterfaceLibrary() != null }
+                .map<Any?> { x: Any? -> x.getInterfaceLibrary().getFilename() })
+            .containsExactly("a.ifso")
+        val staticLibrary: Artifact = info.getValue("static_library", Artifact::class.java)
+        assertThat(staticLibrary.getFilename()).isEqualTo("a.a")
+        val picStaticLibrary: Artifact = info.getValue("pic_static_library", Artifact::class.java)
+        assertThat(picStaticLibrary.getFilename()).isEqualTo("a.pic.a")
+        val dynamicLibrary: Artifact = info.getValue("dynamic_library", Artifact::class.java)
+        assertThat(dynamicLibrary.getFilename()).isEqualTo("a.so")
+        val interfaceLibrary: Artifact = info.getValue("interface_library", Artifact::class.java)
+        assertThat(interfaceLibrary.getFilename()).isEqualTo("a.ifso")
+        val alwayslink: Boolean = info.getValue("alwayslink", Boolean::class.java)
+        Truth.assertThat(alwayslink).isTrue()
 
-    ConfiguredTarget bin = getConfiguredTarget("//a:bin");
-    assertThat(bin).isNotNull();
-  }
+        val bin: ConfiguredTarget = getConfiguredTarget("//a:bin")
+        assertThat(bin).isNotNull()
+    }
 
-  private void setUpCcLinkingContextTest() throws Exception {
-    scratch.file(
-        "a/BUILD",
-        """
+    @Throws(java.lang.Exception::class)
+    private fun setUpCcLinkingContextTest() {
+        scratch.file(
+            "a/BUILD",
+            """
         load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         load("@rules_cc//cc/toolchains:cc_toolchain_alias.bzl", "cc_toolchain_alias")
@@ -1974,2944 +2127,3614 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             hdrs = ["dep2.h"],
             linkopts = ["-DEP2_LINKOPT"],
         )
-        """);
-    scratch.file("a/lib.a", "");
-    scratch.file("a/lib.so", "");
-    scratch.overwriteFile("tools/build_defs/cc/BUILD", "");
-    scratch.file(
-        "tools/build_defs/cc/rule.bzl",
-        "load('//myinfo:myinfo.bzl', 'MyInfo')",
-        "load('"
-            + TestConstants.RULES_CC
-            + ":find_cc_toolchain.bzl', 'find_cc_toolchain', 'use_cc_toolchain')",
-        "load('@rules_cc//cc/common:cc_info.bzl', 'CcInfo')",
-        "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
-        "linker_input = cc_common.create_linker_input(",
-        "                 owner=Label('//toplevel'),",
-        "                 user_link_flags=[['-first_flag'], ['-second_flag']])",
-        "top_linking_context_smoke = cc_common.create_linking_context(",
-        "   linker_inputs=depset([linker_input]))",
-        "def _create(ctx, feature_configuration, static_library, pic_static_library,",
-        "  dynamic_library,",
-        "  interface_library, dynamic_library_symlink_path, interface_library_symlink_path,",
-        "  alwayslink, objects, pic_objects):",
-        "  return cc_common.create_library_to_link(",
-        "    actions=ctx.actions, feature_configuration=feature_configuration, ",
-        "    cc_toolchain = ctx.attr._cc_toolchain[cc_common.CcToolchainInfo], ",
-        "    static_library=static_library, pic_static_library=pic_static_library,",
-        "    dynamic_library=dynamic_library, interface_library=interface_library,",
-        "    dynamic_library_symlink_path=dynamic_library_symlink_path,",
-        "    interface_library_symlink_path=interface_library_symlink_path,",
-        "    alwayslink=alwayslink, ",
-        "    )",
-        "def _impl(ctx):",
-        "  toolchain = find_cc_toolchain(ctx)",
-        "  feature_configuration = cc_common.configure_features(",
-        "    ctx = ctx,",
-        "    cc_toolchain = toolchain,",
-        "  )",
-        "  library_to_link = _create(ctx, feature_configuration, ctx.file.static_library, ",
-        "     ctx.file.pic_static_library, ctx.file.dynamic_library, ctx.file.interface_library,",
-        "     ctx.attr.dynamic_library_symlink_path,",
-        "     ctx.attr.interface_library_symlink_path,",
-        "     ctx.attr.alwayslink, ctx.files.objects, ctx.files.pic_objects)",
-        "  linker_input = cc_common.create_linker_input(",
-        "                   owner=ctx.label,",
-        "                   libraries=depset([library_to_link]),",
-        "                   user_link_flags=depset(ctx.attr.user_link_flags),",
-        "                   additional_inputs=depset(ctx.files.additional_inputs))",
-        "  linking_context = cc_common.create_linking_context(",
-        "     linker_inputs=depset([linker_input]))",
-        "  cc_infos = [CcInfo(linking_context=linking_context)]",
-        "  for dep in ctx.attr.deps:",
-        "      cc_infos.append(dep[CcInfo])",
-        "  merged_cc_info = cc_common.merge_cc_infos(cc_infos=cc_infos)",
-        "  merged_libraries = []",
-        "  merged_additional_inputs = []",
-        "  merged_user_link_flags = []",
-        "  merged_linkstamps = []",
-        "  for l in merged_cc_info.linking_context.linker_inputs.to_list():",
-        "      merged_libraries.extend(l.libraries)",
-        "      merged_additional_inputs.extend(l.additional_inputs)",
-        "      merged_user_link_flags.extend(l.user_link_flags)",
-        "      merged_linkstamps.extend(l.linkstamps)",
-        "  linkstamps_linker_input = cc_common.create_linker_input(",
-        "                   owner=ctx.label,",
-        "                   linkstamps=depset(merged_linkstamps))",
-        "  return [",
-        "     MyInfo(",
-        "         info = struct(",
-        "             cc_info = merged_cc_info,",
-        "             user_link_flags = merged_user_link_flags,",
-        "             additional_inputs = depset(merged_additional_inputs),",
-        "             libraries_to_link = depset(merged_libraries),",
-        "             linkstamps = depset(linkstamps_linker_input.linkstamps),",
-        "             static_library = library_to_link.static_library,",
-        "             pic_static_library = library_to_link.pic_static_library,",
-        "             dynamic_library = library_to_link.dynamic_library,",
-        "             interface_library = library_to_link.interface_library,",
-        "             alwayslink = library_to_link.alwayslink,",
-        "             objects = library_to_link.objects,",
-        "             pic_objects = library_to_link.pic_objects),",
-        "      ),",
-        "      merged_cc_info]",
-        "crule = rule(",
-        "  _impl,",
-        "  attrs = { ",
-        "    'user_link_flags' : attr.string_list(),",
-        "    'additional_inputs': attr.label_list(allow_files=True),",
-        "    'static_library': attr.label(allow_single_file=True),",
-        "    'pic_static_library': attr.label(allow_single_file=True),",
-        "    'dynamic_library': attr.label(allow_single_file=True),",
-        "    'dynamic_library_symlink_path': attr.string(),",
-        "    'interface_library': attr.label(allow_single_file=True),",
-        "    'interface_library_symlink_path': attr.string(),",
-        "    'objects': attr.label_list(allow_files=True),",
-        "    'pic_objects': attr.label_list(allow_files=True),",
-        "    'alwayslink': attr.bool(),",
-        "    '_cc_toolchain': attr.label(default=Label('//a:alias')),",
-        "    'deps': attr.label_list(),",
-        "  },",
-        "  fragments = ['cpp'],",
-        "  toolchains = use_cc_toolchain()",
-        ");");
-  }
-
-  private void loadCcToolchainConfigLib() throws IOException {
-    scratch.appendFile("tools/cpp/BUILD", "");
-    scratch.overwriteFile(
-        "tools/cpp/cc_toolchain_config_lib.bzl",
-        ResourceLoader.readFromResources(
-            TestConstants.RULES_CC_REPOSITORY_EXECROOT + "cc/cc_toolchain_config_lib.bzl"));
-  }
-
-  @Test
-  public void testVariableWithValue() throws Exception {
-    loadCcToolchainConfigLib();
-    createVariableWithValueRule("one", /* name= */ "None", /* value= */ "None");
-
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//one:a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("name parameter of variable_with_value should be a string, found NoneType");
-
-    createVariableWithValueRule("two", /* name= */ "'abc'", /* value= */ "None");
-
-    e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//two:a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("value parameter of variable_with_value should be a string, found NoneType");
-
-    createVariableWithValueRule("three", /* name= */ "''", /* value= */ "None");
-
-    e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//three:a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("name parameter of variable_with_value must be a nonempty string");
-
-    createVariableWithValueRule("four", /* name= */ "'abc'", /* value= */ "''");
-
-    e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//four:a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("value parameter of variable_with_value must be a nonempty string");
-
-    createVariableWithValueRule("five", /* name= */ "'abc'", /* value= */ "'def'");
-
-    ConfiguredTarget t = getConfiguredTarget("//five:a");
-    StarlarkInfo variable = (StarlarkInfo) getMyInfoFromTarget(t).getValue("variable");
-    assertThat(variable).isNotNull();
-    VariableWithValue v = variableWithValueFromStarlark(variable);
-    assertThat(v).isNotNull();
-    assertThat(v.variable).isEqualTo("abc");
-    assertThat(v.value).isEqualTo("def");
-
-    createEnvEntryRule("six", /* key= */ "'abc'", /* value= */ "'def'");
-    t = getConfiguredTarget("//six:a");
-    StarlarkInfo envEntry = (StarlarkInfo) getMyInfoFromTarget(t).getValue("entry");
-    EvalException ee =
-        assertThrows(EvalException.class, () -> variableWithValueFromStarlark(envEntry));
-    assertThat(ee)
-        .hasMessageThat()
-        .contains("Expected object of type 'variable_with_value', received 'env_entry");
-  }
-
-  private void createVariableWithValueRule(String pkg, String name, String value)
-      throws IOException {
-    scratch.file(
-        pkg + "/foo.bzl",
-        "load('//tools/cpp:cc_toolchain_config_lib.bzl', 'variable_with_value')",
-        "load('//myinfo:myinfo.bzl', 'MyInfo')",
-        "def _impl(ctx):",
-        "   return [MyInfo(variable = variable_with_value(",
-        "       name = " + name + ",",
-        "       value = " + value + "))]",
-        "crule = rule(implementation = _impl)");
-    scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')");
-  }
-
-  @Test
-  public void testCustomVariableWithValue_none_none() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomVariableWithValueRule("one", /* name= */ "None", /* value= */ "None");
-    ConfiguredTarget t = getConfiguredTarget("//one:a");
-    StarlarkInfo variable = (StarlarkInfo) getMyInfoFromTarget(t).getValue("variable");
-    EvalException e =
-        assertThrows(EvalException.class, () -> variableWithValueFromStarlark(variable));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("'name' parameter of variable_with_value must be a nonempty string.");
-  }
-
-  @Test
-  public void testCustomVariableWithValue_string_none() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomVariableWithValueRule("two", /* name= */ "'abc'", /* value= */ "None");
-
-    ConfiguredTarget t = getConfiguredTarget("//two:a");
-    StarlarkInfo variable = (StarlarkInfo) getMyInfoFromTarget(t).getValue("variable");
-    EvalException e =
-        assertThrows(EvalException.class, () -> variableWithValueFromStarlark(variable));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("'value' parameter of variable_with_value must be a nonempty string.");
-  }
-
-  @Test
-  public void testCustomVariableWithValue_string_struct() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomVariableWithValueRule("three", /* name= */ "'abc'", /* value= */ "struct()");
-
-    ConfiguredTarget t = getConfiguredTarget("//three:a");
-    StarlarkInfo variable = (StarlarkInfo) getMyInfoFromTarget(t).getValue("variable");
-    EvalException e =
-        assertThrows(EvalException.class, () -> variableWithValueFromStarlark(variable));
-    assertThat(e).hasMessageThat().contains("Field 'value' is not of 'java.lang.String' type.");
-  }
-
-  @Test
-  public void testCustomVariableWithValue_boolean_string() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomVariableWithValueRule("four", /* name= */ "True", /* value= */ "'abc'");
-
-    ConfiguredTarget t = getConfiguredTarget("//four:a");
-    StarlarkInfo variable = (StarlarkInfo) getMyInfoFromTarget(t).getValue("variable");
-    EvalException e =
-        assertThrows(EvalException.class, () -> variableWithValueFromStarlark(variable));
-    assertThat(e).hasMessageThat().contains("Field 'name' is not of 'java.lang.String' type.");
-  }
-
-  private void createCustomVariableWithValueRule(String pkg, String name, String value)
-      throws IOException {
-    scratch.file(
-        pkg + "/foo.bzl",
-        "load('//myinfo:myinfo.bzl', 'MyInfo')",
-        "def _impl(ctx):",
-        "   return [MyInfo(variable = struct(",
-        "       name = " + name + ",",
-        "       value = " + value + ",",
-        "       type_name = 'variable_with_value'))]",
-        "crule = rule(implementation = _impl)");
-    scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')");
-  }
-
-  @Test
-  public void testEnvEntry_none_none() throws Exception {
-    loadCcToolchainConfigLib();
-    createEnvEntryRule("one", "None", /* value= */ "None");
-
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//one:a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("key parameter of env_entry should be a string, found NoneType");
-  }
-
-  @Test
-  public void testEnvEntry_string_none() throws Exception {
-    loadCcToolchainConfigLib();
-    createEnvEntryRule("two", "'abc'", /* value= */ "None");
-
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//two:a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("value parameter of env_entry should be a string, found NoneType");
-  }
-
-  @Test
-  public void testEnvEntry_emptyString_none() throws Exception {
-    loadCcToolchainConfigLib();
-    createEnvEntryRule("three", "''", /* value= */ "None");
-
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//three:a"));
-    assertThat(e).hasMessageThat().contains("key parameter of env_entry must be a nonempty string");
-  }
-
-  @Test
-  public void testEnvEntry_string_emptyString() throws Exception {
-    loadCcToolchainConfigLib();
-    createEnvEntryRule("four", "'abc'", /* value= */ "''");
-
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//four:a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("value parameter of env_entry must be a nonempty string");
-  }
-
-  @Test
-  public void testEnvEntry_string_string() throws Exception {
-    loadCcToolchainConfigLib();
-    createEnvEntryRule("five", "'abc'", /* value= */ "'def'");
-
-    ConfiguredTarget t = getConfiguredTarget("//five:a");
-    StarlarkInfo entryProvider = (StarlarkInfo) getMyInfoFromTarget(t).getValue("entry");
-    assertThat(entryProvider).isNotNull();
-    EnvEntry entry = envEntryFromStarlark(entryProvider);
-    assertThat(entry).isNotNull();
-    StringValueParser parser = new StringValueParser("def");
-    assertThat(entry).isEqualTo(new EnvEntry("abc", parser.getChunks(), ImmutableSet.of()));
-  }
-
-  @Test
-  public void testEnvEntryVariable_string_string() throws Exception {
-    loadCcToolchainConfigLib();
-    createVariableWithValueRule("six", /* name= */ "'abc'", /* value= */ "'def'");
-    ConfiguredTarget t = getConfiguredTarget("//six:a");
-    StarlarkInfo variable = (StarlarkInfo) getMyInfoFromTarget(t).getValue("variable");
-    EvalException e = assertThrows(EvalException.class, () -> envEntryFromStarlark(variable));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("Expected object of type 'env_entry', received 'variable_with_value");
-  }
-
-  private void createEnvEntryRule(String pkg, String key, String value) throws Exception {
-    scratch.file(
-        pkg + "/foo.bzl",
-        "load('//tools/cpp:cc_toolchain_config_lib.bzl', 'env_entry')",
-        "load('//myinfo:myinfo.bzl', 'MyInfo')",
-        "def _impl(ctx):",
-        "   return [MyInfo(entry = env_entry(",
-        "       key = " + key + ",",
-        "       value = " + value + "))]",
-        "crule = rule(implementation = _impl)");
-    scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')");
-  }
-
-  @Test
-  public void testCustomEnvEntry_none_none() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomEnvEntryRule("one", /* key= */ "None", /* value= */ "None");
-
-    ConfiguredTarget t = getConfiguredTarget("//one:a");
-    StarlarkInfo entry = (StarlarkInfo) getMyInfoFromTarget(t).getValue("entry");
-    EvalException e = assertThrows(EvalException.class, () -> envEntryFromStarlark(entry));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("'key' parameter of env_entry must be a nonempty string.");
-  }
-
-  @Test
-  public void testCustomEnvEntry_string_none() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomEnvEntryRule("two", /* key= */ "'abc'", /* value= */ "None");
-
-    ConfiguredTarget t = getConfiguredTarget("//two:a");
-    StarlarkInfo entry = (StarlarkInfo) getMyInfoFromTarget(t).getValue("entry");
-    EvalException e =
-        assertThrows(
-            "Should have failed because of empty string.",
-            EvalException.class,
-            () -> envEntryFromStarlark(entry));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("'value' parameter of env_entry must be a nonempty string.");
-  }
-
-  @Test
-  public void testCustomEnvEntry_string_struct() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomEnvEntryRule("three", /* key= */ "'abc'", /* value= */ "struct()");
-
-    ConfiguredTarget t = getConfiguredTarget("//three:a");
-    StarlarkInfo entry = (StarlarkInfo) getMyInfoFromTarget(t).getValue("entry");
-    EvalException e = assertThrows(EvalException.class, () -> envEntryFromStarlark(entry));
-    assertThat(e).hasMessageThat().contains("Field 'value' is not of 'java.lang.String' type.");
-  }
-
-  @Test
-  public void testCustomEnvEntry_boolean_string() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomEnvEntryRule("four", /* key= */ "True", /* value= */ "'abc'");
-
-    ConfiguredTarget t = getConfiguredTarget("//four:a");
-    StarlarkInfo entry = (StarlarkInfo) getMyInfoFromTarget(t).getValue("entry");
-    EvalException e = assertThrows(EvalException.class, () -> envEntryFromStarlark(entry));
-    assertThat(e).hasMessageThat().contains("Field 'key' is not of 'java.lang.String' type.");
-  }
-
-  private void createCustomEnvEntryRule(String pkg, String key, String value) throws Exception {
-    scratch.file(
-        pkg + "/foo.bzl",
-        "load('//myinfo:myinfo.bzl', 'MyInfo')",
-        "def _impl(ctx):",
-        "   return [MyInfo(entry = struct(",
-        "       key = " + key + ",",
-        "       value = " + value + ",",
-        "       type_name = 'env_entry'))]",
-        "crule = rule(implementation = _impl)");
-    scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')");
-  }
-
-  @Test
-  public void testToolPath_none_none() throws Exception {
-    loadCcToolchainConfigLib();
-    createToolPathRule("one", /* name= */ "None", "None");
-
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//one:a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("name parameter of tool_path should be a string, found NoneType");
-  }
-
-  @Test
-  public void testToolPath_string_none() throws Exception {
-    loadCcToolchainConfigLib();
-    createToolPathRule("two", /* name= */ "'abc'", "None");
-
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//two:a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("path parameter of tool_path should be a string, found NoneType");
-  }
-
-  @Test
-  public void testToolPath_emptyString_none() throws Exception {
-    loadCcToolchainConfigLib();
-    createToolPathRule("three", /* name= */ "''", "None");
-
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//three:a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("name parameter of tool_path must be a nonempty string");
-  }
-
-  @Test
-  public void testToolPath_string_emptyString() throws Exception {
-    loadCcToolchainConfigLib();
-    createToolPathRule("four", /* name= */ "'abc'", "''");
-
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//four:a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("path parameter of tool_path must be a nonempty string");
-  }
-
-  @Test
-  public void testToolPath_string_escapedString() throws Exception {
-    loadCcToolchainConfigLib();
-    createToolPathRule("five", /* name= */ "'abc'", "'/d/e/f'");
-
-    ConfiguredTarget t = getConfiguredTarget("//five:a");
-    StarlarkInfo toolPathProvider = (StarlarkInfo) getMyInfoFromTarget(t).getValue("toolpath");
-    assertThat(toolPathProvider).isNotNull();
-    Pair<String, String> toolPath = toolPathFromStarlark(toolPathProvider);
-    assertThat(toolPath).isNotNull();
-    assertThat(toolPath.first).isEqualTo("abc");
-    assertThat(toolPath.second).isEqualTo("/d/e/f");
-  }
-
-  @Test
-  public void testToolPath_string_string() throws Exception {
-    loadCcToolchainConfigLib();
-    createVariableWithValueRule("six", /* name= */ "'abc'", /* value= */ "'def'");
-    ConfiguredTarget t = getConfiguredTarget("//six:a");
-    StarlarkInfo variable = (StarlarkInfo) getMyInfoFromTarget(t).getValue("variable");
-    EvalException e = assertThrows(EvalException.class, () -> toolPathFromStarlark(variable));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("Expected object of type 'tool_path', received 'variable_with_value");
-  }
-
-  private void createToolPathRule(String pkg, String name, String path) throws IOException {
-    scratch.file(
-        pkg + "/foo.bzl",
-        "load('//tools/cpp:cc_toolchain_config_lib.bzl', 'tool_path')",
-        "load('//myinfo:myinfo.bzl', 'MyInfo')",
-        "def _impl(ctx):",
-        "   return [MyInfo(toolpath = tool_path(",
-        "       name = " + name + ",",
-        "       path = " + path + "))]",
-        "crule = rule(implementation = _impl)");
-    scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')");
-  }
-
-  @Test
-  public void testCustomToolPath_name_mustBeNonEmpty() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomToolPathRule("one", /* name= */ "None", /* path= */ "None");
-
-    ConfiguredTarget t = getConfiguredTarget("//one:a");
-    StarlarkInfo toolPath = (StarlarkInfo) getMyInfoFromTarget(t).getValue("toolpath");
-    EvalException e = assertThrows(EvalException.class, () -> toolPathFromStarlark(toolPath));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("'name' parameter of tool_path must be a nonempty string.");
-  }
-
-  @Test
-  public void testCustomToolPath_path_mustBeNonEmpty() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomToolPathRule("two", /* name= */ "'abc'", /* path= */ "None");
-
-    ConfiguredTarget t = getConfiguredTarget("//two:a");
-    StarlarkInfo toolPath = (StarlarkInfo) getMyInfoFromTarget(t).getValue("toolpath");
-    EvalException e = assertThrows(EvalException.class, () -> toolPathFromStarlark(toolPath));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("'path' parameter of tool_path must be a nonempty string.");
-  }
-
-  @Test
-  public void testCustomToolPath_path_mustBeString() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomToolPathRule("three", /* name= */ "'abc'", /* path= */ "struct()");
-
-    ConfiguredTarget t = getConfiguredTarget("//three:a");
-    StarlarkInfo toolPath = (StarlarkInfo) getMyInfoFromTarget(t).getValue("toolpath");
-    EvalException e = assertThrows(EvalException.class, () -> toolPathFromStarlark(toolPath));
-    assertThat(e).hasMessageThat().contains("Field 'path' is not of 'java.lang.String' type.");
-  }
-
-  @Test
-  public void testCustomToolPath_name_mustBeString() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomToolPathRule("four", /* name= */ "True", /* path= */ "'abc'");
-
-    ConfiguredTarget t = getConfiguredTarget("//four:a");
-    StarlarkInfo toolPath = (StarlarkInfo) getMyInfoFromTarget(t).getValue("toolpath");
-    EvalException e = assertThrows(EvalException.class, () -> toolPathFromStarlark(toolPath));
-    assertThat(e).hasMessageThat().contains("Field 'name' is not of 'java.lang.String' type.");
-  }
-
-  private void createCustomToolPathRule(String pkg, String name, String path) throws IOException {
-    scratch.file(
-        pkg + "/foo.bzl",
-        "load('//tools/cpp:cc_toolchain_config_lib.bzl', 'tool_path')",
-        "load('//myinfo:myinfo.bzl', 'MyInfo')",
-        "def _impl(ctx):",
-        "   return [MyInfo(toolpath = struct(",
-        "       name = " + name + ",",
-        "       path = " + path + ",",
-        "       type_name = 'tool_path'))]",
-        "crule = rule(implementation = _impl)");
-    scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')");
-  }
-
-  @Test
-  public void testMakeVariable() throws Exception {
-    loadCcToolchainConfigLib();
-    createMakeVariablerule("one", /* name= */ "None", /* value= */ "None");
-
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//one:a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("name parameter of make_variable should be a string, found NoneType");
-
-    createMakeVariablerule("two", /* name= */ "'abc'", /* value= */ "None");
-
-    e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//two:a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("value parameter of make_variable should be a string, found NoneType");
-
-    createMakeVariablerule("three", /* name= */ "''", /* value= */ "None");
-
-    e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//three:a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("name parameter of make_variable must be a nonempty string");
-
-    createMakeVariablerule("four", /* name= */ "'abc'", /* value= */ "''");
-
-    e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//four:a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("value parameter of make_variable must be a nonempty string");
-
-    createMakeVariablerule("five", /* name= */ "'abc'", /* value= */ "'val'");
-
-    ConfiguredTarget t = getConfiguredTarget("//five:a");
-    StarlarkInfo makeVariableProvider = (StarlarkInfo) getMyInfoFromTarget(t).getValue("variable");
-    assertThat(makeVariableProvider).isNotNull();
-    Pair<String, String> makeVariable = makeVariableFromStarlark(makeVariableProvider);
-    assertThat(makeVariable).isNotNull();
-    assertThat(makeVariable.first).isEqualTo("abc");
-    assertThat(makeVariable.second).isEqualTo("val");
-
-    createVariableWithValueRule("six", /* name= */ "'abc'", /* value= */ "'def'");
-    t = getConfiguredTarget("//six:a");
-    StarlarkInfo variable = (StarlarkInfo) getMyInfoFromTarget(t).getValue("variable");
-    EvalException ee = assertThrows(EvalException.class, () -> makeVariableFromStarlark(variable));
-    assertThat(ee)
-        .hasMessageThat()
-        .contains("Expected object of type 'make_variable', received 'variable_with_value");
-  }
-
-  private void createMakeVariablerule(String pkg, String name, String value) throws IOException {
-    scratch.file(
-        pkg + "/foo.bzl",
-        "load('//tools/cpp:cc_toolchain_config_lib.bzl', 'make_variable')",
-        "load('//myinfo:myinfo.bzl', 'MyInfo')",
-        "def _impl(ctx):",
-        "   return [MyInfo(variable = make_variable(",
-        "       name = " + name + ",",
-        "       value = " + value + "))]",
-        "crule = rule(implementation = _impl)");
-    scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')");
-  }
-
-  @Test
-  public void testCustomMakeVariable_none_none() throws Exception {
-    createCustomMakeVariableRule("one", /* name= */ "None", /* value= */ "None");
-
-    ConfiguredTarget t = getConfiguredTarget("//one:a");
-    StarlarkInfo makeVariableProvider = (StarlarkInfo) getMyInfoFromTarget(t).getValue("variable");
-    EvalException e =
-        assertThrows(EvalException.class, () -> makeVariableFromStarlark(makeVariableProvider));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("'name' parameter of make_variable must be a nonempty string.");
-  }
-
-  @Test
-  public void testCustomMakeVariable_string_none() throws Exception {
-    createCustomMakeVariableRule("two", /* name= */ "'abc'", /* value= */ "None");
-
-    ConfiguredTarget t = getConfiguredTarget("//two:a");
-    StarlarkInfo makeVariableProvider = (StarlarkInfo) getMyInfoFromTarget(t).getValue("variable");
-    EvalException e =
-        assertThrows(EvalException.class, () -> makeVariableFromStarlark(makeVariableProvider));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("'value' parameter of make_variable must be a nonempty string.");
-  }
-
-  @Test
-  public void testCustomMakeVariable_list_none() throws Exception {
-    createCustomMakeVariableRule("three", /* name= */ "[]", /* value= */ "None");
-
-    ConfiguredTarget t = getConfiguredTarget("//three:a");
-    StarlarkInfo makeVariableProvider = (StarlarkInfo) getMyInfoFromTarget(t).getValue("variable");
-    EvalException e =
-        assertThrows(EvalException.class, () -> makeVariableFromStarlark(makeVariableProvider));
-    assertThat(e).hasMessageThat().contains("Field 'name' is not of 'java.lang.String' type.");
-  }
-
-  @Test
-  public void testCustomMakeVariable_string_boolean() throws Exception {
-    createCustomMakeVariableRule("four", /* name= */ "'abc'", /* value= */ "True");
-
-    ConfiguredTarget t = getConfiguredTarget("//four:a");
-    StarlarkInfo makeVariableProvider = (StarlarkInfo) getMyInfoFromTarget(t).getValue("variable");
-    EvalException e =
-        assertThrows(EvalException.class, () -> makeVariableFromStarlark(makeVariableProvider));
-    assertThat(e).hasMessageThat().contains("Field 'value' is not of 'java.lang.String' type.");
-  }
-
-  private void createCustomMakeVariableRule(String pkg, String name, String value)
-      throws Exception {
-    scratch.file(
-        pkg + "/foo.bzl",
-        "load('//myinfo:myinfo.bzl', 'MyInfo')",
-        "def _impl(ctx):",
-        "   return [MyInfo(variable = struct(",
-        "       name = " + name + ",",
-        "       value = " + value + ",",
-        "       type_name = 'make_variable'))]",
-        "crule = rule(implementation = _impl)");
-    scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')");
-  }
-
-  @Test
-  public void testWithFeatureSet() throws Exception {
-    loadCcToolchainConfigLib();
-    createWithFeatureSetRule("one", /* features= */ "None", /* notFeatures= */ "None");
-
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//one:a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("features parameter of with_feature_set should be a list, found NoneType");
-
-    createWithFeatureSetRule("two", /* features= */ "['abc']", /* notFeatures= */ "None");
-
-    e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//two:a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("not_features parameter of with_feature_set should be a list, found NoneType");
-
-    createWithFeatureSetRule("three", /* features= */ "'asdf'", /* notFeatures= */ "None");
-
-    e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//three:a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("features parameter of with_feature_set should be a list, found string");
-
-    createWithFeatureSetRule("four", /* features= */ "['abc']", /* notFeatures= */ "'def'");
-
-    e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//four:a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("not_features parameter of with_feature_set should be a list, found string");
-
-    createWithFeatureSetRule(
-        "five", /* features= */ "['f1', 'f2']", /* notFeatures= */ "['nf1', 'nf2']");
-
-    ConfiguredTarget t = getConfiguredTarget("//five:a");
-    StarlarkInfo withFeatureSetProvider = (StarlarkInfo) getMyInfoFromTarget(t).getValue("wfs");
-    assertThat(withFeatureSetProvider).isNotNull();
-    WithFeatureSet withFeatureSet = withFeatureSetFromStarlark(withFeatureSetProvider);
-    assertThat(withFeatureSet).isNotNull();
-    assertThat(withFeatureSet.features()).containsExactly("f1", "f2");
-    assertThat(withFeatureSet.notFeatures()).containsExactly("nf1", "nf2");
-
-    createVariableWithValueRule("six", /* name= */ "'abc'", /* value= */ "'def'");
-    t = getConfiguredTarget("//six:a");
-    StarlarkInfo variable = (StarlarkInfo) getMyInfoFromTarget(t).getValue("variable");
-    EvalException ee =
-        assertThrows(EvalException.class, () -> withFeatureSetFromStarlark(variable));
-    assertThat(ee)
-        .hasMessageThat()
-        .contains("Expected object of type 'with_feature_set', received 'variable_with_value");
-  }
-
-  private void createWithFeatureSetRule(String pkg, String features, String notFeatures)
-      throws Exception {
-    scratch.file(
-        pkg + "/foo.bzl",
-        "load('//tools/cpp:cc_toolchain_config_lib.bzl', 'with_feature_set')",
-        "load('//myinfo:myinfo.bzl', 'MyInfo')",
-        "def _impl(ctx):",
-        "   return [MyInfo(wfs = with_feature_set(",
-        "       features = " + features + ",",
-        "       not_features = " + notFeatures + "))]",
-        "crule = rule(implementation = _impl)");
-    scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')");
-  }
-
-  @Test
-  public void testCustomWithFeatureSet_struct_none() throws Exception {
-    createCustomWithFeatureSetRule("one", /* features= */ "struct()", /* notFeatures= */ "None");
-
-    ConfiguredTarget t = getConfiguredTarget("//one:a");
-    StarlarkInfo withFeatureSetProvider = (StarlarkInfo) getMyInfoFromTarget(t).getValue("wfs");
-    assertThat(withFeatureSetProvider).isNotNull();
-    EvalException e =
-        assertThrows(EvalException.class, () -> withFeatureSetFromStarlark(withFeatureSetProvider));
-    assertThat(e).hasMessageThat().contains("for features, got struct, want sequence");
-  }
-
-  @Test
-  public void testCustomWithFeatureSet_listOfString_struct() throws Exception {
-    createCustomWithFeatureSetRule("two", /* features= */ "['abc']", /* notFeatures= */ "struct()");
-
-    ConfiguredTarget t = getConfiguredTarget("//two:a");
-    StarlarkInfo withFeatureSetProvider = (StarlarkInfo) getMyInfoFromTarget(t).getValue("wfs");
-    assertThat(withFeatureSetProvider).isNotNull();
-    EvalException e =
-        assertThrows(EvalException.class, () -> withFeatureSetFromStarlark(withFeatureSetProvider));
-    assertThat(e).hasMessageThat().contains("for not_features, got struct, want sequence");
-  }
-
-  @Test
-  public void testCustomWithFeatureSet_listOfStruct_emptyList() throws Exception {
-    createCustomWithFeatureSetRule("three", /* features= */ "[struct()]", /* notFeatures= */ "[]");
-
-    ConfiguredTarget t = getConfiguredTarget("//three:a");
-    StarlarkInfo withFeatureSetProvider = (StarlarkInfo) getMyInfoFromTarget(t).getValue("wfs");
-    assertThat(withFeatureSetProvider).isNotNull();
-    EvalException e =
-        assertThrows(EvalException.class, () -> withFeatureSetFromStarlark(withFeatureSetProvider));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("at index 0 of features, got element of type struct, want string");
-  }
-
-  @Test
-  public void testCustomWithFeatureSet_emptyList_listOfStruct() throws Exception {
-    createCustomWithFeatureSetRule("four", /* features= */ "[]", /* notFeatures= */ "[struct()]");
-
-    ConfiguredTarget t = getConfiguredTarget("//four:a");
-    StarlarkInfo withFeatureSetProvider = (StarlarkInfo) getMyInfoFromTarget(t).getValue("wfs");
-    assertThat(withFeatureSetProvider).isNotNull();
-    EvalException e =
-        assertThrows(EvalException.class, () -> withFeatureSetFromStarlark(withFeatureSetProvider));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("at index 0 of not_features, got element of type struct, want string");
-  }
-
-  private void createCustomWithFeatureSetRule(String pkg, String features, String notFeatures)
-      throws Exception {
-    scratch.file(
-        pkg + "/foo.bzl",
-        "load('//myinfo:myinfo.bzl', 'MyInfo')",
-        "def _impl(ctx):",
-        "   return [MyInfo(wfs = struct(",
-        "       features = " + features + ",",
-        "       not_features = " + notFeatures + ",",
-        "       type_name = 'with_feature_set'))]",
-        "crule = rule(implementation = _impl)");
-    scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')");
-  }
-
-  @Test
-  public void testEnvSet_none_none() throws Exception {
-    loadCcToolchainConfigLib();
-    createEnvSetRule(
-        "one", /* actions= */ "['a1']", /* envEntries= */ "None", /* withFeatures= */ "None");
-
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//one:a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("env_entries parameter of env_set should be a list, found NoneType");
-  }
-
-  @Test
-  public void testEnvSet_list_none() throws Exception {
-    loadCcToolchainConfigLib();
-    createEnvSetRule(
-        "two", /* actions= */ "['a1']", /* envEntries= */ "['abc']", /* withFeatures= */ "None");
-
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//two:a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("with_features parameter of env_set should be a list, found NoneType");
-  }
-
-  @Test
-  public void testEnvSet_string_none() throws Exception {
-    loadCcToolchainConfigLib();
-    createEnvSetRule(
-        "three", /* actions= */ "['a1']", /* envEntries= */ "'asdf'", /* withFeatures= */ "None");
-
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//three:a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("env_entries parameter of env_set should be a list, found string");
-  }
-
-  @Test
-  public void testEnvSet_list_string() throws Exception {
-    loadCcToolchainConfigLib();
-    createEnvSetRule(
-        "four", /* actions= */ "['a1']", /* envEntries= */ "['abc']", /* withFeatures= */ "'def'");
-
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//four:a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("with_features parameter of env_set should be a list, found string");
-  }
-
-  @Test
-  public void testEnvSet_envEntry_emptyList() throws Exception {
-    loadCcToolchainConfigLib();
-    createEnvSetRule(
-        "five",
-        /* actions= */ "['a1']",
-        /* envEntries= */ "[env_entry(key = 'a', value = 'b'),"
-            + "variable_with_value(name = 'a', value = 'b')]",
-        /* withFeatures= */ "[]");
-
-    ConfiguredTarget t = getConfiguredTarget("//five:a");
-    StarlarkInfo envSetProvider = (StarlarkInfo) getMyInfoFromTarget(t).getValue("envset");
-    assertThat(envSetProvider).isNotNull();
-    EvalException e = assertThrows(EvalException.class, () -> envSetFromStarlark(envSetProvider));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("Expected object of type 'env_entry', received 'variable_with_value'");
-  }
-
-  @Test
-  public void testEnvSet_emptyList_emptyList() throws Exception {
-    loadCcToolchainConfigLib();
-    createEnvSetRule("six", /* actions= */ "[]", /* envEntries= */ "[]", /* withFeatures= */ "[]");
-
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//six:a"));
-    assertThat(e).hasMessageThat().contains("actions parameter of env_set must be a nonempty list");
-  }
-
-  @Test
-  public void testEnvSet_envEntry_featureSet() throws Exception {
-    loadCcToolchainConfigLib();
-    createEnvSetRule(
-        "seven",
-        /* actions= */ "['a1']",
-        /* envEntries= */ "[env_entry(key = 'a', value = 'b')]",
-        /* withFeatures= */ "[with_feature_set(features = ['a'])]");
-
-    ConfiguredTarget t = getConfiguredTarget("//seven:a");
-    StarlarkInfo envSetProvider = (StarlarkInfo) getMyInfoFromTarget(t).getValue("envset");
-    assertThat(envSetProvider).isNotNull();
-    EnvSet envSet = envSetFromStarlark(envSetProvider);
-    assertThat(envSet).isNotNull();
-  }
-
-  @Test
-  public void testEnvSet_string_string() throws Exception {
-    loadCcToolchainConfigLib();
-    createVariableWithValueRule("eight", /* name= */ "'abc'", /* value= */ "'def'");
-    ConfiguredTarget t = getConfiguredTarget("//eight:a");
-    StarlarkInfo variable = (StarlarkInfo) getMyInfoFromTarget(t).getValue("variable");
-    EvalException e = assertThrows(EvalException.class, () -> envSetFromStarlark(variable));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("Expected object of type 'env_set', received 'variable_with_value");
-  }
-
-  private void createEnvSetRule(String pkg, String actions, String envEntries, String withFeatures)
-      throws Exception {
-    scratch.file(
-        pkg + "/foo.bzl",
-        "load('//tools/cpp:cc_toolchain_config_lib.bzl',",
-        "   'env_set', 'env_entry', 'with_feature_set', 'variable_with_value')",
-        "load('//myinfo:myinfo.bzl', 'MyInfo')",
-        "def _impl(ctx):",
-        "   return [MyInfo(envset = env_set(",
-        "       actions = " + actions + ",",
-        "       env_entries = " + envEntries + ",",
-        "       with_features = " + withFeatures + "))]",
-        "crule = rule(implementation = _impl)");
-    scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')");
-  }
-
-  @Test
-  public void testCustomEnvSet_none_none() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomEnvSetRule(
-        "one", /* actions= */ "[]", /* envEntries= */ "None", /* withFeatures= */ "None");
-    ConfiguredTarget t = getConfiguredTarget("//one:a");
-    StarlarkInfo envSetProvider = (StarlarkInfo) getMyInfoFromTarget(t).getValue("envset");
-    assertThat(envSetProvider).isNotNull();
-    EvalException e = assertThrows(EvalException.class, () -> envSetFromStarlark(envSetProvider));
-    assertThat(e).hasMessageThat().contains("actions parameter of env_set must be a nonempty list");
-  }
-
-  @Test
-  public void testCustomEnvSet_struct_none() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomEnvSetRule(
-        "two", /* actions= */ "['a1']", /* envEntries= */ "struct()", /* withFeatures= */ "None");
-    ConfiguredTarget t = getConfiguredTarget("//two:a");
-    StarlarkInfo envSetProvider = (StarlarkInfo) getMyInfoFromTarget(t).getValue("envset");
-    assertThat(envSetProvider).isNotNull();
-    EvalException e = assertThrows(EvalException.class, () -> envSetFromStarlark(envSetProvider));
-    assertThat(e).hasMessageThat().contains("for env_entries, got struct, want sequence");
-  }
-
-  @Test
-  public void testCustomEnvSet_structList_none() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomEnvSetRule(
-        "three",
-        /* actions= */ "['a1']",
-        /* envEntries= */ "[struct()]",
-        /* withFeatures= */ "None");
-    ConfiguredTarget t = getConfiguredTarget("//three:a");
-    StarlarkInfo envSetProvider = (StarlarkInfo) getMyInfoFromTarget(t).getValue("envset");
-    assertThat(envSetProvider).isNotNull();
-    EvalException e = assertThrows(EvalException.class, () -> envSetFromStarlark(envSetProvider));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("Expected object of type 'env_entry', received 'struct'");
-  }
-
-  @Test
-  public void testCustomEnvSet_envEntry_string() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomEnvSetRule(
-        "four",
-        /* actions= */ "['a1']",
-        /* envEntries= */ "[env_entry(key = 'a', value = 'b')]",
-        /* withFeatures= */ "'a'");
-    ConfiguredTarget t = getConfiguredTarget("//four:a");
-    StarlarkInfo envSetProvider = (StarlarkInfo) getMyInfoFromTarget(t).getValue("envset");
-    assertThat(envSetProvider).isNotNull();
-    EvalException e = assertThrows(EvalException.class, () -> envSetFromStarlark(envSetProvider));
-    assertThat(e).hasMessageThat().contains("for with_features, got string, want sequence");
-  }
-
-  @Test
-  public void testCustomEnvSet_envEntry_envEntry() throws Exception {
-    loadCcToolchainConfigLib();
-
-    createCustomEnvSetRule(
-        "five",
-        /* actions= */ "['a1']",
-        /* envEntries= */ "[env_entry(key = 'a', value = 'b')]",
-        /* withFeatures= */ "[env_entry(key = 'a', value = 'b')]");
-    ConfiguredTarget t = getConfiguredTarget("//five:a");
-    StarlarkInfo envSetProvider = (StarlarkInfo) getMyInfoFromTarget(t).getValue("envset");
-    assertThat(envSetProvider).isNotNull();
-    EvalException e = assertThrows(EvalException.class, () -> envSetFromStarlark(envSetProvider));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("Expected object of type 'with_feature_set', received 'env_entry'.");
-  }
-
-  private void createCustomEnvSetRule(
-      String pkg, String actions, String envEntries, String withFeatures) throws Exception {
-    scratch.file(
-        pkg + "/foo.bzl",
-        "load('//tools/cpp:cc_toolchain_config_lib.bzl',",
-        "   'env_entry', 'with_feature_set', 'variable_with_value')",
-        "load('//myinfo:myinfo.bzl', 'MyInfo')",
-        "def _impl(ctx):",
-        "   return [MyInfo(envset = struct(",
-        "       actions = " + actions + ",",
-        "       env_entries = " + envEntries + ",",
-        "       with_features = " + withFeatures + ",",
-        "       type_name = 'env_set'))]",
-        "crule = rule(implementation = _impl)");
-    scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')");
-  }
-
-  @Test
-  public void testFlagGroup_flagGroup_notListofFlags() throws Exception {
-    loadCcToolchainConfigLib();
-    createFlagGroupRule(
-        "one",
-        /* flags= */ "[]",
-        /* flagGroups= */ "[]",
-        /* iterateOver= */ "None",
-        /* expandIfTrue= */ "None",
-        /* expandIfFalse= */ "None",
-        /* expandIfAvailable= */ "None",
-        /* expandIfNotAvailable= */ "None",
-        /* expandIfEqual= */ "None");
-
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//one:a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("flag_group must contain either a list of flags or a list of flag_groups");
-  }
-
-  @Test
-  public void testFlagGroup_iterateOver_notString() throws Exception {
-    loadCcToolchainConfigLib();
-    createFlagGroupRule(
-        "two",
-        /* flags= */ "['a']",
-        /* flagGroups= */ "[]",
-        /* iterateOver= */ "struct(val = 'a')",
-        /* expandIfTrue= */ "None",
-        /* expandIfFalse= */ "None",
-        /* expandIfAvailable= */ "None",
-        /* expandIfNotAvailable= */ "None",
-        /* expandIfEqual= */ "None");
-
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//two:a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("iterate_over parameter of flag_group should be a string, found struct");
-  }
-
-  @Test
-  public void testFlagGroup_expandIfTrue_notString() throws Exception {
-    loadCcToolchainConfigLib();
-    createFlagGroupRule(
-        "three",
-        /* flags= */ "['a']",
-        /* flagGroups= */ "[]",
-        /* iterateOver= */ "None",
-        /* expandIfTrue= */ "struct(val = 'a')",
-        /* expandIfFalse= */ "None",
-        /* expandIfAvailable= */ "None",
-        /* expandIfNotAvailable= */ "None",
-        /* expandIfEqual= */ "None");
-
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//three:a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("expand_if_true parameter of flag_group should be a string, found struct");
-  }
-
-  @Test
-  public void testFlagGroup_expandIfFalse_notString() throws Exception {
-    loadCcToolchainConfigLib();
-    createFlagGroupRule(
-        "four",
-        /* flags= */ "['a']",
-        /* flagGroups= */ "[]",
-        /* iterateOver= */ "None",
-        /* expandIfTrue= */ "None",
-        /* expandIfFalse= */ "struct(val = 'a')",
-        /* expandIfAvailable= */ "None",
-        /* expandIfNotAvailable= */ "None",
-        /* expandIfEqual= */ "None");
-
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//four:a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("expand_if_false parameter of flag_group should be a string, found struct");
-  }
-
-  @Test
-  public void testFlagGroup_expandIfAvailable_notString() throws Exception {
-    loadCcToolchainConfigLib();
-    createFlagGroupRule(
-        "five",
-        /* flags= */ "['a']",
-        /* flagGroups= */ "[]",
-        /* iterateOver= */ "None",
-        /* expandIfTrue= */ "None",
-        /* expandIfFalse= */ "None",
-        /* expandIfAvailable= */ "struct(val = 'a')",
-        /* expandIfNotAvailable= */ "None",
-        /* expandIfEqual= */ "None");
-
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//five:a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("expand_if_available parameter of flag_group should be a string, found struct");
-  }
-
-  @Test
-  public void testFlagGroup_expandIfNotAvailable_notString() throws Exception {
-    loadCcToolchainConfigLib();
-    createFlagGroupRule(
-        "six",
-        /* flags= */ "['a']",
-        /* flagGroups= */ "[]",
-        /* iterateOver= */ "None",
-        /* expandIfTrue= */ "None",
-        /* expandIfFalse= */ "None",
-        /* expandIfAvailable= */ "None",
-        /* expandIfNotAvailable= */ "struct(val = 'a')",
-        /* expandIfEqual= */ "None");
-
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//six:a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains(
-            "expand_if_not_available parameter of flag_group should be a string, found struct");
-  }
-
-  @Test
-  public void testFlagGroup_flagGroup_cannotContainFlagAndGroup() throws Exception {
-    loadCcToolchainConfigLib();
-    createFlagGroupRule(
-        "seven",
-        /* flags= */ "['a']",
-        /* flagGroups= */ "['b']",
-        /* iterateOver= */ "None",
-        /* expandIfTrue= */ "None",
-        /* expandIfFalse= */ "None",
-        /* expandIfAvailable= */ "None",
-        /* expandIfNotAvailable= */ "struct(val = 'a')",
-        /* expandIfEqual= */ "None");
-
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//seven:a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("flag_group must not contain both a flag and another flag_group");
-  }
-
-  @Test
-  public void testFlagGroup_expandIfEqual_notStarlarkInfo() throws Exception {
-    loadCcToolchainConfigLib();
-    createFlagGroupRule(
-        "eight",
-        /* flags= */ "['a']",
-        /* flagGroups= */ "[]",
-        /* iterateOver= */ "'a'",
-        /* expandIfTrue= */ "'b'",
-        /* expandIfFalse= */ "''",
-        /* expandIfAvailable= */ "''",
-        /* expandIfNotAvailable= */ "''",
-        /* expandIfEqual= */ "'a'");
-
-    ConfiguredTarget t = getConfiguredTarget("//eight:a");
-    StarlarkInfo flagGroupProvider = (StarlarkInfo) getMyInfoFromTarget(t).getValue("flaggroup");
-    assertThat(flagGroupProvider).isNotNull();
-    EvalException e =
-        assertThrows(EvalException.class, () -> flagGroupFromStarlark(flagGroupProvider));
-    assertThat(e)
-        .hasMessageThat()
-        .contains(
-            "Field 'expand_if_equal' is not of "
-                + "'com.google.devtools.build.lib.packages.StarlarkInfo' type.");
-  }
-
-  @Test
-  public void testFlagGroup() throws Exception {
-    loadCcToolchainConfigLib();
-    createFlagGroupRule(
-        "nine",
-        /* flags= */ "[]",
-        /* flagGroups= */ "[flag_group(flags = ['a']), flag_group(flags = ['b'])]",
-        /* iterateOver= */ "''",
-        /* expandIfTrue= */ "''",
-        /* expandIfFalse= */ "''",
-        /* expandIfAvailable= */ "''",
-        /* expandIfNotAvailable= */ "''",
-        /* expandIfEqual= */ "variable_with_value(name = 'a', value = 'b')");
-
-    ConfiguredTarget t = getConfiguredTarget("//nine:a");
-    StarlarkInfo flagGroupProvider = (StarlarkInfo) getMyInfoFromTarget(t).getValue("flaggroup");
-    assertThat(flagGroupProvider).isNotNull();
-    FlagGroup f = flagGroupFromStarlark(flagGroupProvider);
-    assertThat(f).isNotNull();
-  }
-
-  @Test
-  public void testFlagGroup_flagGroup_notStruct() throws Exception {
-    loadCcToolchainConfigLib();
-    createFlagGroupRule(
-        "ten",
-        /* flags= */ "[]",
-        /* flagGroups= */ "[flag_group(flags = ['a']), struct(value = 'a')]",
-        /* iterateOver= */ "''",
-        /* expandIfTrue= */ "''",
-        /* expandIfFalse= */ "''",
-        /* expandIfAvailable= */ "''",
-        /* expandIfNotAvailable= */ "''",
-        /* expandIfEqual= */ "variable_with_value(name = 'a', value = 'b')");
-
-    ConfiguredTarget t = getConfiguredTarget("//ten:a");
-    StarlarkInfo flagGroupProvider = (StarlarkInfo) getMyInfoFromTarget(t).getValue("flaggroup");
-    assertThat(flagGroupProvider).isNotNull();
-    EvalException e =
-        assertThrows(EvalException.class, () -> flagGroupFromStarlark(flagGroupProvider));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("Expected object of type 'flag_group', received 'struct'");
-  }
-
-  private void createFlagGroupRule(
-      String pkg,
-      String flags,
-      String flagGroups,
-      String iterateOver,
-      String expandIfTrue,
-      String expandIfFalse,
-      String expandIfAvailable,
-      String expandIfNotAvailable,
-      String expandIfEqual)
-      throws Exception {
-    scratch.file(
-        pkg + "/foo.bzl",
-        "load('//tools/cpp:cc_toolchain_config_lib.bzl',",
-        "   'env_set', 'env_entry', 'with_feature_set', 'variable_with_value', 'flag_group')",
-        "load('//myinfo:myinfo.bzl', 'MyInfo')",
-        "def _impl(ctx):",
-        "   return [MyInfo(flaggroup = flag_group(",
-        "       flags = " + flags + ",",
-        "       flag_groups = " + flagGroups + ",",
-        "       expand_if_true = " + expandIfTrue + ",",
-        "       expand_if_false = " + expandIfFalse + ",",
-        "       expand_if_available = " + expandIfAvailable + ",",
-        "       expand_if_not_available = " + expandIfNotAvailable + ",",
-        "       expand_if_equal = " + expandIfEqual + ",",
-        "       iterate_over = " + iterateOver + "))]",
-        "crule = rule(implementation = _impl)");
-    scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')");
-  }
-
-  @Test
-  public void testSingleChunkFlagIsUsed() throws Exception {
-    loadCcToolchainConfigLib();
-
-    createCustomFlagGroupRule(
-        "single_chunk_flag",
-        /* flags= */ "['a']",
-        /* flagGroups= */ "[]",
-        /* iterateOver= */ "''",
-        /* expandIfTrue= */ "''",
-        /* expandIfFalse= */ "''",
-        /* expandIfAvailable= */ "''",
-        /* expandIfNotAvailable= */ "''",
-        /* expandIfEqual= */ "None");
-
-    ConfiguredTarget t = getConfiguredTarget("//single_chunk_flag:a");
-    StarlarkInfo flagGroupProvider = (StarlarkInfo) getMyInfoFromTarget(t).getValue("flaggroup");
-    assertThat(flagGroupProvider).isNotNull();
-    FlagGroup flagGroup = flagGroupFromStarlark(flagGroupProvider);
-    assertThat(flagGroup.expandables()).isNotEmpty();
-    assertThat(flagGroup.expandables().get(0)).isInstanceOf(SingleChunkFlag.class);
-  }
-
-  @Test
-  public void testCustomFlagGroup_iterateOver_notString() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomFlagGroupRule(
-        "one",
-        /* flags= */ "['a']",
-        /* flagGroups= */ "[]",
-        /* iterateOver= */ "struct()",
-        /* expandIfTrue= */ "'b'",
-        /* expandIfFalse= */ "''",
-        /* expandIfAvailable= */ "''",
-        /* expandIfNotAvailable= */ "''",
-        /* expandIfEqual= */ "None");
-
-    ConfiguredTarget t = getConfiguredTarget("//one:a");
-    StarlarkInfo flagGroupProvider = (StarlarkInfo) getMyInfoFromTarget(t).getValue("flaggroup");
-    assertThat(flagGroupProvider).isNotNull();
-    EvalException e =
-        assertThrows(EvalException.class, () -> flagGroupFromStarlark(flagGroupProvider));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("Field 'iterate_over' is not of 'java.lang.String' type.");
-  }
-
-  @Test
-  public void testCustomFlagGroup_expandIfTrue_notString() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomFlagGroupRule(
-        "two",
-        /* flags= */ "[]",
-        /* flagGroups= */ "[flag_group(flags = ['a']), flag_group(flags = ['b'])]",
-        /* iterateOver= */ "''",
-        /* expandIfTrue= */ "struct()",
-        /* expandIfFalse= */ "''",
-        /* expandIfAvailable= */ "''",
-        /* expandIfNotAvailable= */ "''",
-        /* expandIfEqual= */ "variable_with_value(name = 'a', value = 'b')");
-
-    ConfiguredTarget t = getConfiguredTarget("//two:a");
-    StarlarkInfo flagGroupProvider = (StarlarkInfo) getMyInfoFromTarget(t).getValue("flaggroup");
-    assertThat(flagGroupProvider).isNotNull();
-    EvalException e =
-        assertThrows(EvalException.class, () -> flagGroupFromStarlark(flagGroupProvider));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("Field 'expand_if_true' is not of 'java.lang.String' type.");
-  }
-
-  @Test
-  public void testCustomFlagGroup_expandIfFalse_notString() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomFlagGroupRule(
-        "three",
-        /* flags= */ "[]",
-        /* flagGroups= */ "[flag_group(flags = ['a'])]",
-        /* iterateOver= */ "''",
-        /* expandIfTrue= */ "''",
-        /* expandIfFalse= */ "True",
-        /* expandIfAvailable= */ "''",
-        /* expandIfNotAvailable= */ "''",
-        /* expandIfEqual= */ "variable_with_value(name = 'a', value = 'b')");
-
-    ConfiguredTarget t = getConfiguredTarget("//three:a");
-    StarlarkInfo flagGroupProvider = (StarlarkInfo) getMyInfoFromTarget(t).getValue("flaggroup");
-    assertThat(flagGroupProvider).isNotNull();
-    EvalException e =
-        assertThrows(EvalException.class, () -> flagGroupFromStarlark(flagGroupProvider));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("Field 'expand_if_false' is not of 'java.lang.String' type.");
-  }
-
-  @Test
-  public void testCustomFlagGroup_expandIfAvailable_notString() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomFlagGroupRule(
-        "four",
-        /* flags= */ "[]",
-        /* flagGroups= */ "[flag_group(flags = ['a'])]",
-        /* iterateOver= */ "''",
-        /* expandIfTrue= */ "''",
-        /* expandIfFalse= */ "''",
-        /* expandIfAvailable= */ "struct()",
-        /* expandIfNotAvailable= */ "''",
-        /* expandIfEqual= */ "variable_with_value(name = 'a', value = 'b')");
-
-    ConfiguredTarget t = getConfiguredTarget("//four:a");
-    StarlarkInfo flagGroupProvider = (StarlarkInfo) getMyInfoFromTarget(t).getValue("flaggroup");
-    assertThat(flagGroupProvider).isNotNull();
-    EvalException e =
-        assertThrows(EvalException.class, () -> flagGroupFromStarlark(flagGroupProvider));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("Field 'expand_if_available' is not of 'java.lang.String' type.");
-  }
-
-  @Test
-  public void testCustomFlagGroup_expandIfNotAvailable_notString() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomFlagGroupRule(
-        "five",
-        /* flags= */ "[]",
-        /* flagGroups= */ "[flag_group(flags = ['a'])]",
-        /* iterateOver= */ "''",
-        /* expandIfTrue= */ "''",
-        /* expandIfFalse= */ "''",
-        /* expandIfAvailable= */ "''",
-        /* expandIfNotAvailable= */ "3",
-        /* expandIfEqual= */ "variable_with_value(name = 'a', value = 'b')");
-
-    ConfiguredTarget t = getConfiguredTarget("//five:a");
-    StarlarkInfo flagGroupProvider = (StarlarkInfo) getMyInfoFromTarget(t).getValue("flaggroup");
-    assertThat(flagGroupProvider).isNotNull();
-    EvalException e =
-        assertThrows(EvalException.class, () -> flagGroupFromStarlark(flagGroupProvider));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("Field 'expand_if_not_available' is not of 'java.lang.String' type.");
-  }
-
-  @Test
-  public void testCustomFlagGroup_expandIfEqual_notStruct() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomFlagGroupRule(
-        "six",
-        /* flags= */ "[]",
-        /* flagGroups= */ "[flag_group(flags = ['a'])]",
-        /* iterateOver= */ "''",
-        /* expandIfTrue= */ "''",
-        /* expandIfFalse= */ "''",
-        /* expandIfAvailable= */ "''",
-        /* expandIfNotAvailable= */ "''",
-        /* expandIfEqual= */ "struct(name = 'a', value = 'b')");
-
-    ConfiguredTarget t = getConfiguredTarget("//six:a");
-    StarlarkInfo flagGroupProvider = (StarlarkInfo) getMyInfoFromTarget(t).getValue("flaggroup");
-    assertThat(flagGroupProvider).isNotNull();
-    EvalException e =
-        assertThrows(EvalException.class, () -> flagGroupFromStarlark(flagGroupProvider));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("Expected object of type 'variable_with_value', received 'struct'.");
-  }
-
-  private void createCustomFlagGroupRule(
-      String pkg,
-      String flags,
-      String flagGroups,
-      String iterateOver,
-      String expandIfTrue,
-      String expandIfFalse,
-      String expandIfAvailable,
-      String expandIfNotAvailable,
-      String expandIfEqual)
-      throws Exception {
-    scratch.file(
-        pkg + "/foo.bzl",
-        "load('//tools/cpp:cc_toolchain_config_lib.bzl',",
-        "   'env_set', 'env_entry', 'with_feature_set', 'variable_with_value', 'flag_group')",
-        "load('//myinfo:myinfo.bzl', 'MyInfo')",
-        "def _impl(ctx):",
-        "   return [MyInfo(flaggroup = struct(",
-        "       flags = " + flags + ",",
-        "       flag_groups = " + flagGroups + ",",
-        "       expand_if_true = " + expandIfTrue + ",",
-        "       expand_if_false = " + expandIfFalse + ",",
-        "       expand_if_available = " + expandIfAvailable + ",",
-        "       expand_if_not_available = " + expandIfNotAvailable + ",",
-        "       expand_if_equal = " + expandIfEqual + ",",
-        "       iterate_over = " + iterateOver + ",",
-        "       type_name = 'flag_group'))]",
-        "crule = rule(implementation = _impl)");
-    scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')");
-  }
-
-  @Test
-  public void testTool_path_mustBeNonEmpty() throws Exception {
-    loadCcToolchainConfigLib();
-    createToolRule("one", /* path= */ "''", /* withFeatures= */ "[]", /* requirements= */ "[]");
-
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//one:a"));
-    assertThat(e).hasMessageThat().contains("path parameter of tool must be a nonempty string");
-  }
-
-  @Test
-  public void testTool_withFeatures_mustBeList() throws Exception {
-    loadCcToolchainConfigLib();
-    createToolRule("two", /* path= */ "'a'", /* withFeatures= */ "None", /* requirements= */ "[]");
-
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//two:a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("with_features parameter of tool should be a list, found NoneType");
-  }
-
-  @Test
-  public void testTool_executionRequirements_mustBeList() throws Exception {
-    loadCcToolchainConfigLib();
-    createToolRule(
-        "three", /* path= */ "'a'", /* withFeatures= */ "[]", /* requirements= */ "None");
-
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//three:a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("execution_requirements parameter of tool should be a list, found NoneType");
-  }
-
-  @Test
-  public void testTool_withFeatures_mustBeWithFeatureSet() throws Exception {
-    loadCcToolchainConfigLib();
-    createToolRule(
-        "four",
-        /* path= */ "'a'",
-        /* withFeatures= */ "[struct(val = 'a')]",
-        /* requirements= */ "[]");
-
-    ConfiguredTarget t = getConfiguredTarget("//four:a");
-    StarlarkInfo toolStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("tool");
-    assertThat(toolStruct).isNotNull();
-    EvalException e =
-        assertThrows(EvalException.class, () -> toolFromStarlark(toolStruct, OS.getCurrent()));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("Expected object of type 'with_feature_set', received 'struct'");
-  }
-
-  @Test
-  public void testTool_requirements_mustBeString() throws Exception {
-    loadCcToolchainConfigLib();
-    createToolRule(
-        "five",
-        /* path= */ "'a'",
-        /* withFeatures= */ "[]",
-        /* requirements= */ "[struct(val = 'a')]");
-
-    ConfiguredTarget t = getConfiguredTarget("//five:a");
-    StarlarkInfo toolStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("tool");
-    assertThat(toolStruct).isNotNull();
-    EvalException e =
-        assertThrows(EvalException.class, () -> toolFromStarlark(toolStruct, OS.getCurrent()));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("at index 0 of execution_requirements, got element of type struct, want string");
-  }
-
-  @Test
-  public void testTool() throws Exception {
-    loadCcToolchainConfigLib();
-    createToolRule(
-        "six",
-        /* path= */ "'/a/b/c'",
-        /* withFeatures= */ "[with_feature_set(features = ['a'])]",
-        /* requirements= */ "['a', 'b']");
-
-    ConfiguredTarget t = getConfiguredTarget("//six:a");
-    StarlarkInfo toolStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("tool");
-    assertThat(toolStruct).isNotNull();
-    Tool tool = toolFromStarlark(toolStruct, OS.getCurrent());
-    assertThat(tool.getExecutionRequirements()).containsExactly("a", "b");
-    assertThat(tool.getToolPathString(PathFragment.EMPTY_FRAGMENT)).isEqualTo("/a/b/c");
-    assertThat(tool.getWithFeatureSetSets())
-        .contains(new WithFeatureSet(ImmutableSet.of("a"), ImmutableSet.of()));
-  }
-
-  private void createToolRule(String pkg, String path, String withFeatures, String requirements)
-      throws Exception {
-    scratch.file(
-        pkg + "/foo.bzl",
-        "load('//tools/cpp:cc_toolchain_config_lib.bzl', 'with_feature_set', 'tool')",
-        "load('//myinfo:myinfo.bzl', 'MyInfo')",
-        "def _impl(ctx):",
-        "   return [MyInfo(tool = tool(",
-        "       path = " + path + ",",
-        "       with_features = " + withFeatures + ",",
-        "       execution_requirements = " + requirements + "))]",
-        "crule = rule(implementation = _impl)");
-    scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')");
-  }
-
-  @Test
-  public void testCustomTool_path_nonEmpty() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomToolRule(
-        "one", /* path= */ "''", /* withFeatures= */ "[]", /* requirements= */ "[]");
-
-    ConfiguredTarget t = getConfiguredTarget("//one:a");
-    StarlarkInfo toolStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("tool");
-    assertThat(toolStruct).isNotNull();
-    EvalException e =
-        assertThrows(EvalException.class, () -> toolFromStarlark(toolStruct, OS.getCurrent()));
-    assertThat(e).hasMessageThat().contains("The 'path' field of tool must be a nonempty string.");
-  }
-
-  @Test
-  public void testCustomTool_path_mustBeString() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomToolRule(
-        "two", /* path= */ "struct()", /* withFeatures= */ "[]", /* requirements= */ "[]");
-
-    ConfiguredTarget t = getConfiguredTarget("//two:a");
-    StarlarkInfo toolStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("tool");
-    assertThat(toolStruct).isNotNull();
-    EvalException e =
-        assertThrows(EvalException.class, () -> toolFromStarlark(toolStruct, OS.getCurrent()));
-    assertThat(e).hasMessageThat().contains("Field 'path' is not of 'java.lang.String' type.");
-  }
-
-  @Test
-  public void testCustomTool_withFeatures_mustBeList() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomToolRule(
-        "three", /* path= */ "'a'", /* withFeatures= */ "struct()", /* requirements= */ "[]");
-
-    ConfiguredTarget t = getConfiguredTarget("//three:a");
-    StarlarkInfo toolStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("tool");
-    assertThat(toolStruct).isNotNull();
-    EvalException e =
-        assertThrows(EvalException.class, () -> toolFromStarlark(toolStruct, OS.getCurrent()));
-    assertThat(e).hasMessageThat().contains("for with_features, got struct, want sequence");
-  }
-
-  @Test
-  public void testCustomTool_withFeatures_mustBeWithFeatureSet() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomToolRule(
-        "four",
-        /* path= */ "'a'",
-        /* withFeatures= */ "[struct(val = 'a')]",
-        /* requirements= */ "[]");
-
-    ConfiguredTarget t = getConfiguredTarget("//four:a");
-    StarlarkInfo toolStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("tool");
-    assertThat(toolStruct).isNotNull();
-    EvalException e =
-        assertThrows(EvalException.class, () -> toolFromStarlark(toolStruct, OS.getCurrent()));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("Expected object of type 'with_feature_set', received 'struct'");
-  }
-
-  @Test
-  public void testCustomTool_executionRequirements_mustBeList() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomToolRule(
-        "five", /* path= */ "'a'", /* withFeatures= */ "[]", /* requirements= */ "'a'");
-
-    ConfiguredTarget t = getConfiguredTarget("//five:a");
-    StarlarkInfo toolStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("tool");
-    assertThat(toolStruct).isNotNull();
-    EvalException e =
-        assertThrows(EvalException.class, () -> toolFromStarlark(toolStruct, OS.getCurrent()));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("for execution_requirements, got string, want sequence");
-  }
-
-  @Test
-  public void testCustomTool_executionRequirements_mustBeString() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomToolRule(
-        "six", /* path= */ "'a'", /* withFeatures= */ "[]", /* requirements= */ "[struct()]");
-
-    ConfiguredTarget t = getConfiguredTarget("//six:a");
-    StarlarkInfo toolStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("tool");
-    assertThat(toolStruct).isNotNull();
-    EvalException e =
-        assertThrows(EvalException.class, () -> toolFromStarlark(toolStruct, OS.getCurrent()));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("at index 0 of execution_requirements, got element of type struct, want string");
-  }
-
-  @Test
-  public void testCustomTool_windowsAbsolutePath() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomToolRule(
-        "seven",
-        /* path= */ Starlark.repr(
-            "C:\\Program Files\\Microsoft Visual"
-                + " Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.39.33519\\bin/HostX64/x64/cl.exe",
-            StarlarkSemantics.DEFAULT),
-        /* withFeatures= */ "[]",
-        /* requirements= */ "[]");
-
-    ConfiguredTarget t = getConfiguredTarget("//seven:a");
-    StarlarkInfo toolStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("tool");
-    assertThat(toolStruct).isNotNull();
-    Tool tool = toolFromStarlark(toolStruct, OS.WINDOWS);
-    assertThat(tool.getToolPathString(PathFragment.create("external/my_toolchain")))
-        .isEqualTo(
-            "C:/Program Files/Microsoft Visual"
-                + " Studio/2022/Community/VC/Tools/MSVC/14.39.33519/bin/HostX64/x64/cl.exe");
-  }
-
-  @Test
-  public void testCustomTool_windowsRelativePath() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomToolRule(
-        "seven",
-        /* path= */ Starlark.repr("bin\\HostX64\\x64/cl.exe", StarlarkSemantics.DEFAULT),
-        /* withFeatures= */ "[]",
-        /* requirements= */ "[]");
-
-    ConfiguredTarget t = getConfiguredTarget("//seven:a");
-    StarlarkInfo toolStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("tool");
-    assertThat(toolStruct).isNotNull();
-    Tool tool = toolFromStarlark(toolStruct, OS.WINDOWS);
-    assertThat(tool.getToolPathString(PathFragment.create("external/my_toolchain")))
-        .isEqualTo("external/my_toolchain/bin/HostX64/x64/cl.exe");
-  }
-
-  @Test
-  public void testCustomTool_windowsShortPath_preservedOnNonWindowsHostOs() throws Exception {
-    assume().that(OS.getCurrent()).isNotEqualTo(OS.WINDOWS);
-
-    loadCcToolchainConfigLib();
-    createCustomToolRule(
-        "seven",
-        /* path= */ Starlark.repr(
-            "C:\\PROGRA~1\\MICROS~1\\2022\\COMMUN~1\\VC\\TOOLS\\MSVC\\14.39.33519\\BIN\\HOSTX64\\X64\\CL.EXE",
-            StarlarkSemantics.DEFAULT),
-        /* withFeatures= */ "[]",
-        /* requirements= */ "[]");
-
-    ConfiguredTarget t = getConfiguredTarget("//seven:a");
-    StarlarkInfo toolStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("tool");
-    assertThat(toolStruct).isNotNull();
-    Tool tool = toolFromStarlark(toolStruct, OS.WINDOWS);
-    assertThat(tool.getToolPathString(PathFragment.create("external/my_toolchain")))
-        .isEqualTo(
-            "C:/PROGRA~1/MICROS~1/2022/COMMUN~1/VC/TOOLS/MSVC/14.39.33519/BIN/HOSTX64/X64/CL.EXE");
-  }
-
-  @Test
-  public void testCustomTool_unixAbsolutePath() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomToolRule(
-        "seven",
-        /* path= */ Starlark.repr("/usr/bin/gcc", StarlarkSemantics.DEFAULT),
-        /* withFeatures= */ "[]",
-        /* requirements= */ "[]");
-
-    ConfiguredTarget t = getConfiguredTarget("//seven:a");
-    StarlarkInfo toolStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("tool");
-    assertThat(toolStruct).isNotNull();
-    Tool tool = toolFromStarlark(toolStruct, OS.LINUX);
-    assertThat(tool.getToolPathString(PathFragment.create("external/my_toolchain")))
-        .isEqualTo("/usr/bin/gcc");
-  }
-
-  @Test
-  public void testCustomTool_unixRelativePath() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomToolRule(
-        "seven",
-        /* path= */ Starlark.repr("bin/gcc", StarlarkSemantics.DEFAULT),
-        /* withFeatures= */ "[]",
-        /* requirements= */ "[]");
-
-    ConfiguredTarget t = getConfiguredTarget("//seven:a");
-    StarlarkInfo toolStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("tool");
-    assertThat(toolStruct).isNotNull();
-    Tool tool = toolFromStarlark(toolStruct, OS.LINUX);
-    assertThat(tool.getToolPathString(PathFragment.create("external/my_toolchain")))
-        .isEqualTo("external/my_toolchain/bin/gcc");
-  }
-
-  private void createCustomToolRule(
-      String pkg, String path, String withFeatures, String requirements) throws Exception {
-    scratch.file(
-        pkg + "/foo.bzl",
-        "load('//tools/cpp:cc_toolchain_config_lib.bzl', 'with_feature_set')",
-        "load('//myinfo:myinfo.bzl', 'MyInfo')",
-        "def _impl(ctx):",
-        "   return [MyInfo(tool = struct(",
-        "       path = " + path + ",",
-        "       with_features = " + withFeatures + ",",
-        "       execution_requirements = " + requirements + ",",
-        "       type_name = 'tool'))]",
-        "crule = rule(implementation = _impl)");
-    scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')");
-  }
-
-  @Test
-  public void testFlagSet_withFeatures_mustBeList() throws Exception {
-    loadCcToolchainConfigLib();
-    createFlagSetRule(
-        "two", /* actions= */ "['a']", /* flagGroups= */ "[]", /* withFeatures= */ "None");
-
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//two:a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("with_features parameter of flag_set should be a list, found NoneType");
-  }
-
-  @Test
-  public void testFlagSet_flagGroups_mustBeList() throws Exception {
-    loadCcToolchainConfigLib();
-    createFlagSetRule(
-        "three", /* actions= */ "['a']", /* flagGroups= */ "None", /* withFeatures= */ "[]");
-
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//three:a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("flag_groups parameter of flag_set should be a list, found NoneType");
-  }
-
-  @Test
-  public void testFlagSet_actions_mustBeString() throws Exception {
-    loadCcToolchainConfigLib();
-    createFlagSetRule(
-        "four",
-        /* actions= */ "['a', struct(val = 'a')]",
-        /* flagGroups= */ "[]",
-        /* withFeatures= */ "[]");
-
-    ConfiguredTarget t = getConfiguredTarget("//four:a");
-    StarlarkInfo flagSetStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("flagset");
-    assertThat(flagSetStruct).isNotNull();
-    EvalException e =
-        assertThrows(
-            EvalException.class, () -> flagSetFromStarlark(flagSetStruct, /* actionName= */ null));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("at index 1 of actions, got element of type struct, want string");
-  }
-
-  @Test
-  public void testFlagSet_flagGroups_mustBeFlagGroup() throws Exception {
-    loadCcToolchainConfigLib();
-    createFlagSetRule(
-        "five",
-        /* actions= */ "['a']",
-        /* flagGroups= */ "[flag_group(flags = ['a']), struct(value = 'a')]",
-        /* withFeatures= */ "[]");
-
-    ConfiguredTarget t = getConfiguredTarget("//five:a");
-    StarlarkInfo flagSetStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("flagset");
-    assertThat(flagSetStruct).isNotNull();
-    EvalException e =
-        assertThrows(
-            EvalException.class, () -> flagSetFromStarlark(flagSetStruct, /* actionName= */ null));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("Expected object of type 'flag_group', received 'struct'");
-  }
-
-  @Test
-  public void testFlagSet_withFeatures_mustBeWithFeatureSet() throws Exception {
-    loadCcToolchainConfigLib();
-    createFlagSetRule(
-        "six",
-        /* actions= */ "['a']",
-        /* flagGroups= */ "[flag_group(flags = ['a'])]",
-        /* withFeatures= */ "[struct(val = 'a')]");
-
-    ConfiguredTarget t = getConfiguredTarget("//six:a");
-    StarlarkInfo flagSetStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("flagset");
-    assertThat(flagSetStruct).isNotNull();
-    EvalException e =
-        assertThrows(
-            EvalException.class, () -> flagSetFromStarlark(flagSetStruct, /* actionName= */ null));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("Expected object of type 'with_feature_set', received 'struct'");
-  }
-
-  @Test
-  public void testFlagSet() throws Exception {
-    loadCcToolchainConfigLib();
-    createFlagSetRule(
-        "seven",
-        /* actions= */ "['a']",
-        /* flagGroups= */ "[flag_group(flags = ['a'])]",
-        /* withFeatures= */ "[with_feature_set(features = ['a'])]");
-    ConfiguredTarget t = getConfiguredTarget("//seven:a");
-    StarlarkInfo flagSetStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("flagset");
-    assertThat(flagSetStruct).isNotNull();
-    FlagSet f = flagSetFromStarlark(flagSetStruct, /* actionName= */ null);
-    assertThat(f).isNotNull();
-  }
-
-  @Test
-  public void testFlagSet_actionConfig_notActionList() throws Exception {
-    loadCcToolchainConfigLib();
-    createFlagSetRule(
-        "eight",
-        /* actions= */ "['a']",
-        /* flagGroups= */ "[flag_group(flags = ['a'])]",
-        /* withFeatures= */ "[struct(val = 'a')]");
-
-    ConfiguredTarget t = getConfiguredTarget("//eight:a");
-    StarlarkInfo flagSetStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("flagset");
-    assertThat(flagSetStruct).isNotNull();
-    EvalException e =
-        assertThrows(
-            EvalException.class,
-            () -> flagSetFromStarlark(flagSetStruct, /* actionName= */ "action"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("Thus, you must not specify action lists in an action_config's flag set.");
-  }
-
-  @Test
-  public void testFlagSet_emptyAction() throws Exception {
-    loadCcToolchainConfigLib();
-    createFlagSetRule(
-        "nine",
-        /* actions= */ "[]",
-        /* flagGroups= */ "[flag_group(flags = ['a'])]",
-        /* withFeatures= */ "[with_feature_set(features = ['a'])]");
-    ConfiguredTarget t = getConfiguredTarget("//nine:a");
-    StarlarkInfo flagSetStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("flagset");
-    assertThat(flagSetStruct).isNotNull();
-    FlagSet f = flagSetFromStarlark(flagSetStruct, /* actionName= */ "action");
-    assertThat(f).isNotNull();
-    assertThat(f.actions()).containsExactly("action");
-  }
-
-  private void createFlagSetRule(String pkg, String actions, String flagGroups, String withFeatures)
-      throws Exception {
-    scratch.file(
-        pkg + "/foo.bzl",
-        "load('//tools/cpp:cc_toolchain_config_lib.bzl',",
-        "   'env_set', 'env_entry', 'with_feature_set', 'variable_with_value', 'flag_group',",
-        "   'flag_set')",
-        "load('//myinfo:myinfo.bzl', 'MyInfo')",
-        "def _impl(ctx):",
-        "   return [MyInfo(flagset = flag_set(",
-        "       flag_groups = " + flagGroups + ",",
-        "       actions = " + actions + ",",
-        "       with_features = " + withFeatures + "))]",
-        "crule = rule(implementation = _impl)");
-    scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')");
-  }
-
-  @Test
-  public void testCustomFlagSet() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomFlagSetRule(
-        "one", /* actions= */ "[]", /* flagGroups= */ "[]", /* withFeatures= */ "[]");
-
-    ConfiguredTarget target = getConfiguredTarget("//one:a");
-    StarlarkInfo flagSet = (StarlarkInfo) getMyInfoFromTarget(target).getValue("flagset");
-    assertThat(flagSet).isNotNull();
-    FlagSet flagSetObject = flagSetFromStarlark(flagSet, /* actionName */ null);
-    assertThat(flagSetObject).isNotNull();
-  }
-
-  @Test
-  public void testCustomFlagSet_flagGroups_mustBeList() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomFlagSetRule(
-        "two", /* actions= */ "['a']", /* flagGroups= */ "struct()", /* withFeatures= */ "[]");
-
-    ConfiguredTarget t = getConfiguredTarget("//two:a");
-    StarlarkInfo flagSetStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("flagset");
-    assertThat(flagSetStruct).isNotNull();
-    EvalException e =
-        assertThrows(
-            EvalException.class, () -> flagSetFromStarlark(flagSetStruct, /* actionName */ null));
-    assertThat(e).hasMessageThat().contains("for flag_groups, got struct, want sequence");
-  }
-
-  @Test
-  public void testCustomFlagSet_withFeatures_mustBeList() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomFlagSetRule(
-        "three", /* actions= */ "['a']", /* flagGroups= */ "[]", /* withFeatures= */ "struct()");
-
-    ConfiguredTarget t = getConfiguredTarget("//three:a");
-    StarlarkInfo flagSetStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("flagset");
-    assertThat(flagSetStruct).isNotNull();
-    EvalException e =
-        assertThrows(
-            EvalException.class, () -> flagSetFromStarlark(flagSetStruct, /* actionName */ null));
-    assertThat(e).hasMessageThat().contains("for with_features, got struct, want sequence");
-  }
-
-  @Test
-  public void testCustomFlagSet_actions_mustBeList() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomFlagSetRule(
-        "four", /* actions= */ "struct()", /* flagGroups= */ "[]", /* withFeatures= */ "[]");
-
-    ConfiguredTarget t = getConfiguredTarget("//four:a");
-    StarlarkInfo flagSetStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("flagset");
-    assertThat(flagSetStruct).isNotNull();
-    EvalException e =
-        assertThrows(
-            EvalException.class, () -> flagSetFromStarlark(flagSetStruct, /* actionName */ null));
-    assertThat(e).hasMessageThat().contains("for actions, got struct, want sequence");
-  }
-
-  private void createCustomFlagSetRule(
-      String pkg, String actions, String flagGroups, String withFeatures) throws Exception {
-    scratch.file(
-        pkg + "/foo.bzl",
-        "load('//tools/cpp:cc_toolchain_config_lib.bzl',",
-        "   'env_set', 'env_entry', 'with_feature_set', 'variable_with_value', 'flag_group',",
-        "   'flag_set')",
-        "load('//myinfo:myinfo.bzl', 'MyInfo')",
-        "def _impl(ctx):",
-        "   return [MyInfo(flagset = struct(",
-        "       flag_groups = " + flagGroups + ",",
-        "       actions = " + actions + ",",
-        "       with_features = " + withFeatures + ",",
-        "       type_name = 'flag_set'))]",
-        "crule = rule(implementation = _impl)");
-    scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')");
-  }
-
-  @Test
-  public void testActionConfig_actionName_mustBeNonEmpty() throws Exception {
-    loadCcToolchainConfigLib();
-    createActionConfigRule(
-        "one",
-        /* actionName= */ "''",
-        /* enabled= */ "True",
-        /* tools= */ "[]",
-        /* flagSets= */ "[]",
-        /* implies= */ "[]");
-
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//one:a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("name parameter of action_config must be a nonempty string");
-  }
-
-  @Test
-  public void testActionConfig_enabled_mustBeBool() throws Exception {
-    loadCcToolchainConfigLib();
-    createActionConfigRule(
-        "two",
-        /* actionName= */ "'actionname'",
-        /* enabled= */ "['asd']",
-        /* tools= */ "[]",
-        /* flagSets= */ "[]",
-        /* implies= */ "[]");
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//two:a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("enabled parameter of action_config should be a bool, found list");
-  }
-
-  @Test
-  public void testActionConfig_tools_mustBeTool() throws Exception {
-    loadCcToolchainConfigLib();
-    createActionConfigRule(
-        "three",
-        /* actionName= */ "'actionname'",
-        /* enabled= */ "True",
-        /* tools= */ "[with_feature_set(features = ['a'])]",
-        /* flagSets= */ "[]",
-        /* implies= */ "[]");
-
-    ConfiguredTarget t = getConfiguredTarget("//three:a");
-    StarlarkInfo actionConfigStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("config");
-    assertThat(actionConfigStruct).isNotNull();
-    EvalException e =
-        assertThrows(
-            EvalException.class,
-            () -> actionConfigFromStarlark(actionConfigStruct, OS.getCurrent()));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("Expected object of type 'tool', received 'with_feature_set'");
-  }
-
-  @Test
-  public void testActionConfig_flagSets_mustBeFlagSet() throws Exception {
-    loadCcToolchainConfigLib();
-    createActionConfigRule(
-        "four",
-        /* actionName= */ "'actionname'",
-        /* enabled= */ "True",
-        /* tools= */ "[tool(path = 'a/b/c')]",
-        /* flagSets= */ "[tool(path = 'a/b/c')]",
-        /* implies= */ "[]");
-
-    ConfiguredTarget t = getConfiguredTarget("//four:a");
-    StarlarkInfo actionConfigStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("config");
-    assertThat(actionConfigStruct).isNotNull();
-    EvalException e =
-        assertThrows(
-            EvalException.class,
-            () -> actionConfigFromStarlark(actionConfigStruct, OS.getCurrent()));
-    assertThat(e).hasMessageThat().contains("Expected object of type 'flag_set', received 'tool'");
-  }
-
-  @Test
-  public void testActionConfig_implies_mustBeList() throws Exception {
-    loadCcToolchainConfigLib();
-    createActionConfigRule(
-        "five",
-        /* actionName= */ "'actionname'",
-        /* enabled= */ "True",
-        /* tools= */ "[tool(path = 'a/b/c')]",
-        /* flagSets= */ "[]",
-        /* implies= */ "flag_set(actions = ['a', 'b'])");
-
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//five:a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("implies parameter of action_config should be a list, found struct");
-  }
-
-  @Test
-  public void testActionConfig_implies_mustContainString() throws Exception {
-    loadCcToolchainConfigLib();
-    createActionConfigRule(
-        "six",
-        /* actionName= */ "'actionname'",
-        /* enabled= */ "True",
-        /* tools= */ "[tool(path = 'a/b/c')]",
-        /* flagSets= */ "[]",
-        /* implies= */ "[flag_set(actions = ['a', 'b'])]");
-
-    ConfiguredTarget t = getConfiguredTarget("//six:a");
-    StarlarkInfo actionConfigStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("config");
-    assertThat(actionConfigStruct).isNotNull();
-    EvalException e =
-        assertThrows(
-            EvalException.class,
-            () -> actionConfigFromStarlark(actionConfigStruct, OS.getCurrent()));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("at index 0 of implies, got element of type struct, want string");
-  }
-
-  @Test
-  public void testActionConfig_implies_mustContainString_notStruct() throws Exception {
-    loadCcToolchainConfigLib();
-    createActionConfigRule(
-        "seven",
-        /* actionName= */ "'actionname'",
-        /* enabled= */ "True",
-        /* tools= */ "[tool(path = 'a/b/c')]",
-        /* flagSets= */ "[]",
-        /* implies= */ "[flag_set(actions = ['a', 'b'])]");
-
-    ConfiguredTarget t = getConfiguredTarget("//seven:a");
-    StarlarkInfo actionConfigStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("config");
-    assertThat(actionConfigStruct).isNotNull();
-    EvalException e =
-        assertThrows(
-            EvalException.class,
-            () -> actionConfigFromStarlark(actionConfigStruct, OS.getCurrent()));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("at index 0 of implies, got element of type struct, want string");
-  }
-
-  @Test
-  public void testActionConfig() throws Exception {
-    loadCcToolchainConfigLib();
-    createActionConfigRule(
-        "eight",
-        /* actionName= */ "'actionname32._++-'",
-        /* enabled= */ "True",
-        /* tools= */ "[tool(path = 'a/b/c')]",
-        /* flagSets= */ "[flag_set(flag_groups=[flag_group(flags=['a'])])]",
-        /* implies= */ "['a', 'b']");
-
-    ConfiguredTarget t = getConfiguredTarget("//eight:a");
-    StarlarkInfo actionConfigStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("config");
-    assertThat(actionConfigStruct).isNotNull();
-    ActionConfig a = actionConfigFromStarlark(actionConfigStruct, OS.getCurrent());
-    assertThat(a).isNotNull();
-    assertThat(a.actionName).isEqualTo("actionname32._++-");
-    assertThat(a.getImplies()).containsExactly("a", "b").inOrder();
-    assertThat(Iterables.getOnlyElement(a.getFlagSets()).actions())
-        .containsExactly("actionname32._++-");
-  }
-
-  @Test
-  public void testActionConfig_actionName_validChars_notUpper() throws Exception {
-    loadCcToolchainConfigLib();
-    createActionConfigRule(
-        "nine",
-        /* actionName= */ "'Upper'",
-        /* enabled= */ "True",
-        /* tools= */ "[tool(path = 'a/b/c')]",
-        /* flagSets= */ "[]",
-        /* implies= */ "[flag_set(actions = ['a', 'b'])]");
-
-    ConfiguredTarget t = getConfiguredTarget("//nine:a");
-    StarlarkInfo actionConfigStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("config");
-    assertThat(actionConfigStruct).isNotNull();
-    EvalException e =
-        assertThrows(
-            EvalException.class,
-            () -> actionConfigFromStarlark(actionConfigStruct, OS.getCurrent()));
-    assertThat(e)
-        .hasMessageThat()
-        .contains(
-            "An action_config's name must consist solely "
-                + "of lowercase ASCII letters, digits, '.', '_', '+', and '-', got 'Upper'");
-  }
-
-  @Test
-  public void testActionConfig_actionName_validChars_notWhitespace() throws Exception {
-    loadCcToolchainConfigLib();
-    createActionConfigRule(
-        "ten",
-        /* actionName= */ "'white\tspace'",
-        /* enabled= */ "True",
-        /* tools= */ "[tool(path = 'a/b/c')]",
-        /* flagSets= */ "[]",
-        /* implies= */ "[flag_set(actions = ['a', 'b'])]");
-
-    ConfiguredTarget t = getConfiguredTarget("//ten:a");
-    StarlarkInfo actionConfigStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("config");
-    assertThat(actionConfigStruct).isNotNull();
-    EvalException e =
-        assertThrows(
-            EvalException.class,
-            () -> actionConfigFromStarlark(actionConfigStruct, OS.getCurrent()));
-    assertThat(e)
-        .hasMessageThat()
-        .contains(
-            "An action_config's name must consist solely "
-                + "of lowercase ASCII letters, digits, '.', '_', '+', and '-', "
-                + "got 'white\tspace'");
-  }
-
-  private void createActionConfigRule(
-      String pkg, String actionName, String enabled, String tools, String flagSets, String implies)
-      throws Exception {
-    scratch.file(
-        pkg + "/foo.bzl",
-        "load('//tools/cpp:cc_toolchain_config_lib.bzl', 'with_feature_set',",
-        "             'tool', 'flag_set', 'action_config', 'flag_group')",
-        "load('//myinfo:myinfo.bzl', 'MyInfo')",
-        "def _impl(ctx):",
-        "   return [MyInfo(config = action_config(",
-        "       action_name = " + actionName + ",",
-        "       enabled = " + enabled + ",",
-        "       tools = " + tools + ",",
-        "       flag_sets = " + flagSets + ",",
-        "       implies = " + implies + "))]",
-        "crule = rule(implementation = _impl)");
-    scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')");
-  }
-
-  @Test
-  public void testCustomActionConfig_actionName_mustBeString() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomActionConfigRule(
-        "one",
-        /* actionName= */ "struct()",
-        /* enabled= */ "True",
-        /* tools= */ "[]",
-        /* flagSets= */ "[]",
-        /* implies= */ "[]");
-
-    ConfiguredTarget t = getConfiguredTarget("//one:a");
-    StarlarkInfo actionConfigStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("config");
-    assertThat(actionConfigStruct).isNotNull();
-    EvalException e =
-        assertThrows(
-            EvalException.class,
-            () -> actionConfigFromStarlark(actionConfigStruct, OS.getCurrent()));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("Field 'action_name' is not of 'java.lang.String' type.");
-  }
-
-  @Test
-  public void testCustomActionConfig_enabled_mustBeBool() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomActionConfigRule(
-        "two",
-        /* actionName= */ "'actionname'",
-        /* enabled= */ "['asd']",
-        /* tools= */ "[]",
-        /* flagSets= */ "[]",
-        /* implies= */ "[]");
-
-    ConfiguredTarget t = getConfiguredTarget("//two:a");
-    StarlarkInfo actionConfigStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("config");
-    assertThat(actionConfigStruct).isNotNull();
-    EvalException e =
-        assertThrows(
-            EvalException.class,
-            () -> actionConfigFromStarlark(actionConfigStruct, OS.getCurrent()));
-    assertThat(e).hasMessageThat().contains("Field 'enabled' is not of 'java.lang.Boolean' type.");
-  }
-
-  @Test
-  public void testCustomActionConfig_tools_mustBeList() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomActionConfigRule(
-        "three",
-        /* actionName= */ "'actionname'",
-        /* enabled= */ "True",
-        /* tools= */ "struct()",
-        /* flagSets= */ "[]",
-        /* implies= */ "[]");
-
-    ConfiguredTarget t = getConfiguredTarget("//three:a");
-    StarlarkInfo actionConfigStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("config");
-    assertThat(actionConfigStruct).isNotNull();
-    EvalException e =
-        assertThrows(
-            EvalException.class,
-            () -> actionConfigFromStarlark(actionConfigStruct, OS.getCurrent()));
-    assertThat(e).hasMessageThat().contains("for tools, got struct, want sequence");
-  }
-
-  @Test
-  public void testCustomActionConfig_flagSets_mustBeList() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomActionConfigRule(
-        "four",
-        /* actionName= */ "'actionname'",
-        /* enabled= */ "True",
-        /* tools= */ "[tool(path = 'a/b/c')]",
-        /* flagSets= */ "True",
-        /* implies= */ "[]");
-
-    ConfiguredTarget t = getConfiguredTarget("//four:a");
-    StarlarkInfo actionConfigStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("config");
-    assertThat(actionConfigStruct).isNotNull();
-    EvalException e =
-        assertThrows(
-            EvalException.class,
-            () -> actionConfigFromStarlark(actionConfigStruct, OS.getCurrent()));
-    assertThat(e).hasMessageThat().contains("for flag_sets, got bool, want sequence");
-  }
-
-  @Test
-  public void testCustomActionConfig_implies_mustBeList() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomActionConfigRule(
-        "five",
-        /* actionName= */ "'actionname'",
-        /* enabled= */ "True",
-        /* tools= */ "[tool(path = 'a/b/c')]",
-        /* flagSets= */ "[]",
-        /* implies= */ "flag_set(actions = ['a', 'b'])");
-
-    ConfiguredTarget t = getConfiguredTarget("//five:a");
-    StarlarkInfo actionConfigStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("config");
-    assertThat(actionConfigStruct).isNotNull();
-    EvalException e =
-        assertThrows(
-            EvalException.class,
-            () -> actionConfigFromStarlark(actionConfigStruct, OS.getCurrent()));
-    assertThat(e).hasMessageThat().contains("for implies, got struct, want sequence");
-  }
-
-  private void createCustomActionConfigRule(
-      String pkg, String actionName, String enabled, String tools, String flagSets, String implies)
-      throws Exception {
-    scratch.file(
-        pkg + "/foo.bzl",
-        "load('//tools/cpp:cc_toolchain_config_lib.bzl', 'with_feature_set',",
-        "             'tool', 'flag_set', 'action_config', )",
-        "load('//myinfo:myinfo.bzl', 'MyInfo')",
-        "def _impl(ctx):",
-        "   return [MyInfo(config = struct(",
-        "       action_name = " + actionName + ",",
-        "       enabled = " + enabled + ",",
-        "       tools = " + tools + ",",
-        "       flag_sets = " + flagSets + ",",
-        "       implies = " + implies + ",",
-        "       type_name = 'action_config'))]",
-        "crule = rule(implementation = _impl)");
-    scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')");
-  }
-
-  @Test
-  public void testFeature_name_mustBeNonempty() throws Exception {
-    loadCcToolchainConfigLib();
-    createFeatureRule(
-        "one",
-        /* name= */ "''",
-        /* enabled= */ "False",
-        /* flagSets= */ "[]",
-        /* envSets= */ "[]",
-        /* requires= */ "[]",
-        /* implies= */ "[]",
-        /* provides= */ "[]");
-
-    ConfiguredTarget t = getConfiguredTarget("//one:a");
-    StarlarkInfo featureStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("f");
-    assertThat(featureStruct).isNotNull();
-    EvalException e = assertThrows(EvalException.class, () -> featureFromStarlark(featureStruct));
-    String msg = e.getMessage();
-    assertThat(msg).contains("A feature must either have a nonempty 'name' field or be enabled.");
-  }
-
-  @Test
-  public void testFeature_enabled_mustBeBool() throws Exception {
-    loadCcToolchainConfigLib();
-    createFeatureRule(
-        "two",
-        /* name= */ "'featurename'",
-        /* enabled= */ "None",
-        /* flagSets= */ "[]",
-        /* envSets= */ "[]",
-        /* requires= */ "[]",
-        /* implies= */ "[]",
-        /* provides= */ "[]");
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//two:a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("enabled parameter of feature should be a bool, found NoneType");
-  }
-
-  @Test
-  public void testFeature_flagSets_mustBeFlagSet() throws Exception {
-    loadCcToolchainConfigLib();
-    createFeatureRule(
-        "three",
-        /* name= */ "'featurename'",
-        /* enabled= */ "True",
-        /* flagSets= */ "[struct()]",
-        /* envSets= */ "[]",
-        /* requires= */ "[]",
-        /* implies= */ "[]",
-        /* provides= */ "[]");
-
-    ConfiguredTarget t = getConfiguredTarget("//three:a");
-    StarlarkInfo featureStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("f");
-    assertThat(featureStruct).isNotNull();
-    EvalException e = assertThrows(EvalException.class, () -> featureFromStarlark(featureStruct));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("Expected object of type 'flag_set', received 'struct'");
-  }
-
-  @Test
-  public void testFeature_envSets_mustBeEnvSet() throws Exception {
-    loadCcToolchainConfigLib();
-    createFeatureRule(
-        "four",
-        /* name= */ "'featurename'",
-        /* enabled= */ "True",
-        /* flagSets= */ "[flag_set(actions = ['a'], flag_groups = [flag_group(flags = ['a'])])]",
-        /* envSets= */ "[tool(path = 'a/b/c')]",
-        /* requires= */ "[]",
-        /* implies= */ "[]",
-        /* provides= */ "[]");
-
-    ConfiguredTarget t = getConfiguredTarget("//four:a");
-    StarlarkInfo featureStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("f");
-    assertThat(featureStruct).isNotNull();
-    EvalException e = assertThrows(EvalException.class, () -> featureFromStarlark(featureStruct));
-    assertThat(e).hasMessageThat().contains("Expected object of type 'env_set', received 'tool'");
-  }
-
-  @Test
-  public void testFeature_something_mustBeFeatureSet() throws Exception {
-    loadCcToolchainConfigLib();
-    createFeatureRule(
-        "five",
-        /* name= */ "'featurename'",
-        /* enabled= */ "True",
-        /* flagSets= */ "[flag_set(actions = ['a'], flag_groups = [flag_group(flags = ['a'])])]",
-        /* envSets= */ "[env_set(actions = ['a1'], "
-            + "env_entries = [env_entry(key = 'a', value = 'b')])]",
-        /* requires= */ "[tool(path = 'a/b/c')]",
-        /* implies= */ "[]",
-        /* provides= */ "[]");
-
-    ConfiguredTarget t = getConfiguredTarget("//five:a");
-    StarlarkInfo featureStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("f");
-    assertThat(featureStruct).isNotNull();
-    EvalException e = assertThrows(EvalException.class, () -> featureFromStarlark(featureStruct));
-    assertThat(e).hasMessageThat().contains("expected object of type 'feature_set'");
-  }
-
-  @Test
-  public void testFeature_implies_mustBeString() throws Exception {
-    loadCcToolchainConfigLib();
-    createFeatureRule(
-        "six",
-        /* name= */ "'featurename'",
-        /* enabled= */ "True",
-        /* flagSets= */ "[flag_set(actions = ['a'], flag_groups = [flag_group(flags = ['a'])])]",
-        /* envSets= */ "[env_set(actions = ['a1'], "
-            + "env_entries = [env_entry(key = 'a', value = 'b')])]",
-        /* requires= */ "[feature_set(features = ['f1', 'f2'])]",
-        /* implies= */ "[tool(path = 'a/b/c')]",
-        /* provides= */ "[]");
-
-    ConfiguredTarget t = getConfiguredTarget("//six:a");
-    StarlarkInfo featureStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("f");
-    assertThat(featureStruct).isNotNull();
-    EvalException e = assertThrows(EvalException.class, () -> featureFromStarlark(featureStruct));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("at index 0 of implies, got element of type struct, want string");
-  }
-
-  @Test
-  public void testFeature_provides_mustBeString() throws Exception {
-    loadCcToolchainConfigLib();
-    createFeatureRule(
-        "seven",
-        /* name= */ "'featurename'",
-        /* enabled= */ "True",
-        /* flagSets= */ "[flag_set(actions = ['a'], flag_groups = [flag_group(flags = ['a'])])]",
-        /* envSets= */ "[env_set(actions = ['a1'], "
-            + "env_entries = [env_entry(key = 'a', value = 'b')])]",
-        /* requires= */ "[feature_set(features = ['f1', 'f2'])]",
-        /* implies= */ "['a', 'b', 'c']",
-        /* provides= */ "[struct()]");
-
-    ConfiguredTarget t = getConfiguredTarget("//seven:a");
-    StarlarkInfo featureStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("f");
-    assertThat(featureStruct).isNotNull();
-    EvalException e = assertThrows(EvalException.class, () -> featureFromStarlark(featureStruct));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("at index 0 of provides, got element of type struct, want string");
-  }
-
-  @Test
-  public void testFeature() throws Exception {
-    loadCcToolchainConfigLib();
-    createFeatureRule(
-        "eight",
-        /* name= */ "'featurename32+.-_'",
-        /* enabled= */ "True",
-        /* flagSets= */ "[flag_set(actions = ['a'], flag_groups = [flag_group(flags = ['a'])])]",
-        /* envSets= */ "[env_set(actions = ['a1'], "
-            + "env_entries = [env_entry(key = 'a', value = 'b')])]",
-        /* requires= */ "[feature_set(features = ['f1', 'f2'])]",
-        /* implies= */ "['a', 'b', 'c']",
-        /* provides= */ "['a', 'b', 'c']");
-
-    ConfiguredTarget t = getConfiguredTarget("//eight:a");
-    StarlarkInfo featureStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("f");
-    assertThat(featureStruct).isNotNull();
-    Feature a = featureFromStarlark(featureStruct);
-    assertThat(a).isNotNull();
-  }
-
-  @Test
-  public void testFeature_name_validCharacters_notUpper() throws Exception {
-    loadCcToolchainConfigLib();
-    createFeatureRule(
-        "nine",
-        /* name= */ "'UpperCase'",
-        /* enabled= */ "False",
-        /* flagSets= */ "[]",
-        /* envSets= */ "[]",
-        /* requires= */ "[]",
-        /* implies= */ "[]",
-        /* provides= */ "[]");
-
-    ConfiguredTarget t = getConfiguredTarget("//nine:a");
-    StarlarkInfo featureStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("f");
-    assertThat(featureStruct).isNotNull();
-    EvalException e = assertThrows(EvalException.class, () -> featureFromStarlark(featureStruct));
-    assertThat(e)
-        .hasMessageThat()
-        .contains(
-            "A feature's name must consist solely of lowercase ASCII letters, digits, "
-                + "'.', '_', '+', and '-', got 'UpperCase'");
-  }
-
-  @Test
-  public void testFeature_name_validCharacters_notWhitespace() throws Exception {
-    loadCcToolchainConfigLib();
-    createFeatureRule(
-        "ten",
-        /* name= */ "'white space'",
-        /* enabled= */ "False",
-        /* flagSets= */ "[]",
-        /* envSets= */ "[]",
-        /* requires= */ "[]",
-        /* implies= */ "[]",
-        /* provides= */ "[]");
-
-    ConfiguredTarget t = getConfiguredTarget("//ten:a");
-    StarlarkInfo featureStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("f");
-    assertThat(featureStruct).isNotNull();
-    EvalException e = assertThrows(EvalException.class, () -> featureFromStarlark(featureStruct));
-    assertThat(e)
-        .hasMessageThat()
-        .contains(
-            "A feature's name must consist solely of "
-                + "lowercase ASCII letters, digits, '.', '_', '+', and '-', got 'white space");
-  }
-
-  private void createFeatureRule(
-      String pkg,
-      String name,
-      String enabled,
-      String flagSets,
-      String envSets,
-      String requires,
-      String implies,
-      String provides)
-      throws Exception {
-    scratch.file(
-        pkg + "/foo.bzl",
-        "load('//tools/cpp:cc_toolchain_config_lib.bzl', 'with_feature_set', 'feature_set',",
-        "             'flag_set', 'flag_group', 'tool', 'env_set', 'env_entry', 'feature')",
-        "load('//myinfo:myinfo.bzl', 'MyInfo')",
-        "def _impl(ctx):",
-        "   return [MyInfo(f = feature(",
-        "       name = " + name + ",",
-        "       enabled = " + enabled + ",",
-        "       flag_sets = " + flagSets + ",",
-        "       env_sets = " + envSets + ",",
-        "       requires = " + requires + ",",
-        "       implies = " + implies + ",",
-        "       provides = " + provides + "))]",
-        "crule = rule(implementation = _impl)");
-    scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')");
-  }
-
-  @Test
-  public void testCustomFeature_name_mustBeString() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomFeatureRule(
-        "one",
-        /* name= */ "struct()",
-        /* enabled= */ "False",
-        /* flagSets= */ "[]",
-        /* envSets= */ "[]",
-        /* requires= */ "[]",
-        /* implies= */ "[]",
-        /* provides= */ "[]");
-
-    ConfiguredTarget t = getConfiguredTarget("//one:a");
-    StarlarkInfo featureStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("f");
-    assertThat(featureStruct).isNotNull();
-    EvalException e = assertThrows(EvalException.class, () -> featureFromStarlark(featureStruct));
-    assertThat(e).hasMessageThat().contains("Field 'name' is not of 'java.lang.String' type.");
-  }
-
-  @Test
-  public void testCustomFeature_enabled_mustBeBool() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomFeatureRule(
-        "two",
-        /* name= */ "'featurename'",
-        /* enabled= */ "struct()",
-        /* flagSets= */ "[]",
-        /* envSets= */ "[]",
-        /* requires= */ "[]",
-        /* implies= */ "[]",
-        /* provides= */ "[]");
-
-    ConfiguredTarget t = getConfiguredTarget("//two:a");
-    StarlarkInfo featureStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("f");
-    assertThat(featureStruct).isNotNull();
-    EvalException e = assertThrows(EvalException.class, () -> featureFromStarlark(featureStruct));
-    assertThat(e).hasMessageThat().contains("Field 'enabled' is not of 'java.lang.Boolean' type.");
-  }
-
-  @Test
-  public void testCustomFeature_flagSets_mustBeList() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomFeatureRule(
-        "three",
-        /* name= */ "'featurename'",
-        /* enabled= */ "True",
-        /* flagSets= */ "struct()",
-        /* envSets= */ "[]",
-        /* requires= */ "[]",
-        /* implies= */ "[]",
-        /* provides= */ "[]");
-
-    ConfiguredTarget t = getConfiguredTarget("//three:a");
-    StarlarkInfo featureStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("f");
-    assertThat(featureStruct).isNotNull();
-    EvalException e = assertThrows(EvalException.class, () -> featureFromStarlark(featureStruct));
-    assertThat(e).hasMessageThat().contains("for flag_sets, got struct, want sequence");
-  }
-
-  @Test
-  public void testCustomFeature_envSets_mustBeList() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomFeatureRule(
-        "four",
-        /* name= */ "'featurename'",
-        /* enabled= */ "True",
-        /* flagSets= */ "[]",
-        /* envSets= */ "struct()",
-        /* requires= */ "[]",
-        /* implies= */ "[]",
-        /* provides= */ "[]");
-
-    ConfiguredTarget t = getConfiguredTarget("//four:a");
-    StarlarkInfo featureStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("f");
-    assertThat(featureStruct).isNotNull();
-    EvalException e = assertThrows(EvalException.class, () -> featureFromStarlark(featureStruct));
-    assertThat(e).hasMessageThat().contains("for env_sets, got struct, want sequence");
-  }
-
-  @Test
-  public void testCustomFeature_requires_mustBeList() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomFeatureRule(
-        "five",
-        /* name= */ "'featurename'",
-        /* enabled= */ "True",
-        /* flagSets= */ "[]",
-        /* envSets= */ "[]",
-        /* requires= */ "struct()",
-        /* implies= */ "[]",
-        /* provides= */ "[]");
-
-    ConfiguredTarget t = getConfiguredTarget("//five:a");
-    StarlarkInfo featureStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("f");
-    assertThat(featureStruct).isNotNull();
-    EvalException e = assertThrows(EvalException.class, () -> featureFromStarlark(featureStruct));
-    assertThat(e).hasMessageThat().contains("for requires, got struct, want sequence");
-  }
-
-  @Test
-  public void testCustomFeature_implies_mustBeList() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomFeatureRule(
-        "six",
-        /* name= */ "'featurename'",
-        /* enabled= */ "True",
-        /* flagSets= */ "[]",
-        /* envSets= */ "[]",
-        /* requires= */ "[]",
-        /* implies= */ "struct()",
-        /* provides= */ "[]");
-
-    ConfiguredTarget t = getConfiguredTarget("//six:a");
-    StarlarkInfo featureStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("f");
-    assertThat(featureStruct).isNotNull();
-    EvalException e = assertThrows(EvalException.class, () -> featureFromStarlark(featureStruct));
-    assertThat(e).hasMessageThat().contains("for implies, got struct, want sequence");
-  }
-
-  @Test
-  public void testCustomFeature_provides_mustBeList() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomFeatureRule(
-        "seven",
-        /* name= */ "'featurename'",
-        /* enabled= */ "True",
-        /* flagSets= */ "[]",
-        /* envSets= */ "[]",
-        /* requires= */ "[]",
-        /* implies= */ "[]",
-        /* provides= */ "struct()");
-
-    ConfiguredTarget t = getConfiguredTarget("//seven:a");
-    StarlarkInfo featureStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("f");
-    assertThat(featureStruct).isNotNull();
-    EvalException e = assertThrows(EvalException.class, () -> featureFromStarlark(featureStruct));
-    assertThat(e).hasMessageThat().contains("for provides, got struct, want sequence");
-  }
-
-  @Test
-  public void testCustomFeature_flagSet_musthaveActions() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomFeatureRule(
-        "eight",
-        /* name= */ "'featurename'",
-        /* enabled= */ "True",
-        /* flagSets= */ "[flag_set()]",
-        /* envSets= */ "[]",
-        /* requires= */ "[]",
-        /* implies= */ "[]",
-        /* provides= */ "[]");
-
-    ConfiguredTarget t = getConfiguredTarget("//eight:a");
-    StarlarkInfo featureStruct = (StarlarkInfo) getMyInfoFromTarget(t).getValue("f");
-    assertThat(featureStruct).isNotNull();
-    EvalException e = assertThrows(EvalException.class, () -> featureFromStarlark(featureStruct));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("A flag_set that belongs to a feature must have nonempty 'actions' parameter.");
-  }
-
-  private void createCustomFeatureRule(
-      String pkg,
-      String name,
-      String enabled,
-      String flagSets,
-      String envSets,
-      String requires,
-      String implies,
-      String provides)
-      throws Exception {
-    scratch.file(
-        pkg + "/foo.bzl",
-        "load('//tools/cpp:cc_toolchain_config_lib.bzl', 'with_feature_set', 'feature_set',",
-        "             'flag_set', 'flag_group', 'tool', 'env_set', 'env_entry', 'feature')",
-        "load('//myinfo:myinfo.bzl', 'MyInfo')",
-        "def _impl(ctx):",
-        "   return [MyInfo(f = struct(",
-        "       name = " + name + ",",
-        "       enabled = " + enabled + ",",
-        "       flag_sets = " + flagSets + ",",
-        "       env_sets = " + envSets + ",",
-        "       requires = " + requires + ",",
-        "       implies = " + implies + ",",
-        "       provides = " + provides + ",",
-        "       type_name = 'feature'))]",
-        "crule = rule(implementation = _impl)");
-    scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')");
-  }
-
-  @Test
-  public void testCustomArtifactNamePattern_categoryName_mustBeString() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomArtifactNamePatternRule(
-        "one", /* categoryName= */ "struct()", /* extension= */ "'a'", /* prefix= */ "'a'");
-
-    ConfiguredTarget t = getConfiguredTarget("//one:a");
-    StarlarkInfo artifactNamePatternStruct =
-        (StarlarkInfo) getMyInfoFromTarget(t).getValue("namepattern");
-    assertThat(artifactNamePatternStruct).isNotNull();
-    EvalException e =
-        assertThrows(
-            EvalException.class,
-            () -> artifactNamePatternFromStarlark(artifactNamePatternStruct, (c, p, ext) -> {}));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("Field 'category_name' is not of 'java.lang.String' type.");
-  }
-
-  @Test
-  public void testCustomArtifactNamePattern_extension_mustBeString() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomArtifactNamePatternRule(
-        "two",
-        /* categoryName= */ "'static_library'",
-        /* extension= */ "struct()",
-        /* prefix= */ "'a'");
-
-    ConfiguredTarget t = getConfiguredTarget("//two:a");
-    StarlarkInfo artifactNamePatternStruct =
-        (StarlarkInfo) getMyInfoFromTarget(t).getValue("namepattern");
-    assertThat(artifactNamePatternStruct).isNotNull();
-    EvalException e =
-        assertThrows(
-            EvalException.class,
-            () -> artifactNamePatternFromStarlark(artifactNamePatternStruct, (c, p, ext) -> {}));
-    assertThat(e).hasMessageThat().contains("Field 'extension' is not of 'java.lang.String' type.");
-  }
-
-  @Test
-  public void testCustomArtifactNamePattern_prefix_mustBeString() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomArtifactNamePatternRule(
-        "three",
-        /* categoryName= */ "'static_library'",
-        /* extension= */ "'.a'",
-        /* prefix= */ "struct()");
-
-    ConfiguredTarget t = getConfiguredTarget("//three:a");
-    StarlarkInfo artifactNamePatternStruct =
-        (StarlarkInfo) getMyInfoFromTarget(t).getValue("namepattern");
-    assertThat(artifactNamePatternStruct).isNotNull();
-    EvalException e =
-        assertThrows(
-            EvalException.class,
-            () -> artifactNamePatternFromStarlark(artifactNamePatternStruct, (c, p, ext) -> {}));
-    assertThat(e).hasMessageThat().contains("Field 'prefix' is not of 'java.lang.String' type.");
-  }
-
-  @Test
-  public void testCustomArtifactNamePattern_categoryName_mustBeNonempty() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomArtifactNamePatternRule(
-        "four", /* categoryName= */ "''", /* extension= */ "'.a'", /* prefix= */ "'a'");
-
-    ConfiguredTarget t = getConfiguredTarget("//four:a");
-    StarlarkInfo artifactNamePatternStruct =
-        (StarlarkInfo) getMyInfoFromTarget(t).getValue("namepattern");
-    assertThat(artifactNamePatternStruct).isNotNull();
-    EvalException e =
-        assertThrows(
-            EvalException.class,
-            () -> artifactNamePatternFromStarlark(artifactNamePatternStruct, (c, p, ext) -> {}));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("The 'category_name' field of artifact_name_pattern must be a nonempty string.");
-  }
-
-  @Test
-  public void testCustomArtifactNamePattern_emptyString_emptyString() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomArtifactNamePatternRule(
-        "five", /* categoryName= */ "'executable'", /* extension= */ "''", /* prefix= */ "''");
-
-    ConfiguredTarget t = getConfiguredTarget("//five:a");
-    StarlarkInfo artifactNamePatternStruct =
-        (StarlarkInfo) getMyInfoFromTarget(t).getValue("namepattern");
-    assertThat(artifactNamePatternStruct).isNotNull();
-    AtomicBoolean called = new AtomicBoolean(false);
-    artifactNamePatternFromStarlark(artifactNamePatternStruct, (c, p, ext) -> called.set(true));
-    assertThat(called.get()).isTrue();
-  }
-
-  @Test
-  public void testCustomArtifactNamePattern_none_none() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomArtifactNamePatternRule(
-        "six", /* categoryName= */ "'executable'", /* extension= */ "None", /* prefix= */ "None");
-
-    ConfiguredTarget t = getConfiguredTarget("//six:a");
-    StarlarkInfo artifactNamePatternStruct =
-        (StarlarkInfo) getMyInfoFromTarget(t).getValue("namepattern");
-    assertThat(artifactNamePatternStruct).isNotNull();
-    AtomicBoolean called = new AtomicBoolean(false);
-    artifactNamePatternFromStarlark(artifactNamePatternStruct, (c, p, ext) -> called.set(true));
-    assertThat(called.get()).isTrue();
-  }
-
-  @Test
-  public void testCustomArtifactNamePattern_categoryName_unknown() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomArtifactNamePatternRule(
-        "seven", /* categoryName= */ "'unknown'", /* extension= */ "'.a'", /* prefix= */ "'a'");
-
-    ConfiguredTarget t = getConfiguredTarget("//seven:a");
-    StarlarkInfo artifactNamePatternStruct =
-        (StarlarkInfo) getMyInfoFromTarget(t).getValue("namepattern");
-    assertThat(artifactNamePatternStruct).isNotNull();
-    EvalException e =
-        assertThrows(
-            EvalException.class,
-            () -> artifactNamePatternFromStarlark(artifactNamePatternStruct, (c, p, ext) -> {}));
-    assertThat(e).hasMessageThat().contains("Artifact category unknown not recognized");
-  }
-
-  @Test
-  public void testCustomArtifactNamePattern_fileExtension_unknown() throws Exception {
-    loadCcToolchainConfigLib();
-    createCustomArtifactNamePatternRule(
-        "eight",
-        /* categoryName= */ "'static_library'",
-        /* extension= */ "'a'",
-        /* prefix= */ "'a'");
-
-    ConfiguredTarget t = getConfiguredTarget("//eight:a");
-    StarlarkInfo artifactNamePatternStruct =
-        (StarlarkInfo) getMyInfoFromTarget(t).getValue("namepattern");
-    assertThat(artifactNamePatternStruct).isNotNull();
-    EvalException e =
-        assertThrows(
-            EvalException.class,
-            () -> artifactNamePatternFromStarlark(artifactNamePatternStruct, (c, p, ext) -> {}));
-    assertThat(e).hasMessageThat().contains("Unrecognized file extension 'a'");
-  }
-
-  private void createCustomArtifactNamePatternRule(
-      String pkg, String categoryName, String extension, String prefix) throws Exception {
-    scratch.file(
-        pkg + "/foo.bzl",
-        "load('//myinfo:myinfo.bzl', 'MyInfo')",
-        "def _impl(ctx):",
-        "   return [MyInfo(namepattern = struct(",
-        "       category_name = " + categoryName + ",",
-        "       extension = " + extension + ",",
-        "       prefix = " + prefix + ",",
-        "       type_name = 'artifact_name_pattern'))]",
-        "crule = rule(implementation = _impl)");
-    scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')");
-  }
-
-  @Test
-  public void testCcToolchainInfoFromStarlark() throws Exception {
-    loadCcToolchainConfigLib();
-    scratch.file(
-        "foo/crosstool.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file("a/lib.a", "")
+        scratch.file("a/lib.so", "")
+        scratch.overwriteFile("tools/build_defs/cc/BUILD", "")
+        scratch.file(
+            "tools/build_defs/cc/rule.bzl",
+            "load('//myinfo:myinfo.bzl', 'MyInfo')",
+            ("load('"
+                    + TestConstants.RULES_CC
+                    + ":find_cc_toolchain.bzl', 'find_cc_toolchain', 'use_cc_toolchain')"),
+            "load('@rules_cc//cc/common:cc_info.bzl', 'CcInfo')",
+            "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
+            "linker_input = cc_common.create_linker_input(",
+            "                 owner=Label('//toplevel'),",
+            "                 user_link_flags=[['-first_flag'], ['-second_flag']])",
+            "top_linking_context_smoke = cc_common.create_linking_context(",
+            "   linker_inputs=depset([linker_input]))",
+            "def _create(ctx, feature_configuration, static_library, pic_static_library,",
+            "  dynamic_library,",
+            "  interface_library, dynamic_library_symlink_path, interface_library_symlink_path,",
+            "  alwayslink, objects, pic_objects):",
+            "  return cc_common.create_library_to_link(",
+            "    actions=ctx.actions, feature_configuration=feature_configuration, ",
+            "    cc_toolchain = ctx.attr._cc_toolchain[cc_common.CcToolchainInfo], ",
+            "    static_library=static_library, pic_static_library=pic_static_library,",
+            "    dynamic_library=dynamic_library, interface_library=interface_library,",
+            "    dynamic_library_symlink_path=dynamic_library_symlink_path,",
+            "    interface_library_symlink_path=interface_library_symlink_path,",
+            "    alwayslink=alwayslink, ",
+            "    )",
+            "def _impl(ctx):",
+            "  toolchain = find_cc_toolchain(ctx)",
+            "  feature_configuration = cc_common.configure_features(",
+            "    ctx = ctx,",
+            "    cc_toolchain = toolchain,",
+            "  )",
+            "  library_to_link = _create(ctx, feature_configuration, ctx.file.static_library, ",
+            "     ctx.file.pic_static_library, ctx.file.dynamic_library, ctx.file.interface_library,",
+            "     ctx.attr.dynamic_library_symlink_path,",
+            "     ctx.attr.interface_library_symlink_path,",
+            "     ctx.attr.alwayslink, ctx.files.objects, ctx.files.pic_objects)",
+            "  linker_input = cc_common.create_linker_input(",
+            "                   owner=ctx.label,",
+            "                   libraries=depset([library_to_link]),",
+            "                   user_link_flags=depset(ctx.attr.user_link_flags),",
+            "                   additional_inputs=depset(ctx.files.additional_inputs))",
+            "  linking_context = cc_common.create_linking_context(",
+            "     linker_inputs=depset([linker_input]))",
+            "  cc_infos = [CcInfo(linking_context=linking_context)]",
+            "  for dep in ctx.attr.deps:",
+            "      cc_infos.append(dep[CcInfo])",
+            "  merged_cc_info = cc_common.merge_cc_infos(cc_infos=cc_infos)",
+            "  merged_libraries = []",
+            "  merged_additional_inputs = []",
+            "  merged_user_link_flags = []",
+            "  merged_linkstamps = []",
+            "  for l in merged_cc_info.linking_context.linker_inputs.to_list():",
+            "      merged_libraries.extend(l.libraries)",
+            "      merged_additional_inputs.extend(l.additional_inputs)",
+            "      merged_user_link_flags.extend(l.user_link_flags)",
+            "      merged_linkstamps.extend(l.linkstamps)",
+            "  linkstamps_linker_input = cc_common.create_linker_input(",
+            "                   owner=ctx.label,",
+            "                   linkstamps=depset(merged_linkstamps))",
+            "  return [",
+            "     MyInfo(",
+            "         info = struct(",
+            "             cc_info = merged_cc_info,",
+            "             user_link_flags = merged_user_link_flags,",
+            "             additional_inputs = depset(merged_additional_inputs),",
+            "             libraries_to_link = depset(merged_libraries),",
+            "             linkstamps = depset(linkstamps_linker_input.linkstamps),",
+            "             static_library = library_to_link.static_library,",
+            "             pic_static_library = library_to_link.pic_static_library,",
+            "             dynamic_library = library_to_link.dynamic_library,",
+            "             interface_library = library_to_link.interface_library,",
+            "             alwayslink = library_to_link.alwayslink,",
+            "             objects = library_to_link.objects,",
+            "             pic_objects = library_to_link.pic_objects),",
+            "      ),",
+            "      merged_cc_info]",
+            "crule = rule(",
+            "  _impl,",
+            "  attrs = { ",
+            "    'user_link_flags' : attr.string_list(),",
+            "    'additional_inputs': attr.label_list(allow_files=True),",
+            "    'static_library': attr.label(allow_single_file=True),",
+            "    'pic_static_library': attr.label(allow_single_file=True),",
+            "    'dynamic_library': attr.label(allow_single_file=True),",
+            "    'dynamic_library_symlink_path': attr.string(),",
+            "    'interface_library': attr.label(allow_single_file=True),",
+            "    'interface_library_symlink_path': attr.string(),",
+            "    'objects': attr.label_list(allow_files=True),",
+            "    'pic_objects': attr.label_list(allow_files=True),",
+            "    'alwayslink': attr.bool(),",
+            "    '_cc_toolchain': attr.label(default=Label('//a:alias')),",
+            "    'deps': attr.label_list(),",
+            "  },",
+            "  fragments = ['cpp'],",
+            "  toolchains = use_cc_toolchain()",
+            ");"
+        )
+    }
+
+    @Throws(IOException::class)
+    private fun loadCcToolchainConfigLib() {
+        scratch.appendFile("tools/cpp/BUILD", "")
+        scratch.overwriteFile(
+            "tools/cpp/cc_toolchain_config_lib.bzl",
+            com.google.devtools.build.lib.packages.util.ResourceLoader.readFromResources(
+                TestConstants.RULES_CC_REPOSITORY_EXECROOT + "cc/cc_toolchain_config_lib.bzl"
+            )
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testVariableWithValue() {
+        loadCcToolchainConfigLib()
+        createVariableWithValueRule("one",  /* name= */"None",  /* value= */"None")
+
+        var e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//one:a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("name parameter of variable_with_value should be a string, found NoneType")
+
+        createVariableWithValueRule("two",  /* name= */"'abc'",  /* value= */"None")
+
+        e = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//two:a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("value parameter of variable_with_value should be a string, found NoneType")
+
+        createVariableWithValueRule("three",  /* name= */"''",  /* value= */"None")
+
+        e = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//three:a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("name parameter of variable_with_value must be a nonempty string")
+
+        createVariableWithValueRule("four",  /* name= */"'abc'",  /* value= */"''")
+
+        e = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//four:a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("value parameter of variable_with_value must be a nonempty string")
+
+        createVariableWithValueRule("five",  /* name= */"'abc'",  /* value= */"'def'")
+
+        var t: ConfiguredTarget = getConfiguredTarget("//five:a")
+        val variable: StarlarkInfo? = getMyInfoFromTarget(t).getValue("variable") as StarlarkInfo?
+        assertThat(variable).isNotNull()
+        val v: VariableWithValue = variableWithValueFromStarlark(variable)
+        assertThat(v).isNotNull()
+        assertThat(v.variable).isEqualTo("abc")
+        assertThat(v.value).isEqualTo("def")
+
+        createEnvEntryRule("six",  /* key= */"'abc'",  /* value= */"'def'")
+        t = getConfiguredTarget("//six:a")
+        val envEntry: StarlarkInfo? = getMyInfoFromTarget(t).getValue("entry") as StarlarkInfo?
+        val ee: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { variableWithValueFromStarlark(envEntry) })
+        Truth.assertThat(ee)
+            .hasMessageThat()
+            .contains("Expected object of type 'variable_with_value', received 'env_entry")
+    }
+
+    @Throws(IOException::class)
+    private fun createVariableWithValueRule(pkg: String?, name: String?, value: String?) {
+        scratch.file(
+            pkg + "/foo.bzl",
+            "load('//tools/cpp:cc_toolchain_config_lib.bzl', 'variable_with_value')",
+            "load('//myinfo:myinfo.bzl', 'MyInfo')",
+            "def _impl(ctx):",
+            "   return [MyInfo(variable = variable_with_value(",
+            "       name = " + name + ",",
+            "       value = " + value + "))]",
+            "crule = rule(implementation = _impl)"
+        )
+        scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomVariableWithValue_none_none() {
+        loadCcToolchainConfigLib()
+        createCustomVariableWithValueRule("one",  /* name= */"None",  /* value= */"None")
+        val t: ConfiguredTarget = getConfiguredTarget("//one:a")
+        val variable: StarlarkInfo? = getMyInfoFromTarget(t).getValue("variable") as StarlarkInfo?
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { variableWithValueFromStarlark(variable) })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("'name' parameter of variable_with_value must be a nonempty string.")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomVariableWithValue_string_none() {
+        loadCcToolchainConfigLib()
+        createCustomVariableWithValueRule("two",  /* name= */"'abc'",  /* value= */"None")
+
+        val t: ConfiguredTarget = getConfiguredTarget("//two:a")
+        val variable: StarlarkInfo? = getMyInfoFromTarget(t).getValue("variable") as StarlarkInfo?
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { variableWithValueFromStarlark(variable) })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("'value' parameter of variable_with_value must be a nonempty string.")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomVariableWithValue_string_struct() {
+        loadCcToolchainConfigLib()
+        createCustomVariableWithValueRule("three",  /* name= */"'abc'",  /* value= */"struct()")
+
+        val t: ConfiguredTarget = getConfiguredTarget("//three:a")
+        val variable: StarlarkInfo? = getMyInfoFromTarget(t).getValue("variable") as StarlarkInfo?
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { variableWithValueFromStarlark(variable) })
+        Truth.assertThat(e).hasMessageThat().contains("Field 'value' is not of 'java.lang.String' type.")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomVariableWithValue_boolean_string() {
+        loadCcToolchainConfigLib()
+        createCustomVariableWithValueRule("four",  /* name= */"True",  /* value= */"'abc'")
+
+        val t: ConfiguredTarget = getConfiguredTarget("//four:a")
+        val variable: StarlarkInfo? = getMyInfoFromTarget(t).getValue("variable") as StarlarkInfo?
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { variableWithValueFromStarlark(variable) })
+        Truth.assertThat(e).hasMessageThat().contains("Field 'name' is not of 'java.lang.String' type.")
+    }
+
+    @Throws(IOException::class)
+    private fun createCustomVariableWithValueRule(pkg: String?, name: String?, value: String?) {
+        scratch.file(
+            pkg + "/foo.bzl",
+            "load('//myinfo:myinfo.bzl', 'MyInfo')",
+            "def _impl(ctx):",
+            "   return [MyInfo(variable = struct(",
+            "       name = " + name + ",",
+            "       value = " + value + ",",
+            "       type_name = 'variable_with_value'))]",
+            "crule = rule(implementation = _impl)"
+        )
+        scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEnvEntry_none_none() {
+        loadCcToolchainConfigLib()
+        createEnvEntryRule("one", "None",  /* value= */"None")
+
+        val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//one:a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("key parameter of env_entry should be a string, found NoneType")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEnvEntry_string_none() {
+        loadCcToolchainConfigLib()
+        createEnvEntryRule("two", "'abc'",  /* value= */"None")
+
+        val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//two:a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("value parameter of env_entry should be a string, found NoneType")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEnvEntry_emptyString_none() {
+        loadCcToolchainConfigLib()
+        createEnvEntryRule("three", "''",  /* value= */"None")
+
+        val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//three:a") })
+        Truth.assertThat(e).hasMessageThat().contains("key parameter of env_entry must be a nonempty string")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEnvEntry_string_emptyString() {
+        loadCcToolchainConfigLib()
+        createEnvEntryRule("four", "'abc'",  /* value= */"''")
+
+        val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//four:a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("value parameter of env_entry must be a nonempty string")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEnvEntry_string_string() {
+        loadCcToolchainConfigLib()
+        createEnvEntryRule("five", "'abc'",  /* value= */"'def'")
+
+        val t: ConfiguredTarget = getConfiguredTarget("//five:a")
+        val entryProvider: StarlarkInfo? = getMyInfoFromTarget(t).getValue("entry") as StarlarkInfo?
+        assertThat(entryProvider).isNotNull()
+        val entry: EnvEntry? = envEntryFromStarlark(entryProvider)
+        assertThat(entry).isNotNull()
+        val parser: StringValueParser = StringValueParser("def")
+        assertThat(entry).isEqualTo(
+            EnvEntry(
+                "abc",
+                parser.getChunks(),
+                com.google.common.collect.ImmutableSet.of<E?>()
+            )
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEnvEntryVariable_string_string() {
+        loadCcToolchainConfigLib()
+        createVariableWithValueRule("six",  /* name= */"'abc'",  /* value= */"'def'")
+        val t: ConfiguredTarget = getConfiguredTarget("//six:a")
+        val variable: StarlarkInfo? = getMyInfoFromTarget(t).getValue("variable") as StarlarkInfo?
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { envEntryFromStarlark(variable) })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("Expected object of type 'env_entry', received 'variable_with_value")
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun createEnvEntryRule(pkg: String?, key: String?, value: String?) {
+        scratch.file(
+            pkg + "/foo.bzl",
+            "load('//tools/cpp:cc_toolchain_config_lib.bzl', 'env_entry')",
+            "load('//myinfo:myinfo.bzl', 'MyInfo')",
+            "def _impl(ctx):",
+            "   return [MyInfo(entry = env_entry(",
+            "       key = " + key + ",",
+            "       value = " + value + "))]",
+            "crule = rule(implementation = _impl)"
+        )
+        scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomEnvEntry_none_none() {
+        loadCcToolchainConfigLib()
+        createCustomEnvEntryRule("one",  /* key= */"None",  /* value= */"None")
+
+        val t: ConfiguredTarget = getConfiguredTarget("//one:a")
+        val entry: StarlarkInfo? = getMyInfoFromTarget(t).getValue("entry") as StarlarkInfo?
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { envEntryFromStarlark(entry) })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("'key' parameter of env_entry must be a nonempty string.")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomEnvEntry_string_none() {
+        loadCcToolchainConfigLib()
+        createCustomEnvEntryRule("two",  /* key= */"'abc'",  /* value= */"None")
+
+        val t: ConfiguredTarget = getConfiguredTarget("//two:a")
+        val entry: StarlarkInfo? = getMyInfoFromTarget(t).getValue("entry") as StarlarkInfo?
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                "Should have failed because of empty string.",
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { envEntryFromStarlark(entry) })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("'value' parameter of env_entry must be a nonempty string.")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomEnvEntry_string_struct() {
+        loadCcToolchainConfigLib()
+        createCustomEnvEntryRule("three",  /* key= */"'abc'",  /* value= */"struct()")
+
+        val t: ConfiguredTarget = getConfiguredTarget("//three:a")
+        val entry: StarlarkInfo? = getMyInfoFromTarget(t).getValue("entry") as StarlarkInfo?
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { envEntryFromStarlark(entry) })
+        Truth.assertThat(e).hasMessageThat().contains("Field 'value' is not of 'java.lang.String' type.")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomEnvEntry_boolean_string() {
+        loadCcToolchainConfigLib()
+        createCustomEnvEntryRule("four",  /* key= */"True",  /* value= */"'abc'")
+
+        val t: ConfiguredTarget = getConfiguredTarget("//four:a")
+        val entry: StarlarkInfo? = getMyInfoFromTarget(t).getValue("entry") as StarlarkInfo?
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { envEntryFromStarlark(entry) })
+        Truth.assertThat(e).hasMessageThat().contains("Field 'key' is not of 'java.lang.String' type.")
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun createCustomEnvEntryRule(pkg: String?, key: String?, value: String?) {
+        scratch.file(
+            pkg + "/foo.bzl",
+            "load('//myinfo:myinfo.bzl', 'MyInfo')",
+            "def _impl(ctx):",
+            "   return [MyInfo(entry = struct(",
+            "       key = " + key + ",",
+            "       value = " + value + ",",
+            "       type_name = 'env_entry'))]",
+            "crule = rule(implementation = _impl)"
+        )
+        scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testToolPath_none_none() {
+        loadCcToolchainConfigLib()
+        createToolPathRule("one",  /* name= */"None", "None")
+
+        val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//one:a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("name parameter of tool_path should be a string, found NoneType")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testToolPath_string_none() {
+        loadCcToolchainConfigLib()
+        createToolPathRule("two",  /* name= */"'abc'", "None")
+
+        val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//two:a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("path parameter of tool_path should be a string, found NoneType")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testToolPath_emptyString_none() {
+        loadCcToolchainConfigLib()
+        createToolPathRule("three",  /* name= */"''", "None")
+
+        val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//three:a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("name parameter of tool_path must be a nonempty string")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testToolPath_string_emptyString() {
+        loadCcToolchainConfigLib()
+        createToolPathRule("four",  /* name= */"'abc'", "''")
+
+        val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//four:a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("path parameter of tool_path must be a nonempty string")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testToolPath_string_escapedString() {
+        loadCcToolchainConfigLib()
+        createToolPathRule("five",  /* name= */"'abc'", "'/d/e/f'")
+
+        val t: ConfiguredTarget = getConfiguredTarget("//five:a")
+        val toolPathProvider: StarlarkInfo? = getMyInfoFromTarget(t).getValue("toolpath") as StarlarkInfo?
+        assertThat(toolPathProvider).isNotNull()
+        val toolPath: Pair<String?, String?> = toolPathFromStarlark(toolPathProvider)
+        assertThat(toolPath).isNotNull()
+        assertThat(toolPath.first).isEqualTo("abc")
+        assertThat(toolPath.second).isEqualTo("/d/e/f")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testToolPath_string_string() {
+        loadCcToolchainConfigLib()
+        createVariableWithValueRule("six",  /* name= */"'abc'",  /* value= */"'def'")
+        val t: ConfiguredTarget = getConfiguredTarget("//six:a")
+        val variable: StarlarkInfo? = getMyInfoFromTarget(t).getValue("variable") as StarlarkInfo?
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { toolPathFromStarlark(variable) })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("Expected object of type 'tool_path', received 'variable_with_value")
+    }
+
+    @Throws(IOException::class)
+    private fun createToolPathRule(pkg: String?, name: String?, path: String?) {
+        scratch.file(
+            pkg + "/foo.bzl",
+            "load('//tools/cpp:cc_toolchain_config_lib.bzl', 'tool_path')",
+            "load('//myinfo:myinfo.bzl', 'MyInfo')",
+            "def _impl(ctx):",
+            "   return [MyInfo(toolpath = tool_path(",
+            "       name = " + name + ",",
+            "       path = " + path + "))]",
+            "crule = rule(implementation = _impl)"
+        )
+        scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomToolPath_name_mustBeNonEmpty() {
+        loadCcToolchainConfigLib()
+        createCustomToolPathRule("one",  /* name= */"None",  /* path= */"None")
+
+        val t: ConfiguredTarget = getConfiguredTarget("//one:a")
+        val toolPath: StarlarkInfo? = getMyInfoFromTarget(t).getValue("toolpath") as StarlarkInfo?
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { toolPathFromStarlark(toolPath) })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("'name' parameter of tool_path must be a nonempty string.")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomToolPath_path_mustBeNonEmpty() {
+        loadCcToolchainConfigLib()
+        createCustomToolPathRule("two",  /* name= */"'abc'",  /* path= */"None")
+
+        val t: ConfiguredTarget = getConfiguredTarget("//two:a")
+        val toolPath: StarlarkInfo? = getMyInfoFromTarget(t).getValue("toolpath") as StarlarkInfo?
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { toolPathFromStarlark(toolPath) })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("'path' parameter of tool_path must be a nonempty string.")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomToolPath_path_mustBeString() {
+        loadCcToolchainConfigLib()
+        createCustomToolPathRule("three",  /* name= */"'abc'",  /* path= */"struct()")
+
+        val t: ConfiguredTarget = getConfiguredTarget("//three:a")
+        val toolPath: StarlarkInfo? = getMyInfoFromTarget(t).getValue("toolpath") as StarlarkInfo?
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { toolPathFromStarlark(toolPath) })
+        Truth.assertThat(e).hasMessageThat().contains("Field 'path' is not of 'java.lang.String' type.")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomToolPath_name_mustBeString() {
+        loadCcToolchainConfigLib()
+        createCustomToolPathRule("four",  /* name= */"True",  /* path= */"'abc'")
+
+        val t: ConfiguredTarget = getConfiguredTarget("//four:a")
+        val toolPath: StarlarkInfo? = getMyInfoFromTarget(t).getValue("toolpath") as StarlarkInfo?
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { toolPathFromStarlark(toolPath) })
+        Truth.assertThat(e).hasMessageThat().contains("Field 'name' is not of 'java.lang.String' type.")
+    }
+
+    @Throws(IOException::class)
+    private fun createCustomToolPathRule(pkg: String?, name: String?, path: String?) {
+        scratch.file(
+            pkg + "/foo.bzl",
+            "load('//tools/cpp:cc_toolchain_config_lib.bzl', 'tool_path')",
+            "load('//myinfo:myinfo.bzl', 'MyInfo')",
+            "def _impl(ctx):",
+            "   return [MyInfo(toolpath = struct(",
+            "       name = " + name + ",",
+            "       path = " + path + ",",
+            "       type_name = 'tool_path'))]",
+            "crule = rule(implementation = _impl)"
+        )
+        scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMakeVariable() {
+        loadCcToolchainConfigLib()
+        createMakeVariablerule("one",  /* name= */"None",  /* value= */"None")
+
+        var e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//one:a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("name parameter of make_variable should be a string, found NoneType")
+
+        createMakeVariablerule("two",  /* name= */"'abc'",  /* value= */"None")
+
+        e = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//two:a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("value parameter of make_variable should be a string, found NoneType")
+
+        createMakeVariablerule("three",  /* name= */"''",  /* value= */"None")
+
+        e = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//three:a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("name parameter of make_variable must be a nonempty string")
+
+        createMakeVariablerule("four",  /* name= */"'abc'",  /* value= */"''")
+
+        e = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//four:a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("value parameter of make_variable must be a nonempty string")
+
+        createMakeVariablerule("five",  /* name= */"'abc'",  /* value= */"'val'")
+
+        var t: ConfiguredTarget = getConfiguredTarget("//five:a")
+        val makeVariableProvider: StarlarkInfo? = getMyInfoFromTarget(t).getValue("variable") as StarlarkInfo?
+        assertThat(makeVariableProvider).isNotNull()
+        val makeVariable: Pair<String?, String?> = makeVariableFromStarlark(makeVariableProvider)
+        assertThat(makeVariable).isNotNull()
+        assertThat(makeVariable.first).isEqualTo("abc")
+        assertThat(makeVariable.second).isEqualTo("val")
+
+        createVariableWithValueRule("six",  /* name= */"'abc'",  /* value= */"'def'")
+        t = getConfiguredTarget("//six:a")
+        val variable: StarlarkInfo? = getMyInfoFromTarget(t).getValue("variable") as StarlarkInfo?
+        val ee: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { makeVariableFromStarlark(variable) })
+        Truth.assertThat(ee)
+            .hasMessageThat()
+            .contains("Expected object of type 'make_variable', received 'variable_with_value")
+    }
+
+    @Throws(IOException::class)
+    private fun createMakeVariablerule(pkg: String?, name: String?, value: String?) {
+        scratch.file(
+            pkg + "/foo.bzl",
+            "load('//tools/cpp:cc_toolchain_config_lib.bzl', 'make_variable')",
+            "load('//myinfo:myinfo.bzl', 'MyInfo')",
+            "def _impl(ctx):",
+            "   return [MyInfo(variable = make_variable(",
+            "       name = " + name + ",",
+            "       value = " + value + "))]",
+            "crule = rule(implementation = _impl)"
+        )
+        scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomMakeVariable_none_none() {
+        createCustomMakeVariableRule("one",  /* name= */"None",  /* value= */"None")
+
+        val t: ConfiguredTarget = getConfiguredTarget("//one:a")
+        val makeVariableProvider: StarlarkInfo? = getMyInfoFromTarget(t).getValue("variable") as StarlarkInfo?
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { makeVariableFromStarlark(makeVariableProvider) })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("'name' parameter of make_variable must be a nonempty string.")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomMakeVariable_string_none() {
+        createCustomMakeVariableRule("two",  /* name= */"'abc'",  /* value= */"None")
+
+        val t: ConfiguredTarget = getConfiguredTarget("//two:a")
+        val makeVariableProvider: StarlarkInfo? = getMyInfoFromTarget(t).getValue("variable") as StarlarkInfo?
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { makeVariableFromStarlark(makeVariableProvider) })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("'value' parameter of make_variable must be a nonempty string.")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomMakeVariable_list_none() {
+        createCustomMakeVariableRule("three",  /* name= */"[]",  /* value= */"None")
+
+        val t: ConfiguredTarget = getConfiguredTarget("//three:a")
+        val makeVariableProvider: StarlarkInfo? = getMyInfoFromTarget(t).getValue("variable") as StarlarkInfo?
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { makeVariableFromStarlark(makeVariableProvider) })
+        Truth.assertThat(e).hasMessageThat().contains("Field 'name' is not of 'java.lang.String' type.")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomMakeVariable_string_boolean() {
+        createCustomMakeVariableRule("four",  /* name= */"'abc'",  /* value= */"True")
+
+        val t: ConfiguredTarget = getConfiguredTarget("//four:a")
+        val makeVariableProvider: StarlarkInfo? = getMyInfoFromTarget(t).getValue("variable") as StarlarkInfo?
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { makeVariableFromStarlark(makeVariableProvider) })
+        Truth.assertThat(e).hasMessageThat().contains("Field 'value' is not of 'java.lang.String' type.")
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun createCustomMakeVariableRule(pkg: String?, name: String?, value: String?) {
+        scratch.file(
+            pkg + "/foo.bzl",
+            "load('//myinfo:myinfo.bzl', 'MyInfo')",
+            "def _impl(ctx):",
+            "   return [MyInfo(variable = struct(",
+            "       name = " + name + ",",
+            "       value = " + value + ",",
+            "       type_name = 'make_variable'))]",
+            "crule = rule(implementation = _impl)"
+        )
+        scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testWithFeatureSet() {
+        loadCcToolchainConfigLib()
+        createWithFeatureSetRule("one",  /* features= */"None",  /* notFeatures= */"None")
+
+        var e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//one:a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("features parameter of with_feature_set should be a list, found NoneType")
+
+        createWithFeatureSetRule("two",  /* features= */"['abc']",  /* notFeatures= */"None")
+
+        e = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//two:a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("not_features parameter of with_feature_set should be a list, found NoneType")
+
+        createWithFeatureSetRule("three",  /* features= */"'asdf'",  /* notFeatures= */"None")
+
+        e = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//three:a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("features parameter of with_feature_set should be a list, found string")
+
+        createWithFeatureSetRule("four",  /* features= */"['abc']",  /* notFeatures= */"'def'")
+
+        e = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//four:a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("not_features parameter of with_feature_set should be a list, found string")
+
+        createWithFeatureSetRule(
+            "five",  /* features= */"['f1', 'f2']",  /* notFeatures= */"['nf1', 'nf2']"
+        )
+
+        var t: ConfiguredTarget = getConfiguredTarget("//five:a")
+        val withFeatureSetProvider: StarlarkInfo? = getMyInfoFromTarget(t).getValue("wfs") as StarlarkInfo?
+        assertThat(withFeatureSetProvider).isNotNull()
+        val withFeatureSet: WithFeatureSet = withFeatureSetFromStarlark(withFeatureSetProvider)
+        assertThat(withFeatureSet).isNotNull()
+        assertThat(withFeatureSet.features()).containsExactly("f1", "f2")
+        assertThat(withFeatureSet.notFeatures()).containsExactly("nf1", "nf2")
+
+        createVariableWithValueRule("six",  /* name= */"'abc'",  /* value= */"'def'")
+        t = getConfiguredTarget("//six:a")
+        val variable: StarlarkInfo? = getMyInfoFromTarget(t).getValue("variable") as StarlarkInfo?
+        val ee: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { withFeatureSetFromStarlark(variable) })
+        Truth.assertThat(ee)
+            .hasMessageThat()
+            .contains("Expected object of type 'with_feature_set', received 'variable_with_value")
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun createWithFeatureSetRule(pkg: String?, features: String?, notFeatures: String?) {
+        scratch.file(
+            pkg + "/foo.bzl",
+            "load('//tools/cpp:cc_toolchain_config_lib.bzl', 'with_feature_set')",
+            "load('//myinfo:myinfo.bzl', 'MyInfo')",
+            "def _impl(ctx):",
+            "   return [MyInfo(wfs = with_feature_set(",
+            "       features = " + features + ",",
+            "       not_features = " + notFeatures + "))]",
+            "crule = rule(implementation = _impl)"
+        )
+        scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomWithFeatureSet_struct_none() {
+        createCustomWithFeatureSetRule("one",  /* features= */"struct()",  /* notFeatures= */"None")
+
+        val t: ConfiguredTarget = getConfiguredTarget("//one:a")
+        val withFeatureSetProvider: StarlarkInfo? = getMyInfoFromTarget(t).getValue("wfs") as StarlarkInfo?
+        assertThat(withFeatureSetProvider).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { withFeatureSetFromStarlark(withFeatureSetProvider) })
+        Truth.assertThat(e).hasMessageThat().contains("for features, got struct, want sequence")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomWithFeatureSet_listOfString_struct() {
+        createCustomWithFeatureSetRule("two",  /* features= */"['abc']",  /* notFeatures= */"struct()")
+
+        val t: ConfiguredTarget = getConfiguredTarget("//two:a")
+        val withFeatureSetProvider: StarlarkInfo? = getMyInfoFromTarget(t).getValue("wfs") as StarlarkInfo?
+        assertThat(withFeatureSetProvider).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { withFeatureSetFromStarlark(withFeatureSetProvider) })
+        Truth.assertThat(e).hasMessageThat().contains("for not_features, got struct, want sequence")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomWithFeatureSet_listOfStruct_emptyList() {
+        createCustomWithFeatureSetRule("three",  /* features= */"[struct()]",  /* notFeatures= */"[]")
+
+        val t: ConfiguredTarget = getConfiguredTarget("//three:a")
+        val withFeatureSetProvider: StarlarkInfo? = getMyInfoFromTarget(t).getValue("wfs") as StarlarkInfo?
+        assertThat(withFeatureSetProvider).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { withFeatureSetFromStarlark(withFeatureSetProvider) })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("at index 0 of features, got element of type struct, want string")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomWithFeatureSet_emptyList_listOfStruct() {
+        createCustomWithFeatureSetRule("four",  /* features= */"[]",  /* notFeatures= */"[struct()]")
+
+        val t: ConfiguredTarget = getConfiguredTarget("//four:a")
+        val withFeatureSetProvider: StarlarkInfo? = getMyInfoFromTarget(t).getValue("wfs") as StarlarkInfo?
+        assertThat(withFeatureSetProvider).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { withFeatureSetFromStarlark(withFeatureSetProvider) })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("at index 0 of not_features, got element of type struct, want string")
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun createCustomWithFeatureSetRule(pkg: String?, features: String?, notFeatures: String?) {
+        scratch.file(
+            pkg + "/foo.bzl",
+            "load('//myinfo:myinfo.bzl', 'MyInfo')",
+            "def _impl(ctx):",
+            "   return [MyInfo(wfs = struct(",
+            "       features = " + features + ",",
+            "       not_features = " + notFeatures + ",",
+            "       type_name = 'with_feature_set'))]",
+            "crule = rule(implementation = _impl)"
+        )
+        scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEnvSet_none_none() {
+        loadCcToolchainConfigLib()
+        createEnvSetRule(
+            "one",  /* actions= */"['a1']",  /* envEntries= */"None",  /* withFeatures= */"None"
+        )
+
+        val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//one:a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("env_entries parameter of env_set should be a list, found NoneType")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEnvSet_list_none() {
+        loadCcToolchainConfigLib()
+        createEnvSetRule(
+            "two",  /* actions= */"['a1']",  /* envEntries= */"['abc']",  /* withFeatures= */"None"
+        )
+
+        val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//two:a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("with_features parameter of env_set should be a list, found NoneType")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEnvSet_string_none() {
+        loadCcToolchainConfigLib()
+        createEnvSetRule(
+            "three",  /* actions= */"['a1']",  /* envEntries= */"'asdf'",  /* withFeatures= */"None"
+        )
+
+        val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//three:a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("env_entries parameter of env_set should be a list, found string")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEnvSet_list_string() {
+        loadCcToolchainConfigLib()
+        createEnvSetRule(
+            "four",  /* actions= */"['a1']",  /* envEntries= */"['abc']",  /* withFeatures= */"'def'"
+        )
+
+        val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//four:a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("with_features parameter of env_set should be a list, found string")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEnvSet_envEntry_emptyList() {
+        loadCcToolchainConfigLib()
+        createEnvSetRule(
+            "five",  /* actions= */
+            "['a1']",  /* envEntries= */
+            "[env_entry(key = 'a', value = 'b'),"
+                    + "variable_with_value(name = 'a', value = 'b')]",  /* withFeatures= */
+            "[]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//five:a")
+        val envSetProvider: StarlarkInfo? = getMyInfoFromTarget(t).getValue("envset") as StarlarkInfo?
+        assertThat(envSetProvider).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { envSetFromStarlark(envSetProvider) })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("Expected object of type 'env_entry', received 'variable_with_value'")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEnvSet_emptyList_emptyList() {
+        loadCcToolchainConfigLib()
+        createEnvSetRule("six",  /* actions= */"[]",  /* envEntries= */"[]",  /* withFeatures= */"[]")
+
+        val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//six:a") })
+        Truth.assertThat(e).hasMessageThat().contains("actions parameter of env_set must be a nonempty list")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEnvSet_envEntry_featureSet() {
+        loadCcToolchainConfigLib()
+        createEnvSetRule(
+            "seven",  /* actions= */
+            "['a1']",  /* envEntries= */
+            "[env_entry(key = 'a', value = 'b')]",  /* withFeatures= */
+            "[with_feature_set(features = ['a'])]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//seven:a")
+        val envSetProvider: StarlarkInfo? = getMyInfoFromTarget(t).getValue("envset") as StarlarkInfo?
+        assertThat(envSetProvider).isNotNull()
+        val envSet: EnvSet? = envSetFromStarlark(envSetProvider)
+        assertThat(envSet).isNotNull()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEnvSet_string_string() {
+        loadCcToolchainConfigLib()
+        createVariableWithValueRule("eight",  /* name= */"'abc'",  /* value= */"'def'")
+        val t: ConfiguredTarget = getConfiguredTarget("//eight:a")
+        val variable: StarlarkInfo? = getMyInfoFromTarget(t).getValue("variable") as StarlarkInfo?
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { envSetFromStarlark(variable) })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("Expected object of type 'env_set', received 'variable_with_value")
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun createEnvSetRule(pkg: String?, actions: String?, envEntries: String?, withFeatures: String?) {
+        scratch.file(
+            pkg + "/foo.bzl",
+            "load('//tools/cpp:cc_toolchain_config_lib.bzl',",
+            "   'env_set', 'env_entry', 'with_feature_set', 'variable_with_value')",
+            "load('//myinfo:myinfo.bzl', 'MyInfo')",
+            "def _impl(ctx):",
+            "   return [MyInfo(envset = env_set(",
+            "       actions = " + actions + ",",
+            "       env_entries = " + envEntries + ",",
+            "       with_features = " + withFeatures + "))]",
+            "crule = rule(implementation = _impl)"
+        )
+        scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomEnvSet_none_none() {
+        loadCcToolchainConfigLib()
+        createCustomEnvSetRule(
+            "one",  /* actions= */"[]",  /* envEntries= */"None",  /* withFeatures= */"None"
+        )
+        val t: ConfiguredTarget = getConfiguredTarget("//one:a")
+        val envSetProvider: StarlarkInfo? = getMyInfoFromTarget(t).getValue("envset") as StarlarkInfo?
+        assertThat(envSetProvider).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { envSetFromStarlark(envSetProvider) })
+        Truth.assertThat(e).hasMessageThat().contains("actions parameter of env_set must be a nonempty list")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomEnvSet_struct_none() {
+        loadCcToolchainConfigLib()
+        createCustomEnvSetRule(
+            "two",  /* actions= */"['a1']",  /* envEntries= */"struct()",  /* withFeatures= */"None"
+        )
+        val t: ConfiguredTarget = getConfiguredTarget("//two:a")
+        val envSetProvider: StarlarkInfo? = getMyInfoFromTarget(t).getValue("envset") as StarlarkInfo?
+        assertThat(envSetProvider).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { envSetFromStarlark(envSetProvider) })
+        Truth.assertThat(e).hasMessageThat().contains("for env_entries, got struct, want sequence")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomEnvSet_structList_none() {
+        loadCcToolchainConfigLib()
+        createCustomEnvSetRule(
+            "three",  /* actions= */
+            "['a1']",  /* envEntries= */
+            "[struct()]",  /* withFeatures= */
+            "None"
+        )
+        val t: ConfiguredTarget = getConfiguredTarget("//three:a")
+        val envSetProvider: StarlarkInfo? = getMyInfoFromTarget(t).getValue("envset") as StarlarkInfo?
+        assertThat(envSetProvider).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { envSetFromStarlark(envSetProvider) })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("Expected object of type 'env_entry', received 'struct'")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomEnvSet_envEntry_string() {
+        loadCcToolchainConfigLib()
+        createCustomEnvSetRule(
+            "four",  /* actions= */
+            "['a1']",  /* envEntries= */
+            "[env_entry(key = 'a', value = 'b')]",  /* withFeatures= */
+            "'a'"
+        )
+        val t: ConfiguredTarget = getConfiguredTarget("//four:a")
+        val envSetProvider: StarlarkInfo? = getMyInfoFromTarget(t).getValue("envset") as StarlarkInfo?
+        assertThat(envSetProvider).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { envSetFromStarlark(envSetProvider) })
+        Truth.assertThat(e).hasMessageThat().contains("for with_features, got string, want sequence")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomEnvSet_envEntry_envEntry() {
+        loadCcToolchainConfigLib()
+
+        createCustomEnvSetRule(
+            "five",  /* actions= */
+            "['a1']",  /* envEntries= */
+            "[env_entry(key = 'a', value = 'b')]",  /* withFeatures= */
+            "[env_entry(key = 'a', value = 'b')]"
+        )
+        val t: ConfiguredTarget = getConfiguredTarget("//five:a")
+        val envSetProvider: StarlarkInfo? = getMyInfoFromTarget(t).getValue("envset") as StarlarkInfo?
+        assertThat(envSetProvider).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { envSetFromStarlark(envSetProvider) })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("Expected object of type 'with_feature_set', received 'env_entry'.")
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun createCustomEnvSetRule(
+        pkg: String?, actions: String?, envEntries: String?, withFeatures: String?
+    ) {
+        scratch.file(
+            pkg + "/foo.bzl",
+            "load('//tools/cpp:cc_toolchain_config_lib.bzl',",
+            "   'env_entry', 'with_feature_set', 'variable_with_value')",
+            "load('//myinfo:myinfo.bzl', 'MyInfo')",
+            "def _impl(ctx):",
+            "   return [MyInfo(envset = struct(",
+            "       actions = " + actions + ",",
+            "       env_entries = " + envEntries + ",",
+            "       with_features = " + withFeatures + ",",
+            "       type_name = 'env_set'))]",
+            "crule = rule(implementation = _impl)"
+        )
+        scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFlagGroup_flagGroup_notListofFlags() {
+        loadCcToolchainConfigLib()
+        createFlagGroupRule(
+            "one",  /* flags= */
+            "[]",  /* flagGroups= */
+            "[]",  /* iterateOver= */
+            "None",  /* expandIfTrue= */
+            "None",  /* expandIfFalse= */
+            "None",  /* expandIfAvailable= */
+            "None",  /* expandIfNotAvailable= */
+            "None",  /* expandIfEqual= */
+            "None"
+        )
+
+        val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//one:a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("flag_group must contain either a list of flags or a list of flag_groups")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFlagGroup_iterateOver_notString() {
+        loadCcToolchainConfigLib()
+        createFlagGroupRule(
+            "two",  /* flags= */
+            "['a']",  /* flagGroups= */
+            "[]",  /* iterateOver= */
+            "struct(val = 'a')",  /* expandIfTrue= */
+            "None",  /* expandIfFalse= */
+            "None",  /* expandIfAvailable= */
+            "None",  /* expandIfNotAvailable= */
+            "None",  /* expandIfEqual= */
+            "None"
+        )
+
+        val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//two:a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("iterate_over parameter of flag_group should be a string, found struct")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFlagGroup_expandIfTrue_notString() {
+        loadCcToolchainConfigLib()
+        createFlagGroupRule(
+            "three",  /* flags= */
+            "['a']",  /* flagGroups= */
+            "[]",  /* iterateOver= */
+            "None",  /* expandIfTrue= */
+            "struct(val = 'a')",  /* expandIfFalse= */
+            "None",  /* expandIfAvailable= */
+            "None",  /* expandIfNotAvailable= */
+            "None",  /* expandIfEqual= */
+            "None"
+        )
+
+        val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//three:a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("expand_if_true parameter of flag_group should be a string, found struct")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFlagGroup_expandIfFalse_notString() {
+        loadCcToolchainConfigLib()
+        createFlagGroupRule(
+            "four",  /* flags= */
+            "['a']",  /* flagGroups= */
+            "[]",  /* iterateOver= */
+            "None",  /* expandIfTrue= */
+            "None",  /* expandIfFalse= */
+            "struct(val = 'a')",  /* expandIfAvailable= */
+            "None",  /* expandIfNotAvailable= */
+            "None",  /* expandIfEqual= */
+            "None"
+        )
+
+        val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//four:a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("expand_if_false parameter of flag_group should be a string, found struct")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFlagGroup_expandIfAvailable_notString() {
+        loadCcToolchainConfigLib()
+        createFlagGroupRule(
+            "five",  /* flags= */
+            "['a']",  /* flagGroups= */
+            "[]",  /* iterateOver= */
+            "None",  /* expandIfTrue= */
+            "None",  /* expandIfFalse= */
+            "None",  /* expandIfAvailable= */
+            "struct(val = 'a')",  /* expandIfNotAvailable= */
+            "None",  /* expandIfEqual= */
+            "None"
+        )
+
+        val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//five:a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("expand_if_available parameter of flag_group should be a string, found struct")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFlagGroup_expandIfNotAvailable_notString() {
+        loadCcToolchainConfigLib()
+        createFlagGroupRule(
+            "six",  /* flags= */
+            "['a']",  /* flagGroups= */
+            "[]",  /* iterateOver= */
+            "None",  /* expandIfTrue= */
+            "None",  /* expandIfFalse= */
+            "None",  /* expandIfAvailable= */
+            "None",  /* expandIfNotAvailable= */
+            "struct(val = 'a')",  /* expandIfEqual= */
+            "None"
+        )
+
+        val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//six:a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains(
+                "expand_if_not_available parameter of flag_group should be a string, found struct"
+            )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFlagGroup_flagGroup_cannotContainFlagAndGroup() {
+        loadCcToolchainConfigLib()
+        createFlagGroupRule(
+            "seven",  /* flags= */
+            "['a']",  /* flagGroups= */
+            "['b']",  /* iterateOver= */
+            "None",  /* expandIfTrue= */
+            "None",  /* expandIfFalse= */
+            "None",  /* expandIfAvailable= */
+            "None",  /* expandIfNotAvailable= */
+            "struct(val = 'a')",  /* expandIfEqual= */
+            "None"
+        )
+
+        val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//seven:a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("flag_group must not contain both a flag and another flag_group")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFlagGroup_expandIfEqual_notStarlarkInfo() {
+        loadCcToolchainConfigLib()
+        createFlagGroupRule(
+            "eight",  /* flags= */
+            "['a']",  /* flagGroups= */
+            "[]",  /* iterateOver= */
+            "'a'",  /* expandIfTrue= */
+            "'b'",  /* expandIfFalse= */
+            "''",  /* expandIfAvailable= */
+            "''",  /* expandIfNotAvailable= */
+            "''",  /* expandIfEqual= */
+            "'a'"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//eight:a")
+        val flagGroupProvider: StarlarkInfo? = getMyInfoFromTarget(t).getValue("flaggroup") as StarlarkInfo?
+        assertThat(flagGroupProvider).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { flagGroupFromStarlark(flagGroupProvider) })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains(
+                "Field 'expand_if_equal' is not of "
+                        + "'com.google.devtools.build.lib.packages.StarlarkInfo' type."
+            )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFlagGroup() {
+        loadCcToolchainConfigLib()
+        createFlagGroupRule(
+            "nine",  /* flags= */
+            "[]",  /* flagGroups= */
+            "[flag_group(flags = ['a']), flag_group(flags = ['b'])]",  /* iterateOver= */
+            "''",  /* expandIfTrue= */
+            "''",  /* expandIfFalse= */
+            "''",  /* expandIfAvailable= */
+            "''",  /* expandIfNotAvailable= */
+            "''",  /* expandIfEqual= */
+            "variable_with_value(name = 'a', value = 'b')"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//nine:a")
+        val flagGroupProvider: StarlarkInfo? = getMyInfoFromTarget(t).getValue("flaggroup") as StarlarkInfo?
+        assertThat(flagGroupProvider).isNotNull()
+        val f: FlagGroup? = flagGroupFromStarlark(flagGroupProvider)
+        assertThat(f).isNotNull()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFlagGroup_flagGroup_notStruct() {
+        loadCcToolchainConfigLib()
+        createFlagGroupRule(
+            "ten",  /* flags= */
+            "[]",  /* flagGroups= */
+            "[flag_group(flags = ['a']), struct(value = 'a')]",  /* iterateOver= */
+            "''",  /* expandIfTrue= */
+            "''",  /* expandIfFalse= */
+            "''",  /* expandIfAvailable= */
+            "''",  /* expandIfNotAvailable= */
+            "''",  /* expandIfEqual= */
+            "variable_with_value(name = 'a', value = 'b')"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//ten:a")
+        val flagGroupProvider: StarlarkInfo? = getMyInfoFromTarget(t).getValue("flaggroup") as StarlarkInfo?
+        assertThat(flagGroupProvider).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { flagGroupFromStarlark(flagGroupProvider) })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("Expected object of type 'flag_group', received 'struct'")
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun createFlagGroupRule(
+        pkg: String?,
+        flags: String?,
+        flagGroups: String?,
+        iterateOver: String?,
+        expandIfTrue: String?,
+        expandIfFalse: String?,
+        expandIfAvailable: String?,
+        expandIfNotAvailable: String?,
+        expandIfEqual: String?
+    ) {
+        scratch.file(
+            pkg + "/foo.bzl",
+            "load('//tools/cpp:cc_toolchain_config_lib.bzl',",
+            "   'env_set', 'env_entry', 'with_feature_set', 'variable_with_value', 'flag_group')",
+            "load('//myinfo:myinfo.bzl', 'MyInfo')",
+            "def _impl(ctx):",
+            "   return [MyInfo(flaggroup = flag_group(",
+            "       flags = " + flags + ",",
+            "       flag_groups = " + flagGroups + ",",
+            "       expand_if_true = " + expandIfTrue + ",",
+            "       expand_if_false = " + expandIfFalse + ",",
+            "       expand_if_available = " + expandIfAvailable + ",",
+            "       expand_if_not_available = " + expandIfNotAvailable + ",",
+            "       expand_if_equal = " + expandIfEqual + ",",
+            "       iterate_over = " + iterateOver + "))]",
+            "crule = rule(implementation = _impl)"
+        )
+        scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSingleChunkFlagIsUsed() {
+        loadCcToolchainConfigLib()
+
+        createCustomFlagGroupRule(
+            "single_chunk_flag",  /* flags= */
+            "['a']",  /* flagGroups= */
+            "[]",  /* iterateOver= */
+            "''",  /* expandIfTrue= */
+            "''",  /* expandIfFalse= */
+            "''",  /* expandIfAvailable= */
+            "''",  /* expandIfNotAvailable= */
+            "''",  /* expandIfEqual= */
+            "None"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//single_chunk_flag:a")
+        val flagGroupProvider: StarlarkInfo? = getMyInfoFromTarget(t).getValue("flaggroup") as StarlarkInfo?
+        assertThat(flagGroupProvider).isNotNull()
+        val flagGroup: FlagGroup = flagGroupFromStarlark(flagGroupProvider)
+        assertThat(flagGroup.expandables()).isNotEmpty()
+        assertThat(flagGroup.expandables().get(0)).isInstanceOf(SingleChunkFlag::class.java)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomFlagGroup_iterateOver_notString() {
+        loadCcToolchainConfigLib()
+        createCustomFlagGroupRule(
+            "one",  /* flags= */
+            "['a']",  /* flagGroups= */
+            "[]",  /* iterateOver= */
+            "struct()",  /* expandIfTrue= */
+            "'b'",  /* expandIfFalse= */
+            "''",  /* expandIfAvailable= */
+            "''",  /* expandIfNotAvailable= */
+            "''",  /* expandIfEqual= */
+            "None"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//one:a")
+        val flagGroupProvider: StarlarkInfo? = getMyInfoFromTarget(t).getValue("flaggroup") as StarlarkInfo?
+        assertThat(flagGroupProvider).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { flagGroupFromStarlark(flagGroupProvider) })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("Field 'iterate_over' is not of 'java.lang.String' type.")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomFlagGroup_expandIfTrue_notString() {
+        loadCcToolchainConfigLib()
+        createCustomFlagGroupRule(
+            "two",  /* flags= */
+            "[]",  /* flagGroups= */
+            "[flag_group(flags = ['a']), flag_group(flags = ['b'])]",  /* iterateOver= */
+            "''",  /* expandIfTrue= */
+            "struct()",  /* expandIfFalse= */
+            "''",  /* expandIfAvailable= */
+            "''",  /* expandIfNotAvailable= */
+            "''",  /* expandIfEqual= */
+            "variable_with_value(name = 'a', value = 'b')"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//two:a")
+        val flagGroupProvider: StarlarkInfo? = getMyInfoFromTarget(t).getValue("flaggroup") as StarlarkInfo?
+        assertThat(flagGroupProvider).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { flagGroupFromStarlark(flagGroupProvider) })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("Field 'expand_if_true' is not of 'java.lang.String' type.")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomFlagGroup_expandIfFalse_notString() {
+        loadCcToolchainConfigLib()
+        createCustomFlagGroupRule(
+            "three",  /* flags= */
+            "[]",  /* flagGroups= */
+            "[flag_group(flags = ['a'])]",  /* iterateOver= */
+            "''",  /* expandIfTrue= */
+            "''",  /* expandIfFalse= */
+            "True",  /* expandIfAvailable= */
+            "''",  /* expandIfNotAvailable= */
+            "''",  /* expandIfEqual= */
+            "variable_with_value(name = 'a', value = 'b')"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//three:a")
+        val flagGroupProvider: StarlarkInfo? = getMyInfoFromTarget(t).getValue("flaggroup") as StarlarkInfo?
+        assertThat(flagGroupProvider).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { flagGroupFromStarlark(flagGroupProvider) })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("Field 'expand_if_false' is not of 'java.lang.String' type.")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomFlagGroup_expandIfAvailable_notString() {
+        loadCcToolchainConfigLib()
+        createCustomFlagGroupRule(
+            "four",  /* flags= */
+            "[]",  /* flagGroups= */
+            "[flag_group(flags = ['a'])]",  /* iterateOver= */
+            "''",  /* expandIfTrue= */
+            "''",  /* expandIfFalse= */
+            "''",  /* expandIfAvailable= */
+            "struct()",  /* expandIfNotAvailable= */
+            "''",  /* expandIfEqual= */
+            "variable_with_value(name = 'a', value = 'b')"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//four:a")
+        val flagGroupProvider: StarlarkInfo? = getMyInfoFromTarget(t).getValue("flaggroup") as StarlarkInfo?
+        assertThat(flagGroupProvider).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { flagGroupFromStarlark(flagGroupProvider) })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("Field 'expand_if_available' is not of 'java.lang.String' type.")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomFlagGroup_expandIfNotAvailable_notString() {
+        loadCcToolchainConfigLib()
+        createCustomFlagGroupRule(
+            "five",  /* flags= */
+            "[]",  /* flagGroups= */
+            "[flag_group(flags = ['a'])]",  /* iterateOver= */
+            "''",  /* expandIfTrue= */
+            "''",  /* expandIfFalse= */
+            "''",  /* expandIfAvailable= */
+            "''",  /* expandIfNotAvailable= */
+            "3",  /* expandIfEqual= */
+            "variable_with_value(name = 'a', value = 'b')"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//five:a")
+        val flagGroupProvider: StarlarkInfo? = getMyInfoFromTarget(t).getValue("flaggroup") as StarlarkInfo?
+        assertThat(flagGroupProvider).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { flagGroupFromStarlark(flagGroupProvider) })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("Field 'expand_if_not_available' is not of 'java.lang.String' type.")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomFlagGroup_expandIfEqual_notStruct() {
+        loadCcToolchainConfigLib()
+        createCustomFlagGroupRule(
+            "six",  /* flags= */
+            "[]",  /* flagGroups= */
+            "[flag_group(flags = ['a'])]",  /* iterateOver= */
+            "''",  /* expandIfTrue= */
+            "''",  /* expandIfFalse= */
+            "''",  /* expandIfAvailable= */
+            "''",  /* expandIfNotAvailable= */
+            "''",  /* expandIfEqual= */
+            "struct(name = 'a', value = 'b')"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//six:a")
+        val flagGroupProvider: StarlarkInfo? = getMyInfoFromTarget(t).getValue("flaggroup") as StarlarkInfo?
+        assertThat(flagGroupProvider).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { flagGroupFromStarlark(flagGroupProvider) })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("Expected object of type 'variable_with_value', received 'struct'.")
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun createCustomFlagGroupRule(
+        pkg: String?,
+        flags: String?,
+        flagGroups: String?,
+        iterateOver: String?,
+        expandIfTrue: String?,
+        expandIfFalse: String?,
+        expandIfAvailable: String?,
+        expandIfNotAvailable: String?,
+        expandIfEqual: String?
+    ) {
+        scratch.file(
+            pkg + "/foo.bzl",
+            "load('//tools/cpp:cc_toolchain_config_lib.bzl',",
+            "   'env_set', 'env_entry', 'with_feature_set', 'variable_with_value', 'flag_group')",
+            "load('//myinfo:myinfo.bzl', 'MyInfo')",
+            "def _impl(ctx):",
+            "   return [MyInfo(flaggroup = struct(",
+            "       flags = " + flags + ",",
+            "       flag_groups = " + flagGroups + ",",
+            "       expand_if_true = " + expandIfTrue + ",",
+            "       expand_if_false = " + expandIfFalse + ",",
+            "       expand_if_available = " + expandIfAvailable + ",",
+            "       expand_if_not_available = " + expandIfNotAvailable + ",",
+            "       expand_if_equal = " + expandIfEqual + ",",
+            "       iterate_over = " + iterateOver + ",",
+            "       type_name = 'flag_group'))]",
+            "crule = rule(implementation = _impl)"
+        )
+        scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTool_path_mustBeNonEmpty() {
+        loadCcToolchainConfigLib()
+        createToolRule("one",  /* path= */"''",  /* withFeatures= */"[]",  /* requirements= */"[]")
+
+        val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//one:a") })
+        Truth.assertThat(e).hasMessageThat().contains("path parameter of tool must be a nonempty string")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTool_withFeatures_mustBeList() {
+        loadCcToolchainConfigLib()
+        createToolRule("two",  /* path= */"'a'",  /* withFeatures= */"None",  /* requirements= */"[]")
+
+        val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//two:a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("with_features parameter of tool should be a list, found NoneType")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTool_executionRequirements_mustBeList() {
+        loadCcToolchainConfigLib()
+        createToolRule(
+            "three",  /* path= */"'a'",  /* withFeatures= */"[]",  /* requirements= */"None"
+        )
+
+        val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//three:a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("execution_requirements parameter of tool should be a list, found NoneType")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTool_withFeatures_mustBeWithFeatureSet() {
+        loadCcToolchainConfigLib()
+        createToolRule(
+            "four",  /* path= */
+            "'a'",  /* withFeatures= */
+            "[struct(val = 'a')]",  /* requirements= */
+            "[]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//four:a")
+        val toolStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("tool") as StarlarkInfo?
+        assertThat(toolStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    toolFromStarlark(
+                        toolStruct,
+                        com.google.devtools.build.lib.util.OS.getCurrent()
+                    )
+                })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("Expected object of type 'with_feature_set', received 'struct'")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTool_requirements_mustBeString() {
+        loadCcToolchainConfigLib()
+        createToolRule(
+            "five",  /* path= */
+            "'a'",  /* withFeatures= */
+            "[]",  /* requirements= */
+            "[struct(val = 'a')]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//five:a")
+        val toolStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("tool") as StarlarkInfo?
+        assertThat(toolStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    toolFromStarlark(
+                        toolStruct,
+                        com.google.devtools.build.lib.util.OS.getCurrent()
+                    )
+                })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("at index 0 of execution_requirements, got element of type struct, want string")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTool() {
+        loadCcToolchainConfigLib()
+        createToolRule(
+            "six",  /* path= */
+            "'/a/b/c'",  /* withFeatures= */
+            "[with_feature_set(features = ['a'])]",  /* requirements= */
+            "['a', 'b']"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//six:a")
+        val toolStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("tool") as StarlarkInfo?
+        assertThat(toolStruct).isNotNull()
+        val tool: Tool = toolFromStarlark(toolStruct, com.google.devtools.build.lib.util.OS.getCurrent())
+        assertThat(tool.getExecutionRequirements()).containsExactly("a", "b")
+        assertThat(tool.getToolPathString(PathFragment.EMPTY_FRAGMENT)).isEqualTo("/a/b/c")
+        com.google.common.truth.Subject.contains(
+            WithFeatureSet(
+                com.google.common.collect.ImmutableSet.of<E?>("a"),
+                com.google.common.collect.ImmutableSet.of<E?>()
+            )
+        )
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun createToolRule(pkg: String?, path: String?, withFeatures: String?, requirements: String?) {
+        scratch.file(
+            pkg + "/foo.bzl",
+            "load('//tools/cpp:cc_toolchain_config_lib.bzl', 'with_feature_set', 'tool')",
+            "load('//myinfo:myinfo.bzl', 'MyInfo')",
+            "def _impl(ctx):",
+            "   return [MyInfo(tool = tool(",
+            "       path = " + path + ",",
+            "       with_features = " + withFeatures + ",",
+            "       execution_requirements = " + requirements + "))]",
+            "crule = rule(implementation = _impl)"
+        )
+        scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomTool_path_nonEmpty() {
+        loadCcToolchainConfigLib()
+        createCustomToolRule(
+            "one",  /* path= */"''",  /* withFeatures= */"[]",  /* requirements= */"[]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//one:a")
+        val toolStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("tool") as StarlarkInfo?
+        assertThat(toolStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    toolFromStarlark(
+                        toolStruct,
+                        com.google.devtools.build.lib.util.OS.getCurrent()
+                    )
+                })
+        Truth.assertThat(e).hasMessageThat().contains("The 'path' field of tool must be a nonempty string.")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomTool_path_mustBeString() {
+        loadCcToolchainConfigLib()
+        createCustomToolRule(
+            "two",  /* path= */"struct()",  /* withFeatures= */"[]",  /* requirements= */"[]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//two:a")
+        val toolStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("tool") as StarlarkInfo?
+        assertThat(toolStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    toolFromStarlark(
+                        toolStruct,
+                        com.google.devtools.build.lib.util.OS.getCurrent()
+                    )
+                })
+        Truth.assertThat(e).hasMessageThat().contains("Field 'path' is not of 'java.lang.String' type.")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomTool_withFeatures_mustBeList() {
+        loadCcToolchainConfigLib()
+        createCustomToolRule(
+            "three",  /* path= */"'a'",  /* withFeatures= */"struct()",  /* requirements= */"[]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//three:a")
+        val toolStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("tool") as StarlarkInfo?
+        assertThat(toolStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    toolFromStarlark(
+                        toolStruct,
+                        com.google.devtools.build.lib.util.OS.getCurrent()
+                    )
+                })
+        Truth.assertThat(e).hasMessageThat().contains("for with_features, got struct, want sequence")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomTool_withFeatures_mustBeWithFeatureSet() {
+        loadCcToolchainConfigLib()
+        createCustomToolRule(
+            "four",  /* path= */
+            "'a'",  /* withFeatures= */
+            "[struct(val = 'a')]",  /* requirements= */
+            "[]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//four:a")
+        val toolStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("tool") as StarlarkInfo?
+        assertThat(toolStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    toolFromStarlark(
+                        toolStruct,
+                        com.google.devtools.build.lib.util.OS.getCurrent()
+                    )
+                })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("Expected object of type 'with_feature_set', received 'struct'")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomTool_executionRequirements_mustBeList() {
+        loadCcToolchainConfigLib()
+        createCustomToolRule(
+            "five",  /* path= */"'a'",  /* withFeatures= */"[]",  /* requirements= */"'a'"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//five:a")
+        val toolStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("tool") as StarlarkInfo?
+        assertThat(toolStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    toolFromStarlark(
+                        toolStruct,
+                        com.google.devtools.build.lib.util.OS.getCurrent()
+                    )
+                })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("for execution_requirements, got string, want sequence")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomTool_executionRequirements_mustBeString() {
+        loadCcToolchainConfigLib()
+        createCustomToolRule(
+            "six",  /* path= */"'a'",  /* withFeatures= */"[]",  /* requirements= */"[struct()]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//six:a")
+        val toolStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("tool") as StarlarkInfo?
+        assertThat(toolStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    toolFromStarlark(
+                        toolStruct,
+                        com.google.devtools.build.lib.util.OS.getCurrent()
+                    )
+                })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("at index 0 of execution_requirements, got element of type struct, want string")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomTool_windowsAbsolutePath() {
+        loadCcToolchainConfigLib()
+        createCustomToolRule(
+            "seven",  /* path= */
+            Starlark.repr(
+                "C:\\Program Files\\Microsoft Visual"
+                        + " Studio\\2022\\Community\\VC\\Tools\\MSVC\\14.39.33519\\bin/HostX64/x64/cl.exe",
+                StarlarkSemantics.DEFAULT
+            ),  /* withFeatures= */
+            "[]",  /* requirements= */
+            "[]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//seven:a")
+        val toolStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("tool") as StarlarkInfo?
+        assertThat(toolStruct).isNotNull()
+        val tool: Tool = toolFromStarlark(toolStruct, com.google.devtools.build.lib.util.OS.WINDOWS)
+        assertThat(tool.getToolPathString(PathFragment.create("external/my_toolchain")))
+            .isEqualTo(
+                "C:/Program Files/Microsoft Visual"
+                        + " Studio/2022/Community/VC/Tools/MSVC/14.39.33519/bin/HostX64/x64/cl.exe"
+            )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomTool_windowsRelativePath() {
+        loadCcToolchainConfigLib()
+        createCustomToolRule(
+            "seven",  /* path= */
+            Starlark.repr("bin\\HostX64\\x64/cl.exe", StarlarkSemantics.DEFAULT),  /* withFeatures= */
+            "[]",  /* requirements= */
+            "[]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//seven:a")
+        val toolStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("tool") as StarlarkInfo?
+        assertThat(toolStruct).isNotNull()
+        val tool: Tool = toolFromStarlark(toolStruct, com.google.devtools.build.lib.util.OS.WINDOWS)
+        assertThat(tool.getToolPathString(PathFragment.create("external/my_toolchain")))
+            .isEqualTo("external/my_toolchain/bin/HostX64/x64/cl.exe")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomTool_windowsShortPath_preservedOnNonWindowsHostOs() {
+        TruthJUnit.assume()
+            .that<com.google.devtools.build.lib.util.OS?>(com.google.devtools.build.lib.util.OS.getCurrent())
+            .isNotEqualTo(com.google.devtools.build.lib.util.OS.WINDOWS)
+
+        loadCcToolchainConfigLib()
+        createCustomToolRule(
+            "seven",  /* path= */
+            Starlark.repr(
+                "C:\\PROGRA~1\\MICROS~1\\2022\\COMMUN~1\\VC\\TOOLS\\MSVC\\14.39.33519\\BIN\\HOSTX64\\X64\\CL.EXE",
+                StarlarkSemantics.DEFAULT
+            ),  /* withFeatures= */
+            "[]",  /* requirements= */
+            "[]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//seven:a")
+        val toolStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("tool") as StarlarkInfo?
+        assertThat(toolStruct).isNotNull()
+        val tool: Tool = toolFromStarlark(toolStruct, com.google.devtools.build.lib.util.OS.WINDOWS)
+        assertThat(tool.getToolPathString(PathFragment.create("external/my_toolchain")))
+            .isEqualTo(
+                "C:/PROGRA~1/MICROS~1/2022/COMMUN~1/VC/TOOLS/MSVC/14.39.33519/BIN/HOSTX64/X64/CL.EXE"
+            )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomTool_unixAbsolutePath() {
+        loadCcToolchainConfigLib()
+        createCustomToolRule(
+            "seven",  /* path= */
+            Starlark.repr("/usr/bin/gcc", StarlarkSemantics.DEFAULT),  /* withFeatures= */
+            "[]",  /* requirements= */
+            "[]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//seven:a")
+        val toolStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("tool") as StarlarkInfo?
+        assertThat(toolStruct).isNotNull()
+        val tool: Tool = toolFromStarlark(toolStruct, com.google.devtools.build.lib.util.OS.LINUX)
+        assertThat(tool.getToolPathString(PathFragment.create("external/my_toolchain")))
+            .isEqualTo("/usr/bin/gcc")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomTool_unixRelativePath() {
+        loadCcToolchainConfigLib()
+        createCustomToolRule(
+            "seven",  /* path= */
+            Starlark.repr("bin/gcc", StarlarkSemantics.DEFAULT),  /* withFeatures= */
+            "[]",  /* requirements= */
+            "[]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//seven:a")
+        val toolStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("tool") as StarlarkInfo?
+        assertThat(toolStruct).isNotNull()
+        val tool: Tool = toolFromStarlark(toolStruct, com.google.devtools.build.lib.util.OS.LINUX)
+        assertThat(tool.getToolPathString(PathFragment.create("external/my_toolchain")))
+            .isEqualTo("external/my_toolchain/bin/gcc")
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun createCustomToolRule(
+        pkg: String?, path: String?, withFeatures: String?, requirements: String?
+    ) {
+        scratch.file(
+            pkg + "/foo.bzl",
+            "load('//tools/cpp:cc_toolchain_config_lib.bzl', 'with_feature_set')",
+            "load('//myinfo:myinfo.bzl', 'MyInfo')",
+            "def _impl(ctx):",
+            "   return [MyInfo(tool = struct(",
+            "       path = " + path + ",",
+            "       with_features = " + withFeatures + ",",
+            "       execution_requirements = " + requirements + ",",
+            "       type_name = 'tool'))]",
+            "crule = rule(implementation = _impl)"
+        )
+        scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFlagSet_withFeatures_mustBeList() {
+        loadCcToolchainConfigLib()
+        createFlagSetRule(
+            "two",  /* actions= */"['a']",  /* flagGroups= */"[]",  /* withFeatures= */"None"
+        )
+
+        val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//two:a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("with_features parameter of flag_set should be a list, found NoneType")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFlagSet_flagGroups_mustBeList() {
+        loadCcToolchainConfigLib()
+        createFlagSetRule(
+            "three",  /* actions= */"['a']",  /* flagGroups= */"None",  /* withFeatures= */"[]"
+        )
+
+        val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//three:a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("flag_groups parameter of flag_set should be a list, found NoneType")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFlagSet_actions_mustBeString() {
+        loadCcToolchainConfigLib()
+        createFlagSetRule(
+            "four",  /* actions= */
+            "['a', struct(val = 'a')]",  /* flagGroups= */
+            "[]",  /* withFeatures= */
+            "[]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//four:a")
+        val flagSetStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("flagset") as StarlarkInfo?
+        assertThat(flagSetStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { flagSetFromStarlark(flagSetStruct,  /* actionName= */null) })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("at index 1 of actions, got element of type struct, want string")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFlagSet_flagGroups_mustBeFlagGroup() {
+        loadCcToolchainConfigLib()
+        createFlagSetRule(
+            "five",  /* actions= */
+            "['a']",  /* flagGroups= */
+            "[flag_group(flags = ['a']), struct(value = 'a')]",  /* withFeatures= */
+            "[]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//five:a")
+        val flagSetStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("flagset") as StarlarkInfo?
+        assertThat(flagSetStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { flagSetFromStarlark(flagSetStruct,  /* actionName= */null) })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("Expected object of type 'flag_group', received 'struct'")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFlagSet_withFeatures_mustBeWithFeatureSet() {
+        loadCcToolchainConfigLib()
+        createFlagSetRule(
+            "six",  /* actions= */
+            "['a']",  /* flagGroups= */
+            "[flag_group(flags = ['a'])]",  /* withFeatures= */
+            "[struct(val = 'a')]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//six:a")
+        val flagSetStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("flagset") as StarlarkInfo?
+        assertThat(flagSetStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { flagSetFromStarlark(flagSetStruct,  /* actionName= */null) })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("Expected object of type 'with_feature_set', received 'struct'")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFlagSet() {
+        loadCcToolchainConfigLib()
+        createFlagSetRule(
+            "seven",  /* actions= */
+            "['a']",  /* flagGroups= */
+            "[flag_group(flags = ['a'])]",  /* withFeatures= */
+            "[with_feature_set(features = ['a'])]"
+        )
+        val t: ConfiguredTarget = getConfiguredTarget("//seven:a")
+        val flagSetStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("flagset") as StarlarkInfo?
+        assertThat(flagSetStruct).isNotNull()
+        val f: FlagSet? = flagSetFromStarlark(flagSetStruct,  /* actionName= */null)
+        assertThat(f).isNotNull()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFlagSet_actionConfig_notActionList() {
+        loadCcToolchainConfigLib()
+        createFlagSetRule(
+            "eight",  /* actions= */
+            "['a']",  /* flagGroups= */
+            "[flag_group(flags = ['a'])]",  /* withFeatures= */
+            "[struct(val = 'a')]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//eight:a")
+        val flagSetStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("flagset") as StarlarkInfo?
+        assertThat(flagSetStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { flagSetFromStarlark(flagSetStruct,  /* actionName= */"action") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("Thus, you must not specify action lists in an action_config's flag set.")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFlagSet_emptyAction() {
+        loadCcToolchainConfigLib()
+        createFlagSetRule(
+            "nine",  /* actions= */
+            "[]",  /* flagGroups= */
+            "[flag_group(flags = ['a'])]",  /* withFeatures= */
+            "[with_feature_set(features = ['a'])]"
+        )
+        val t: ConfiguredTarget = getConfiguredTarget("//nine:a")
+        val flagSetStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("flagset") as StarlarkInfo?
+        assertThat(flagSetStruct).isNotNull()
+        val f: FlagSet = flagSetFromStarlark(flagSetStruct,  /* actionName= */"action")
+        assertThat(f).isNotNull()
+        assertThat(f.actions()).containsExactly("action")
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun createFlagSetRule(pkg: String?, actions: String?, flagGroups: String?, withFeatures: String?) {
+        scratch.file(
+            pkg + "/foo.bzl",
+            "load('//tools/cpp:cc_toolchain_config_lib.bzl',",
+            "   'env_set', 'env_entry', 'with_feature_set', 'variable_with_value', 'flag_group',",
+            "   'flag_set')",
+            "load('//myinfo:myinfo.bzl', 'MyInfo')",
+            "def _impl(ctx):",
+            "   return [MyInfo(flagset = flag_set(",
+            "       flag_groups = " + flagGroups + ",",
+            "       actions = " + actions + ",",
+            "       with_features = " + withFeatures + "))]",
+            "crule = rule(implementation = _impl)"
+        )
+        scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomFlagSet() {
+        loadCcToolchainConfigLib()
+        createCustomFlagSetRule(
+            "one",  /* actions= */"[]",  /* flagGroups= */"[]",  /* withFeatures= */"[]"
+        )
+
+        val target: ConfiguredTarget = getConfiguredTarget("//one:a")
+        val flagSet: StarlarkInfo? = getMyInfoFromTarget(target).getValue("flagset") as StarlarkInfo?
+        assertThat(flagSet).isNotNull()
+        val flagSetObject: FlagSet? = flagSetFromStarlark(flagSet,  /* actionName */null)
+        assertThat(flagSetObject).isNotNull()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomFlagSet_flagGroups_mustBeList() {
+        loadCcToolchainConfigLib()
+        createCustomFlagSetRule(
+            "two",  /* actions= */"['a']",  /* flagGroups= */"struct()",  /* withFeatures= */"[]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//two:a")
+        val flagSetStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("flagset") as StarlarkInfo?
+        assertThat(flagSetStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { flagSetFromStarlark(flagSetStruct,  /* actionName */null) })
+        Truth.assertThat(e).hasMessageThat().contains("for flag_groups, got struct, want sequence")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomFlagSet_withFeatures_mustBeList() {
+        loadCcToolchainConfigLib()
+        createCustomFlagSetRule(
+            "three",  /* actions= */"['a']",  /* flagGroups= */"[]",  /* withFeatures= */"struct()"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//three:a")
+        val flagSetStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("flagset") as StarlarkInfo?
+        assertThat(flagSetStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { flagSetFromStarlark(flagSetStruct,  /* actionName */null) })
+        Truth.assertThat(e).hasMessageThat().contains("for with_features, got struct, want sequence")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomFlagSet_actions_mustBeList() {
+        loadCcToolchainConfigLib()
+        createCustomFlagSetRule(
+            "four",  /* actions= */"struct()",  /* flagGroups= */"[]",  /* withFeatures= */"[]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//four:a")
+        val flagSetStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("flagset") as StarlarkInfo?
+        assertThat(flagSetStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { flagSetFromStarlark(flagSetStruct,  /* actionName */null) })
+        Truth.assertThat(e).hasMessageThat().contains("for actions, got struct, want sequence")
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun createCustomFlagSetRule(
+        pkg: String?, actions: String?, flagGroups: String?, withFeatures: String?
+    ) {
+        scratch.file(
+            pkg + "/foo.bzl",
+            "load('//tools/cpp:cc_toolchain_config_lib.bzl',",
+            "   'env_set', 'env_entry', 'with_feature_set', 'variable_with_value', 'flag_group',",
+            "   'flag_set')",
+            "load('//myinfo:myinfo.bzl', 'MyInfo')",
+            "def _impl(ctx):",
+            "   return [MyInfo(flagset = struct(",
+            "       flag_groups = " + flagGroups + ",",
+            "       actions = " + actions + ",",
+            "       with_features = " + withFeatures + ",",
+            "       type_name = 'flag_set'))]",
+            "crule = rule(implementation = _impl)"
+        )
+        scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testActionConfig_actionName_mustBeNonEmpty() {
+        loadCcToolchainConfigLib()
+        createActionConfigRule(
+            "one",  /* actionName= */
+            "''",  /* enabled= */
+            "True",  /* tools= */
+            "[]",  /* flagSets= */
+            "[]",  /* implies= */
+            "[]"
+        )
+
+        val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//one:a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("name parameter of action_config must be a nonempty string")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testActionConfig_enabled_mustBeBool() {
+        loadCcToolchainConfigLib()
+        createActionConfigRule(
+            "two",  /* actionName= */
+            "'actionname'",  /* enabled= */
+            "['asd']",  /* tools= */
+            "[]",  /* flagSets= */
+            "[]",  /* implies= */
+            "[]"
+        )
+        val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//two:a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("enabled parameter of action_config should be a bool, found list")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testActionConfig_tools_mustBeTool() {
+        loadCcToolchainConfigLib()
+        createActionConfigRule(
+            "three",  /* actionName= */
+            "'actionname'",  /* enabled= */
+            "True",  /* tools= */
+            "[with_feature_set(features = ['a'])]",  /* flagSets= */
+            "[]",  /* implies= */
+            "[]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//three:a")
+        val actionConfigStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("config") as StarlarkInfo?
+        assertThat(actionConfigStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    actionConfigFromStarlark(
+                        actionConfigStruct,
+                        com.google.devtools.build.lib.util.OS.getCurrent()
+                    )
+                })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("Expected object of type 'tool', received 'with_feature_set'")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testActionConfig_flagSets_mustBeFlagSet() {
+        loadCcToolchainConfigLib()
+        createActionConfigRule(
+            "four",  /* actionName= */
+            "'actionname'",  /* enabled= */
+            "True",  /* tools= */
+            "[tool(path = 'a/b/c')]",  /* flagSets= */
+            "[tool(path = 'a/b/c')]",  /* implies= */
+            "[]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//four:a")
+        val actionConfigStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("config") as StarlarkInfo?
+        assertThat(actionConfigStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    actionConfigFromStarlark(
+                        actionConfigStruct,
+                        com.google.devtools.build.lib.util.OS.getCurrent()
+                    )
+                })
+        Truth.assertThat(e).hasMessageThat().contains("Expected object of type 'flag_set', received 'tool'")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testActionConfig_implies_mustBeList() {
+        loadCcToolchainConfigLib()
+        createActionConfigRule(
+            "five",  /* actionName= */
+            "'actionname'",  /* enabled= */
+            "True",  /* tools= */
+            "[tool(path = 'a/b/c')]",  /* flagSets= */
+            "[]",  /* implies= */
+            "flag_set(actions = ['a', 'b'])"
+        )
+
+        val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//five:a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("implies parameter of action_config should be a list, found struct")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testActionConfig_implies_mustContainString() {
+        loadCcToolchainConfigLib()
+        createActionConfigRule(
+            "six",  /* actionName= */
+            "'actionname'",  /* enabled= */
+            "True",  /* tools= */
+            "[tool(path = 'a/b/c')]",  /* flagSets= */
+            "[]",  /* implies= */
+            "[flag_set(actions = ['a', 'b'])]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//six:a")
+        val actionConfigStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("config") as StarlarkInfo?
+        assertThat(actionConfigStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    actionConfigFromStarlark(
+                        actionConfigStruct,
+                        com.google.devtools.build.lib.util.OS.getCurrent()
+                    )
+                })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("at index 0 of implies, got element of type struct, want string")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testActionConfig_implies_mustContainString_notStruct() {
+        loadCcToolchainConfigLib()
+        createActionConfigRule(
+            "seven",  /* actionName= */
+            "'actionname'",  /* enabled= */
+            "True",  /* tools= */
+            "[tool(path = 'a/b/c')]",  /* flagSets= */
+            "[]",  /* implies= */
+            "[flag_set(actions = ['a', 'b'])]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//seven:a")
+        val actionConfigStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("config") as StarlarkInfo?
+        assertThat(actionConfigStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    actionConfigFromStarlark(
+                        actionConfigStruct,
+                        com.google.devtools.build.lib.util.OS.getCurrent()
+                    )
+                })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("at index 0 of implies, got element of type struct, want string")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testActionConfig() {
+        loadCcToolchainConfigLib()
+        createActionConfigRule(
+            "eight",  /* actionName= */
+            "'actionname32._++-'",  /* enabled= */
+            "True",  /* tools= */
+            "[tool(path = 'a/b/c')]",  /* flagSets= */
+            "[flag_set(flag_groups=[flag_group(flags=['a'])])]",  /* implies= */
+            "['a', 'b']"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//eight:a")
+        val actionConfigStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("config") as StarlarkInfo?
+        assertThat(actionConfigStruct).isNotNull()
+        val a: ActionConfig =
+            actionConfigFromStarlark(actionConfigStruct, com.google.devtools.build.lib.util.OS.getCurrent())
+        assertThat(a).isNotNull()
+        assertThat(a.actionName).isEqualTo("actionname32._++-")
+        assertThat(a.getImplies()).containsExactly("a", "b").inOrder()
+        assertThat(com.google.common.collect.Iterables.getOnlyElement<T?>(a.getFlagSets()).actions())
+            .containsExactly("actionname32._++-")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testActionConfig_actionName_validChars_notUpper() {
+        loadCcToolchainConfigLib()
+        createActionConfigRule(
+            "nine",  /* actionName= */
+            "'Upper'",  /* enabled= */
+            "True",  /* tools= */
+            "[tool(path = 'a/b/c')]",  /* flagSets= */
+            "[]",  /* implies= */
+            "[flag_set(actions = ['a', 'b'])]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//nine:a")
+        val actionConfigStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("config") as StarlarkInfo?
+        assertThat(actionConfigStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    actionConfigFromStarlark(
+                        actionConfigStruct,
+                        com.google.devtools.build.lib.util.OS.getCurrent()
+                    )
+                })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains(
+                "An action_config's name must consist solely "
+                        + "of lowercase ASCII letters, digits, '.', '_', '+', and '-', got 'Upper'"
+            )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testActionConfig_actionName_validChars_notWhitespace() {
+        loadCcToolchainConfigLib()
+        createActionConfigRule(
+            "ten",  /* actionName= */
+            "'white\tspace'",  /* enabled= */
+            "True",  /* tools= */
+            "[tool(path = 'a/b/c')]",  /* flagSets= */
+            "[]",  /* implies= */
+            "[flag_set(actions = ['a', 'b'])]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//ten:a")
+        val actionConfigStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("config") as StarlarkInfo?
+        assertThat(actionConfigStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    actionConfigFromStarlark(
+                        actionConfigStruct,
+                        com.google.devtools.build.lib.util.OS.getCurrent()
+                    )
+                })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains(
+                ("An action_config's name must consist solely "
+                        + "of lowercase ASCII letters, digits, '.', '_', '+', and '-', "
+                        + "got 'white\tspace'")
+            )
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun createActionConfigRule(
+        pkg: String?, actionName: String?, enabled: String?, tools: String?, flagSets: String?, implies: String?
+    ) {
+        scratch.file(
+            pkg + "/foo.bzl",
+            "load('//tools/cpp:cc_toolchain_config_lib.bzl', 'with_feature_set',",
+            "             'tool', 'flag_set', 'action_config', 'flag_group')",
+            "load('//myinfo:myinfo.bzl', 'MyInfo')",
+            "def _impl(ctx):",
+            "   return [MyInfo(config = action_config(",
+            "       action_name = " + actionName + ",",
+            "       enabled = " + enabled + ",",
+            "       tools = " + tools + ",",
+            "       flag_sets = " + flagSets + ",",
+            "       implies = " + implies + "))]",
+            "crule = rule(implementation = _impl)"
+        )
+        scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomActionConfig_actionName_mustBeString() {
+        loadCcToolchainConfigLib()
+        createCustomActionConfigRule(
+            "one",  /* actionName= */
+            "struct()",  /* enabled= */
+            "True",  /* tools= */
+            "[]",  /* flagSets= */
+            "[]",  /* implies= */
+            "[]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//one:a")
+        val actionConfigStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("config") as StarlarkInfo?
+        assertThat(actionConfigStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    actionConfigFromStarlark(
+                        actionConfigStruct,
+                        com.google.devtools.build.lib.util.OS.getCurrent()
+                    )
+                })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("Field 'action_name' is not of 'java.lang.String' type.")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomActionConfig_enabled_mustBeBool() {
+        loadCcToolchainConfigLib()
+        createCustomActionConfigRule(
+            "two",  /* actionName= */
+            "'actionname'",  /* enabled= */
+            "['asd']",  /* tools= */
+            "[]",  /* flagSets= */
+            "[]",  /* implies= */
+            "[]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//two:a")
+        val actionConfigStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("config") as StarlarkInfo?
+        assertThat(actionConfigStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    actionConfigFromStarlark(
+                        actionConfigStruct,
+                        com.google.devtools.build.lib.util.OS.getCurrent()
+                    )
+                })
+        Truth.assertThat(e).hasMessageThat().contains("Field 'enabled' is not of 'java.lang.Boolean' type.")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomActionConfig_tools_mustBeList() {
+        loadCcToolchainConfigLib()
+        createCustomActionConfigRule(
+            "three",  /* actionName= */
+            "'actionname'",  /* enabled= */
+            "True",  /* tools= */
+            "struct()",  /* flagSets= */
+            "[]",  /* implies= */
+            "[]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//three:a")
+        val actionConfigStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("config") as StarlarkInfo?
+        assertThat(actionConfigStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    actionConfigFromStarlark(
+                        actionConfigStruct,
+                        com.google.devtools.build.lib.util.OS.getCurrent()
+                    )
+                })
+        Truth.assertThat(e).hasMessageThat().contains("for tools, got struct, want sequence")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomActionConfig_flagSets_mustBeList() {
+        loadCcToolchainConfigLib()
+        createCustomActionConfigRule(
+            "four",  /* actionName= */
+            "'actionname'",  /* enabled= */
+            "True",  /* tools= */
+            "[tool(path = 'a/b/c')]",  /* flagSets= */
+            "True",  /* implies= */
+            "[]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//four:a")
+        val actionConfigStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("config") as StarlarkInfo?
+        assertThat(actionConfigStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    actionConfigFromStarlark(
+                        actionConfigStruct,
+                        com.google.devtools.build.lib.util.OS.getCurrent()
+                    )
+                })
+        Truth.assertThat(e).hasMessageThat().contains("for flag_sets, got bool, want sequence")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomActionConfig_implies_mustBeList() {
+        loadCcToolchainConfigLib()
+        createCustomActionConfigRule(
+            "five",  /* actionName= */
+            "'actionname'",  /* enabled= */
+            "True",  /* tools= */
+            "[tool(path = 'a/b/c')]",  /* flagSets= */
+            "[]",  /* implies= */
+            "flag_set(actions = ['a', 'b'])"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//five:a")
+        val actionConfigStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("config") as StarlarkInfo?
+        assertThat(actionConfigStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    actionConfigFromStarlark(
+                        actionConfigStruct,
+                        com.google.devtools.build.lib.util.OS.getCurrent()
+                    )
+                })
+        Truth.assertThat(e).hasMessageThat().contains("for implies, got struct, want sequence")
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun createCustomActionConfigRule(
+        pkg: String?, actionName: String?, enabled: String?, tools: String?, flagSets: String?, implies: String?
+    ) {
+        scratch.file(
+            pkg + "/foo.bzl",
+            "load('//tools/cpp:cc_toolchain_config_lib.bzl', 'with_feature_set',",
+            "             'tool', 'flag_set', 'action_config', )",
+            "load('//myinfo:myinfo.bzl', 'MyInfo')",
+            "def _impl(ctx):",
+            "   return [MyInfo(config = struct(",
+            "       action_name = " + actionName + ",",
+            "       enabled = " + enabled + ",",
+            "       tools = " + tools + ",",
+            "       flag_sets = " + flagSets + ",",
+            "       implies = " + implies + ",",
+            "       type_name = 'action_config'))]",
+            "crule = rule(implementation = _impl)"
+        )
+        scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFeature_name_mustBeNonempty() {
+        loadCcToolchainConfigLib()
+        createFeatureRule(
+            "one",  /* name= */
+            "''",  /* enabled= */
+            "False",  /* flagSets= */
+            "[]",  /* envSets= */
+            "[]",  /* requires= */
+            "[]",  /* implies= */
+            "[]",  /* provides= */
+            "[]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//one:a")
+        val featureStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("f") as StarlarkInfo?
+        assertThat(featureStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { featureFromStarlark(featureStruct) })
+        val msg: String? = e.message
+        Truth.assertThat(msg).contains("A feature must either have a nonempty 'name' field or be enabled.")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFeature_enabled_mustBeBool() {
+        loadCcToolchainConfigLib()
+        createFeatureRule(
+            "two",  /* name= */
+            "'featurename'",  /* enabled= */
+            "None",  /* flagSets= */
+            "[]",  /* envSets= */
+            "[]",  /* requires= */
+            "[]",  /* implies= */
+            "[]",  /* provides= */
+            "[]"
+        )
+        val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//two:a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("enabled parameter of feature should be a bool, found NoneType")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFeature_flagSets_mustBeFlagSet() {
+        loadCcToolchainConfigLib()
+        createFeatureRule(
+            "three",  /* name= */
+            "'featurename'",  /* enabled= */
+            "True",  /* flagSets= */
+            "[struct()]",  /* envSets= */
+            "[]",  /* requires= */
+            "[]",  /* implies= */
+            "[]",  /* provides= */
+            "[]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//three:a")
+        val featureStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("f") as StarlarkInfo?
+        assertThat(featureStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { featureFromStarlark(featureStruct) })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("Expected object of type 'flag_set', received 'struct'")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFeature_envSets_mustBeEnvSet() {
+        loadCcToolchainConfigLib()
+        createFeatureRule(
+            "four",  /* name= */
+            "'featurename'",  /* enabled= */
+            "True",  /* flagSets= */
+            "[flag_set(actions = ['a'], flag_groups = [flag_group(flags = ['a'])])]",  /* envSets= */
+            "[tool(path = 'a/b/c')]",  /* requires= */
+            "[]",  /* implies= */
+            "[]",  /* provides= */
+            "[]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//four:a")
+        val featureStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("f") as StarlarkInfo?
+        assertThat(featureStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { featureFromStarlark(featureStruct) })
+        Truth.assertThat(e).hasMessageThat().contains("Expected object of type 'env_set', received 'tool'")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFeature_something_mustBeFeatureSet() {
+        loadCcToolchainConfigLib()
+        createFeatureRule(
+            "five",  /* name= */
+            "'featurename'",  /* enabled= */
+            "True",  /* flagSets= */
+            "[flag_set(actions = ['a'], flag_groups = [flag_group(flags = ['a'])])]",  /* envSets= */
+            "[env_set(actions = ['a1'], "
+                    + "env_entries = [env_entry(key = 'a', value = 'b')])]",  /* requires= */
+            "[tool(path = 'a/b/c')]",  /* implies= */
+            "[]",  /* provides= */
+            "[]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//five:a")
+        val featureStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("f") as StarlarkInfo?
+        assertThat(featureStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { featureFromStarlark(featureStruct) })
+        Truth.assertThat(e).hasMessageThat().contains("expected object of type 'feature_set'")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFeature_implies_mustBeString() {
+        loadCcToolchainConfigLib()
+        createFeatureRule(
+            "six",  /* name= */
+            "'featurename'",  /* enabled= */
+            "True",  /* flagSets= */
+            "[flag_set(actions = ['a'], flag_groups = [flag_group(flags = ['a'])])]",  /* envSets= */
+            "[env_set(actions = ['a1'], "
+                    + "env_entries = [env_entry(key = 'a', value = 'b')])]",  /* requires= */
+            "[feature_set(features = ['f1', 'f2'])]",  /* implies= */
+            "[tool(path = 'a/b/c')]",  /* provides= */
+            "[]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//six:a")
+        val featureStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("f") as StarlarkInfo?
+        assertThat(featureStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { featureFromStarlark(featureStruct) })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("at index 0 of implies, got element of type struct, want string")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFeature_provides_mustBeString() {
+        loadCcToolchainConfigLib()
+        createFeatureRule(
+            "seven",  /* name= */
+            "'featurename'",  /* enabled= */
+            "True",  /* flagSets= */
+            "[flag_set(actions = ['a'], flag_groups = [flag_group(flags = ['a'])])]",  /* envSets= */
+            "[env_set(actions = ['a1'], "
+                    + "env_entries = [env_entry(key = 'a', value = 'b')])]",  /* requires= */
+            "[feature_set(features = ['f1', 'f2'])]",  /* implies= */
+            "['a', 'b', 'c']",  /* provides= */
+            "[struct()]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//seven:a")
+        val featureStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("f") as StarlarkInfo?
+        assertThat(featureStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { featureFromStarlark(featureStruct) })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("at index 0 of provides, got element of type struct, want string")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFeature() {
+        loadCcToolchainConfigLib()
+        createFeatureRule(
+            "eight",  /* name= */
+            "'featurename32+.-_'",  /* enabled= */
+            "True",  /* flagSets= */
+            "[flag_set(actions = ['a'], flag_groups = [flag_group(flags = ['a'])])]",  /* envSets= */
+            "[env_set(actions = ['a1'], "
+                    + "env_entries = [env_entry(key = 'a', value = 'b')])]",  /* requires= */
+            "[feature_set(features = ['f1', 'f2'])]",  /* implies= */
+            "['a', 'b', 'c']",  /* provides= */
+            "['a', 'b', 'c']"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//eight:a")
+        val featureStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("f") as StarlarkInfo?
+        assertThat(featureStruct).isNotNull()
+        val a: Feature? = featureFromStarlark(featureStruct)
+        assertThat(a).isNotNull()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFeature_name_validCharacters_notUpper() {
+        loadCcToolchainConfigLib()
+        createFeatureRule(
+            "nine",  /* name= */
+            "'UpperCase'",  /* enabled= */
+            "False",  /* flagSets= */
+            "[]",  /* envSets= */
+            "[]",  /* requires= */
+            "[]",  /* implies= */
+            "[]",  /* provides= */
+            "[]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//nine:a")
+        val featureStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("f") as StarlarkInfo?
+        assertThat(featureStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { featureFromStarlark(featureStruct) })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains(
+                "A feature's name must consist solely of lowercase ASCII letters, digits, "
+                        + "'.', '_', '+', and '-', got 'UpperCase'"
+            )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFeature_name_validCharacters_notWhitespace() {
+        loadCcToolchainConfigLib()
+        createFeatureRule(
+            "ten",  /* name= */
+            "'white space'",  /* enabled= */
+            "False",  /* flagSets= */
+            "[]",  /* envSets= */
+            "[]",  /* requires= */
+            "[]",  /* implies= */
+            "[]",  /* provides= */
+            "[]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//ten:a")
+        val featureStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("f") as StarlarkInfo?
+        assertThat(featureStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { featureFromStarlark(featureStruct) })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains(
+                "A feature's name must consist solely of "
+                        + "lowercase ASCII letters, digits, '.', '_', '+', and '-', got 'white space"
+            )
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun createFeatureRule(
+        pkg: String?,
+        name: String?,
+        enabled: String?,
+        flagSets: String?,
+        envSets: String?,
+        requires: String?,
+        implies: String?,
+        provides: String?
+    ) {
+        scratch.file(
+            pkg + "/foo.bzl",
+            "load('//tools/cpp:cc_toolchain_config_lib.bzl', 'with_feature_set', 'feature_set',",
+            "             'flag_set', 'flag_group', 'tool', 'env_set', 'env_entry', 'feature')",
+            "load('//myinfo:myinfo.bzl', 'MyInfo')",
+            "def _impl(ctx):",
+            "   return [MyInfo(f = feature(",
+            "       name = " + name + ",",
+            "       enabled = " + enabled + ",",
+            "       flag_sets = " + flagSets + ",",
+            "       env_sets = " + envSets + ",",
+            "       requires = " + requires + ",",
+            "       implies = " + implies + ",",
+            "       provides = " + provides + "))]",
+            "crule = rule(implementation = _impl)"
+        )
+        scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomFeature_name_mustBeString() {
+        loadCcToolchainConfigLib()
+        createCustomFeatureRule(
+            "one",  /* name= */
+            "struct()",  /* enabled= */
+            "False",  /* flagSets= */
+            "[]",  /* envSets= */
+            "[]",  /* requires= */
+            "[]",  /* implies= */
+            "[]",  /* provides= */
+            "[]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//one:a")
+        val featureStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("f") as StarlarkInfo?
+        assertThat(featureStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { featureFromStarlark(featureStruct) })
+        Truth.assertThat(e).hasMessageThat().contains("Field 'name' is not of 'java.lang.String' type.")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomFeature_enabled_mustBeBool() {
+        loadCcToolchainConfigLib()
+        createCustomFeatureRule(
+            "two",  /* name= */
+            "'featurename'",  /* enabled= */
+            "struct()",  /* flagSets= */
+            "[]",  /* envSets= */
+            "[]",  /* requires= */
+            "[]",  /* implies= */
+            "[]",  /* provides= */
+            "[]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//two:a")
+        val featureStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("f") as StarlarkInfo?
+        assertThat(featureStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { featureFromStarlark(featureStruct) })
+        Truth.assertThat(e).hasMessageThat().contains("Field 'enabled' is not of 'java.lang.Boolean' type.")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomFeature_flagSets_mustBeList() {
+        loadCcToolchainConfigLib()
+        createCustomFeatureRule(
+            "three",  /* name= */
+            "'featurename'",  /* enabled= */
+            "True",  /* flagSets= */
+            "struct()",  /* envSets= */
+            "[]",  /* requires= */
+            "[]",  /* implies= */
+            "[]",  /* provides= */
+            "[]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//three:a")
+        val featureStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("f") as StarlarkInfo?
+        assertThat(featureStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { featureFromStarlark(featureStruct) })
+        Truth.assertThat(e).hasMessageThat().contains("for flag_sets, got struct, want sequence")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomFeature_envSets_mustBeList() {
+        loadCcToolchainConfigLib()
+        createCustomFeatureRule(
+            "four",  /* name= */
+            "'featurename'",  /* enabled= */
+            "True",  /* flagSets= */
+            "[]",  /* envSets= */
+            "struct()",  /* requires= */
+            "[]",  /* implies= */
+            "[]",  /* provides= */
+            "[]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//four:a")
+        val featureStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("f") as StarlarkInfo?
+        assertThat(featureStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { featureFromStarlark(featureStruct) })
+        Truth.assertThat(e).hasMessageThat().contains("for env_sets, got struct, want sequence")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomFeature_requires_mustBeList() {
+        loadCcToolchainConfigLib()
+        createCustomFeatureRule(
+            "five",  /* name= */
+            "'featurename'",  /* enabled= */
+            "True",  /* flagSets= */
+            "[]",  /* envSets= */
+            "[]",  /* requires= */
+            "struct()",  /* implies= */
+            "[]",  /* provides= */
+            "[]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//five:a")
+        val featureStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("f") as StarlarkInfo?
+        assertThat(featureStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { featureFromStarlark(featureStruct) })
+        Truth.assertThat(e).hasMessageThat().contains("for requires, got struct, want sequence")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomFeature_implies_mustBeList() {
+        loadCcToolchainConfigLib()
+        createCustomFeatureRule(
+            "six",  /* name= */
+            "'featurename'",  /* enabled= */
+            "True",  /* flagSets= */
+            "[]",  /* envSets= */
+            "[]",  /* requires= */
+            "[]",  /* implies= */
+            "struct()",  /* provides= */
+            "[]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//six:a")
+        val featureStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("f") as StarlarkInfo?
+        assertThat(featureStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { featureFromStarlark(featureStruct) })
+        Truth.assertThat(e).hasMessageThat().contains("for implies, got struct, want sequence")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomFeature_provides_mustBeList() {
+        loadCcToolchainConfigLib()
+        createCustomFeatureRule(
+            "seven",  /* name= */
+            "'featurename'",  /* enabled= */
+            "True",  /* flagSets= */
+            "[]",  /* envSets= */
+            "[]",  /* requires= */
+            "[]",  /* implies= */
+            "[]",  /* provides= */
+            "struct()"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//seven:a")
+        val featureStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("f") as StarlarkInfo?
+        assertThat(featureStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { featureFromStarlark(featureStruct) })
+        Truth.assertThat(e).hasMessageThat().contains("for provides, got struct, want sequence")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomFeature_flagSet_musthaveActions() {
+        loadCcToolchainConfigLib()
+        createCustomFeatureRule(
+            "eight",  /* name= */
+            "'featurename'",  /* enabled= */
+            "True",  /* flagSets= */
+            "[flag_set()]",  /* envSets= */
+            "[]",  /* requires= */
+            "[]",  /* implies= */
+            "[]",  /* provides= */
+            "[]"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//eight:a")
+        val featureStruct: StarlarkInfo? = getMyInfoFromTarget(t).getValue("f") as StarlarkInfo?
+        assertThat(featureStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { featureFromStarlark(featureStruct) })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("A flag_set that belongs to a feature must have nonempty 'actions' parameter.")
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun createCustomFeatureRule(
+        pkg: String?,
+        name: String?,
+        enabled: String?,
+        flagSets: String?,
+        envSets: String?,
+        requires: String?,
+        implies: String?,
+        provides: String?
+    ) {
+        scratch.file(
+            pkg + "/foo.bzl",
+            "load('//tools/cpp:cc_toolchain_config_lib.bzl', 'with_feature_set', 'feature_set',",
+            "             'flag_set', 'flag_group', 'tool', 'env_set', 'env_entry', 'feature')",
+            "load('//myinfo:myinfo.bzl', 'MyInfo')",
+            "def _impl(ctx):",
+            "   return [MyInfo(f = struct(",
+            "       name = " + name + ",",
+            "       enabled = " + enabled + ",",
+            "       flag_sets = " + flagSets + ",",
+            "       env_sets = " + envSets + ",",
+            "       requires = " + requires + ",",
+            "       implies = " + implies + ",",
+            "       provides = " + provides + ",",
+            "       type_name = 'feature'))]",
+            "crule = rule(implementation = _impl)"
+        )
+        scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomArtifactNamePattern_categoryName_mustBeString() {
+        loadCcToolchainConfigLib()
+        createCustomArtifactNamePatternRule(
+            "one",  /* categoryName= */"struct()",  /* extension= */"'a'",  /* prefix= */"'a'"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//one:a")
+        val artifactNamePatternStruct: StarlarkInfo? =
+            getMyInfoFromTarget(t).getValue("namepattern") as StarlarkInfo?
+        assertThat(artifactNamePatternStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    artifactNamePatternFromStarlark(
+                        artifactNamePatternStruct,
+                        { c, p, ext -> })
+                })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("Field 'category_name' is not of 'java.lang.String' type.")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomArtifactNamePattern_extension_mustBeString() {
+        loadCcToolchainConfigLib()
+        createCustomArtifactNamePatternRule(
+            "two",  /* categoryName= */
+            "'static_library'",  /* extension= */
+            "struct()",  /* prefix= */
+            "'a'"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//two:a")
+        val artifactNamePatternStruct: StarlarkInfo? =
+            getMyInfoFromTarget(t).getValue("namepattern") as StarlarkInfo?
+        assertThat(artifactNamePatternStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    artifactNamePatternFromStarlark(
+                        artifactNamePatternStruct,
+                        { c, p, ext -> })
+                })
+        Truth.assertThat(e).hasMessageThat().contains("Field 'extension' is not of 'java.lang.String' type.")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomArtifactNamePattern_prefix_mustBeString() {
+        loadCcToolchainConfigLib()
+        createCustomArtifactNamePatternRule(
+            "three",  /* categoryName= */
+            "'static_library'",  /* extension= */
+            "'.a'",  /* prefix= */
+            "struct()"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//three:a")
+        val artifactNamePatternStruct: StarlarkInfo? =
+            getMyInfoFromTarget(t).getValue("namepattern") as StarlarkInfo?
+        assertThat(artifactNamePatternStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    artifactNamePatternFromStarlark(
+                        artifactNamePatternStruct,
+                        { c, p, ext -> })
+                })
+        Truth.assertThat(e).hasMessageThat().contains("Field 'prefix' is not of 'java.lang.String' type.")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomArtifactNamePattern_categoryName_mustBeNonempty() {
+        loadCcToolchainConfigLib()
+        createCustomArtifactNamePatternRule(
+            "four",  /* categoryName= */"''",  /* extension= */"'.a'",  /* prefix= */"'a'"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//four:a")
+        val artifactNamePatternStruct: StarlarkInfo? =
+            getMyInfoFromTarget(t).getValue("namepattern") as StarlarkInfo?
+        assertThat(artifactNamePatternStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    artifactNamePatternFromStarlark(
+                        artifactNamePatternStruct,
+                        { c, p, ext -> })
+                })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("The 'category_name' field of artifact_name_pattern must be a nonempty string.")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomArtifactNamePattern_emptyString_emptyString() {
+        loadCcToolchainConfigLib()
+        createCustomArtifactNamePatternRule(
+            "five",  /* categoryName= */"'executable'",  /* extension= */"''",  /* prefix= */"''"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//five:a")
+        val artifactNamePatternStruct: StarlarkInfo? =
+            getMyInfoFromTarget(t).getValue("namepattern") as StarlarkInfo?
+        assertThat(artifactNamePatternStruct).isNotNull()
+        val called: AtomicBoolean = AtomicBoolean(false)
+        artifactNamePatternFromStarlark(artifactNamePatternStruct, { c, p, ext -> called.set(true) })
+        Truth.assertThat(called.get()).isTrue()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomArtifactNamePattern_none_none() {
+        loadCcToolchainConfigLib()
+        createCustomArtifactNamePatternRule(
+            "six",  /* categoryName= */"'executable'",  /* extension= */"None",  /* prefix= */"None"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//six:a")
+        val artifactNamePatternStruct: StarlarkInfo? =
+            getMyInfoFromTarget(t).getValue("namepattern") as StarlarkInfo?
+        assertThat(artifactNamePatternStruct).isNotNull()
+        val called: AtomicBoolean = AtomicBoolean(false)
+        artifactNamePatternFromStarlark(artifactNamePatternStruct, { c, p, ext -> called.set(true) })
+        Truth.assertThat(called.get()).isTrue()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomArtifactNamePattern_categoryName_unknown() {
+        loadCcToolchainConfigLib()
+        createCustomArtifactNamePatternRule(
+            "seven",  /* categoryName= */"'unknown'",  /* extension= */"'.a'",  /* prefix= */"'a'"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//seven:a")
+        val artifactNamePatternStruct: StarlarkInfo? =
+            getMyInfoFromTarget(t).getValue("namepattern") as StarlarkInfo?
+        assertThat(artifactNamePatternStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    artifactNamePatternFromStarlark(
+                        artifactNamePatternStruct,
+                        { c, p, ext -> })
+                })
+        Truth.assertThat(e).hasMessageThat().contains("Artifact category unknown not recognized")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomArtifactNamePattern_fileExtension_unknown() {
+        loadCcToolchainConfigLib()
+        createCustomArtifactNamePatternRule(
+            "eight",  /* categoryName= */
+            "'static_library'",  /* extension= */
+            "'a'",  /* prefix= */
+            "'a'"
+        )
+
+        val t: ConfiguredTarget = getConfiguredTarget("//eight:a")
+        val artifactNamePatternStruct: StarlarkInfo? =
+            getMyInfoFromTarget(t).getValue("namepattern") as StarlarkInfo?
+        assertThat(artifactNamePatternStruct).isNotNull()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    artifactNamePatternFromStarlark(
+                        artifactNamePatternStruct,
+                        { c, p, ext -> })
+                })
+        Truth.assertThat(e).hasMessageThat().contains("Unrecognized file extension 'a'")
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun createCustomArtifactNamePatternRule(
+        pkg: String?, categoryName: String?, extension: String?, prefix: String?
+    ) {
+        scratch.file(
+            pkg + "/foo.bzl",
+            "load('//myinfo:myinfo.bzl', 'MyInfo')",
+            "def _impl(ctx):",
+            "   return [MyInfo(namepattern = struct(",
+            "       category_name = " + categoryName + ",",
+            "       extension = " + extension + ",",
+            "       prefix = " + prefix + ",",
+            "       type_name = 'artifact_name_pattern'))]",
+            "crule = rule(implementation = _impl)"
+        )
+        scratch.file(pkg + "/BUILD", "load(':foo.bzl', 'crule')", "crule(name = 'a')")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCcToolchainInfoFromStarlark() {
+        loadCcToolchainConfigLib()
+        scratch.file(
+            "foo/crosstool.bzl",
+            """
         load(
             "//tools/cpp:cc_toolchain_config_lib.bzl",
             "action_config",
@@ -4961,95 +5784,111 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             attrs = {},
             provides = [CcToolchainConfigInfo],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "foo/BUILD",
-        """
+        scratch.file(
+            "foo/BUILD",
+            """
         load("@rules_cc//cc/toolchains:cc_toolchain_alias.bzl", "cc_toolchain_alias")
         load(":crosstool.bzl", "cc_toolchain_config_rule")
 
         cc_toolchain_alias(name = "alias")
 
         cc_toolchain_config_rule(name = "r")
-        """);
-    ConfiguredTarget target = getConfiguredTarget("//foo:r");
-    assertThat(target).isNotNull();
-    CcToolchainConfigInfo ccToolchainConfigInfo = CcToolchainConfigInfo.get(target);
-    assertThat(ccToolchainConfigInfo).isNotNull();
-  }
+        
+        """.trimIndent()
+        )
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:r")
+        assertThat(target).isNotNull()
+        val ccToolchainConfigInfo: CcToolchainConfigInfo? = CcToolchainConfigInfo.get(target)
+        assertThat(ccToolchainConfigInfo).isNotNull()
+    }
 
-  @Test
-  public void testCcToolchainInfoFromStarlarkRequiredToolchainIdentifier() throws Exception {
-    setupStarlarkRuleForStringFieldsTesting("toolchain_identifier");
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//foo:r"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("missing 1 required keyword-only argument: toolchain_identifier");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCcToolchainInfoFromStarlarkRequiredToolchainIdentifier() {
+        setupStarlarkRuleForStringFieldsTesting("toolchain_identifier")
+        val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//foo:r") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("missing 1 required keyword-only argument: toolchain_identifier")
+    }
 
-  @Test
-  public void testCcToolchainInfoFromStarlarkRequiredCompiler() throws Exception {
-    setupStarlarkRuleForStringFieldsTesting("compiler");
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//foo:r"));
-    assertThat(e).hasMessageThat().contains("missing 1 required keyword-only argument: compiler");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCcToolchainInfoFromStarlarkRequiredCompiler() {
+        setupStarlarkRuleForStringFieldsTesting("compiler")
+        val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//foo:r") })
+        Truth.assertThat(e).hasMessageThat().contains("missing 1 required keyword-only argument: compiler")
+    }
 
-  @Test
-  public void testCcToolchainInfoFromStarlarkAllRequiredStringsPresent() throws Exception {
-    setupStarlarkRuleForStringFieldsTesting("");
-    ConfiguredTarget target = getConfiguredTarget("//foo:r");
-    assertThat(target).isNotNull();
-    CcToolchainConfigInfo ccToolchainConfigInfo = CcToolchainConfigInfo.get(target);
-    assertThat(ccToolchainConfigInfo).isNotNull();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCcToolchainInfoFromStarlarkAllRequiredStringsPresent() {
+        setupStarlarkRuleForStringFieldsTesting("")
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:r")
+        assertThat(target).isNotNull()
+        val ccToolchainConfigInfo: CcToolchainConfigInfo? = CcToolchainConfigInfo.get(target)
+        assertThat(ccToolchainConfigInfo).isNotNull()
+    }
 
-  private void setupStarlarkRuleForStringFieldsTesting(String fieldToExclude) throws Exception {
-    ImmutableList<String> fields =
-        ImmutableList.of(
-            "toolchain_identifier = 'identifier'",
-            "host_system_name = 'host_system_name'",
-            "target_system_name = 'target_system_name'",
-            "target_cpu = 'target_cpu'",
-            "target_libc = 'target_libc'",
-            "compiler = 'compiler'",
-            "abi_version = 'abi'",
-            "abi_libc_version = 'abi_libc'");
+    @Throws(java.lang.Exception::class)
+    private fun setupStarlarkRuleForStringFieldsTesting(fieldToExclude: String?) {
+        val fields: com.google.common.collect.ImmutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>(
+                "toolchain_identifier = 'identifier'",
+                "host_system_name = 'host_system_name'",
+                "target_system_name = 'target_system_name'",
+                "target_cpu = 'target_cpu'",
+                "target_libc = 'target_libc'",
+                "compiler = 'compiler'",
+                "abi_version = 'abi'",
+                "abi_libc_version = 'abi_libc'"
+            )
 
-    scratch.file(
-        "foo/crosstool.bzl",
-        "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
-        "load('@rules_cc//cc/toolchains:cc_toolchain_config_info.bzl',"
-            + " 'CcToolchainConfigInfo')",
-        "def _impl(ctx):",
-        "    return cc_common.create_cc_toolchain_config_info(",
-        "    ctx = ctx,",
-        Joiner.on(",\n")
-            .join(fields.stream().filter(el -> !el.startsWith(fieldToExclude + " =")).toArray()),
-        ")",
-        "cc_toolchain_config_rule = rule(",
-        "    implementation = _impl,",
-        "    attrs = {},",
-        "    provides = [CcToolchainConfigInfo], ",
-        ")");
-    scratch.file(
-        "foo/BUILD",
-        """
+        scratch.file(
+            "foo/crosstool.bzl",
+            "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
+            "load('@rules_cc//cc/toolchains:cc_toolchain_config_info.bzl',"
+                    + " 'CcToolchainConfigInfo')",
+            "def _impl(ctx):",
+            "    return cc_common.create_cc_toolchain_config_info(",
+            "    ctx = ctx,",
+            com.google.common.base.Joiner.on(",\n")
+                .join(fields.stream().filter { el: String? -> !el.startsWith(fieldToExclude + " =") }.toArray()),
+            ")",
+            "cc_toolchain_config_rule = rule(",
+            "    implementation = _impl,",
+            "    attrs = {},",
+            "    provides = [CcToolchainConfigInfo], ",
+            ")")
+        scratch.file(
+            "foo/BUILD",
+            """
         load("@rules_cc//cc/toolchains:cc_toolchain_alias.bzl", "cc_toolchain_alias")
         load(":crosstool.bzl", "cc_toolchain_config_rule")
 
         cc_toolchain_alias(name = "alias")
 
         cc_toolchain_config_rule(name = "r")
-        """);
-  }
+        
+        """.trimIndent()
+        )
+    }
 
-  @Test
-  public void testCcToolchainInfoFromStarlarkNoLegacyFeatures() throws Exception {
-    loadCcToolchainConfigLib();
-    scratch.file(
-        "foo/crosstool.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCcToolchainInfoFromStarlarkNoLegacyFeatures() {
+        loadCcToolchainConfigLib()
+        scratch.file(
+            "foo/crosstool.bzl",
+            """
         load(
             "//tools/cpp:cc_toolchain_config_lib.bzl",
             "action_config",
@@ -5097,39 +5936,44 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             attrs = {},
             provides = [CcToolchainConfigInfo],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "foo/BUILD",
-        """
+        scratch.file(
+            "foo/BUILD",
+            """
         load("@rules_cc//cc/toolchains:cc_toolchain_alias.bzl", "cc_toolchain_alias")
         load(":crosstool.bzl", "cc_toolchain_config_rule")
 
         cc_toolchain_alias(name = "alias")
 
         cc_toolchain_config_rule(name = "r")
-        """);
-    ConfiguredTarget target = getConfiguredTarget("//foo:r");
-    assertThat(target).isNotNull();
-    CcToolchainConfigInfo ccToolchainConfigInfo = CcToolchainConfigInfo.get(target);
-    ImmutableSet<String> featureNames =
-        ccToolchainConfigInfo.getFeatures().stream()
-            .map(Feature::getName)
-            .collect(ImmutableSet.toImmutableSet());
-    ImmutableSet<String> actionConfigNames =
-        ccToolchainConfigInfo.getActionConfigs().stream()
-            .map(ActionConfig::getActionName)
-            .collect(ImmutableSet.toImmutableSet());
-    assertThat(featureNames).containsExactly("no_legacy_features", "custom_feature");
-    assertThat(actionConfigNames).containsExactly("custom_action");
-  }
+        
+        """.trimIndent()
+        )
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:r")
+        assertThat(target).isNotNull()
+        val ccToolchainConfigInfo: CcToolchainConfigInfo = CcToolchainConfigInfo.get(target)
+        val featureNames: com.google.common.collect.ImmutableSet<String?>? =
+            ccToolchainConfigInfo.getFeatures().stream()
+                .map(Feature::getName)
+                .collect(com.google.common.collect.ImmutableSet.toImmutableSet<E?>())
+        val actionConfigNames: com.google.common.collect.ImmutableSet<String?>? =
+            ccToolchainConfigInfo.getActionConfigs().stream()
+                .map(ActionConfig::getActionName)
+                .collect(com.google.common.collect.ImmutableSet.toImmutableSet<E?>())
+        Truth.assertThat(featureNames).containsExactly("no_legacy_features", "custom_feature")
+        Truth.assertThat(actionConfigNames).containsExactly("custom_action")
+    }
 
-  @Test
-  public void testCcToolchainInfoFromStarlarkWithLegacyFeatures() throws Exception {
-    loadCcToolchainConfigLib();
-    scratch.file(
-        "foo/crosstool.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCcToolchainInfoFromStarlarkWithLegacyFeatures() {
+        loadCcToolchainConfigLib()
+        scratch.file(
+            "foo/crosstool.bzl",
+            """
         load(
             "//tools/cpp:cc_toolchain_config_lib.bzl",
             "action_config",
@@ -5179,55 +6023,62 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             attrs = {},
             provides = [CcToolchainConfigInfo],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "foo/BUILD",
-        """
+        scratch.file(
+            "foo/BUILD",
+            """
         load("@rules_cc//cc/toolchains:cc_toolchain_alias.bzl", "cc_toolchain_alias")
         load(":crosstool.bzl", "cc_toolchain_config_rule")
 
         cc_toolchain_alias(name = "alias")
 
         cc_toolchain_config_rule(name = "r")
-        """);
-    ConfiguredTarget target = getConfiguredTarget("//foo:r");
-    assertThat(target).isNotNull();
-    CcToolchainConfigInfo ccToolchainConfigInfo = CcToolchainConfigInfo.get(target);
-    ImmutableList<String> featureNames =
-        ccToolchainConfigInfo.getFeatures().stream()
-            .map(Feature::getName)
-            .collect(ImmutableList.toImmutableList());
-    ImmutableSet<String> actionConfigNames =
-        ccToolchainConfigInfo.getActionConfigs().stream()
-            .map(ActionConfig::getActionName)
-            .collect(ImmutableSet.toImmutableSet());
-    // fdo_optimize should not be re-added to the list of features by legacy behavior
-    assertThat(featureNames).containsNoDuplicates();
-    // legacy_compile_flags should appear first in the list of features, followed by
-    // default_compile_flags.
-    assertThat(featureNames)
-        .containsAtLeast(
-            "legacy_compile_flags", "default_compile_flags", "custom_feature", "fdo_optimize")
-        .inOrder();
-    // assemble is one of the action_configs added as a legacy behavior, therefore it needs to be
-    // prepended to the action configs defined by the user.
-    assertThat(actionConfigNames).containsAtLeast("assemble", "custom-action").inOrder();
-  }
+        
+        """.trimIndent()
+        )
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:r")
+        assertThat(target).isNotNull()
+        val ccToolchainConfigInfo: CcToolchainConfigInfo = CcToolchainConfigInfo.get(target)
+        val featureNames: com.google.common.collect.ImmutableList<String?>? =
+            ccToolchainConfigInfo.getFeatures().stream()
+                .map(Feature::getName)
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
+        val actionConfigNames: com.google.common.collect.ImmutableSet<String?>? =
+            ccToolchainConfigInfo.getActionConfigs().stream()
+                .map(ActionConfig::getActionName)
+                .collect(com.google.common.collect.ImmutableSet.toImmutableSet<E?>())
+        // fdo_optimize should not be re-added to the list of features by legacy behavior
+        Truth.assertThat(featureNames).containsNoDuplicates()
+        // legacy_compile_flags should appear first in the list of features, followed by
+        // default_compile_flags.
+        Truth.assertThat(featureNames)
+            .containsAtLeast(
+                "legacy_compile_flags", "default_compile_flags", "custom_feature", "fdo_optimize"
+            )
+            .inOrder()
+        // assemble is one of the action_configs added as a legacy behavior, therefore it needs to be
+        // prepended to the action configs defined by the user.
+        Truth.assertThat(actionConfigNames).containsAtLeast("assemble", "custom-action").inOrder()
+    }
 
-  @Test
-  public void testGetLegacyCcFlagsMakeVariable() throws Exception {
-    AnalysisMock.get()
-        .ccSupport()
-        .setupCcToolchainConfig(
-            mockToolsConfig,
-            CcToolchainConfig.builder()
-                .withMakeVariables(Pair.of("CC_FLAGS", "-test-cflag1 -testcflag2")));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGetLegacyCcFlagsMakeVariable() {
+        AnalysisMock.get()
+            .ccSupport()
+            .setupCcToolchainConfig(
+                mockToolsConfig,
+                CcToolchainConfig.builder()
+                    .withMakeVariables(Pair.of("CC_FLAGS", "-test-cflag1 -testcflag2"))
+            )
 
-    loadCcToolchainConfigLib();
-    scratch.file(
-        "a/rule.bzl",
-        """
+        loadCcToolchainConfigLib()
+        scratch.file(
+            "a/rule.bzl",
+            """
         load("//myinfo:myinfo.bzl", "MyInfo")
         load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')
 
@@ -5247,31 +6098,36 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             },
             fragments = ["cpp"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "a/BUILD",
-        """
+        scratch.file(
+            "a/BUILD",
+            """
         load("@rules_cc//cc/toolchains:cc_toolchain_alias.bzl", "cc_toolchain_alias")
         load(":rule.bzl", "cc_flags")
 
         cc_toolchain_alias(name = "alias")
 
         cc_flags(name = "r")
-        """);
+        
+        """.trimIndent()
+        )
 
-    String ccFlags =
-        (String) getMyInfoFromTarget(getConfiguredTarget("//a:r")).getValue("cc_flags");
+        val ccFlags =
+            getMyInfoFromTarget(getConfiguredTarget("//a:r")).getValue("cc_flags") as String?
 
-    assertThat(ccFlags).isEqualTo("-test-cflag1 -testcflag2");
-  }
+        Truth.assertThat(ccFlags).isEqualTo("-test-cflag1 -testcflag2")
+    }
 
-  @Test
-  public void testWrongExtensionThrowsError() throws Exception {
-    setUpCcLinkingContextTest();
-    scratch.file(
-        "foo/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testWrongExtensionThrowsError() {
+        setUpCcLinkingContextTest()
+        scratch.file(
+            "foo/BUILD",
+            """
         load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
         load("//tools/build_defs/cc:rule.bzl", "crule")
 
@@ -5289,36 +6145,42 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             pic_static_library = "a.pic.o",
             static_library = "a.o",
         )
-        """);
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//foo:bin"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("'a.o' does not have any of the allowed extensions .a, .lib, .rlib");
-    assertThat(e)
-        .hasMessageThat()
-        .contains("'a.pic.o' does not have any of the allowed extensions .a, .lib, .rlib");
-    assertThat(e)
-        .hasMessageThat()
-        .contains(
-            "'a.ifso' does not have any of the allowed extensions .so, .dylib, .dll, .pyd, .wasm,"
-                + " .tgt, .vpi");
-    assertThat(e)
-        .hasMessageThat()
-        .contains(
-            "'a.lib' does not have any of the allowed extensions .so, .dylib, .dll, .pyd, .wasm,"
-                + " .tgt, .vpi");
-    assertThat(e)
-        .hasMessageThat()
-        .contains("'a.dll' does not have any of the allowed extensions .ifso, .tbd, .lib, .dll.a");
-  }
+        
+        """.trimIndent()
+        )
+        val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//foo:bin") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("'a.o' does not have any of the allowed extensions .a, .lib, .rlib")
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("'a.pic.o' does not have any of the allowed extensions .a, .lib, .rlib")
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains(
+                "'a.ifso' does not have any of the allowed extensions .so, .dylib, .dll, .pyd, .wasm,"
+                        + " .tgt, .vpi"
+            )
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains(
+                "'a.lib' does not have any of the allowed extensions .so, .dylib, .dll, .pyd, .wasm,"
+                        + " .tgt, .vpi"
+            )
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("'a.dll' does not have any of the allowed extensions .ifso, .tbd, .lib, .dll.a")
+    }
 
-  @Test
-  @SuppressWarnings("unchecked")
-  public void testCcOutputsMerging() throws Exception {
-    setupCcOutputsTest();
-    scratch.file(
-        "foo/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCcOutputsMerging() {
+        setupCcOutputsTest()
+        scratch.file(
+            "foo/BUILD",
+            """
         load("//tools/build_defs/foo:extension.bzl", "cc_starlark_library")
 
         cc_starlark_library(
@@ -5328,216 +6190,245 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             pic_object1 = "pic_object1.o",
             pic_object2 = "pic_object2.o",
         )
-        """);
-    ConfiguredTarget target = getConfiguredTarget("//foo:starlark_lib");
-    StarlarkInfo compilationOutputs =
-        (StarlarkInfo) getMyInfoFromTarget(target).getValue("compilation_outputs");
-    assertThat(
+        
+        """.trimIndent()
+        )
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:starlark_lib")
+        val compilationOutputs: StarlarkInfo =
+            getMyInfoFromTarget(target).getValue("compilation_outputs") as StarlarkInfo
+        Truth.assertThat(
             AnalysisTestUtil.artifactsToStrings(
-                targetConfig, compilationOutputs.getValue("pic_objects", Iterable.class)))
-        .containsExactly("src foo/pic_object1.o", "src foo/pic_object2.o");
-    assertThat(
+                targetConfig, compilationOutputs.getValue("pic_objects", Iterable::class.java)
+            )
+        )
+            .containsExactly("src foo/pic_object1.o", "src foo/pic_object2.o")
+        Truth.assertThat(
             AnalysisTestUtil.artifactsToStrings(
-                targetConfig, compilationOutputs.getValue("objects", Iterable.class)))
-        .containsExactly("src foo/object1.o", "src foo/object2.o");
-  }
+                targetConfig, compilationOutputs.getValue("objects", Iterable::class.java)
+            )
+        )
+            .containsExactly("src foo/object1.o", "src foo/object2.o")
+    }
 
-  @Test
-  public void testObjectsWrongExtension() throws Exception {
-    doTestCcOutputsWrongExtension("object1", "objects");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testObjectsWrongExtension() {
+        doTestCcOutputsWrongExtension("object1", "objects")
+    }
 
-  @Test
-  public void testPicObjectsWrongExtension() throws Exception {
-    doTestCcOutputsWrongExtension("pic_object1", "pic_objects");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testPicObjectsWrongExtension() {
+        doTestCcOutputsWrongExtension("pic_object1", "pic_objects")
+    }
 
-  @Test
-  public void testObjectsRightExtension() throws Exception {
-    doTestCcOutputsRightExtension("object1");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testObjectsRightExtension() {
+        doTestCcOutputsRightExtension("object1")
+    }
 
-  @Test
-  public void testPicObjectsRightExtension() throws Exception {
-    doTestCcOutputsRightExtension("pic_object1");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testPicObjectsRightExtension() {
+        doTestCcOutputsRightExtension("pic_object1")
+    }
 
-  @Test
-  public void testCreateOnlyPic() throws Exception {
-    getAnalysisMock()
-        .ccSupport()
-        .setupCcToolchainConfig(
-            mockToolsConfig, CcToolchainConfig.builder().withFeatures(CppRuleClasses.SUPPORTS_PIC));
-    createFilesForTestingCompilation(
-        scratch, "tools/build_defs/foo", "disallow_nopic_outputs=True");
-    assertThat(getConfiguredTarget("//foo:bin")).isNotNull();
-    ConfiguredTarget target = getConfiguredTarget("//foo:starlark_lib");
-    assertThat(getFilenamesToBuild(target)).doesNotContain("starlark_lib.o");
-    assertThat(getFilenamesToBuild(target)).contains("starlark_lib.pic.o");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCreateOnlyPic() {
+        getAnalysisMock()
+            .ccSupport()
+            .setupCcToolchainConfig(
+                mockToolsConfig, CcToolchainConfig.builder().withFeatures(CppRuleClasses.SUPPORTS_PIC)
+            )
+        createFilesForTestingCompilation(
+            scratch, "tools/build_defs/foo", "disallow_nopic_outputs=True"
+        )
+        assertThat(getConfiguredTarget("//foo:bin")).isNotNull()
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:starlark_lib")
+        Truth.assertThat(getFilenamesToBuild(target)).doesNotContain("starlark_lib.o")
+        Truth.assertThat(getFilenamesToBuild(target)).contains("starlark_lib.pic.o")
+    }
 
-  @Test
-  public void testCreateOnlyNoPic() throws Exception {
-    createFilesForTestingCompilation(scratch, "tools/build_defs/foo", "disallow_pic_outputs=True");
-    assertThat(getConfiguredTarget("//foo:bin")).isNotNull();
-    ConfiguredTarget target = getConfiguredTarget("//foo:starlark_lib");
-    assertThat(getFilenamesToBuild(target)).contains("starlark_lib.o");
-    assertThat(getFilenamesToBuild(target)).doesNotContain("starlark_lib.pic.o");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCreateOnlyNoPic() {
+        createFilesForTestingCompilation(scratch, "tools/build_defs/foo", "disallow_pic_outputs=True")
+        assertThat(getConfiguredTarget("//foo:bin")).isNotNull()
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:starlark_lib")
+        Truth.assertThat(getFilenamesToBuild(target)).contains("starlark_lib.o")
+        Truth.assertThat(getFilenamesToBuild(target)).doesNotContain("starlark_lib.pic.o")
+    }
 
-  @Test
-  public void testCreatePicAndNoPic() throws Exception {
-    getAnalysisMock()
-        .ccSupport()
-        .setupCcToolchainConfig(
-            mockToolsConfig, CcToolchainConfig.builder().withFeatures(CppRuleClasses.SUPPORTS_PIC));
-    createFilesForTestingCompilation(scratch, "tools/build_defs/foo", "");
-    useConfiguration("--compilation_mode=opt");
-    assertThat(getConfiguredTarget("//foo:bin")).isNotNull();
-    ConfiguredTarget target = getConfiguredTarget("//foo:starlark_lib");
-    assertThat(getFilenamesToBuild(target)).contains("starlark_lib.pic.o");
-    assertThat(getFilenamesToBuild(target)).contains("starlark_lib.o");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCreatePicAndNoPic() {
+        getAnalysisMock()
+            .ccSupport()
+            .setupCcToolchainConfig(
+                mockToolsConfig, CcToolchainConfig.builder().withFeatures(CppRuleClasses.SUPPORTS_PIC)
+            )
+        createFilesForTestingCompilation(scratch, "tools/build_defs/foo", "")
+        useConfiguration("--compilation_mode=opt")
+        assertThat(getConfiguredTarget("//foo:bin")).isNotNull()
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:starlark_lib")
+        Truth.assertThat(getFilenamesToBuild(target)).contains("starlark_lib.pic.o")
+        Truth.assertThat(getFilenamesToBuild(target)).contains("starlark_lib.o")
+    }
 
-  @Test
-  public void testDoNotCreateEitherPicOrNoPic() throws Exception {
-    createFilesForTestingCompilation(
-        scratch, "tools/build_defs/foo", "disallow_nopic_outputs=True, disallow_pic_outputs=True");
-    reporter.removeHandler(failFastHandler);
-    getConfiguredTarget("//foo:bin");
-    assertContainsEvent("Either PIC or no PIC actions have to be created.");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDoNotCreateEitherPicOrNoPic() {
+        createFilesForTestingCompilation(
+            scratch, "tools/build_defs/foo", "disallow_nopic_outputs=True, disallow_pic_outputs=True"
+        )
+        reporter.removeHandler(failFastHandler)
+        getConfiguredTarget("//foo:bin")
+        assertContainsEvent("Either PIC or no PIC actions have to be created.")
+    }
 
-  @Test
-  public void testCreateStaticLibraries() throws Exception {
-    getAnalysisMock()
-        .ccSupport()
-        .setupCcToolchainConfig(
-            mockToolsConfig,
-            CcToolchainConfig.builder()
-                .withFeatures(CppRuleClasses.SUPPORTS_DYNAMIC_LINKER, CppRuleClasses.SUPPORTS_PIC));
-    createFilesForTestingLinking(scratch, "tools/build_defs/foo", /* linkProviderLines= */ "");
-    assertThat(getConfiguredTarget("//foo:starlark_lib")).isNotNull();
-    ConfiguredTarget target = getConfiguredTarget("//foo:starlark_lib");
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCreateStaticLibraries() {
+        getAnalysisMock()
+            .ccSupport()
+            .setupCcToolchainConfig(
+                mockToolsConfig,
+                CcToolchainConfig.builder()
+                    .withFeatures(CppRuleClasses.SUPPORTS_DYNAMIC_LINKER, CppRuleClasses.SUPPORTS_PIC)
+            )
+        createFilesForTestingLinking(scratch, "tools/build_defs/foo",  /* linkProviderLines= */"")
+        assertThat(getConfiguredTarget("//foo:starlark_lib")).isNotNull()
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:starlark_lib")
+        com.google.common.truth.Subject.contains("libstarlark_lib.a")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDoNotCreateStaticLibraries() {
+        createFilesForTestingLinking(scratch, "tools/build_defs/foo", "disallow_static_libraries=True")
+        assertThat(getConfiguredTarget("//foo:starlark_lib")).isNotNull()
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:starlark_lib")
+        assertThat(
             getFilesToBuild(target).toList().stream()
                 .map(Artifact::getFilename)
-                .collect(ImmutableList.toImmutableList()))
-        .contains("libstarlark_lib.a");
-  }
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
+        )
+            .doesNotContain("libstarlark_lib.a")
+    }
 
-  @Test
-  public void testDoNotCreateStaticLibraries() throws Exception {
-    createFilesForTestingLinking(scratch, "tools/build_defs/foo", "disallow_static_libraries=True");
-    assertThat(getConfiguredTarget("//foo:starlark_lib")).isNotNull();
-    ConfiguredTarget target = getConfiguredTarget("//foo:starlark_lib");
-    assertThat(
-            getFilesToBuild(target).toList().stream()
-                .map(Artifact::getFilename)
-                .collect(ImmutableList.toImmutableList()))
-        .doesNotContain("libstarlark_lib.a");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCcNativeRuleDependingOnStarlarkDefinedRule() {
+        createFiles(scratch, "tools/build_defs/cc")
+        assertThat(getConfiguredTarget("//foo:bin")).isNotNull()
+    }
 
-  private static ImmutableList<String> getFilenamesToBuild(ConfiguredTarget target) {
-    return getFilesToBuild(target).toList().stream()
-        .map(Artifact::getFilename)
-        .collect(ImmutableList.toImmutableList());
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testUserCompileFlagsInRulesApi() {
+        createFilesForTestingCompilation(
+            scratch, "tools/build_defs/foo", "user_compile_flags=['-COMPILATION_OPTION']"
+        )
+        assertThat(getConfiguredTarget("//foo:bin")).isNotNull()
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:starlark_lib")
+        val action: CppCompileAction =
+            getGeneratingAction(artifactByPath(getFilesToBuild(target), ".o")) as CppCompileAction
+        com.google.common.truth.Subject.contains("-COMPILATION_OPTION")
+    }
 
-  @Test
-  public void testCcNativeRuleDependingOnStarlarkDefinedRule() throws Exception {
-    createFiles(scratch, "tools/build_defs/cc");
-    assertThat(getConfiguredTarget("//foo:bin")).isNotNull();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testIncludeDirs() {
+        createFilesForTestingCompilation(
+            scratch, "tools/build_defs/foo", "includes=['foo/bar', 'baz/qux']"
+        )
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:starlark_lib")
+        assertThat(target).isNotNull()
+        val action: CppCompileAction =
+            getGeneratingAction(artifactByPath(getFilesToBuild(target), ".o")) as CppCompileAction
+        assertThat(action.getArguments()).containsAtLeast("-Ifoo/bar", "-Ibaz/qux")
+    }
 
-  @Test
-  public void testUserCompileFlagsInRulesApi() throws Exception {
-    createFilesForTestingCompilation(
-        scratch, "tools/build_defs/foo", "user_compile_flags=['-COMPILATION_OPTION']");
-    assertThat(getConfiguredTarget("//foo:bin")).isNotNull();
-    ConfiguredTarget target = getConfiguredTarget("//foo:starlark_lib");
-    CppCompileAction action =
-        (CppCompileAction) getGeneratingAction(artifactByPath(getFilesToBuild(target), ".o"));
-    assertThat(action.getArguments()).contains("-COMPILATION_OPTION");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSystemIncludeDirs() {
+        createFilesForTestingCompilation(
+            scratch, "tools/build_defs/foo", "system_includes=['foo/bar', 'baz/qux']"
+        )
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:starlark_lib")
+        assertThat(target).isNotNull()
+        val action: CppCompileAction =
+            getGeneratingAction(artifactByPath(getFilesToBuild(target), ".o")) as CppCompileAction
+        assertThat(action.getArguments())
+            .containsAtLeast("-isystem", "foo/bar", "-isystem", "baz/qux")
+            .inOrder()
+    }
 
-  @Test
-  public void testIncludeDirs() throws Exception {
-    createFilesForTestingCompilation(
-        scratch, "tools/build_defs/foo", "includes=['foo/bar', 'baz/qux']");
-    ConfiguredTarget target = getConfiguredTarget("//foo:starlark_lib");
-    assertThat(target).isNotNull();
-    CppCompileAction action =
-        (CppCompileAction) getGeneratingAction(artifactByPath(getFilesToBuild(target), ".o"));
-    assertThat(action.getArguments()).containsAtLeast("-Ifoo/bar", "-Ibaz/qux");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testQuoteIncludeDirs() {
+        createFilesForTestingCompilation(
+            scratch, "tools/build_defs/foo", "quote_includes=['foo/bar', 'baz/qux']"
+        )
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:starlark_lib")
+        assertThat(target).isNotNull()
+        val action: CppCompileAction =
+            getGeneratingAction(artifactByPath(getFilesToBuild(target), ".o")) as CppCompileAction
+        assertThat(action.getArguments())
+            .containsAtLeast("-iquote", "foo/bar", "-iquote", "baz/qux")
+            .inOrder()
+    }
 
-  @Test
-  public void testSystemIncludeDirs() throws Exception {
-    createFilesForTestingCompilation(
-        scratch, "tools/build_defs/foo", "system_includes=['foo/bar', 'baz/qux']");
-    ConfiguredTarget target = getConfiguredTarget("//foo:starlark_lib");
-    assertThat(target).isNotNull();
-    CppCompileAction action =
-        (CppCompileAction) getGeneratingAction(artifactByPath(getFilesToBuild(target), ".o"));
-    assertThat(action.getArguments())
-        .containsAtLeast("-isystem", "foo/bar", "-isystem", "baz/qux")
-        .inOrder();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFrameworkIncludeDirs() {
+        createFilesForTestingCompilation(
+            scratch, "tools/build_defs/foo", "framework_includes=['foo/bar', 'baz/qux']"
+        )
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:starlark_lib")
+        assertThat(target).isNotNull()
+        val action: CppCompileAction =
+            getGeneratingAction(artifactByPath(getFilesToBuild(target), ".o")) as CppCompileAction
+        assertThat(action.getArguments()).containsAtLeast("-Ffoo/bar", "-Fbaz/qux").inOrder()
+    }
 
-  @Test
-  public void testQuoteIncludeDirs() throws Exception {
-    createFilesForTestingCompilation(
-        scratch, "tools/build_defs/foo", "quote_includes=['foo/bar', 'baz/qux']");
-    ConfiguredTarget target = getConfiguredTarget("//foo:starlark_lib");
-    assertThat(target).isNotNull();
-    CppCompileAction action =
-        (CppCompileAction) getGeneratingAction(artifactByPath(getFilesToBuild(target), ".o"));
-    assertThat(action.getArguments())
-        .containsAtLeast("-iquote", "foo/bar", "-iquote", "baz/qux")
-        .inOrder();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDefines() {
+        createFilesForTestingCompilation(
+            scratch, "tools/build_defs/foo", "defines=['DEFINE1', 'DEFINE2']"
+        )
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:starlark_lib")
+        assertThat(target).isNotNull()
+        val action: CppCompileAction =
+            getGeneratingAction(artifactByPath(getFilesToBuild(target), ".o")) as CppCompileAction
+        assertThat(action.getArguments()).containsAtLeast("-DDEFINE1", "-DDEFINE2")
+    }
 
-  @Test
-  public void testFrameworkIncludeDirs() throws Exception {
-    createFilesForTestingCompilation(
-        scratch, "tools/build_defs/foo", "framework_includes=['foo/bar', 'baz/qux']");
-    ConfiguredTarget target = getConfiguredTarget("//foo:starlark_lib");
-    assertThat(target).isNotNull();
-    CppCompileAction action =
-        (CppCompileAction) getGeneratingAction(artifactByPath(getFilesToBuild(target), ".o"));
-    assertThat(action.getArguments()).containsAtLeast("-Ffoo/bar", "-Fbaz/qux").inOrder();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLocalDefines() {
+        createFilesForTestingCompilation(
+            scratch, "tools/build_defs/foo", "local_defines=['DEFINE1', 'DEFINE2']"
+        )
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:starlark_lib")
+        assertThat(target).isNotNull()
+        val action: CppCompileAction =
+            getGeneratingAction(artifactByPath(getFilesToBuild(target), ".o")) as CppCompileAction
+        assertThat(action.getArguments()).containsAtLeast("-DDEFINE1", "-DDEFINE2")
+    }
 
-  @Test
-  public void testDefines() throws Exception {
-    createFilesForTestingCompilation(
-        scratch, "tools/build_defs/foo", "defines=['DEFINE1', 'DEFINE2']");
-    ConfiguredTarget target = getConfiguredTarget("//foo:starlark_lib");
-    assertThat(target).isNotNull();
-    CppCompileAction action =
-        (CppCompileAction) getGeneratingAction(artifactByPath(getFilesToBuild(target), ".o"));
-    assertThat(action.getArguments()).containsAtLeast("-DDEFINE1", "-DDEFINE2");
-  }
-
-  @Test
-  public void testLocalDefines() throws Exception {
-    createFilesForTestingCompilation(
-        scratch, "tools/build_defs/foo", "local_defines=['DEFINE1', 'DEFINE2']");
-    ConfiguredTarget target = getConfiguredTarget("//foo:starlark_lib");
-    assertThat(target).isNotNull();
-    CppCompileAction action =
-        (CppCompileAction) getGeneratingAction(artifactByPath(getFilesToBuild(target), ".o"));
-    assertThat(action.getArguments()).containsAtLeast("-DDEFINE1", "-DDEFINE2");
-  }
-
-  @Test
-  public void testIncludePrefix() throws Exception {
-    createFilesForTestingCompilation(
-        scratch, "third_party/tools/build_defs/foo", "include_prefix='prefix'");
-    scratch.file(
-        "third_party/bar/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testIncludePrefix() {
+        createFilesForTestingCompilation(
+            scratch, "third_party/tools/build_defs/foo", "include_prefix='prefix'"
+        )
+        scratch.file(
+            "third_party/bar/BUILD",
+            """
         load("//third_party/tools/build_defs/foo:extension.bzl", "cc_starlark_library")
 
         cc_starlark_library(
@@ -5546,682 +6437,595 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             private_hdrs = ["private_starlark_lib.h"],
             public_hdrs = ["starlark_lib.h"],
         )
-        """);
-    ConfiguredTarget target = getConfiguredTarget("//third_party/bar:starlark_lib");
-    assertThat(target).isNotNull();
-    CcInfo ccInfo = CcInfo.get(target);
-    assertThat(artifactsToStrings(ccInfo.getCcCompilationContext().getDirectPublicHdrs()))
-        .contains(
-            "bin third_party/bar/_virtual_includes/starlark_lib_suffix/prefix/starlark_lib.h");
-  }
-
-  @Test
-  public void testStripIncludePrefix() throws Exception {
-    createFilesForTestingCompilation(
-        scratch, "third_party/tools/build_defs/foo", "strip_include_prefix='v1'");
-    scratch.file(
-        "third_party/bar/BUILD",
-        """
-        load("//third_party/tools/build_defs/foo:extension.bzl", "cc_starlark_library")
-
-        cc_starlark_library(
-            name = "starlark_lib",
-            srcs = ["starlark_lib.cc"],
-            private_hdrs = ["v1/private_starlark_lib.h"],
-            public_hdrs = ["v1/starlark_lib.h"],
+        
+        """.trimIndent()
         )
-        """);
-    ConfiguredTarget target = getConfiguredTarget("//third_party/bar:starlark_lib");
-    assertThat(target).isNotNull();
-    CcInfo ccInfo = CcInfo.get(target);
-    assertThat(artifactsToStrings(ccInfo.getCcCompilationContext().getDirectPublicHdrs()))
-        .contains("bin third_party/bar/_virtual_includes/starlark_lib_suffix/starlark_lib.h");
-  }
-
-  @Test
-  public void testStripIncludePrefixIncludePath() throws Exception {
-    createFilesForTestingCompilation(
-        scratch, "third_party/tools/build_defs/foo", "strip_include_prefix='v1'");
-    scratch.file(
-        "third_party/bar/BUILD",
-        """
-        load("//third_party/tools/build_defs/foo:extension.bzl", "cc_starlark_library")
-
-        cc_starlark_library(
-            name = "starlark_lib",
-            srcs = ["starlark_lib.cc"],
-            private_hdrs = ["v1/private_starlark_lib.h"],
-            public_hdrs = ["v1/starlark_lib.h"],
-        )
-        """);
-    ConfiguredTarget target = getConfiguredTarget("//third_party/bar:starlark_lib");
-    assertThat(target).isNotNull();
-    CcInfo ccInfo = CcInfo.get(target);
-
-    assertThat(ccInfo.getCcCompilationContext().getIncludeDirs())
-        .containsExactly(
-            getTargetConfiguration()
-                .getBinFragment(RepositoryName.MAIN)
-                .getRelative("third_party/bar/_virtual_includes/starlark_lib_suffix"));
-  }
-
-  @Test
-  public void testStripIncludePrefixAndIncludePrefix() throws Exception {
-    createFilesForTestingCompilation(
-        scratch,
-        "third_party/tools/build_defs/foo",
-        "strip_include_prefix='v1', include_prefix='prefix'");
-    scratch.file(
-        "third_party/bar/BUILD",
-        """
-        load("//third_party/tools/build_defs/foo:extension.bzl", "cc_starlark_library")
-
-        cc_starlark_library(
-            name = "starlark_lib",
-            srcs = ["starlark_lib.cc"],
-            private_hdrs = ["v1/private_starlark_lib.h"],
-            public_hdrs = ["v1/starlark_lib.h"],
-        )
-        """);
-    ConfiguredTarget target = getConfiguredTarget("//third_party/bar:starlark_lib");
-    assertThat(target).isNotNull();
-    CcInfo ccInfo = CcInfo.get(target);
-    assertThat(artifactsToStrings(ccInfo.getCcCompilationContext().getDirectPublicHdrs()))
-        .contains(
-            "bin third_party/bar/_virtual_includes/starlark_lib_suffix/prefix/starlark_lib.h");
-  }
-
-  @Test
-  public void testStripIncludePrefixAndIncludePrefixIncludePath() throws Exception {
-    createFilesForTestingCompilation(
-        scratch,
-        "third_party/tools/build_defs/foo",
-        "strip_include_prefix='v1', include_prefix='prefix'");
-    scratch.file(
-        "third_party/bar/BUILD",
-        "load('//third_party/tools/build_defs/foo:extension.bzl', 'cc_starlark_library')",
-        "cc_starlark_library(",
-        "    name = 'starlark_lib',",
-        "    srcs = ['starlark_lib.cc'],",
-        "    public_hdrs = ['v1/starlark_lib.h'],",
-        "    private_hdrs = ['v1/private_starlark_lib.h'],",
-        ")");
-    ConfiguredTarget target = getConfiguredTarget("//third_party/bar:starlark_lib");
-    assertThat(target).isNotNull();
-    CcInfo ccInfo = CcInfo.get(target);
-    assertThat(ccInfo.getCcCompilationContext().getIncludeDirs())
-        .containsExactly(
-            getTargetConfiguration()
-                .getBinFragment(RepositoryName.MAIN)
-                .getRelative("third_party/bar/_virtual_includes/starlark_lib_suffix"));
-  }
-
-  @Test
-  public void testHeaders() throws Exception {
-    createFilesForTestingCompilation(
-        scratch, "tools/build_defs/foo", /* compileProviderLines= */ "");
-    ConfiguredTarget target = getConfiguredTarget("//foo:starlark_lib");
-    assertThat(target).isNotNull();
-    CcInfo ccInfo = CcInfo.get(target);
-    assertThat(artifactsToStrings(ccInfo.getCcCompilationContext().getDeclaredIncludeSrcs()))
-        .containsAtLeast(
-            "src foo/dep2.h", "src foo/starlark_lib.h", "src foo/private_starlark_lib.h");
-    assertThat(artifactsToStrings(ccInfo.getCcCompilationContext().getTextualHdrs()))
-        .containsExactly("src foo/textual_hdr.h");
-  }
-
-  @Test
-  public void testCompileOutputHasSuffix() throws Exception {
-    createFilesForTestingCompilation(
-        scratch, "tools/build_defs/foo", /* compileProviderLines= */ "");
-    ConfiguredTarget target = getConfiguredTarget("//foo:starlark_lib");
-    assertThat(target).isNotNull();
-    assertThat(artifactsToStrings(getFilesToBuild(target)))
-        .contains("bin foo/_objs/starlark_lib_suffix/starlark_lib.o");
-  }
-
-  @Test
-  public void testCompilationContexts() throws Exception {
-    createFilesForTestingCompilation(
-        scratch, "tools/build_defs/foo", /* compileProviderLines= */ "");
-    assertThat(getConfiguredTarget("//foo:bin")).isNotNull();
-    ConfiguredTarget target = getConfiguredTarget("//foo:starlark_lib");
-    CppCompileAction action =
-        (CppCompileAction) getGeneratingAction(artifactByPath(getFilesToBuild(target), ".o"));
-    assertThat(action.getArguments()).containsAtLeast("-DDEFINE_DEP1", "-DDEFINE_DEP2");
-  }
-
-  @Test
-  public void testLinkingOutputs() throws Exception {
-    createFiles(scratch, "tools/build_defs/foo");
-    ConfiguredTarget target = getConfiguredTarget("//foo:starlark_lib");
-    assertThat(target).isNotNull();
-    @SuppressWarnings("unchecked")
-    Sequence<StarlarkInfo> libraries =
-        (Sequence<StarlarkInfo>) getMyInfoFromTarget(target).getValue("libraries");
-    assertThat(
-            libraries.stream()
-                .map(LibraryToLink::wrap)
-                .map(x -> x.getResolvedSymlinkDynamicLibrary().getFilename())
-                .collect(ImmutableList.toImmutableList()))
-        .contains("libstarlark_lib.so");
-  }
-
-  @Test
-  public void testUserLinkFlags() throws Exception {
-    createFilesForTestingLinking(
-        scratch, "tools/build_defs/foo", "user_link_flags=['-LINKING_OPTION']");
-    ConfiguredTarget target = getConfiguredTarget("//foo:starlark_lib");
-    assertThat(target).isNotNull();
-    assertThat(CcInfo.get(target).getCcLinkingContext().getFlattenedUserLinkFlags())
-        .contains("-LINKING_OPTION");
-  }
-
-  @Test
-  public void testLinkingContexts() throws Exception {
-    createFilesForTestingLinking(scratch, "tools/build_defs/foo", /* linkProviderLines= */ "");
-    assertThat(getConfiguredTarget("//foo:bin")).isNotNull();
-    ConfiguredTarget target = getConfiguredTarget("//foo:bin");
-    SpawnAction action =
-        (SpawnAction) getGeneratingAction(artifactByPath(getFilesToBuild(target), "bin"));
-    assertThat(action.getArguments()).containsAtLeast("-DEP1_LINKOPT", "-DEP2_LINKOPT");
-  }
-
-  @Test
-  public void testAlwayslinkTrue() throws Exception {
-    createFilesForTestingLinking(scratch, "tools/build_defs/foo", "alwayslink=True");
-    ConfiguredTarget target = getConfiguredTarget("//foo:starlark_lib");
-    assertThat(target).isNotNull();
-    assertThat(
-            CcInfo.get(target).getCcLinkingContext().getLibraries().toList().stream()
-                .filter(LibraryToLink::getAlwayslink)
-                .collect(ImmutableList.toImmutableList()))
-        .hasSize(1);
-  }
-
-  @Test
-  public void testAlwayslinkFalse() throws Exception {
-    createFilesForTestingLinking(scratch, "tools/build_defs/foo", "alwayslink=False");
-    ConfiguredTarget target = getConfiguredTarget("//foo:starlark_lib");
-    assertThat(target).isNotNull();
-    assertThat(
-            CcInfo.get(target).getCcLinkingContext().getLibraries().toList().stream()
-                .filter(LibraryToLink::getAlwayslink)
-                .collect(ImmutableList.toImmutableList()))
-        .isEmpty();
-  }
-
-  @Test
-  public void testAdditionalLinkingInputs() throws Exception {
-    createFilesForTestingLinking(
-        scratch, "tools/build_defs/foo", "additional_inputs=ctx.files._additional_inputs");
-    ConfiguredTarget target = getConfiguredTarget("//foo:starlark_lib");
-    assertThat(target).isNotNull();
-    assertThat(CcInfo.get(target).getCcLinkingContext().getNonCodeInputs().toList()).hasSize(1);
-  }
-
-  @Test
-  public void testAdditionalCompilationInputs() throws Exception {
-    createFilesForTestingCompilation(
-        scratch, "tools/build_defs/foo", "additional_inputs=ctx.files._additional_compiler_inputs");
-    ConfiguredTarget target = getConfiguredTarget("//foo:starlark_lib");
-    assertThat(target).isNotNull();
-    CppCompileAction action =
-        (CppCompileAction) getGeneratingAction(artifactByPath(getFilesToBuild(target), ".o"));
-    assertThat(artifactsToStrings(action.getMandatoryInputs()))
-        .contains("src foo/extra_compiler_input");
-  }
-
-  @Test
-  public void testPossibleSrcsExtensions() throws Exception {
-    doTestPossibleExtensionsOfSrcsAndHdrs(
-        "srcs", CppFileTypes.ALL_C_CLASS_SOURCE.including(CppFileTypes.ASSEMBLER).getExtensions());
-  }
-
-  @Test
-  public void testPossiblePrivateHdrExtensions() throws Exception {
-    doTestPossibleExtensionsOfSrcsAndHdrs("private_hdrs", CppFileTypes.CPP_HEADER.getExtensions());
-  }
-
-  @Test
-  public void testPossiblePublicHdrExtensions() throws Exception {
-    doTestPossibleExtensionsOfSrcsAndHdrs("public_hdrs", CppFileTypes.CPP_HEADER.getExtensions());
-  }
-
-  @Test
-  public void testTreeArtifactSrcs() throws Exception {
-    doTestTreeAtrifactInSrcsAndHdrs("srcs");
-  }
-
-  @Test
-  public void testTreeArtifactPrivateHdrs() throws Exception {
-    doTestTreeAtrifactInSrcsAndHdrs("private_hdrs");
-  }
-
-  @Test
-  public void testTreeArtifactPublicHdrs() throws Exception {
-    doTestTreeAtrifactInSrcsAndHdrs("public_hdrs");
-  }
-
-  private static void createFilesForTestingCompilation(
-      Scratch scratch, String bzlFilePath, String compileProviderLines) throws Exception {
-    createFiles(scratch, bzlFilePath, compileProviderLines, "");
-  }
-
-  private static void createFilesForTestingLinking(
-      Scratch scratch, String bzlFilePath, String linkProviderLines) throws Exception {
-    createFiles(scratch, bzlFilePath, "", linkProviderLines);
-  }
-
-  private static void createFiles(Scratch scratch, String bzlFilePath) throws Exception {
-    createFiles(scratch, bzlFilePath, "", "");
-  }
-
-  private static void createFiles(
-      Scratch scratch, String bzlFilePath, String compileProviderLines, String linkProviderLines)
-      throws Exception {
-    String fragments = "    fragments = ['google_cpp', 'cpp'],";
-    if (AnalysisMock.get().isThisBazel()) {
-      fragments = "    fragments = ['cpp'],";
+        val target: ConfiguredTarget = getConfiguredTarget("//third_party/bar:starlark_lib")
+        assertThat(target).isNotNull()
+        val ccInfo: CcInfo = CcInfo.get(target)
+        Truth.assertThat(artifactsToStrings(ccInfo.getCcCompilationContext().getDirectPublicHdrs()))
+            .contains(
+                "bin third_party/bar/_virtual_includes/starlark_lib_suffix/prefix/starlark_lib.h"
+            )
     }
-    scratch.overwriteFile(bzlFilePath + "/BUILD");
-    scratch.file(
-        bzlFilePath + "/extension.bzl",
-        "load('//myinfo:myinfo.bzl', 'MyInfo')",
-        "load('@rules_cc//cc/common:cc_info.bzl', 'CcInfo')",
-        "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
-        "def _cc_aspect_impl(target, ctx):",
-        "    if ctx.attr._cc_toolchain:",
-        "      toolchain = ctx.attr._cc_toolchain[cc_common.CcToolchainInfo]",
-        "    else:",
-        "      toolchain = ctx.toolchains['" + TestConstants.CPP_TOOLCHAIN_TYPE + "'].cc",
-        "    feature_configuration = cc_common.configure_features(",
-        "        ctx = ctx,",
-        "        cc_toolchain = toolchain,",
-        "        requested_features = ctx.features,",
-        "        unsupported_features = ctx.disabled_features,",
-        "    )",
-        "    (compilation_context, compilation_outputs) = cc_common.compile(",
-        "        actions = ctx.actions,",
-        "        feature_configuration = feature_configuration,",
-        "        cc_toolchain = toolchain,",
-        "        name = ctx.label.name + '_aspect',",
-        "        srcs = ctx.rule.files.srcs,",
-        "        public_hdrs = ctx.rule.files.hdrs,",
-        "    )",
-        "    (linking_context, linking_outputs) = (",
-        "        cc_common.create_linking_context_from_compilation_outputs(",
-        "            actions = ctx.actions,",
-        "            feature_configuration = feature_configuration,",
-        "            name = ctx.label.name + '_aspect',",
-        "            cc_toolchain = toolchain,",
-        "            compilation_outputs = compilation_outputs,",
-        "        )",
-        "    )",
-        "    return []",
-        "_cc_aspect = aspect(",
-        "    implementation = _cc_aspect_impl,",
-        "    attrs = {",
-        "        '_cc_toolchain': attr.label(default ="
-            + " '@bazel_tools//tools/cpp:current_cc_toolchain'),",
-        "    },",
-        fragments,
-        "    toolchains = ['" + TestConstants.CPP_TOOLCHAIN_TYPE + "']",
-        ")",
-        "def _cc_starlark_library_impl(ctx):",
-        "    dep_compilation_contexts = []",
-        "    dep_linking_contexts = []",
-        "    for dep in ctx.attr._deps:",
-        "        dep_compilation_contexts.append(dep[CcInfo].compilation_context)",
-        "        dep_linking_contexts.append(dep[CcInfo].linking_context)",
-        "    toolchain = ctx.toolchains['" + TestConstants.CPP_TOOLCHAIN_TYPE + "'].cc",
-        "    feature_configuration = cc_common.configure_features(",
-        "        ctx = ctx,",
-        "        cc_toolchain=toolchain,",
-        "        requested_features = ctx.features,",
-        "        unsupported_features = ctx.disabled_features)",
-        "    foo_dict = {'string_variable': 'foo',",
-        "            'string_sequence_variable' : ['foo'],",
-        "            'string_depset_variable': depset(['foo'])}",
-        "    (compilation_context, compilation_outputs) = cc_common.compile(",
-        "        actions=ctx.actions,",
-        "        feature_configuration=feature_configuration,",
-        "        cc_toolchain=toolchain,",
-        "        srcs=ctx.files.srcs,",
-        "        name=ctx.label.name + '_suffix',",
-        "        compilation_contexts = dep_compilation_contexts,",
-        "        public_hdrs=ctx.files.public_hdrs,",
-        "        textual_hdrs=ctx.files.textual_hdrs,",
-        "        private_hdrs=ctx.files.private_hdrs" + (compileProviderLines.isEmpty() ? "" : ","),
-        "        " + compileProviderLines,
-        "    )",
-        "    (linking_context,",
-        "     linking_outputs) = cc_common.create_linking_context_from_compilation_outputs(",
-        "        actions=ctx.actions,",
-        "        feature_configuration=feature_configuration,",
-        "        compilation_outputs=compilation_outputs,",
-        "        name = ctx.label.name,",
-        "        linking_contexts = dep_linking_contexts,",
-        "        cc_toolchain=toolchain" + (linkProviderLines.isEmpty() ? "" : ","),
-        "        " + linkProviderLines,
-        "    )",
-        "    files_to_build = []",
-        "    files_to_build.extend(compilation_outputs.pic_objects)",
-        "    files_to_build.extend(compilation_outputs.objects)",
-        "    library_to_link = None",
-        "    if len(ctx.files.srcs) > 0:",
-        "        library_to_link = linking_outputs.library_to_link",
-        "        if library_to_link.pic_static_library != None:",
-        "            files_to_build.append(library_to_link.pic_static_library)",
-        "        if library_to_link.static_library != None:",
-        "            files_to_build.append(library_to_link.static_library)",
-        "        if library_to_link.dynamic_library != None:",
-        "            files_to_build.append(library_to_link.dynamic_library)",
-        "    return [MyInfo(libraries=[library_to_link]),",
-        "            DefaultInfo(files=depset(files_to_build)),",
-        "            CcInfo(compilation_context=compilation_context,",
-        "                   linking_context=linking_context)]",
-        "cc_starlark_library = rule(",
-        "    implementation = _cc_starlark_library_impl,",
-        "    attrs = {",
-        "      'srcs': attr.label_list(allow_files=True),",
-        "      'public_hdrs': attr.label_list(allow_files=True),",
-        "      'textual_hdrs': attr.label_list(allow_files=True),",
-        "      'private_hdrs': attr.label_list(allow_files=True),",
-        "      '_additional_inputs': attr.label_list(allow_files=True,"
-            + " default=['//foo:script.lds']),",
-        "      '_additional_compiler_inputs': attr.label_list(allow_files=True,"
-            + " default=['//foo:extra_compiler_input']),",
-        "      '_deps': attr.label_list(default=['//foo:dep1', '//foo:dep2']),",
-        "      'aspect_deps': attr.label_list(aspects=[_cc_aspect]),",
-        "    },",
-        fragments,
-        "    toolchains = ['" + TestConstants.CPP_TOOLCHAIN_TYPE + "']",
-        ")");
-    scratch.file(
-        "foo/BUILD",
-        "load('//" + bzlFilePath + ":extension.bzl', 'cc_starlark_library')",
-        "load('@rules_cc//cc:cc_binary.bzl', 'cc_binary')",
-        "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
-        "exports_files(['script.lds', 'extra_compiler_input'])",
-        "cc_library(",
-        "    name = 'dep1',",
-        "    srcs = ['dep1.cc'],",
-        "    hdrs = ['dep1.h'],",
-        "    defines = ['DEFINE_DEP1'],",
-        "    linkopts = ['-DEP1_LINKOPT'],",
-        ")",
-        "cc_library(",
-        "    name = 'dep2',",
-        "    srcs = ['dep2.cc'],",
-        "    hdrs = ['dep2.h'],",
-        "    defines = ['DEFINE_DEP2'],",
-        "    linkopts = ['-DEP2_LINKOPT'],",
-        ")",
-        "cc_starlark_library(",
-        "    name = 'starlark_lib',",
-        "    srcs = ['starlark_lib.cc'],",
-        "    public_hdrs = ['starlark_lib.h'],",
-        "    textual_hdrs = ['textual_hdr.h'],",
-        "    private_hdrs = ['private_starlark_lib.h'],",
-        ")",
-        "cc_binary(",
-        "    name = 'bin',",
-        "    deps = ['starlark_lib'],",
-        ")");
-  }
 
-  @Test
-  public void testTransitiveLinkWithDeps() throws Exception {
-    setupTestTransitiveLink(scratch, "linking_contexts = dep_linking_contexts");
-    ConfiguredTarget target = getConfiguredTarget("//foo:bin");
-    assertThat(target).isNotNull();
-    Artifact executable = (Artifact) getMyInfoFromTarget(target).getValue("executable");
-    assertThat(artifactsToStrings(getGeneratingAction(executable).getInputs()))
-        .containsAtLeast("bin foo/libdep1.a", "bin foo/libdep2.a");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStripIncludePrefix() {
+        createFilesForTestingCompilation(
+            scratch, "third_party/tools/build_defs/foo", "strip_include_prefix='v1'"
+        )
+        scratch.file(
+            "third_party/bar/BUILD",
+            """
+        load("//third_party/tools/build_defs/foo:extension.bzl", "cc_starlark_library")
 
-  @Test
-  public void testTransitiveLinkForDynamicLibrary() throws Exception {
-    setupTestTransitiveLink(scratch, "output_type = 'dynamic_library'");
-    ConfiguredTarget target = getConfiguredTarget("//foo:bin");
-    assertThat(target).isNotNull();
-    LibraryToLink library =
-        LibraryToLink.wrap((StarlarkInfo) getMyInfoFromTarget(target).getValue("library"));
-    assertThat(library).isNotNull();
-    Object executable = getMyInfoFromTarget(target).getValue("executable");
-    assertThat(Starlark.isNullOrNone(executable)).isTrue();
-  }
+        cc_starlark_library(
+            name = "starlark_lib",
+            srcs = ["starlark_lib.cc"],
+            private_hdrs = ["v1/private_starlark_lib.h"],
+            public_hdrs = ["v1/starlark_lib.h"],
+        )
+        
+        """.trimIndent()
+        )
+        val target: ConfiguredTarget = getConfiguredTarget("//third_party/bar:starlark_lib")
+        assertThat(target).isNotNull()
+        val ccInfo: CcInfo = CcInfo.get(target)
+        Truth.assertThat(artifactsToStrings(ccInfo.getCcCompilationContext().getDirectPublicHdrs()))
+            .contains("bin third_party/bar/_virtual_includes/starlark_lib_suffix/starlark_lib.h")
+    }
 
-  @Test
-  public void testCustomNameOutputArtifact() throws Exception {
-    createCcBinRule(
-        scratch,
-        /* internalApi= */ true,
-        "output_type = 'dynamic_library'",
-        " main_output=ctx.actions.declare_file('custom_name.so')");
-    scratch.file(
-        "foo/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStripIncludePrefixIncludePath() {
+        createFilesForTestingCompilation(
+            scratch, "third_party/tools/build_defs/foo", "strip_include_prefix='v1'"
+        )
+        scratch.file(
+            "third_party/bar/BUILD",
+            """
+        load("//third_party/tools/build_defs/foo:extension.bzl", "cc_starlark_library")
+
+        cc_starlark_library(
+            name = "starlark_lib",
+            srcs = ["starlark_lib.cc"],
+            private_hdrs = ["v1/private_starlark_lib.h"],
+            public_hdrs = ["v1/starlark_lib.h"],
+        )
+        
+        """.trimIndent()
+        )
+        val target: ConfiguredTarget = getConfiguredTarget("//third_party/bar:starlark_lib")
+        assertThat(target).isNotNull()
+        val ccInfo: CcInfo = CcInfo.get(target)
+
+        assertThat(ccInfo.getCcCompilationContext().getIncludeDirs())
+            .containsExactly(
+                targetConfiguration
+                    .getBinFragment(RepositoryName.MAIN)
+                    .getRelative("third_party/bar/_virtual_includes/starlark_lib_suffix")
+            )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStripIncludePrefixAndIncludePrefix() {
+        createFilesForTestingCompilation(
+            scratch,
+            "third_party/tools/build_defs/foo",
+            "strip_include_prefix='v1', include_prefix='prefix'"
+        )
+        scratch.file(
+            "third_party/bar/BUILD",
+            """
+        load("//third_party/tools/build_defs/foo:extension.bzl", "cc_starlark_library")
+
+        cc_starlark_library(
+            name = "starlark_lib",
+            srcs = ["starlark_lib.cc"],
+            private_hdrs = ["v1/private_starlark_lib.h"],
+            public_hdrs = ["v1/starlark_lib.h"],
+        )
+        
+        """.trimIndent()
+        )
+        val target: ConfiguredTarget = getConfiguredTarget("//third_party/bar:starlark_lib")
+        assertThat(target).isNotNull()
+        val ccInfo: CcInfo = CcInfo.get(target)
+        Truth.assertThat(artifactsToStrings(ccInfo.getCcCompilationContext().getDirectPublicHdrs()))
+            .contains(
+                "bin third_party/bar/_virtual_includes/starlark_lib_suffix/prefix/starlark_lib.h"
+            )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStripIncludePrefixAndIncludePrefixIncludePath() {
+        createFilesForTestingCompilation(
+            scratch,
+            "third_party/tools/build_defs/foo",
+            "strip_include_prefix='v1', include_prefix='prefix'"
+        )
+        scratch.file(
+            "third_party/bar/BUILD",
+            "load('//third_party/tools/build_defs/foo:extension.bzl', 'cc_starlark_library')",
+            "cc_starlark_library(",
+            "    name = 'starlark_lib',",
+            "    srcs = ['starlark_lib.cc'],",
+            "    public_hdrs = ['v1/starlark_lib.h'],",
+            "    private_hdrs = ['v1/private_starlark_lib.h'],",
+            ")"
+        )
+        val target: ConfiguredTarget = getConfiguredTarget("//third_party/bar:starlark_lib")
+        assertThat(target).isNotNull()
+        val ccInfo: CcInfo = CcInfo.get(target)
+        assertThat(ccInfo.getCcCompilationContext().getIncludeDirs())
+            .containsExactly(
+                targetConfiguration
+                    .getBinFragment(RepositoryName.MAIN)
+                    .getRelative("third_party/bar/_virtual_includes/starlark_lib_suffix")
+            )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testHeaders() {
+        createFilesForTestingCompilation(
+            scratch, "tools/build_defs/foo",  /* compileProviderLines= */""
+        )
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:starlark_lib")
+        assertThat(target).isNotNull()
+        val ccInfo: CcInfo = CcInfo.get(target)
+        Truth.assertThat(artifactsToStrings(ccInfo.getCcCompilationContext().getDeclaredIncludeSrcs()))
+            .containsAtLeast(
+                "src foo/dep2.h", "src foo/starlark_lib.h", "src foo/private_starlark_lib.h"
+            )
+        Truth.assertThat(artifactsToStrings(ccInfo.getCcCompilationContext().getTextualHdrs()))
+            .containsExactly("src foo/textual_hdr.h")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCompileOutputHasSuffix() {
+        createFilesForTestingCompilation(
+            scratch, "tools/build_defs/foo",  /* compileProviderLines= */""
+        )
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:starlark_lib")
+        assertThat(target).isNotNull()
+        Truth.assertThat(artifactsToStrings(getFilesToBuild(target)))
+            .contains("bin foo/_objs/starlark_lib_suffix/starlark_lib.o")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCompilationContexts() {
+        createFilesForTestingCompilation(
+            scratch, "tools/build_defs/foo",  /* compileProviderLines= */""
+        )
+        assertThat(getConfiguredTarget("//foo:bin")).isNotNull()
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:starlark_lib")
+        val action: CppCompileAction =
+            getGeneratingAction(artifactByPath(getFilesToBuild(target), ".o")) as CppCompileAction
+        assertThat(action.getArguments()).containsAtLeast("-DDEFINE_DEP1", "-DDEFINE_DEP2")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLinkingOutputs() {
+        createFiles(scratch, "tools/build_defs/foo")
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:starlark_lib")
+        assertThat(target).isNotNull()
+        val libraries: net.starlark.java.eval.Sequence<StarlarkInfo?> =
+            getMyInfoFromTarget(target).getValue("libraries") as net.starlark.java.eval.Sequence<StarlarkInfo?>
+        Truth.assertThat(
+            libraries.stream()
+                .map<Any?>(LibraryToLink::wrap)
+                .map<Any?> { x: Any? -> x.getResolvedSymlinkDynamicLibrary().getFilename() }
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<Any?>()))
+            .contains("libstarlark_lib.so")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testUserLinkFlags() {
+        createFilesForTestingLinking(
+            scratch, "tools/build_defs/foo", "user_link_flags=['-LINKING_OPTION']"
+        )
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:starlark_lib")
+        assertThat(target).isNotNull()
+        com.google.common.truth.Subject.contains("-LINKING_OPTION")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLinkingContexts() {
+        createFilesForTestingLinking(scratch, "tools/build_defs/foo",  /* linkProviderLines= */"")
+        assertThat(getConfiguredTarget("//foo:bin")).isNotNull()
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:bin")
+        val action: SpawnAction =
+            getGeneratingAction(artifactByPath(getFilesToBuild(target), "bin")) as SpawnAction
+        assertThat(action.getArguments()).containsAtLeast("-DEP1_LINKOPT", "-DEP2_LINKOPT")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAlwayslinkTrue() {
+        createFilesForTestingLinking(scratch, "tools/build_defs/foo", "alwayslink=True")
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:starlark_lib")
+        assertThat(target).isNotNull()
+        assertThat(
+            CcInfo.get(target).getCcLinkingContext().getLibraries().toList().stream()
+                .filter(LibraryToLink::getAlwayslink)
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
+        )
+            .hasSize(1)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAlwayslinkFalse() {
+        createFilesForTestingLinking(scratch, "tools/build_defs/foo", "alwayslink=False")
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:starlark_lib")
+        assertThat(target).isNotNull()
+        assertThat(
+            CcInfo.get(target).getCcLinkingContext().getLibraries().toList().stream()
+                .filter(LibraryToLink::getAlwayslink)
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
+        )
+            .isEmpty()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAdditionalLinkingInputs() {
+        createFilesForTestingLinking(
+            scratch, "tools/build_defs/foo", "additional_inputs=ctx.files._additional_inputs"
+        )
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:starlark_lib")
+        assertThat(target).isNotNull()
+        assertThat(CcInfo.get(target).getCcLinkingContext().getNonCodeInputs().toList()).hasSize(1)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAdditionalCompilationInputs() {
+        createFilesForTestingCompilation(
+            scratch, "tools/build_defs/foo", "additional_inputs=ctx.files._additional_compiler_inputs"
+        )
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:starlark_lib")
+        assertThat(target).isNotNull()
+        val action: CppCompileAction =
+            getGeneratingAction(artifactByPath(getFilesToBuild(target), ".o")) as CppCompileAction
+        Truth.assertThat(artifactsToStrings(action.getMandatoryInputs()))
+            .contains("src foo/extra_compiler_input")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testPossibleSrcsExtensions() {
+        doTestPossibleExtensionsOfSrcsAndHdrs(
+            "srcs", CppFileTypes.ALL_C_CLASS_SOURCE.including(CppFileTypes.ASSEMBLER).getExtensions()
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testPossiblePrivateHdrExtensions() {
+        doTestPossibleExtensionsOfSrcsAndHdrs("private_hdrs", CppFileTypes.CPP_HEADER.getExtensions())
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testPossiblePublicHdrExtensions() {
+        doTestPossibleExtensionsOfSrcsAndHdrs("public_hdrs", CppFileTypes.CPP_HEADER.getExtensions())
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTreeArtifactSrcs() {
+        doTestTreeAtrifactInSrcsAndHdrs("srcs")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTreeArtifactPrivateHdrs() {
+        doTestTreeAtrifactInSrcsAndHdrs("private_hdrs")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTreeArtifactPublicHdrs() {
+        doTestTreeAtrifactInSrcsAndHdrs("public_hdrs")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTransitiveLinkWithDeps() {
+        setupTestTransitiveLink(scratch, "linking_contexts = dep_linking_contexts")
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:bin")
+        assertThat(target).isNotNull()
+        val executable: Artifact = getMyInfoFromTarget(target).getValue("executable") as Artifact
+        Truth.assertThat(artifactsToStrings(getGeneratingAction(executable).getInputs()))
+            .containsAtLeast("bin foo/libdep1.a", "bin foo/libdep2.a")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTransitiveLinkForDynamicLibrary() {
+        setupTestTransitiveLink(scratch, "output_type = 'dynamic_library'")
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:bin")
+        assertThat(target).isNotNull()
+        val library: LibraryToLink? =
+            LibraryToLink.wrap(getMyInfoFromTarget(target).getValue("library") as StarlarkInfo?)
+        assertThat(library).isNotNull()
+        val executable: Any? = getMyInfoFromTarget(target).getValue("executable")
+        Truth.assertThat(Starlark.isNullOrNone(executable)).isTrue()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCustomNameOutputArtifact() {
+        createCcBinRule(
+            scratch,  /* internalApi= */
+            true,
+            "output_type = 'dynamic_library'",
+            " main_output=ctx.actions.declare_file('custom_name.so')"
+        )
+        scratch.file(
+            "foo/BUILD",
+            """
         load("//bazel_internal/test_rules/cc:extension.bzl", "cc_bin")
 
         cc_bin(
             name = "bin",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget target = getConfiguredTarget("//foo:bin");
-    assertThat(target).isNotNull();
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:bin")
+        assertThat(target).isNotNull()
 
-    LibraryToLink library =
-        LibraryToLink.wrap((StarlarkInfo) getMyInfoFromTarget(target).getValue("library"));
-    Artifact dynamicLibrary = library.getResolvedSymlinkDynamicLibrary();
-    if (dynamicLibrary == null) {
-      dynamicLibrary = library.getDynamicLibrary();
+        val library: LibraryToLink =
+            LibraryToLink.wrap(getMyInfoFromTarget(target).getValue("library") as StarlarkInfo?)
+        var dynamicLibrary: Artifact? = library.getResolvedSymlinkDynamicLibrary()
+        if (dynamicLibrary == null) {
+            dynamicLibrary = library.getDynamicLibrary()
+        }
+
+        assertThat(dynamicLibrary).isNotNull()
+        assertThat(dynamicLibrary.getFilename()).isEqualTo("custom_name.so")
     }
 
-    assertThat(dynamicLibrary).isNotNull();
-    assertThat(dynamicLibrary.getFilename()).isEqualTo("custom_name.so");
-  }
-
-  @Test
-  public void testInterfaceLibraryProducedForTransitiveLinkOnWindows() throws Exception {
-    getAnalysisMock()
-        .ccSupport()
-        .setupCcToolchainConfig(
-            mockToolsConfig,
-            CcToolchainConfig.builder()
-                .withFeatures(
-                    CppRuleClasses.SUPPORTS_DYNAMIC_LINKER,
-                    CppRuleClasses.TARGETS_WINDOWS,
-                    CppRuleClasses.SUPPORTS_INTERFACE_SHARED_LIBRARIES,
-                    CppRuleClasses.COPY_DYNAMIC_LIBRARIES_TO_BINARY));
-    setupTestTransitiveLink(scratch, "output_type = 'dynamic_library'");
-    ConfiguredTarget target = getConfiguredTarget("//foo:bin");
-    assertThat(target).isNotNull();
-    LibraryToLink library =
-        LibraryToLink.wrap((StarlarkInfo) getMyInfoFromTarget(target).getValue("library"));
-    assertThat(library).isNotNull();
-    assertThat(library.getDynamicLibrary()).isNotNull();
-    assertThat(library.getInterfaceLibrary()).isNotNull();
-  }
-
-  @Test
-  public void testEmitInterfaceLibrary() throws Exception {
-    getAnalysisMock()
-        .ccSupport()
-        .setupCcToolchainConfig(
-            mockToolsConfig,
-            CcToolchainConfig.builder()
-                .withFeatures(
-                    CppRuleClasses.SUPPORTS_DYNAMIC_LINKER,
-                    CppRuleClasses.SUPPORTS_INTERFACE_SHARED_LIBRARIES,
-                    CppRuleClasses.COPY_DYNAMIC_LIBRARIES_TO_BINARY));
-    setupTestTransitiveLinkInternal(
-        scratch,
-        /* internalApi= */ true,
-        "output_type = 'dynamic_library'",
-        "emit_interface_shared_library = True");
-    ConfiguredTarget target = getConfiguredTarget("//foo:bin");
-    assertThat(target).isNotNull();
-    LibraryToLink library =
-        LibraryToLink.wrap((StarlarkInfo) getMyInfoFromTarget(target).getValue("library"));
-    assertThat(library).isNotNull();
-    assertThat(library.getDynamicLibrary()).isNotNull();
-    assertThat(library.getInterfaceLibrary()).isNotNull();
-  }
-
-  @Test
-  public void testTransitiveLinkForExecutable() throws Exception {
-    setupTestTransitiveLink(scratch, "output_type = 'executable'");
-    ConfiguredTarget target = getConfiguredTarget("//foo:bin");
-    assertThat(target).isNotNull();
-    Artifact executable = (Artifact) getMyInfoFromTarget(target).getValue("executable");
-    assertThat(executable).isNotNull();
-    Object library = getMyInfoFromTarget(target).getValue("library");
-    assertThat(Starlark.isNullOrNone(library)).isTrue();
-  }
-
-  @Test
-  public void testTransitiveLinkWithCompilationOutputs() throws Exception {
-    setupTestTransitiveLink(scratch, "compilation_outputs=objects");
-    ConfiguredTarget target = getConfiguredTarget("//foo:bin");
-    assertThat(target).isNotNull();
-    Artifact executable = (Artifact) getMyInfoFromTarget(target).getValue("executable");
-    assertThat(artifactsToStrings(getGeneratingAction(executable).getInputs()))
-        .contains("src foo/file.o");
-  }
-
-  @Test
-  public void testLinkStampExpliciltyEnabledOverridesNoStampFlag() throws Exception {
-    useConfiguration(
-        "--nostamp",
-        "--platforms=" + TestConstants.PLATFORM_LABEL,
-        "--experimental_platform_in_output_dir",
-        String.format(
-            "--experimental_override_name_platform_in_output_dir=%s=k8",
-            TestConstants.PLATFORM_LABEL));
-    setupTestTransitiveLink(scratch, "stamp=1", "linking_contexts=dep_linking_contexts");
-    assertStampEnabled(getLinkstampCompileAction("//foo:bin"));
-  }
-
-  @Test
-  public void testLinkExplicitlyDisabledOverridesStampFlag() throws Exception {
-    useConfiguration(
-        "--nostamp",
-        "--platforms=" + TestConstants.PLATFORM_LABEL,
-        "--experimental_platform_in_output_dir",
-        String.format(
-            "--experimental_override_name_platform_in_output_dir=%s=k8",
-            TestConstants.PLATFORM_LABEL));
-    setupTestTransitiveLink(scratch, "stamp=0", "linking_contexts=dep_linking_contexts");
-    assertStampDisabled(getLinkstampCompileAction("//foo:bin"));
-  }
-
-  @Test
-  public void testLinkStampUseFlagStamp() throws Exception {
-    useConfiguration(
-        "--stamp",
-        "--platforms=" + TestConstants.PLATFORM_LABEL,
-        "--experimental_platform_in_output_dir",
-        String.format(
-            "--experimental_override_name_platform_in_output_dir=%s=k8",
-            TestConstants.PLATFORM_LABEL));
-    setupTestTransitiveLink(scratch, "stamp=-1", "linking_contexts=dep_linking_contexts");
-    assertStampEnabled(getLinkstampCompileAction("//foo:bin"));
-  }
-
-  @Test
-  public void testLinkStampUseFlagNoStamp() throws Exception {
-    useConfiguration(
-        "--nostamp",
-        "--platforms=" + TestConstants.PLATFORM_LABEL,
-        "--experimental_platform_in_output_dir",
-        String.format(
-            "--experimental_override_name_platform_in_output_dir=%s=k8",
-            TestConstants.PLATFORM_LABEL));
-    setupTestTransitiveLink(scratch, "stamp=-1", "linking_contexts=dep_linking_contexts");
-    assertStampDisabled(getLinkstampCompileAction("//foo:bin"));
-  }
-
-  @Test
-  public void testLinkStampDisabledByDefaultDespiteStampFlag() throws Exception {
-    useConfiguration(
-        "--stamp",
-        "--platforms=" + TestConstants.PLATFORM_LABEL,
-        "--experimental_platform_in_output_dir",
-        String.format(
-            "--experimental_override_name_platform_in_output_dir=%s=k8",
-            TestConstants.PLATFORM_LABEL));
-    setupTestTransitiveLink(scratch, "linking_contexts=dep_linking_contexts");
-    assertStampDisabled(getLinkstampCompileAction("//foo:bin"));
-  }
-
-  @Test
-  public void testLinkStampInvalid() throws Exception {
-    setupTestTransitiveLink(scratch, "stamp=2");
-    checkError(
-        "//foo:bin",
-        "stamp value 2 is not supported, must be 0 (disabled), 1 (enabled), or -1 (default)");
-  }
-
-  private CppCompileAction getLinkstampCompileAction(String label)
-      throws LabelSyntaxException, EvalException {
-    ConfiguredTarget target = getConfiguredTarget(label);
-    Artifact executable = (Artifact) getMyInfoFromTarget(target).getValue("executable");
-    SpawnAction generatingAction = (SpawnAction) getGeneratingAction(executable);
-    Artifact compiledLinkstamp =
-        ActionsTestUtil.getFirstArtifactEndingWith(generatingAction.getInputs(), "version.o");
-    CppCompileAction linkstampCompileAction =
-        (CppCompileAction) getGeneratingAction(compiledLinkstamp);
-    assertThat(linkstampCompileAction.getMnemonic()).isEqualTo("CppLinkstampCompile");
-    return linkstampCompileAction;
-  }
-
-  public String getBuildInfoFile(String commonPath) {
-    if (AnalysisMock.get().isThisBazel()) {
-      return getRelativeOutputPath() + "/k8-fastbuild/bin/external/bazel_tools/" + commonPath;
-    } else {
-      return getRelativeOutputPath() + "/k8-fastbuild/bin/" + commonPath;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testInterfaceLibraryProducedForTransitiveLinkOnWindows() {
+        getAnalysisMock()
+            .ccSupport()
+            .setupCcToolchainConfig(
+                mockToolsConfig,
+                CcToolchainConfig.builder()
+                    .withFeatures(
+                        CppRuleClasses.SUPPORTS_DYNAMIC_LINKER,
+                        CppRuleClasses.TARGETS_WINDOWS,
+                        CppRuleClasses.SUPPORTS_INTERFACE_SHARED_LIBRARIES,
+                        CppRuleClasses.COPY_DYNAMIC_LIBRARIES_TO_BINARY
+                    )
+            )
+        setupTestTransitiveLink(scratch, "output_type = 'dynamic_library'")
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:bin")
+        assertThat(target).isNotNull()
+        val library: LibraryToLink =
+            LibraryToLink.wrap(getMyInfoFromTarget(target).getValue("library") as StarlarkInfo?)
+        assertThat(library).isNotNull()
+        assertThat(library.getDynamicLibrary()).isNotNull()
+        assertThat(library.getInterfaceLibrary()).isNotNull()
     }
-  }
 
-  private void assertStampEnabled(CppCompileAction linkstampAction)
-      throws CommandLineExpansionException {
-    assertThat(linkstampAction.getArguments())
-        .contains(getBuildInfoFile(NON_REDACTED_ARTIFACT_PATH));
-  }
-
-  private void assertStampDisabled(CppCompileAction linkstampAction)
-      throws CommandLineExpansionException {
-    assertThat(linkstampAction.getArguments()).contains(getBuildInfoFile(REDACTED_ARTIFACT_PATH));
-  }
-
-  @Test
-  public void testApiWithAspectsOnTargetsInExternalRepos() throws Exception {
-    if (!AnalysisMock.get().isThisBazel()) {
-      return;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEmitInterfaceLibrary() {
+        getAnalysisMock()
+            .ccSupport()
+            .setupCcToolchainConfig(
+                mockToolsConfig,
+                CcToolchainConfig.builder()
+                    .withFeatures(
+                        CppRuleClasses.SUPPORTS_DYNAMIC_LINKER,
+                        CppRuleClasses.SUPPORTS_INTERFACE_SHARED_LIBRARIES,
+                        CppRuleClasses.COPY_DYNAMIC_LIBRARIES_TO_BINARY
+                    )
+            )
+        setupTestTransitiveLinkInternal(
+            scratch,  /* internalApi= */
+            true,
+            "output_type = 'dynamic_library'",
+            "emit_interface_shared_library = True"
+        )
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:bin")
+        assertThat(target).isNotNull()
+        val library: LibraryToLink =
+            LibraryToLink.wrap(getMyInfoFromTarget(target).getValue("library") as StarlarkInfo?)
+        assertThat(library).isNotNull()
+        assertThat(library.getDynamicLibrary()).isNotNull()
+        assertThat(library.getInterfaceLibrary()).isNotNull()
     }
-    createFilesForTestingCompilation(
-        scratch, "tools/build_defs/foo", /* compileProviderLines= */ "");
-    scratch.appendFile(
-        "MODULE.bazel",
-        "bazel_dep(name = 'r')",
-        "local_path_override(module_name = 'r', path = '/r')");
-    scratch.file("/r/MODULE.bazel", "module(name = 'r')");
-    scratch.file(
-        "/r/p/BUILD",
-        """
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTransitiveLinkForExecutable() {
+        setupTestTransitiveLink(scratch, "output_type = 'executable'")
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:bin")
+        assertThat(target).isNotNull()
+        val executable: Artifact? = getMyInfoFromTarget(target).getValue("executable") as Artifact?
+        assertThat(executable).isNotNull()
+        val library: Any? = getMyInfoFromTarget(target).getValue("library")
+        Truth.assertThat(Starlark.isNullOrNone(library)).isTrue()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTransitiveLinkWithCompilationOutputs() {
+        setupTestTransitiveLink(scratch, "compilation_outputs=objects")
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:bin")
+        assertThat(target).isNotNull()
+        val executable: Artifact = getMyInfoFromTarget(target).getValue("executable") as Artifact
+        Truth.assertThat(artifactsToStrings(getGeneratingAction(executable).getInputs()))
+            .contains("src foo/file.o")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLinkStampExpliciltyEnabledOverridesNoStampFlag() {
+        useConfiguration(
+            "--nostamp",
+            "--platforms=" + TestConstants.PLATFORM_LABEL,
+            "--experimental_platform_in_output_dir",
+            String.format(
+                "--experimental_override_name_platform_in_output_dir=%s=k8",
+                TestConstants.PLATFORM_LABEL
+            )
+        )
+        setupTestTransitiveLink(scratch, "stamp=1", "linking_contexts=dep_linking_contexts")
+        assertStampEnabled(getLinkstampCompileAction("//foo:bin"))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLinkExplicitlyDisabledOverridesStampFlag() {
+        useConfiguration(
+            "--nostamp",
+            "--platforms=" + TestConstants.PLATFORM_LABEL,
+            "--experimental_platform_in_output_dir",
+            String.format(
+                "--experimental_override_name_platform_in_output_dir=%s=k8",
+                TestConstants.PLATFORM_LABEL
+            )
+        )
+        setupTestTransitiveLink(scratch, "stamp=0", "linking_contexts=dep_linking_contexts")
+        assertStampDisabled(getLinkstampCompileAction("//foo:bin"))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLinkStampUseFlagStamp() {
+        useConfiguration(
+            "--stamp",
+            "--platforms=" + TestConstants.PLATFORM_LABEL,
+            "--experimental_platform_in_output_dir",
+            String.format(
+                "--experimental_override_name_platform_in_output_dir=%s=k8",
+                TestConstants.PLATFORM_LABEL
+            )
+        )
+        setupTestTransitiveLink(scratch, "stamp=-1", "linking_contexts=dep_linking_contexts")
+        assertStampEnabled(getLinkstampCompileAction("//foo:bin"))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLinkStampUseFlagNoStamp() {
+        useConfiguration(
+            "--nostamp",
+            "--platforms=" + TestConstants.PLATFORM_LABEL,
+            "--experimental_platform_in_output_dir",
+            String.format(
+                "--experimental_override_name_platform_in_output_dir=%s=k8",
+                TestConstants.PLATFORM_LABEL
+            )
+        )
+        setupTestTransitiveLink(scratch, "stamp=-1", "linking_contexts=dep_linking_contexts")
+        assertStampDisabled(getLinkstampCompileAction("//foo:bin"))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLinkStampDisabledByDefaultDespiteStampFlag() {
+        useConfiguration(
+            "--stamp",
+            "--platforms=" + TestConstants.PLATFORM_LABEL,
+            "--experimental_platform_in_output_dir",
+            String.format(
+                "--experimental_override_name_platform_in_output_dir=%s=k8",
+                TestConstants.PLATFORM_LABEL
+            )
+        )
+        setupTestTransitiveLink(scratch, "linking_contexts=dep_linking_contexts")
+        assertStampDisabled(getLinkstampCompileAction("//foo:bin"))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLinkStampInvalid() {
+        setupTestTransitiveLink(scratch, "stamp=2")
+        checkError(
+            "//foo:bin",
+            "stamp value 2 is not supported, must be 0 (disabled), 1 (enabled), or -1 (default)"
+        )
+    }
+
+    @Throws(LabelSyntaxException::class, net.starlark.java.eval.EvalException::class)
+    private fun getLinkstampCompileAction(label: String?): CppCompileAction {
+        val target: ConfiguredTarget = getConfiguredTarget(label)
+        val executable: Artifact = getMyInfoFromTarget(target).getValue("executable") as Artifact
+        val generatingAction: SpawnAction = getGeneratingAction(executable) as SpawnAction
+        val compiledLinkstamp: Artifact =
+            ActionsTestUtil.getFirstArtifactEndingWith(generatingAction.getInputs(), "version.o")
+        val linkstampCompileAction: CppCompileAction =
+            getGeneratingAction(compiledLinkstamp) as CppCompileAction
+        assertThat(linkstampCompileAction.getMnemonic()).isEqualTo("CppLinkstampCompile")
+        return linkstampCompileAction
+    }
+
+    fun getBuildInfoFile(commonPath: String?): String {
+        if (AnalysisMock.get().isThisBazel()) {
+            return relativeOutputPath + "/k8-fastbuild/bin/external/bazel_tools/" + commonPath
+        } else {
+            return relativeOutputPath + "/k8-fastbuild/bin/" + commonPath
+        }
+    }
+
+    @Throws(CommandLineExpansionException::class)
+    private fun assertStampEnabled(linkstampAction: CppCompileAction) {
+        com.google.common.truth.Subject.contains(getBuildInfoFile(NON_REDACTED_ARTIFACT_PATH))
+    }
+
+    @Throws(CommandLineExpansionException::class)
+    private fun assertStampDisabled(linkstampAction: CppCompileAction) {
+        com.google.common.truth.Subject.contains(getBuildInfoFile(REDACTED_ARTIFACT_PATH))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testApiWithAspectsOnTargetsInExternalRepos() {
+        if (!AnalysisMock.get().isThisBazel()) {
+            return
+        }
+        createFilesForTestingCompilation(
+            scratch, "tools/build_defs/foo",  /* compileProviderLines= */""
+        )
+        scratch.appendFile(
+            "MODULE.bazel",
+            "bazel_dep(name = 'r')",
+            "local_path_override(module_name = 'r', path = '/r')"
+        )
+        scratch.file("/r/MODULE.bazel", "module(name = 'r')")
+        scratch.file(
+            "/r/p/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_library(
             name = "a",
             srcs = ["a.cc"],
         )
-        """);
-    invalidatePackages();
-    scratch.file(
-        "b/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        invalidatePackages()
+        scratch.file(
+            "b/BUILD",
+            """
         load("//tools/build_defs/foo:extension.bzl", "cc_starlark_library")
 
         cc_starlark_library(
@@ -6229,136 +7033,149 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             srcs = ["b.cc"],
             aspect_deps = ["@r//p:a"],
         )
-        """);
-    assertThat(getConfiguredTarget("//b:b")).isNotNull();
-  }
+        
+        """.trimIndent()
+        )
+        assertThat(getConfiguredTarget("//b:b")).isNotNull()
+    }
 
-  @Test
-  public void testObjectsApi() throws Exception {
-    useConfiguration("--compilation_mode=opt");
-    AnalysisMock.get()
-        .ccSupport()
-        .setupCcToolchainConfig(
-            mockToolsConfig,
-            CcToolchainConfig.builder()
-                .withFeatures(CppRuleClasses.SUPPORTS_PIC, CppRuleClasses.PIC));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testObjectsApi() {
+        useConfiguration("--compilation_mode=opt")
+        AnalysisMock.get()
+            .ccSupport()
+            .setupCcToolchainConfig(
+                mockToolsConfig,
+                CcToolchainConfig.builder()
+                    .withFeatures(CppRuleClasses.SUPPORTS_PIC, CppRuleClasses.PIC)
+            )
 
-    scratchObjectsProvidingRule();
+        scratchObjectsProvidingRule()
 
-    Provider.Key key =
-        new StarlarkProvider.Key(keyForBuild(Label.parseCanonical("//foo:foo.bzl")), "FooInfo");
-    LibraryToLink fooLibrary =
-        Iterables.getFirst(
-            CcInfo.get(getConfiguredTarget("//foo:dep"))
-                .getCcLinkingContext()
-                .getLibraries()
-                .toList(),
-            null);
-    StarlarkInfo fooInfo =
-        (StarlarkInfo) getConfiguredTarget("//foo:foo").get(StarlarkProviderIdentifier.forKey(key));
+        val key: Provider.Key =
+            Key(keyForBuild(Label.parseCanonical("//foo:foo.bzl")), "FooInfo")
+        val fooLibrary: LibraryToLink? =
+            com.google.common.collect.Iterables.getFirst<T?>(
+                CcInfo.get(getConfiguredTarget("//foo:dep"))
+                    .getCcLinkingContext()
+                    .getLibraries()
+                    .toList(),
+                null
+            )
+        val fooInfo: StarlarkInfo =
+            getConfiguredTarget("//foo:foo").get(StarlarkProviderIdentifier.forKey(key)) as StarlarkInfo
 
-    assertThat(fooLibrary.getObjectFiles()).isEqualTo(fooInfo.getValue("objects"));
-    assertThat(fooLibrary.getPicObjectFiles()).isEqualTo(fooInfo.getValue("pic_objects"));
-  }
+        assertThat(fooLibrary.getObjectFiles()).isEqualTo(fooInfo.getValue("objects"))
+        assertThat(fooLibrary.getPicObjectFiles()).isEqualTo(fooInfo.getValue("pic_objects"))
+    }
 
-  @Test
-  public void testObjectsApiNeverReturningNones() throws Exception {
-    scratchObjectsProvidingRule();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testObjectsApiNeverReturningNones() {
+        scratchObjectsProvidingRule()
 
-    Provider.Key key =
-        new StarlarkProvider.Key(keyForBuild(Label.parseCanonical("//foo:foo.bzl")), "FooInfo");
+        val key: Provider.Key =
+            Key(keyForBuild(Label.parseCanonical("//foo:foo.bzl")), "FooInfo")
 
-    // Default toolchain is without PIC support, so pic_objects should be None
-    StarlarkInfo fooInfoForPic =
-        (StarlarkInfo) getConfiguredTarget("//foo:foo").get(StarlarkProviderIdentifier.forKey(key));
+        // Default toolchain is without PIC support, so pic_objects should be None
+        val fooInfoForPic: StarlarkInfo =
+            getConfiguredTarget("//foo:foo").get(StarlarkProviderIdentifier.forKey(key)) as StarlarkInfo
 
-    Object picObjects = fooInfoForPic.getValue("pic_objects");
-    assertThat(picObjects).isNotEqualTo(Starlark.NONE);
-    assertThat((List) picObjects).isEmpty();
+        val picObjects: Any? = fooInfoForPic.getValue("pic_objects")
+        Truth.assertThat(picObjects).isNotEqualTo(Starlark.NONE)
+        Truth.assertThat(picObjects as MutableList<*>?).isEmpty()
 
-    // With PIC and the default compilation_mode which is fastbuild C++ rules only produce PIC
-    // objects.
-    AnalysisMock.get()
-        .ccSupport()
-        .setupCcToolchainConfig(
-            mockToolsConfig,
-            CcToolchainConfig.builder()
-                .withFeatures(CppRuleClasses.SUPPORTS_PIC, CppRuleClasses.PIC));
-    invalidatePackages();
-    StarlarkInfo fooInfoForNoPic =
-        (StarlarkInfo) getConfiguredTarget("//foo:foo").get(StarlarkProviderIdentifier.forKey(key));
+        // With PIC and the default compilation_mode which is fastbuild C++ rules only produce PIC
+        // objects.
+        AnalysisMock.get()
+            .ccSupport()
+            .setupCcToolchainConfig(
+                mockToolsConfig,
+                CcToolchainConfig.builder()
+                    .withFeatures(CppRuleClasses.SUPPORTS_PIC, CppRuleClasses.PIC)
+            )
+        invalidatePackages()
+        val fooInfoForNoPic: StarlarkInfo =
+            getConfiguredTarget("//foo:foo").get(StarlarkProviderIdentifier.forKey(key)) as StarlarkInfo
 
-    Object objects = fooInfoForNoPic.getValue("objects");
-    assertThat(objects).isNotEqualTo(Starlark.NONE);
-    assertThat((List) objects).isEmpty();
-  }
+        val objects: Any? = fooInfoForNoPic.getValue("objects")
+        Truth.assertThat(objects).isNotEqualTo(Starlark.NONE)
+        Truth.assertThat(objects as MutableList<*>?).isEmpty()
+    }
 
-  @Test
-  public void testLtoBitcodeFilesApi() throws Exception {
-    useConfiguration("--compilation_mode=opt", "--features=thin_lto");
-    AnalysisMock.get()
-        .ccSupport()
-        .setupCcToolchainConfig(
-            mockToolsConfig,
-            CcToolchainConfig.builder()
-                .withFeatures(
-                    CppRuleClasses.THIN_LTO, CppRuleClasses.SUPPORTS_PIC, CppRuleClasses.PIC));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLtoBitcodeFilesApi() {
+        useConfiguration("--compilation_mode=opt", "--features=thin_lto")
+        AnalysisMock.get()
+            .ccSupport()
+            .setupCcToolchainConfig(
+                mockToolsConfig,
+                CcToolchainConfig.builder()
+                    .withFeatures(
+                        CppRuleClasses.THIN_LTO, CppRuleClasses.SUPPORTS_PIC, CppRuleClasses.PIC
+                    )
+            )
 
-    scratchObjectsProvidingRule();
+        scratchObjectsProvidingRule()
 
-    Provider.Key key =
-        new StarlarkProvider.Key(keyForBuild(Label.parseCanonical("//foo:foo.bzl")), "FooInfo");
-    LibraryToLink fooLibrary =
-        Iterables.getFirst(
-            CcInfo.get(getConfiguredTarget("//foo:dep"))
-                .getCcLinkingContext()
-                .getLibraries()
-                .toList(),
-            null);
-    StarlarkInfo fooInfo =
-        (StarlarkInfo) getConfiguredTarget("//foo:foo").get(StarlarkProviderIdentifier.forKey(key));
+        val key: Provider.Key =
+            Key(keyForBuild(Label.parseCanonical("//foo:foo.bzl")), "FooInfo")
+        val fooLibrary: LibraryToLink? =
+            com.google.common.collect.Iterables.getFirst<T?>(
+                CcInfo.get(getConfiguredTarget("//foo:dep"))
+                    .getCcLinkingContext()
+                    .getLibraries()
+                    .toList(),
+                null
+            )
+        val fooInfo: StarlarkInfo =
+            getConfiguredTarget("//foo:foo").get(StarlarkProviderIdentifier.forKey(key)) as StarlarkInfo
 
-    assertThat(ImmutableList.copyOf(fooLibrary.getLtoCompilationContextBitcodeFiles()))
-        .isEqualTo(fooInfo.getValue("lto_bitcode_files"));
-    assertThat((Map<?, ?>) fooLibrary.getLtoCompilationContextBitcodeFiles()).isNotEmpty();
+        Truth.assertThat(com.google.common.collect.ImmutableList.copyOf(fooLibrary.getLtoCompilationContextBitcodeFiles()))
+            .isEqualTo(fooInfo.getValue("lto_bitcode_files"))
+        Truth.assertThat(fooLibrary.getLtoCompilationContextBitcodeFiles() as MutableMap<*, *>?).isNotEmpty()
 
-    assertThat(ImmutableList.copyOf(fooLibrary.getPicLtoCompilationContextBitcodeFiles()))
-        .isEqualTo(fooInfo.getValue("pic_lto_bitcode_files"));
-    assertThat((Map<?, ?>) fooLibrary.getPicLtoCompilationContextBitcodeFiles()).isNotEmpty();
-  }
+        Truth.assertThat(com.google.common.collect.ImmutableList.copyOf(fooLibrary.getPicLtoCompilationContextBitcodeFiles()))
+            .isEqualTo(fooInfo.getValue("pic_lto_bitcode_files"))
+        Truth.assertThat(fooLibrary.getPicLtoCompilationContextBitcodeFiles() as MutableMap<*, *>?).isNotEmpty()
+    }
 
-  @Test
-  public void testLtoBitcodeFilesApiNeverReturningNones() throws Exception {
-    // We do not add --features=thin_lto for this test.
-    useConfiguration("--compilation_mode=opt");
-    AnalysisMock.get()
-        .ccSupport()
-        .setupCcToolchainConfig(
-            mockToolsConfig,
-            CcToolchainConfig.builder()
-                // We do not enable the THIN_LTO feature for this test.
-                .withFeatures(CppRuleClasses.SUPPORTS_PIC, CppRuleClasses.PIC));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLtoBitcodeFilesApiNeverReturningNones() {
+        // We do not add --features=thin_lto for this test.
+        useConfiguration("--compilation_mode=opt")
+        AnalysisMock.get()
+            .ccSupport()
+            .setupCcToolchainConfig(
+                mockToolsConfig,
+                CcToolchainConfig.builder() // We do not enable the THIN_LTO feature for this test.
+                    .withFeatures(CppRuleClasses.SUPPORTS_PIC, CppRuleClasses.PIC)
+            )
 
-    scratchObjectsProvidingRule();
+        scratchObjectsProvidingRule()
 
-    Provider.Key key =
-        new StarlarkProvider.Key(keyForBuild(Label.parseCanonical("//foo:foo.bzl")), "FooInfo");
-    StarlarkInfo fooInfo =
-        (StarlarkInfo) getConfiguredTarget("//foo:foo").get(StarlarkProviderIdentifier.forKey(key));
+        val key: Provider.Key =
+            Key(keyForBuild(Label.parseCanonical("//foo:foo.bzl")), "FooInfo")
+        val fooInfo: StarlarkInfo =
+            getConfiguredTarget("//foo:foo").get(StarlarkProviderIdentifier.forKey(key)) as StarlarkInfo
 
-    Object picLtoBitcodeFiles = fooInfo.getValue("pic_lto_bitcode_files");
-    assertThat(picLtoBitcodeFiles).isNotEqualTo(Starlark.NONE);
-    assertThat((List) picLtoBitcodeFiles).isEmpty();
+        val picLtoBitcodeFiles: Any? = fooInfo.getValue("pic_lto_bitcode_files")
+        Truth.assertThat(picLtoBitcodeFiles).isNotEqualTo(Starlark.NONE)
+        Truth.assertThat(picLtoBitcodeFiles as MutableList<*>?).isEmpty()
 
-    Object ltoBitcodeFiles = fooInfo.getValue("lto_bitcode_files");
-    assertThat(ltoBitcodeFiles).isNotEqualTo(Starlark.NONE);
-    assertThat((List) ltoBitcodeFiles).isEmpty();
-  }
+        val ltoBitcodeFiles: Any? = fooInfo.getValue("lto_bitcode_files")
+        Truth.assertThat(ltoBitcodeFiles).isNotEqualTo(Starlark.NONE)
+        Truth.assertThat(ltoBitcodeFiles as MutableList<*>?).isEmpty()
+    }
 
-  private void scratchObjectsProvidingRule() throws IOException {
-    scratch.file(
-        "foo/BUILD",
-        """
+    @Throws(IOException::class)
+    private fun scratchObjectsProvidingRule() {
+        scratch.file(
+            "foo/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         load(":foo.bzl", "foo")
 
@@ -6371,10 +7188,12 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             name = "dep",
             srcs = ["dep.cc"],
         )
-        """);
-    scratch.file(
-        "foo/foo.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "foo/foo.bzl",
+            """
         load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 
         FooInfo = provider(
@@ -6396,98 +7215,111 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
                 "dep": attr.label(),
             },
         )
-        """);
-  }
-
-  private void doTestPossibleExtensionsOfSrcsAndHdrs(String attrName, List<String> extensions)
-      throws Exception {
-    createFiles(scratch, "tools/build_defs/foo");
-    reporter.removeHandler(failFastHandler);
-
-    for (String extension : extensions) {
-      scratch.deleteFile("bar/BUILD");
-      scratch.file(
-          "bar/BUILD",
-          "load('//tools/build_defs/foo:extension.bzl', 'cc_starlark_library')",
-          "cc_starlark_library(",
-          "    name = 'starlark_lib',",
-          "    " + attrName + " = ['file" + extension + "'],",
-          ")");
-      getConfiguredTarget("//bar:starlark_lib");
-      assertNoEvents();
+        
+        """.trimIndent()
+        )
     }
-  }
 
-  private void doTestTreeAtrifactInSrcsAndHdrs(String attrName) throws Exception {
-    createFiles(scratch, "tools/build_defs/foo");
-    reporter.removeHandler(failFastHandler);
+    @Throws(java.lang.Exception::class)
+    private fun doTestPossibleExtensionsOfSrcsAndHdrs(attrName: String?, extensions: MutableList<String?>) {
+        createFiles(scratch, "tools/build_defs/foo")
+        reporter.removeHandler(failFastHandler)
 
-    scratch.file(
-        "bar/create_tree_artifact.bzl",
-        """
+        for (extension in extensions) {
+            scratch.deleteFile("bar/BUILD")
+            scratch.file(
+                "bar/BUILD",
+                "load('//tools/build_defs/foo:extension.bzl', 'cc_starlark_library')",
+                "cc_starlark_library(",
+                "    name = 'starlark_lib',",
+                "    " + attrName + " = ['file" + extension + "'],",
+                ")"
+            )
+            getConfiguredTarget("//bar:starlark_lib")
+            assertNoEvents()
+        }
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun doTestTreeAtrifactInSrcsAndHdrs(attrName: String?) {
+        createFiles(scratch, "tools/build_defs/foo")
+        reporter.removeHandler(failFastHandler)
+
+        scratch.file(
+            "bar/create_tree_artifact.bzl",
+            """
         def _impl(ctx):
             tree = ctx.actions.declare_directory("dir")
             ctx.actions.run_shell(
                 outputs = [tree],
                 inputs = [],
                 arguments = [tree.path],
-                command = "mkdir $1",
+                command = "mkdir ${'$'}1",
             )
             return [DefaultInfo(files = depset([tree]))]
 
         create_tree_artifact = rule(implementation = _impl)
-        """);
-    scratch.file(
-        "bar/BUILD",
-        "load('//tools/build_defs/foo:extension.bzl', 'cc_starlark_library')",
-        "load(':create_tree_artifact.bzl', 'create_tree_artifact')",
-        "create_tree_artifact(name = 'tree_artifact')",
-        "cc_starlark_library(",
-        "    name = 'starlark_lib',",
-        "    " + attrName + " = [':tree_artifact'],",
-        ")");
-    getConfiguredTarget("//bar:starlark_lib");
-    assertNoEvents();
-  }
-
-  private void doTestCcOutputsWrongExtension(String attrName, String paramName) throws Exception {
-    setupCcOutputsTest();
-    scratch.file(
-        "foo/BUILD",
-        "load('//tools/build_defs/foo:extension.bzl', 'cc_starlark_library')",
-        "cc_starlark_library(",
-        "    name = 'starlark_lib',",
-        "    " + attrName + " = 'object.cannotpossiblybevalid',",
-        ")");
-    reporter.removeHandler(failFastHandler);
-    getConfiguredTarget("//foo:starlark_lib");
-    assertContainsEvent(
-        "has wrong extension. The list of possible extensions for '" + paramName + "'");
-  }
-
-  private void doTestCcOutputsRightExtension(String paramName) throws Exception {
-    setupCcOutputsTest();
-    reporter.removeHandler(failFastHandler);
-
-    for (String extension : Link.OBJECT_FILETYPES.getExtensions()) {
-      scratch.deleteFile("foo/BUILD");
-      scratch.file(
-          "foo/BUILD",
-          "load('//tools/build_defs/foo:extension.bzl', 'cc_starlark_library')",
-          "cc_starlark_library(",
-          "    name = 'starlark_lib',",
-          "    " + paramName + " = 'object1" + extension + "',",
-          ")");
-      getConfiguredTarget("//foo:starlark_lib");
-      assertNoEvents();
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "bar/BUILD",
+            "load('//tools/build_defs/foo:extension.bzl', 'cc_starlark_library')",
+            "load(':create_tree_artifact.bzl', 'create_tree_artifact')",
+            "create_tree_artifact(name = 'tree_artifact')",
+            "cc_starlark_library(",
+            "    name = 'starlark_lib',",
+            "    " + attrName + " = [':tree_artifact'],",
+            ")"
+        )
+        getConfiguredTarget("//bar:starlark_lib")
+        assertNoEvents()
     }
-  }
 
-  private void setupCcOutputsTest() throws Exception {
-    scratch.overwriteFile("tools/build_defs/foo/BUILD");
-    scratch.file(
-        "tools/build_defs/foo/extension.bzl",
-        """
+    @Throws(java.lang.Exception::class)
+    private fun doTestCcOutputsWrongExtension(attrName: String?, paramName: String?) {
+        setupCcOutputsTest()
+        scratch.file(
+            "foo/BUILD",
+            "load('//tools/build_defs/foo:extension.bzl', 'cc_starlark_library')",
+            "cc_starlark_library(",
+            "    name = 'starlark_lib',",
+            "    " + attrName + " = 'object.cannotpossiblybevalid',",
+            ")"
+        )
+        reporter.removeHandler(failFastHandler)
+        getConfiguredTarget("//foo:starlark_lib")
+        assertContainsEvent(
+            "has wrong extension. The list of possible extensions for '" + paramName + "'"
+        )
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun doTestCcOutputsRightExtension(paramName: String?) {
+        setupCcOutputsTest()
+        reporter.removeHandler(failFastHandler)
+
+        for (extension in Link.OBJECT_FILETYPES.getExtensions()) {
+            scratch.deleteFile("foo/BUILD")
+            scratch.file(
+                "foo/BUILD",
+                "load('//tools/build_defs/foo:extension.bzl', 'cc_starlark_library')",
+                "cc_starlark_library(",
+                "    name = 'starlark_lib',",
+                "    " + paramName + " = 'object1" + extension + "',",
+                ")"
+            )
+            getConfiguredTarget("//foo:starlark_lib")
+            assertNoEvents()
+        }
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun setupCcOutputsTest() {
+        scratch.overwriteFile("tools/build_defs/foo/BUILD")
+        scratch.file(
+            "tools/build_defs/foo/extension.bzl",
+            """
         load("//myinfo:myinfo.bzl", "MyInfo")
         load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')
 
@@ -6526,236 +7358,72 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
                 "pic_object2": attr.label(allow_single_file = True),
             },
         )
-        """);
-  }
-
-  private static void createCcBinRule(
-      Scratch scratch, boolean internalApi, String... additionalLines) throws Exception {
-    String fragments = "    fragments = ['google_cpp', 'cpp'],";
-    if (AnalysisMock.get().isThisBazel()) {
-      fragments = "    fragments = ['cpp'],";
+        
+        """.trimIndent()
+        )
     }
-    scratch.overwriteFile("tools/build_defs/BUILD");
 
-    String extensionDirectory = "tools/build_defs";
-    if (internalApi) {
-      extensionDirectory = "bazel_internal/test_rules/cc";
-      scratch.overwriteFile(extensionDirectory + "/BUILD", "");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCcLibraryPropagatesCcInfoWithDirectHeaders() {
+        setupDirectHeaderExtractionSupport(scratch)
+        setupCcLibraryDirectPropagationTestTargets(scratch)
+
+        val fooTarget: ConfiguredTarget = getConfiguredTarget("//direct:foo")
+        val fooDirectHeaders: Iterable<Artifact?>? = getArtifactsFromMyInfo(fooTarget, "direct_headers")
+        assertThat(baseArtifactNames(fooDirectHeaders)).containsExactly("foo.h", "foo_impl.h")
+
+        val fooDirectPublicHeaders: Iterable<Artifact?>? =
+            getArtifactsFromMyInfo(fooTarget, "direct_public_headers")
+        assertThat(baseArtifactNames(fooDirectPublicHeaders)).containsExactly("foo.h")
+
+        val fooDirectPrivateHeaders: Iterable<Artifact?>? =
+            getArtifactsFromMyInfo(fooTarget, "direct_private_headers")
+        assertThat(baseArtifactNames(fooDirectPrivateHeaders)).containsExactly("foo_impl.h")
+
+        val barTarget: ConfiguredTarget = getConfiguredTarget("//direct:bar")
+        val barDirectHeaders: Iterable<Artifact?>? = getArtifactsFromMyInfo(barTarget, "direct_headers")
+        assertThat(baseArtifactNames(barDirectHeaders)).containsExactly("bar.h")
+
+        val barDirectPublicHeaders: Iterable<Artifact?>? =
+            getArtifactsFromMyInfo(barTarget, "direct_public_headers")
+        assertThat(baseArtifactNames(barDirectPublicHeaders)).containsExactly("bar.h")
+
+        val barDirectPrivateHeaders: Iterable<Artifact?>? =
+            getArtifactsFromMyInfo(barTarget, "direct_private_headers")
+        Truth.assertThat(barDirectPrivateHeaders).isEmpty()
     }
-    scratch.file(
-        extensionDirectory + "/extension.bzl",
-        "load('//myinfo:myinfo.bzl', 'MyInfo')",
-        "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
-        "load('@rules_cc//cc/common:cc_info.bzl', 'CcInfo')",
-        "def _cc_bin_impl(ctx):",
-        "    toolchain = ctx.toolchains['" + TestConstants.CPP_TOOLCHAIN_TYPE + "'].cc",
-        "    feature_configuration = cc_common.configure_features(",
-        "      ctx = ctx,",
-        "      cc_toolchain = toolchain,",
-        "    )",
-        "    dep_linking_contexts = []",
-        "    for dep in ctx.attr.deps:",
-        "        dep_linking_contexts.append(dep[CcInfo].linking_context)",
-        "    objects = cc_common.create_compilation_outputs(objects=depset(ctx.files.objects),",
-        "        pic_objects=depset(ctx.files.pic_objects))",
-        "    foo_dict = {'string_variable': 'foo',",
-        "            'string_sequence_variable' : ['foo'],",
-        "            'string_depset_variable': depset(['foo'])}",
-        "    linking_outputs = cc_common.link(",
-        "        actions=ctx.actions,",
-        "        feature_configuration=feature_configuration,",
-        "        name = ctx.label.name,",
-        "        cc_toolchain=toolchain,",
-        "        " + Joiner.on(",\n        ").join(additionalLines),
-        "    )",
-        "    return [",
-        "      MyInfo(",
-        "          library=linking_outputs.library_to_link,",
-        "          executable=linking_outputs.executable",
-        "      ),",
-        "    ]",
-        "cc_bin = rule(",
-        "    implementation = _cc_bin_impl,",
-        "    attrs = {",
-        "      'objects': attr.label_list(allow_files=True),",
-        "      'pic_objects': attr.label_list(allow_files=True),",
-        "      'deps': attr.label_list(),",
-        "      'additional_outputs': attr.output_list(),",
-        "    },",
-        fragments,
-        "    toolchains = ['" + TestConstants.CPP_TOOLCHAIN_TYPE + "']",
-        ")");
-  }
 
-  private static void setupTestTransitiveLink(Scratch scratch, String... additionalLines)
-      throws Exception {
-    setupTestTransitiveLinkInternal(scratch, /* internalApi= */ false, additionalLines);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCcLibraryPropagatesCcInfoWithDirectTextualHeaders() {
+        setupDirectHeaderExtractionSupport(scratch)
+        setupCcLibraryDirectPropagationTestTargets(scratch)
 
-  private static void setupTestTransitiveLinkInternal(
-      Scratch scratch, boolean internalApi, String... additionalLines) throws Exception {
-    createCcBinRule(scratch, internalApi, additionalLines);
-    String bzlPath;
-    if (internalApi) {
-      bzlPath = "bazel_internal/test_rules/cc";
-    } else {
-      bzlPath = "tools/build_defs";
+        val fooTarget: ConfiguredTarget = getConfiguredTarget("//direct:foo")
+        val fooDirectTextualHeaders: Iterable<Artifact?>? =
+            getArtifactsFromMyInfo(fooTarget, "direct_textual_headers")
+        assertThat(baseArtifactNames(fooDirectTextualHeaders)).containsExactly("foo.def")
+
+        val barTarget: ConfiguredTarget = getConfiguredTarget("//direct:bar")
+        val barDirectTextualHeaders: Iterable<Artifact?>? =
+            getArtifactsFromMyInfo(barTarget, "direct_textual_headers")
+        assertThat(baseArtifactNames(barDirectTextualHeaders)).containsExactly("bar.def")
     }
-    scratch.file(
-        "foo/BUILD",
-        "load(\"//" + bzlPath + ":extension.bzl\", \"cc_bin\")",
-        """
-        load("@rules_cc//cc:cc_library.bzl", "cc_library")
-        cc_library(
-            name = "dep1",
-            srcs = ["dep1.cc"],
-            hdrs = ["dep1.h"],
-            defines = ["DEP1"],
-            includes = ["dep1/baz"],
-            linkstamp = "version.cc",
-        )
 
-        cc_library(
-            name = "dep2",
-            srcs = ["dep2.cc"],
-            hdrs = ["dep2.h"],
-            defines = ["DEP2"],
-            includes = ["dep2/qux"],
-        )
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMergeCcInfosWithDirects() {
+        AnalysisMock.get()
+            .ccSupport()
+            .setupCcToolchainConfig(
+                mockToolsConfig,
+                CcToolchainConfig.builder().withFeatures(MockCcSupport.HEADER_MODULES_FEATURES)
+            )
 
-        cc_bin(
-            name = "bin",
-            objects = ["file.o"],
-            pic_objects = ["file.pic.o"],
-            deps = [
-                ":dep1",
-                ":dep2",
-            ],
-        )
-        """);
-  }
-
-  private static void setupDirectHeaderExtractionSupport(Scratch scratch) throws Exception {
-    scratch.file(
-        "direct/cc_info_extractor.bzl",
-        """
-        load("//myinfo:myinfo.bzl", "MyInfo")
-        load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
-
-        def _cc_info_extractor_impl(ctx):
-            compilation_context = ctx.attr.dep[CcInfo].compilation_context
-            return [MyInfo(
-                direct_headers = compilation_context.direct_headers,
-                direct_public_headers = compilation_context.direct_public_headers,
-                direct_private_headers = compilation_context.direct_private_headers,
-                direct_textual_headers = compilation_context.direct_textual_headers,
-            )]
-
-        cc_info_extractor = rule(
-            _cc_info_extractor_impl,
-            attrs = {
-                "dep": attr.label(providers = [[CcInfo]]),
-            },
-        )
-        """);
-    scratch.file(
-        "direct/BUILD",
-        """
-        load("//direct:cc_info_extractor.bzl", "cc_info_extractor")
-
-        cc_info_extractor(
-            name = "foo",
-            dep = "//direct/libs:foo_lib",
-        )
-
-        cc_info_extractor(
-            name = "bar",
-            dep = "//direct/libs:bar_lib",
-        )
-        """);
-  }
-
-  private static void setupCcLibraryDirectPropagationTestTargets(Scratch scratch) throws Exception {
-    scratch.file(
-        "direct/libs/BUILD",
-        """
-        load("@rules_cc//cc:cc_library.bzl", "cc_library")
-        cc_library(
-            name = "foo_lib",
-            srcs = [
-                "foo.cc",
-                "foo_impl.h",
-            ],
-            hdrs = ["foo.h"],
-            textual_hdrs = ["foo.def"],
-        )
-
-        cc_library(
-            name = "bar_lib",
-            hdrs = ["bar.h"],
-            textual_hdrs = ["bar.def"],
-            deps = [":foo_lib"],
-        )
-        """);
-  }
-
-  @Test
-  public void testCcLibraryPropagatesCcInfoWithDirectHeaders() throws Exception {
-    setupDirectHeaderExtractionSupport(scratch);
-    setupCcLibraryDirectPropagationTestTargets(scratch);
-
-    ConfiguredTarget fooTarget = getConfiguredTarget("//direct:foo");
-    Iterable<Artifact> fooDirectHeaders = getArtifactsFromMyInfo(fooTarget, "direct_headers");
-    assertThat(baseArtifactNames(fooDirectHeaders)).containsExactly("foo.h", "foo_impl.h");
-
-    Iterable<Artifact> fooDirectPublicHeaders =
-        getArtifactsFromMyInfo(fooTarget, "direct_public_headers");
-    assertThat(baseArtifactNames(fooDirectPublicHeaders)).containsExactly("foo.h");
-
-    Iterable<Artifact> fooDirectPrivateHeaders =
-        getArtifactsFromMyInfo(fooTarget, "direct_private_headers");
-    assertThat(baseArtifactNames(fooDirectPrivateHeaders)).containsExactly("foo_impl.h");
-
-    ConfiguredTarget barTarget = getConfiguredTarget("//direct:bar");
-    Iterable<Artifact> barDirectHeaders = getArtifactsFromMyInfo(barTarget, "direct_headers");
-    assertThat(baseArtifactNames(barDirectHeaders)).containsExactly("bar.h");
-
-    Iterable<Artifact> barDirectPublicHeaders =
-        getArtifactsFromMyInfo(barTarget, "direct_public_headers");
-    assertThat(baseArtifactNames(barDirectPublicHeaders)).containsExactly("bar.h");
-
-    Iterable<Artifact> barDirectPrivateHeaders =
-        getArtifactsFromMyInfo(barTarget, "direct_private_headers");
-    assertThat(barDirectPrivateHeaders).isEmpty();
-  }
-
-  @Test
-  public void testCcLibraryPropagatesCcInfoWithDirectTextualHeaders() throws Exception {
-    setupDirectHeaderExtractionSupport(scratch);
-    setupCcLibraryDirectPropagationTestTargets(scratch);
-
-    ConfiguredTarget fooTarget = getConfiguredTarget("//direct:foo");
-    Iterable<Artifact> fooDirectTextualHeaders =
-        getArtifactsFromMyInfo(fooTarget, "direct_textual_headers");
-    assertThat(baseArtifactNames(fooDirectTextualHeaders)).containsExactly("foo.def");
-
-    ConfiguredTarget barTarget = getConfiguredTarget("//direct:bar");
-    Iterable<Artifact> barDirectTextualHeaders =
-        getArtifactsFromMyInfo(barTarget, "direct_textual_headers");
-    assertThat(baseArtifactNames(barDirectTextualHeaders)).containsExactly("bar.def");
-  }
-
-  @Test
-  public void testMergeCcInfosWithDirects() throws Exception {
-    AnalysisMock.get()
-        .ccSupport()
-        .setupCcToolchainConfig(
-            mockToolsConfig,
-            CcToolchainConfig.builder().withFeatures(MockCcSupport.HEADER_MODULES_FEATURES));
-
-    scratch.file(
-        "direct/cc_merger.bzl",
-        """
+        scratch.file(
+            "direct/cc_merger.bzl",
+            """
         load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')
         load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
         def _cc_merger_impl(ctx):
@@ -6773,10 +7441,12 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
                 "exports": attr.label_list(providers = [[CcInfo]]),
             },
         )
-        """);
-    scratch.file(
-        "direct/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "direct/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         load("//direct:cc_merger.bzl", "cc_merger")
 
@@ -6818,35 +7488,41 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             ],
             deps = [":private"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget lib = getConfiguredTarget("//direct:merge");
-    CcCompilationContext ccCompilationContext = CcInfo.get(lib).getCcCompilationContext();
-    assertThat(
+        val lib: ConfiguredTarget = getConfiguredTarget("//direct:merge")
+        val ccCompilationContext: CcCompilationContext = CcInfo.get(lib).getCcCompilationContext()
+        assertThat(
             baseArtifactNames(
                 ccCompilationContext.getExportingModuleMaps().stream()
                     .map(CppModuleMap::getArtifact)
-                    .collect(ImmutableList.toImmutableList())))
-        .containsExactly("public1.cppmap", "public2.cppmap");
-    assertThat(baseArtifactNames(ccCompilationContext.getDirectPublicHdrs()))
-        .containsExactly("public1.h", "public2.h");
-    assertThat(baseArtifactNames(ccCompilationContext.getDirectPrivateHdrs()))
-        .containsExactly("public1_impl.h", "public2_impl.h");
-    assertThat(baseArtifactNames(ccCompilationContext.getTextualHdrs()))
-        .containsExactly("public1.inc", "public2.inc");
-  }
+                    .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
+            )
+        )
+            .containsExactly("public1.cppmap", "public2.cppmap")
+        assertThat(baseArtifactNames(ccCompilationContext.getDirectPublicHdrs()))
+            .containsExactly("public1.h", "public2.h")
+        assertThat(baseArtifactNames(ccCompilationContext.getDirectPrivateHdrs()))
+            .containsExactly("public1_impl.h", "public2_impl.h")
+        assertThat(baseArtifactNames(ccCompilationContext.getTextualHdrs()))
+            .containsExactly("public1.inc", "public2.inc")
+    }
 
-  @Test
-  public void testMergeCompilationContexts() throws Exception {
-    AnalysisMock.get()
-        .ccSupport()
-        .setupCcToolchainConfig(
-            mockToolsConfig,
-            CcToolchainConfig.builder().withFeatures(MockCcSupport.HEADER_MODULES_FEATURES));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMergeCompilationContexts() {
+        AnalysisMock.get()
+            .ccSupport()
+            .setupCcToolchainConfig(
+                mockToolsConfig,
+                CcToolchainConfig.builder().withFeatures(MockCcSupport.HEADER_MODULES_FEATURES)
+            )
 
-    scratch.file(
-        "direct/cc_merger.bzl",
-        """
+        scratch.file(
+            "direct/cc_merger.bzl",
+            """
         load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')
         load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
         def _cc_merger_impl(ctx):
@@ -6862,10 +7538,12 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
                 "deps": attr.label_list(providers = [[CcInfo]]),
             },
         )
-        """);
-    scratch.file(
-        "direct/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "direct/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         load("//direct:cc_merger.bzl", "cc_merger")
 
@@ -6896,34 +7574,40 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
                 ":public2",
             ],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget lib = getConfiguredTarget("//direct:merge");
-    CcCompilationContext ccCompilationContext = CcInfo.get(lib).getCcCompilationContext();
-    assertThat(
+        val lib: ConfiguredTarget = getConfiguredTarget("//direct:merge")
+        val ccCompilationContext: CcCompilationContext = CcInfo.get(lib).getCcCompilationContext()
+        assertThat(
             baseArtifactNames(
                 ccCompilationContext.getExportingModuleMaps().stream()
                     .map(CppModuleMap::getArtifact)
-                    .collect(ImmutableList.toImmutableList())))
-        .containsExactly("public1.cppmap", "public2.cppmap");
-    assertThat(baseArtifactNames(ccCompilationContext.getDirectPublicHdrs()))
-        .containsExactly("public1.h", "public2.h");
-    assertThat(baseArtifactNames(ccCompilationContext.getDirectPrivateHdrs()))
-        .containsExactly("public1_impl.h", "public2_impl.h");
-    assertThat(baseArtifactNames(ccCompilationContext.getTextualHdrs()))
-        .containsExactly("public1.inc", "public2.inc");
-  }
+                    .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
+            )
+        )
+            .containsExactly("public1.cppmap", "public2.cppmap")
+        assertThat(baseArtifactNames(ccCompilationContext.getDirectPublicHdrs()))
+            .containsExactly("public1.h", "public2.h")
+        assertThat(baseArtifactNames(ccCompilationContext.getDirectPrivateHdrs()))
+            .containsExactly("public1_impl.h", "public2_impl.h")
+        assertThat(baseArtifactNames(ccCompilationContext.getTextualHdrs()))
+            .containsExactly("public1.inc", "public2.inc")
+    }
 
-  private void setupDebugPackageProviderTest(String fission) throws Exception {
-    getAnalysisMock()
-        .ccSupport()
-        .setupCcToolchainConfig(
-            mockToolsConfig,
-            CcToolchainConfig.builder().withFeatures(CppRuleClasses.PER_OBJECT_DEBUG_INFO));
-    useConfiguration(fission);
-    scratch.file(
-        "a/rule.bzl",
-        """
+    @Throws(java.lang.Exception::class)
+    private fun setupDebugPackageProviderTest(fission: String?) {
+        getAnalysisMock()
+            .ccSupport()
+            .setupCcToolchainConfig(
+                mockToolsConfig,
+                CcToolchainConfig.builder().withFeatures(CppRuleClasses.PER_OBJECT_DEBUG_INFO)
+            )
+        useConfiguration(fission)
+        scratch.file(
+            "a/rule.bzl",
+            """
         load("@rules_cc//cc/common:debug_package_info.bzl", "DebugPackageInfo")
         def _impl(ctx):
             out = ctx.actions.declare_file(ctx.label.name)
@@ -6978,10 +7662,12 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             },
             executable = True,
         )
-        """);
-    scratch.file(
-        "a/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "a/BUILD",
+            """
         load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
         load(":rule.bzl", "wrapped_binary")
 
@@ -7006,50 +7692,57 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             name = "native_binary",
             srcs = ["main.cc"],
         )
-        """);
-    scratch.file("a/main.cc", "int main() {}");
-  }
+        
+        """.trimIndent()
+        )
+        scratch.file("a/main.cc", "int main() {}")
+    }
 
-  @Test
-  public void testDebugPackageProviderFissionDisabled() throws Exception {
-    setupDebugPackageProviderTest("--fission=no");
-    ConfiguredTarget target = getConfiguredTarget("//a:w");
-    assertNoEvents();
-    assertThat(target).isNotNull();
-    DebugPackageProvider debugPackageProvider = DebugPackageProvider.get(target);
-    assertThat(debugPackageProvider.getStrippedArtifact().getFilename()).isEqualTo("w.stripped");
-    assertThat(debugPackageProvider.getUnstrippedArtifact().getFilename()).isEqualTo("w");
-    assertThat(debugPackageProvider.getDwpArtifact()).isNull();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDebugPackageProviderFissionDisabled() {
+        setupDebugPackageProviderTest("--fission=no")
+        val target: ConfiguredTarget = getConfiguredTarget("//a:w")
+        assertNoEvents()
+        assertThat(target).isNotNull()
+        val debugPackageProvider: DebugPackageProvider = DebugPackageProvider.get(target)
+        assertThat(debugPackageProvider.getStrippedArtifact().getFilename()).isEqualTo("w.stripped")
+        assertThat(debugPackageProvider.getUnstrippedArtifact().getFilename()).isEqualTo("w")
+        assertThat(debugPackageProvider.getDwpArtifact()).isNull()
+    }
 
-  @Test
-  public void testDebugPackageProviderFissionEnabled() throws Exception {
-    setupDebugPackageProviderTest("--fission=yes");
-    ConfiguredTarget target = getConfiguredTarget("//a:w");
-    assertNoEvents();
-    assertThat(target).isNotNull();
-    DebugPackageProvider debugPackageProvider = DebugPackageProvider.get(target);
-    assertThat(debugPackageProvider.getStrippedArtifact().getFilename()).isEqualTo("w.stripped");
-    assertThat(debugPackageProvider.getUnstrippedArtifact().getFilename()).isEqualTo("w");
-    assertThat(debugPackageProvider.getDwpArtifact().getFilename()).isEqualTo("w.dwp");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDebugPackageProviderFissionEnabled() {
+        setupDebugPackageProviderTest("--fission=yes")
+        val target: ConfiguredTarget = getConfiguredTarget("//a:w")
+        assertNoEvents()
+        assertThat(target).isNotNull()
+        val debugPackageProvider: DebugPackageProvider = DebugPackageProvider.get(target)
+        assertThat(debugPackageProvider.getStrippedArtifact().getFilename()).isEqualTo("w.stripped")
+        assertThat(debugPackageProvider.getUnstrippedArtifact().getFilename()).isEqualTo("w")
+        assertThat(debugPackageProvider.getDwpArtifact().getFilename()).isEqualTo("w.dwp")
+    }
 
-  @Test
-  public void testCcDebugContextDisabled() throws Exception {
-    scratch.file(
-        "b/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCcDebugContextDisabled() {
+        scratch.file(
+            "b/BUILD",
+            """
         load("//my_rules:rule.bzl", "cc_compile_rule")
 
         cc_compile_rule(
             name = "b_lib",
             srcs = ["b_lib.cc"],
         )
-        """);
-    scratch.file("my_rules/BUILD");
-    scratch.file(
-        "my_rules/rule.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file("my_rules/BUILD")
+        scratch.file(
+            "my_rules/rule.bzl",
+            """
         load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')
         load('@rules_cc//cc/common:cc_info.bzl', 'CcInfo')
         def _impl(ctx):
@@ -7064,17 +7757,22 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
                 "srcs": attr.label_list(allow_files = [".cc"]),
             },
         )
-        """);
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//b:b_lib"));
-    assertThat(e).hasMessageThat().contains("cannot use private API");
-  }
+        
+        """.trimIndent()
+        )
+        val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//b:b_lib") })
+        Truth.assertThat(e).hasMessageThat().contains("cannot use private API")
+    }
 
-  @Test
-  public void testCcDebugContext() throws Exception {
-    useConfiguration("--fission=yes");
-    scratch.file(
-        "b/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCcDebugContext() {
+        useConfiguration("--fission=yes")
+        scratch.file(
+            "b/BUILD",
+            """
         load("@rules_cc//cc/toolchains:cc_toolchain_alias.bzl", "cc_toolchain_alias")
         load("//bazel_internal/test_rules/cc:rule.bzl", "cc_compile_rule")
 
@@ -7084,11 +7782,13 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             name = "b_lib",
             srcs = ["b_lib.cc"],
         )
-        """);
-    scratch.file("bazel_internal/test_rules/cc/BUILD");
-    scratch.file(
-        "bazel_internal/test_rules/cc/rule.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file("bazel_internal/test_rules/cc/BUILD")
+        scratch.file(
+            "bazel_internal/test_rules/cc/rule.bzl",
+            """
         load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')
         load('@rules_cc//cc/common:cc_info.bzl', 'CcInfo')
 
@@ -7118,73 +7818,87 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             },
             fragments = ["cpp"],
         )
-        """);
-    ConfiguredTarget target = getConfiguredTarget("//b:b_lib");
-    assertThat(
+        
+        """.trimIndent()
+        )
+        val target: ConfiguredTarget = getConfiguredTarget("//b:b_lib")
+        assertThat(
             CcInfo.get(target)
                 .getCcDebugInfoContext()
-                .getValue("files", Depset.class)
-                .toList(Artifact.class)
+                .getValue("files", Depset::class.java)
+                .toList(Artifact::class.java)
                 .stream()
-                .map(Artifact::getFilename))
-        .containsExactly("b_lib.dwo");
-    assertThat(
-            CcInfo.get(target).getCcDebugInfoContext().getValue("pic_files", Depset.class).toList())
-        .isEmpty();
-  }
+                .map(Artifact::getFilename)
+        )
+            .containsExactly("b_lib.dwo")
+        assertThat(
+            CcInfo.get(target).getCcDebugInfoContext().getValue("pic_files", Depset::class.java).toList()
+        )
+            .isEmpty()
+    }
 
-  @Test
-  public void testExpandedCppConfigurationApiBlocked() throws Exception {
-    List<String> cppConfigurationOptions =
-        ImmutableList.of(
-            "strip_opts()",
-            "build_test_dwp()",
-            "grte_top()",
-            "experimental_cc_implementation_deps()",
-            "experimental_cpp_modules()",
-            "share_native_deps()");
-    scratch.file(
-        "foo/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExpandedCppConfigurationApiBlocked() {
+        val cppConfigurationOptions: MutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>(
+                "strip_opts()",
+                "build_test_dwp()",
+                "grte_top()",
+                "experimental_cc_implementation_deps()",
+                "experimental_cpp_modules()",
+                "share_native_deps()"
+            )
+        scratch.file(
+            "foo/BUILD",
+            """
         load(":custom_rule.bzl", "cpp_config_rule")
 
         cpp_config_rule(name = "custom")
-        """);
-    for (String option : cppConfigurationOptions) {
-      scratch.overwriteFile(
-          "foo/custom_rule.bzl",
-          "def _impl(ctx):",
-          "  ctx.fragments.cpp." + option,
-          "  return []",
-          "cpp_config_rule = rule(",
-          "  implementation = _impl,",
-          "  fragments = [\"cpp\"],",
-          ")");
-      invalidatePackages();
+        
+        """.trimIndent()
+        )
+        for (option in cppConfigurationOptions) {
+            scratch.overwriteFile(
+                "foo/custom_rule.bzl",
+                "def _impl(ctx):",
+                "  ctx.fragments.cpp." + option,
+                "  return []",
+                "cpp_config_rule = rule(",
+                "  implementation = _impl,",
+                "  fragments = [\"cpp\"],",
+                ")"
+            )
+            invalidatePackages()
 
-      AssertionError e =
-          assertThrows(AssertionError.class, () -> getConfiguredTarget("//foo:custom"));
+            val e: java.lang.AssertionError? =
+                org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                    java.lang.AssertionError::class.java,
+                    org.junit.function.ThrowingRunnable { getConfiguredTarget("//foo:custom") })
 
-      assertThat(e).hasMessageThat().contains("cannot use private API");
+            Truth.assertThat(e).hasMessageThat().contains("cannot use private API")
+        }
     }
-  }
 
-  @Test
-  public void testExpandedCompileApiBlocked() throws Exception {
-    scratch.file(
-        "bazel_internal/test_rules/cc/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExpandedCompileApiBlocked() {
+        scratch.file(
+            "bazel_internal/test_rules/cc/BUILD",
+            """
         load(":module_map.bzl", "module_map")
 
         module_map(
             name = "module_map",
             file = "a_file.txt",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "bazel_internal/test_rules/cc/module_map.bzl",
-        """
+        scratch.file(
+            "bazel_internal/test_rules/cc/module_map.bzl",
+            """
         load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')
         ModuleMapInfo = provider(fields = ["module_map", "file"])
 
@@ -7202,24 +7916,27 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             },
             fragments = ["cpp"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    String compileCall =
-        "cc_common.compile(actions = ctx.actions, feature_configuration = feature_configuration,"
-            + " name = 'name', cc_toolchain = toolchain, ";
-    List<String> calls =
-        ImmutableList.of(
-            "cc_common.create_module_map(file=file, name='name')",
-            compileCall + " module_map = module_map)",
-            compileCall + " additional_module_maps = [module_map])",
-            compileCall + "additional_exported_hdrs = [])",
-            compileCall + "do_not_generate_module_map = True)",
-            compileCall + "code_coverage_enabled = True)",
-            compileCall + "separate_module_headers = [])",
-            compileCall + "hdrs_checking_mode = 'strict')");
-    scratch.overwriteFile(
-        "a/BUILD",
-        """
+        val compileCall =
+            ("cc_common.compile(actions = ctx.actions, feature_configuration = feature_configuration,"
+                    + " name = 'name', cc_toolchain = toolchain, ")
+        val calls: MutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>(
+                "cc_common.create_module_map(file=file, name='name')",
+                compileCall + " module_map = module_map)",
+                compileCall + " additional_module_maps = [module_map])",
+                compileCall + "additional_exported_hdrs = [])",
+                compileCall + "do_not_generate_module_map = True)",
+                compileCall + "code_coverage_enabled = True)",
+                compileCall + "separate_module_headers = [])",
+                compileCall + "hdrs_checking_mode = 'strict')"
+            )
+        scratch.overwriteFile(
+            "a/BUILD",
+            """
         load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')
         load("@rules_cc//cc/toolchains:cc_toolchain_alias.bzl", "cc_toolchain_alias")
         load(":rule.bzl", "crule")
@@ -7230,121 +7947,141 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             name = "r",
             deps = ["//bazel_internal/test_rules/cc:module_map"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    for (String call : calls) {
-      scratch.overwriteFile(
-          "a/rule.bzl",
-          "load('//bazel_internal/test_rules/cc:module_map.bzl', 'ModuleMapInfo')",
-          "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
-          "CruleInfo = provider()",
-          "def _impl(ctx):",
-          "  toolchain = ctx.attr._cc_toolchain[cc_common.CcToolchainInfo]",
-          "  feature_configuration = cc_common.configure_features(",
-          "    ctx = ctx,",
-          "    cc_toolchain = toolchain,",
-          "  )",
-          "  module_map = ctx.attr.deps[0][ModuleMapInfo].module_map",
-          "  file = ctx.attr.deps[0][ModuleMapInfo].file",
-          "  " + call,
-          "  return [CruleInfo()]",
-          "crule = rule(",
-          "  _impl,",
-          "  attrs = { ",
-          "    'deps': attr.label_list(),",
-          "    '_cc_toolchain': attr.label(default=Label('//a:alias'))",
-          "  },",
-          "  fragments = ['cpp'],",
-          ");");
-      initializeSkyframeExecutor();
-      AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//a:r"));
-      assertThat(e).hasMessageThat().contains("cannot use private API");
+        for (call in calls) {
+            scratch.overwriteFile(
+                "a/rule.bzl",
+                "load('//bazel_internal/test_rules/cc:module_map.bzl', 'ModuleMapInfo')",
+                "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
+                "CruleInfo = provider()",
+                "def _impl(ctx):",
+                "  toolchain = ctx.attr._cc_toolchain[cc_common.CcToolchainInfo]",
+                "  feature_configuration = cc_common.configure_features(",
+                "    ctx = ctx,",
+                "    cc_toolchain = toolchain,",
+                "  )",
+                "  module_map = ctx.attr.deps[0][ModuleMapInfo].module_map",
+                "  file = ctx.attr.deps[0][ModuleMapInfo].file",
+                "  " + call,
+                "  return [CruleInfo()]",
+                "crule = rule(",
+                "  _impl,",
+                "  attrs = { ",
+                "    'deps': attr.label_list(),",
+                "    '_cc_toolchain': attr.label(default=Label('//a:alias'))",
+                "  },",
+                "  fragments = ['cpp'],",
+                ");"
+            )
+            initializeSkyframeExecutor()
+            val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//a:r") })
+            Truth.assertThat(e).hasMessageThat().contains("cannot use private API")
+        }
     }
-  }
 
-  @Test
-  public void testExpandedLinkApiRaisesError() throws Exception {
-    scratch.file(
-        "b/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExpandedLinkApiRaisesError() {
+        scratch.file(
+            "b/BUILD",
+            """
         load("@rules_cc//cc/toolchains:cc_toolchain_alias.bzl", "cc_toolchain_alias")
         load("//b:rule.bzl", "link_rule")
 
         cc_toolchain_alias(name = "alias")
 
         link_rule(name = "foo")
-        """);
-    String callFormatString =
-        "cc_common.link(name='test', actions=ctx.actions,"
-            + "feature_configuration=feature_configuration, cc_toolchain=toolchain, %s)";
-    ImmutableList<String> calls =
-        ImmutableList.of(
-            String.format(callFormatString, "never_link=False"),
-            String.format(callFormatString, "test_only_target=False"),
-            String.format(callFormatString, "always_link=False"),
-            String.format(callFormatString, "additional_linkstamp_defines=[]"),
-            String.format(callFormatString, "whole_archive=False"),
-            String.format(callFormatString, "native_deps=False"),
-            String.format(callFormatString, "emit_interface_shared_library=True"));
-    for (String call : calls) {
-      scratch.overwriteFile(
-          "b/rule.bzl",
-          "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
-          "def _impl(ctx):",
-          "  toolchain = ctx.attr._cc_toolchain[cc_common.CcToolchainInfo]",
-          "  feature_configuration = cc_common.configure_features(",
-          "    ctx = ctx,",
-          "    cc_toolchain = toolchain,",
-          "  )",
-          "  " + call,
-          "  return [DefaultInfo()]",
-          "link_rule = rule(",
-          "  implementation = _impl,",
-          "  attrs = {",
-          "    '_cc_toolchain': attr.label(default=Label('//b:alias'))",
-          "  },",
-          "  fragments = ['cpp'],",
-          ")");
-      initializeSkyframeExecutor();
-      AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//b:foo"));
-      assertThat(e).hasMessageThat().contains("cannot use private API");
+        
+        """.trimIndent()
+        )
+        val callFormatString =
+            ("cc_common.link(name='test', actions=ctx.actions,"
+                    + "feature_configuration=feature_configuration, cc_toolchain=toolchain, %s)")
+        val calls: com.google.common.collect.ImmutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>(
+                String.format(callFormatString, "never_link=False"),
+                String.format(callFormatString, "test_only_target=False"),
+                String.format(callFormatString, "always_link=False"),
+                String.format(callFormatString, "additional_linkstamp_defines=[]"),
+                String.format(callFormatString, "whole_archive=False"),
+                String.format(callFormatString, "native_deps=False"),
+                String.format(callFormatString, "emit_interface_shared_library=True")
+            )
+        for (call in calls) {
+            scratch.overwriteFile(
+                "b/rule.bzl",
+                "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
+                "def _impl(ctx):",
+                "  toolchain = ctx.attr._cc_toolchain[cc_common.CcToolchainInfo]",
+                "  feature_configuration = cc_common.configure_features(",
+                "    ctx = ctx,",
+                "    cc_toolchain = toolchain,",
+                "  )",
+                "  " + call,
+                "  return [DefaultInfo()]",
+                "link_rule = rule(",
+                "  implementation = _impl,",
+                "  attrs = {",
+                "    '_cc_toolchain': attr.label(default=Label('//b:alias'))",
+                "  },",
+                "  fragments = ['cpp'],",
+                ")"
+            )
+            initializeSkyframeExecutor()
+            val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//b:foo") })
+            Truth.assertThat(e).hasMessageThat().contains("cannot use private API")
+        }
     }
-  }
 
-  @Test
-  public void testExpandedCcCompilationOutputsApiRaisesError() throws Exception {
-    scratch.file(
-        "b/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExpandedCcCompilationOutputsApiRaisesError() {
+        scratch.file(
+            "b/BUILD",
+            """
         load("//b:rule.bzl", "cc_rule")
 
         cc_rule(
             name = "foo",
         )
-        """);
-    ImmutableList<String> calls = ImmutableList.of("comp_outputs.temps()");
-    for (String call : calls) {
-      scratch.overwriteFile(
-          "b/rule.bzl",
-          "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
-          "def _impl(ctx):",
-          "  comp_outputs = cc_common.create_compilation_outputs()",
-          "  " + call,
-          "  return [DefaultInfo()]",
-          "cc_rule = rule(",
-          "  implementation = _impl,",
-          ")");
-      invalidatePackages();
-      AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//b:foo"));
-      assertThat(e).hasMessageThat().contains("cannot use private API");
+        
+        """.trimIndent()
+        )
+        val calls: com.google.common.collect.ImmutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>("comp_outputs.temps()")
+        for (call in calls) {
+            scratch.overwriteFile(
+                "b/rule.bzl",
+                "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
+                "def _impl(ctx):",
+                "  comp_outputs = cc_common.create_compilation_outputs()",
+                "  " + call,
+                "  return [DefaultInfo()]",
+                "cc_rule = rule(",
+                "  implementation = _impl,",
+                ")"
+            )
+            invalidatePackages()
+            val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//b:foo") })
+            Truth.assertThat(e).hasMessageThat().contains("cannot use private API")
+        }
     }
-  }
 
-  @Test
-  public void testExpandedLibraryToLinkApiRaisesError() throws Exception {
-    scratch.file(
-        "b/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExpandedLibraryToLinkApiRaisesError() {
+        scratch.file(
+            "b/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         load("@rules_cc//cc/toolchains:cc_toolchain_alias.bzl", "cc_toolchain_alias")
         load("//b:rule.bzl", "cc_rule")
@@ -7360,49 +8097,56 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             name = "foo",
             cc_dep = ":cc_dep",
         )
-        """);
-    ImmutableList<String> calls =
-        ImmutableList.of(
-            "cc_common.create_library_to_link(actions=ctx.actions,"
-                + "feature_configuration=feature_configuration, cc_toolchain=toolchain,"
-                + " must_keep_debug=False)",
-            "cc_common.create_library_to_link(actions=ctx.actions,"
-                + "feature_configuration=feature_configuration, cc_toolchain=toolchain,"
-                + " lto_compilation_context=None)");
-    for (String call : calls) {
-      scratch.overwriteFile(
-          "b/rule.bzl",
-          "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
-          "load('@rules_cc//cc/common:cc_info.bzl', 'CcInfo')",
-          "def _impl(ctx):",
-          "  toolchain = ctx.attr._cc_toolchain[cc_common.CcToolchainInfo]",
-          "  feature_configuration = cc_common.configure_features(",
-          "    ctx = ctx,",
-          "    cc_toolchain = toolchain,",
-          "  )",
-          "  library_to_link = (ctx.attr.cc_dep[CcInfo].linking_context",
-          "                                     .linker_inputs.to_list()[0].libraries[0])",
-          "  " + call,
-          "  return [DefaultInfo()]",
-          "cc_rule = rule(",
-          "  implementation = _impl,",
-          "  attrs = { ",
-          "    'cc_dep': attr.label(),",
-          "    '_cc_toolchain': attr.label(default=Label('//b:alias'))",
-          "  },",
-          "  fragments = ['cpp'],",
-          ")");
-      invalidatePackages();
-      AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//b:foo"));
-      assertThat(e).hasMessageThat().contains("cannot use private API");
+        
+        """.trimIndent()
+        )
+        val calls: com.google.common.collect.ImmutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>(
+                ("cc_common.create_library_to_link(actions=ctx.actions,"
+                        + "feature_configuration=feature_configuration, cc_toolchain=toolchain,"
+                        + " must_keep_debug=False)"),
+                ("cc_common.create_library_to_link(actions=ctx.actions,"
+                        + "feature_configuration=feature_configuration, cc_toolchain=toolchain,"
+                        + " lto_compilation_context=None)")
+            )
+        for (call in calls) {
+            scratch.overwriteFile(
+                "b/rule.bzl",
+                "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
+                "load('@rules_cc//cc/common:cc_info.bzl', 'CcInfo')",
+                "def _impl(ctx):",
+                "  toolchain = ctx.attr._cc_toolchain[cc_common.CcToolchainInfo]",
+                "  feature_configuration = cc_common.configure_features(",
+                "    ctx = ctx,",
+                "    cc_toolchain = toolchain,",
+                "  )",
+                "  library_to_link = (ctx.attr.cc_dep[CcInfo].linking_context",
+                "                                     .linker_inputs.to_list()[0].libraries[0])",
+                "  " + call,
+                "  return [DefaultInfo()]",
+                "cc_rule = rule(",
+                "  implementation = _impl,",
+                "  attrs = { ",
+                "    'cc_dep': attr.label(),",
+                "    '_cc_toolchain': attr.label(default=Label('//b:alias'))",
+                "  },",
+                "  fragments = ['cpp'],",
+                ")"
+            )
+            invalidatePackages()
+            val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//b:foo") })
+            Truth.assertThat(e).hasMessageThat().contains("cannot use private API")
+        }
     }
-  }
 
-  @Test
-  public void testExpandedLinkstampApiRaisesError() throws Exception {
-    scratch.file(
-        "bazel_internal/test_rules/cc/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExpandedLinkstampApiRaisesError() {
+        scratch.file(
+            "bazel_internal/test_rules/cc/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         load(":linkstamps.bzl", "linkstamps")
 
@@ -7416,11 +8160,13 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             name = "linkstamps",
             deps = [":cc_dep"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "bazel_internal/test_rules/cc/linkstamps.bzl",
-        """
+        scratch.file(
+            "bazel_internal/test_rules/cc/linkstamps.bzl",
+            """
         load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
         LinkstampsInfo = provider(fields = ["linkstamps"])
 
@@ -7438,11 +8184,13 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
                 "deps": attr.label_list(),
             },
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "b/BUILD",
-        """
+        scratch.file(
+            "b/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         load("@rules_cc//cc/toolchains:cc_toolchain_alias.bzl", "cc_toolchain_alias")
         load("//b:rule.bzl", "cc_rule")
@@ -7460,152 +8208,170 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             file = "file.cc",
             linkstamps_dep = "//bazel_internal/test_rules/cc:linkstamps",
         )
-        """);
-    List<String> calls = new ArrayList<>(Arrays.asList("linkstamp.file()", "linkstamp.hdrs()"));
-    if (!analysisMock.isThisBazel()) {
-      calls.add(
-          "cc_common.register_linkstamp_compile_action(actions=ctx.actions,cc_toolchain=toolchain,"
-              + " feature_configuration=feature_configuration, "
-              + " source_file=file, output_file=file,"
-              + " compilation_inputs=depset([]), inputs_for_validation=depset([]),"
-              + " label_replacement='', output_replacement='')");
+        
+        """.trimIndent()
+        )
+        val calls: MutableList<String?> =
+            java.util.ArrayList<String?>(mutableListOf<String?>("linkstamp.file()", "linkstamp.hdrs()"))
+        if (!analysisMock.isThisBazel) {
+            calls.add(
+                ("cc_common.register_linkstamp_compile_action(actions=ctx.actions,cc_toolchain=toolchain,"
+                        + " feature_configuration=feature_configuration, "
+                        + " source_file=file, output_file=file,"
+                        + " compilation_inputs=depset([]), inputs_for_validation=depset([]),"
+                        + " label_replacement='', output_replacement='')")
+            )
+        }
+        for (call in calls) {
+            scratch.overwriteFile(
+                "b/rule.bzl",
+                "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
+                "load('@rules_cc//cc/common:cc_info.bzl', 'CcInfo')",
+                "load('//bazel_internal/test_rules/cc:linkstamps.bzl',",
+                "             'LinkstampsInfo')",
+                "def _impl(ctx):",
+                "  toolchain = ctx.attr._cc_toolchain[cc_common.CcToolchainInfo]",
+                "  feature_configuration = cc_common.configure_features(",
+                "    ctx = ctx,",
+                "    cc_toolchain = toolchain,",
+                "  )",
+                "  linkstamp = ctx.attr.linkstamps_dep[LinkstampsInfo].linkstamps[0]",
+                "  linking_context = ctx.attr.cc_dep[CcInfo].linking_context",
+                "  file = ctx.file.file",
+                "  " + call,
+                "  return [DefaultInfo()]",
+                "cc_rule = rule(",
+                "  implementation = _impl,",
+                "  attrs = { ",
+                "    'cc_dep': attr.label(),",
+                "    'linkstamps_dep': attr.label(),",
+                "    '_cc_toolchain': attr.label(default=Label('//b:alias')),",
+                "    'file': attr.label(allow_single_file=True),",
+                "  },",
+                "  fragments = ['cpp'],",
+                ")"
+            )
+            invalidatePackages()
+            val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//b:foo") })
+            Truth.assertThat(e).hasMessageThat().contains("cannot use private API")
+        }
     }
-    for (String call : calls) {
-      scratch.overwriteFile(
-          "b/rule.bzl",
-          "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
-          "load('@rules_cc//cc/common:cc_info.bzl', 'CcInfo')",
-          "load('//bazel_internal/test_rules/cc:linkstamps.bzl',",
-          "             'LinkstampsInfo')",
-          "def _impl(ctx):",
-          "  toolchain = ctx.attr._cc_toolchain[cc_common.CcToolchainInfo]",
-          "  feature_configuration = cc_common.configure_features(",
-          "    ctx = ctx,",
-          "    cc_toolchain = toolchain,",
-          "  )",
-          "  linkstamp = ctx.attr.linkstamps_dep[LinkstampsInfo].linkstamps[0]",
-          "  linking_context = ctx.attr.cc_dep[CcInfo].linking_context",
-          "  file = ctx.file.file",
-          "  " + call,
-          "  return [DefaultInfo()]",
-          "cc_rule = rule(",
-          "  implementation = _impl,",
-          "  attrs = { ",
-          "    'cc_dep': attr.label(),",
-          "    'linkstamps_dep': attr.label(),",
-          "    '_cc_toolchain': attr.label(default=Label('//b:alias')),",
-          "    'file': attr.label(allow_single_file=True),",
-          "  },",
-          "  fragments = ['cpp'],",
-          ")");
-      invalidatePackages();
-      AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//b:foo"));
-      assertThat(e).hasMessageThat().contains("cannot use private API");
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testVariableExtensionCompileApi() {
+        createFilesForTestingCompilation(
+            scratch, "tools/build_defs/foo", "variables_extension = foo_dict"
+        )
+        assertThat(getConfiguredTarget("//foo:bin")).isNotNull()
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:starlark_lib")
+        val action: CppCompileAction =
+            getGeneratingAction(artifactByPath(getFilesToBuild(target), ".o")) as CppCompileAction
+
+        val unused1: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            action
+                .getCompileCommandLine()
+                .getVariables()
+                .getVariable("string_sequence_variable", PathMapper.NOOP)
+        val unused2: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            action
+                .getCompileCommandLine()
+                .getVariables()
+                .getStringVariable("string_variable", PathMapper.NOOP)
+        val unused3: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            action
+                .getCompileCommandLine()
+                .getVariables()
+                .getVariable("string_depset_variable", PathMapper.NOOP)
     }
-  }
 
-  @Test
-  public void testVariableExtensionCompileApi() throws Exception {
-    createFilesForTestingCompilation(
-        scratch, "tools/build_defs/foo", "variables_extension = foo_dict");
-    assertThat(getConfiguredTarget("//foo:bin")).isNotNull();
-    ConfiguredTarget target = getConfiguredTarget("//foo:starlark_lib");
-    CppCompileAction action =
-        (CppCompileAction) getGeneratingAction(artifactByPath(getFilesToBuild(target), ".o"));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testVariableExtensionLinkingContextApi() {
+        createFilesForTestingLinking(scratch, "tools/build_defs/foo", "variables_extension = foo_dict")
+        assertThat(getConfiguredTarget("//foo:bin")).isNotNull()
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:starlark_lib")
+        val action: SpawnAction =
+            getGeneratingAction(artifactByPath(getFilesToBuild(target), ".a")) as SpawnAction
 
-    var unused1 =
-        action
-            .getCompileCommandLine()
-            .getVariables()
-            .getVariable("string_sequence_variable", PathMapper.NOOP);
-    var unused2 =
-        action
-            .getCompileCommandLine()
-            .getVariables()
-            .getStringVariable("string_variable", PathMapper.NOOP);
-    var unused3 =
-        action
-            .getCompileCommandLine()
-            .getVariables()
-            .getVariable("string_depset_variable", PathMapper.NOOP);
-  }
-
-  @Test
-  public void testVariableExtensionLinkingContextApi() throws Exception {
-    createFilesForTestingLinking(scratch, "tools/build_defs/foo", "variables_extension = foo_dict");
-    assertThat(getConfiguredTarget("//foo:bin")).isNotNull();
-    ConfiguredTarget target = getConfiguredTarget("//foo:starlark_lib");
-    SpawnAction action =
-        (SpawnAction) getGeneratingAction(artifactByPath(getFilesToBuild(target), ".a"));
-
-    var unused1 =
-        getLinkCommandLine(action)
-            .getBuildVariables()
-            .getVariable("string_sequence_variable", PathMapper.NOOP);
-    var unused2 =
-        getLinkCommandLine(action)
-            .getBuildVariables()
-            .getStringVariable("string_variable", PathMapper.NOOP);
-    var unused3 =
-        getLinkCommandLine(action)
-            .getBuildVariables()
-            .getVariable("string_depset_variable", PathMapper.NOOP);
-  }
-
-  @Test
-  public void testVariableExtensionLinkApi() throws Exception {
-    setupTestTransitiveLink(
-        scratch, "output_type = 'executable'", "variables_extension = foo_dict");
-    ConfiguredTarget target = getConfiguredTarget("//foo:bin");
-    assertThat(target).isNotNull();
-    SpawnAction action =
-        (SpawnAction)
-            getGeneratingAction((Artifact) getMyInfoFromTarget(target).getValue("executable"));
-
-    var unused1 =
-        getLinkCommandLine(action)
-            .getBuildVariables()
-            .getVariable("string_sequence_variable", PathMapper.NOOP);
-    var unused2 =
-        getLinkCommandLine(action)
-            .getBuildVariables()
-            .getStringVariable("string_variable", PathMapper.NOOP);
-    var unused3 =
-        getLinkCommandLine(action)
-            .getBuildVariables()
-            .getVariable("string_depset_variable", PathMapper.NOOP);
-  }
-
-  @Test
-  public void testVariablesExtensionInvalidValueTypesThrowsError() throws Exception {
-    String rulePkg = "b";
-    scratch.overwriteFile(rulePkg + "/BUILD", "");
-    scratch.overwriteFile(
-        "b/BUILD",
-        "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
-        "load('@rules_cc//cc/toolchains:cc_toolchain_alias.bzl',"
-            + " 'cc_toolchain_alias')",
-        "load('//" + rulePkg + ":rule.bzl', 'cc_rule')",
-        "cc_library(name='cc_dep', srcs=['cc_dep.cc'])",
-        "cc_toolchain_alias(name='alias')",
-        "cc_rule(name='foo', cc_dep=':cc_dep')");
-    for (String value : ImmutableList.of("1", "[1]", "depset([1])")) {
-      scratch.overwriteFile(
-          rulePkg + "/rule.bzl",
-          getVariablesExtensionStarlarkRule("compile", "dict = {'variable': " + value + "}"));
-      invalidatePackages();
-      AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//b:foo"));
-      assertThat(e).hasMessageThat().contains("got element of type int, want string");
+        val unused1: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            getLinkCommandLine(action)
+                .getBuildVariables()
+                .getVariable("string_sequence_variable", PathMapper.NOOP)
+        val unused2: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            getLinkCommandLine(action)
+                .getBuildVariables()
+                .getStringVariable("string_variable", PathMapper.NOOP)
+        val unused3: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            getLinkCommandLine(action)
+                .getBuildVariables()
+                .getVariable("string_depset_variable", PathMapper.NOOP)
     }
-  }
 
-  @Test
-  public void testAdditionalLinkingOutputsAppearAsOutputsOfLinkAction() throws Exception {
-    createCcBinRule(
-        scratch, /* internalApi= */ false, "additional_outputs=ctx.outputs.additional_outputs");
-    scratch.file(
-        "foo/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testVariableExtensionLinkApi() {
+        setupTestTransitiveLink(
+            scratch, "output_type = 'executable'", "variables_extension = foo_dict"
+        )
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:bin")
+        assertThat(target).isNotNull()
+        val action: SpawnAction =
+            getGeneratingAction(getMyInfoFromTarget(target).getValue("executable") as Artifact?) as SpawnAction
+
+        val unused1: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            getLinkCommandLine(action)
+                .getBuildVariables()
+                .getVariable("string_sequence_variable", PathMapper.NOOP)
+        val unused2: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            getLinkCommandLine(action)
+                .getBuildVariables()
+                .getStringVariable("string_variable", PathMapper.NOOP)
+        val unused3: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            getLinkCommandLine(action)
+                .getBuildVariables()
+                .getVariable("string_depset_variable", PathMapper.NOOP)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testVariablesExtensionInvalidValueTypesThrowsError() {
+        val rulePkg = "b"
+        scratch.overwriteFile(rulePkg + "/BUILD", "")
+        scratch.overwriteFile(
+            "b/BUILD",
+            "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
+            "load('@rules_cc//cc/toolchains:cc_toolchain_alias.bzl',"
+                    + " 'cc_toolchain_alias')",
+            "load('//" + rulePkg + ":rule.bzl', 'cc_rule')",
+            "cc_library(name='cc_dep', srcs=['cc_dep.cc'])",
+            "cc_toolchain_alias(name='alias')",
+            "cc_rule(name='foo', cc_dep=':cc_dep')"
+        )
+        for (value in com.google.common.collect.ImmutableList.of<String?>("1", "[1]", "depset([1])")) {
+            scratch.overwriteFile(
+                rulePkg + "/rule.bzl",
+                getVariablesExtensionStarlarkRule("compile", "dict = {'variable': " + value + "}")
+            )
+            invalidatePackages()
+            val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//b:foo") })
+            Truth.assertThat(e).hasMessageThat().contains("got element of type int, want string")
+        }
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAdditionalLinkingOutputsAppearAsOutputsOfLinkAction() {
+        createCcBinRule(
+            scratch,  /* internalApi= */false, "additional_outputs=ctx.outputs.additional_outputs"
+        )
+        scratch.file(
+            "foo/BUILD",
+            """
         load("//tools/build_defs:extension.bzl", "cc_bin")
 
         cc_bin(
@@ -7614,132 +8380,154 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             objects = ["file.o"],
             pic_objects = ["file.pic.o"],
         )
-        """);
-    ConfiguredTarget target = getConfiguredTarget("//foo:bin");
-    assertThat(target).isNotNull();
-    SpawnAction action =
-        (SpawnAction) getGeneratingAction(artifactByPath(getFilesToBuild(target), ".map"));
-    assertThat(artifactsToStrings(action.getOutputs())).contains("bin foo/bin.map");
-  }
+        
+        """.trimIndent()
+        )
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:bin")
+        assertThat(target).isNotNull()
+        val action: SpawnAction =
+            getGeneratingAction(artifactByPath(getFilesToBuild(target), ".map")) as SpawnAction
+        Truth.assertThat(artifactsToStrings(action.getOutputs())).contains("bin foo/bin.map")
+    }
 
-  private String getVariablesExtensionStarlarkRule(String call, String dictionaryEntries) {
-    return Joiner.on("\n")
-        .join(
-            "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
-            "def _impl(ctx):",
-            "  toolchain = ctx.attr._cc_toolchain[cc_common.CcToolchainInfo]",
-            "  feature_configuration = cc_common.configure_features(",
-            "      ctx = ctx,",
-            "      cc_toolchain = toolchain,",
-            "      requested_features = ctx.features,",
-            "      unsupported_features = ctx.disabled_features,",
-            "  )",
-            "  " + dictionaryEntries,
-            "  cc_common." + call + "(",
-            "      actions = ctx.actions,",
-            "      feature_configuration = feature_configuration,",
-            "      cc_toolchain = toolchain,",
-            "      name = ctx.label.name + '_aspect',",
-            "      variables_extension = dict,",
-            "  )",
-            "  return [DefaultInfo()]",
-            "cc_rule = rule(",
-            "  implementation = _impl,",
-            "  attrs = { ",
-            "    'cc_dep': attr.label(),",
-            "    '_cc_toolchain': attr.label(default=Label('//b:alias'))",
-            "  },",
-            "  fragments = ['cpp'],",
-            ")");
-  }
+    private fun getVariablesExtensionStarlarkRule(call: String?, dictionaryEntries: String?): String {
+        return com.google.common.base.Joiner.on("\n")
+            .join(
+                "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
+                "def _impl(ctx):",
+                "  toolchain = ctx.attr._cc_toolchain[cc_common.CcToolchainInfo]",
+                "  feature_configuration = cc_common.configure_features(",
+                "      ctx = ctx,",
+                "      cc_toolchain = toolchain,",
+                "      requested_features = ctx.features,",
+                "      unsupported_features = ctx.disabled_features,",
+                "  )",
+                "  " + dictionaryEntries,
+                "  cc_common." + call + "(",
+                "      actions = ctx.actions,",
+                "      feature_configuration = feature_configuration,",
+                "      cc_toolchain = toolchain,",
+                "      name = ctx.label.name + '_aspect',",
+                "      variables_extension = dict,",
+                "  )",
+                "  return [DefaultInfo()]",
+                "cc_rule = rule(",
+                "  implementation = _impl,",
+                "  attrs = { ",
+                "    'cc_dep': attr.label(),",
+                "    '_cc_toolchain': attr.label(default=Label('//b:alias'))",
+                "  },",
+                "  fragments = ['cpp'],",
+                ")"
+            )
+    }
 
-  @Test
-  public void testMissingToolchainAndFeatureConfigurationRaisesErrorInCreateLibraryToLink()
-      throws Exception {
-    scratch.file(
-        "b/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMissingToolchainAndFeatureConfigurationRaisesErrorInCreateLibraryToLink() {
+        scratch.file(
+            "b/BUILD",
+            """
         load("@rules_cc//cc/toolchains:cc_toolchain_alias.bzl", "cc_toolchain_alias")
         load("//b:rule.bzl", "cc_rule")
 
         cc_toolchain_alias(name = "alias")
 
         cc_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    runTestMissingToolchainAndFeatureConfigurationRaisesErrorInCreateLibraryToLink(
-        "None,", "feature_configuration,", "ctx.file._artifact,", "None,");
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//b:foo"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("If you pass 'dynamic_library', you must also pass a 'cc_toolchain'");
+        runTestMissingToolchainAndFeatureConfigurationRaisesErrorInCreateLibraryToLink(
+            "None,", "feature_configuration,", "ctx.file._artifact,", "None,"
+        )
+        var e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//b:foo") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("If you pass 'dynamic_library', you must also pass a 'cc_toolchain'")
 
-    runTestMissingToolchainAndFeatureConfigurationRaisesErrorInCreateLibraryToLink(
-        "toolchain,", "None,", "ctx.file._artifact,", "None,");
-    e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//b:foo"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("If you pass 'dynamic_library', you must also pass a 'feature_configuration'");
+        runTestMissingToolchainAndFeatureConfigurationRaisesErrorInCreateLibraryToLink(
+            "toolchain,", "None,", "ctx.file._artifact,", "None,"
+        )
+        e = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//b:foo") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("If you pass 'dynamic_library', you must also pass a 'feature_configuration'")
 
-    runTestMissingToolchainAndFeatureConfigurationRaisesErrorInCreateLibraryToLink(
-        "None,", "feature_configuration,", "None,", "ctx.file._artifact,");
-    e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//b:foo"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("If you pass 'interface_library', you must also pass a 'cc_toolchain'");
+        runTestMissingToolchainAndFeatureConfigurationRaisesErrorInCreateLibraryToLink(
+            "None,", "feature_configuration,", "None,", "ctx.file._artifact,"
+        )
+        e = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//b:foo") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("If you pass 'interface_library', you must also pass a 'cc_toolchain'")
 
-    runTestMissingToolchainAndFeatureConfigurationRaisesErrorInCreateLibraryToLink(
-        "toolchain,", "None,", "None,", "ctx.file._artifact,");
-    e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//b:foo"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("If you pass 'interface_library', you must also pass a 'feature_configuration'");
-  }
+        runTestMissingToolchainAndFeatureConfigurationRaisesErrorInCreateLibraryToLink(
+            "toolchain,", "None,", "None,", "ctx.file._artifact,"
+        )
+        e = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//b:foo") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("If you pass 'interface_library', you must also pass a 'feature_configuration'")
+    }
 
-  private void runTestMissingToolchainAndFeatureConfigurationRaisesErrorInCreateLibraryToLink(
-      String toolchain, String featureConfiguration, String dynamicLibrary, String interfaceLibrary)
-      throws Exception {
-    scratch.overwriteFile(
-        "b/rule.bzl",
-        "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
-        "def _impl(ctx):",
-        "  toolchain = ctx.attr._cc_toolchain[cc_common.CcToolchainInfo]",
-        "  feature_configuration = cc_common.configure_features(",
-        "    ctx = ctx,",
-        "    cc_toolchain = toolchain,",
-        "  )",
-        "  cc_common.create_library_to_link(",
-        "    actions=ctx.actions, ",
-        "    cc_toolchain = " + toolchain,
-        "    feature_configuration = " + featureConfiguration,
-        "    dynamic_library =" + dynamicLibrary,
-        "    interface_library =" + interfaceLibrary,
-        "  )",
-        "  return [DefaultInfo()]",
-        "cc_rule = rule(",
-        "  implementation = _impl,",
-        "  attrs = { ",
-        "    '_artifact': attr.label(allow_single_file=True, default=Label('//b:foo.soif.so')),",
-        "    '_cc_toolchain': attr.label(default=Label('//b:alias'))",
-        "  },",
-        "  fragments = ['cpp'],",
-        ")");
-    invalidatePackages();
-  }
+    @Throws(java.lang.Exception::class)
+    private fun runTestMissingToolchainAndFeatureConfigurationRaisesErrorInCreateLibraryToLink(
+        toolchain: String?, featureConfiguration: String?, dynamicLibrary: String?, interfaceLibrary: String?
+    ) {
+        scratch.overwriteFile(
+            "b/rule.bzl",
+            "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
+            "def _impl(ctx):",
+            "  toolchain = ctx.attr._cc_toolchain[cc_common.CcToolchainInfo]",
+            "  feature_configuration = cc_common.configure_features(",
+            "    ctx = ctx,",
+            "    cc_toolchain = toolchain,",
+            "  )",
+            "  cc_common.create_library_to_link(",
+            "    actions=ctx.actions, ",
+            "    cc_toolchain = " + toolchain,
+            "    feature_configuration = " + featureConfiguration,
+            "    dynamic_library =" + dynamicLibrary,
+            "    interface_library =" + interfaceLibrary,
+            "  )",
+            "  return [DefaultInfo()]",
+            "cc_rule = rule(",
+            "  implementation = _impl,",
+            "  attrs = { ",
+            "    '_artifact': attr.label(allow_single_file=True, default=Label('//b:foo.soif.so')),",
+            "    '_cc_toolchain': attr.label(default=Label('//b:alias'))",
+            "  },",
+            "  fragments = ['cpp'],",
+            ")"
+        )
+        invalidatePackages()
+    }
 
-  @Test
-  public void testCcInternalIsNotAccessibleFromOutsideBuiltins() throws Exception {
-    scratch.file(
-        "a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCcInternalIsNotAccessibleFromOutsideBuiltins() {
+        scratch.file(
+            "a/BUILD",
+            """
         load(":rule.bzl", "crule")
 
         crule(name = "r")
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "a/rule.bzl",
-        """
+        scratch.file(
+            "a/rule.bzl",
+            """
         def _impl(ctx):
             cc_internal
             return DefaultInfo()
@@ -7747,24 +8535,31 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
         crule = rule(
             _impl,
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//a:r"));
-    assertThat(e).hasMessageThat().contains("name 'cc_internal' is not defined");
-  }
+        val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//a:r") })
+        Truth.assertThat(e).hasMessageThat().contains("name 'cc_internal' is not defined")
+    }
 
-  @Test
-  public void testExtendedBuildConfigurationApiBlocked() throws Exception {
-    scratch.file(
-        "foo/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExtendedBuildConfigurationApiBlocked() {
+        scratch.file(
+            "foo/BUILD",
+            """
         load(":custom_rule.bzl", "build_config_rule")
 
         build_config_rule(name = "custom")
-        """);
-    scratch.file(
-        "foo/custom_rule.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "foo/custom_rule.bzl",
+            """
         def _impl(ctx):
             ctx.configuration.stamp_binaries()
             return []
@@ -7772,30 +8567,37 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
         build_config_rule = rule(
             implementation = _impl,
         )
-        """);
-    invalidatePackages();
+        
+        """.trimIndent()
+        )
+        invalidatePackages()
 
-    AssertionError e =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//foo:custom"));
+        val e: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//foo:custom") })
 
-    assertThat(e).hasMessageThat().contains("file '//foo:custom_rule.bzl' cannot use private API");
-  }
+        Truth.assertThat(e).hasMessageThat().contains("file '//foo:custom_rule.bzl' cannot use private API")
+    }
 
-  @Test
-  public void testExtendedCcLinkingOutputsApiBlocked() throws Exception {
-    scratch.file(
-        "foo/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExtendedCcLinkingOutputsApiBlocked() {
+        scratch.file(
+            "foo/BUILD",
+            """
         load("@rules_cc//cc/toolchains:cc_toolchain_alias.bzl", "cc_toolchain_alias")
         load(":custom_rule.bzl", "cc_linking_outputs_rule")
 
         cc_toolchain_alias(name = "alias")
 
         cc_linking_outputs_rule(name = "custom")
-        """);
-    scratch.file(
-        "foo/custom_rule.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "foo/custom_rule.bzl",
+            """
         load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')
         def _impl(ctx):
             cc_toolchain = ctx.attr._cc_toolchain[cc_common.CcToolchainInfo]
@@ -7817,30 +8619,37 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             attrs = {"_cc_toolchain": attr.label(default = Label("//foo:alias"))},
             fragments = ["cpp"],
         )
-        """);
-    invalidatePackages();
+        
+        """.trimIndent()
+        )
+        invalidatePackages()
 
-    AssertionError e =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//foo:custom"));
+        val e: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//foo:custom") })
 
-    assertThat(e).hasMessageThat().contains("cannot use private API");
-  }
+        Truth.assertThat(e).hasMessageThat().contains("cannot use private API")
+    }
 
-  @Test
-  public void testToolRequirementForActionIsNotAccessibleFromOutsideBuiltins() throws Exception {
-    scratch.file(
-        "foo/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testToolRequirementForActionIsNotAccessibleFromOutsideBuiltins() {
+        scratch.file(
+            "foo/BUILD",
+            """
         load("@rules_cc//cc/toolchains:cc_toolchain_alias.bzl", "cc_toolchain_alias")
         load(":custom_rule.bzl", "custom_rule")
 
         cc_toolchain_alias(name = "alias")
 
         custom_rule(name = "custom")
-        """);
-    scratch.file(
-        "foo/custom_rule.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "foo/custom_rule.bzl",
+            """
         load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')
         def _impl(ctx):
             cc_toolchain = ctx.attr._cc_toolchain[cc_common.CcToolchainInfo]
@@ -7859,28 +8668,34 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             attrs = {"_cc_toolchain": attr.label(default = Label("//foo:alias"))},
             fragments = ["cpp"],
         )
-        """);
-    invalidatePackages();
+        
+        """.trimIndent()
+        )
+        invalidatePackages()
 
-    AssertionError e =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//foo:custom"));
+        val e: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//foo:custom") })
 
-    assertThat(e).hasMessageThat().contains("cannot use private API");
-  }
+        Truth.assertThat(e).hasMessageThat().contains("cannot use private API")
+    }
 
-  @Test
-  public void testCreateCompilationOutputsPrivateParameterIsNotAccessibleFromOutsideBuiltins()
-      throws Exception {
-    scratch.file(
-        "foo/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCreateCompilationOutputsPrivateParameterIsNotAccessibleFromOutsideBuiltins() {
+        scratch.file(
+            "foo/BUILD",
+            """
         load(":custom_rule.bzl", "custom_rule")
 
         custom_rule(name = "custom")
-        """);
-    scratch.file(
-        "foo/custom_rule.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "foo/custom_rule.bzl",
+            """
         load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')
         def _impl(ctx):
             cc_common.create_compilation_outputs(
@@ -7893,31 +8708,37 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
         custom_rule = rule(
             implementation = _impl,
         )
-        """);
-    invalidatePackages();
+        
+        """.trimIndent()
+        )
+        invalidatePackages()
 
-    AssertionError e =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//foo:custom"));
+        val e: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//foo:custom") })
 
-    assertThat(e).hasMessageThat().contains("cannot use private API");
-  }
+        Truth.assertThat(e).hasMessageThat().contains("cannot use private API")
+    }
 
-  @Test
-  public void testGetCompileBuildVariablesStripOptsNotAccessibleFromOutsideBuiltins()
-      throws Exception {
-    scratch.file(
-        "foo/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGetCompileBuildVariablesStripOptsNotAccessibleFromOutsideBuiltins() {
+        scratch.file(
+            "foo/BUILD",
+            """
         load("@rules_cc//cc/toolchains:cc_toolchain_alias.bzl", "cc_toolchain_alias")
         load(":custom_rule.bzl", "custom_rule")
 
         cc_toolchain_alias(name = "alias")
 
         custom_rule(name = "custom")
-        """);
-    scratch.file(
-        "foo/custom_rule.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "foo/custom_rule.bzl",
+            """
         load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')
         def _impl(ctx):
             cc_toolchain = ctx.attr._cc_toolchain[cc_common.CcToolchainInfo]
@@ -7937,31 +8758,37 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             attrs = {"_cc_toolchain": attr.label(default = Label("//foo:alias"))},
             fragments = ["cpp"],
         )
-        """);
-    invalidatePackages();
+        
+        """.trimIndent()
+        )
+        invalidatePackages()
 
-    AssertionError e =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//foo:custom"));
+        val e: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//foo:custom") })
 
-    assertThat(e).hasMessageThat().contains("cannot use private API");
-  }
+        Truth.assertThat(e).hasMessageThat().contains("cannot use private API")
+    }
 
-  @Test
-  public void testGetCompileBuildVariablesInputFileNotAccessibleFromOutsideBuiltins()
-      throws Exception {
-    scratch.file(
-        "foo/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGetCompileBuildVariablesInputFileNotAccessibleFromOutsideBuiltins() {
+        scratch.file(
+            "foo/BUILD",
+            """
         load("@rules_cc//cc/toolchains:cc_toolchain_alias.bzl", "cc_toolchain_alias")
         load(":custom_rule.bzl", "custom_rule")
 
         cc_toolchain_alias(name = "alias")
 
         custom_rule(name = "custom")
-        """);
-    scratch.file(
-        "foo/custom_rule.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "foo/custom_rule.bzl",
+            """
         load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')
         def _impl(ctx):
             cc_toolchain = ctx.attr._cc_toolchain[cc_common.CcToolchainInfo]
@@ -7981,31 +8808,37 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             attrs = {"_cc_toolchain": attr.label(default = Label("//foo:alias"))},
             fragments = ["cpp"],
         )
-        """);
-    invalidatePackages();
+        
+        """.trimIndent()
+        )
+        invalidatePackages()
 
-    AssertionError e =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//foo:custom"));
+        val e: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//foo:custom") })
 
-    assertThat(e).hasMessageThat().contains("cannot use private API");
-  }
+        Truth.assertThat(e).hasMessageThat().contains("cannot use private API")
+    }
 
-  @Test
-  public void testCreateLinkingContextFromCompilationOutputsStampNotAccessibleFromOutsideBuiltins()
-      throws Exception {
-    scratch.file(
-        "foo/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCreateLinkingContextFromCompilationOutputsStampNotAccessibleFromOutsideBuiltins() {
+        scratch.file(
+            "foo/BUILD",
+            """
         load("@rules_cc//cc/toolchains:cc_toolchain_alias.bzl", "cc_toolchain_alias")
         load(":custom_rule.bzl", "custom_rule")
 
         cc_toolchain_alias(name = "alias")
 
         custom_rule(name = "custom")
-        """);
-    scratch.file(
-        "foo/custom_rule.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "foo/custom_rule.bzl",
+            """
         load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')
         def _impl(ctx):
             cc_toolchain = ctx.attr._cc_toolchain[cc_common.CcToolchainInfo]
@@ -8028,30 +8861,37 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             attrs = {"_cc_toolchain": attr.label(default = Label("//foo:alias"))},
             fragments = ["cpp"],
         )
-        """);
-    invalidatePackages();
+        
+        """.trimIndent()
+        )
+        invalidatePackages()
 
-    AssertionError e =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//foo:custom"));
+        val e: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//foo:custom") })
 
-    assertThat(e).hasMessageThat().contains("cannot use private API");
-  }
+        Truth.assertThat(e).hasMessageThat().contains("cannot use private API")
+    }
 
-  @Test
-  public void testLinkUseTestOnlyFlagNotAccessibleFromOutsideBuiltins() throws Exception {
-    scratch.file(
-        "foo/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLinkUseTestOnlyFlagNotAccessibleFromOutsideBuiltins() {
+        scratch.file(
+            "foo/BUILD",
+            """
         load("@rules_cc//cc/toolchains:cc_toolchain_alias.bzl", "cc_toolchain_alias")
         load(":custom_rule.bzl", "custom_rule")
 
         cc_toolchain_alias(name = "alias")
 
         custom_rule(name = "custom")
-        """);
-    scratch.file(
-        "foo/custom_rule.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "foo/custom_rule.bzl",
+            """
         load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')
         def _impl(ctx):
             cc_toolchain = ctx.attr._cc_toolchain[cc_common.CcToolchainInfo]
@@ -8073,27 +8913,34 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
             attrs = {"_cc_toolchain": attr.label(default = Label("//foo:alias"))},
             fragments = ["cpp"],
         )
-        """);
-    invalidatePackages();
+        
+        """.trimIndent()
+        )
+        invalidatePackages()
 
-    AssertionError e =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//foo:custom"));
+        val e: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//foo:custom") })
 
-    assertThat(e).hasMessageThat().contains("cannot use private API");
-  }
+        Truth.assertThat(e).hasMessageThat().contains("cannot use private API")
+    }
 
-  @Test
-  public void testCheckPrivateApiCanOnlyBeCalledFromCcCommonBzl() throws Exception {
-    scratch.file(
-        "foo/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCheckPrivateApiCanOnlyBeCalledFromCcCommonBzl() {
+        scratch.file(
+            "foo/BUILD",
+            """
         load(":custom_rule.bzl", "custom_rule")
 
         custom_rule(name = "custom")
-        """);
-    scratch.file(
-        "foo/custom_rule.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "foo/custom_rule.bzl",
+            """
         load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')
         def _impl(ctx):
             cc_common.check_private_api(allowlist = [])
@@ -8102,28 +8949,35 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
         custom_rule = rule(
             implementation = _impl,
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError e =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//foo:custom"));
+        val e: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//foo:custom") })
 
-    assertThat(e)
-        .hasMessageThat()
-        .contains("'struct' value has no field or method 'check_private_api'");
-  }
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("'struct' value has no field or method 'check_private_api'")
+    }
 
-  @Test
-  public void testDwoObjectsAllowlistBlocksPrivateParameter() throws Exception {
-    scratch.file(
-        "foo/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDwoObjectsAllowlistBlocksPrivateParameter() {
+        scratch.file(
+            "foo/BUILD",
+            """
         load(":custom_rule.bzl", "custom_rule")
 
         custom_rule(name = "custom")
-        """);
-    scratch.file(
-        "foo/custom_rule.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "foo/custom_rule.bzl",
+            """
         load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')
         def _impl(ctx):
             cc_common.create_compilation_outputs(dwo_objects = depset())
@@ -8132,26 +8986,33 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
         custom_rule = rule(
             implementation = _impl,
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError e =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//foo:custom"));
+        val e: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//foo:custom") })
 
-    assertThat(e).hasMessageThat().contains("cannot use private API");
-  }
+        Truth.assertThat(e).hasMessageThat().contains("cannot use private API")
+    }
 
-  @Test
-  public void testPicDwoObjectsAllowlistBlocksPrivateParameter() throws Exception {
-    scratch.file(
-        "foo/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testPicDwoObjectsAllowlistBlocksPrivateParameter() {
+        scratch.file(
+            "foo/BUILD",
+            """
         load(":custom_rule.bzl", "custom_rule")
 
         custom_rule(name = "custom")
-        """);
-    scratch.file(
-        "foo/custom_rule.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "foo/custom_rule.bzl",
+            """
         load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')
         def _impl(ctx):
             cc_common.create_compilation_outputs(pic_dwo_objects = depset())
@@ -8160,26 +9021,33 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
         custom_rule = rule(
             implementation = _impl,
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError e =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//foo:custom"));
+        val e: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//foo:custom") })
 
-    assertThat(e).hasMessageThat().contains("cannot use private API");
-  }
+        Truth.assertThat(e).hasMessageThat().contains("cannot use private API")
+    }
 
-  @Test
-  public void testPicDwoObjectsAllowlistAllowsPrivateParameter() throws Exception {
-    scratch.file(
-        "bazel_internal/test_rules/cc/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testPicDwoObjectsAllowlistAllowsPrivateParameter() {
+        scratch.file(
+            "bazel_internal/test_rules/cc/BUILD",
+            """
         load(":custom_rule.bzl", "custom_rule")
 
         custom_rule(name = "custom")
-        """);
-    scratch.file(
-        "bazel_internal/test_rules/cc/custom_rule.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "bazel_internal/test_rules/cc/custom_rule.bzl",
+            """
         load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')
         def _impl(ctx):
             cc_common.create_compilation_outputs(
@@ -8191,40 +9059,448 @@ public class StarlarkCcCommonTest extends BuildViewTestCase {
         custom_rule = rule(
             implementation = _impl,
         )
-        """);
-    getConfiguredTarget("//bazel_internal/test_rules/cc:custom");
-  }
-
-  // grep_includes is not supported by Bazel.
-  @Test
-  public void testGrepIncludesIsSetToNullInsideCcToolchain() throws Exception {
-    if (!AnalysisMock.get().isThisBazel()) {
-      return;
+        
+        """.trimIndent()
+        )
+        getConfiguredTarget("//bazel_internal/test_rules/cc:custom")
     }
-    scratch.file(
-        "foo/BUILD",
-        """
+
+    // grep_includes is not supported by Bazel.
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGrepIncludesIsSetToNullInsideCcToolchain() {
+        if (!AnalysisMock.get().isThisBazel()) {
+            return
+        }
+        scratch.file(
+            "foo/BUILD",
+            """
         load(":extension.bzl", "cc_skylark_library")
 
         cc_skylark_library(
             name = "skylark_lib",
         )
-        """);
-    scratch.file(
-        "foo/extension.bzl",
-        "def _cc_skylark_library_impl(ctx):",
-        "    toolchain = ctx.toolchains['" + TestConstants.CPP_TOOLCHAIN_TYPE + "'].cc",
-        "    return [toolchain]",
-        "cc_skylark_library = rule(",
-        "    implementation = _cc_skylark_library_impl,",
-        "    fragments = ['cpp'],",
-        "    toolchains = ['" + TestConstants.CPP_TOOLCHAIN_TYPE + "']",
-        ")");
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "foo/extension.bzl",
+            "def _cc_skylark_library_impl(ctx):",
+            "    toolchain = ctx.toolchains['" + TestConstants.CPP_TOOLCHAIN_TYPE + "'].cc",
+            "    return [toolchain]",
+            "cc_skylark_library = rule(",
+            "    implementation = _cc_skylark_library_impl,",
+            "    fragments = ['cpp'],",
+            "    toolchains = ['" + TestConstants.CPP_TOOLCHAIN_TYPE + "']",
+            ")"
+        )
 
-    ConfiguredTarget target = getConfiguredTarget("//foo:skylark_lib");
-    CcToolchainProvider toolchainProvider = CcToolchainProvider.getFromTarget(target);
-    Artifact grepIncludes = toolchainProvider.getGrepIncludes();
+        val target: ConfiguredTarget = getConfiguredTarget("//foo:skylark_lib")
+        val toolchainProvider: CcToolchainProvider = CcToolchainProvider.getFromTarget(target)
+        val grepIncludes: Artifact? = toolchainProvider.getGrepIncludes()
 
-    assertThat(grepIncludes).isNull();
-  }
+        assertThat(grepIncludes).isNull()
+    }
+
+    companion object {
+        private const val REDACTED_ARTIFACT_PATH = "tools/build_defs/build_info/redacted_file.h"
+        private const val NON_REDACTED_ARTIFACT_PATH = "tools/build_defs/build_info/volatile_file.h"
+
+        @Throws(LabelSyntaxException::class)
+        private fun getMyInfoFromTarget(configuredTarget: ConfiguredTarget): StructImpl {
+            val key: Provider.Key =
+                Key(
+                    keyForBuild(Label.parseCanonical("//myinfo:myinfo.bzl")), "MyInfo"
+                )
+            return configuredTarget.get(key) as StructImpl
+        }
+
+        @Throws(java.lang.Exception::class)
+        private fun getArtifactsFromMyInfo(target: ConfiguredTarget, field: String?): Iterable<Artifact?>? {
+            val myInfo: StructImpl = getMyInfoFromTarget(target)
+            val artifacts: Iterable<Artifact?>? = myInfo.getValue(field) as Iterable<Artifact?>?
+            return artifacts
+        }
+
+        @Throws(net.starlark.java.eval.EvalException::class)
+        private fun getSolibRelativePath(library: Artifact, toolchain: CcToolchainProvider): String {
+            return library.getRootRelativePath().relativeTo(toolchain.getSolibDirectory()).toString()
+        }
+
+        private fun getLinkstampFile(linkstamp: StarlarkInfo): Artifact? {
+            try {
+                Mutability.create().use { mu ->
+                    val func: StarlarkFunction? = linkstamp.getValue("file", StarlarkFunction::class.java)
+                    val thread: StarlarkThread? = StarlarkThread.createTransient(mu, StarlarkSemantics.DEFAULT)
+                    return Starlark.positionalOnlyCall(thread, func) as Artifact?
+                }
+            } catch (e: net.starlark.java.eval.EvalException) {
+                throw java.lang.RuntimeException(e)
+            } catch (e: java.lang.InterruptedException) {
+                throw java.lang.RuntimeException(e)
+            }
+        }
+
+        private fun getFilenamesToBuild(target: ConfiguredTarget?): com.google.common.collect.ImmutableList<String?> {
+            return getFilesToBuild(target).toList().stream()
+                .map(Artifact::getFilename)
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
+        }
+
+        @Throws(java.lang.Exception::class)
+        private fun createFilesForTestingCompilation(
+            scratch: Scratch, bzlFilePath: String?, compileProviderLines: String
+        ) {
+            createFiles(scratch, bzlFilePath, compileProviderLines, "")
+        }
+
+        @Throws(java.lang.Exception::class)
+        private fun createFilesForTestingLinking(
+            scratch: Scratch, bzlFilePath: String?, linkProviderLines: String
+        ) {
+            createFiles(scratch, bzlFilePath, "", linkProviderLines)
+        }
+
+        @Throws(java.lang.Exception::class)
+        private fun createFiles(
+            scratch: Scratch, bzlFilePath: String?, compileProviderLines: String = "", linkProviderLines: String = ""
+        ) {
+            var fragments = "    fragments = ['google_cpp', 'cpp'],"
+            if (AnalysisMock.get().isThisBazel()) {
+                fragments = "    fragments = ['cpp'],"
+            }
+            scratch.overwriteFile(bzlFilePath + "/BUILD")
+            scratch.file(
+                bzlFilePath + "/extension.bzl",
+                "load('//myinfo:myinfo.bzl', 'MyInfo')",
+                "load('@rules_cc//cc/common:cc_info.bzl', 'CcInfo')",
+                "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
+                "def _cc_aspect_impl(target, ctx):",
+                "    if ctx.attr._cc_toolchain:",
+                "      toolchain = ctx.attr._cc_toolchain[cc_common.CcToolchainInfo]",
+                "    else:",
+                "      toolchain = ctx.toolchains['" + TestConstants.CPP_TOOLCHAIN_TYPE + "'].cc",
+                "    feature_configuration = cc_common.configure_features(",
+                "        ctx = ctx,",
+                "        cc_toolchain = toolchain,",
+                "        requested_features = ctx.features,",
+                "        unsupported_features = ctx.disabled_features,",
+                "    )",
+                "    (compilation_context, compilation_outputs) = cc_common.compile(",
+                "        actions = ctx.actions,",
+                "        feature_configuration = feature_configuration,",
+                "        cc_toolchain = toolchain,",
+                "        name = ctx.label.name + '_aspect',",
+                "        srcs = ctx.rule.files.srcs,",
+                "        public_hdrs = ctx.rule.files.hdrs,",
+                "    )",
+                "    (linking_context, linking_outputs) = (",
+                "        cc_common.create_linking_context_from_compilation_outputs(",
+                "            actions = ctx.actions,",
+                "            feature_configuration = feature_configuration,",
+                "            name = ctx.label.name + '_aspect',",
+                "            cc_toolchain = toolchain,",
+                "            compilation_outputs = compilation_outputs,",
+                "        )",
+                "    )",
+                "    return []",
+                "_cc_aspect = aspect(",
+                "    implementation = _cc_aspect_impl,",
+                "    attrs = {",
+                "        '_cc_toolchain': attr.label(default ="
+                        + " '@bazel_tools//tools/cpp:current_cc_toolchain'),",
+                "    },",
+                fragments,
+                "    toolchains = ['" + TestConstants.CPP_TOOLCHAIN_TYPE + "']",
+                ")",
+                "def _cc_starlark_library_impl(ctx):",
+                "    dep_compilation_contexts = []",
+                "    dep_linking_contexts = []",
+                "    for dep in ctx.attr._deps:",
+                "        dep_compilation_contexts.append(dep[CcInfo].compilation_context)",
+                "        dep_linking_contexts.append(dep[CcInfo].linking_context)",
+                "    toolchain = ctx.toolchains['" + TestConstants.CPP_TOOLCHAIN_TYPE + "'].cc",
+                "    feature_configuration = cc_common.configure_features(",
+                "        ctx = ctx,",
+                "        cc_toolchain=toolchain,",
+                "        requested_features = ctx.features,",
+                "        unsupported_features = ctx.disabled_features)",
+                "    foo_dict = {'string_variable': 'foo',",
+                "            'string_sequence_variable' : ['foo'],",
+                "            'string_depset_variable': depset(['foo'])}",
+                "    (compilation_context, compilation_outputs) = cc_common.compile(",
+                "        actions=ctx.actions,",
+                "        feature_configuration=feature_configuration,",
+                "        cc_toolchain=toolchain,",
+                "        srcs=ctx.files.srcs,",
+                "        name=ctx.label.name + '_suffix',",
+                "        compilation_contexts = dep_compilation_contexts,",
+                "        public_hdrs=ctx.files.public_hdrs,",
+                "        textual_hdrs=ctx.files.textual_hdrs,",
+                "        private_hdrs=ctx.files.private_hdrs" + (if (compileProviderLines.isEmpty()) "" else ","),
+                "        " + compileProviderLines,
+                "    )",
+                "    (linking_context,",
+                "     linking_outputs) = cc_common.create_linking_context_from_compilation_outputs(",
+                "        actions=ctx.actions,",
+                "        feature_configuration=feature_configuration,",
+                "        compilation_outputs=compilation_outputs,",
+                "        name = ctx.label.name,",
+                "        linking_contexts = dep_linking_contexts,",
+                "        cc_toolchain=toolchain" + (if (linkProviderLines.isEmpty()) "" else ","),
+                "        " + linkProviderLines,
+                "    )",
+                "    files_to_build = []",
+                "    files_to_build.extend(compilation_outputs.pic_objects)",
+                "    files_to_build.extend(compilation_outputs.objects)",
+                "    library_to_link = None",
+                "    if len(ctx.files.srcs) > 0:",
+                "        library_to_link = linking_outputs.library_to_link",
+                "        if library_to_link.pic_static_library != None:",
+                "            files_to_build.append(library_to_link.pic_static_library)",
+                "        if library_to_link.static_library != None:",
+                "            files_to_build.append(library_to_link.static_library)",
+                "        if library_to_link.dynamic_library != None:",
+                "            files_to_build.append(library_to_link.dynamic_library)",
+                "    return [MyInfo(libraries=[library_to_link]),",
+                "            DefaultInfo(files=depset(files_to_build)),",
+                "            CcInfo(compilation_context=compilation_context,",
+                "                   linking_context=linking_context)]",
+                "cc_starlark_library = rule(",
+                "    implementation = _cc_starlark_library_impl,",
+                "    attrs = {",
+                "      'srcs': attr.label_list(allow_files=True),",
+                "      'public_hdrs': attr.label_list(allow_files=True),",
+                "      'textual_hdrs': attr.label_list(allow_files=True),",
+                "      'private_hdrs': attr.label_list(allow_files=True),",
+                "      '_additional_inputs': attr.label_list(allow_files=True,"
+                        + " default=['//foo:script.lds']),",
+                "      '_additional_compiler_inputs': attr.label_list(allow_files=True,"
+                        + " default=['//foo:extra_compiler_input']),",
+                "      '_deps': attr.label_list(default=['//foo:dep1', '//foo:dep2']),",
+                "      'aspect_deps': attr.label_list(aspects=[_cc_aspect]),",
+                "    },",
+                fragments,
+                "    toolchains = ['" + TestConstants.CPP_TOOLCHAIN_TYPE + "']",
+                ")"
+            )
+            scratch.file(
+                "foo/BUILD",
+                "load('//" + bzlFilePath + ":extension.bzl', 'cc_starlark_library')",
+                "load('@rules_cc//cc:cc_binary.bzl', 'cc_binary')",
+                "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
+                "exports_files(['script.lds', 'extra_compiler_input'])",
+                "cc_library(",
+                "    name = 'dep1',",
+                "    srcs = ['dep1.cc'],",
+                "    hdrs = ['dep1.h'],",
+                "    defines = ['DEFINE_DEP1'],",
+                "    linkopts = ['-DEP1_LINKOPT'],",
+                ")",
+                "cc_library(",
+                "    name = 'dep2',",
+                "    srcs = ['dep2.cc'],",
+                "    hdrs = ['dep2.h'],",
+                "    defines = ['DEFINE_DEP2'],",
+                "    linkopts = ['-DEP2_LINKOPT'],",
+                ")",
+                "cc_starlark_library(",
+                "    name = 'starlark_lib',",
+                "    srcs = ['starlark_lib.cc'],",
+                "    public_hdrs = ['starlark_lib.h'],",
+                "    textual_hdrs = ['textual_hdr.h'],",
+                "    private_hdrs = ['private_starlark_lib.h'],",
+                ")",
+                "cc_binary(",
+                "    name = 'bin',",
+                "    deps = ['starlark_lib'],",
+                ")"
+            )
+        }
+
+        @Throws(java.lang.Exception::class)
+        private fun createCcBinRule(
+            scratch: Scratch, internalApi: Boolean, vararg additionalLines: String?
+        ) {
+            var fragments = "    fragments = ['google_cpp', 'cpp'],"
+            if (AnalysisMock.get().isThisBazel()) {
+                fragments = "    fragments = ['cpp'],"
+            }
+            scratch.overwriteFile("tools/build_defs/BUILD")
+
+            var extensionDirectory = "tools/build_defs"
+            if (internalApi) {
+                extensionDirectory = "bazel_internal/test_rules/cc"
+                scratch.overwriteFile(extensionDirectory + "/BUILD", "")
+            }
+            scratch.file(
+                extensionDirectory + "/extension.bzl",
+                "load('//myinfo:myinfo.bzl', 'MyInfo')",
+                "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
+                "load('@rules_cc//cc/common:cc_info.bzl', 'CcInfo')",
+                "def _cc_bin_impl(ctx):",
+                "    toolchain = ctx.toolchains['" + TestConstants.CPP_TOOLCHAIN_TYPE + "'].cc",
+                "    feature_configuration = cc_common.configure_features(",
+                "      ctx = ctx,",
+                "      cc_toolchain = toolchain,",
+                "    )",
+                "    dep_linking_contexts = []",
+                "    for dep in ctx.attr.deps:",
+                "        dep_linking_contexts.append(dep[CcInfo].linking_context)",
+                "    objects = cc_common.create_compilation_outputs(objects=depset(ctx.files.objects),",
+                "        pic_objects=depset(ctx.files.pic_objects))",
+                "    foo_dict = {'string_variable': 'foo',",
+                "            'string_sequence_variable' : ['foo'],",
+                "            'string_depset_variable': depset(['foo'])}",
+                "    linking_outputs = cc_common.link(",
+                "        actions=ctx.actions,",
+                "        feature_configuration=feature_configuration,",
+                "        name = ctx.label.name,",
+                "        cc_toolchain=toolchain,",
+                "        " + com.google.common.base.Joiner.on(",\n        ").join(additionalLines),
+                "    )",
+                "    return [",
+                "      MyInfo(",
+                "          library=linking_outputs.library_to_link,",
+                "          executable=linking_outputs.executable",
+                "      ),",
+                "    ]",
+                "cc_bin = rule(",
+                "    implementation = _cc_bin_impl,",
+                "    attrs = {",
+                "      'objects': attr.label_list(allow_files=True),",
+                "      'pic_objects': attr.label_list(allow_files=True),",
+                "      'deps': attr.label_list(),",
+                "      'additional_outputs': attr.output_list(),",
+                "    },",
+                fragments,
+                "    toolchains = ['" + TestConstants.CPP_TOOLCHAIN_TYPE + "']",
+                ")"
+            )
+        }
+
+        @Throws(java.lang.Exception::class)
+        private fun setupTestTransitiveLink(scratch: Scratch, vararg additionalLines: String?) {
+            setupTestTransitiveLinkInternal(scratch,  /* internalApi= */false, *additionalLines)
+        }
+
+        @Throws(java.lang.Exception::class)
+        private fun setupTestTransitiveLinkInternal(
+            scratch: Scratch, internalApi: Boolean, vararg additionalLines: String?
+        ) {
+            createCcBinRule(scratch, internalApi, *additionalLines)
+            val bzlPath: String?
+            if (internalApi) {
+                bzlPath = "bazel_internal/test_rules/cc"
+            } else {
+                bzlPath = "tools/build_defs"
+            }
+            scratch.file(
+                "foo/BUILD",
+                "load(\"//" + bzlPath + ":extension.bzl\", \"cc_bin\")",
+                """
+        load("@rules_cc//cc:cc_library.bzl", "cc_library")
+        cc_library(
+            name = "dep1",
+            srcs = ["dep1.cc"],
+            hdrs = ["dep1.h"],
+            defines = ["DEP1"],
+            includes = ["dep1/baz"],
+            linkstamp = "version.cc",
+        )
+
+        cc_library(
+            name = "dep2",
+            srcs = ["dep2.cc"],
+            hdrs = ["dep2.h"],
+            defines = ["DEP2"],
+            includes = ["dep2/qux"],
+        )
+
+        cc_bin(
+            name = "bin",
+            objects = ["file.o"],
+            pic_objects = ["file.pic.o"],
+            deps = [
+                ":dep1",
+                ":dep2",
+            ],
+        )
+        
+        """.trimIndent()
+            )
+        }
+
+        @Throws(java.lang.Exception::class)
+        private fun setupDirectHeaderExtractionSupport(scratch: Scratch) {
+            scratch.file(
+                "direct/cc_info_extractor.bzl",
+                """
+        load("//myinfo:myinfo.bzl", "MyInfo")
+        load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
+
+        def _cc_info_extractor_impl(ctx):
+            compilation_context = ctx.attr.dep[CcInfo].compilation_context
+            return [MyInfo(
+                direct_headers = compilation_context.direct_headers,
+                direct_public_headers = compilation_context.direct_public_headers,
+                direct_private_headers = compilation_context.direct_private_headers,
+                direct_textual_headers = compilation_context.direct_textual_headers,
+            )]
+
+        cc_info_extractor = rule(
+            _cc_info_extractor_impl,
+            attrs = {
+                "dep": attr.label(providers = [[CcInfo]]),
+            },
+        )
+        
+        """.trimIndent()
+            )
+            scratch.file(
+                "direct/BUILD",
+                """
+        load("//direct:cc_info_extractor.bzl", "cc_info_extractor")
+
+        cc_info_extractor(
+            name = "foo",
+            dep = "//direct/libs:foo_lib",
+        )
+
+        cc_info_extractor(
+            name = "bar",
+            dep = "//direct/libs:bar_lib",
+        )
+        
+        """.trimIndent()
+            )
+        }
+
+        @Throws(java.lang.Exception::class)
+        private fun setupCcLibraryDirectPropagationTestTargets(scratch: Scratch) {
+            scratch.file(
+                "direct/libs/BUILD",
+                """
+        load("@rules_cc//cc:cc_library.bzl", "cc_library")
+        cc_library(
+            name = "foo_lib",
+            srcs = [
+                "foo.cc",
+                "foo_impl.h",
+            ],
+            hdrs = ["foo.h"],
+            textual_hdrs = ["foo.def"],
+        )
+
+        cc_library(
+            name = "bar_lib",
+            hdrs = ["bar.h"],
+            textual_hdrs = ["bar.def"],
+            deps = [":foo_lib"],
+        )
+        
+        """.trimIndent()
+            )
+        }
+    }
 }

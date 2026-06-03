@@ -11,463 +11,407 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.testutil;
+package com.google.devtools.build.lib.query2.testutil
 
-import static com.google.devtools.build.lib.packages.Rule.ALL_LABELS;
+import com.google.common.base.Joiner
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.ImmutableMap
+import com.google.common.collect.ImmutableSet
+import com.google.common.collect.Iterables
+import com.google.devtools.build.lib.clock.BlazeClock
+import com.google.devtools.build.lib.packages.Rule.ALL_LABELS
+import com.google.devtools.build.lib.query2.engine.QueryException
+import com.google.devtools.build.lib.query2.engine.QueryParser
+import com.google.devtools.build.lib.query2.engine.QuerySyntaxException
+import com.google.devtools.common.options.Options
+import com.google.errorprone.annotations.ForOverride
+import kotlin.collections.ArrayList
+import kotlin.collections.Iterable
+import kotlin.collections.MutableIterator
+import kotlin.collections.MutableList
+import kotlin.collections.MutableSet
 
-import com.google.common.base.Joiner;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.actions.ActionKeyContext;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
-import com.google.devtools.build.lib.analysis.ServerDirectories;
-import com.google.devtools.build.lib.analysis.util.AnalysisMock;
-import com.google.devtools.build.lib.bazel.bzlmod.FakeRegistry;
-import com.google.devtools.build.lib.bazel.bzlmod.ModuleFileFunction;
-import com.google.devtools.build.lib.bazel.bzlmod.ModuleKey;
-import com.google.devtools.build.lib.clock.BlazeClock;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.packages.BuildFileName;
-import com.google.devtools.build.lib.packages.LabelPrinter;
-import com.google.devtools.build.lib.packages.PackageFactory;
-import com.google.devtools.build.lib.packages.RuleVisibility;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.packages.semantics.BuildLanguageOptions;
-import com.google.devtools.build.lib.packages.util.MockToolsConfig;
-import com.google.devtools.build.lib.pkgcache.PackageManager;
-import com.google.devtools.build.lib.pkgcache.PackageOptions;
-import com.google.devtools.build.lib.pkgcache.PackageOptions.LazyMacroExpansionPackages;
-import com.google.devtools.build.lib.pkgcache.PathPackageLocator;
-import com.google.devtools.build.lib.pkgcache.TargetPatternPreloader;
-import com.google.devtools.build.lib.query2.QueryEnvironmentFactory;
-import com.google.devtools.build.lib.query2.common.AbstractBlazeQueryEnvironment;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.QueryFunction;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.ThreadSafeMutableSet;
-import com.google.devtools.build.lib.query2.engine.QueryEvalResult;
-import com.google.devtools.build.lib.query2.engine.QueryException;
-import com.google.devtools.build.lib.query2.engine.QueryParser;
-import com.google.devtools.build.lib.query2.engine.QuerySyntaxException;
-import com.google.devtools.build.lib.query2.engine.QueryUtil;
-import com.google.devtools.build.lib.query2.engine.QueryUtil.AggregateAllOutputFormatterCallback;
-import com.google.devtools.build.lib.query2.engine.ThreadSafeOutputFormatterCallback;
-import com.google.devtools.build.lib.runtime.QuiescingExecutorsImpl;
-import com.google.devtools.build.lib.skyframe.BazelSkyframeExecutorConstants;
-import com.google.devtools.build.lib.skyframe.PrecomputedValue;
-import com.google.devtools.build.lib.skyframe.SkyframeExecutor;
-import com.google.devtools.build.lib.skyframe.SkyframeTargetPatternEvaluator;
-import com.google.devtools.build.lib.skyframe.packages.PackageFactoryBuilderWithSkyframeForTesting;
-import com.google.devtools.build.lib.testing.common.FakeOptions;
-import com.google.devtools.build.lib.testutil.SkyframeExecutorTestHelper;
-import com.google.devtools.build.lib.testutil.TestPackageFactoryBuilderFactory;
-import com.google.devtools.build.lib.util.AbruptExitException;
-import com.google.devtools.build.lib.util.io.TimestampGranularityMonitor;
-import com.google.devtools.build.lib.vfs.DelegatingSyscallCache;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import com.google.devtools.build.skyframe.MemoizingEvaluator;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.common.options.Options;
-import com.google.errorprone.annotations.ForOverride;
-import java.io.IOException;
-import java.util.AbstractSet;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.UUID;
+/** An implementation of AbstractQueryHelper to support testing bazel query.  */
+abstract class SkyframeQueryHelper : AbstractQueryHelper<Target?>() {
+    protected var skyframeExecutor: SkyframeExecutor? = null
+    protected var fileSystem: FileSystem = InMemoryFileSystem(BlazeClock.instance(), DigestHashFunction.SHA256)
+    private var registry: FakeRegistry? = null
 
-/** An implementation of AbstractQueryHelper to support testing bazel query. */
-public abstract class SkyframeQueryHelper extends AbstractQueryHelper<Target> {
-  private static final String FAKE_INSTALL_MD5_STRING = "abcedf1234567890abcedf1234567890";
+    protected var rootDirectory: Path? = null
+    protected var outputBase: Path? = null
+    protected var moduleRoot: Path? = null
+    protected var directories: BlazeDirectories? = null
+    private var toolsRepository: RepositoryName? = null
 
-  protected SkyframeExecutor skyframeExecutor;
-  protected FileSystem fileSystem =
-      new InMemoryFileSystem(BlazeClock.instance(), DigestHashFunction.SHA256);
-  private FakeRegistry registry;
+    protected var analysisMock: AnalysisMock? = null
+    private var queryEnvironmentFactory: QueryEnvironmentFactory? = null
 
-  protected Path rootDirectory;
-  protected Path outputBase;
-  protected Path moduleRoot;
-  protected BlazeDirectories directories;
-  private RepositoryName toolsRepository;
+    private var pkgManager: PackageManager? = null
+    private var targetParser: TargetPatternPreloader? = null
+    private var lazyMacroExpansionPackages: LazyMacroExpansionPackages? = LazyMacroExpansionPackages.NONE
+    protected val actionKeyContext: ActionKeyContext = ActionKeyContext()
 
-  protected AnalysisMock analysisMock;
-  private QueryEnvironmentFactory queryEnvironmentFactory;
+    private val ignoredSubdirectoriesFile: PathFragment? = PathFragment.create(".bazelignore")
+    private val delegatingSyscallCache: DelegatingSyscallCache = DelegatingSyscallCache()
 
-  private PackageManager pkgManager;
-  private TargetPatternPreloader targetParser;
-  private LazyMacroExpansionPackages lazyMacroExpansionPackages = LazyMacroExpansionPackages.NONE;
-  protected final ActionKeyContext actionKeyContext = new ActionKeyContext();
-
-  private final PathFragment ignoredSubdirectoriesFile = PathFragment.create(".bazelignore");
-  private final DelegatingSyscallCache delegatingSyscallCache = new DelegatingSyscallCache();
-
-  @Override
-  public void setUp() throws Exception {
-    super.setUp();
-    analysisMock = AnalysisMock.get();
-    rootDirectory = createDir(getRootDirectoryNameForSetup());
-    outputBase = createDir(fileSystem.getPath("/output").getPathString());
-    directories =
-        new BlazeDirectories(
-            new ServerDirectories(
+    @Throws(Exception::class)
+    override fun setUp() {
+        super.setUp()
+        analysisMock = AnalysisMock.get()
+        rootDirectory = createDir(this.rootDirectoryNameForSetup)
+        outputBase = createDir(fileSystem.getPath("/output").getPathString())
+        directories =
+            BlazeDirectories(
+                ServerDirectories(
+                    rootDirectory,
+                    outputBase,
+                    outputBase,
+                    outputBase.getRelative(ServerDirectories.EXECROOT),
+                    if (useVirtualSourceRoot()) Root.fromPath(rootDirectory) else null,
+                    FAKE_INSTALL_MD5_STRING
+                ),
                 rootDirectory,
-                outputBase,
-                outputBase,
-                outputBase.getRelative(ServerDirectories.EXECROOT),
-                useVirtualSourceRoot() ? Root.fromPath(rootDirectory) : null,
-                FAKE_INSTALL_MD5_STRING),
-            rootDirectory,
-            analysisMock.getProductName());
-    delegatingSyscallCache.setDelegate(SyscallCache.NO_CACHE);
+                analysisMock.productName
+            )
+        delegatingSyscallCache.setDelegate(SyscallCache.NO_CACHE)
 
-    moduleRoot = createDir(outputBase.getRelative("modules").getPathString());
-    registry = FakeRegistry.DEFAULT_FACTORY.newFakeRegistry(moduleRoot.getPathString());
-    writeFile("MODULE.bazel", "module( name = \"root\", version = \"1.0\")");
+        moduleRoot = createDir(outputBase.getRelative("modules").getPathString())
+        registry = FakeRegistry.DEFAULT_FACTORY.newFakeRegistry(moduleRoot.getPathString())
+        writeFile("MODULE.bazel", "module( name = \"root\", version = \"1.0\")")
 
-    MockToolsConfig mockToolsConfig = new MockToolsConfig(rootDirectory);
-    analysisMock.setupMockClient(mockToolsConfig);
-    analysisMock.setupMockToolsRepository(mockToolsConfig);
-    analysisMock.ccSupport().setup(mockToolsConfig);
-    analysisMock.pySupport().setup(mockToolsConfig);
-    performAdditionalClientSetup(mockToolsConfig);
+        val mockToolsConfig: MockToolsConfig = MockToolsConfig(rootDirectory)
+        analysisMock.setupMockClient(mockToolsConfig)
+        analysisMock.setupMockToolsRepository(mockToolsConfig)
+        analysisMock.ccSupport().setup(mockToolsConfig)
+        analysisMock.pySupport().setup(mockToolsConfig)
+        performAdditionalClientSetup(mockToolsConfig)
 
-    initTargetPatternEvaluator(analysisMock.createRuleClassProvider());
+        initTargetPatternEvaluator(analysisMock.createRuleClassProvider())
 
-    this.queryEnvironmentFactory = makeQueryEnvironmentFactory();
-  }
-
-  @Override
-  public final void cleanUp() {
-    skyframeExecutor.getEvaluator().cleanupInterningPools();
-  }
-
-  protected abstract String getRootDirectoryNameForSetup();
-
-  @ForOverride
-  protected boolean useVirtualSourceRoot() {
-    return false;
-  }
-
-  protected abstract void performAdditionalClientSetup(MockToolsConfig mockToolsConfig)
-      throws IOException;
-
-  private Path createDir(String pathName) throws IOException {
-    Path dir = fileSystem.getPath(pathName);
-    dir.createDirectoryAndParents();
-    return dir;
-  }
-
-  @Override
-  public void maybeHandleDiffs() throws AbruptExitException, InterruptedException {
-    if (skyframeExecutor.hasDiffAwareness()) {
-      skyframeExecutor.handleDiffsForTesting(getReporter());
+        this.queryEnvironmentFactory = makeQueryEnvironmentFactory()
     }
-  }
 
-  @Override
-  public PathFragment getIgnoredSubdirectoriesFile() {
-    return ignoredSubdirectoriesFile;
-  }
-
-  @ForOverride
-  protected QueryEnvironmentFactory makeQueryEnvironmentFactory() {
-    return new QueryEnvironmentFactory();
-  }
-
-  @Override
-  public Path getRootDirectory() {
-    return rootDirectory;
-  }
-
-  @Override
-  public void clearAllFiles() throws IOException {
-    rootDirectory.deleteTreesBelow();
-  }
-
-  @Override
-  public void writeFile(String fileName, String... lines) throws IOException {
-    Path file = rootDirectory.getRelative(fileName);
-    if (file.exists()) {
-      throw new IOException("Could not create scratch file (file exists) " + fileName);
+    override fun cleanUp() {
+        skyframeExecutor.getEvaluator().cleanupInterningPools()
     }
-    file.getParentDirectory().createDirectoryAndParents();
-    FileSystemUtils.writeContentAsLatin1(file, Joiner.on('\n').join(lines));
-  }
 
-  @Override
-  public void overwriteFile(String fileName, String... lines) throws IOException {
-    Path file = rootDirectory.getRelative(fileName);
-    file.getParentDirectory().createDirectoryAndParents();
-    FileSystemUtils.writeContentAsLatin1(file, Joiner.on('\n').join(lines));
-  }
+    protected abstract val rootDirectoryNameForSetup: String?
 
-  @Override
-  public void ensureSymbolicLink(String link, String target) throws IOException {
-    Path linkPath = rootDirectory.getRelative(link);
-    Path targetPath = rootDirectory.getRelative(target);
-    linkPath.getParentDirectory().createDirectoryAndParents();
-    FileSystemUtils.ensureSymbolicLink(linkPath, targetPath);
-  }
-
-  @Override
-  public AbstractBlazeQueryEnvironment<Target> getQueryEnvironment() {
-    return queryEnvironmentFactory.create(
-        skyframeExecutor.getQueryTransitivePackagePreloader(),
-        skyframeExecutor,
-        pkgManager,
-        pkgManager,
-        targetParser,
-        mainRepoTargetParser,
-        /* relativeWorkingDirectory= */ PathFragment.EMPTY_FRAGMENT,
-        keepGoing,
-        /* strictScope= */ true,
-        orderedResults,
-        universeScope,
-        /* loadingPhaseThreads= */ 1,
-        /* trackIncrementalState= */ true,
-        /* labelFilter= */ ALL_LABELS,
-        getReporter(),
-        this.settings,
-        getExtraQueryFunctions(),
-        pkgManager.getPackagePath(),
-        /* useGraphlessQuery= */ false,
-        LabelPrinter.legacy());
-  }
-
-  protected abstract Iterable<QueryFunction> getExtraQueryFunctions();
-
-  @Override
-  public ResultAndTargets<Target> evaluateQuery(String query)
-      throws QueryException, InterruptedException {
-    try (AbstractBlazeQueryEnvironment<Target> env = getQueryEnvironment()) {
-      return evaluateQuery(query, env);
+    @ForOverride
+    protected fun useVirtualSourceRoot(): Boolean {
+        return false
     }
-  }
 
-  public static ResultAndTargets<Target> evaluateQuery(
-      String query, AbstractBlazeQueryEnvironment<Target> env)
-      throws QueryException, InterruptedException {
-    AggregateAllOutputFormatterCallback<Target, ?> callback =
-        QueryUtil.newOrderedAggregateAllOutputFormatterCallback(env);
-    QueryEvalResult queryEvalResult;
-    try {
-      queryEvalResult =
-          env.evaluateQuery(env.transformParsedQuery(QueryParser.parse(query, env)), callback);
-    } catch (IOException e) {
-      // Should be impossible since AggregateAllOutputFormatterCallback doesn't throw IOException.
-      throw new IllegalStateException(e);
-    } catch (QuerySyntaxException e) {
-      // Expect valid query syntax in tests.
-      throw new IllegalArgumentException(e);
+    @Throws(IOException::class)
+    protected abstract fun performAdditionalClientSetup(mockToolsConfig: MockToolsConfig?)
+
+    @Throws(IOException::class)
+    private fun createDir(pathName: String?): Path {
+        val dir: Path = fileSystem.getPath(pathName)
+        dir.createDirectoryAndParents()
+        return dir
     }
-    return new ResultAndTargets<>(
-        queryEvalResult, new OrderedThreadSafeImmutableSet(env, callback.getResult()));
-  }
 
-  @Override
-  public Set<Target> evaluateQueryRaw(String query) throws QueryException, InterruptedException {
-    Set<Target> result = new LinkedHashSet<>();
-    ThreadSafeOutputFormatterCallback<Target> callback =
-        new ThreadSafeOutputFormatterCallback<>() {
-          @Override
-          public synchronized void processOutput(Iterable<Target> partialResult) {
-            Iterables.addAll(result, partialResult);
-          }
-        };
-    try (AbstractBlazeQueryEnvironment<Target> env = getQueryEnvironment()) {
-      try {
-        env.evaluateQuery(env.transformParsedQuery(QueryParser.parse(query, env)), callback);
-      } catch (IOException e) {
-        // Should be impossible since the callback we passed in above doesn't throw IOException.
-        throw new IllegalStateException(e);
-      } catch (QuerySyntaxException e) {
-        // Expect valid query syntax in tests.
-        throw new IllegalArgumentException(e);
-      }
-    }
-    return result;
-  }
-
-  @Override
-  public RepositoryName getToolsRepository() {
-    return toolsRepository;
-  }
-
-  @Override
-  public String getLabel(Target target) {
-    return target.getLabel().toString();
-  }
-
-  @Override
-  public void addModule(ModuleKey key, String... moduleFileLines) {
-    registry.addModule(key, moduleFileLines);
-  }
-
-  private void initTargetPatternEvaluator(ConfiguredRuleClassProvider ruleClassProvider) {
-    this.toolsRepository = ruleClassProvider.getToolsRepository();
-    if (skyframeExecutor != null) {
-      cleanUp();
-    }
-    skyframeExecutor = createSkyframeExecutor(ruleClassProvider);
-    PackageOptions packageOptions = Options.getDefaults(PackageOptions.class);
-
-    packageOptions.setDefaultVisibility(RuleVisibility.PRIVATE);
-    packageOptions.setShowLoadingProgress(true);
-    packageOptions.setGlobbingThreads(7);
-    packageOptions.setPackagePath(ImmutableList.of(rootDirectory.getPathString()));
-    packageOptions.setLazyMacroExpansionPackages(lazyMacroExpansionPackages);
-
-    BuildLanguageOptions buildLanguageOptions = Options.getDefaults(BuildLanguageOptions.class);
-    buildLanguageOptions.setExperimentalGoogleLegacyApi(!analysisMock.isThisBazel());
-    // TODO(b/256127926): Delete once flipped.
-    buildLanguageOptions.setExperimentalEnableSclDialect(true);
-    buildLanguageOptions.setExperimentalDormantDeps(true);
-
-    ImmutableList<BuildFileName> buildFilesByPriority = skyframeExecutor.getBuildFilesByPriority();
-    PathPackageLocator packageLocator =
-        useVirtualSourceRoot()
-            ? PathPackageLocator.createWithoutExistenceCheck(
-                /* outputBase= */ null,
-                ImmutableList.of(directories.getVirtualSourceRoot()),
-                buildFilesByPriority)
-            : PathPackageLocator.create(
-                directories.getOutputBase(),
-                packageOptions.getPackagePath(),
-                getReporter(),
-                directories.getWorkspace().asFragment(),
-                rootDirectory,
-                buildFilesByPriority);
-    try {
-      skyframeExecutor.sync(
-          getReporter(),
-          packageLocator,
-          UUID.randomUUID(),
-          ImmutableMap.of(),
-          new TimestampGranularityMonitor(BlazeClock.instance()),
-          QuiescingExecutorsImpl.forTesting(),
-          FakeOptions.builder().put(packageOptions).put(buildLanguageOptions).build(),
-          /* commandName= */ "query",
-          /* commandExecutes= */ false);
-    } catch (InterruptedException | AbruptExitException e) {
-      throw new IllegalStateException(e);
-    }
-    pkgManager = skyframeExecutor.getPackageManager();
-    targetParser = new SkyframeTargetPatternEvaluator(skyframeExecutor);
-  }
-
-  @Override
-  public void useRuleClassProvider(ConfiguredRuleClassProvider ruleClassProvider) {
-    initTargetPatternEvaluator(ruleClassProvider);
-  }
-
-  public void setSyscallCache(SyscallCache syscallCache) {
-    this.delegatingSyscallCache.setDelegate(syscallCache);
-  }
-
-  public void setLazyMacroExpansionPackages(LazyMacroExpansionPackages lazyMacroExpansionPackages) {
-    this.lazyMacroExpansionPackages = lazyMacroExpansionPackages;
-  }
-
-  protected SkyframeExecutor createSkyframeExecutor(ConfiguredRuleClassProvider ruleClassProvider) {
-    var extraPrecomputedValues =
-        ImmutableList.<PrecomputedValue.Injected>builder()
-            .addAll(analysisMock.getPrecomputedValues())
-            .add(
-                PrecomputedValue.injected(
-                    ModuleFileFunction.REGISTRIES, ImmutableSet.of(registry.getUrl())))
-            .build();
-    PackageFactory pkgFactory =
-        ((PackageFactoryBuilderWithSkyframeForTesting)
-                TestPackageFactoryBuilderFactory.getInstance().builder(directories))
-            .setExtraSkyFunctions(analysisMock.getSkyFunctions(directories))
-            .setExtraPrecomputeValues(extraPrecomputedValues)
-            .build(ruleClassProvider, fileSystem);
-    SkyframeExecutor skyframeExecutor =
-        BazelSkyframeExecutorConstants.newBazelSkyframeExecutorBuilder()
-            .setPkgFactory(pkgFactory)
-            .setFileSystem(fileSystem)
-            .setDirectories(directories)
-            .setActionKeyContext(actionKeyContext)
-            .setExtraSkyFunctions(analysisMock.getSkyFunctions(directories))
-            .setSyscallCache(delegatingSyscallCache)
-            .build();
-    skyframeExecutor.injectExtraPrecomputedValues(extraPrecomputedValues);
-    SkyframeExecutorTestHelper.process(skyframeExecutor);
-    return skyframeExecutor;
-  }
-
-  @Override
-  public void assertPackageNotLoaded(String packageName) throws Exception {
-    MemoizingEvaluator evaluator = skyframeExecutor.getEvaluator();
-    SkyKey key = PackageIdentifier.createInMainRepo(packageName);
-    if (evaluator.getExistingValue(key) != null
-        || evaluator.getExistingErrorForTesting(key) != null) {
-      throw new IllegalStateException("Package was loaded: " + packageName);
-    }
-  }
-
-  @Override
-  public Path getModuleRoot() {
-    return moduleRoot;
-  }
-
-  /**
-   * A wrapper to maintain an ordered copy of set of targets which also respect equality rules
-   * defined by {@link ThreadSafeMutableSet}.
-   */
-  private static class OrderedThreadSafeImmutableSet extends AbstractSet<Target> {
-    private final ThreadSafeMutableSet<Target> targetSet;
-    private final List<Target> orderedTargetList;
-
-    private OrderedThreadSafeImmutableSet(QueryEnvironment<Target> env, Set<Target> targets) {
-      this.targetSet = env.createThreadSafeMutableSet();
-      this.orderedTargetList = new ArrayList<>(targets.size());
-
-      // The order is determined by implementation of iterator on the source set of targets, which
-      // can be deterministic or non-deterministic.
-      for (Target target : targets) {
-        if (targetSet.add(target)) {
-          orderedTargetList.add(target);
+    @Throws(AbruptExitException::class, InterruptedException::class)
+    override fun maybeHandleDiffs() {
+        if (skyframeExecutor.hasDiffAwareness()) {
+            skyframeExecutor.handleDiffsForTesting(getReporter())
         }
-      }
     }
 
-    @Override
-    public Iterator<Target> iterator() {
-      return orderedTargetList.iterator();
+    override fun getIgnoredSubdirectoriesFile(): PathFragment? {
+        return ignoredSubdirectoriesFile
     }
 
-    @Override
-    public int size() {
-      return targetSet.size();
+    @ForOverride
+    protected open fun makeQueryEnvironmentFactory(): QueryEnvironmentFactory {
+        return QueryEnvironmentFactory()
     }
 
-    @Override
-    public boolean add(Target element) {
-      throw new IllegalStateException("Add operation on immutable set is not supported.");
+    override fun getRootDirectory(): Path {
+        return rootDirectory
     }
 
-    @Override
-    public boolean contains(Object obj) {
-      return targetSet.contains(obj);
+    @Throws(IOException::class)
+    override fun clearAllFiles() {
+        rootDirectory.deleteTreesBelow()
     }
 
-    @Override
-    public boolean remove(Object obj) {
-      throw new IllegalStateException("Remove operation on immutable set is not supported.");
+    @Throws(IOException::class)
+    override fun writeFile(fileName: String?, vararg lines: String?) {
+        val file: Path = rootDirectory.getRelative(fileName)
+        if (file.exists()) {
+            throw IOException("Could not create scratch file (file exists) " + fileName)
+        }
+        file.getParentDirectory().createDirectoryAndParents()
+        FileSystemUtils.writeContentAsLatin1(file, Joiner.on('\n').join(lines))
     }
-  }
+
+    @Throws(IOException::class)
+    override fun overwriteFile(fileName: String?, vararg lines: String?) {
+        val file: Path = rootDirectory.getRelative(fileName)
+        file.getParentDirectory().createDirectoryAndParents()
+        FileSystemUtils.writeContentAsLatin1(file, Joiner.on('\n').join(lines))
+    }
+
+    @Throws(IOException::class)
+    override fun ensureSymbolicLink(link: String?, target: String?) {
+        val linkPath: Path = rootDirectory.getRelative(link)
+        val targetPath: Path? = rootDirectory.getRelative(target)
+        linkPath.getParentDirectory().createDirectoryAndParents()
+        FileSystemUtils.ensureSymbolicLink(linkPath, targetPath)
+    }
+
+    override fun getQueryEnvironment(): AbstractBlazeQueryEnvironment<Target?> {
+        return queryEnvironmentFactory.create(
+            skyframeExecutor.getQueryTransitivePackagePreloader(),
+            skyframeExecutor,
+            pkgManager,
+            pkgManager,
+            targetParser,
+            mainRepoTargetParser,  /* relativeWorkingDirectory= */
+            PathFragment.EMPTY_FRAGMENT,
+            keepGoing,  /* strictScope= */
+            true,
+            orderedResults,
+            universeScope,  /* loadingPhaseThreads= */
+            1,  /* trackIncrementalState= */
+            true,  /* labelFilter= */
+            ALL_LABELS,
+            getReporter(),
+            this.settings,
+            this.extraQueryFunctions,
+            pkgManager.getPackagePath(),  /* useGraphlessQuery= */
+            false,
+            LabelPrinter.legacy()
+        )
+    }
+
+    protected abstract val extraQueryFunctions: Iterable<QueryFunction>?
+
+    @Throws(QueryException::class, InterruptedException::class)
+    override fun evaluateQuery(query: String?): ResultAndTargets<Target?> {
+        getQueryEnvironment().use { env ->
+            return evaluateQuery(query, env)
+        }
+    }
+
+    @Throws(QueryException::class, InterruptedException::class)
+    override fun evaluateQueryRaw(query: String?): MutableSet<Target?> {
+        val result: MutableSet<Target?> = LinkedHashSet<Target?>()
+        val callback: ThreadSafeOutputFormatterCallback<Target?> =
+            object : ThreadSafeOutputFormatterCallback<Target?>() {
+                @kotlin.jvm.Synchronized
+                public override fun processOutput(partialResult: Iterable<Target?>) {
+                    Iterables.addAll<Target?>(result, partialResult)
+                }
+            }
+        getQueryEnvironment().use { env ->
+            try {
+                env.evaluateQuery(env.transformParsedQuery(QueryParser.parse(query, env)), callback)
+            } catch (e: IOException) {
+                // Should be impossible since the callback we passed in above doesn't throw IOException.
+                throw IllegalStateException(e)
+            } catch (e: QuerySyntaxException) {
+                // Expect valid query syntax in tests.
+                throw IllegalArgumentException(e)
+            }
+        }
+        return result
+    }
+
+    override fun getToolsRepository(): RepositoryName? {
+        return toolsRepository
+    }
+
+    override fun getLabel(target: Target): String {
+        return target.getLabel().toString()
+    }
+
+    override fun addModule(key: ModuleKey?, vararg moduleFileLines: String?) {
+        registry.addModule(key, moduleFileLines)
+    }
+
+    private fun initTargetPatternEvaluator(ruleClassProvider: ConfiguredRuleClassProvider) {
+        this.toolsRepository = ruleClassProvider.getToolsRepository()
+        if (skyframeExecutor != null) {
+            cleanUp()
+        }
+        skyframeExecutor = createSkyframeExecutor(ruleClassProvider)
+        val packageOptions: PackageOptions = Options.getDefaults<O>(PackageOptions::class.java)
+
+        packageOptions.setDefaultVisibility(RuleVisibility.PRIVATE)
+        packageOptions.setShowLoadingProgress(true)
+        packageOptions.setGlobbingThreads(7)
+        packageOptions.setPackagePath(ImmutableList.of<E?>(rootDirectory.getPathString()))
+        packageOptions.setLazyMacroExpansionPackages(lazyMacroExpansionPackages)
+
+        val buildLanguageOptions: BuildLanguageOptions = Options.getDefaults<O>(BuildLanguageOptions::class.java)
+        buildLanguageOptions.setExperimentalGoogleLegacyApi(!analysisMock.isThisBazel)
+        // TODO(b/256127926): Delete once flipped.
+        buildLanguageOptions.setExperimentalEnableSclDialect(true)
+        buildLanguageOptions.setExperimentalDormantDeps(true)
+
+        val buildFilesByPriority: ImmutableList<BuildFileName?>? = skyframeExecutor.getBuildFilesByPriority()
+        val packageLocator: PathPackageLocator? =
+            if (useVirtualSourceRoot())
+                PathPackageLocator.createWithoutExistenceCheck( /* outputBase= */
+                    null,
+                    ImmutableList.of<E?>(directories.getVirtualSourceRoot()),
+                    buildFilesByPriority
+                )
+            else
+                PathPackageLocator.create(
+                    directories.getOutputBase(),
+                    packageOptions.getPackagePath(),
+                    getReporter(),
+                    directories.getWorkspace().asFragment(),
+                    rootDirectory,
+                    buildFilesByPriority
+                )
+        try {
+            skyframeExecutor.sync(
+                getReporter(),
+                packageLocator,
+                UUID.randomUUID(),
+                ImmutableMap.of<K?, V?>(),
+                TimestampGranularityMonitor(BlazeClock.instance()),
+                QuiescingExecutorsImpl.forTesting(),
+                FakeOptions.builder().put(packageOptions).put(buildLanguageOptions).build(),  /* commandName= */
+                "query",  /* commandExecutes= */
+                false
+            )
+        } catch (e: InterruptedException) {
+            throw IllegalStateException(e)
+        } catch (e: AbruptExitException) {
+            throw IllegalStateException(e)
+        }
+        pkgManager = skyframeExecutor.getPackageManager()
+        targetParser = SkyframeTargetPatternEvaluator(skyframeExecutor)
+    }
+
+    override fun useRuleClassProvider(ruleClassProvider: ConfiguredRuleClassProvider) {
+        initTargetPatternEvaluator(ruleClassProvider)
+    }
+
+    fun setSyscallCache(syscallCache: SyscallCache?) {
+        this.delegatingSyscallCache.setDelegate(syscallCache)
+    }
+
+    fun setLazyMacroExpansionPackages(lazyMacroExpansionPackages: LazyMacroExpansionPackages?) {
+        this.lazyMacroExpansionPackages = lazyMacroExpansionPackages
+    }
+
+    protected fun createSkyframeExecutor(ruleClassProvider: ConfiguredRuleClassProvider?): SkyframeExecutor {
+        val extraPrecomputedValues: ImmutableList<PrecomputedValue.Injected?> =
+            ImmutableList.builder<PrecomputedValue.Injected?>()
+                .addAll(analysisMock.precomputedValues)
+                .add(
+                    PrecomputedValue.injected(
+                        ModuleFileFunction.REGISTRIES, ImmutableSet.of<E?>(registry.getUrl())
+                    )
+                )
+                .build()
+        val pkgFactory: PackageFactory? =
+            (TestPackageFactoryBuilderFactory.getInstance()
+                .builder(directories) as PackageFactoryBuilderWithSkyframeForTesting)
+                .setExtraSkyFunctions(analysisMock.getSkyFunctions(directories))
+                .setExtraPrecomputeValues(extraPrecomputedValues)
+                .build(ruleClassProvider, fileSystem)
+        val skyframeExecutor: SkyframeExecutor =
+            BazelSkyframeExecutorConstants.newBazelSkyframeExecutorBuilder()
+                .setPkgFactory(pkgFactory)
+                .setFileSystem(fileSystem)
+                .setDirectories(directories)
+                .setActionKeyContext(actionKeyContext)
+                .setExtraSkyFunctions(analysisMock.getSkyFunctions(directories))
+                .setSyscallCache(delegatingSyscallCache)
+                .build()
+        skyframeExecutor.injectExtraPrecomputedValues(extraPrecomputedValues)
+        SkyframeExecutorTestHelper.process(skyframeExecutor)
+        return skyframeExecutor
+    }
+
+    @Throws(Exception::class)
+    override fun assertPackageNotLoaded(packageName: String?) {
+        val evaluator: MemoizingEvaluator = skyframeExecutor.getEvaluator()
+        val key: SkyKey? = PackageIdentifier.createInMainRepo(packageName)
+        check(
+            !(evaluator.getExistingValue(key) != null
+                    || evaluator.getExistingErrorForTesting(key) != null)
+        ) { "Package was loaded: " + packageName }
+    }
+
+    override fun getModuleRoot(): Path? {
+        return moduleRoot
+    }
+
+    /**
+     * A wrapper to maintain an ordered copy of set of targets which also respect equality rules
+     * defined by [ThreadSafeMutableSet].
+     */
+    private class OrderedThreadSafeImmutableSet(env: QueryEnvironment<Target?>, targets: MutableSet<Target?>) :
+        AbstractSet<Target?>() {
+        private val targetSet: ThreadSafeMutableSet<Target?>?
+        private val orderedTargetList: MutableList<Target?>
+
+        init {
+            this.targetSet = env.createThreadSafeMutableSet()
+            this.orderedTargetList = ArrayList<Target?>(targets.size)
+
+            // The order is determined by implementation of iterator on the source set of targets, which
+            // can be deterministic or non-deterministic.
+            for (target in targets) {
+                if (targetSet.add(target)) {
+                    orderedTargetList.add(target)
+                }
+            }
+        }
+
+        override fun iterator(): MutableIterator<Target?>? {
+            return orderedTargetList.iterator()
+        }
+
+        override fun size(): Int {
+            return targetSet.size
+        }
+
+        override fun add(element: Target?): Boolean {
+            throw IllegalStateException("Add operation on immutable set is not supported.")
+        }
+
+        override fun contains(obj: Any?): Boolean {
+            return targetSet.contains(obj)
+        }
+
+        override fun remove(obj: Any?): Boolean {
+            throw IllegalStateException("Remove operation on immutable set is not supported.")
+        }
+    }
+
+    companion object {
+        private const val FAKE_INSTALL_MD5_STRING = "abcedf1234567890abcedf1234567890"
+
+        @Throws(QueryException::class, InterruptedException::class)
+        fun evaluateQuery(
+            query: String?, env: AbstractBlazeQueryEnvironment<Target?>
+        ): ResultAndTargets<Target?> {
+            val callback: AggregateAllOutputFormatterCallback<Target?, *> =
+                QueryUtil.newOrderedAggregateAllOutputFormatterCallback<Target?>(env)
+            val queryEvalResult: QueryEvalResult?
+            try {
+                queryEvalResult =
+                    env.evaluateQuery(env.transformParsedQuery(QueryParser.parse(query, env)), callback)
+            } catch (e: IOException) {
+                // Should be impossible since AggregateAllOutputFormatterCallback doesn't throw IOException.
+                throw IllegalStateException(e)
+            } catch (e: QuerySyntaxException) {
+                // Expect valid query syntax in tests.
+                throw IllegalArgumentException(e)
+            }
+            return ResultAndTargets<Target?>(
+                queryEvalResult, OrderedThreadSafeImmutableSet(env, callback.result)
+            )
+        }
+    }
 }

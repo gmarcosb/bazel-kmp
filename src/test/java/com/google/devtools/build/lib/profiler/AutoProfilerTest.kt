@@ -11,43 +11,43 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.profiler;
+package com.google.devtools.build.lib.profiler
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.clock.BlazeClock.setClock
+import com.google.devtools.build.lib.exec.util.SpawnBuilder.build
+import com.google.devtools.build.lib.profiler.AutoProfiler
+import com.google.devtools.build.lib.profiler.AutoProfiler.ElapsedTimeReceiver
+import com.google.devtools.build.lib.remote.grpc.ConnectionFactory.create
+import com.google.devtools.build.lib.remote.grpc.DynamicConnectionPool.create
+import com.google.devtools.build.lib.remote.grpc.SharedConnectionFactory.create
+import org.junit.Before
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.util.concurrent.atomic.AtomicLong
 
-import com.google.devtools.build.lib.profiler.AutoProfiler.ElapsedTimeReceiver;
-import com.google.devtools.build.lib.testutil.ManualClock;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [AutoProfiler].  */
+@RunWith(JUnit4::class)
+class AutoProfilerTest {
+    private var clock: com.google.devtools.build.lib.testutil.ManualClock? = null
 
-import java.util.concurrent.atomic.AtomicLong;
-
-/** Tests for {@link AutoProfiler}. */
-@RunWith(JUnit4.class)
-public class AutoProfilerTest {
-
-  private ManualClock clock;
-
-  @Before
-  public final void init() {
-    clock = new ManualClock();
-    AutoProfiler.setClock(clock);
-  }
-
-  @Test
-  public void simple() {
-    final AtomicLong elapsedTime = new AtomicLong();
-    ElapsedTimeReceiver receiver = new ElapsedTimeReceiver() {
-      @Override
-      public void accept(long elapsedTimeNanos) {
-        elapsedTime.set(elapsedTimeNanos);
-      }
-    };
-    try (AutoProfiler profiler = AutoProfiler.create(receiver)) {
-      clock.advanceMillis(42);
+    @Before
+    fun init() {
+        clock = com.google.devtools.build.lib.testutil.ManualClock()
+        AutoProfiler.setClock(clock)
     }
-    assertThat(elapsedTime.get()).isEqualTo(42 * 1000 * 1000);
-  }
+
+    @org.junit.Test
+    fun simple() {
+        val elapsedTime: AtomicLong = AtomicLong()
+        val receiver: ElapsedTimeReceiver = object : ElapsedTimeReceiver {
+            override fun accept(elapsedTimeNanos: Long) {
+                elapsedTime.set(elapsedTimeNanos)
+            }
+        }
+        AutoProfiler.create(receiver).use { profiler ->
+            clock.advanceMillis(42)
+        }
+        Truth.assertThat(elapsedTime.get()).isEqualTo(42 * 1000 * 1000)
+    }
 }

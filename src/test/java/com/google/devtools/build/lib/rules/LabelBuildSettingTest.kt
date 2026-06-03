@@ -11,69 +11,60 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules
 
-package com.google.devtools.build.lib.rules;
+import com.google.devtools.build.lib.bazel.bzlmod.BzlmodTestUtil.createModuleKey
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.bazel.bzlmod.BzlmodTestUtil.createModuleKey;
-import static com.google.devtools.build.lib.skyframe.BzlLoadValue.keyForBuild;
+/** Tests for [LabelBuildSettings] rules.  */
+@RunWith(JUnit4::class)
+class LabelBuildSettingTest : BuildViewTestCase() {
+    @Throws(java.lang.Exception::class)
+    private fun writeRulesBzl(type: String?) {
+        scratch.file(
+            "test/rules.bzl",
+            "MyRuleInfo = provider()",
+            "def _my_rule_impl(ctx):",
+            "    return MyRuleInfo(value = ctx.attr._label_setting[SimpleRuleInfo].value)",
+            "",
+            "my_rule = rule(",
+            "    implementation = _my_rule_impl,",
+            "    attrs = {",
+            "        '_label_setting': attr.label(default = Label('//test:my_label_" + type + "')),",
+            "    },",
+            ")",
+            "",
+            "SimpleRuleInfo = provider(fields = ['value'])",
+            "",
+            "def _simple_rule_impl(ctx):",
+            "    return [SimpleRuleInfo(value = ctx.attr.value)]",
+            "",
+            "simple_rule = rule(",
+            "    implementation = _simple_rule_impl,",
+            "    attrs = {",
+            "        'value':attr.string(),",
+            "    },",
+            ")"
+        )
+    }
 
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.StarlarkInfo;
-import com.google.devtools.build.lib.packages.StarlarkProvider;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLabelSetting() {
+        val testing = "setting"
+        writeRulesBzl(testing)
+        scratch.file(
+            "test/BUILD",
+            "load('//test:rules.bzl', 'my_rule', 'simple_rule')",
+            "",
+            "my_rule(name = 'my_rule')",
+            "simple_rule(name = 'default', value = 'default_value')",
+            "simple_rule(name = 'command_line', value = 'command_line_value')",
+            "label_setting(name = 'my_label_" + testing + "', build_setting_default = ':default')"
+        )
 
-/** Tests for {@link LabelBuildSettings} rules. */
-@RunWith(JUnit4.class)
-public class LabelBuildSettingTest extends BuildViewTestCase {
-
-  private void writeRulesBzl(String type) throws Exception {
-    scratch.file(
-        "test/rules.bzl",
-        "MyRuleInfo = provider()",
-        "def _my_rule_impl(ctx):",
-        "    return MyRuleInfo(value = ctx.attr._label_setting[SimpleRuleInfo].value)",
-        "",
-        "my_rule = rule(",
-        "    implementation = _my_rule_impl,",
-        "    attrs = {",
-        "        '_label_setting': attr.label(default = Label('//test:my_label_" + type + "')),",
-        "    },",
-        ")",
-        "",
-        "SimpleRuleInfo = provider(fields = ['value'])",
-        "",
-        "def _simple_rule_impl(ctx):",
-        "    return [SimpleRuleInfo(value = ctx.attr.value)]",
-        "",
-        "simple_rule = rule(",
-        "    implementation = _simple_rule_impl,",
-        "    attrs = {",
-        "        'value':attr.string(),",
-        "    },",
-        ")");
-  }
-
-  @Test
-  public void testLabelSetting() throws Exception {
-    String testing = "setting";
-    writeRulesBzl(testing);
-    scratch.file(
-        "test/BUILD",
-        "load('//test:rules.bzl', 'my_rule', 'simple_rule')",
-        "",
-        "my_rule(name = 'my_rule')",
-        "simple_rule(name = 'default', value = 'default_value')",
-        "simple_rule(name = 'command_line', value = 'command_line_value')",
-        "label_setting(name = 'my_label_" + testing + "', build_setting_default = ':default')");
-
-    scratch.file(
-        "a/BUILD",
-        """
+        scratch.file(
+            "a/BUILD",
+            """
         cc_library(
             name = "a",
             srcs = ["a.cc"],
@@ -83,29 +74,33 @@ public class LabelBuildSettingTest extends BuildViewTestCase {
             name = "b",
             actual = "a",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget b = getConfiguredTarget("//test:my_rule");
-    StarlarkInfo myRuleInfo = getStarlarkProvider(b, "MyRuleInfo");
-    assertThat(myRuleInfo.getValue("value")).isEqualTo("default_value");
-  }
+        val b: ConfiguredTarget = getConfiguredTarget("//test:my_rule")
+        val myRuleInfo: StarlarkInfo = getStarlarkProvider(b, "MyRuleInfo")
+        assertThat(myRuleInfo.getValue("value")).isEqualTo("default_value")
+    }
 
-  @Test
-  public void testLabelFlag_default() throws Exception {
-    String testing = "flag";
-    writeRulesBzl(testing);
-    scratch.file(
-        "test/BUILD",
-        "load('//test:rules.bzl', 'my_rule', 'simple_rule')",
-        "",
-        "my_rule(name = 'my_rule')",
-        "simple_rule(name = 'default', value = 'default_value')",
-        "simple_rule(name = 'command_line', value = 'command_line_value')",
-        "label_flag(name = 'my_label_" + testing + "', build_setting_default = ':default')");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLabelFlag_default() {
+        val testing = "flag"
+        writeRulesBzl(testing)
+        scratch.file(
+            "test/BUILD",
+            "load('//test:rules.bzl', 'my_rule', 'simple_rule')",
+            "",
+            "my_rule(name = 'my_rule')",
+            "simple_rule(name = 'default', value = 'default_value')",
+            "simple_rule(name = 'command_line', value = 'command_line_value')",
+            "label_flag(name = 'my_label_" + testing + "', build_setting_default = ':default')"
+        )
 
-    scratch.file(
-        "a/BUILD",
-        """
+        scratch.file(
+            "a/BUILD",
+            """
         cc_library(
             name = "a",
             srcs = ["a.cc"],
@@ -115,31 +110,36 @@ public class LabelBuildSettingTest extends BuildViewTestCase {
             name = "b",
             actual = "a",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget b = getConfiguredTarget("//test:my_rule");
-    StarlarkProvider.Key myRuleInfo =
-        new StarlarkProvider.Key(
-            keyForBuild(Label.parseCanonical("//test:rules.bzl")), "MyRuleInfo");
-    assertThat(((StarlarkInfo) b.get(myRuleInfo)).getValue("value")).isEqualTo("default_value");
-  }
+        val b: ConfiguredTarget = getConfiguredTarget("//test:my_rule")
+        val myRuleInfo: StarlarkProvider.Key =
+            Key(
+                keyForBuild(Label.parseCanonical("//test:rules.bzl")), "MyRuleInfo"
+            )
+        assertThat((b.get(myRuleInfo) as StarlarkInfo).getValue("value")).isEqualTo("default_value")
+    }
 
-  @Test
-  public void testLabelFlag_set() throws Exception {
-    String testing = "flag";
-    writeRulesBzl(testing);
-    scratch.file(
-        "test/BUILD",
-        "load('//test:rules.bzl', 'my_rule', 'simple_rule')",
-        "",
-        "my_rule(name = 'my_rule')",
-        "simple_rule(name = 'default', value = 'default_value')",
-        "simple_rule(name = 'command_line', value = 'command_line_value')",
-        "label_flag(name = 'my_label_" + testing + "', build_setting_default = ':default')");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLabelFlag_set() {
+        val testing = "flag"
+        writeRulesBzl(testing)
+        scratch.file(
+            "test/BUILD",
+            "load('//test:rules.bzl', 'my_rule', 'simple_rule')",
+            "",
+            "my_rule(name = 'my_rule')",
+            "simple_rule(name = 'default', value = 'default_value')",
+            "simple_rule(name = 'command_line', value = 'command_line_value')",
+            "label_flag(name = 'my_label_" + testing + "', build_setting_default = ':default')"
+        )
 
-    scratch.file(
-        "a/BUILD",
-        """
+        scratch.file(
+            "a/BUILD",
+            """
         cc_library(
             name = "a",
             srcs = ["a.cc"],
@@ -149,24 +149,28 @@ public class LabelBuildSettingTest extends BuildViewTestCase {
             name = "b",
             actual = "a",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration("--//test:my_label_flag=//test:command_line");
+        useConfiguration("--//test:my_label_flag=//test:command_line")
 
-    ConfiguredTarget b = getConfiguredTarget("//test:my_rule");
-    StarlarkProvider.Key myRuleInfo =
-        new StarlarkProvider.Key(
-            keyForBuild(Label.parseCanonical("//test:rules.bzl")), "MyRuleInfo");
-    assertThat(((StarlarkInfo) b.get(myRuleInfo)).getValue("value"))
-        .isEqualTo("command_line_value");
-  }
+        val b: ConfiguredTarget = getConfiguredTarget("//test:my_rule")
+        val myRuleInfo: StarlarkProvider.Key =
+            Key(
+                keyForBuild(Label.parseCanonical("//test:rules.bzl")), "MyRuleInfo"
+            )
+        assertThat((b.get(myRuleInfo) as StarlarkInfo).getValue("value"))
+            .isEqualTo("command_line_value")
+    }
 
-  @Test
-  public void withSelectThroughAlias() throws Exception {
-    writeRulesBzl("flag");
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun withSelectThroughAlias() {
+        writeRulesBzl("flag")
+        scratch.file(
+            "test/BUILD",
+            """
         load("//test:rules.bzl", "my_rule", "simple_rule")
 
         simple_rule(
@@ -198,25 +202,29 @@ public class LabelBuildSettingTest extends BuildViewTestCase {
             name = "selector",
             value = select({":is_default_label": "valid"}),
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration();
-    getConfiguredTarget("//test:selector");
-    assertNoEvents();
+        useConfiguration()
+        getConfiguredTarget("//test:selector")
+        assertNoEvents()
 
-    reporter.removeHandler(failFastHandler);
-    useConfiguration("--//test:my_label_flag=//test:command_line");
-    getConfiguredTarget("//test:selector");
-    assertContainsEvent(
-        "configurable attribute \"value\" in //test:selector doesn't match this configuration");
-  }
+        reporter.removeHandler(failFastHandler)
+        useConfiguration("--//test:my_label_flag=//test:command_line")
+        getConfiguredTarget("//test:selector")
+        assertContainsEvent(
+            "configurable attribute \"value\" in //test:selector doesn't match this configuration"
+        )
+    }
 
-  @Test
-  public void withSelect() throws Exception {
-    writeRulesBzl("flag");
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun withSelect() {
+        writeRulesBzl("flag")
+        scratch.file(
+            "test/BUILD",
+            """
         load("//test:rules.bzl", "my_rule", "simple_rule")
 
         simple_rule(
@@ -243,25 +251,29 @@ public class LabelBuildSettingTest extends BuildViewTestCase {
             name = "selector",
             value = select({":is_default_label": "valid"}),
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration();
-    getConfiguredTarget("//test:selector");
-    assertNoEvents();
+        useConfiguration()
+        getConfiguredTarget("//test:selector")
+        assertNoEvents()
 
-    reporter.removeHandler(failFastHandler);
-    useConfiguration("--//test:my_label_flag=//test:command_line");
-    getConfiguredTarget("//test:selector");
-    assertContainsEvent(
-        "configurable attribute \"value\" in //test:selector doesn't match this configuration");
-  }
+        reporter.removeHandler(failFastHandler)
+        useConfiguration("--//test:my_label_flag=//test:command_line")
+        getConfiguredTarget("//test:selector")
+        assertContainsEvent(
+            "configurable attribute \"value\" in //test:selector doesn't match this configuration"
+        )
+    }
 
-  @Test
-  public void selectWithRelativeLabel() throws Exception {
-    writeRulesBzl("flag");
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun selectWithRelativeLabel() {
+        writeRulesBzl("flag")
+        scratch.file(
+            "test/BUILD",
+            """
         load("//test:rules.bzl", "my_rule", "simple_rule")
 
         simple_rule(
@@ -288,25 +300,29 @@ public class LabelBuildSettingTest extends BuildViewTestCase {
             name = "selector",
             value = select({":is_default_label": "valid"}),
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration();
-    getConfiguredTarget("//test:selector");
-    assertNoEvents();
+        useConfiguration()
+        getConfiguredTarget("//test:selector")
+        assertNoEvents()
 
-    reporter.removeHandler(failFastHandler);
-    useConfiguration("--//test:my_label_flag=//test:command_line");
-    getConfiguredTarget("//test:selector");
-    assertContainsEvent(
-        "configurable attribute \"value\" in //test:selector doesn't match this configuration");
-  }
+        reporter.removeHandler(failFastHandler)
+        useConfiguration("--//test:my_label_flag=//test:command_line")
+        getConfiguredTarget("//test:selector")
+        assertContainsEvent(
+            "configurable attribute \"value\" in //test:selector doesn't match this configuration"
+        )
+    }
 
-  @Test
-  public void selectOnInvalidLabel() throws Exception {
-    writeRulesBzl("flag");
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun selectOnInvalidLabel() {
+        writeRulesBzl("flag")
+        scratch.file(
+            "test/BUILD",
+            """
         load("//test:rules.bzl", "my_rule", "simple_rule")
 
         simple_rule(
@@ -333,31 +349,37 @@ public class LabelBuildSettingTest extends BuildViewTestCase {
             name = "selector",
             value = select({":is_default_label": "valid"}),
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    reporter.removeHandler(failFastHandler);
-    useConfiguration();
-    getConfiguredTarget("//test:selector");
-    assertContainsEvent(
-        "':@not_a_valid_label/' cannot be converted to //test:my_label_flag type label");
-  }
+        reporter.removeHandler(failFastHandler)
+        useConfiguration()
+        getConfiguredTarget("//test:selector")
+        assertContainsEvent(
+            "':@not_a_valid_label/' cannot be converted to //test:my_label_flag type label"
+        )
+    }
 
-  @Test
-  public void transitionOutput_samePackage() throws Exception {
-    scratch.overwriteFile(
-        "tools/allowlists/function_transition_allowlist/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun transitionOutput_samePackage() {
+        scratch.overwriteFile(
+            "tools/allowlists/function_transition_allowlist/BUILD",
+            """
         package_group(
             name = "function_transition_allowlist",
             packages = [
                 "//test/...",
             ],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "test/rules.bzl",
-        """
+        scratch.file(
+            "test/rules.bzl",
+            """
         def _transition_impl(settings, attr):
             return {
                 "//test:my_flag1": Label("//test:other_rule"),
@@ -389,11 +411,13 @@ public class LabelBuildSettingTest extends BuildViewTestCase {
                 "_flag3": attr.label(default = ":my_flag3"),
             },
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "test/BUILD",
-        """
+        scratch.file(
+            "test/BUILD",
+            """
         load("//test:rules.bzl", "rule_with_transition")
 
         label_flag(
@@ -416,32 +440,37 @@ public class LabelBuildSettingTest extends BuildViewTestCase {
         filegroup(name = "other_rule")
 
         rule_with_transition(name = "buildme")
-        """);
-    assertThat(getConfiguredTarget("//test:buildme")).isNotNull();
-    assertNoEvents();
-  }
+        
+        """.trimIndent()
+        )
+        assertThat(getConfiguredTarget("//test:buildme")).isNotNull()
+        assertNoEvents()
+    }
 
-  @Test
-  public void transitionOutput_otherRepo() throws Exception {
-    scratch.overwriteFile("MODULE.bazel", "bazel_dep(name='foo',version='1.0')");
-    registry.addModule(createModuleKey("foo", "1.0"), "module(name='foo', version='1.0')");
-    scratch.file("modules/foo+1.0/REPO.bazel");
-    scratch.file("modules/foo+1.0/BUILD", "filegroup(name='other_rule')");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun transitionOutput_otherRepo() {
+        scratch.overwriteFile("MODULE.bazel", "bazel_dep(name='foo',version='1.0')")
+        registry.addModule(createModuleKey("foo", "1.0"), "module(name='foo', version='1.0')")
+        scratch.file("modules/foo+1.0/REPO.bazel")
+        scratch.file("modules/foo+1.0/BUILD", "filegroup(name='other_rule')")
 
-    scratch.overwriteFile(
-        "tools/allowlists/function_transition_allowlist/BUILD",
-        """
+        scratch.overwriteFile(
+            "tools/allowlists/function_transition_allowlist/BUILD",
+            """
         package_group(
             name = "function_transition_allowlist",
             packages = [
                 "//test/...",
             ],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "test/rules.bzl",
-        """
+        scratch.file(
+            "test/rules.bzl",
+            """
         def _transition_impl(settings, attr):
             return {
                 "//test:my_flag1": Label("@foo//:other_rule"),
@@ -469,11 +498,13 @@ public class LabelBuildSettingTest extends BuildViewTestCase {
                 "_flag2": attr.label(default = ":my_flag2"),
             },
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "test/BUILD",
-        """
+        scratch.file(
+            "test/BUILD",
+            """
         load("//test:rules.bzl", "rule_with_transition")
 
         label_flag(
@@ -489,19 +520,22 @@ public class LabelBuildSettingTest extends BuildViewTestCase {
         filegroup(name = "first_rule")
 
         rule_with_transition(name = "buildme")
-        """);
+        
+        """.trimIndent()
+        )
 
-    invalidatePackages();
+        invalidatePackages()
 
-    assertThat(getConfiguredTarget("//test:buildme")).isNotNull();
-    assertNoEvents();
-  }
+        assertThat(getConfiguredTarget("//test:buildme")).isNotNull()
+        assertNoEvents()
+    }
 
-  @Test
-  public void testInvisibleRepoInLabelResultsInEarlyError() throws Exception {
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testInvisibleRepoInLabelResultsInEarlyError() {
+        scratch.file(
+            "test/defs.bzl",
+            """
         def _setting_impl(ctx):
             return []
 
@@ -526,10 +560,12 @@ public class LabelBuildSettingTest extends BuildViewTestCase {
             implementation = _impl,
             cfg = formation_transition,
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load("//test:defs.bzl", "state", "string_flag")
 
         state(name = "arizona")
@@ -538,13 +574,16 @@ public class LabelBuildSettingTest extends BuildViewTestCase {
             name = "formation",
             build_setting_default = "canyon",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    reporter.removeHandler(failFastHandler);
-    getConfiguredTarget("//test:arizona");
+        reporter.removeHandler(failFastHandler)
+        getConfiguredTarget("//test:arizona")
 
-    assertContainsEvent(
-        "Error in transition: invalid transition input '@@[unknown repo 'foobar' requested from @@]"
-            + "//test:formation': no repo visible as @foobar from main repository");
-  }
+        assertContainsEvent(
+            "Error in transition: invalid transition input '@@[unknown repo 'foobar' requested from @@]"
+                    + "//test:formation': no repo visible as @foobar from main repository"
+        )
+    }
 }

@@ -11,309 +11,336 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.collect;
+package com.google.devtools.build.lib.collect
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-
-import com.google.common.collect.ArrayListMultimap;
-import com.google.common.collect.HashMultiset;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.LinkedListMultimap;
-import com.google.common.collect.ListMultimap;
-import com.google.common.collect.Multimap;
-import com.google.common.collect.testing.google.UnmodifiableCollectionTests;
-import com.google.common.testing.EqualsTester;
-import java.util.AbstractMap.SimpleImmutableEntry;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Map;
-import java.util.Set;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.common.collect.testing.google.UnmodifiableCollectionTests
+import com.google.common.testing.EqualsTester
+import com.google.common.truth.Truth
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.util.AbstractMap.SimpleImmutableEntry
 
 /**
- * A test for {@link ImmutableSortedKeyListMultimap}. Started out as a copy of
+ * A test for [ImmutableSortedKeyListMultimap]. Started out as a copy of
  * ImmutableListMultimapTest.
  */
-@RunWith(JUnit4.class)
-public class ImmutableSortedKeyListMultimapTest {
+@RunWith(JUnit4::class)
+class ImmutableSortedKeyListMultimapTest {
+    @org.junit.Test
+    fun builderPutAllIterable() {
+        val builder
+                : ImmutableSortedKeyListMultimap.Builder<String?, Int?> = ImmutableSortedKeyListMultimap.builder()
+        builder.putAll("foo", mutableListOf<T?>(1, 2, 3))
+        builder.putAll("bar", mutableListOf<T?>(4, 5))
+        builder.putAll("foo", mutableListOf<T?>(6, 7))
+        val multimap: com.google.common.collect.Multimap<String?, Int?>? = builder.build()
+        Truth.assertThat(multimap).valuesForKey("foo").containsExactly(1, 2, 3, 6, 7).inOrder()
+        Truth.assertThat(multimap).valuesForKey("bar").containsExactly(4, 5).inOrder()
+        Truth.assertThat(multimap).hasSize(7)
+    }
 
-  @Test
-  public void builderPutAllIterable() {
-    ImmutableSortedKeyListMultimap.Builder<String, Integer> builder
-        = ImmutableSortedKeyListMultimap.builder();
-    builder.putAll("foo", Arrays.asList(1, 2, 3));
-    builder.putAll("bar", Arrays.asList(4, 5));
-    builder.putAll("foo", Arrays.asList(6, 7));
-    Multimap<String, Integer> multimap = builder.build();
-    assertThat(multimap).valuesForKey("foo").containsExactly(1, 2, 3, 6, 7).inOrder();
-    assertThat(multimap).valuesForKey("bar").containsExactly(4, 5).inOrder();
-    assertThat(multimap).hasSize(7);
-  }
+    @org.junit.Test
+    fun builderPutAllVarargs() {
+        val builder
+                : ImmutableSortedKeyListMultimap.Builder<String?, Int?> = ImmutableSortedKeyListMultimap.builder()
+        builder.putAll("foo", 1, 2, 3)
+        builder.putAll("bar", 4, 5)
+        builder.putAll("foo", 6, 7)
+        val multimap: com.google.common.collect.Multimap<String?, Int?>? = builder.build()
+        Truth.assertThat(multimap).valuesForKey("foo").containsExactly(1, 2, 3, 6, 7).inOrder()
+        Truth.assertThat(multimap).valuesForKey("bar").containsExactly(4, 5).inOrder()
+        Truth.assertThat(multimap).hasSize(7)
+    }
 
-  @Test
-  public void builderPutAllVarargs() {
-    ImmutableSortedKeyListMultimap.Builder<String, Integer> builder
-        = ImmutableSortedKeyListMultimap.builder();
-    builder.putAll("foo", 1, 2, 3);
-    builder.putAll("bar", 4, 5);
-    builder.putAll("foo", 6, 7);
-    Multimap<String, Integer> multimap = builder.build();
-    assertThat(multimap).valuesForKey("foo").containsExactly(1, 2, 3, 6, 7).inOrder();
-    assertThat(multimap).valuesForKey("bar").containsExactly(4, 5).inOrder();
-    assertThat(multimap).hasSize(7);
-  }
+    @org.junit.Test
+    fun builderPutAllMultimap() {
+        val toPut: com.google.common.collect.Multimap<String?, Int?> =
+            com.google.common.collect.LinkedListMultimap.create<String?, Int?>()
+        toPut.put("foo", 1)
+        toPut.put("bar", 4)
+        toPut.put("foo", 2)
+        toPut.put("foo", 3)
+        val moreToPut: com.google.common.collect.Multimap<String?, Int?> =
+            com.google.common.collect.LinkedListMultimap.create<String?, Int?>()
+        moreToPut.put("foo", 6)
+        moreToPut.put("bar", 5)
+        moreToPut.put("foo", 7)
+        val builder
+                : ImmutableSortedKeyListMultimap.Builder<String?, Int?> = ImmutableSortedKeyListMultimap.builder()
+        builder.putAll(toPut)
+        builder.putAll(moreToPut)
+        val multimap: com.google.common.collect.Multimap<String?, Int?>? = builder.build()
+        Truth.assertThat(multimap).valuesForKey("foo").containsExactly(1, 2, 3, 6, 7).inOrder()
+        Truth.assertThat(multimap).valuesForKey("bar").containsExactly(4, 5).inOrder()
+        Truth.assertThat(multimap).hasSize(7)
+    }
 
-  @Test
-  public void builderPutAllMultimap() {
-    Multimap<String, Integer> toPut = LinkedListMultimap.create();
-    toPut.put("foo", 1);
-    toPut.put("bar", 4);
-    toPut.put("foo", 2);
-    toPut.put("foo", 3);
-    Multimap<String, Integer> moreToPut = LinkedListMultimap.create();
-    moreToPut.put("foo", 6);
-    moreToPut.put("bar", 5);
-    moreToPut.put("foo", 7);
-    ImmutableSortedKeyListMultimap.Builder<String, Integer> builder
-        = ImmutableSortedKeyListMultimap.builder();
-    builder.putAll(toPut);
-    builder.putAll(moreToPut);
-    Multimap<String, Integer> multimap = builder.build();
-    assertThat(multimap).valuesForKey("foo").containsExactly(1, 2, 3, 6, 7).inOrder();
-    assertThat(multimap).valuesForKey("bar").containsExactly(4, 5).inOrder();
-    assertThat(multimap).hasSize(7);
-  }
+    @org.junit.Test
+    fun builderPutAllWithDuplicates() {
+        val builder
+                : ImmutableSortedKeyListMultimap.Builder<String?, Int?> = ImmutableSortedKeyListMultimap.builder()
+        builder.putAll("foo", 1, 2, 3)
+        builder.putAll("bar", 4, 5)
+        builder.putAll("foo", 1, 6, 7)
+        val multimap: ImmutableSortedKeyListMultimap<String?, Int?>? = builder.build()
+        assertThat(multimap).valuesForKey("foo").containsExactly(1, 2, 3, 1, 6, 7).inOrder()
+        assertThat(multimap).valuesForKey("bar").containsExactly(4, 5).inOrder()
+        assertThat(multimap).hasSize(8)
+    }
 
-  @Test
-  public void builderPutAllWithDuplicates() {
-    ImmutableSortedKeyListMultimap.Builder<String, Integer> builder
-        = ImmutableSortedKeyListMultimap.builder();
-    builder.putAll("foo", 1, 2, 3);
-    builder.putAll("bar", 4, 5);
-    builder.putAll("foo", 1, 6, 7);
-    ImmutableSortedKeyListMultimap<String, Integer> multimap = builder.build();
-    assertThat(multimap).valuesForKey("foo").containsExactly(1, 2, 3, 1, 6, 7).inOrder();
-    assertThat(multimap).valuesForKey("bar").containsExactly(4, 5).inOrder();
-    assertThat(multimap).hasSize(8);
-  }
+    @org.junit.Test
+    fun builderPutWithDuplicates() {
+        val builder
+                : ImmutableSortedKeyListMultimap.Builder<String?, Int?> = ImmutableSortedKeyListMultimap.builder()
+        builder.putAll("foo", 1, 2, 3)
+        builder.putAll("bar", 4, 5)
+        builder.put("foo", 1)
+        val multimap: ImmutableSortedKeyListMultimap<String?, Int?>? = builder.build()
+        assertThat(multimap).valuesForKey("foo").containsExactly(1, 2, 3, 1).inOrder()
+        assertThat(multimap).valuesForKey("bar").containsExactly(4, 5).inOrder()
+        assertThat(multimap).hasSize(6)
+    }
 
-  @Test
-  public void builderPutWithDuplicates() {
-    ImmutableSortedKeyListMultimap.Builder<String, Integer> builder
-        = ImmutableSortedKeyListMultimap.builder();
-    builder.putAll("foo", 1, 2, 3);
-    builder.putAll("bar", 4, 5);
-    builder.put("foo", 1);
-    ImmutableSortedKeyListMultimap<String, Integer> multimap = builder.build();
-    assertThat(multimap).valuesForKey("foo").containsExactly(1, 2, 3, 1).inOrder();
-    assertThat(multimap).valuesForKey("bar").containsExactly(4, 5).inOrder();
-    assertThat(multimap).hasSize(6);
-  }
+    @org.junit.Test
+    fun builderPutAllMultimapWithDuplicates() {
+        val toPut: com.google.common.collect.Multimap<String?, Int?> =
+            com.google.common.collect.LinkedListMultimap.create<String?, Int?>()
+        toPut.put("foo", 1)
+        toPut.put("bar", 4)
+        toPut.put("foo", 2)
+        toPut.put("foo", 1)
+        toPut.put("bar", 5)
+        val moreToPut: com.google.common.collect.Multimap<String?, Int?> =
+            com.google.common.collect.LinkedListMultimap.create<String?, Int?>()
+        moreToPut.put("foo", 6)
+        moreToPut.put("bar", 4)
+        moreToPut.put("foo", 7)
+        moreToPut.put("foo", 2)
+        val builder
+                : ImmutableSortedKeyListMultimap.Builder<String?, Int?> = ImmutableSortedKeyListMultimap.builder()
+        builder.putAll(toPut)
+        builder.putAll(moreToPut)
+        val multimap: com.google.common.collect.Multimap<String?, Int?>? = builder.build()
+        Truth.assertThat(multimap).valuesForKey("foo").containsExactly(1, 2, 1, 6, 7, 2).inOrder()
+        Truth.assertThat(multimap).valuesForKey("bar").containsExactly(4, 5, 4).inOrder()
+        Truth.assertThat(multimap).hasSize(9)
+    }
 
-  @Test
-  public void builderPutAllMultimapWithDuplicates() {
-    Multimap<String, Integer> toPut = LinkedListMultimap.create();
-    toPut.put("foo", 1);
-    toPut.put("bar", 4);
-    toPut.put("foo", 2);
-    toPut.put("foo", 1);
-    toPut.put("bar", 5);
-    Multimap<String, Integer> moreToPut = LinkedListMultimap.create();
-    moreToPut.put("foo", 6);
-    moreToPut.put("bar", 4);
-    moreToPut.put("foo", 7);
-    moreToPut.put("foo", 2);
-    ImmutableSortedKeyListMultimap.Builder<String, Integer> builder
-        = ImmutableSortedKeyListMultimap.builder();
-    builder.putAll(toPut);
-    builder.putAll(moreToPut);
-    Multimap<String, Integer> multimap = builder.build();
-    assertThat(multimap).valuesForKey("foo").containsExactly(1, 2, 1, 6, 7, 2).inOrder();
-    assertThat(multimap).valuesForKey("bar").containsExactly(4, 5, 4).inOrder();
-    assertThat(multimap).hasSize(9);
-  }
+    @org.junit.Test
+    fun builderPutNullKey() {
+        val toPut: com.google.common.collect.Multimap<String?, Int?> =
+            com.google.common.collect.LinkedListMultimap.create<String?, Int?>()
+        toPut.put("foo", null)
+        val builder
+                : ImmutableSortedKeyListMultimap.Builder<String?, Int?> = ImmutableSortedKeyListMultimap.builder()
+        org.junit.Assert.assertThrows<java.lang.NullPointerException?>(
+            java.lang.NullPointerException::class.java,
+            org.junit.function.ThrowingRunnable { builder.put(null, 1) })
+        org.junit.Assert.assertThrows<java.lang.NullPointerException?>(
+            java.lang.NullPointerException::class.java,
+            org.junit.function.ThrowingRunnable { builder.putAll(null, mutableListOf<T?>(1, 2, 3)) })
+        org.junit.Assert.assertThrows<java.lang.NullPointerException?>(
+            java.lang.NullPointerException::class.java,
+            org.junit.function.ThrowingRunnable { builder.putAll(null, 1, 2, 3) })
+        org.junit.Assert.assertThrows<java.lang.NullPointerException?>(
+            java.lang.NullPointerException::class.java,
+            org.junit.function.ThrowingRunnable { builder.putAll(toPut) })
+    }
 
-  @Test
-  public void builderPutNullKey() {
-    Multimap<String, Integer> toPut = LinkedListMultimap.create();
-    toPut.put("foo", null);
-    ImmutableSortedKeyListMultimap.Builder<String, Integer> builder
-        = ImmutableSortedKeyListMultimap.builder();
-    assertThrows(NullPointerException.class, () -> builder.put(null, 1));
-    assertThrows(NullPointerException.class, () -> builder.putAll(null, Arrays.asList(1, 2, 3)));
-    assertThrows(NullPointerException.class, () -> builder.putAll(null, 1, 2, 3));
-    assertThrows(NullPointerException.class, () -> builder.putAll(toPut));
-  }
+    @org.junit.Test
+    fun builderPutNullValue() {
+        val toPut: com.google.common.collect.Multimap<String?, Int?> =
+            com.google.common.collect.LinkedListMultimap.create<String?, Int?>()
+        toPut.put(null, 1)
+        val builder
+                : ImmutableSortedKeyListMultimap.Builder<String?, Int?> = ImmutableSortedKeyListMultimap.builder()
+        org.junit.Assert.assertThrows<java.lang.NullPointerException?>(
+            java.lang.NullPointerException::class.java,
+            org.junit.function.ThrowingRunnable { builder.put("foo", null) })
+        org.junit.Assert.assertThrows<java.lang.NullPointerException?>(
+            java.lang.NullPointerException::class.java,
+            org.junit.function.ThrowingRunnable { builder.putAll("foo", mutableListOf<T?>(1, null, 3)) })
+        org.junit.Assert.assertThrows<java.lang.NullPointerException?>(
+            java.lang.NullPointerException::class.java,
+            org.junit.function.ThrowingRunnable { builder.putAll("foo", 1, null, 3) })
+        org.junit.Assert.assertThrows<java.lang.NullPointerException?>(
+            java.lang.NullPointerException::class.java,
+            org.junit.function.ThrowingRunnable { builder.putAll(toPut) })
+    }
 
-  @Test
-  public void builderPutNullValue() {
-    Multimap<String, Integer> toPut = LinkedListMultimap.create();
-    toPut.put(null, 1);
-    ImmutableSortedKeyListMultimap.Builder<String, Integer> builder
-        = ImmutableSortedKeyListMultimap.builder();
-    assertThrows(NullPointerException.class, () -> builder.put("foo", null));
-    assertThrows(
-        NullPointerException.class, () -> builder.putAll("foo", Arrays.asList(1, null, 3)));
-    assertThrows(NullPointerException.class, () -> builder.putAll("foo", 1, null, 3));
-    assertThrows(NullPointerException.class, () -> builder.putAll(toPut));
-  }
+    @org.junit.Test
+    fun copyOf() {
+        val input: com.google.common.collect.ListMultimap<String?, Int?> =
+            com.google.common.collect.ArrayListMultimap.create<String?, Int?>()
+        input.put("foo", 1)
+        input.put("bar", 2)
+        input.put("foo", 3)
+        val multimap: com.google.common.collect.Multimap<String?, Int?>? = ImmutableSortedKeyListMultimap.copyOf(input)
+        Truth.assertThat(input).isEqualTo(multimap)
+        Truth.assertThat(multimap).isEqualTo(input)
+    }
 
-  @Test
-  public void copyOf() {
-    ListMultimap<String, Integer> input = ArrayListMultimap.create();
-    input.put("foo", 1);
-    input.put("bar", 2);
-    input.put("foo", 3);
-    Multimap<String, Integer> multimap = ImmutableSortedKeyListMultimap.copyOf(input);
-    assertThat(input).isEqualTo(multimap);
-    assertThat(multimap).isEqualTo(input);
-  }
+    @org.junit.Test
+    fun copyOfWithDuplicates() {
+        val input: com.google.common.collect.ListMultimap<String?, Int?> =
+            com.google.common.collect.ArrayListMultimap.create<String?, Int?>()
+        input.put("foo", 1)
+        input.put("bar", 2)
+        input.put("foo", 3)
+        input.put("foo", 1)
+        val multimap: com.google.common.collect.Multimap<String?, Int?>? = ImmutableSortedKeyListMultimap.copyOf(input)
+        Truth.assertThat(input).isEqualTo(multimap)
+        Truth.assertThat(multimap).isEqualTo(input)
+    }
 
-  @Test
-  public void copyOfWithDuplicates() {
-    ListMultimap<String, Integer> input = ArrayListMultimap.create();
-    input.put("foo", 1);
-    input.put("bar", 2);
-    input.put("foo", 3);
-    input.put("foo", 1);
-    Multimap<String, Integer> multimap = ImmutableSortedKeyListMultimap.copyOf(input);
-    assertThat(input).isEqualTo(multimap);
-    assertThat(multimap).isEqualTo(input);
-  }
+    @org.junit.Test
+    fun copyOfEmpty() {
+        val input: com.google.common.collect.ListMultimap<String?, Int?> =
+            com.google.common.collect.ArrayListMultimap.create<String?, Int?>()
+        val multimap: com.google.common.collect.Multimap<String?, Int?>? = ImmutableSortedKeyListMultimap.copyOf(input)
+        Truth.assertThat(input).isEqualTo(multimap)
+        Truth.assertThat(multimap).isEqualTo(input)
+    }
 
-  @Test
-  public void copyOfEmpty() {
-    ListMultimap<String, Integer> input = ArrayListMultimap.create();
-    Multimap<String, Integer> multimap = ImmutableSortedKeyListMultimap.copyOf(input);
-    assertThat(input).isEqualTo(multimap);
-    assertThat(multimap).isEqualTo(input);
-  }
+    @org.junit.Test
+    fun copyOfImmutableListMultimap() {
+        val multimap: com.google.common.collect.Multimap<String?, Int?> = createMultimap()
+        assertThat(ImmutableSortedKeyListMultimap.copyOf(multimap)).isSameInstanceAs(multimap)
+    }
 
-  @Test
-  public void copyOfImmutableListMultimap() {
-    Multimap<String, Integer> multimap = createMultimap();
-    assertThat(ImmutableSortedKeyListMultimap.copyOf(multimap)).isSameInstanceAs(multimap);
-  }
+    @org.junit.Test
+    fun copyOfNullKey() {
+        val input: com.google.common.collect.ListMultimap<String?, Int?> =
+            com.google.common.collect.ArrayListMultimap.create<String?, Int?>()
+        input.put(null, 1)
+        org.junit.Assert.assertThrows<java.lang.NullPointerException?>(
+            java.lang.NullPointerException::class.java,
+            org.junit.function.ThrowingRunnable { ImmutableSortedKeyListMultimap.copyOf(input) })
+    }
 
-  @Test
-  public void copyOfNullKey() {
-    ListMultimap<String, Integer> input = ArrayListMultimap.create();
-    input.put(null, 1);
-    assertThrows(NullPointerException.class, () -> ImmutableSortedKeyListMultimap.copyOf(input));
-  }
+    @org.junit.Test
+    fun copyOfNullValue() {
+        val input: com.google.common.collect.ListMultimap<String?, Int?> =
+            com.google.common.collect.ArrayListMultimap.create<String?, Int?>()
+        input.putAll("foo", mutableListOf<Int?>(1, null, 3))
+        org.junit.Assert.assertThrows<java.lang.NullPointerException?>(
+            java.lang.NullPointerException::class.java,
+            org.junit.function.ThrowingRunnable { ImmutableSortedKeyListMultimap.copyOf(input) })
+    }
 
-  @Test
-  public void copyOfNullValue() {
-    ListMultimap<String, Integer> input = ArrayListMultimap.create();
-    input.putAll("foo", Arrays.asList(1, null, 3));
-    assertThrows(NullPointerException.class, () -> ImmutableSortedKeyListMultimap.copyOf(input));
-  }
+    @org.junit.Test
+    fun emptyMultimapReads() {
+        val multimap: com.google.common.collect.Multimap<String?, Int?> = ImmutableSortedKeyListMultimap.of()
+        Truth.assertThat(multimap).doesNotContainKey("foo")
+        Truth.assertThat(multimap.containsValue(1)).isFalse()
+        Truth.assertThat(multimap).doesNotContainEntry("foo", 1)
+        Truth.assertThat(multimap.entries()).isEmpty()
+        Truth.assertThat(multimap == com.google.common.collect.ArrayListMultimap.create<Any?, Any?>()).isTrue()
+        Truth.assertThat(multimap).valuesForKey("foo").isEqualTo(mutableListOf<Any?>())
+        Truth.assertThat(multimap.hashCode()).isEqualTo(0)
+        Truth.assertThat(multimap).isEmpty()
+        Truth.assertThat(multimap.keys()).isEqualTo(com.google.common.collect.HashMultiset.create<Any?>())
+        Truth.assertThat(multimap).isEmpty()
+        Truth.assertThat(multimap).isEmpty()
+        Truth.assertThat(multimap).isEmpty()
+        Truth.assertThat(multimap.toString()).isEqualTo("{}")
+    }
 
-  @Test
-  public void emptyMultimapReads() {
-    Multimap<String, Integer> multimap = ImmutableSortedKeyListMultimap.of();
-    assertThat(multimap).doesNotContainKey("foo");
-    assertThat(multimap.containsValue(1)).isFalse();
-    assertThat(multimap).doesNotContainEntry("foo", 1);
-    assertThat(multimap.entries()).isEmpty();
-    assertThat(multimap.equals(ArrayListMultimap.create())).isTrue();
-    assertThat(multimap).valuesForKey("foo").isEqualTo(Collections.emptyList());
-    assertThat(multimap.hashCode()).isEqualTo(0);
-    assertThat(multimap).isEmpty();
-    assertThat(multimap.keys()).isEqualTo(HashMultiset.create());
-    assertThat(multimap).isEmpty();
-    assertThat(multimap).isEmpty();
-    assertThat(multimap).isEmpty();
-    assertThat(multimap.toString()).isEqualTo("{}");
-  }
+    @org.junit.Test
+    fun emptyMultimapWrites() {
+        val multimap: com.google.common.collect.Multimap<String?, Int?> = ImmutableSortedKeyListMultimap.of()
+        UnmodifiableCollectionTests.assertMultimapIsUnmodifiable<String?, Int?>(
+            multimap, "foo", 1
+        )
+    }
 
-  @Test
-  public void emptyMultimapWrites() {
-    Multimap<String, Integer> multimap = ImmutableSortedKeyListMultimap.of();
-    UnmodifiableCollectionTests.assertMultimapIsUnmodifiable(
-        multimap, "foo", 1);
-  }
+    private fun createMultimap(): com.google.common.collect.Multimap<String?, Int?> {
+        return ImmutableSortedKeyListMultimap.< String, Integer>builder<kotlin.String?, Int?>()
+        .put("foo", 1).put("bar", 2).put("foo", 3).build()
+    }
 
-  private Multimap<String, Integer> createMultimap() {
-    return ImmutableSortedKeyListMultimap.<String, Integer>builder()
-        .put("foo", 1).put("bar", 2).put("foo", 3).build();
-  }
+    @org.junit.Test
+    fun multimapReads() {
+        val multimap: com.google.common.collect.Multimap<String?, Int?> = createMultimap()
+        Truth.assertThat(multimap).containsKey("foo")
+        Truth.assertThat(multimap).doesNotContainKey("cat")
+        Truth.assertThat(multimap.containsValue(1)).isTrue()
+        Truth.assertThat(multimap.containsValue(5)).isFalse()
+        Truth.assertThat(multimap).containsEntry("foo", 1)
+        Truth.assertThat(multimap).doesNotContainEntry("cat", 1)
+        Truth.assertThat(multimap).doesNotContainEntry("foo", 5)
+        Truth.assertThat(multimap.entries()).isNotEmpty()
+        Truth.assertThat(multimap).hasSize(3)
+        Truth.assertThat(multimap).isNotEmpty()
+        Truth.assertThat(multimap.toString()).isEqualTo("{bar=[2], foo=[1, 3]}")
+    }
 
-  @Test
-  public void multimapReads() {
-    Multimap<String, Integer> multimap = createMultimap();
-    assertThat(multimap).containsKey("foo");
-    assertThat(multimap).doesNotContainKey("cat");
-    assertThat(multimap.containsValue(1)).isTrue();
-    assertThat(multimap.containsValue(5)).isFalse();
-    assertThat(multimap).containsEntry("foo", 1);
-    assertThat(multimap).doesNotContainEntry("cat", 1);
-    assertThat(multimap).doesNotContainEntry("foo", 5);
-    assertThat(multimap.entries()).isNotEmpty();
-    assertThat(multimap).hasSize(3);
-    assertThat(multimap).isNotEmpty();
-    assertThat(multimap.toString()).isEqualTo("{bar=[2], foo=[1, 3]}");
-  }
+    @org.junit.Test
+    fun multimapWrites() {
+        val multimap: com.google.common.collect.Multimap<String?, Int?> = createMultimap()
+        UnmodifiableCollectionTests.assertMultimapIsUnmodifiable<String?, Int?>(
+            multimap, "bar", 2
+        )
+    }
 
-  @Test
-  public void multimapWrites() {
-    Multimap<String, Integer> multimap = createMultimap();
-    UnmodifiableCollectionTests.assertMultimapIsUnmodifiable(
-        multimap, "bar", 2);
-  }
+    @org.junit.Test
+    fun multimapEquals() {
+        val multimap: com.google.common.collect.Multimap<String?, Int?> = createMultimap()
+        val arrayListMultimap
+                : com.google.common.collect.Multimap<String?, Int?> =
+            com.google.common.collect.ArrayListMultimap.create<String?, Int?>()
+        arrayListMultimap.putAll("foo", mutableListOf<Int?>(1, 3))
+        arrayListMultimap.put("bar", 2)
 
-  @Test
-  public void multimapEquals() {
-    Multimap<String, Integer> multimap = createMultimap();
-    Multimap<String, Integer> arrayListMultimap
-        = ArrayListMultimap.create();
-    arrayListMultimap.putAll("foo", Arrays.asList(1, 3));
-    arrayListMultimap.put("bar", 2);
+        EqualsTester()
+            .addEqualityGroup(
+                multimap, createMultimap(), arrayListMultimap,
+                ImmutableSortedKeyListMultimap.< String, Integer > builder<String?, Int?>()
+                    .put("bar", 2).put("foo", 1).put("foo", 3).build()
+            )
+            .addEqualityGroup(
+                ImmutableSortedKeyListMultimap.< String, Integer > builder<String?, Int?>()
+                    .put("bar", 2).put("foo", 3).put("foo", 1).build()
+            )
+            .addEqualityGroup(
+                ImmutableSortedKeyListMultimap.< String, Integer > builder<String?, Int?>()
+                    .put("foo", 2).put("foo", 3).put("foo", 1).build()
+            )
+            .addEqualityGroup(
+                ImmutableSortedKeyListMultimap.< String, Integer > builder<String?, Int?>()
+                    .put("bar", 2).put("foo", 3).build()
+            )
+            .testEquals()
+    }
 
-    new EqualsTester()
-        .addEqualityGroup(multimap, createMultimap(), arrayListMultimap,
-            ImmutableSortedKeyListMultimap.<String, Integer>builder()
-                .put("bar", 2).put("foo", 1).put("foo", 3).build())
-        .addEqualityGroup(ImmutableSortedKeyListMultimap.<String, Integer>builder()
-            .put("bar", 2).put("foo", 3).put("foo", 1).build())
-        .addEqualityGroup(ImmutableSortedKeyListMultimap.<String, Integer>builder()
-            .put("foo", 2).put("foo", 3).put("foo", 1).build())
-        .addEqualityGroup(ImmutableSortedKeyListMultimap.<String, Integer>builder()
-            .put("bar", 2).put("foo", 3).build())
-        .testEquals();
-  }
+    @org.junit.Test
+    fun asMap() {
+        val builder
+                : ImmutableSortedKeyListMultimap.Builder<String?, Int?> = ImmutableSortedKeyListMultimap.builder()
+        builder.putAll("foo", mutableListOf<T?>(1, 2, 3))
+        builder.putAll("bar", mutableListOf<T?>(4, 5))
+        val map: MutableMap<String?, MutableCollection<Int?>?>? = builder.build().asMap()
+        Truth.assertThat(map).containsEntry("foo", mutableListOf<Int?>(1, 2, 3))
+        Truth.assertThat(map).containsEntry("bar", mutableListOf<Int?>(4, 5))
+        Truth.assertThat(map).hasSize(2)
+        Truth.assertThat(map).containsKey("foo")
+        Truth.assertThat(map).containsKey("bar")
+        Truth.assertThat(map).doesNotContainKey("notfoo")
+    }
 
-  @Test
-  public void asMap() {
-    ImmutableSortedKeyListMultimap.Builder<String, Integer> builder
-        = ImmutableSortedKeyListMultimap.builder();
-    builder.putAll("foo", Arrays.asList(1, 2, 3));
-    builder.putAll("bar", Arrays.asList(4, 5));
-    Map<String, Collection<Integer>> map = builder.build().asMap();
-    assertThat(map).containsEntry("foo", Arrays.asList(1, 2, 3));
-    assertThat(map).containsEntry("bar", Arrays.asList(4, 5));
-    assertThat(map).hasSize(2);
-    assertThat(map).containsKey("foo");
-    assertThat(map).containsKey("bar");
-    assertThat(map).doesNotContainKey("notfoo");
-  }
-
-  @Test
-  public void asMapEntries() {
-    ImmutableSortedKeyListMultimap.Builder<String, Integer> builder
-        = ImmutableSortedKeyListMultimap.builder();
-    builder.putAll("foo", Arrays.asList(1, 2, 3));
-    builder.putAll("bar", Arrays.asList(4, 5));
-    Set<Map.Entry<String, Collection<Integer>>> set = builder.build().asMap().entrySet();
-    Set<Map.Entry<String, Collection<Integer>>> other =
-        ImmutableSet.<Map.Entry<String, Collection<Integer>>>builder()
-        .add(new SimpleImmutableEntry<String, Collection<Integer>>("foo", Arrays.asList(1, 2, 3)))
-        .add(new SimpleImmutableEntry<String, Collection<Integer>>("bar", Arrays.asList(4, 5)))
-        .build();
-    assertThat(set).isEqualTo(other);
-  }
+    @org.junit.Test
+    fun asMapEntries() {
+        val builder
+                : ImmutableSortedKeyListMultimap.Builder<String?, Int?> = ImmutableSortedKeyListMultimap.builder()
+        builder.putAll("foo", mutableListOf<T?>(1, 2, 3))
+        builder.putAll("bar", mutableListOf<T?>(4, 5))
+        val set: MutableSet<MutableMap.MutableEntry<String?, MutableCollection<Int?>?>?>? =
+            builder.build().asMap().entrySet()
+        val other: MutableSet<MutableMap.MutableEntry<String?, MutableCollection<Int?>?>?> =
+            com.google.common.collect.ImmutableSet.builder<MutableMap.MutableEntry<String?, MutableCollection<Int?>?>?>()
+                .add(SimpleImmutableEntry<String?, MutableCollection<Int?>?>("foo", mutableListOf<Int?>(1, 2, 3)))
+                .add(SimpleImmutableEntry<String?, MutableCollection<Int?>?>("bar", mutableListOf<Int?>(4, 5)))
+                .build()
+        Truth.assertThat(set).isEqualTo(other)
+    }
 }

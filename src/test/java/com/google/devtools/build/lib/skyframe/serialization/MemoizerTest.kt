@@ -11,372 +11,332 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.skyframe.serialization.strings.UnsafeStringCodec.stringCodec;
-import static com.google.devtools.build.lib.util.HashCodes.hashObjects;
+import com.google.devtools.build.lib.skyframe.serialization.strings.UnsafeStringCodec.stringCodec
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.RoundTripping;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import com.google.errorprone.annotations.Keep;
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
-import javax.annotation.Nullable;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests memo-based encoding and decoding, especially for cyclic data structures.  */
+@RunWith(JUnit4::class)
+class MemoizerTest {
+    // These classes are used to model a potentially cyclic data structure with both mutable and
+    // immutable components.
+    private interface DummyLinkedList {
+        val value: String?
 
-/** Tests memo-based encoding and decoding, especially for cyclic data structures. */
-@RunWith(JUnit4.class)
-public class MemoizerTest {
-
-  // These classes are used to model a potentially cyclic data structure with both mutable and
-  // immutable components.
-
-  private interface DummyLinkedList {
-
-    String getValue();
-
-    @Nullable
-    DummyLinkedList getNext();
-  }
-
-  private static class MutableDummy implements DummyLinkedList {
-
-    private final String value;
-
-    @Nullable private DummyLinkedList next;
-
-    MutableDummy(String value, @Nullable DummyLinkedList next) {
-      this.value = value;
-      this.next = next;
+        val next: DummyLinkedList?
     }
 
-    @Override
-    public String getValue() {
-      return value;
+    private class MutableDummy(private val value: String?, private var next: DummyLinkedList?) : DummyLinkedList {
+        override fun getValue(): String? {
+            return value
+        }
+
+        override fun getNext(): DummyLinkedList? {
+            return next
+        }
+
+        fun setNext(next: DummyLinkedList?) {
+            this.next = next
+        }
     }
 
-    @Override
-    @Nullable
-    public DummyLinkedList getNext() {
-      return next;
+    private class ImmutableDummy(private val value: String?, private val next: DummyLinkedList?) : DummyLinkedList {
+        override fun getValue(): String? {
+            return value
+        }
+
+        override fun getNext(): DummyLinkedList? {
+            return next
+        }
     }
 
-    void setNext(@Nullable DummyLinkedList next) {
-      this.next = next;
-    }
-  }
-
-  private static class ImmutableDummy implements DummyLinkedList {
-
-    private final String value;
-
-    @Nullable private final DummyLinkedList next;
-
-    ImmutableDummy(String value, @Nullable DummyLinkedList next) {
-      this.value = value;
-      this.next = next;
+    @org.junit.Test
+    @Throws(IOException::class, SerializationException::class)
+    fun chainOfMutables() {
+        val c: DummyLinkedList = MutableDummy("C", null)
+        val b: DummyLinkedList = MutableDummy("B", c)
+        val a: DummyLinkedList = MutableDummy("A", b)
+        assertABC(RoundTripping.roundTripMemoized(a))
     }
 
-    @Override
-    public String getValue() {
-      return value;
+    @org.junit.Test
+    @Throws(IOException::class, SerializationException::class)
+    fun chainOfMixed() {
+        val c: DummyLinkedList = MutableDummy("C", null)
+        val b: DummyLinkedList = ImmutableDummy("B", c)
+        val a: DummyLinkedList = MutableDummy("A", b)
+        assertABC(RoundTripping.roundTripMemoized(a))
     }
 
-    @Override
-    @Nullable
-    public DummyLinkedList getNext() {
-      return next;
-    }
-  }
-
-  @Test
-  public void chainOfMutables() throws IOException, SerializationException {
-    DummyLinkedList c = new MutableDummy("C", null);
-    DummyLinkedList b = new MutableDummy("B", c);
-    DummyLinkedList a = new MutableDummy("A", b);
-    assertABC(RoundTripping.roundTripMemoized(a));
-  }
-
-  @Test
-  public void chainOfMixed() throws IOException, SerializationException {
-    DummyLinkedList c = new MutableDummy("C", null);
-    DummyLinkedList b = new ImmutableDummy("B", c);
-    DummyLinkedList a = new MutableDummy("A", b);
-    assertABC(RoundTripping.roundTripMemoized(a));
-  }
-
-  @Test
-  public void cycleOfMutables() throws IOException, SerializationException {
-    MutableDummy b = new MutableDummy("B", null);
-    DummyLinkedList a = new MutableDummy("A", b);
-    b.setNext(a);
-    assertABcycle(RoundTripping.roundTripMemoized(a));
-  }
-
-  @Test
-  public void cycleOfMixedWithMutableRoot() throws IOException, SerializationException {
-    MutableDummy a = new MutableDummy("A", null);
-    DummyLinkedList b = new ImmutableDummy("B", a);
-    a.setNext(b);
-    assertABcycle(RoundTripping.roundTripMemoized(a));
-  }
-
-  @Test
-  public void cycleOfMixedWithImmutableRoot() throws IOException, SerializationException {
-    MutableDummy b = new MutableDummy("B", null);
-    DummyLinkedList a = new ImmutableDummy("A", b);
-    b.setNext(a);
-    assertABcycle(RoundTripping.roundTripMemoized(a));
-  }
-
-  // The following two tests verify that objects memoized using serialize can interoperate with
-  // objects memoized using serializeLeaf, bidirectionally.
-
-  @Test
-  public void serializedLeaf_canBeBackreferenced() throws Exception {
-    @SuppressWarnings("StringCopy") // deliberate to create different references
-    String first = new String("foo");
-    @SuppressWarnings("StringCopy") // deliberate to create different references
-    String second = new String("foo");
-    ImmutableList<Object> subject = ImmutableList.of(new Wrapper(first), second);
-    assertThat(((Wrapper) subject.get(0)).value).isNotSameInstanceAs(subject.get(1));
-
-    ImmutableList<Object> deserialized =
-        RoundTripping.roundTripMemoized(subject, wrapperLeafCodec());
-    assertThat(subject).isEqualTo(deserialized);
-    // The "foo" instance memoized via serializeLeaf can be backreferenced by a codec that isn't
-    // explicitly invoked via serializeLeaf.
-    assertThat(((Wrapper) deserialized.get(0)).value).isSameInstanceAs(deserialized.get(1));
-  }
-
-  @Test
-  public void serializeLeaf_canBackreferenceNonSerializeLeaf() throws Exception {
-    @SuppressWarnings("StringCopy") // deliberate to create different references
-    String first = new String("foo");
-    @SuppressWarnings("StringCopy") // deliberate to create different references
-    String second = new String("foo");
-    ImmutableList<Object> subject = ImmutableList.of(first, new Wrapper(second));
-    assertThat(subject.get(0)).isNotSameInstanceAs(((Wrapper) subject.get(1)).value);
-
-    ImmutableList<Object> deserialized =
-        RoundTripping.roundTripMemoized(subject, wrapperLeafCodec());
-    assertThat(subject).isEqualTo(deserialized);
-    // The "foo" instance memoized via serialize can be backreferenced by a codec that uses
-    // serializeLeaf.
-    assertThat(deserialized.get(0)).isSameInstanceAs(((Wrapper) deserialized.get(1)).value);
-  }
-
-  @Test
-  public void serializeAsBothLeafAndContainingSharedValue() throws Exception {
-    // Serializes the same Wrapper instance in two ways. Once using WrapperWithSharedStringCodec and
-    // once using WrapperLeafCodec. This would cause them to use the same memoization which would
-    // lead to an error without special handling.
-    TwoWrappers wrappers = new TwoWrappers();
-    wrappers.one = new Wrapper("value");
-    wrappers.two = wrappers.one;
-
-    new SerializationTester(wrappers)
-        .makeMemoizingAndAllowFutureBlocking(/* allowFutureBlocking= */ true)
-        .addCodec(new WrapperWithSharedStringCodec())
-        .runTests();
-  }
-
-  /** An example class that allows {@link LeafObjectCodec} to be exercised. */
-  private static class Wrapper {
-    private final String value;
-
-    private Wrapper(String value) {
-      this.value = value;
+    @org.junit.Test
+    @Throws(IOException::class, SerializationException::class)
+    fun cycleOfMutables() {
+        val b = MutableDummy("B", null)
+        val a: DummyLinkedList = MutableDummy("A", b)
+        b.setNext(a)
+        assertABcycle(RoundTripping.roundTripMemoized(a))
     }
 
-    @Override
-    public boolean equals(Object obj) {
-      if (obj instanceof Wrapper that) {
-        return value.equals(that.value);
-      }
-      return false;
+    @org.junit.Test
+    @Throws(IOException::class, SerializationException::class)
+    fun cycleOfMixedWithMutableRoot() {
+        val a = MutableDummy("A", null)
+        val b: DummyLinkedList = ImmutableDummy("B", a)
+        a.setNext(b)
+        assertABcycle(RoundTripping.roundTripMemoized(a))
     }
 
-    @Override
-    public int hashCode() {
-      return value.hashCode();
-    }
-  }
-
-  private static WrapperLeafCodec wrapperLeafCodec() {
-    return WrapperLeafCodec.INSTANCE;
-  }
-
-  private static final class WrapperLeafCodec extends LeafObjectCodec<Wrapper> {
-    private static final WrapperLeafCodec INSTANCE = new WrapperLeafCodec();
-
-    @Override
-    public Class<Wrapper> getEncodedClass() {
-      return Wrapper.class;
+    @org.junit.Test
+    @Throws(IOException::class, SerializationException::class)
+    fun cycleOfMixedWithImmutableRoot() {
+        val b = MutableDummy("B", null)
+        val a: DummyLinkedList = ImmutableDummy("A", b)
+        b.setNext(a)
+        assertABcycle(RoundTripping.roundTripMemoized(a))
     }
 
-    @Override
-    public boolean autoRegister() {
-      return false;
+    // The following two tests verify that objects memoized using serialize can interoperate with
+    // objects memoized using serializeLeaf, bidirectionally.
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun serializedLeaf_canBeBackreferenced() {
+        val first// deliberate to create different references
+                = String("foo")
+        val second// deliberate to create different references
+                = String("foo")
+        val subject: com.google.common.collect.ImmutableList<Any?> = com.google.common.collect.ImmutableList.of<Any?>(
+            com.google.devtools.build.lib.skyframe.serialization.MemoizerTest.Wrapper(first), second
+        )
+        Truth.assertThat((subject.get(0) as Wrapper).value).isNotSameInstanceAs(subject.get(1))
+
+        val deserialized: com.google.common.collect.ImmutableList<Any?> =
+            RoundTripping.roundTripMemoized(subject, wrapperLeafCodec())
+        Truth.assertThat(subject).isEqualTo(deserialized)
+        // The "foo" instance memoized via serializeLeaf can be backreferenced by a codec that isn't
+        // explicitly invoked via serializeLeaf.
+        Truth.assertThat((deserialized.get(0) as Wrapper).value).isSameInstanceAs(deserialized.get(1))
     }
 
-    @Override
-    public void serialize(LeafSerializationContext context, Wrapper obj, CodedOutputStream codedOut)
-        throws SerializationException, IOException {
-      context.serializeLeaf(obj.value, stringCodec(), codedOut);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun serializeLeaf_canBackreferenceNonSerializeLeaf() {
+        val first// deliberate to create different references
+                = String("foo")
+        val second// deliberate to create different references
+                = String("foo")
+        val subject: com.google.common.collect.ImmutableList<Any?> = com.google.common.collect.ImmutableList.of<Any?>(
+            first,
+            com.google.devtools.build.lib.skyframe.serialization.MemoizerTest.Wrapper(second)
+        )
+        Truth.assertThat(subject.get(0)).isNotSameInstanceAs((subject.get(1) as Wrapper).value)
+
+        val deserialized: com.google.common.collect.ImmutableList<Any?> =
+            RoundTripping.roundTripMemoized(subject, wrapperLeafCodec())
+        Truth.assertThat(subject).isEqualTo(deserialized)
+        // The "foo" instance memoized via serialize can be backreferenced by a codec that uses
+        // serializeLeaf.
+        Truth.assertThat(deserialized.get(0)).isSameInstanceAs((deserialized.get(1) as Wrapper).value)
     }
 
-    @Override
-    public Wrapper deserialize(LeafDeserializationContext context, CodedInputStream codedIn)
-        throws SerializationException, IOException {
-      return new Wrapper(context.deserializeLeaf(codedIn, stringCodec()));
-    }
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun serializeAsBothLeafAndContainingSharedValue() {
+        // Serializes the same Wrapper instance in two ways. Once using WrapperWithSharedStringCodec and
+        // once using WrapperLeafCodec. This would cause them to use the same memoization which would
+        // lead to an error without special handling.
+        val wrappers = TwoWrappers()
+        wrappers.one = com.google.devtools.build.lib.skyframe.serialization.MemoizerTest.Wrapper("value")
+        wrappers.two = wrappers.one
 
-  private static class WrapperWithSharedStringCodec extends DeferredObjectCodec<Wrapper> {
-    @Override
-    public Class<Wrapper> getEncodedClass() {
-      return Wrapper.class;
-    }
-
-    @Override
-    public boolean autoRegister() {
-      return false;
+        SerializationTester(wrappers)
+            .makeMemoizingAndAllowFutureBlocking( /* allowFutureBlocking= */true)
+            .addCodec(WrapperWithSharedStringCodec())
+            .runTests()
     }
 
-    @Override
-    public void serialize(SerializationContext context, Wrapper obj, CodedOutputStream codedOut)
-        throws SerializationException, IOException {
-      context.putSharedValue(
-          obj.value, /* distinguisher= */ null, DeferredStringCodec.INSTANCE, codedOut);
+    /** An example class that allows [LeafObjectCodec] to be exercised.  */
+    private class Wrapper(private val value: String) {
+        override fun equals(obj: Any?): Boolean {
+            if (obj is Wrapper) {
+                return value == obj.value
+            }
+            return false
+        }
+
+        override fun hashCode(): Int {
+            return value.hashCode()
+        }
     }
 
-    @Override
-    public DeferredValue<Wrapper> deserializeDeferred(
-        AsyncDeserializationContext context, CodedInputStream codedIn)
-        throws SerializationException, IOException {
-      WrapperBuilder builder = new WrapperBuilder();
-      context.getSharedValue(
-          codedIn,
-          /* distinguisher= */ null,
-          DeferredStringCodec.INSTANCE,
-          builder,
-          WrapperBuilder::setValue);
-      return builder;
+    private class WrapperLeafCodec : LeafObjectCodec<Wrapper?>() {
+        val encodedClass: java.lang.Class<Wrapper?>
+            get() = com.google.devtools.build.lib.skyframe.serialization.MemoizerTest.Wrapper::class.java
+
+        public override fun autoRegister(): Boolean {
+            return false
+        }
+
+        @Throws(SerializationException::class, IOException::class)
+        public override fun serialize(context: LeafSerializationContext, obj: Wrapper, codedOut: CodedOutputStream?) {
+            context.serializeLeaf(obj.value, stringCodec(), codedOut)
+        }
+
+        @Throws(SerializationException::class, IOException::class)
+        public override fun deserialize(context: LeafDeserializationContext, codedIn: CodedInputStream?): Wrapper {
+            return com.google.devtools.build.lib.skyframe.serialization.MemoizerTest.Wrapper(
+                context.deserializeLeaf(
+                    codedIn,
+                    stringCodec()
+                )
+            )
+        }
+
+        companion object {
+            private val INSTANCE = WrapperLeafCodec()
+        }
     }
 
-    private static class WrapperBuilder implements DeferredValue<Wrapper> {
-      private String value;
+    private class WrapperWithSharedStringCodec : DeferredObjectCodec<Wrapper?>() {
+        val encodedClass: java.lang.Class<Wrapper?>
+            get() = com.google.devtools.build.lib.skyframe.serialization.MemoizerTest.Wrapper::class.java
 
-      private static void setValue(WrapperBuilder builder, Object value) {
-        builder.value = (String) value;
-      }
+        public override fun autoRegister(): Boolean {
+            return false
+        }
 
-      @Override
-      public Wrapper call() {
-        return new Wrapper(value);
-      }
-    }
-  }
+        @Throws(SerializationException::class, IOException::class)
+        public override fun serialize(context: SerializationContext, obj: Wrapper, codedOut: CodedOutputStream?) {
+            context.putSharedValue(
+                obj.value,  /* distinguisher= */null, DeferredStringCodec.Companion.INSTANCE, codedOut
+            )
+        }
 
-  private static class DeferredStringCodec extends DeferredObjectCodec<String> {
-    private static final DeferredStringCodec INSTANCE = new DeferredStringCodec();
+        @Throws(SerializationException::class, IOException::class)
+        public override fun deserializeDeferred(
+            context: AsyncDeserializationContext, codedIn: CodedInputStream?
+        ): DeferredValue<Wrapper?> {
+            val builder = WrapperBuilder()
+            context.getSharedValue(
+                codedIn,  /* distinguisher= */
+                null,
+                DeferredStringCodec.Companion.INSTANCE,
+                builder,
+                { builder: WrapperBuilder, value: Any? -> WrapperBuilder.Companion.setValue(builder, value) })
+            return builder
+        }
 
-    @Override
-    public boolean autoRegister() {
-      return false;
-    }
+        private class WrapperBuilder : DeferredValue<Wrapper?> {
+            private var value: String? = null
 
-    @Override
-    public Class<String> getEncodedClass() {
-      return String.class;
-    }
+            public override fun call(): Wrapper {
+                return com.google.devtools.build.lib.skyframe.serialization.MemoizerTest.Wrapper(value)
+            }
 
-    @Override
-    public void serialize(SerializationContext context, String obj, CodedOutputStream codedOut)
-        throws SerializationException, IOException {
-      codedOut.writeStringNoTag(obj);
-    }
-
-    @Override
-    public DeferredValue<String> deserializeDeferred(
-        AsyncDeserializationContext context, CodedInputStream codedIn)
-        throws SerializationException, IOException {
-      String value = codedIn.readString();
-      return () -> value;
-    }
-  }
-
-  private static class TwoWrappers {
-    private Wrapper one;
-    private Wrapper two;
-
-    @Override
-    public boolean equals(Object obj) {
-      if (obj instanceof TwoWrappers that) {
-        return one.equals(that.one) && two.equals(that.two);
-      }
-      return false;
+            companion object {
+                private fun setValue(builder: WrapperBuilder, value: Any?) {
+                    builder.value = value as String
+                }
+            }
+        }
     }
 
-    @Override
-    public int hashCode() {
-      return hashObjects(one, two);
+    private class DeferredStringCodec : DeferredObjectCodec<String?>() {
+        public override fun autoRegister(): Boolean {
+            return false
+        }
+
+        val encodedClass: java.lang.Class<String?>
+            get() = String::class.java
+
+        @Throws(SerializationException::class, IOException::class)
+        public override fun serialize(context: SerializationContext?, obj: String?, codedOut: CodedOutputStream) {
+            codedOut.writeStringNoTag(obj)
+        }
+
+        @Throws(SerializationException::class, IOException::class)
+        public override fun deserializeDeferred(
+            context: AsyncDeserializationContext?, codedIn: CodedInputStream
+        ): DeferredValue<String?> {
+            val value: String? = codedIn.readString()
+            return DeferredValue { value }
+        }
+
+        companion object {
+            private val INSTANCE = DeferredStringCodec()
+        }
     }
 
-    private static void setOne(TwoWrappers parent, Object value) {
-      parent.one = (Wrapper) value;
+    private class TwoWrappers {
+        private var one: Wrapper? = null
+        private var two: Wrapper? = null
+
+        override fun equals(obj: Any?): Boolean {
+            if (obj is TwoWrappers) {
+                return one == obj.one && two == obj.two
+            }
+            return false
+        }
+
+        override fun hashCode(): Int {
+            return hashObjects(one, two)
+        }
+
+        companion object {
+            private fun setOne(parent: TwoWrappers, value: Any?) {
+                parent.one = value as Wrapper
+            }
+        }
     }
-  }
 
-  @Keep
-  private static class TwoWrappersCodec extends AsyncObjectCodec<TwoWrappers> {
-    @Override
-    public Class<TwoWrappers> getEncodedClass() {
-      return TwoWrappers.class;
+    @com.google.errorprone.annotations.Keep
+    private class TwoWrappersCodec : AsyncObjectCodec<TwoWrappers?>() {
+        val encodedClass: java.lang.Class<TwoWrappers?>
+            get() = TwoWrappers::class.java
+
+        @Throws(SerializationException::class, IOException::class)
+        public override fun serialize(context: SerializationContext, obj: TwoWrappers, codedOut: CodedOutputStream?) {
+            context.serialize(obj.one, codedOut)
+            context.serializeLeaf(obj.two, wrapperLeafCodec(), codedOut)
+        }
+
+        @Throws(SerializationException::class, IOException::class)
+        public override fun deserializeAsync(
+            context: AsyncDeserializationContext, codedIn: CodedInputStream?
+        ): TwoWrappers {
+            val wrappers = TwoWrappers()
+            context.registerInitialValue(wrappers)
+            context.deserialize(
+                codedIn,
+                wrappers,
+                { parent: TwoWrappers, value: Any? -> TwoWrappers.Companion.setOne(parent, value) })
+            wrappers.two = context.deserializeLeaf(codedIn, wrapperLeafCodec())
+            return wrappers
+        }
     }
 
-    @Override
-    public void serialize(SerializationContext context, TwoWrappers obj, CodedOutputStream codedOut)
-        throws SerializationException, IOException {
-      context.serialize(obj.one, codedOut);
-      context.serializeLeaf(obj.two, wrapperLeafCodec(), codedOut);
+    companion object {
+        private fun wrapperLeafCodec(): WrapperLeafCodec {
+            return WrapperLeafCodec.Companion.INSTANCE
+        }
+
+        /** Asserts that `value` has the linked list structure `A -> B -> C`.  */
+        private fun assertABC(value: DummyLinkedList) {
+            Truth.assertThat(value.value).isEqualTo("A")
+            Truth.assertThat(value.next).isNotNull()
+            Truth.assertThat(value.next!!.value).isEqualTo("B")
+            Truth.assertThat(value.next!!.next).isNotNull()
+            Truth.assertThat(value.next!!.next!!.value).isEqualTo("C")
+            Truth.assertThat(value.next!!.next!!.next).isNull()
+        }
+
+        /** Asserts that `value` has the cyclic linked list structure `A -> B -> A...`.  */
+        private fun assertABcycle(value: DummyLinkedList) {
+            Truth.assertThat(value.value).isEqualTo("A")
+            Truth.assertThat(value.next).isNotNull()
+            Truth.assertThat(value.next!!.value).isEqualTo("B")
+            Truth.assertThat(value.next!!.next).isNotNull()
+            // Check instance identity to ensure we reproduced the object graph without creating duplicates.
+            Truth.assertThat(value.next!!.next).isSameInstanceAs(value)
+        }
     }
-
-    @Override
-    public TwoWrappers deserializeAsync(
-        AsyncDeserializationContext context, CodedInputStream codedIn)
-        throws SerializationException, IOException {
-      TwoWrappers wrappers = new TwoWrappers();
-      context.registerInitialValue(wrappers);
-      context.deserialize(codedIn, wrappers, TwoWrappers::setOne);
-      wrappers.two = context.deserializeLeaf(codedIn, wrapperLeafCodec());
-      return wrappers;
-    }
-  }
-
-  /** Asserts that {@code value} has the linked list structure {@code A -> B -> C}. */
-  private static void assertABC(DummyLinkedList value) {
-    assertThat(value.getValue()).isEqualTo("A");
-    assertThat(value.getNext()).isNotNull();
-    assertThat(value.getNext().getValue()).isEqualTo("B");
-    assertThat(value.getNext().getNext()).isNotNull();
-    assertThat(value.getNext().getNext().getValue()).isEqualTo("C");
-    assertThat(value.getNext().getNext().getNext()).isNull();
-  }
-
-  /** Asserts that {@code value} has the cyclic linked list structure {@code A -> B -> A...}. */
-  private static void assertABcycle(DummyLinkedList value) {
-    assertThat(value.getValue()).isEqualTo("A");
-    assertThat(value.getNext()).isNotNull();
-    assertThat(value.getNext().getValue()).isEqualTo("B");
-    assertThat(value.getNext().getNext()).isNotNull();
-    // Check instance identity to ensure we reproduced the object graph without creating duplicates.
-    assertThat(value.getNext().getNext()).isSameInstanceAs(value);
-  }
 }

@@ -11,55 +11,52 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.remote.common
 
-package com.google.devtools.build.lib.remote.common;
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.io.IOException
 
-import static com.google.common.truth.Truth.assertThat;
+@RunWith(JUnit4::class)
+class BulkTransferExceptionTest {
+    @Test
+    fun shouldProvideGenericMessageIfNoAddedException() {
+        val bulkTransferException: BulkTransferException = BulkTransferException()
+        assertThat(bulkTransferException.getMessage()).isEqualTo("Unknown error during bulk transfer")
+    }
 
-import java.io.IOException;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @Test
+    fun shouldPreserveMessageAsIsFromSingleException() {
+        val bulkTransferException: BulkTransferException = BulkTransferException()
+        bulkTransferException.add(IOException("Failure Type A"))
+        assertThat(bulkTransferException.getMessage()).isEqualTo("Failure Type A")
+    }
 
-@RunWith(JUnit4.class)
-public class BulkTransferExceptionTest {
+    @Test
+    fun shouldSortAndRemoveDuplicatesWhenAggregatingMessages() {
+        val bulkTransferException: BulkTransferException = BulkTransferException()
+        bulkTransferException.add(IOException("Failure Type B"))
+        bulkTransferException.add(IOException("Failure Type A"))
+        bulkTransferException.add(IOException("Failure Type B"))
+        assertThat(bulkTransferException.getMessage())
+            .isEqualTo(
+                "Multiple errors during bulk transfer:\n" + "Failure Type A\n" + "Failure Type B"
+            )
+    }
 
-  @Test
-  public void shouldProvideGenericMessageIfNoAddedException() {
-    BulkTransferException bulkTransferException = new BulkTransferException();
-    assertThat(bulkTransferException.getMessage()).isEqualTo("Unknown error during bulk transfer");
-  }
+    @Test
+    fun shouldProvideGenericMessageIfOnlyNullMessages() {
+        val bulkTransferException: BulkTransferException = BulkTransferException()
+        bulkTransferException.add(IOException())
+        assertThat(bulkTransferException.getMessage()).isEqualTo("Unknown error during bulk transfer")
+    }
 
-  @Test
-  public void shouldPreserveMessageAsIsFromSingleException() {
-    BulkTransferException bulkTransferException = new BulkTransferException();
-    bulkTransferException.add(new IOException("Failure Type A"));
-    assertThat(bulkTransferException.getMessage()).isEqualTo("Failure Type A");
-  }
-
-  @Test
-  public void shouldSortAndRemoveDuplicatesWhenAggregatingMessages() {
-    BulkTransferException bulkTransferException = new BulkTransferException();
-    bulkTransferException.add(new IOException("Failure Type B"));
-    bulkTransferException.add(new IOException("Failure Type A"));
-    bulkTransferException.add(new IOException("Failure Type B"));
-    assertThat(bulkTransferException.getMessage())
-        .isEqualTo(
-            "Multiple errors during bulk transfer:\n" + "Failure Type A\n" + "Failure Type B");
-  }
-
-  @Test
-  public void shouldProvideGenericMessageIfOnlyNullMessages() {
-    BulkTransferException bulkTransferException = new BulkTransferException();
-    bulkTransferException.add(new IOException());
-    assertThat(bulkTransferException.getMessage()).isEqualTo("Unknown error during bulk transfer");
-  }
-
-  @Test
-  public void shouldIgnoreNullMessagesWhenGettingMessage() {
-    BulkTransferException bulkTransferException = new BulkTransferException();
-    bulkTransferException.add(new IOException("Failure Type A"));
-    bulkTransferException.add(new IOException());
-    assertThat(bulkTransferException.getMessage()).isEqualTo("Failure Type A");
-  }
+    @Test
+    fun shouldIgnoreNullMessagesWhenGettingMessage() {
+        val bulkTransferException: BulkTransferException = BulkTransferException()
+        bulkTransferException.add(IOException("Failure Type A"))
+        bulkTransferException.add(IOException())
+        assertThat(bulkTransferException.getMessage()).isEqualTo("Failure Type A")
+    }
 }

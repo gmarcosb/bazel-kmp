@@ -11,95 +11,117 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.exec;
+package com.google.devtools.build.lib.exec
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.runtime.proto.MnemonicPolicy
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.runtime.proto.MnemonicPolicy;
-import com.google.devtools.build.lib.runtime.proto.StrategiesForMnemonic;
-import java.util.List;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+@RunWith(JUnit4::class)
+class SpawnStrategyPolicyTest {
+    @org.junit.Test
+    fun applyEmptyPolicyListAllowsEverything() {
+        val underTest: SpawnStrategyPolicy = SpawnStrategyPolicy.create(MnemonicPolicy.getDefaultInstance())
 
-@RunWith(JUnit4.class)
-public class SpawnStrategyPolicyTest {
+        val strategies: com.google.common.collect.ImmutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>("foo", "bar")
+        assertThat(underTest.apply("mnemonic1", strategies))
+            .containsExactlyElementsIn(strategies)
+            .inOrder()
+    }
 
-  @Test
-  public void applyEmptyPolicyListAllowsEverything() {
-    SpawnStrategyPolicy underTest = SpawnStrategyPolicy.create(MnemonicPolicy.getDefaultInstance());
+    @org.junit.Test
+    fun applyNonOverriddenMnemonicUsesDefaultAllowList() {
+        val underTest: SpawnStrategyPolicy =
+            SpawnStrategyPolicy.create(
+                mnemonicPolicy(
+                    com.google.common.collect.ImmutableList.of<StrategiesForMnemonic?>(
+                        strategiesForMnemonic(
+                            "mnemonic1",
+                            "baz"
+                        )
+                    ),
+                    com.google.common.collect.ImmutableList.of<String?>("foo", "bar")
+                )
+            )
 
-    ImmutableList<String> strategies = ImmutableList.of("foo", "bar");
-    assertThat(underTest.apply("mnemonic1", strategies))
-        .containsExactlyElementsIn(strategies)
-        .inOrder();
-  }
+        assertThat(
+            underTest.apply(
+                "not-mnemonic1",
+                com.google.common.collect.ImmutableList.of<E?>("foo", "bar", "baz")
+            )
+        )
+            .containsExactly("foo", "bar")
+            .inOrder()
+    }
 
-  @Test
-  public void applyNonOverriddenMnemonicUsesDefaultAllowList() {
-    SpawnStrategyPolicy underTest =
-        SpawnStrategyPolicy.create(
-            mnemonicPolicy(
-                ImmutableList.of(strategiesForMnemonic("mnemonic1", "baz")),
-                ImmutableList.of("foo", "bar")));
+    @org.junit.Test
+    fun applyPerStrategyAllowListUsedToFilterStrategies() {
+        val underTest: SpawnStrategyPolicy =
+            SpawnStrategyPolicy.create(
+                mnemonicPolicy(
+                    com.google.common.collect.ImmutableList.of<StrategiesForMnemonic?>(
+                        strategiesForMnemonic(
+                            "mnemonic1",
+                            "baz"
+                        )
+                    ),
+                    com.google.common.collect.ImmutableList.of<String?>("foo", "bar")
+                )
+            )
 
-    assertThat(underTest.apply("not-mnemonic1", ImmutableList.of("foo", "bar", "baz")))
-        .containsExactly("foo", "bar")
-        .inOrder();
-  }
+        assertThat(underTest.apply("mnemonic1", com.google.common.collect.ImmutableList.of<E?>("foo", "bar", "baz")))
+            .containsExactly("baz")
+    }
 
-  @Test
-  public void applyPerStrategyAllowListUsedToFilterStrategies() {
-    SpawnStrategyPolicy underTest =
-        SpawnStrategyPolicy.create(
-            mnemonicPolicy(
-                ImmutableList.of(strategiesForMnemonic("mnemonic1", "baz")),
-                ImmutableList.of("foo", "bar")));
+    @org.junit.Test
+    fun applyPerStrategyAllowListLastListPerMnemonicWins() {
+        val underTest: SpawnStrategyPolicy =
+            SpawnStrategyPolicy.create(
+                mnemonicPolicy(
+                    com.google.common.collect.ImmutableList.of<StrategiesForMnemonic?>(
+                        strategiesForMnemonic("mnemonic1", "bar"),
+                        strategiesForMnemonic("mnemonic1", "foo", "bar")
+                    ),
+                    com.google.common.collect.ImmutableList.of<String?>("boom")
+                )
+            )
 
-    assertThat(underTest.apply("mnemonic1", ImmutableList.of("foo", "bar", "baz")))
-        .containsExactly("baz");
-  }
+        assertThat(underTest.apply("mnemonic1", com.google.common.collect.ImmutableList.of<E?>("foo", "bar", "baz")))
+            .containsExactly("foo", "bar")
+            .inOrder()
+    }
 
-  @Test
-  public void applyPerStrategyAllowListLastListPerMnemonicWins() {
-    SpawnStrategyPolicy underTest =
-        SpawnStrategyPolicy.create(
-            mnemonicPolicy(
-                ImmutableList.of(
-                    strategiesForMnemonic("mnemonic1", "bar"),
-                    strategiesForMnemonic("mnemonic1", "foo", "bar")),
-                ImmutableList.of("boom")));
+    @org.junit.Test
+    fun applyDefaultAllowList() {
+        val underTest: SpawnStrategyPolicy =
+            SpawnStrategyPolicy.create(
+                mnemonicPolicy(
+                    com.google.common.collect.ImmutableList.of<StrategiesForMnemonic?>(),
+                    com.google.common.collect.ImmutableList.of<String?>("foo", "baz")
+                )
+            )
 
-    assertThat(underTest.apply("mnemonic1", ImmutableList.of("foo", "bar", "baz")))
-        .containsExactly("foo", "bar")
-        .inOrder();
-  }
+        assertThat(underTest.apply(com.google.common.collect.ImmutableList.of<E?>("foo", "bar", "baz")))
+            .containsExactly("foo", "baz")
+            .inOrder()
+    }
 
-  @Test
-  public void applyDefaultAllowList() {
-    SpawnStrategyPolicy underTest =
-        SpawnStrategyPolicy.create(
-            mnemonicPolicy(ImmutableList.of(), ImmutableList.of("foo", "baz")));
+    companion object {
+        private fun mnemonicPolicy(
+            strategyAllowList: MutableList<StrategiesForMnemonic?>?, defaultAllowlist: MutableList<String?>?
+        ): MnemonicPolicy {
+            return MnemonicPolicy.newBuilder()
+                .addAllStrategyAllowlist(strategyAllowList)
+                .addAllDefaultAllowlist(defaultAllowlist)
+                .build()
+        }
 
-    assertThat(underTest.apply(ImmutableList.of("foo", "bar", "baz")))
-        .containsExactly("foo", "baz")
-        .inOrder();
-  }
-
-  private static MnemonicPolicy mnemonicPolicy(
-      List<StrategiesForMnemonic> strategyAllowList, List<String> defaultAllowlist) {
-    return MnemonicPolicy.newBuilder()
-        .addAllStrategyAllowlist(strategyAllowList)
-        .addAllDefaultAllowlist(defaultAllowlist)
-        .build();
-  }
-
-  private static StrategiesForMnemonic strategiesForMnemonic(
-      String mnemonic, String... strategies) {
-    return StrategiesForMnemonic.newBuilder()
-        .setMnemonic(mnemonic)
-        .addAllStrategy(ImmutableList.copyOf(strategies))
-        .build();
-  }
+        private fun strategiesForMnemonic(
+            mnemonic: String?, vararg strategies: String?
+        ): StrategiesForMnemonic {
+            return StrategiesForMnemonic.newBuilder()
+                .setMnemonic(mnemonic)
+                .addAllStrategy(com.google.common.collect.ImmutableList.< E > copyOf < E ? > (strategies))
+                .build()
+        }
+    }
 }

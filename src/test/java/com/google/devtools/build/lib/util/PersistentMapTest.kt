@@ -11,295 +11,290 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util;
+package com.google.devtools.build.lib.util
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.vfs.Path
 
-import com.google.devtools.build.lib.testutil.Scratch;
-import com.google.devtools.build.lib.testutil.TestThread;
-import com.google.devtools.build.lib.testutil.TestUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import java.io.DataInput;
-import java.io.DataOutput;
-import java.io.IOException;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Unit tests for [PersistentMap].  */
+@RunWith(JUnit4::class)
+class PersistentMapTest {
+    private class PersistentStringMap(map: ConcurrentMap<String?, String?>?, mapFile: Path?, journalFile: Path?) :
+        PersistentMap<String?, String?>(0x0, CODEC, map, mapFile, journalFile) {
+        var flushJournal: Boolean = true
+        var keepJournal: Boolean = false
 
-/** Unit tests for {@link PersistentMap}. */
-@RunWith(JUnit4.class)
-public final class PersistentMapTest {
-  private static class PersistentStringMap extends PersistentMap<String, String> {
-    boolean flushJournal = true;
-    boolean keepJournal = false;
+        init {
+            load()
+        }
 
-    private static final MapCodec<String, String> CODEC =
-        new MapCodec<String, String>() {
-          @Override
-          protected String readKey(DataInput in) throws IOException {
-            return in.readUTF();
-          }
+        protected override fun shouldFlushJournal(): Boolean {
+            return flushJournal
+        }
 
-          @Override
-          protected String readValue(DataInput in) throws IOException {
-            return in.readUTF();
-          }
+        protected override fun shouldKeepJournal(): Boolean {
+            return keepJournal
+        }
 
-          @Override
-          protected void writeKey(String key, DataOutput out) throws IOException {
-            out.writeUTF(key);
-          }
+        companion object {
+            private val CODEC: MapCodec<String?, String?> = object : MapCodec<String?, String?>() {
+                @Throws(IOException::class)
+                protected override fun readKey(`in`: DataInput): String? {
+                    return `in`.readUTF()
+                }
 
-          @Override
-          protected void writeValue(String value, DataOutput out) throws IOException {
-            out.writeUTF(value);
-          }
-        };
+                @Throws(IOException::class)
+                protected override fun readValue(`in`: DataInput): String? {
+                    return `in`.readUTF()
+                }
 
-    PersistentStringMap(ConcurrentMap<String, String> map, Path mapFile, Path journalFile)
-        throws IOException {
-      super(0x0, CODEC, map, mapFile, journalFile);
-      load();
+                @Throws(IOException::class)
+                protected override fun writeKey(key: String?, out: DataOutput) {
+                    out.writeUTF(key)
+                }
+
+                @Throws(IOException::class)
+                protected override fun writeValue(value: String?, out: DataOutput) {
+                    out.writeUTF(value)
+                }
+            }
+        }
     }
 
-    @Override
-    protected boolean shouldFlushJournal() {
-      return flushJournal;
+    private val scratch: Scratch = Scratch()
+
+    private var map: PersistentStringMap? = null
+    private var mapFile: Path? = null
+    private var journalFile: Path? = null
+
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun createFiles() {
+        val root: Path = scratch.dir("/tmp")
+        mapFile = root.getChild("map.txt")
+        journalFile = root.getChild("journal.txt")
+        createMap()
     }
 
-    @Override
-    protected boolean shouldKeepJournal() {
-      return keepJournal;
+    @Throws(java.lang.Exception::class)
+    private fun createMap() {
+        val map: ConcurrentMap<String?, String?> = ConcurrentHashMap<String?, String?>()
+        this.map = PersistentStringMap(map, mapFile, journalFile)
     }
-  }
 
-  private final Scratch scratch = new Scratch();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun map() {
+        createMap()
+        map.put("foo", "bar")
+        map.put("baz", "bang")
+        Truth.assertThat(map).containsEntry("foo", "bar")
+        Truth.assertThat(map).containsEntry("baz", "bang")
+        Truth.assertThat(map).hasSize(2)
+        val size: Long = map.save()
+        Truth.assertThat(size).isEqualTo(mapFile.getFileSize())
+        Truth.assertThat(map).containsEntry("foo", "bar")
+        Truth.assertThat(map).containsEntry("baz", "bang")
+        Truth.assertThat(map).hasSize(2)
 
-  private PersistentStringMap map;
-  private Path mapFile;
-  private Path journalFile;
-
-  @Before
-  public final void createFiles() throws Exception  {
-    Path root = scratch.dir("/tmp");
-    mapFile = root.getChild("map.txt");
-    journalFile = root.getChild("journal.txt");
-    createMap();
-  }
-
-  private void createMap() throws Exception {
-    ConcurrentMap<String, String> map = new ConcurrentHashMap<>();
-    this.map = new PersistentStringMap(map, mapFile, journalFile);
-  }
-
-  @Test
-  public void map() throws Exception {
-    createMap();
-    map.put("foo", "bar");
-    map.put("baz", "bang");
-    assertThat(map).containsEntry("foo", "bar");
-    assertThat(map).containsEntry("baz", "bang");
-    assertThat(map).hasSize(2);
-    long size = map.save();
-    assertThat(size).isEqualTo(mapFile.getFileSize());
-    assertThat(map).containsEntry("foo", "bar");
-    assertThat(map).containsEntry("baz", "bang");
-    assertThat(map).hasSize(2);
-
-    createMap(); // create a new map
-    assertThat(map).containsEntry("foo", "bar");
-    assertThat(map).containsEntry("baz", "bang");
-    assertThat(map).hasSize(2);
-  }
-
-  @Test
-  public void putIfAbsent() throws Exception {
-    createMap();
-    assertThat(map.putIfAbsent("foo", "bar")).isNull();
-    assertThat(map.putIfAbsent("foo", "ignored")).isEqualTo("bar");
-    assertThat(map.putIfAbsent("baz", "bang")).isNull();
-    assertThat(map.putIfAbsent("baz", "ignored")).isEqualTo("bang");
-    assertThat(map).containsEntry("foo", "bar");
-    assertThat(map).containsEntry("baz", "bang");
-    assertThat(map).hasSize(2);
-    long size = map.save();
-    assertThat(size).isEqualTo(mapFile.getFileSize());
-    assertThat(map).containsEntry("foo", "bar");
-    assertThat(map).containsEntry("baz", "bang");
-    assertThat(map).hasSize(2);
-
-    createMap(); // create a new map
-    assertThat(map).containsEntry("foo", "bar");
-    assertThat(map).containsEntry("baz", "bang");
-    assertThat(map).hasSize(2);
-  }
-
-  @Test
-  public void remove() throws Exception {
-    createMap();
-    map.put("foo", "bar");
-    map.put("baz", "bang");
-    long size = map.save();
-    assertThat(size).isEqualTo(mapFile.getFileSize());
-    assertThat(journalFile.exists()).isFalse();
-    map.remove("foo");
-    assertThat(map).hasSize(1);
-    assertThat(journalFile.exists()).isTrue();
-    createMap(); // create a new map
-    assertThat(map).hasSize(1);
-  }
-
-  @Test
-  public void clear() throws Exception {
-    createMap();
-    map.put("foo", "bar");
-    map.put("baz", "bang");
-    map.save();
-    assertThat(mapFile.exists()).isTrue();
-    assertThat(journalFile.exists()).isFalse();
-    map.clear();
-    assertThat(map).isEmpty();
-    assertThat(mapFile.exists()).isTrue();
-    assertThat(journalFile.exists()).isFalse();
-    createMap(); // create a new map
-    assertThat(map).isEmpty();
-  }
-
-  @Test
-  public void noFlushJournal() throws Exception {
-    createMap();
-    map.put("foo", "bar");
-    map.put("baz", "bang");
-    map.save();
-    assertThat(journalFile.exists()).isFalse();
-    // prevent flushing the journal
-    map.flushJournal = false;
-    // remove an entry
-    map.remove("foo");
-    assertThat(map).hasSize(1);
-    // no journal file written
-    assertThat(journalFile.exists()).isFalse();
-    createMap(); // create a new map
-    // both entries are still in the map on disk
-    assertThat(map).hasSize(2);
-  }
-
-  @Test
-  public void keepJournal() throws Exception {
-    createMap();
-    map.put("foo", "bar");
-    map.put("baz", "bang");
-    map.save();
-    assertThat(journalFile.exists()).isFalse();
-
-    // Keep the journal through the save.
-    map.flushJournal = false;
-    map.keepJournal = true;
-
-    // remove an entry
-    map.remove("foo");
-    assertThat(map).hasSize(1);
-    // no journal file written
-    assertThat(journalFile.exists()).isFalse();
-
-    long size = map.save();
-    assertThat(map).hasSize(1);
-    // The journal must be serialized on save(), even if !flushJournal.
-    assertThat(journalFile.exists()).isTrue();
-    assertThat(size).isEqualTo(journalFile.getFileSize() + mapFile.getFileSize());
-
-    map.load();
-    assertThat(map).hasSize(1);
-    assertThat(journalFile.exists()).isTrue();
-
-    createMap(); // create a new map
-    assertThat(map).hasSize(1);
-
-    map.keepJournal = false;
-    map.save();
-    assertThat(map).hasSize(1);
-    assertThat(journalFile.exists()).isFalse();
-  }
-
-  @Test
-  public void keepJournalWithMultipleSaves() throws Exception {
-    createMap();
-    map.put("foo", "bar");
-    map.put("baz", "bang");
-    map.save();
-    map.flushJournal = false;
-    map.keepJournal = true;
-    map.remove("foo");
-    assertThat(map).hasSize(1);
-    map.save();
-    map.remove("baz");
-    map.save();
-    assertThat(map).isEmpty();
-    // Ensure recreating the map loads the correct state.
-    createMap();
-    assertThat(map).isEmpty();
-    assertThat(journalFile.exists()).isFalse();
-  }
-
-  @Test
-  public void multipleJournalUpdates() throws Exception {
-    createMap();
-    map.put("foo", "bar");
-    map.save();
-    assertThat(journalFile.exists()).isFalse();
-    // add an entry
-    map.put("baz", "bang");
-    assertThat(map).hasSize(2);
-    // journal file written
-    assertThat(journalFile.exists()).isTrue();
-    createMap(); // create a new map
-    // both entries are still in the map on disk
-    assertThat(map).hasSize(2);
-    // add another entry
-    map.put("baz2", "bang2");
-    assertThat(map).hasSize(3);
-    // journal file written
-    assertThat(journalFile.exists()).isTrue();
-    createMap(); // create a new map
-    // all three entries are still in the map on disk
-    assertThat(map).hasSize(3);
-  }
-
-  @Test
-  public void concurrentOperations() throws Exception {
-    createMap();
-    map.keepJournal = true;
-    int numIters = 1000;
-    TestThread fooPutter =
-        new TestThread(
-            () -> {
-              for (int i = 0; i < numIters; i++) {
-                map.put("foo", "bar" + i);
-                map.remove("baz");
-              }
-            });
-    TestThread bazPutter =
-        new TestThread(
-            () -> {
-              for (int i = 0; i < numIters; i++) {
-                map.put("baz", "bar" + i);
-                map.remove("noexist");
-              }
-            });
-    fooPutter.start();
-    bazPutter.start();
-    fooPutter.joinAndAssertState(TestUtils.WAIT_TIMEOUT_MILLISECONDS);
-    bazPutter.joinAndAssertState(TestUtils.WAIT_TIMEOUT_MILLISECONDS);
-    map.save();
-    assertThat(journalFile.exists()).isTrue();
-    createMap();
-    assertThat(map).containsEntry("foo", "bar" + (numIters - 1));
-    String bazValue = map.get("baz");
-    if (bazValue != null) {
-      assertThat(bazValue).isEqualTo("bar" + (numIters - 1));
+        createMap() // create a new map
+        Truth.assertThat(map).containsEntry("foo", "bar")
+        Truth.assertThat(map).containsEntry("baz", "bang")
+        Truth.assertThat(map).hasSize(2)
     }
-  }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun putIfAbsent() {
+        createMap()
+        assertThat(map.putIfAbsent("foo", "bar")).isNull()
+        assertThat(map.putIfAbsent("foo", "ignored")).isEqualTo("bar")
+        assertThat(map.putIfAbsent("baz", "bang")).isNull()
+        assertThat(map.putIfAbsent("baz", "ignored")).isEqualTo("bang")
+        Truth.assertThat(map).containsEntry("foo", "bar")
+        Truth.assertThat(map).containsEntry("baz", "bang")
+        Truth.assertThat(map).hasSize(2)
+        val size: Long = map.save()
+        Truth.assertThat(size).isEqualTo(mapFile.getFileSize())
+        Truth.assertThat(map).containsEntry("foo", "bar")
+        Truth.assertThat(map).containsEntry("baz", "bang")
+        Truth.assertThat(map).hasSize(2)
+
+        createMap() // create a new map
+        Truth.assertThat(map).containsEntry("foo", "bar")
+        Truth.assertThat(map).containsEntry("baz", "bang")
+        Truth.assertThat(map).hasSize(2)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun remove() {
+        createMap()
+        map.put("foo", "bar")
+        map.put("baz", "bang")
+        val size: Long = map.save()
+        Truth.assertThat(size).isEqualTo(mapFile.getFileSize())
+        assertThat(journalFile.exists()).isFalse()
+        map.remove("foo")
+        Truth.assertThat(map).hasSize(1)
+        assertThat(journalFile.exists()).isTrue()
+        createMap() // create a new map
+        Truth.assertThat(map).hasSize(1)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun clear() {
+        createMap()
+        map.put("foo", "bar")
+        map.put("baz", "bang")
+        map.save()
+        assertThat(mapFile.exists()).isTrue()
+        assertThat(journalFile.exists()).isFalse()
+        map.clear()
+        Truth.assertThat(map).isEmpty()
+        assertThat(mapFile.exists()).isTrue()
+        assertThat(journalFile.exists()).isFalse()
+        createMap() // create a new map
+        Truth.assertThat(map).isEmpty()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun noFlushJournal() {
+        createMap()
+        map.put("foo", "bar")
+        map.put("baz", "bang")
+        map.save()
+        assertThat(journalFile.exists()).isFalse()
+        // prevent flushing the journal
+        map!!.flushJournal = false
+        // remove an entry
+        map.remove("foo")
+        Truth.assertThat(map).hasSize(1)
+        // no journal file written
+        assertThat(journalFile.exists()).isFalse()
+        createMap() // create a new map
+        // both entries are still in the map on disk
+        Truth.assertThat(map).hasSize(2)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun keepJournal() {
+        createMap()
+        map.put("foo", "bar")
+        map.put("baz", "bang")
+        map.save()
+        assertThat(journalFile.exists()).isFalse()
+
+        // Keep the journal through the save.
+        map!!.flushJournal = false
+        map!!.keepJournal = true
+
+        // remove an entry
+        map.remove("foo")
+        Truth.assertThat(map).hasSize(1)
+        // no journal file written
+        assertThat(journalFile.exists()).isFalse()
+
+        val size: Long = map.save()
+        Truth.assertThat(map).hasSize(1)
+        // The journal must be serialized on save(), even if !flushJournal.
+        assertThat(journalFile.exists()).isTrue()
+        Truth.assertThat(size).isEqualTo(journalFile.getFileSize() + mapFile.getFileSize())
+
+        map.load()
+        Truth.assertThat(map).hasSize(1)
+        assertThat(journalFile.exists()).isTrue()
+
+        createMap() // create a new map
+        Truth.assertThat(map).hasSize(1)
+
+        map!!.keepJournal = false
+        map.save()
+        Truth.assertThat(map).hasSize(1)
+        assertThat(journalFile.exists()).isFalse()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun keepJournalWithMultipleSaves() {
+        createMap()
+        map.put("foo", "bar")
+        map.put("baz", "bang")
+        map.save()
+        map!!.flushJournal = false
+        map!!.keepJournal = true
+        map.remove("foo")
+        Truth.assertThat(map).hasSize(1)
+        map.save()
+        map.remove("baz")
+        map.save()
+        Truth.assertThat(map).isEmpty()
+        // Ensure recreating the map loads the correct state.
+        createMap()
+        Truth.assertThat(map).isEmpty()
+        assertThat(journalFile.exists()).isFalse()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun multipleJournalUpdates() {
+        createMap()
+        map.put("foo", "bar")
+        map.save()
+        assertThat(journalFile.exists()).isFalse()
+        // add an entry
+        map.put("baz", "bang")
+        Truth.assertThat(map).hasSize(2)
+        // journal file written
+        assertThat(journalFile.exists()).isTrue()
+        createMap() // create a new map
+        // both entries are still in the map on disk
+        Truth.assertThat(map).hasSize(2)
+        // add another entry
+        map.put("baz2", "bang2")
+        Truth.assertThat(map).hasSize(3)
+        // journal file written
+        assertThat(journalFile.exists()).isTrue()
+        createMap() // create a new map
+        // all three entries are still in the map on disk
+        Truth.assertThat(map).hasSize(3)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun concurrentOperations() {
+        createMap()
+        map!!.keepJournal = true
+        val numIters = 1000
+        val fooPutter: TestThread =
+            TestThread(
+                TestRunnable {
+                    for (i in 0..<numIters) {
+                        map.put("foo", "bar" + i)
+                        map.remove("baz")
+                    }
+                })
+        val bazPutter: TestThread =
+            TestThread(
+                TestRunnable {
+                    for (i in 0..<numIters) {
+                        map.put("baz", "bar" + i)
+                        map.remove("noexist")
+                    }
+                })
+        fooPutter.start()
+        bazPutter.start()
+        fooPutter.joinAndAssertState(com.google.devtools.build.lib.testutil.TestUtils.WAIT_TIMEOUT_MILLISECONDS)
+        bazPutter.joinAndAssertState(com.google.devtools.build.lib.testutil.TestUtils.WAIT_TIMEOUT_MILLISECONDS)
+        map.save()
+        assertThat(journalFile.exists()).isTrue()
+        createMap()
+        Truth.assertThat(map).containsEntry("foo", "bar" + (numIters - 1))
+        val bazValue: String? = map.get("baz")
+        if (bazValue != null) {
+            Truth.assertThat(bazValue).isEqualTo("bar" + (numIters - 1))
+        }
+    }
 }

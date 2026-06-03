@@ -11,80 +11,70 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.testutil;
+package com.google.devtools.build.lib.testutil
 
-import com.google.devtools.build.lib.util.io.FileOutErr;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import java.io.File;
-import java.io.IOException;
+import com.google.devtools.build.lib.util.io.FileOutErr
 
 /**
  * An implementation of the FileOutErr that uses an in-memory file behind the scenes.
  */
-public class TestFileOutErr extends FileOutErr {
+class TestFileOutErr : FileOutErr {
+    constructor() : super(
+        FlushingFileRecordingOutputStream(newInMemoryFile("out.log")),
+        FlushingFileRecordingOutputStream(newInMemoryFile("err.log"))
+    )
 
-  public TestFileOutErr() {
-    super(new FlushingFileRecordingOutputStream(newInMemoryFile("out.log")),
-        new FlushingFileRecordingOutputStream(newInMemoryFile("err.log")));
+    constructor(root: Path) : super(
+        FlushingFileRecordingOutputStream(root.getChild("out.log")),
+        FlushingFileRecordingOutputStream(root.getChild("err.log"))
+    )
 
-  }
+    private class FlushingFileRecordingOutputStream(outputFile: Path?) : FileRecordingOutputStream(outputFile) {
+        @kotlin.jvm.Synchronized
+        @Throws(IOException::class)
+        public override fun write(b: ByteArray?) {
+            super.write(b)
+            flush()
+        }
 
-  public TestFileOutErr(Path root) {
-    super(
-        new FlushingFileRecordingOutputStream(root.getChild("out.log")),
-        new FlushingFileRecordingOutputStream(root.getChild("err.log")));
-  }
+        @kotlin.jvm.Synchronized
+        public override fun write(b: ByteArray?, off: Int, len: Int) {
+            super.write(b, off, len)
+            try {
+                flush()
+            } catch (e: IOException) {
+                recordError(e)
+            }
+        }
 
-  private static Path newInMemoryFile(File root, String name) {
-    InMemoryFileSystem inMemFS = new InMemoryFileSystem(DigestHashFunction.SHA256);
-    Path directory = inMemFS.getPath(root.getPath());
-    try {
-      directory.createDirectoryAndParents();
-    } catch (IOException e) {
-      throw new IllegalStateException(e);
-    }
-    return directory.getRelative(name);
-  }
-
-  private static Path newInMemoryFile(String name) {
-    return newInMemoryFile(new File("/inmem/file_outerr"), name);
-  }
-
-  private static class FlushingFileRecordingOutputStream extends FileRecordingOutputStream {
-    protected FlushingFileRecordingOutputStream(Path outputFile) {
-      super(outputFile);
-    }
-
-    @Override
-    public synchronized void write(byte[] b) throws IOException {
-      super.write(b);
-      flush();
-    }
-
-    @Override
-    public synchronized void write(byte[] b, int off, int len) {
-      super.write(b, off, len);
-      try {
-        flush();
-      } catch (IOException e) {
-        recordError(e);
-      }
+        @kotlin.jvm.Synchronized
+        public override fun write(b: Int) {
+            super.write(b)
+            try {
+                flush()
+            } catch (e: IOException) {
+                recordError(e)
+            }
+        }
     }
 
-    @Override
-    public synchronized void write(int b) {
-      super.write(b);
-      try {
-        flush();
-      } catch (IOException e) {
-        recordError(e);
-      }
-    }
-  }
+    val recordedOutput: String
+        get() = outAsLatin1() + errAsLatin1()
 
-  public String getRecordedOutput() {
-    return outAsLatin1() + errAsLatin1();
-  }
+    companion object {
+        private fun newInMemoryFile(root: java.io.File, name: String?): Path {
+            val inMemFS: InMemoryFileSystem = InMemoryFileSystem(DigestHashFunction.SHA256)
+            val directory: Path = inMemFS.getPath(root.getPath())
+            try {
+                directory.createDirectoryAndParents()
+            } catch (e: IOException) {
+                throw java.lang.IllegalStateException(e)
+            }
+            return directory.getRelative(name)
+        }
+
+        private fun newInMemoryFile(name: String?): Path {
+            return newInMemoryFile(java.io.File("/inmem/file_outerr"), name)
+        }
+    }
 }

@@ -11,51 +11,42 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
+import com.google.devtools.build.lib.cmdline.PackageIdentifier
 
-import static com.google.common.truth.Truth.assertThat;
+/** Tests the execution of symbolic macro implementations.  */
+@RunWith(JUnit4::class)
+class RuleFinalizerTest : BuildViewTestCase() {
+    /**
+     * Returns a package by the given name (no leading "//"), or null upon [ ].
+     */
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    @Throws(java.lang.InterruptedException::class, NoSuchPackageException::class)
+    private fun getPackage(pkgName: String?): java.lang.Package? {
+        return packageManager.getPackage(reporter, PackageIdentifier.createInMainRepo(pkgName))
+    }
 
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import javax.annotation.Nullable;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    private fun assertPackageNotInError(pkg: java.lang.Package?) {
+        Truth.assertThat(pkg).isNotNull()
+        assertThat(pkg.containsErrors()).isFalse()
+    }
 
-/** Tests the execution of symbolic macro implementations. */
-@RunWith(JUnit4.class)
-public final class RuleFinalizerTest extends BuildViewTestCase {
+    @Throws(java.lang.Exception::class)
+    private fun assertGetPackageFailsWithEvent(pkgName: String?, msg: String?) {
+        reporter.removeHandler(failFastHandler)
+        val pkg: java.lang.Package = getPackage(pkgName)
+        Truth.assertThat(pkg).isNotNull()
+        assertThat(pkg.containsErrors()).isTrue()
+        assertContainsEvent(msg)
+    }
 
-  /**
-   * Returns a package by the given name (no leading "//"), or null upon {@link
-   * NoSuchPackageException}.
-   */
-  @CanIgnoreReturnValue
-  @Nullable
-  private Package getPackage(String pkgName) throws InterruptedException, NoSuchPackageException {
-    return getPackageManager().getPackage(reporter, PackageIdentifier.createInMainRepo(pkgName));
-  }
-
-  private void assertPackageNotInError(@Nullable Package pkg) {
-    assertThat(pkg).isNotNull();
-    assertThat(pkg.containsErrors()).isFalse();
-  }
-
-  private void assertGetPackageFailsWithEvent(String pkgName, String msg) throws Exception {
-    reporter.removeHandler(failFastHandler);
-    Package pkg = getPackage(pkgName);
-    assertThat(pkg).isNotNull();
-    assertThat(pkg.containsErrors()).isTrue();
-    assertContainsEvent(msg);
-  }
-
-  @Test
-  public void basicFunctionality() throws Exception {
-    scratch.file(
-        "pkg/foo.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun basicFunctionality() {
+        scratch.file(
+            "pkg/foo.bzl",
+            """
         def _impl(name, visibility, targets_of_interest):
             for r in native.existing_rules().values():
                 if r["name"] in [t.name for t in targets_of_interest]:
@@ -64,7 +55,7 @@ public final class RuleFinalizerTest extends BuildViewTestCase {
                         name = genrule_name,
                         srcs = [r["name"]],
                         outs = [genrule_name + ".txt"],
-                        cmd = "... > $@",
+                        cmd = "... > ${'$'}@",
                     )
 
         my_finalizer = macro(
@@ -72,26 +63,31 @@ public final class RuleFinalizerTest extends BuildViewTestCase {
             finalizer = True,
             attrs = {"targets_of_interest": attr.label_list(configurable = False)},
         )
-        """);
-    scratch.file(
-        "pkg/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "pkg/BUILD",
+            """
         load(":foo.bzl", "my_finalizer")
         filegroup(name = "foo")
         my_finalizer(name = "abc", targets_of_interest = [":foo"])
-        """);
+        
+        """.trimIndent()
+        )
 
-    Package pkg = getPackage("pkg");
-    assertPackageNotInError(pkg);
-    assertThat(pkg.getTargets().keySet())
-        .containsAtLeast("abc_foo_finalize", "abc_foo_finalize.txt");
-  }
+        val pkg: java.lang.Package = getPackage("pkg")
+        assertPackageNotInError(pkg)
+        assertThat(pkg.getTargets().keySet())
+            .containsAtLeast("abc_foo_finalize", "abc_foo_finalize.txt")
+    }
 
-  @Test
-  public void finalizer_canCallFinalizer() throws Exception {
-    scratch.file(
-        "pkg/foo.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun finalizer_canCallFinalizer() {
+        scratch.file(
+            "pkg/foo.bzl",
+            """
         def _impl_inner(name, visibility):
             for r in native.existing_rules().values():
                 if r["name"] == "foo":
@@ -100,7 +96,7 @@ public final class RuleFinalizerTest extends BuildViewTestCase {
                         name = genrule_name,
                         srcs = [r["name"]],
                         outs = [genrule_name + ".txt"],
-                        cmd = "... > $@",
+                        cmd = "... > ${'$'}@",
                     )
 
         my_finalizer_inner = macro(implementation = _impl_inner, finalizer = True)
@@ -109,31 +105,36 @@ public final class RuleFinalizerTest extends BuildViewTestCase {
             my_finalizer_inner(name = name + "_inner")
 
         my_finalizer_outer = macro(implementation = _impl_outer, finalizer = True)
-        """);
-    scratch.file(
-        "pkg/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "pkg/BUILD",
+            """
         load(":foo.bzl", "my_finalizer_outer")
         filegroup(name = "foo")
         my_finalizer_outer(name = "abc")
-        """);
+        
+        """.trimIndent()
+        )
 
-    Package pkg = getPackage("pkg");
-    assertPackageNotInError(pkg);
-    assertThat(pkg.getTargets()).containsKey("abc_inner_foo_finalize");
-  }
+        val pkg: java.lang.Package = getPackage("pkg")
+        assertPackageNotInError(pkg)
+        assertThat(pkg.getTargets()).containsKey("abc_inner_foo_finalize")
+    }
 
-  @Test
-  public void finalizer_canCallNonFinalizerMacro() throws Exception {
-    scratch.file(
-        "pkg/foo.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun finalizer_canCallNonFinalizerMacro() {
+        scratch.file(
+            "pkg/foo.bzl",
+            """
         def _impl_macro(name, visibility, deps):
             native.genrule(
                 name = name,
                 srcs = deps,
                 outs = [name + ".txt"],
-                cmd = "... > $@",
+                cmd = "... > ${'$'}@",
             )
 
         my_macro = macro(implementation = _impl_macro, attrs = {"deps": attr.label_list()})
@@ -144,26 +145,31 @@ public final class RuleFinalizerTest extends BuildViewTestCase {
                     my_macro(name=name + "_" + r["name"] + "_finalize", deps = [r["name"]])
 
         my_finalizer = macro(implementation = _impl_finalizer, finalizer = True)
-        """);
-    scratch.file(
-        "pkg/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "pkg/BUILD",
+            """
         load(":foo.bzl", "my_finalizer")
         filegroup(name = "foo")
         my_finalizer(name = "abc")
-        """);
+        
+        """.trimIndent()
+        )
 
-    Package pkg = getPackage("pkg");
-    assertPackageNotInError(pkg);
-    assertThat(pkg.getTargets().keySet())
-        .containsAtLeast("abc_foo_finalize", "abc_foo_finalize.txt");
-  }
+        val pkg: java.lang.Package = getPackage("pkg")
+        assertPackageNotInError(pkg)
+        assertThat(pkg.getTargets().keySet())
+            .containsAtLeast("abc_foo_finalize", "abc_foo_finalize.txt")
+    }
 
-  @Test
-  public void nonFinalizerMacro_cannotCallFinalizer() throws Exception {
-    scratch.file(
-        "pkg/foo.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun nonFinalizerMacro_cannotCallFinalizer() {
+        scratch.file(
+            "pkg/foo.bzl",
+            """
         def _impl_finalizer(name, visibility):
             for r in native.existing_rules().values():
                 if r["name"] == "foo":
@@ -172,7 +178,7 @@ public final class RuleFinalizerTest extends BuildViewTestCase {
                         name = genrule_name,
                         srcs = [r["name"]],
                         outs = [genrule_name + ".txt"],
-                        cmd = "... > $@",
+                        cmd = "... > ${'$'}@",
                     )
 
         my_finalizer = macro(implementation = _impl_finalizer, finalizer = True)
@@ -181,24 +187,29 @@ public final class RuleFinalizerTest extends BuildViewTestCase {
             my_finalizer(name = name + "_inner")
 
         my_macro = macro(implementation = _impl_macro)
-        """);
-    scratch.file(
-        "pkg/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "pkg/BUILD",
+            """
         load(":foo.bzl", "my_macro")
         my_macro(name = "abc")
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertGetPackageFailsWithEvent(
-        "pkg", "Cannot instantiate a rule finalizer within a non-finalizer symbolic macro");
-  }
+        assertGetPackageFailsWithEvent(
+            "pkg", "Cannot instantiate a rule finalizer within a non-finalizer symbolic macro"
+        )
+    }
 
-  @Test
-  public void finalizer_nativeExistingRule_seesOnlyNonFinalizerTargets_inAllLexicalPositions()
-      throws Exception {
-    scratch.file(
-        "pkg/foo.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun finalizer_nativeExistingRule_seesOnlyNonFinalizerTargets_inAllLexicalPositions() {
+        scratch.file(
+            "pkg/foo.bzl",
+            """
         EXPECTED = [
             "top_level_lexically_before_finalizer",
             "macro_lexically_before_finalizer_inner_lib",
@@ -244,10 +255,12 @@ public final class RuleFinalizerTest extends BuildViewTestCase {
             check_existing_rules()
 
         my_finalizer = macro(implementation = _impl_finalizer, finalizer = True)
-        """);
-    scratch.file(
-        "pkg/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "pkg/BUILD",
+            """
         load(":foo.bzl", "my_finalizer", "my_macro")
         filegroup(name = "top_level_lexically_before_finalizer")
         my_macro(name = "macro_lexically_before_finalizer")
@@ -255,48 +268,57 @@ public final class RuleFinalizerTest extends BuildViewTestCase {
         my_finalizer(name = "other_finalizer")
         filegroup(name = "top_level_lexically_after_finalizer")
         my_macro(name = "macro_lexically_after_finalizer")
-        """);
+        
+        """.trimIndent()
+        )
 
-    Package pkg = getPackage("pkg");
-    assertPackageNotInError(pkg);
-    assertContainsEventWithFrequency(
-        "native.existing_rules and native.existing_rule are as expected", 4);
-  }
+        val pkg: java.lang.Package = getPackage("pkg")
+        assertPackageNotInError(pkg)
+        assertContainsEventWithFrequency(
+            "native.existing_rules and native.existing_rule are as expected", 4
+        )
+    }
 
-  @Test
-  public void packageInError_notFinalized() throws Exception {
-    scratch.file(
-        "pkg/finalizers.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun packageInError_notFinalized() {
+        scratch.file(
+            "pkg/finalizers.bzl",
+            """
         def _impl(name, visibility):
             print("in my_finalizer")
             native.filegroup(name = name + "_lib")
 
         my_finalizer = macro(implementation = _impl, finalizer = True)
-        """);
-    scratch.file(
-        "pkg/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "pkg/BUILD",
+            """
         load(":finalizers.bzl", "my_finalizer")
         my_finalizer(name = "finalize")
         filegroup(name = 1 // 0)  # causes EvalException
-        """);
+        
+        """.trimIndent()
+        )
 
-    reporter.removeHandler(failFastHandler);
-    Package pkg = getPackage("pkg");
-    assertThat(pkg).isNotNull();
-    assertThat(pkg.containsErrors()).isTrue();
-    assertContainsEvent("division by zero");
-    assertDoesNotContainEvent("in my_finalizer");
-    assertThat(pkg.getTargets().keySet()).doesNotContain("finalize_lib");
-  }
+        reporter.removeHandler(failFastHandler)
+        val pkg: java.lang.Package = getPackage("pkg")
+        Truth.assertThat(pkg).isNotNull()
+        assertThat(pkg.containsErrors()).isTrue()
+        assertContainsEvent("division by zero")
+        assertDoesNotContainEvent("in my_finalizer")
+        assertThat(pkg.getTargets().keySet()).doesNotContain("finalize_lib")
+    }
 
-  // Regression test for b/419523258.
-  @Test
-  public void finalizerFailure_handledCleanly() throws Exception {
-    scratch.file(
-        "pkg/finalizers.bzl",
-        """
+    // Regression test for b/419523258.
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun finalizerFailure_handledCleanly() {
+        scratch.file(
+            "pkg/finalizers.bzl",
+            """
         def _fail_impl(name, visibility):
             fail("fail fail fail")
 
@@ -305,23 +327,27 @@ public final class RuleFinalizerTest extends BuildViewTestCase {
 
         fail_finalizer = macro(implementation = _fail_impl, finalizer = True)
         good_finalizer = macro(implementation = _good_impl, finalizer = True)
-        """);
-    scratch.file(
-        "pkg/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "pkg/BUILD",
+            """
         load(":finalizers.bzl", "fail_finalizer", "good_finalizer")
         good_finalizer(name = "good_finalizer")
         fail_finalizer(name = "bad_finalizer")
         good_finalizer(name = "should_not_be_expanded")  # because it follows a failing one
         filegroup(name = "unrelated_target")  # evaluated before any finalizers
-        """);
+        
+        """.trimIndent()
+        )
 
-    reporter.removeHandler(failFastHandler);
-    Package pkg = getPackage("pkg");
-    assertThat(pkg).isNotNull();
-    assertThat(pkg.containsErrors()).isTrue();
-    assertContainsEvent("fail fail fail");
-    assertThat(pkg.getTargets().keySet()).containsAtLeast("unrelated_target", "good_finalizer_lib");
-    assertThat(pkg.getTargets().keySet()).doesNotContain("should_not_be_expanded_lib");
-  }
+        reporter.removeHandler(failFastHandler)
+        val pkg: java.lang.Package = getPackage("pkg")
+        Truth.assertThat(pkg).isNotNull()
+        assertThat(pkg.containsErrors()).isTrue()
+        assertContainsEvent("fail fail fail")
+        assertThat(pkg.getTargets().keySet()).containsAtLeast("unrelated_target", "good_finalizer_lib")
+        assertThat(pkg.getTargets().keySet()).doesNotContain("should_not_be_expanded_lib")
+    }
 }

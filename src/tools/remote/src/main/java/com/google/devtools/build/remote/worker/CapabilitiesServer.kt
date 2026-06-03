@@ -11,71 +11,64 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.remote.worker
 
-package com.google.devtools.build.remote.worker;
+import build.bazel.remote.execution.v2.ActionCacheUpdateCapabilities
 
-import build.bazel.remote.execution.v2.ActionCacheUpdateCapabilities;
-import build.bazel.remote.execution.v2.CacheCapabilities;
-import build.bazel.remote.execution.v2.CapabilitiesGrpc.CapabilitiesImplBase;
-import build.bazel.remote.execution.v2.DigestFunction;
-import build.bazel.remote.execution.v2.ExecutionCapabilities;
-import build.bazel.remote.execution.v2.FastCdc2020Params;
-import build.bazel.remote.execution.v2.GetCapabilitiesRequest;
-import build.bazel.remote.execution.v2.ServerCapabilities;
-import build.bazel.remote.execution.v2.SymlinkAbsolutePathStrategy;
-import com.google.devtools.build.lib.remote.ApiVersion;
-import com.google.devtools.build.lib.remote.util.DigestUtil;
-import io.grpc.stub.StreamObserver;
+/** A basic implementation of a Capabilities service.  */
+internal class CapabilitiesServer(digestUtil: DigestUtil, execEnabled: Boolean, workerOptions: RemoteWorkerOptions) :
+    CapabilitiesImplBase() {
+    private val digestUtil: DigestUtil
+    private val execEnabled: Boolean
+    private val workerOptions: RemoteWorkerOptions
 
-/** A basic implementation of a Capabilities service. */
-final class CapabilitiesServer extends CapabilitiesImplBase {
-  private final DigestUtil digestUtil;
-  private final boolean execEnabled;
-  private final RemoteWorkerOptions workerOptions;
-
-  public CapabilitiesServer(
-      DigestUtil digestUtil, boolean execEnabled, RemoteWorkerOptions workerOptions) {
-    this.digestUtil = digestUtil;
-    this.execEnabled = execEnabled;
-    this.workerOptions = workerOptions;
-  }
-
-  @Override
-  public void getCapabilities(
-      GetCapabilitiesRequest request, StreamObserver<ServerCapabilities> responseObserver) {
-    DigestFunction.Value df = digestUtil.getDigestFunction();
-
-    var builder = ServerCapabilities.newBuilder();
-    if (workerOptions.getLegacyApi()) {
-      builder
-          .setLowApiVersion(ApiVersion.twoPointZero.toSemVer())
-          .setHighApiVersion(ApiVersion.twoPointZero.toSemVer());
-    } else {
-      builder
-          .setLowApiVersion(ApiVersion.low.toSemVer())
-          .setHighApiVersion(ApiVersion.high.toSemVer());
+    init {
+        this.digestUtil = digestUtil
+        this.execEnabled = execEnabled
+        this.workerOptions = workerOptions
     }
-    ServerCapabilities.Builder response =
-        builder.setCacheCapabilities(
-            CacheCapabilities.newBuilder()
-                .addDigestFunctions(df)
-                .setSymlinkAbsolutePathStrategy(SymlinkAbsolutePathStrategy.Value.DISALLOWED)
-                .setActionCacheUpdateCapabilities(
-                    ActionCacheUpdateCapabilities.newBuilder().setUpdateEnabled(true).build())
-                .setMaxBatchTotalSizeBytes(CasServer.MAX_BATCH_SIZE_BYTES)
-                .setSplitBlobSupport(true)
-                .setSpliceBlobSupport(true)
-                .setFastCdc2020Params(
-                    FastCdc2020Params.newBuilder()
-                        .setAvgChunkSizeBytes(512 * 1024)
-                        .setSeed(0)
-                        .build())
-                .build());
-    if (execEnabled) {
-      response.setExecutionCapabilities(
-          ExecutionCapabilities.newBuilder().setDigestFunction(df).setExecEnabled(true).build());
+
+    public override fun getCapabilities(
+        request: GetCapabilitiesRequest?, responseObserver: StreamObserver<ServerCapabilities?>
+    ) {
+        val df: DigestFunction.Value? = digestUtil.getDigestFunction()
+
+        val builder: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            ServerCapabilities.newBuilder()
+        if (workerOptions.getLegacyApi()) {
+            builder
+                .setLowApiVersion(ApiVersion.twoPointZero.toSemVer())
+                .setHighApiVersion(ApiVersion.twoPointZero.toSemVer())
+        } else {
+            builder
+                .setLowApiVersion(ApiVersion.low.toSemVer())
+                .setHighApiVersion(ApiVersion.high.toSemVer())
+        }
+        val response: ServerCapabilities.Builder =
+            builder.setCacheCapabilities(
+                CacheCapabilities.newBuilder()
+                    .addDigestFunctions(df)
+                    .setSymlinkAbsolutePathStrategy(SymlinkAbsolutePathStrategy.Value.DISALLOWED)
+                    .setActionCacheUpdateCapabilities(
+                        ActionCacheUpdateCapabilities.newBuilder().setUpdateEnabled(true).build()
+                    )
+                    .setMaxBatchTotalSizeBytes(CasServer.Companion.MAX_BATCH_SIZE_BYTES)
+                    .setSplitBlobSupport(true)
+                    .setSpliceBlobSupport(true)
+                    .setFastCdc2020Params(
+                        FastCdc2020Params.newBuilder()
+                            .setAvgChunkSizeBytes(512 * 1024)
+                            .setSeed(0)
+                            .build()
+                    )
+                    .build()
+            )
+        if (execEnabled) {
+            response.setExecutionCapabilities(
+                ExecutionCapabilities.newBuilder().setDigestFunction(df).setExecEnabled(true).build()
+            )
+        }
+        responseObserver.onNext(response.build())
+        responseObserver.onCompleted()
     }
-    responseObserver.onNext(response.build());
-    responseObserver.onCompleted();
-  }
 }

@@ -11,583 +11,607 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.config
 
-package com.google.devtools.build.lib.skyframe.config;
+import com.google.devtools.build.lib.analysis.BlazeDirectories
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+/** Unit tests for [PlatformMappingFunction].  */
+@RunWith(JUnit4::class)
+class PlatformMappingFunctionParserTest : AnalysisTestCase() {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testParse() {
+        val mappings: Mappings =
+            parse(
+                "platforms:",
+                "  //platforms:one",
+                "    --cpu=one",
+                "  //platforms:two",
+                "    --cpu=two",
+                "flags:",
+                "  --cpu=one",
+                "    //platforms:one",
+                "  --cpu=two",
+                "    //platforms:two"
+            )
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.analysis.util.AnalysisMock;
-import com.google.devtools.build.lib.analysis.util.AnalysisTestCase;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.Label.RepoContext;
-import com.google.devtools.build.lib.cmdline.RepositoryMapping;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.skyframe.config.PlatformMappingFunction.Mappings;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.lib.skyframe.util.SkyframeExecutorTestUtils;
-import com.google.devtools.build.skyframe.ErrorInfo;
-import com.google.devtools.build.skyframe.EvaluationResult;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionException;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.devtools.common.options.OptionsParsingException;
-import java.util.Objects;
-import javax.annotation.Nullable;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+        assertThat(mappings.platformsToFlags.keySet()).containsExactly(PLATFORM1, PLATFORM2)
+        assertThat(mappings.platformsToFlags.get(PLATFORM1).parsingResult().canonicalize())
+            .containsExactly("--cpu=one")
+        assertThat(mappings.platformsToFlags.get(PLATFORM2).parsingResult().canonicalize())
+            .containsExactly("--cpu=two")
 
-/** Unit tests for {@link PlatformMappingFunction}. */
-@RunWith(JUnit4.class)
-public class PlatformMappingFunctionParserTest extends AnalysisTestCase {
-
-  private static final Label PLATFORM1 = Label.parseCanonicalUnchecked("//platforms:one");
-  private static final Label PLATFORM2 = Label.parseCanonicalUnchecked("//platforms:two");
-  private static final Label EXTERNAL_PLATFORM =
-      Label.parseCanonicalUnchecked("@dep+1.0//platforms:two");
-
-  @Test
-  public void testParse() throws Exception {
-    PlatformMappingFunction.Mappings mappings =
-        parse(
-            "platforms:",
-            "  //platforms:one",
-            "    --cpu=one",
-            "  //platforms:two",
-            "    --cpu=two",
-            "flags:",
-            "  --cpu=one",
-            "    //platforms:one",
-            "  --cpu=two",
-            "    //platforms:two");
-
-    assertThat(mappings.platformsToFlags.keySet()).containsExactly(PLATFORM1, PLATFORM2);
-    assertThat(mappings.platformsToFlags.get(PLATFORM1).parsingResult().canonicalize())
-        .containsExactly("--cpu=one");
-    assertThat(mappings.platformsToFlags.get(PLATFORM2).parsingResult().canonicalize())
-        .containsExactly("--cpu=two");
-
-    assertThat(mappings.flagsToPlatforms.keySet())
-        .containsExactly(createFlags("--cpu=one"), createFlags("--cpu=two"));
-    assertThat(mappings.flagsToPlatforms.get(createFlags("--cpu=one"))).isEqualTo(PLATFORM1);
-    assertThat(mappings.flagsToPlatforms.get(createFlags("--cpu=two"))).isEqualTo(PLATFORM2);
-  }
-
-  @Test
-  public void testParseWithRepoMapping() throws Exception {
-    RepositoryMapping repoMapping =
-        RepositoryMapping.create(
-            ImmutableMap.of("foo", RepositoryName.MAIN, "dep", RepositoryName.create("dep+1.0")),
-            RepositoryName.MAIN);
-    PlatformMappingFunction.Mappings mappings =
-        parse(
-            repoMapping,
-            "platforms:",
-            "  @foo//platforms:one",
-            "    --cpu=one",
-            "  @dep//platforms:two",
-            "    --cpu=two",
-            "flags:",
-            "  --cpu=one",
-            "    @foo//platforms:one",
-            "  --cpu=two",
-            "    @dep//platforms:two");
-
-    assertThat(mappings.platformsToFlags.keySet()).containsExactly(PLATFORM1, EXTERNAL_PLATFORM);
-    assertThat(mappings.platformsToFlags.get(PLATFORM1).parsingResult().canonicalize())
-        .containsExactly("--cpu=one");
-    assertThat(mappings.platformsToFlags.get(EXTERNAL_PLATFORM).parsingResult().canonicalize())
-        .containsExactly("--cpu=two");
-
-    assertThat(mappings.flagsToPlatforms.keySet())
-        .containsExactly(
-            createFlags(repoMapping, "--cpu=one"), createFlags(repoMapping, "--cpu=two"));
-    assertThat(mappings.flagsToPlatforms.get(createFlags(repoMapping, "--cpu=one")))
-        .isEqualTo(PLATFORM1);
-    assertThat(mappings.flagsToPlatforms.get(createFlags(repoMapping, "--cpu=two")))
-        .isEqualTo(EXTERNAL_PLATFORM);
-  }
-
-  @Test
-  public void testParseComment() throws Exception {
-    PlatformMappingFunction.Mappings mappings =
-        parse(
-            "# A mapping file!",
-            "platforms:",
-            "  # comment1",
-            "  //platforms:one",
-            "# comment2",
-            "    --cpu=one",
-            "  //platforms:two",
-            "    --cpu=two",
-            "flags:",
-            "# another comment",
-            "  --cpu=one",
-            "    //platforms:one",
-            "  --cpu=two",
-            "    //platforms:two");
-
-    assertThat(mappings.platformsToFlags.keySet()).containsExactly(PLATFORM1, PLATFORM2);
-    assertThat(mappings.platformsToFlags.get(PLATFORM1).parsingResult().canonicalize())
-        .containsExactly("--cpu=one");
-    assertThat(mappings.platformsToFlags.get(PLATFORM2).parsingResult().canonicalize())
-        .containsExactly("--cpu=two");
-
-    assertThat(mappings.flagsToPlatforms.keySet())
-        .containsExactly(createFlags("--cpu=one"), createFlags("--cpu=two"));
-    assertThat(mappings.flagsToPlatforms.get(createFlags("--cpu=one"))).isEqualTo(PLATFORM1);
-    assertThat(mappings.flagsToPlatforms.get(createFlags("--cpu=two"))).isEqualTo(PLATFORM2);
-  }
-
-  @Test
-  public void testParseWhitespace() throws Exception {
-    PlatformMappingFunction.Mappings mappings =
-        parse(
-            "",
-            "platforms:",
-            "  ",
-            "  //platforms:one",
-            "",
-            "    --cpu=one",
-            "    //platforms:two    ",
-            "      --cpu=two ",
-            "flags:",
-            "           ",
-            "",
-            "--cpu=one",
-            "  //platforms:one",
-            "  --cpu=two",
-            "  //platforms:two");
-
-    assertThat(mappings.platformsToFlags.keySet()).containsExactly(PLATFORM1, PLATFORM2);
-    assertThat(mappings.platformsToFlags.get(PLATFORM1).parsingResult().canonicalize())
-        .containsExactly("--cpu=one");
-    assertThat(mappings.platformsToFlags.get(PLATFORM2).parsingResult().canonicalize())
-        .containsExactly("--cpu=two");
-
-    assertThat(mappings.flagsToPlatforms.keySet())
-        .containsExactly(createFlags("--cpu=one"), createFlags("--cpu=two"));
-    assertThat(mappings.flagsToPlatforms.get(createFlags("--cpu=one"))).isEqualTo(PLATFORM1);
-    assertThat(mappings.flagsToPlatforms.get(createFlags("--cpu=two"))).isEqualTo(PLATFORM2);
-  }
-
-  @Test
-  public void testParseMultipleFlagsInPlatform() throws Exception {
-    PlatformMappingFunction.Mappings mappings =
-        parse(
-            "platforms:",
-            "  //platforms:one",
-            "    --cpu=one",
-            "    --compilation_mode=dbg",
-            "  //platforms:two",
-            "    --cpu=two");
-
-    assertThat(mappings.platformsToFlags.keySet()).containsExactly(PLATFORM1, PLATFORM2);
-    assertThat(mappings.platformsToFlags.get(PLATFORM1).parsingResult().canonicalize())
-        .containsExactly("--cpu=one", "--compilation_mode=dbg");
-  }
-
-  @Test
-  public void testParseMultipleFlagsInFlags() throws Exception {
-    PlatformMappingFunction.Mappings mappings =
-        parse(
-            "flags:",
-            "  --compilation_mode=dbg",
-            "  --cpu=one",
-            "    //platforms:one",
-            "  --cpu=two",
-            "    //platforms:two");
-
-    assertThat(mappings.flagsToPlatforms.keySet())
-        .containsExactly(
-            createFlags("--compilation_mode=dbg", "--cpu=one"), createFlags("--cpu=two"));
-    assertThat(mappings.flagsToPlatforms.get(createFlags("--compilation_mode=dbg", "--cpu=one")))
-        .isEqualTo(PLATFORM1);
-  }
-
-  @Test
-  public void testParseOnlyPlatforms() throws Exception {
-    PlatformMappingFunction.Mappings mappings =
-        parse(
-            "platforms:", // Force line break
-            "  //platforms:one", // Force line break
-            "    --cpu=one" // Force line break
-            );
-
-    assertThat(mappings.platformsToFlags.keySet()).containsExactly(PLATFORM1);
-    assertThat(mappings.platformsToFlags.get(PLATFORM1).parsingResult().canonicalize())
-        .containsExactly("--cpu=one");
-    assertThat(mappings.flagsToPlatforms).isEmpty();
-  }
-
-  @Test
-  public void testParseOnlyFlags() throws Exception {
-    PlatformMappingFunction.Mappings mappings =
-        parse(
-            "flags:", // Force line break
-            "  --cpu=one", // Force line break
-            "    //platforms:one" // Force line break
-            );
-
-    assertThat(mappings.flagsToPlatforms.keySet()).containsExactly(createFlags("--cpu=one"));
-    assertThat(mappings.flagsToPlatforms.get(createFlags("--cpu=one"))).isEqualTo(PLATFORM1);
-    assertThat(mappings.platformsToFlags).isEmpty();
-  }
-
-  @Test
-  public void testParseEmpty() throws Exception {
-    PlatformMappingFunction.Mappings mappings = parse();
-
-    assertThat(mappings.flagsToPlatforms).isEmpty();
-    assertThat(mappings.platformsToFlags).isEmpty();
-  }
-
-  @Test
-  public void testParseEmptySections() throws Exception {
-    PlatformMappingFunction.Mappings mappings = parse("platforms:", "flags:");
-
-    assertThat(mappings.flagsToPlatforms).isEmpty();
-    assertThat(mappings.platformsToFlags).isEmpty();
-  }
-
-  @Test
-  public void testParseCommentOnly() throws Exception {
-    PlatformMappingFunction.Mappings mappings = parse("#No mappings");
-
-    assertThat(mappings.flagsToPlatforms).isEmpty();
-    assertThat(mappings.platformsToFlags).isEmpty();
-  }
-
-  @Test
-  public void testParseExtraPlatformInFlags() {
-    PlatformMappingParsingException exception =
-        assertThrows(
-            PlatformMappingParsingException.class,
-            () ->
-                parse(
-                    "flags:", // Force line break
-                    "  --cpu=one", // Force line break
-                    "    //platforms:one", // Force line break
-                    "    //platforms:two" // Force line break
-                    ));
-
-    assertThat(exception).hasMessageThat().contains("//platforms:two");
-  }
-
-  @Test
-  public void testParsePlatformWithoutFlags() {
-    PlatformMappingParsingException exception =
-        assertThrows(
-            PlatformMappingParsingException.class,
-            () ->
-                parse(
-                    "platforms:", // Force line break
-                    "  //platforms:one" // Force line break
-                    ));
-
-    assertThat(exception).hasMessageThat().contains("end of file");
-  }
-
-  @Test
-  public void testParseFlagsWithoutPlatform() {
-    PlatformMappingParsingException exception =
-        assertThrows(
-            PlatformMappingParsingException.class,
-            () ->
-                parse(
-                    "flags:", // Force line break
-                    "  --cpu=one" // Force line break
-                    ));
-
-    assertThat(exception).hasMessageThat().contains("end of file");
-  }
-
-  @Test
-  public void testParseCommentEndOfFile() throws Exception {
-    PlatformMappingFunction.Mappings mappings =
-        parse(
-            "platforms:", // Force line break
-            "  //platforms:one", // Force line break
-            "    --cpu=one", // Force line break
-            "# No more mappings" // Force line break
-            );
-
-    assertThat(mappings.platformsToFlags).isNotEmpty();
-  }
-
-  @Test
-  public void testParseUnknownSection() {
-    PlatformMappingParsingException exception =
-        assertThrows(
-            PlatformMappingParsingException.class,
-            () ->
-                parse(
-                    "platform:", // Force line break
-                    "  //platforms:one", // Force line break
-                    "    --cpu=one" // Force line break
-                    ));
-
-    assertThat(exception).hasMessageThat().contains("platform:");
-
-    exception =
-        assertThrows(
-            PlatformMappingParsingException.class,
-            () ->
-                parse(
-                    "platforms:",
-                    "  //platforms:one",
-                    "    --cpu=one",
-                    "flag:",
-                    "  --cpu=one",
-                    "    //platforms:one"));
-
-    assertThat(exception).hasMessageThat().contains("platform");
-  }
-
-  @Test
-  public void testParsePlatformsInvalidPlatformLabel() {
-    PlatformMappingParsingException exception =
-        assertThrows(
-            PlatformMappingParsingException.class,
-            () ->
-                parse(
-                    "platforms:", // Force line break
-                    "  @@@", // Force line break
-                    "    --cpu=one"));
-
-    assertThat(exception).hasMessageThat().contains("@@@");
-  }
-
-  @Test
-  public void testParseFlagsInvalidPlatformLabel() {
-    PlatformMappingParsingException exception =
-        assertThrows(
-            PlatformMappingParsingException.class,
-            () ->
-                parse(
-                    "flags:", // Force line break
-                    "  --cpu=one", // Force line break
-                    "    @@@"));
-
-    assertThat(exception).hasMessageThat().contains("@@@");
-  }
-
-  @Test
-  public void testParsePlatformsInvalidFlag() {
-    PlatformMappingParsingException exception =
-        assertThrows(
-            PlatformMappingParsingException.class,
-            () ->
-                parse(
-                    "platforms:", // Force line break
-                    "  //platforms:one", // Force line break
-                    "    -cpu=one"));
-
-    assertThat(exception).hasMessageThat().contains("-cpu");
-  }
-
-  @Test
-  public void testParseFlagsInvalidFlag() {
-    PlatformMappingParsingException exception =
-        assertThrows(
-            PlatformMappingParsingException.class,
-            () ->
-                parse(
-                    "flags:", // Force line break
-                    "  -cpu=one", // Force line breakPlatformMappingFunction
-                    "    //platforms:one"));
-
-    assertThat(exception).hasMessageThat().contains("-cpu");
-  }
-
-  @Test
-  public void testParsePlatformsDuplicatePlatform() {
-    PlatformMappingParsingException exception =
-        assertThrows(
-            PlatformMappingParsingException.class,
-            () ->
-                parse(
-                    "platforms:", // Force line break
-                    "  //platforms:one", // Force line break
-                    "    --cpu=one", // Force line break
-                    "  //platforms:one", // Force line break
-                    "    --cpu=two"));
-
-    assertThat(exception).hasMessageThat().contains("duplicate");
-  }
-
-  @Test
-  public void testParseFlagsDuplicateFlags() {
-    PlatformMappingParsingException exception =
-        assertThrows(
-            PlatformMappingParsingException.class,
-            () ->
-                parse(
-                    "flags:", // Force line break
-                    "  --compilation_mode=dbg", // Force line break
-                    "  --cpu=one", // Force line break:242
-                    "    //platforms:one", // Force line break
-                    "  --compilation_mode=dbg", // Force line break
-                    "  --cpu=one", // Force line break
-                    "    //platforms:two"));
-
-    assertThat(exception).hasMessageThat().contains("duplicate");
-  }
-
-  private ParsedFlagsValue createFlags(String... nativeFlags) throws OptionsParsingException {
-    return createFlags(RepositoryMapping.EMPTY, nativeFlags);
-  }
-
-  private ParsedFlagsValue createFlags(RepositoryMapping mainRepoMapping, String... nativeFlags)
-      throws OptionsParsingException {
-    NativeAndStarlarkFlags flags =
-        NativeAndStarlarkFlags.builder()
-            .nativeFlags(ImmutableList.copyOf(nativeFlags))
-            .optionsClasses(ruleClassProvider.getFragmentRegistry().getOptionsClasses())
-            .repoMapping(mainRepoMapping)
-            .build();
-    return ParsedFlagsValue.parseAndCreate(flags);
-  }
-
-  private PlatformMappingFunction.Mappings parse(String... lines)
-      throws PlatformMappingParsingException, InterruptedException {
-    return parse(RepositoryMapping.EMPTY, lines);
-  }
-
-  private PlatformMappingFunction.Mappings parse(RepositoryMapping mainRepoMapping, String... lines)
-      throws InterruptedException, PlatformMappingParsingException {
-    Key key = Key.create(mainRepoMapping, ImmutableList.copyOf(lines));
-    try {
-      // Must re-enable analysis for Skyframe functions that create configured targets.
-      skyframeExecutor.getSkyframeBuildView().enableAnalysis(true);
-      EvaluationResult<Value> evalResult =
-          SkyframeExecutorTestUtils.evaluate(
-              skyframeExecutor, key, /* keepGoing= */ false, reporter);
-      if (evalResult.hasError()) {
-        ErrorInfo errorInfo = evalResult.getError(key);
-        throw (PlatformMappingParsingException) errorInfo.getException();
-      }
-      return evalResult.get(key).mappings();
-    } finally {
-      skyframeExecutor.getSkyframeBuildView().enableAnalysis(false);
-    }
-  }
-
-  private static final SkyFunctionName SKYFUNCTION_NAME =
-      SkyFunctionName.createHermetic("PARSE_MAPPINGS");
-
-  @AutoCodec
-  static final class Key implements SkyKey {
-    static Key create(RepositoryMapping mainRepoMapping, ImmutableList<String> lines) {
-      return new Key(mainRepoMapping, lines);
+        assertThat(mappings.flagsToPlatforms.keySet())
+            .containsExactly(createFlags("--cpu=one"), createFlags("--cpu=two"))
+        assertThat(mappings.flagsToPlatforms.get(createFlags("--cpu=one"))).isEqualTo(PLATFORM1)
+        assertThat(mappings.flagsToPlatforms.get(createFlags("--cpu=two"))).isEqualTo(PLATFORM2)
     }
 
-    private final RepositoryMapping mainRepoMapping;
-    private final ImmutableList<String> lines;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testParseWithRepoMapping() {
+        val repoMapping: RepositoryMapping? =
+            RepositoryMapping.create(
+                com.google.common.collect.ImmutableMap.of<K?, V?>(
+                    "foo",
+                    RepositoryName.MAIN,
+                    "dep",
+                    RepositoryName.create("dep+1.0")
+                ),
+                RepositoryName.MAIN
+            )
+        val mappings: Mappings =
+            parse(
+                repoMapping,
+                "platforms:",
+                "  @foo//platforms:one",
+                "    --cpu=one",
+                "  @dep//platforms:two",
+                "    --cpu=two",
+                "flags:",
+                "  --cpu=one",
+                "    @foo//platforms:one",
+                "  --cpu=two",
+                "    @dep//platforms:two"
+            )
 
-    public Key(RepositoryMapping mainRepoMapping, ImmutableList<String> lines) {
-      this.mainRepoMapping = mainRepoMapping;
-      this.lines = lines;
+        assertThat(mappings.platformsToFlags.keySet()).containsExactly(PLATFORM1, EXTERNAL_PLATFORM)
+        assertThat(mappings.platformsToFlags.get(PLATFORM1).parsingResult().canonicalize())
+            .containsExactly("--cpu=one")
+        assertThat(mappings.platformsToFlags.get(EXTERNAL_PLATFORM).parsingResult().canonicalize())
+            .containsExactly("--cpu=two")
+
+        assertThat(mappings.flagsToPlatforms.keySet())
+            .containsExactly(
+                createFlags(repoMapping, "--cpu=one"), createFlags(repoMapping, "--cpu=two")
+            )
+        assertThat(mappings.flagsToPlatforms.get(createFlags(repoMapping, "--cpu=one")))
+            .isEqualTo(PLATFORM1)
+        assertThat(mappings.flagsToPlatforms.get(createFlags(repoMapping, "--cpu=two")))
+            .isEqualTo(EXTERNAL_PLATFORM)
     }
 
-    RepositoryMapping mainRepoMapping() {
-      return mainRepoMapping;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testParseComment() {
+        val mappings: Mappings =
+            parse(
+                "# A mapping file!",
+                "platforms:",
+                "  # comment1",
+                "  //platforms:one",
+                "# comment2",
+                "    --cpu=one",
+                "  //platforms:two",
+                "    --cpu=two",
+                "flags:",
+                "# another comment",
+                "  --cpu=one",
+                "    //platforms:one",
+                "  --cpu=two",
+                "    //platforms:two"
+            )
+
+        assertThat(mappings.platformsToFlags.keySet()).containsExactly(PLATFORM1, PLATFORM2)
+        assertThat(mappings.platformsToFlags.get(PLATFORM1).parsingResult().canonicalize())
+            .containsExactly("--cpu=one")
+        assertThat(mappings.platformsToFlags.get(PLATFORM2).parsingResult().canonicalize())
+            .containsExactly("--cpu=two")
+
+        assertThat(mappings.flagsToPlatforms.keySet())
+            .containsExactly(createFlags("--cpu=one"), createFlags("--cpu=two"))
+        assertThat(mappings.flagsToPlatforms.get(createFlags("--cpu=one"))).isEqualTo(PLATFORM1)
+        assertThat(mappings.flagsToPlatforms.get(createFlags("--cpu=two"))).isEqualTo(PLATFORM2)
     }
 
-    ImmutableList<String> lines() {
-      return lines;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testParseWhitespace() {
+        val mappings: Mappings =
+            parse(
+                "",
+                "platforms:",
+                "  ",
+                "  //platforms:one",
+                "",
+                "    --cpu=one",
+                "    //platforms:two    ",
+                "      --cpu=two ",
+                "flags:",
+                "           ",
+                "",
+                "--cpu=one",
+                "  //platforms:one",
+                "  --cpu=two",
+                "  //platforms:two"
+            )
+
+        assertThat(mappings.platformsToFlags.keySet()).containsExactly(PLATFORM1, PLATFORM2)
+        assertThat(mappings.platformsToFlags.get(PLATFORM1).parsingResult().canonicalize())
+            .containsExactly("--cpu=one")
+        assertThat(mappings.platformsToFlags.get(PLATFORM2).parsingResult().canonicalize())
+            .containsExactly("--cpu=two")
+
+        assertThat(mappings.flagsToPlatforms.keySet())
+            .containsExactly(createFlags("--cpu=one"), createFlags("--cpu=two"))
+        assertThat(mappings.flagsToPlatforms.get(createFlags("--cpu=one"))).isEqualTo(PLATFORM1)
+        assertThat(mappings.flagsToPlatforms.get(createFlags("--cpu=two"))).isEqualTo(PLATFORM2)
     }
 
-    @Override
-    public int hashCode() {
-      return Objects.hash(mainRepoMapping, lines);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testParseMultipleFlagsInPlatform() {
+        val mappings: Mappings =
+            parse(
+                "platforms:",
+                "  //platforms:one",
+                "    --cpu=one",
+                "    --compilation_mode=dbg",
+                "  //platforms:two",
+                "    --cpu=two"
+            )
+
+        assertThat(mappings.platformsToFlags.keySet()).containsExactly(PLATFORM1, PLATFORM2)
+        assertThat(mappings.platformsToFlags.get(PLATFORM1).parsingResult().canonicalize())
+            .containsExactly("--cpu=one", "--compilation_mode=dbg")
     }
 
-    @Override
-    public boolean equals(Object o) {
-      if (this == o) {
-        return true;
-      }
-      if (!(o instanceof Key other)) {
-        return false;
-      }
-      return Objects.equals(mainRepoMapping, other.mainRepoMapping)
-          && Objects.equals(lines, other.lines);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testParseMultipleFlagsInFlags() {
+        val mappings: Mappings =
+            parse(
+                "flags:",
+                "  --compilation_mode=dbg",
+                "  --cpu=one",
+                "    //platforms:one",
+                "  --cpu=two",
+                "    //platforms:two"
+            )
+
+        assertThat(mappings.flagsToPlatforms.keySet())
+            .containsExactly(
+                createFlags("--compilation_mode=dbg", "--cpu=one"), createFlags("--cpu=two")
+            )
+        assertThat(mappings.flagsToPlatforms.get(createFlags("--compilation_mode=dbg", "--cpu=one")))
+            .isEqualTo(PLATFORM1)
     }
 
-    @Override
-    public SkyFunctionName functionName() {
-      return SKYFUNCTION_NAME;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testParseOnlyPlatforms() {
+        val mappings: Mappings =
+            parse(
+                "platforms:",  // Force line break
+                "  //platforms:one",  // Force line break
+                "    --cpu=one" // Force line break
+            )
+
+        assertThat(mappings.platformsToFlags.keySet()).containsExactly(PLATFORM1)
+        assertThat(mappings.platformsToFlags.get(PLATFORM1).parsingResult().canonicalize())
+            .containsExactly("--cpu=one")
+        assertThat(mappings.flagsToPlatforms).isEmpty()
     }
-  }
 
-  static final class Value implements SkyValue {
-    static Value create(Mappings mappings) {
-      return new Value(mappings);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testParseOnlyFlags() {
+        val mappings: Mappings =
+            parse(
+                "flags:",  // Force line break
+                "  --cpu=one",  // Force line break
+                "    //platforms:one" // Force line break
+            )
+
+        assertThat(mappings.flagsToPlatforms.keySet()).containsExactly(createFlags("--cpu=one"))
+        assertThat(mappings.flagsToPlatforms.get(createFlags("--cpu=one"))).isEqualTo(PLATFORM1)
+        assertThat(mappings.platformsToFlags).isEmpty()
     }
 
-    private final Mappings mappings;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testParseEmpty() {
+        val mappings: Mappings = parse()
 
-    Value(Mappings mappings) {
-      this.mappings = mappings;
+        assertThat(mappings.flagsToPlatforms).isEmpty()
+        assertThat(mappings.platformsToFlags).isEmpty()
     }
 
-    Mappings mappings() {
-      return mappings;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testParseEmptySections() {
+        val mappings: Mappings = parse("platforms:", "flags:")
+
+        assertThat(mappings.flagsToPlatforms).isEmpty()
+        assertThat(mappings.platformsToFlags).isEmpty()
     }
-  }
 
-  private static final class ParseMappingsFunction implements SkyFunction {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testParseCommentOnly() {
+        val mappings: Mappings = parse("#No mappings")
 
-    @Nullable
-    @Override
-    public Value compute(SkyKey skyKey, Environment env)
-        throws InterruptedException, EvalException {
-      Key key = (Key) skyKey.argument();
-      try {
-        Mappings mappings =
-            PlatformMappingFunction.parse(
-                env, key.lines(), RepoContext.of(RepositoryName.MAIN, key.mainRepoMapping()));
-        if (mappings == null) {
-          return null;
+        assertThat(mappings.flagsToPlatforms).isEmpty()
+        assertThat(mappings.platformsToFlags).isEmpty()
+    }
+
+    @org.junit.Test
+    fun testParseExtraPlatformInFlags() {
+        val exception: PlatformMappingParsingException? =
+            org.junit.Assert.assertThrows<T?>(
+                PlatformMappingParsingException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    parse(
+                        "flags:",  // Force line break
+                        "  --cpu=one",  // Force line break
+                        "    //platforms:one",  // Force line break
+                        "    //platforms:two" // Force line break
+                    )
+                })
+
+        assertThat(exception).hasMessageThat().contains("//platforms:two")
+    }
+
+    @org.junit.Test
+    fun testParsePlatformWithoutFlags() {
+        val exception: PlatformMappingParsingException? =
+            org.junit.Assert.assertThrows<T?>(
+                PlatformMappingParsingException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    parse(
+                        "platforms:",  // Force line break
+                        "  //platforms:one" // Force line break
+                    )
+                })
+
+        assertThat(exception).hasMessageThat().contains("end of file")
+    }
+
+    @org.junit.Test
+    fun testParseFlagsWithoutPlatform() {
+        val exception: PlatformMappingParsingException? =
+            org.junit.Assert.assertThrows<T?>(
+                PlatformMappingParsingException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    parse(
+                        "flags:",  // Force line break
+                        "  --cpu=one" // Force line break
+                    )
+                })
+
+        assertThat(exception).hasMessageThat().contains("end of file")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testParseCommentEndOfFile() {
+        val mappings: Mappings =
+            parse(
+                "platforms:",  // Force line break
+                "  //platforms:one",  // Force line break
+                "    --cpu=one",  // Force line break
+                "# No more mappings" // Force line break
+            )
+
+        assertThat(mappings.platformsToFlags).isNotEmpty()
+    }
+
+    @org.junit.Test
+    fun testParseUnknownSection() {
+        var exception: PlatformMappingParsingException? =
+            org.junit.Assert.assertThrows<T?>(
+                PlatformMappingParsingException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    parse(
+                        "platform:",  // Force line break
+                        "  //platforms:one",  // Force line break
+                        "    --cpu=one" // Force line break
+                    )
+                })
+
+        assertThat(exception).hasMessageThat().contains("platform:")
+
+        exception =
+            org.junit.Assert.assertThrows<T?>(
+                PlatformMappingParsingException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    parse(
+                        "platforms:",
+                        "  //platforms:one",
+                        "    --cpu=one",
+                        "flag:",
+                        "  --cpu=one",
+                        "    //platforms:one"
+                    )
+                })
+
+        assertThat(exception).hasMessageThat().contains("platform")
+    }
+
+    @org.junit.Test
+    fun testParsePlatformsInvalidPlatformLabel() {
+        val exception: PlatformMappingParsingException? =
+            org.junit.Assert.assertThrows<T?>(
+                PlatformMappingParsingException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    parse(
+                        "platforms:",  // Force line break
+                        "  @@@",  // Force line break
+                        "    --cpu=one"
+                    )
+                })
+
+        assertThat(exception).hasMessageThat().contains("@@@")
+    }
+
+    @org.junit.Test
+    fun testParseFlagsInvalidPlatformLabel() {
+        val exception: PlatformMappingParsingException? =
+            org.junit.Assert.assertThrows<T?>(
+                PlatformMappingParsingException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    parse(
+                        "flags:",  // Force line break
+                        "  --cpu=one",  // Force line break
+                        "    @@@"
+                    )
+                })
+
+        assertThat(exception).hasMessageThat().contains("@@@")
+    }
+
+    @org.junit.Test
+    fun testParsePlatformsInvalidFlag() {
+        val exception: PlatformMappingParsingException? =
+            org.junit.Assert.assertThrows<T?>(
+                PlatformMappingParsingException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    parse(
+                        "platforms:",  // Force line break
+                        "  //platforms:one",  // Force line break
+                        "    -cpu=one"
+                    )
+                })
+
+        assertThat(exception).hasMessageThat().contains("-cpu")
+    }
+
+    @org.junit.Test
+    fun testParseFlagsInvalidFlag() {
+        val exception: PlatformMappingParsingException? =
+            org.junit.Assert.assertThrows<T?>(
+                PlatformMappingParsingException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    parse(
+                        "flags:",  // Force line break
+                        "  -cpu=one",  // Force line breakPlatformMappingFunction
+                        "    //platforms:one"
+                    )
+                })
+
+        assertThat(exception).hasMessageThat().contains("-cpu")
+    }
+
+    @org.junit.Test
+    fun testParsePlatformsDuplicatePlatform() {
+        val exception: PlatformMappingParsingException? =
+            org.junit.Assert.assertThrows<T?>(
+                PlatformMappingParsingException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    parse(
+                        "platforms:",  // Force line break
+                        "  //platforms:one",  // Force line break
+                        "    --cpu=one",  // Force line break
+                        "  //platforms:one",  // Force line break
+                        "    --cpu=two"
+                    )
+                })
+
+        assertThat(exception).hasMessageThat().contains("duplicate")
+    }
+
+    @org.junit.Test
+    fun testParseFlagsDuplicateFlags() {
+        val exception: PlatformMappingParsingException? =
+            org.junit.Assert.assertThrows<T?>(
+                PlatformMappingParsingException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    parse(
+                        "flags:",  // Force line break
+                        "  --compilation_mode=dbg",  // Force line break
+                        "  --cpu=one",  // Force line break:242
+                        "    //platforms:one",  // Force line break
+                        "  --compilation_mode=dbg",  // Force line break
+                        "  --cpu=one",  // Force line break
+                        "    //platforms:two"
+                    )
+                })
+
+        assertThat(exception).hasMessageThat().contains("duplicate")
+    }
+
+    @Throws(OptionsParsingException::class)
+    private fun createFlags(vararg nativeFlags: String?): ParsedFlagsValue? {
+        return createFlags(RepositoryMapping.EMPTY, nativeFlags)
+    }
+
+    @Throws(OptionsParsingException::class)
+    private fun createFlags(mainRepoMapping: RepositoryMapping?, vararg nativeFlags: String?): ParsedFlagsValue {
+        val flags: NativeAndStarlarkFlags? =
+            NativeAndStarlarkFlags.builder()
+                .nativeFlags(com.google.common.collect.ImmutableList.< E > copyOf < E ? > (nativeFlags))
+                .optionsClasses(ruleClassProvider.getFragmentRegistry().getOptionsClasses())
+                .repoMapping(mainRepoMapping)
+                .build()
+        return ParsedFlagsValue.parseAndCreate(flags)
+    }
+
+    @Throws(PlatformMappingParsingException::class, java.lang.InterruptedException::class)
+    private fun parse(vararg lines: String?): Mappings {
+        return parse(RepositoryMapping.EMPTY, lines)
+    }
+
+    @Throws(java.lang.InterruptedException::class, PlatformMappingParsingException::class)
+    private fun parse(mainRepoMapping: RepositoryMapping?, vararg lines: String?): Mappings {
+        val key: Key =
+            com.google.devtools.build.lib.skyframe.config.PlatformMappingFunctionParserTest.Key.Companion.create(
+                mainRepoMapping,
+                com.google.common.collect.ImmutableList.copyOf<String?>(lines)
+            )
+        try {
+            // Must re-enable analysis for Skyframe functions that create configured targets.
+            skyframeExecutor.getSkyframeBuildView().enableAnalysis(true)
+            val evalResult: EvaluationResult<Value?> =
+                SkyframeExecutorTestUtils.evaluate<T?>(
+                    skyframeExecutor, key,  /* keepGoing= */false, reporter
+                )
+            if (evalResult.hasError()) {
+                val errorInfo: ErrorInfo = evalResult.getError(key)
+                throw errorInfo.getException() as PlatformMappingParsingException?
+            }
+            return evalResult.get(key).mappings()
+        } finally {
+            skyframeExecutor.getSkyframeBuildView().enableAnalysis(false)
         }
-        return Value.create(mappings);
-      } catch (PlatformMappingParsingException e) {
-        throw new EvalException(e);
-      }
     }
 
-    private static final class EvalException extends SkyFunctionException {
-      EvalException(Exception cause) {
-        super(cause, Transience.PERSISTENT); // We can generalize the transience if/when needed.
-      }
+    @AutoCodec
+    internal class Key(mainRepoMapping: RepositoryMapping?, lines: com.google.common.collect.ImmutableList<String?>?) :
+        SkyKey {
+        private val mainRepoMapping: RepositoryMapping?
+        private val lines: com.google.common.collect.ImmutableList<String?>?
+
+        init {
+            this.mainRepoMapping = mainRepoMapping
+            this.lines = lines
+        }
+
+        fun mainRepoMapping(): RepositoryMapping? {
+            return mainRepoMapping
+        }
+
+        fun lines(): com.google.common.collect.ImmutableList<String?>? {
+            return lines
+        }
+
+        override fun hashCode(): Int {
+            return java.util.Objects.hash(mainRepoMapping, lines)
+        }
+
+        override fun equals(o: Any?): Boolean {
+            if (this === o) {
+                return true
+            }
+            if (o !is Key) {
+                return false
+            }
+            return mainRepoMapping == o.mainRepoMapping
+                    && lines == o.lines
+        }
+
+        public override fun functionName(): SkyFunctionName? {
+            return SKYFUNCTION_NAME
+        }
+
+        companion object {
+            fun create(
+                mainRepoMapping: RepositoryMapping?,
+                lines: com.google.common.collect.ImmutableList<String?>?
+            ): Key {
+                return com.google.devtools.build.lib.skyframe.config.PlatformMappingFunctionParserTest.Key(
+                    mainRepoMapping,
+                    lines
+                )
+            }
+        }
     }
-  }
 
-  private static final class CustomAnalysisMock extends AnalysisMock.Delegate {
+    internal class Value(mappings: Mappings?) : SkyValue {
+        private val mappings: Mappings?
 
-    CustomAnalysisMock() {
-      super(AnalysisMock.get());
+        init {
+            this.mappings = mappings
+        }
+
+        fun mappings(): Mappings? {
+            return mappings
+        }
+
+        companion object {
+            fun create(mappings: Mappings?): Value {
+                return com.google.devtools.build.lib.skyframe.config.PlatformMappingFunctionParserTest.Value(mappings)
+            }
+        }
     }
 
-    @Override
-    public ImmutableMap<SkyFunctionName, SkyFunction> getSkyFunctions(
-        BlazeDirectories directories) {
-      return ImmutableMap.<SkyFunctionName, SkyFunction>builder()
-          .putAll(super.getSkyFunctions(directories))
-          .put(SKYFUNCTION_NAME, new ParseMappingsFunction())
-          .buildOrThrow();
-    }
-  }
+    private class ParseMappingsFunction : SkyFunction {
+        @Throws(
+            java.lang.InterruptedException::class,
+            com.google.devtools.build.lib.skyframe.config.PlatformMappingFunctionParserTest.ParseMappingsFunction.EvalException::class
+        )
+        public override fun compute(skyKey: SkyKey, env: Environment?): Value? {
+            val key = skyKey.argument() as Key
+            try {
+                val mappings: Mappings? =
+                    PlatformMappingFunction.parse(
+                        env, key.lines(), RepoContext.of(RepositoryName.MAIN, key.mainRepoMapping())
+                    )
+                if (mappings == null) {
+                    return null
+                }
+                return com.google.devtools.build.lib.skyframe.config.PlatformMappingFunctionParserTest.Value.Companion.create(
+                    mappings
+                )
+            } catch (e: PlatformMappingParsingException) {
+                throw com.google.devtools.build.lib.skyframe.config.PlatformMappingFunctionParserTest.ParseMappingsFunction.EvalException(
+                    e
+                )
+            }
+        }
 
-  @Override
-  protected AnalysisMock getAnalysisMock() {
-    return new CustomAnalysisMock();
-  }
+        private class EvalException(cause: java.lang.Exception?) : SkyFunctionException(cause, Transience.PERSISTENT)
+    }
+
+    private class CustomAnalysisMock :
+        com.google.devtools.build.lib.analysis.util.AnalysisMock.Delegate(AnalysisMock.get()) {
+        public override fun getSkyFunctions(
+            directories: BlazeDirectories
+        ): com.google.common.collect.ImmutableMap<SkyFunctionName?, SkyFunction?> {
+            return com.google.common.collect.ImmutableMap.builder<SkyFunctionName?, SkyFunction?>()
+                .putAll(super.getSkyFunctions(directories))
+                .put(SKYFUNCTION_NAME, ParseMappingsFunction())
+                .buildOrThrow()
+        }
+    }
+
+    val analysisMock: AnalysisMock
+        get() = CustomAnalysisMock()
+
+    companion object {
+        private val PLATFORM1: Label? = Label.parseCanonicalUnchecked("//platforms:one")
+        private val PLATFORM2: Label? = Label.parseCanonicalUnchecked("//platforms:two")
+        private val EXTERNAL_PLATFORM: Label? = Label.parseCanonicalUnchecked("@dep+1.0//platforms:two")
+
+        private val SKYFUNCTION_NAME: SkyFunctionName? = SkyFunctionName.createHermetic("PARSE_MAPPINGS")
+    }
 }

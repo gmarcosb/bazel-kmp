@@ -11,56 +11,63 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.common.options;
+package com.google.devtools.common.options
 
-import static com.google.common.truth.Truth.assertThat;
+import Converter.Contextless
+import com.google.common.truth.Truth
+import com.google.devtools.common.options.Converter.Contextless
+import com.google.devtools.common.options.Converters.CommaSeparatedOptionListConverter
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import com.google.common.collect.ImmutableList;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** A test for [Converters.CommaSeparatedOptionListConverter].  */
+@RunWith(JUnit4::class)
+class CommaSeparatedOptionListConverterTest {
+    private val converter: Contextless<com.google.common.collect.ImmutableList<String?>?> =
+        CommaSeparatedOptionListConverter()
 
-/** A test for {@link Converters.CommaSeparatedOptionListConverter}. */
-@RunWith(JUnit4.class)
-public class CommaSeparatedOptionListConverterTest {
-  private final Converter.Contextless<ImmutableList<String>> converter =
-      new Converters.CommaSeparatedOptionListConverter();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun emptyStringYieldsEmptyList() {
+        Truth.assertThat(converter.convert("")).isEmpty()
+    }
 
-  @Test
-  public void emptyStringYieldsEmptyList() throws Exception {
-    assertThat(converter.convert("")).isEmpty();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun commaTwoEmptyStrings() {
+        Truth.assertThat(converter.convert(",")).containsExactly("", "").inOrder()
+    }
 
-  @Test
-  public void commaTwoEmptyStrings() throws Exception {
-    assertThat(converter.convert(",")).containsExactly("", "").inOrder();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun leadingCommaYieldsLeadingSpace() {
+        Truth.assertThat(converter.convert(",leading,comma"))
+            .containsExactly("", "leading", "comma").inOrder()
+    }
 
-  @Test
-  public void leadingCommaYieldsLeadingSpace() throws Exception {
-    assertThat(converter.convert(",leading,comma"))
-        .containsExactly("", "leading", "comma").inOrder();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun trailingCommaYieldsTrailingSpace() {
+        Truth.assertThat(converter.convert("trailing,comma,"))
+            .containsExactly("trailing", "comma", "").inOrder()
+    }
 
-  @Test
-  public void trailingCommaYieldsTrailingSpace() throws Exception {
-    assertThat(converter.convert("trailing,comma,"))
-        .containsExactly("trailing", "comma", "").inOrder();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun singleWord() {
+        Truth.assertThat(converter.convert("lonely")).containsExactly("lonely")
+    }
 
-  @Test
-  public void singleWord() throws Exception {
-    assertThat(converter.convert("lonely")).containsExactly("lonely");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun multiWords() {
+        Truth.assertThat(converter.convert("one,two,three"))
+            .containsExactly("one", "two", "three").inOrder()
+    }
 
-  @Test
-  public void multiWords() throws Exception {
-    assertThat(converter.convert("one,two,three"))
-        .containsExactly("one", "two", "three").inOrder();
-  }
-
-  @Test
-  public void spaceIsIgnored() throws Exception {
-    assertThat(converter.convert("one two three")).containsExactly("one two three");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun spaceIsIgnored() {
+        Truth.assertThat(converter.convert("one two three")).containsExactly("one two three")
+    }
 }

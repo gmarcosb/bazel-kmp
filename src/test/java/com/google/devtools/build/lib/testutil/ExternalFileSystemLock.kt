@@ -11,60 +11,60 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.testutil;
+package com.google.devtools.build.lib.testutil
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.shell.Subprocess;
-import com.google.devtools.build.lib.shell.SubprocessBuilder;
-import com.google.devtools.build.lib.shell.WindowsSubprocessFactory;
-import com.google.devtools.build.lib.util.OS;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.runfiles.Runfiles;
-import java.io.IOException;
+import com.google.devtools.build.lib.shell.Subprocess
 
 /**
  * Runs an external process that holds a shared or exclusive lock on a file.
- *
- * <p>This is needed for testing because the JVM does not allow overlapping locks.
+ * 
+ * 
+ * This is needed for testing because the JVM does not allow overlapping locks.
  */
-public class ExternalFileSystemLock implements AutoCloseable {
-  static {
-    WindowsSubprocessFactory.maybeInstallWindowsSubprocessFactory();
-  }
+class ExternalFileSystemLock private constructor(lockPath: Path, shared: Boolean) : java.lang.AutoCloseable {
+    private val subprocess: Subprocess
 
-  private static final String HELPER_PATH =
-      "io_bazel/src/test/java/com/google/devtools/build/lib/testutil/external_file_system_lock_helper"
-          + (OS.getCurrent() == OS.WINDOWS ? ".exe" : "");
-
-  private final Subprocess subprocess;
-
-  public static ExternalFileSystemLock getShared(Path lockPath) throws IOException {
-    return new ExternalFileSystemLock(lockPath, true);
-  }
-
-  public static ExternalFileSystemLock getExclusive(Path lockPath) throws IOException {
-    return new ExternalFileSystemLock(lockPath, false);
-  }
-
-  private ExternalFileSystemLock(Path lockPath, boolean shared) throws IOException {
-    String binaryPath = Runfiles.preload().withSourceRepository("").rlocation(HELPER_PATH);
-    this.subprocess =
-        new SubprocessBuilder(System.getenv())
-            .setArgv(
-                ImmutableList.of(
-                    binaryPath, lockPath.getPathString(), shared ? "shared" : "exclusive", "sleep"))
-            .start();
-    // Wait for child to report that the lock has been acquired.
-    // We could read the entire stdout/stderr here to obtain additional debugging information,
-    // but for some reason that hangs forever on Windows, even if we close them on the child side.
-    if (subprocess.inputStream.read() != '!') {
-      throw new IOException("external helper process failed");
+    init {
+        val binaryPath: String? = Runfiles.preload().withSourceRepository("").rlocation(HELPER_PATH)
+        this.subprocess =
+            SubprocessBuilder(java.lang.System.getenv())
+                .setArgv(
+                    com.google.common.collect.ImmutableList.of<E?>(
+                        binaryPath, lockPath.getPathString(), if (shared) "shared" else "exclusive", "sleep"
+                    )
+                )
+                .start()
+        // Wait for child to report that the lock has been acquired.
+        // We could read the entire stdout/stderr here to obtain additional debugging information,
+        // but for some reason that hangs forever on Windows, even if we close them on the child side.
+        if (subprocess.inputStream.read() !== '!') {
+            throw IOException("external helper process failed")
+        }
     }
-  }
 
-  @Override
-  public void close() throws IOException {
-    // Wait for process to exit and release the lock.
-    subprocess.destroyAndWait();
-  }
+    @Throws(IOException::class)
+    override fun close() {
+        // Wait for process to exit and release the lock.
+        subprocess.destroyAndWait()
+    }
+
+    companion object {
+        init {
+            WindowsSubprocessFactory.maybeInstallWindowsSubprocessFactory()
+        }
+
+        private val HELPER_PATH =
+            ("io_bazel/src/test/java/com/google/devtools/build/lib/testutil/external_file_system_lock_helper"
+                    + (if (OS.getCurrent() === OS.WINDOWS) ".exe" else ""))
+
+        @Throws(IOException::class)
+        fun getShared(lockPath: Path): ExternalFileSystemLock {
+            return ExternalFileSystemLock(lockPath, true)
+        }
+
+        @Throws(IOException::class)
+        fun getExclusive(lockPath: Path): ExternalFileSystemLock {
+            return ExternalFileSystemLock(lockPath, false)
+        }
+    }
 }

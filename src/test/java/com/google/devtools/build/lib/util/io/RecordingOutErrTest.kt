@@ -11,51 +11,46 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util.io;
+package com.google.devtools.build.lib.util.io
 
-import static com.google.common.truth.Truth.assertThat;
-
-import java.io.PrintWriter;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.io.PrintWriter
 
 /**
- * A test for {@link RecordingOutErr}.
+ * A test for [RecordingOutErr].
  */
-@RunWith(JUnit4.class)
-public class RecordingOutErrTest {
+@RunWith(JUnit4::class)
+class RecordingOutErrTest {
+    protected val recordingOutErr: RecordingOutErr
+        get() = RecordingOutErr()
 
-  protected RecordingOutErr getRecordingOutErr() {
-    return new RecordingOutErr();
-  }
+    @Test
+    fun testRecordingOutErrRecords() {
+        val outErr: RecordingOutErr = this.recordingOutErr
 
-  @Test
-  public void testRecordingOutErrRecords() {
-    RecordingOutErr outErr = getRecordingOutErr();
+        outErr.printOut("Test")
+        outErr.printOutLn("out1")
+        var writer: PrintWriter = PrintWriter(outErr.getOutputStream())
+        writer.println("Testout2")
+        writer.flush()
 
-    outErr.printOut("Test");
-    outErr.printOutLn("out1");
-    PrintWriter writer = new PrintWriter(outErr.getOutputStream());
-    writer.println("Testout2");
-    writer.flush();
+        outErr.printErr("Test")
+        outErr.printErrLn("err1")
+        writer = PrintWriter(outErr.getErrorStream())
+        writer.println("Testerr2")
+        writer.flush()
 
-    outErr.printErr("Test");
-    outErr.printErrLn("err1");
-    writer = new PrintWriter(outErr.getErrorStream());
-    writer.println("Testerr2");
-    writer.flush();
+        assertThat(outErr.outAsLatin1()).isEqualTo("Testout1\nTestout2\n")
+        assertThat(outErr.errAsLatin1()).isEqualTo("Testerr1\nTesterr2\n")
 
-    assertThat(outErr.outAsLatin1()).isEqualTo("Testout1\nTestout2\n");
-    assertThat(outErr.errAsLatin1()).isEqualTo("Testerr1\nTesterr2\n");
+        assertThat(outErr.hasRecordedOutput()).isTrue()
 
-    assertThat(outErr.hasRecordedOutput()).isTrue();
+        outErr.reset()
 
-    outErr.reset();
-
-    assertThat(outErr.outAsLatin1()).isEmpty();
-    assertThat(outErr.errAsLatin1()).isEmpty();
-    assertThat(outErr.hasRecordedOutput()).isFalse();
-  }
-
+        assertThat(outErr.outAsLatin1()).isEmpty()
+        assertThat(outErr.errAsLatin1()).isEmpty()
+        assertThat(outErr.hasRecordedOutput()).isFalse()
+    }
 }

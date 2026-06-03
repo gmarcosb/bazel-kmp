@@ -11,127 +11,132 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.genquery
 
-package com.google.devtools.build.lib.rules.genquery;
+import com.google.devtools.build.lib.rules.genquery.GenQueryOutputStream.GenQueryResult
+import org.junit.Test
+import java.io.ByteArrayOutputStream
+import java.nio.charset.StandardCharsets
 
-import static com.google.common.truth.Truth.assertThat;
+/** Tests for [GenQueryOutputStream].  */
+@RunWith(TestParameterInjector::class)
+class GenQueryOutputStreamTest {
+    @TestParameter
+    private val outputCompressed = false
 
-import com.google.devtools.build.lib.rules.genquery.GenQueryOutputStream.GenQueryResult;
-import com.google.devtools.build.lib.util.Fingerprint;
-import com.google.protobuf.ByteString;
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.util.zip.GZIPOutputStream;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-
-/** Tests for {@link GenQueryOutputStream}. */
-@RunWith(TestParameterInjector.class)
-public class GenQueryOutputStreamTest {
-
-  @TestParameter private boolean outputCompressed;
-
-  @Test
-  public void testSmallOutputMultibyteWrite() throws IOException {
-    runMultibyteWriteTest(
-        "xyz".repeat(10_000), GenQueryOutputStream.SimpleResult.class, outputCompressed);
-  }
-
-  @Test
-  public void testBigOutputMultibyteWrite() throws IOException {
-    runMultibyteWriteTest(
-        "xyz".repeat(1_000_000),
-        outputCompressed
-            ? GenQueryOutputStream.SimpleResult.class
-            : GenQueryOutputStream.CompressedResultWithDecompressedOutput.class,
-        outputCompressed);
-  }
-
-  @Test
-  public void testSmallOutputSingleByteWrites() throws IOException {
-    runSingleByteWriteTest(
-        "xyz".repeat(10_000), GenQueryOutputStream.SimpleResult.class, outputCompressed);
-  }
-
-  @Test
-  public void testBigOutputSingleByteWrites() throws IOException {
-    runSingleByteWriteTest(
-        "xyz".repeat(1_000_000),
-        outputCompressed
-            ? GenQueryOutputStream.SimpleResult.class
-            : GenQueryOutputStream.CompressedResultWithDecompressedOutput.class,
-        outputCompressed);
-  }
-
-  private static void runMultibyteWriteTest(
-      String data, Class<? extends GenQueryResult> resultClass, boolean outputCompressed)
-      throws IOException {
-    GenQueryOutputStream underTest = new GenQueryOutputStream(outputCompressed);
-    underTest.write(data.getBytes(StandardCharsets.UTF_8));
-    underTest.close();
-
-    verifyGenQueryResult(underTest.getResult(), data, resultClass, outputCompressed);
-  }
-
-  private static void runSingleByteWriteTest(
-      String data, Class<? extends GenQueryResult> resultClass, boolean outputCompressed)
-      throws IOException {
-    GenQueryOutputStream underTest = new GenQueryOutputStream(outputCompressed);
-    for (byte b : data.getBytes(StandardCharsets.UTF_8)) {
-      underTest.write(b);
+    @Test
+    @Throws(IOException::class)
+    fun testSmallOutputMultibyteWrite() {
+        runMultibyteWriteTest(
+            "xyz".repeat(10000), GenQueryOutputStream.SimpleResult::class.java, outputCompressed
+        )
     }
-    underTest.close();
 
-    verifyGenQueryResult(underTest.getResult(), data, resultClass, outputCompressed);
-  }
-
-  private static void verifyGenQueryResult(
-      GenQueryOutputStream.GenQueryResult result,
-      String data,
-      Class<? extends GenQueryResult> resultClass,
-      boolean outputCompressed)
-      throws IOException {
-    assertThat(result).isInstanceOf(resultClass);
-
-    if (outputCompressed) {
-      // If result is actually compressed, also compress input data so that it is comparable to what
-      // is outputted from GenQueryResult.
-      ByteString dataInByteString = ByteString.copyFromUtf8(data);
-      ByteString.Output compressedDataBytesOut = ByteString.newOutput();
-      GZIPOutputStream gzipDataOut = new GZIPOutputStream(compressedDataBytesOut);
-      dataInByteString.writeTo(gzipDataOut);
-      gzipDataOut.finish();
-      ByteString dataCompressedInByteString = compressedDataBytesOut.toByteString();
-
-      assertThat(result.bytes).isEqualTo(dataCompressedInByteString);
-
-      Fingerprint actualFingerprint = new Fingerprint();
-      result.fingerprint(actualFingerprint);
-      Fingerprint expectFingerprint = new Fingerprint();
-      expectFingerprint.addBytes(dataCompressedInByteString);
-      assertThat(actualFingerprint.hexDigestAndReset())
-          .isEqualTo(expectFingerprint.hexDigestAndReset());
-
-      ByteArrayOutputStream bytesOut = new ByteArrayOutputStream();
-      result.writeTo(bytesOut);
-      assertThat(bytesOut.toByteArray()).isEqualTo(dataCompressedInByteString.toByteArray());
-    } else {
-      assertThat(result.bytes).isEqualTo(ByteString.copyFromUtf8(data));
-      assertThat(result.size()).isEqualTo(data.length());
-
-      Fingerprint actualFingerprint = new Fingerprint();
-      result.fingerprint(actualFingerprint);
-      Fingerprint expectFingerprint = new Fingerprint();
-      expectFingerprint.addBytes(data.getBytes(StandardCharsets.UTF_8));
-      assertThat(actualFingerprint.hexDigestAndReset())
-          .isEqualTo(expectFingerprint.hexDigestAndReset());
-
-      ByteArrayOutputStream bytesOut = new ByteArrayOutputStream();
-      result.writeTo(bytesOut);
-      assertThat(new String(bytesOut.toByteArray(), StandardCharsets.UTF_8)).isEqualTo(data);
+    @Test
+    @Throws(IOException::class)
+    fun testBigOutputMultibyteWrite() {
+        runMultibyteWriteTest(
+            "xyz".repeat(1000000),
+            if (outputCompressed)
+                GenQueryOutputStream.SimpleResult::class.java
+            else
+                GenQueryOutputStream.CompressedResultWithDecompressedOutput::class.java,
+            outputCompressed
+        )
     }
-  }
+
+    @Test
+    @Throws(IOException::class)
+    fun testSmallOutputSingleByteWrites() {
+        runSingleByteWriteTest(
+            "xyz".repeat(10000), GenQueryOutputStream.SimpleResult::class.java, outputCompressed
+        )
+    }
+
+    @Test
+    @Throws(IOException::class)
+    fun testBigOutputSingleByteWrites() {
+        runSingleByteWriteTest(
+            "xyz".repeat(1000000),
+            if (outputCompressed)
+                GenQueryOutputStream.SimpleResult::class.java
+            else
+                GenQueryOutputStream.CompressedResultWithDecompressedOutput::class.java,
+            outputCompressed
+        )
+    }
+
+    companion object {
+        @Throws(IOException::class)
+        private fun runMultibyteWriteTest(
+            data: String, resultClass: Class<out GenQueryResult?>?, outputCompressed: Boolean
+        ) {
+            val underTest: GenQueryOutputStream = GenQueryOutputStream(outputCompressed)
+            underTest.write(data.toByteArray(StandardCharsets.UTF_8))
+            underTest.close()
+
+            verifyGenQueryResult(underTest.getResult(), data, resultClass, outputCompressed)
+        }
+
+        @Throws(IOException::class)
+        private fun runSingleByteWriteTest(
+            data: String, resultClass: Class<out GenQueryResult?>?, outputCompressed: Boolean
+        ) {
+            val underTest: GenQueryOutputStream = GenQueryOutputStream(outputCompressed)
+            for (b in data.toByteArray(StandardCharsets.UTF_8)) {
+                underTest.write(b)
+            }
+            underTest.close()
+
+            verifyGenQueryResult(underTest.getResult(), data, resultClass, outputCompressed)
+        }
+
+        @Throws(IOException::class)
+        private fun verifyGenQueryResult(
+            result: GenQueryOutputStream.GenQueryResult,
+            data: String,
+            resultClass: Class<out GenQueryResult?>?,
+            outputCompressed: Boolean
+        ) {
+            assertThat(result).isInstanceOf(resultClass)
+
+            if (outputCompressed) {
+                // If result is actually compressed, also compress input data so that it is comparable to what
+                // is outputted from GenQueryResult.
+                val dataInByteString: ByteString = ByteString.copyFromUtf8(data)
+                val compressedDataBytesOut: ByteString.Output = ByteString.newOutput()
+                val gzipDataOut: GZIPOutputStream = GZIPOutputStream(compressedDataBytesOut)
+                dataInByteString.writeTo(gzipDataOut)
+                gzipDataOut.finish()
+                val dataCompressedInByteString: ByteString = compressedDataBytesOut.toByteString()
+
+                assertThat(result.bytes).isEqualTo(dataCompressedInByteString)
+
+                val actualFingerprint: Fingerprint = Fingerprint()
+                result.fingerprint(actualFingerprint)
+                val expectFingerprint: Fingerprint = Fingerprint()
+                expectFingerprint.addBytes(dataCompressedInByteString)
+                assertThat(actualFingerprint.hexDigestAndReset())
+                    .isEqualTo(expectFingerprint.hexDigestAndReset())
+
+                val bytesOut = ByteArrayOutputStream()
+                result.writeTo(bytesOut)
+                Truth.assertThat(bytesOut.toByteArray()).isEqualTo(dataCompressedInByteString.toByteArray())
+            } else {
+                assertThat(result.bytes).isEqualTo(ByteString.copyFromUtf8(data))
+                assertThat(result.size()).isEqualTo(data.length)
+
+                val actualFingerprint: Fingerprint = Fingerprint()
+                result.fingerprint(actualFingerprint)
+                val expectFingerprint: Fingerprint = Fingerprint()
+                expectFingerprint.addBytes(data.toByteArray(StandardCharsets.UTF_8))
+                assertThat(actualFingerprint.hexDigestAndReset())
+                    .isEqualTo(expectFingerprint.hexDigestAndReset())
+
+                val bytesOut = ByteArrayOutputStream()
+                result.writeTo(bytesOut)
+                Truth.assertThat(String(bytesOut.toByteArray(), StandardCharsets.UTF_8)).isEqualTo(data)
+            }
+        }
+    }
 }

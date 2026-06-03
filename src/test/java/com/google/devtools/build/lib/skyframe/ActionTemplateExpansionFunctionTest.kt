@@ -11,555 +11,538 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.actions.Action
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableListMultimap;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.actions.Action;
-import com.google.devtools.build.lib.actions.ActionAnalysisMetadata;
-import com.google.devtools.build.lib.actions.ActionConflictException;
-import com.google.devtools.build.lib.actions.ActionExecutionContext;
-import com.google.devtools.build.lib.actions.ActionKeyContext;
-import com.google.devtools.build.lib.actions.ActionLookupData;
-import com.google.devtools.build.lib.actions.ActionLookupKey;
-import com.google.devtools.build.lib.actions.ActionLookupValue;
-import com.google.devtools.build.lib.actions.ActionOwner;
-import com.google.devtools.build.lib.actions.ActionTemplate;
-import com.google.devtools.build.lib.actions.Actions;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.Artifact.DerivedArtifact;
-import com.google.devtools.build.lib.actions.Artifact.SpecialArtifact;
-import com.google.devtools.build.lib.actions.Artifact.SpecialArtifactType;
-import com.google.devtools.build.lib.actions.Artifact.TreeFileArtifact;
-import com.google.devtools.build.lib.actions.ArtifactOwner;
-import com.google.devtools.build.lib.actions.ArtifactRoot;
-import com.google.devtools.build.lib.actions.ArtifactRoot.RootType;
-import com.google.devtools.build.lib.actions.BasicActionLookupValue;
-import com.google.devtools.build.lib.actions.FileArtifactValue;
-import com.google.devtools.build.lib.actions.InputMetadataProvider;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
-import com.google.devtools.build.lib.actions.util.InjectedActionLookupKey;
-import com.google.devtools.build.lib.actions.util.TestAction.DummyAction;
-import com.google.devtools.build.lib.analysis.actions.CustomCommandLine;
-import com.google.devtools.build.lib.analysis.actions.SpawnActionTemplate;
-import com.google.devtools.build.lib.analysis.actions.SpawnActionTemplate.OutputPathMapper;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.events.EventHandler;
-import com.google.devtools.build.lib.events.NullEventHandler;
-import com.google.devtools.build.lib.pkgcache.PathPackageLocator;
-import com.google.devtools.build.lib.skyframe.ActionTemplateExpansionValue.ActionTemplateExpansionKey;
-import com.google.devtools.build.lib.testutil.FoundationTestCase;
-import com.google.devtools.build.lib.util.Fingerprint;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.skyframe.Differencer.DiffWithDelta.Delta;
-import com.google.devtools.build.skyframe.EvaluationContext;
-import com.google.devtools.build.skyframe.EvaluationResult;
-import com.google.devtools.build.skyframe.InMemoryMemoizingEvaluator;
-import com.google.devtools.build.skyframe.MemoizingEvaluator;
-import com.google.devtools.build.skyframe.SequencedRecordingDifferencer;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.util.Collection;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
-import javax.annotation.Nullable;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [ActionTemplateExpansionFunction].  */
+@RunWith(JUnit4::class)
+class ActionTemplateExpansionFunctionTest : FoundationTestCase() {
+    private val artifactValueMap: MutableMap<Artifact?, TreeArtifactValue?> =
+        LinkedHashMap<Artifact?, TreeArtifactValue?>()
+    private val differencer: SequencedRecordingDifferencer = SequencedRecordingDifferencer()
+    private val evaluator: MemoizingEvaluator = InMemoryMemoizingEvaluator(
+        com.google.common.collect.ImmutableMap.of<K?, V?>(
+            Artifact.ARTIFACT,
+            DummyArtifactFunction(artifactValueMap),
+            SkyFunctions.ACTION_TEMPLATE_EXPANSION,
+            ActionTemplateExpansionFunction(ActionKeyContext())
+        ),
+        differencer
+    )
 
-/** Tests for {@link ActionTemplateExpansionFunction}. */
-@RunWith(JUnit4.class)
-public final class ActionTemplateExpansionFunctionTest extends FoundationTestCase  {
-
-  private final Map<Artifact, TreeArtifactValue> artifactValueMap = new LinkedHashMap<>();
-  private final SequencedRecordingDifferencer differencer = new SequencedRecordingDifferencer();
-  private final MemoizingEvaluator evaluator =
-      new InMemoryMemoizingEvaluator(
-          ImmutableMap.of(
-              Artifact.ARTIFACT,
-              new DummyArtifactFunction(artifactValueMap),
-              SkyFunctions.ACTION_TEMPLATE_EXPANSION,
-              new ActionTemplateExpansionFunction(new ActionKeyContext())),
-          differencer);
-
-  @Before
-  public void setUp() {
-    PrecomputedValue.BUILD_ID.set(differencer, UUID.randomUUID());
-    PrecomputedValue.PATH_PACKAGE_LOCATOR.set(
-        differencer,
-        new PathPackageLocator(
-            rootDirectory.getFileSystem().getPath("/outputbase"),
-            ImmutableList.of(Root.fromPath(rootDirectory)),
-            BazelSkyframeExecutorConstants.BUILD_FILES_BY_PRIORITY));
-  }
-
-  @Test
-  public void testActionTemplateExpansionFunction() throws Exception {
-    SpecialArtifact inputTreeArtifact =
-        createAndPopulateTreeArtifact("inputTreeArtifact", "child0", "child1", "child2");
-    SpecialArtifact outputTreeArtifact = createTreeArtifact("outputTreeArtifact");
-
-    SpawnActionTemplate spawnActionTemplate = ActionsTestUtil.createDummySpawnActionTemplate(
-        inputTreeArtifact, outputTreeArtifact);
-    List<Action> actions = evaluate(spawnActionTemplate);
-    assertThat(actions).hasSize(3);
-
-    ArtifactOwner owner = ActionTemplateExpansionValue.key(CTKEY, 0);
-    int i = 0;
-    for (Action action : actions) {
-      String childName = "child" + i;
-      assertThat(Artifact.asExecPaths(action.getInputs()))
-          .contains("out/inputTreeArtifact/" + childName);
-      assertThat(Artifact.asExecPaths(action.getOutputs()))
-          .containsExactly("out/outputTreeArtifact/" + childName);
-      assertThat(Iterables.getOnlyElement(action.getOutputs()).getArtifactOwner()).isEqualTo(owner);
-      ++i;
+    @Before
+    fun setUp() {
+        PrecomputedValue.BUILD_ID.set(differencer, UUID.randomUUID())
+        PrecomputedValue.PATH_PACKAGE_LOCATOR.set(
+            differencer,
+            PathPackageLocator(
+                rootDirectory.getFileSystem().getPath("/outputbase"),
+                com.google.common.collect.ImmutableList.of<E?>(Root.fromPath(rootDirectory)),
+                BazelSkyframeExecutorConstants.BUILD_FILES_BY_PRIORITY
+            )
+        )
     }
-  }
 
-  @Test
-  public void testThrowsOnActionConflict() throws Exception {
-    SpecialArtifact inputTreeArtifact =
-        createAndPopulateTreeArtifact("inputTreeArtifact", "child0", "child1", "child2");
-    SpecialArtifact outputTreeArtifact = createTreeArtifact("outputTreeArtifact");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testActionTemplateExpansionFunction() {
+        val inputTreeArtifact: SpecialArtifact =
+            createAndPopulateTreeArtifact("inputTreeArtifact", "child0", "child1", "child2")
+        val outputTreeArtifact: SpecialArtifact = createTreeArtifact("outputTreeArtifact")
 
-    OutputPathMapper mapper = artifact -> PathFragment.create("conflict_path");
-    SpawnActionTemplate spawnActionTemplate =
-        new SpawnActionTemplate.Builder(inputTreeArtifact, outputTreeArtifact)
-            .setExecutable(PathFragment.create("/bin/cp"))
-            .setCommandLineTemplate(CustomCommandLine.builder().build())
-            .setOutputPathMapper(mapper)
-            .build(ActionsTestUtil.NULL_ACTION_OWNER);
+        val spawnActionTemplate: SpawnActionTemplate = ActionsTestUtil.createDummySpawnActionTemplate(
+            inputTreeArtifact, outputTreeArtifact
+        )
+        val actions: MutableList<Action> = evaluate(spawnActionTemplate)
+        Truth.assertThat(actions).hasSize(3)
 
-    ActionConflictException e =
-        assertThrows(ActionConflictException.class, () -> evaluate(spawnActionTemplate));
-    assertThat(e)
-        .hasMessageThat()
-        .contains(
-            "file 'outputTreeArtifact/conflict_path' is generated by these conflicting actions");
-  }
+        val owner: ArtifactOwner? = ActionTemplateExpansionValue.key(CTKEY, 0)
+        var i = 0
+        for (action in actions) {
+            val childName = "child" + i
+            com.google.common.truth.Subject.contains("out/inputTreeArtifact/" + childName)
+            assertThat(Artifact.asExecPaths(action.getOutputs()))
+                .containsExactly("out/outputTreeArtifact/" + childName)
+            assertThat(
+                com.google.common.collect.Iterables.getOnlyElement<T?>(action.getOutputs()).getArtifactOwner()
+            ).isEqualTo(owner)
+            ++i
+        }
+    }
 
-  @Test
-  public void testThrowsOnArtifactPrefixConflict() throws Exception {
-    SpecialArtifact inputTreeArtifact =
-        createAndPopulateTreeArtifact("inputTreeArtifact", "child0", "child1", "child2");
-    SpecialArtifact outputTreeArtifact = createTreeArtifact("outputTreeArtifact");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testThrowsOnActionConflict() {
+        val inputTreeArtifact: SpecialArtifact =
+            createAndPopulateTreeArtifact("inputTreeArtifact", "child0", "child1", "child2")
+        val outputTreeArtifact: SpecialArtifact = createTreeArtifact("outputTreeArtifact")
 
-    OutputPathMapper mapper =
-        new OutputPathMapper() {
-          private int i = 0;
+        val mapper: OutputPathMapper = OutputPathMapper { artifact -> PathFragment.create("conflict_path") }
+        val spawnActionTemplate: SpawnActionTemplate =
+            Builder(inputTreeArtifact, outputTreeArtifact)
+                .setExecutable(PathFragment.create("/bin/cp"))
+                .setCommandLineTemplate(CustomCommandLine.builder().build())
+                .setOutputPathMapper(mapper)
+                .build(ActionsTestUtil.NULL_ACTION_OWNER)
 
-          @Override
-          public PathFragment parentRelativeOutputPath(TreeFileArtifact inputTreeFileArtifact) {
-            PathFragment path =
-                switch (i) {
-                  case 0 -> PathFragment.create("path_prefix");
-                  case 1 -> PathFragment.create("path_prefix/conflict");
-                  default -> inputTreeFileArtifact.getParentRelativePath();
-                };
-            ++i;
-            return path;
-          }
-        };
-    SpawnActionTemplate spawnActionTemplate =
-        new SpawnActionTemplate.Builder(inputTreeArtifact, outputTreeArtifact)
-            .setExecutable(PathFragment.create("/bin/cp"))
-            .setCommandLineTemplate(CustomCommandLine.builder().build())
-            .setOutputPathMapper(mapper)
-            .build(ActionsTestUtil.NULL_ACTION_OWNER);
+        val e: ActionConflictException? =
+            org.junit.Assert.assertThrows<T?>(
+                ActionConflictException::class.java,
+                org.junit.function.ThrowingRunnable { evaluate(spawnActionTemplate) })
+        assertThat(e)
+            .hasMessageThat()
+            .contains(
+                "file 'outputTreeArtifact/conflict_path' is generated by these conflicting actions"
+            )
+    }
 
-    ActionConflictException e =
-        assertThrows(ActionConflictException.class, () -> evaluate(spawnActionTemplate));
-    assertThat(e).hasMessageThat().contains("is a prefix of the other");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testThrowsOnArtifactPrefixConflict() {
+        val inputTreeArtifact: SpecialArtifact =
+            createAndPopulateTreeArtifact("inputTreeArtifact", "child0", "child1", "child2")
+        val outputTreeArtifact: SpecialArtifact = createTreeArtifact("outputTreeArtifact")
 
-  @Test
-  public void cannotDeclareNonTreeOutput() throws Exception {
-    SpecialArtifact inputTree = createAndPopulateTreeArtifact("input", "child");
-    SpecialArtifact outputTree = createTreeArtifact("output");
+        val mapper: OutputPathMapper =
+            object : OutputPathMapper() {
+                private var i = 0
 
-    ActionTemplate<DummyAction> template =
-        new TestActionTemplate(inputTree, outputTree) {
-          @Override
-          public ImmutableList<DummyAction> generateActionsForInputArtifacts(
-              ImmutableList<TreeFileArtifact> inputTreeFileArtifacts,
-              ActionLookupKey artifactOwner,
-              EventHandler eventHandler) {
-            return ImmutableList.of();
-          }
-
-          @Override
-          public ImmutableSet<Artifact> getOutputs() {
-            return ImmutableSet.of(
-                outputTree,
-                DerivedArtifact.create(
-                    outputTree.getRoot(),
-                    outputTree.getRoot().getExecPath().getRelative("not_tree"),
-                    outputTree.getArtifactOwner()));
-          }
-        };
-
-    Exception e = assertThrows(RuntimeException.class, () -> evaluate(template));
-    assertThat(e).hasCauseThat().isInstanceOf(IllegalStateException.class);
-    assertThat(e)
-        .hasCauseThat()
-        .hasMessageThat()
-        .contains(template + " declares an output which is not a tree artifact");
-  }
-
-  @Test
-  public void cannotGenerateOutputWithWrongOwner() throws Exception {
-    SpecialArtifact inputTree = createAndPopulateTreeArtifact("input", "child");
-    SpecialArtifact outputTree = createTreeArtifact("output");
-
-    ActionTemplate<DummyAction> template =
-        new TestActionTemplate(inputTree, outputTree) {
-          @Override
-          public ImmutableList<DummyAction> generateActionsForInputArtifacts(
-              ImmutableList<TreeFileArtifact> inputTreeFileArtifacts,
-              ActionLookupKey artifactOwner,
-              EventHandler eventHandler) {
-            TreeFileArtifact input = Iterables.getOnlyElement(inputTreeFileArtifacts);
-            TreeFileArtifact outputWithWrongOwner =
-                TreeFileArtifact.createTemplateExpansionOutput(
-                    outputTree, "child", ActionsTestUtil.NULL_TEMPLATE_EXPANSION_ARTIFACT_OWNER);
-            assertThat(outputWithWrongOwner.getArtifactOwner()).isNotEqualTo(artifactOwner);
-            return ImmutableList.of(new DummyAction(input, outputWithWrongOwner));
-          }
-        };
-
-    Exception e = assertThrows(RuntimeException.class, () -> evaluate(template));
-    assertThat(e).hasCauseThat().isInstanceOf(IllegalStateException.class);
-    assertThat(e)
-        .hasCauseThat()
-        .hasMessageThat()
-        .contains(template + " generated an action with an output owned by the wrong owner");
-  }
-
-  @Test
-  public void cannotGenerateNonTreeFileArtifactOutput() throws Exception {
-    SpecialArtifact inputTree = createAndPopulateTreeArtifact("input", "child");
-    SpecialArtifact outputTree = createTreeArtifact("output");
-
-    ActionTemplate<DummyAction> template =
-        new TestActionTemplate(inputTree, outputTree) {
-          @Override
-          public ImmutableList<DummyAction> generateActionsForInputArtifacts(
-              ImmutableList<TreeFileArtifact> inputTreeFileArtifacts,
-              ActionLookupKey artifactOwner,
-              EventHandler eventHandler) {
-            TreeFileArtifact input = Iterables.getOnlyElement(inputTreeFileArtifacts);
-            Artifact notTreeFileArtifact =
-                DerivedArtifact.create(
-                    input.getRoot(),
-                    input.getRoot().getExecPath().getRelative("a.txt"),
-                    artifactOwner);
-            assertThat(notTreeFileArtifact.isTreeArtifact()).isFalse();
-            return ImmutableList.of(new DummyAction(input, notTreeFileArtifact));
-          }
-        };
-
-    Exception e = assertThrows(RuntimeException.class, () -> evaluate(template));
-    assertThat(e).hasCauseThat().isInstanceOf(IllegalStateException.class);
-    assertThat(e)
-        .hasCauseThat()
-        .hasMessageThat()
-        .contains(template + " generated an action which outputs a non-TreeFileArtifact");
-  }
-
-  @Test
-  public void cannotGenerateOutputUnderUndeclaredTree() throws Exception {
-    SpecialArtifact inputTree = createAndPopulateTreeArtifact("input", "child");
-    SpecialArtifact outputTree = createTreeArtifact("output");
-
-    ActionTemplate<DummyAction> template =
-        new TestActionTemplate(inputTree, outputTree) {
-          @Override
-          public ImmutableList<DummyAction> generateActionsForInputArtifacts(
-              ImmutableList<TreeFileArtifact> inputTreeFileArtifacts,
-              ActionLookupKey artifactOwner,
-              EventHandler eventHandler) {
-            TreeFileArtifact input = Iterables.getOnlyElement(inputTreeFileArtifacts);
-            TreeFileArtifact outputUnderWrongTree =
-                TreeFileArtifact.createTemplateExpansionOutput(
-                    createTreeArtifact("undeclared"), "child", artifactOwner);
-            return ImmutableList.of(new DummyAction(input, outputUnderWrongTree));
-          }
-        };
-
-    Exception e = assertThrows(RuntimeException.class, () -> evaluate(template));
-    assertThat(e).hasCauseThat().isInstanceOf(IllegalStateException.class);
-    assertThat(e)
-        .hasCauseThat()
-        .hasMessageThat()
-        .contains(
-            template
-                + " generated an action with an output File:[[<execution_root>]out]undeclared/child"
-                + " under an undeclared tree not in [File:[[<execution_root>]out]output]");
-  }
-
-  @Test
-  public void canGenerateOutputUnderAdditionalDeclaredTree() throws Exception {
-    SpecialArtifact inputTree = createAndPopulateTreeArtifact("input", "child");
-    SpecialArtifact outputTree = createTreeArtifact("output");
-    SpecialArtifact additionalOutputTree = createTreeArtifact("additional_output");
-
-    ActionTemplate<DummyAction> template =
-        new TestActionTemplate(inputTree, outputTree) {
-          @Override
-          public ImmutableList<DummyAction> generateActionsForInputArtifacts(
-              ImmutableList<TreeFileArtifact> inputTreeFileArtifacts,
-              ActionLookupKey artifactOwner,
-              EventHandler eventHandler) {
-            TreeFileArtifact input = Iterables.getOnlyElement(inputTreeFileArtifacts);
-            return ImmutableList.of(
-                new DummyAction(
-                    input,
-                    TreeFileArtifact.createTemplateExpansionOutput(
-                        outputTree, "child", artifactOwner)),
-                new DummyAction(
-                    input,
-                    TreeFileArtifact.createTemplateExpansionOutput(
-                        additionalOutputTree, "additional_child", artifactOwner)));
-          }
-
-          @Override
-          public ImmutableSet<Artifact> getOutputs() {
-            return ImmutableSet.of(outputTree, additionalOutputTree);
-          }
-        };
-
-    evaluate(template);
-  }
-
-  @Test
-  public void canUseMultipleInputTrees() throws Exception {
-    SpecialArtifact inputTree1 = createAndPopulateTreeArtifact("input1", "child1", "child2");
-    SpecialArtifact inputTree2 = createAndPopulateTreeArtifact("input2", "child1", "child2");
-    SpecialArtifact outputTree = createTreeArtifact("output");
-
-    ActionTemplate<DummyAction> template =
-        new TestActionTemplate(ImmutableList.of(inputTree1, inputTree2), outputTree) {
-          @Override
-          public ImmutableList<DummyAction> generateActionsForInputArtifacts(
-              ImmutableList<TreeFileArtifact> inputTreeFileArtifacts,
-              ActionLookupKey artifactOwner,
-              EventHandler eventHandler) {
-            ImmutableList.Builder<DummyAction> actions = ImmutableList.builder();
-            ImmutableListMultimap<SpecialArtifact, TreeFileArtifact> inputTreeArtifactsToChildren =
-                ActionTemplate.getInputTreeArtifactsToChildren(inputTreeFileArtifacts);
-            int i = 0;
-            for (SpecialArtifact inputTreeArtifact : getInputTreeArtifacts()) {
-              actions.add(
-                  new DummyAction(
-                      NestedSetBuilder.<Artifact>wrap(
-                          Order.STABLE_ORDER, inputTreeArtifactsToChildren.get(inputTreeArtifact)),
-                      TreeFileArtifact.createTemplateExpansionOutput(
-                          outputTree, "child-" + i++, artifactOwner)));
+                public override fun parentRelativeOutputPath(inputTreeFileArtifact: TreeFileArtifact): PathFragment? {
+                    val path: PathFragment? =
+                        when (i) {
+                            0 -> PathFragment.create("path_prefix")
+                            1 -> PathFragment.create("path_prefix/conflict")
+                            else -> inputTreeFileArtifact.getParentRelativePath()
+                        }
+                    ++i
+                    return path
+                }
             }
-            return actions.build();
-          }
-        };
-    evaluate(template);
-  }
+        val spawnActionTemplate: SpawnActionTemplate =
+            Builder(inputTreeArtifact, outputTreeArtifact)
+                .setExecutable(PathFragment.create("/bin/cp"))
+                .setCommandLineTemplate(CustomCommandLine.builder().build())
+                .setOutputPathMapper(mapper)
+                .build(ActionsTestUtil.NULL_ACTION_OWNER)
 
-  private static final ActionLookupKey CTKEY = new InjectedActionLookupKey("key");
-
-  private ImmutableList<Action> evaluate(ActionTemplate<?> actionTemplate) throws Exception {
-    ActionLookupValue ctValue = createActionLookupValue(actionTemplate);
-
-    differencer.inject(CTKEY, Delta.justNew(ctValue));
-    ActionTemplateExpansionKey templateKey = ActionTemplateExpansionValue.key(CTKEY, 0);
-    EvaluationContext evaluationContext =
-        EvaluationContext.newBuilder()
-            .setKeepGoing(false)
-            .setParallelism(SkyframeExecutor.DEFAULT_THREAD_COUNT)
-            .setEventHandler(NullEventHandler.INSTANCE)
-            .build();
-    EvaluationResult<ActionTemplateExpansionValue> result =
-        evaluator.evaluate(ImmutableList.of(templateKey), evaluationContext);
-    if (result.hasError()) {
-      throw result.getError().getException();
-    }
-    ActionTemplateExpansionValue actionTemplateExpansionValue = result.get(templateKey);
-    ImmutableList.Builder<Action> actionList = ImmutableList.builder();
-    for (int i = 0; i < actionTemplateExpansionValue.getActions().size(); i++) {
-      actionList.add(actionTemplateExpansionValue.getAction(i));
-    }
-    return actionList.build();
-  }
-
-  private static ActionLookupValue createActionLookupValue(ActionTemplate<?> actionTemplate)
-      throws ActionConflictException,
-          InterruptedException,
-          Actions.ArtifactGeneratedByOtherRuleException {
-    ImmutableList<ActionAnalysisMetadata> actions = ImmutableList.of(actionTemplate);
-    Actions.assignOwnersAndThrowIfConflict(new ActionKeyContext(), actions, CTKEY);
-    return new BasicActionLookupValue(actions);
-  }
-
-  private SpecialArtifact createTreeArtifact(String path) {
-    PathFragment execPath = PathFragment.create("out").getRelative(path);
-    return SpecialArtifact.create(
-        ArtifactRoot.asDerivedRoot(rootDirectory, RootType.OUTPUT, "out"),
-        execPath,
-        CTKEY,
-        SpecialArtifactType.TREE);
-  }
-
-  private SpecialArtifact createAndPopulateTreeArtifact(String path, String... childRelativePaths)
-      throws Exception {
-    SpecialArtifact treeArtifact = createTreeArtifact(path);
-    treeArtifact.setGeneratingActionKey(ActionLookupData.create(CTKEY, /*actionIndex=*/ 0));
-    TreeArtifactValue.Builder tree = TreeArtifactValue.newBuilder(treeArtifact);
-
-    for (String childRelativePath : childRelativePaths) {
-      TreeFileArtifact treeFileArtifact =
-          TreeFileArtifact.createTreeOutput(treeArtifact, childRelativePath);
-      scratch.file(treeFileArtifact.getPath().toString(), childRelativePath);
-      // We do not care about the FileArtifactValues in this test.
-      tree.putChild(treeFileArtifact, FileArtifactValue.createForTesting(treeFileArtifact));
+        val e: ActionConflictException? =
+            org.junit.Assert.assertThrows<T?>(
+                ActionConflictException::class.java,
+                org.junit.function.ThrowingRunnable { evaluate(spawnActionTemplate) })
+        assertThat(e).hasMessageThat().contains("is a prefix of the other")
     }
 
-    artifactValueMap.put(treeArtifact, tree.build());
-    return treeArtifact;
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun cannotDeclareNonTreeOutput() {
+        val inputTree: SpecialArtifact = createAndPopulateTreeArtifact("input", "child")
+        val outputTree: SpecialArtifact = createTreeArtifact("output")
 
-  /** Dummy ArtifactFunction that just returns injected values */
-  private static final class DummyArtifactFunction implements SkyFunction {
-    private final Map<Artifact, TreeArtifactValue> artifactValueMap;
+        val template: ActionTemplate<DummyAction?> =
+            object : TestActionTemplate(inputTree, outputTree) {
+                public override fun generateActionsForInputArtifacts(
+                    inputTreeFileArtifacts: com.google.common.collect.ImmutableList<TreeFileArtifact?>?,
+                    artifactOwner: ActionLookupKey?,
+                    eventHandler: com.google.devtools.build.lib.events.EventHandler?
+                ): com.google.common.collect.ImmutableList<DummyAction?> {
+                    return com.google.common.collect.ImmutableList.of<DummyAction?>()
+                }
 
-    DummyArtifactFunction(Map<Artifact, TreeArtifactValue> artifactValueMap) {
-      this.artifactValueMap = artifactValueMap;
-    }
-    @Override
-    public SkyValue compute(SkyKey skyKey, Environment env) {
-      return Preconditions.checkNotNull(artifactValueMap.get(skyKey));
-    }
-  }
+                override fun getOutputs(): com.google.common.collect.ImmutableSet<Artifact?> {
+                    return com.google.common.collect.ImmutableSet.of<E?>(
+                        outputTree,
+                        DerivedArtifact.create(
+                            outputTree.getRoot(),
+                            outputTree.getRoot().getExecPath().getRelative("not_tree"),
+                            outputTree.getArtifactOwner()
+                        )
+                    )
+                }
+            }
 
-  private abstract static class TestActionTemplate implements ActionTemplate<DummyAction> {
-    private final ImmutableList<SpecialArtifact> inputTreeArtifacts;
-    private final SpecialArtifact outputTreeArtifact;
-
-    TestActionTemplate(SpecialArtifact inputTreeArtifact, SpecialArtifact outputTreeArtifact) {
-      this(ImmutableList.of(inputTreeArtifact), outputTreeArtifact);
-    }
-
-    TestActionTemplate(
-        ImmutableList<SpecialArtifact> inputTreeArtifacts, SpecialArtifact outputTreeArtifact) {
-      for (SpecialArtifact inputTreeArtifact : inputTreeArtifacts) {
-        Preconditions.checkArgument(inputTreeArtifact.isTreeArtifact(), inputTreeArtifact);
-      }
-      Preconditions.checkArgument(outputTreeArtifact.isTreeArtifact(), outputTreeArtifact);
-      this.inputTreeArtifacts = inputTreeArtifacts;
-      this.outputTreeArtifact = outputTreeArtifact;
-    }
-
-    @Override
-    public ImmutableList<SpecialArtifact> getInputTreeArtifacts() {
-      return inputTreeArtifacts;
+        val e: java.lang.Exception? = org.junit.Assert.assertThrows<java.lang.RuntimeException?>(
+            java.lang.RuntimeException::class.java,
+            org.junit.function.ThrowingRunnable { evaluate(template) })
+        Truth.assertThat(e).hasCauseThat().isInstanceOf(java.lang.IllegalStateException::class.java)
+        Truth.assertThat(e)
+            .hasCauseThat()
+            .hasMessageThat()
+            .contains(template.toString() + " declares an output which is not a tree artifact")
     }
 
-    @Override
-    public ImmutableSet<Artifact> getOutputs() {
-      return ImmutableSet.of(outputTreeArtifact);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun cannotGenerateOutputWithWrongOwner() {
+        val inputTree: SpecialArtifact = createAndPopulateTreeArtifact("input", "child")
+        val outputTree: SpecialArtifact = createTreeArtifact("output")
+
+        val template: ActionTemplate<DummyAction?> =
+            object : TestActionTemplate(inputTree, outputTree) {
+                public override fun generateActionsForInputArtifacts(
+                    inputTreeFileArtifacts: com.google.common.collect.ImmutableList<TreeFileArtifact?>,
+                    artifactOwner: ActionLookupKey?,
+                    eventHandler: com.google.devtools.build.lib.events.EventHandler?
+                ): com.google.common.collect.ImmutableList<DummyAction?> {
+                    val input: TreeFileArtifact? =
+                        com.google.common.collect.Iterables.getOnlyElement<TreeFileArtifact?>(inputTreeFileArtifacts)
+                    val outputWithWrongOwner: TreeFileArtifact =
+                        TreeFileArtifact.createTemplateExpansionOutput(
+                            outputTree, "child", ActionsTestUtil.NULL_TEMPLATE_EXPANSION_ARTIFACT_OWNER
+                        )
+                    assertThat(outputWithWrongOwner.getArtifactOwner()).isNotEqualTo(artifactOwner)
+                    return com.google.common.collect.ImmutableList.of<DummyAction?>(
+                        DummyAction(
+                            input,
+                            outputWithWrongOwner
+                        )
+                    )
+                }
+            }
+
+        val e: java.lang.Exception? = org.junit.Assert.assertThrows<java.lang.RuntimeException?>(
+            java.lang.RuntimeException::class.java,
+            org.junit.function.ThrowingRunnable { evaluate(template) })
+        Truth.assertThat(e).hasCauseThat().isInstanceOf(java.lang.IllegalStateException::class.java)
+        Truth.assertThat(e)
+            .hasCauseThat()
+            .hasMessageThat()
+            .contains(template.toString() + " generated an action with an output owned by the wrong owner")
     }
 
-    @Override
-    public ActionOwner getOwner() {
-      return ActionsTestUtil.NULL_ACTION_OWNER;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun cannotGenerateNonTreeFileArtifactOutput() {
+        val inputTree: SpecialArtifact = createAndPopulateTreeArtifact("input", "child")
+        val outputTree: SpecialArtifact = createTreeArtifact("output")
+
+        val template: ActionTemplate<DummyAction?> =
+            object : TestActionTemplate(inputTree, outputTree) {
+                public override fun generateActionsForInputArtifacts(
+                    inputTreeFileArtifacts: com.google.common.collect.ImmutableList<TreeFileArtifact?>,
+                    artifactOwner: ActionLookupKey?,
+                    eventHandler: com.google.devtools.build.lib.events.EventHandler?
+                ): com.google.common.collect.ImmutableList<DummyAction?> {
+                    val input: TreeFileArtifact? =
+                        com.google.common.collect.Iterables.getOnlyElement<TreeFileArtifact?>(inputTreeFileArtifacts)
+                    val notTreeFileArtifact: Artifact =
+                        DerivedArtifact.create(
+                            input.getRoot(),
+                            input.getRoot().getExecPath().getRelative("a.txt"),
+                            artifactOwner
+                        )
+                    assertThat(notTreeFileArtifact.isTreeArtifact()).isFalse()
+                    return com.google.common.collect.ImmutableList.of<DummyAction?>(
+                        DummyAction(
+                            input,
+                            notTreeFileArtifact
+                        )
+                    )
+                }
+            }
+
+        val e: java.lang.Exception? = org.junit.Assert.assertThrows<java.lang.RuntimeException?>(
+            java.lang.RuntimeException::class.java,
+            org.junit.function.ThrowingRunnable { evaluate(template) })
+        Truth.assertThat(e).hasCauseThat().isInstanceOf(java.lang.IllegalStateException::class.java)
+        Truth.assertThat(e)
+            .hasCauseThat()
+            .hasMessageThat()
+            .contains(template.toString() + " generated an action which outputs a non-TreeFileArtifact")
     }
 
-    @Override
-    public boolean isShareable() {
-      return false;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun cannotGenerateOutputUnderUndeclaredTree() {
+        val inputTree: SpecialArtifact = createAndPopulateTreeArtifact("input", "child")
+        val outputTree: SpecialArtifact = createTreeArtifact("output")
+
+        val template: ActionTemplate<DummyAction?> =
+            object : TestActionTemplate(inputTree, outputTree) {
+                public override fun generateActionsForInputArtifacts(
+                    inputTreeFileArtifacts: com.google.common.collect.ImmutableList<TreeFileArtifact?>,
+                    artifactOwner: ActionLookupKey?,
+                    eventHandler: com.google.devtools.build.lib.events.EventHandler?
+                ): com.google.common.collect.ImmutableList<DummyAction?> {
+                    val input: TreeFileArtifact? =
+                        com.google.common.collect.Iterables.getOnlyElement<TreeFileArtifact?>(inputTreeFileArtifacts)
+                    val outputUnderWrongTree: TreeFileArtifact? =
+                        TreeFileArtifact.createTemplateExpansionOutput(
+                            createTreeArtifact("undeclared"), "child", artifactOwner
+                        )
+                    return com.google.common.collect.ImmutableList.of<DummyAction?>(
+                        DummyAction(
+                            input,
+                            outputUnderWrongTree
+                        )
+                    )
+                }
+            }
+
+        val e: java.lang.Exception? = org.junit.Assert.assertThrows<java.lang.RuntimeException?>(
+            java.lang.RuntimeException::class.java,
+            org.junit.function.ThrowingRunnable { evaluate(template) })
+        Truth.assertThat(e).hasCauseThat().isInstanceOf(java.lang.IllegalStateException::class.java)
+        Truth.assertThat(e)
+            .hasCauseThat()
+            .hasMessageThat()
+            .contains(
+                (template
+                    .toString() + " generated an action with an output File:[[<execution_root>]out]undeclared/child"
+                        + " under an undeclared tree not in [File:[[<execution_root>]out]output]")
+            )
     }
 
-    @Override
-    public String getMnemonic() {
-      return "TestActionTemplate";
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun canGenerateOutputUnderAdditionalDeclaredTree() {
+        val inputTree: SpecialArtifact = createAndPopulateTreeArtifact("input", "child")
+        val outputTree: SpecialArtifact = createTreeArtifact("output")
+        val additionalOutputTree: SpecialArtifact = createTreeArtifact("additional_output")
+
+        val template: ActionTemplate<DummyAction?> =
+            object : TestActionTemplate(inputTree, outputTree) {
+                public override fun generateActionsForInputArtifacts(
+                    inputTreeFileArtifacts: com.google.common.collect.ImmutableList<TreeFileArtifact?>,
+                    artifactOwner: ActionLookupKey?,
+                    eventHandler: com.google.devtools.build.lib.events.EventHandler?
+                ): com.google.common.collect.ImmutableList<DummyAction?> {
+                    val input: TreeFileArtifact? =
+                        com.google.common.collect.Iterables.getOnlyElement<TreeFileArtifact?>(inputTreeFileArtifacts)
+                    return com.google.common.collect.ImmutableList.of<DummyAction?>(
+                        DummyAction(
+                            input,
+                            TreeFileArtifact.createTemplateExpansionOutput(
+                                outputTree, "child", artifactOwner
+                            )
+                        ),
+                        DummyAction(
+                            input,
+                            TreeFileArtifact.createTemplateExpansionOutput(
+                                additionalOutputTree, "additional_child", artifactOwner
+                            )
+                        )
+                    )
+                }
+
+                override fun getOutputs(): com.google.common.collect.ImmutableSet<Artifact?> {
+                    return com.google.common.collect.ImmutableSet.of<Artifact?>(outputTree, additionalOutputTree)
+                }
+            }
+
+        evaluate(template)
     }
 
-    @Override
-    public String getKey(
-        ActionKeyContext actionKeyContext, @Nullable InputMetadataProvider inputMetadataProvider) {
-      Fingerprint fp = new Fingerprint();
-      for (SpecialArtifact inputTreeArtifact : inputTreeArtifacts) {
-        fp.addPath(inputTreeArtifact.getPath());
-      }
-      fp.addPath(outputTreeArtifact.getPath());
-      return fp.hexDigestAndReset();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun canUseMultipleInputTrees() {
+        val inputTree1: SpecialArtifact = createAndPopulateTreeArtifact("input1", "child1", "child2")
+        val inputTree2: SpecialArtifact = createAndPopulateTreeArtifact("input2", "child1", "child2")
+        val outputTree: SpecialArtifact = createTreeArtifact("output")
+
+        val template: ActionTemplate<DummyAction?> =
+            object : TestActionTemplate(
+                com.google.common.collect.ImmutableList.of<SpecialArtifact?>(inputTree1, inputTree2),
+                outputTree
+            ) {
+                public override fun generateActionsForInputArtifacts(
+                    inputTreeFileArtifacts: com.google.common.collect.ImmutableList<TreeFileArtifact?>?,
+                    artifactOwner: ActionLookupKey?,
+                    eventHandler: com.google.devtools.build.lib.events.EventHandler?
+                ): com.google.common.collect.ImmutableList<DummyAction?> {
+                    val actions: com.google.common.collect.ImmutableList.Builder<DummyAction?> =
+                        com.google.common.collect.ImmutableList.builder<DummyAction?>()
+                    val inputTreeArtifactsToChildren: com.google.common.collect.ImmutableListMultimap<SpecialArtifact?, TreeFileArtifact?> =
+                        ActionTemplate.getInputTreeArtifactsToChildren(inputTreeFileArtifacts)
+                    var i = 0
+                    for (inputTreeArtifact in getInputTreeArtifacts()) {
+                        actions.add(
+                            DummyAction(
+                                NestedSetBuilder.< Artifact > wrap < Artifact ? > (
+                                        Order.STABLE_ORDER, inputTreeArtifactsToChildren.get(inputTreeArtifact)
+                            ),
+                            TreeFileArtifact.createTemplateExpansionOutput(
+                                outputTree, "child-" + i++, artifactOwner
+                            )
+                        ))
+                    }
+                    return actions.build()
+                }
+            }
+        evaluate(template)
     }
 
-    @Override
-    public String prettyPrint() {
-      return "TestActionTemplate for " + outputTreeArtifact;
+    @Throws(java.lang.Exception::class)
+    private fun evaluate(actionTemplate: ActionTemplate<*>): com.google.common.collect.ImmutableList<Action> {
+        val ctValue: ActionLookupValue = createActionLookupValue(actionTemplate)
+
+        differencer.inject(CTKEY, Delta.justNew(ctValue))
+        val templateKey: ActionTemplateExpansionKey = ActionTemplateExpansionValue.key(CTKEY, 0)
+        val evaluationContext: EvaluationContext? =
+            EvaluationContext.newBuilder()
+                .setKeepGoing(false)
+                .setParallelism(SkyframeExecutor.DEFAULT_THREAD_COUNT)
+                .setEventHandler(NullEventHandler.INSTANCE)
+                .build()
+        val result: EvaluationResult<ActionTemplateExpansionValue?> =
+            evaluator.evaluate(com.google.common.collect.ImmutableList.of<E?>(templateKey), evaluationContext)
+        if (result.hasError()) {
+            throw result.getError().getException()
+        }
+        val actionTemplateExpansionValue: ActionTemplateExpansionValue = result.get(templateKey)
+        val actionList: com.google.common.collect.ImmutableList.Builder<Action?> =
+            com.google.common.collect.ImmutableList.builder<Action?>()
+        for (i in 0..<actionTemplateExpansionValue.getActions().size()) {
+            actionList.add(actionTemplateExpansionValue.getAction(i))
+        }
+        return actionList.build()
     }
 
-    @Override
-    public String describe() {
-      return prettyPrint();
+    private fun createTreeArtifact(path: String?): SpecialArtifact {
+        val execPath: PathFragment? = PathFragment.create("out").getRelative(path)
+        return SpecialArtifact.create(
+            ArtifactRoot.asDerivedRoot(rootDirectory, RootType.OUTPUT, "out"),
+            execPath,
+            CTKEY,
+            SpecialArtifactType.TREE
+        )
     }
 
-    @Override
-    public NestedSet<Artifact> getTools() {
-      return NestedSetBuilder.emptySet(Order.STABLE_ORDER);
+    @Throws(java.lang.Exception::class)
+    private fun createAndPopulateTreeArtifact(path: String?, vararg childRelativePaths: String?): SpecialArtifact {
+        val treeArtifact: SpecialArtifact = createTreeArtifact(path)
+        treeArtifact.setGeneratingActionKey(ActionLookupData.create(CTKEY,  /*actionIndex=*/0))
+        val tree: TreeArtifactValue.Builder = TreeArtifactValue.newBuilder(treeArtifact)
+
+        for (childRelativePath in childRelativePaths) {
+            val treeFileArtifact: TreeFileArtifact =
+                TreeFileArtifact.createTreeOutput(treeArtifact, childRelativePath)
+            scratch.file(treeFileArtifact.getPath().toString(), childRelativePath)
+            // We do not care about the FileArtifactValues in this test.
+            tree.putChild(treeFileArtifact, FileArtifactValue.createForTesting(treeFileArtifact))
+        }
+
+        artifactValueMap.put(treeArtifact, tree.build())
+        return treeArtifact
     }
 
-    @Override
-    public NestedSet<Artifact> getInputs() {
-      return NestedSetBuilder.wrap(Order.STABLE_ORDER, inputTreeArtifacts);
+    /** Dummy ArtifactFunction that just returns injected values  */
+    private class DummyArtifactFunction(artifactValueMap: MutableMap<Artifact?, TreeArtifactValue?>) : SkyFunction {
+        private val artifactValueMap: MutableMap<Artifact?, TreeArtifactValue?>
+
+        init {
+            this.artifactValueMap = artifactValueMap
+        }
+
+        public override fun compute(skyKey: SkyKey?, env: Environment?): SkyValue? {
+            return com.google.common.base.Preconditions.checkNotNull<SkyValue?>(artifactValueMap.get(skyKey))
+        }
     }
 
-    @Override
-    public NestedSet<Artifact> getOriginalInputs() {
-      return getInputs();
+    private abstract class TestActionTemplate(
+        inputTreeArtifacts: com.google.common.collect.ImmutableList<SpecialArtifact>,
+        outputTreeArtifact: SpecialArtifact
+    ) : ActionTemplate<DummyAction?> {
+        private val inputTreeArtifacts: com.google.common.collect.ImmutableList<SpecialArtifact>
+        private val outputTreeArtifact: SpecialArtifact
+
+        internal constructor(
+            inputTreeArtifact: SpecialArtifact,
+            outputTreeArtifact: SpecialArtifact
+        ) : this(com.google.common.collect.ImmutableList.of<SpecialArtifact?>(inputTreeArtifact), outputTreeArtifact)
+
+        init {
+            for (inputTreeArtifact in inputTreeArtifacts) {
+                com.google.common.base.Preconditions.checkArgument(
+                    inputTreeArtifact.isTreeArtifact(),
+                    inputTreeArtifact
+                )
+            }
+            com.google.common.base.Preconditions.checkArgument(outputTreeArtifact.isTreeArtifact(), outputTreeArtifact)
+            this.inputTreeArtifacts = inputTreeArtifacts
+            this.outputTreeArtifact = outputTreeArtifact
+        }
+
+        public override fun getInputTreeArtifacts(): com.google.common.collect.ImmutableList<SpecialArtifact> {
+            return inputTreeArtifacts
+        }
+
+        val outputs: com.google.common.collect.ImmutableSet<Artifact?>
+            get() = com.google.common.collect.ImmutableSet.of<Artifact?>(outputTreeArtifact)
+
+        val owner: ActionOwner?
+            get() = ActionsTestUtil.NULL_ACTION_OWNER
+
+        val isShareable: Boolean
+            get() = false
+
+        val mnemonic: String
+            get() = "TestActionTemplate"
+
+        public override fun getKey(
+            actionKeyContext: ActionKeyContext?, inputMetadataProvider: InputMetadataProvider?
+        ): String {
+            val fp: Fingerprint = Fingerprint()
+            for (inputTreeArtifact in inputTreeArtifacts) {
+                fp.addPath(inputTreeArtifact.getPath())
+            }
+            fp.addPath(outputTreeArtifact.getPath())
+            return fp.hexDigestAndReset()
+        }
+
+        public override fun prettyPrint(): String {
+            return "TestActionTemplate for " + outputTreeArtifact
+        }
+
+        public override fun describe(): String {
+            return prettyPrint()
+        }
+
+        val tools: NestedSet<Artifact?>
+            get() = NestedSetBuilder.emptySet(Order.STABLE_ORDER)
+
+        val inputs: NestedSet<Artifact?>
+            get() = NestedSetBuilder.wrap(Order.STABLE_ORDER, inputTreeArtifacts)
+
+        val originalInputs: NestedSet<Artifact?>
+            get() = this.inputs
+
+        val schedulingDependencies: NestedSet<Artifact?>
+            get() = NestedSetBuilder.emptySet(Order.STABLE_ORDER)
+
+        val clientEnvironmentVariables: MutableCollection<String?>
+            get() = com.google.common.collect.ImmutableList.of<String?>()
+
+        public override fun getInputFilesForExtraAction(
+            actionExecutionContext: ActionExecutionContext?
+        ): NestedSet<Artifact?> {
+            return NestedSetBuilder.emptySet(Order.STABLE_ORDER)
+        }
+
+        val mandatoryOutputs: com.google.common.collect.ImmutableSet<Artifact?>
+            get() = com.google.common.collect.ImmutableSet.of<Artifact?>()
+
+        val mandatoryInputs: NestedSet<Artifact?>
+            get() = NestedSetBuilder.wrap(Order.STABLE_ORDER, inputTreeArtifacts)
+
+        override fun toString(): String {
+            return prettyPrint()
+        }
     }
 
-    @Override
-    public NestedSet<Artifact> getSchedulingDependencies() {
-      return NestedSetBuilder.emptySet(Order.STABLE_ORDER);
-    }
+    companion object {
+        private val CTKEY: ActionLookupKey = InjectedActionLookupKey("key")
 
-    @Override
-    public Collection<String> getClientEnvironmentVariables() {
-      return ImmutableList.of();
+        @Throws(
+            ActionConflictException::class,
+            java.lang.InterruptedException::class,
+            Actions.ArtifactGeneratedByOtherRuleException::class
+        )
+        private fun createActionLookupValue(actionTemplate: ActionTemplate<*>): ActionLookupValue {
+            val actions: com.google.common.collect.ImmutableList<ActionAnalysisMetadata?> =
+                com.google.common.collect.ImmutableList.of<ActionAnalysisMetadata?>(actionTemplate)
+            Actions.assignOwnersAndThrowIfConflict(ActionKeyContext(), actions, CTKEY)
+            return BasicActionLookupValue(actions)
+        }
     }
-
-    @Override
-    public NestedSet<Artifact> getInputFilesForExtraAction(
-        ActionExecutionContext actionExecutionContext) {
-      return NestedSetBuilder.emptySet(Order.STABLE_ORDER);
-    }
-
-    @Override
-    public ImmutableSet<Artifact> getMandatoryOutputs() {
-      return ImmutableSet.of();
-    }
-
-    @Override
-    public NestedSet<Artifact> getMandatoryInputs() {
-      return NestedSetBuilder.wrap(Order.STABLE_ORDER, inputTreeArtifacts);
-    }
-
-    @Override
-    public String toString() {
-      return prettyPrint();
-    }
-  }
 }

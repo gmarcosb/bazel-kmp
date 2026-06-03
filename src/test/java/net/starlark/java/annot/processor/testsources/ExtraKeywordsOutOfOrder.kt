@@ -11,28 +11,23 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.annot.processor.testsources
 
-package net.starlark.java.annot.processor.testsources;
-
-import net.starlark.java.annot.Param;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.Dict;
-import net.starlark.java.eval.StarlarkThread;
-import net.starlark.java.eval.StarlarkValue;
+import net.starlark.java.eval.Dict
 
 /**
  * Test case for a StarlarkMethod method which specifies extraKeywords, but specifies the argument
  * out of order.
  */
-public class ExtraKeywordsOutOfOrder implements StarlarkValue {
-
-  @StarlarkMethod(
-      name = "extra_kwargs_out_of_order",
-      documented = false,
-      parameters = {@Param(name = "one")},
-      extraKeywords = @Param(name = "kwargs"),
-      useStarlarkThread = true)
-  public String threeArgMethod(Dict<?, ?> kwargs, String one, StarlarkThread thread) {
-    return "bar";
-  }
+class ExtraKeywordsOutOfOrder : StarlarkValue {
+    @StarlarkMethod(
+        name = "extra_kwargs_out_of_order",
+        documented = false,
+        parameters = [net.starlark.java.annot.Param(name = "one")],
+        extraKeywords = net.starlark.java.annot.Param(name = "kwargs"),
+        useStarlarkThread = true
+    )
+    fun threeArgMethod(kwargs: Dict<*, *>?, one: String?, thread: StarlarkThread?): String {
+        return "bar"
+    }
 }

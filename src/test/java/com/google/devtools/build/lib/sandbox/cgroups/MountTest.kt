@@ -11,41 +11,43 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.sandbox.cgroups
 
-package com.google.devtools.build.lib.sandbox.cgroups;
+import com.google.common.collect.ImmutableList
+import com.google.common.truth.Subject
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.vfs.util.FsApparatus
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.io.IOException
+import java.nio.file.Path
 
-import static com.google.common.truth.Truth.assertThat;
+@RunWith(JUnit4::class)
+class MountTest {
+    private val scratch: FsApparatus = FsApparatus.newNative()
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.vfs.util.FsApparatus;
-import java.io.IOException;
-import java.nio.file.Path;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @Test
+    @Throws(IOException::class)
+    fun testParse() {
+        val mounts: ImmutableList<Mount?>? =
+            Mount.parse(
+                scratch
+                    .file(
+                        "proc/self/mounts",
+                        "sysfs /sys sysfs rw,nosuid,nodev,noexec,relatime 0 0",
+                        "cgroup /dev/cgroup/cpu cgroup rw,cpu,cpuacct 0 0",
+                        "cgroup /dev/cgroup/unified cgroup2 ro 0 0",
+                        "proc /proc proc rw,nosuid,nodev,noexec,relatime 0 0"
+                    )
+                    .getPathFile()
+            )
 
-@RunWith(JUnit4.class)
-public class MountTest {
-  private final FsApparatus scratch = FsApparatus.newNative();
-
-  @Test
-  public void testParse() throws IOException {
-    ImmutableList<Mount> mounts =
-        Mount.parse(
-            scratch
-                .file(
-                    "proc/self/mounts",
-                    "sysfs /sys sysfs rw,nosuid,nodev,noexec,relatime 0 0",
-                    "cgroup /dev/cgroup/cpu cgroup rw,cpu,cpuacct 0 0",
-                    "cgroup /dev/cgroup/unified cgroup2 ro 0 0",
-                    "proc /proc proc rw,nosuid,nodev,noexec,relatime 0 0")
-                .getPathFile());
-
-    assertThat(mounts).hasSize(2);
-    assertThat(mounts.get(0).isV2()).isFalse();
-    assertThat(mounts.get(1).isV2()).isTrue();
-    assertThat(mounts.get(0).opts()).contains("cpu");
-    assertThat(mounts.get(0).path()).isEqualTo(Path.of("/dev/cgroup/cpu"));
-    assertThat(mounts.get(1).path()).isEqualTo(Path.of("/dev/cgroup/unified"));
-  }
+        Truth.assertThat(mounts).hasSize(2)
+        assertThat(mounts!!.get(0).isV2()).isFalse()
+        assertThat(mounts.get(1).isV2()).isTrue()
+        Subject.contains("cpu")
+        assertThat(mounts.get(0).path()).isEqualTo(Path.of("/dev/cgroup/cpu"))
+        assertThat(mounts.get(1).path()).isEqualTo(Path.of("/dev/cgroup/unified"))
+    }
 }

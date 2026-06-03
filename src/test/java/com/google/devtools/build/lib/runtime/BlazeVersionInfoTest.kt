@@ -11,66 +11,62 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import static com.google.common.truth.Truth.assertThat;
-import static java.util.Collections.singletonMap;
-
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.analysis.BlazeVersionInfo;
-import java.util.Collections;
-import java.util.Map;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.analysis.BlazeVersionInfo
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.util.Collections
 
 /**
- * Tests {@link BlazeVersionInfo}.
+ * Tests [BlazeVersionInfo].
  */
-@RunWith(JUnit4.class)
-public class BlazeVersionInfoTest {
+@RunWith(JUnit4::class)
+class BlazeVersionInfoTest {
+    @org.junit.Test
+    fun testEmptyVersionInfoMeansNotAvailable() {
+        val info: BlazeVersionInfo = BlazeVersionInfo(mutableMapOf<String?, String?>())
+        Truth.assertThat(info.isAvailable()).isFalse()
+        Truth.assertThat(info.getSummary()).isNull()
+        Truth.assertThat(info.getReleaseName()).isEqualTo("development version")
+    }
 
-  @Test
-  public void testEmptyVersionInfoMeansNotAvailable() {
-    BlazeVersionInfo info = new BlazeVersionInfo(Collections.<String, String>emptyMap());
-    assertThat(info.isAvailable()).isFalse();
-    assertThat(info.getSummary()).isNull();
-    assertThat(info.getReleaseName()).isEqualTo("development version");
-  }
+    @org.junit.Test
+    fun testReleaseNameIsDevelopmentIfBuildLabelIsNull() {
+        val data: MutableMap<String?, String?> = Collections.singletonMap<String?, String?>("Build label", "")
+        val info: BlazeVersionInfo = BlazeVersionInfo(data)
+        Truth.assertThat(info.getReleaseName()).isEqualTo("development version")
+    }
 
-  @Test
-  public void testReleaseNameIsDevelopmentIfBuildLabelIsNull() {
-    Map<String, String> data = singletonMap("Build label", "");
-    BlazeVersionInfo info = new BlazeVersionInfo(data);
-    assertThat(info.getReleaseName()).isEqualTo("development version");
-  }
+    @org.junit.Test
+    fun testReleaseNameIfBuildLabelIsPresent() {
+        val data: MutableMap<String?, String?> =
+            Collections.singletonMap<String?, String?>("Build label", "3/4/2009 (gold)")
+        val info: BlazeVersionInfo = BlazeVersionInfo(data)
+        Truth.assertThat(info.getReleaseName()).isEqualTo("release 3/4/2009 (gold)")
+    }
 
-  @Test
-  public void testReleaseNameIfBuildLabelIsPresent() {
-    Map<String, String> data = singletonMap("Build label", "3/4/2009 (gold)");
-    BlazeVersionInfo info = new BlazeVersionInfo(data);
-    assertThat(info.getReleaseName()).isEqualTo("release 3/4/2009 (gold)");
-  }
+    @org.junit.Test
+    fun testGetSummaryReturnsOrderedTablifiedData() {
+        val data: com.google.common.collect.ImmutableMap<String?, String?> =
+            com.google.common.collect.ImmutableMap.of<String?, String?>("key3", "foo", "key2", "bar", "key1", "baz")
 
-  @Test
-  public void testGetSummaryReturnsOrderedTablifiedData() {
-    ImmutableMap<String, String> data =
-        ImmutableMap.of("key3", "foo", "key2", "bar", "key1", "baz");
+        val info: BlazeVersionInfo = BlazeVersionInfo(data)
+        Truth.assertThat(info.getSummary()).isEqualTo("key1: baz\nkey2: bar\nkey3: foo")
+    }
 
-    BlazeVersionInfo info = new BlazeVersionInfo(data);
-    assertThat(info.getSummary()).isEqualTo("key1: baz\nkey2: bar\nkey3: foo");
-  }
+    @org.junit.Test
+    fun testVersionIsHeadIfBuildLabelIsNull() {
+        val info: BlazeVersionInfo = BlazeVersionInfo(com.google.common.collect.ImmutableMap.of<String?, String?>())
+        Truth.assertThat(info.getVersion()).isEmpty()
+    }
 
-  @Test
-  public void testVersionIsHeadIfBuildLabelIsNull() {
-    BlazeVersionInfo info = new BlazeVersionInfo(ImmutableMap.of());
-    assertThat(info.getVersion()).isEmpty();
-  }
-
-  @Test
-  public void testVersionsIIfBuildLabelIsPresent() {
-    Map<String, String> data = ImmutableMap.of("Build label", "123.4");
-    BlazeVersionInfo info = new BlazeVersionInfo(data);
-    assertThat(info.getVersion()).isEqualTo("123.4");
-  }
+    @org.junit.Test
+    fun testVersionsIIfBuildLabelIsPresent() {
+        val data: MutableMap<String?, String?> =
+            com.google.common.collect.ImmutableMap.of<String?, String?>("Build label", "123.4")
+        val info: BlazeVersionInfo = BlazeVersionInfo(data)
+        Truth.assertThat(info.getVersion()).isEqualTo("123.4")
+    }
 }

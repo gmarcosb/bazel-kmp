@@ -11,77 +11,79 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.cmdline.LabelSyntaxException
 
-import com.google.devtools.build.lib.cmdline.LabelSyntaxException;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.packages.Globber;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.FsUtils;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Root;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link GlobDescriptor}. */
-@RunWith(JUnit4.class)
-public class GlobDescriptorTest {
-
-  @Test
-  public void testSerialization() throws Exception {
-    SerializationTester serializationTester =
-        new SerializationTester(
+/** Tests for [GlobDescriptor].  */
+@RunWith(JUnit4::class)
+class GlobDescriptorTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSerialization() {
+        val serializationTester: SerializationTester =
+            SerializationTester(
                 GlobDescriptor.create(
                     PackageIdentifier.create("foo", PathFragment.create("//bar")),
                     Root.fromPath(FsUtils.TEST_FILESYSTEM.getPath("/packageRoot")),
                     PathFragment.create("subdir"),
                     "pattern",
-                    Globber.Operation.FILES_AND_DIRS),
+                    Globber.Operation.FILES_AND_DIRS
+                ),
                 GlobDescriptor.create(
                     PackageIdentifier.create("bar", PathFragment.create("//foo")),
                     Root.fromPath(FsUtils.TEST_FILESYSTEM.getPath("/anotherPackageRoot")),
                     PathFragment.create("anotherSubdir"),
                     "pattern",
-                    Globber.Operation.FILES))
-            .setVerificationFunction(GlobDescriptorTest::verifyEquivalent);
-    FsUtils.addDependencies(serializationTester);
-    serializationTester.runTests();
-  }
+                    Globber.Operation.FILES
+                )
+            )
+                .setVerificationFunction({ orig: GlobDescriptor?, deserialized: GlobDescriptor? ->
+                    verifyEquivalent(
+                        orig,
+                        deserialized
+                    )
+                })
+        FsUtils.addDependencies(serializationTester)
+        serializationTester.runTests()
+    }
 
-  private static void verifyEquivalent(GlobDescriptor orig, GlobDescriptor deserialized) {
-    assertThat(deserialized).isSameInstanceAs(orig);
-  }
+    @org.junit.Test
+    @Throws(LabelSyntaxException::class)
+    fun testCreateReturnsInternedInstances() {
+        val original: GlobDescriptor =
+            GlobDescriptor.create(
+                PackageIdentifier.create("foo", PathFragment.create("//bar")),
+                Root.fromPath(FsUtils.TEST_FILESYSTEM.getPath("/packageRoot")),
+                PathFragment.create("subdir"),
+                "pattern",
+                Globber.Operation.FILES_AND_DIRS
+            )
 
-  @Test
-  public void testCreateReturnsInternedInstances() throws LabelSyntaxException {
-    GlobDescriptor original =
-        GlobDescriptor.create(
-            PackageIdentifier.create("foo", PathFragment.create("//bar")),
-            Root.fromPath(FsUtils.TEST_FILESYSTEM.getPath("/packageRoot")),
-            PathFragment.create("subdir"),
-            "pattern",
-            Globber.Operation.FILES_AND_DIRS);
-
-    GlobDescriptor sameCopy =
-        GlobDescriptor.create(
-            original.getPackageId(),
-            original.getPackageRoot(),
-            original.getSubdir(),
+        val sameCopy: GlobDescriptor? =
+            GlobDescriptor.create(
+                original.getPackageId(),
+                original.getPackageRoot(),
+                original.getSubdir(),
                 original.pattern,
-            original.globberOperation());
-    assertThat(sameCopy).isSameInstanceAs(original);
+                original.globberOperation()
+            )
+        assertThat(sameCopy).isSameInstanceAs(original)
 
-    GlobDescriptor diffCopy =
-        GlobDescriptor.create(
-            original.getPackageId(),
-            original.getPackageRoot(),
-            original.getSubdir(),
+        val diffCopy: GlobDescriptor? =
+            GlobDescriptor.create(
+                original.getPackageId(),
+                original.getPackageRoot(),
+                original.getSubdir(),
                 original.pattern,
-            Globber.Operation.FILES);
-    assertThat(diffCopy).isNotEqualTo(original);
-  }
+                Globber.Operation.FILES
+            )
+        assertThat(diffCopy).isNotEqualTo(original)
+    }
 
+    companion object {
+        private fun verifyEquivalent(orig: GlobDescriptor?, deserialized: GlobDescriptor?) {
+            assertThat(deserialized).isSameInstanceAs(orig)
+        }
+    }
 }

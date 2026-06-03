@@ -11,171 +11,150 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.exec
 
-package com.google.devtools.build.lib.exec;
+import com.google.devtools.build.lib.actions.ActionEnvironment
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.truth.Truth.assertWithMessage;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+/** Unit tests for [SymlinkTreeStrategy].  */
+@RunWith(JUnit4::class)
+class SymlinkTreeStrategyTest : BuildViewTestCase() {
+    @org.junit.Test
+    fun testArtifactToPathConversion() {
+        val artifact: Artifact = getBinArtifactWithNoOwner("dir/foo")
+        assertThat(SymlinkTreeStrategy.TO_PATH.apply(artifact))
+            .isEqualTo(artifact.getPath().asFragment())
+        assertThat(SymlinkTreeStrategy.TO_PATH.apply(null)).isEqualTo(null)
+    }
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.actions.ActionEnvironment;
-import com.google.devtools.build.lib.actions.ActionExecutionContext;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.ArtifactPathResolver;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
-import com.google.devtools.build.lib.analysis.Runfiles;
-import com.google.devtools.build.lib.analysis.actions.SymlinkTreeAction;
-import com.google.devtools.build.lib.analysis.actions.SymlinkTreeActionContext;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue.RunfileSymlinksMode;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.events.StoredEventHandler;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import com.google.devtools.build.lib.util.Fingerprint;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.OutputService;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Symlinks;
-import java.util.Map;
-import java.util.Set;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-import org.mockito.ArgumentCaptor;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun withOutputService() {
+        val context: ActionExecutionContext
+        ActionExecutionContext > Mockito.mock<ActionExecutionContext?>(ActionExecutionContext::class.java)
+        val outputService: OutputService
+        OutputService > Mockito.mock<OutputService?>(OutputService::class.java)
+        val eventHandler: StoredEventHandler = StoredEventHandler()
 
-/** Unit tests for {@link SymlinkTreeStrategy}. */
-@RunWith(JUnit4.class)
-public final class SymlinkTreeStrategyTest extends BuildViewTestCase {
-  @Test
-  public void testArtifactToPathConversion() {
-    Artifact artifact = getBinArtifactWithNoOwner("dir/foo");
-    assertThat(SymlinkTreeStrategy.TO_PATH.apply(artifact))
-        .isEqualTo(artifact.getPath().asFragment());
-    assertThat(SymlinkTreeStrategy.TO_PATH.apply(null)).isEqualTo(null);
-  }
+        T > Mockito.`when`<T?>(context.getContext(SymlinkTreeActionContext::class.java))
+            .thenReturn(SymlinkTreeStrategy(outputService, TestConstants.WORKSPACE_NAME))
+        T > Mockito.`when`<Boolean?>(context.getInputPath(TODO("Cannot convert element"))<T> ArgumentMatchers . any < kotlin . Any ? > ())
+        thenAnswer({ i -> (i.< Object > getArgument < kotlin . Any ? > (0) as Artifact).getPath() })
+        T > Mockito.`when`<T?>(context.getPathResolver()).thenReturn(ArtifactPathResolver.IDENTITY)
+        T > Mockito.`when`<T?>(context.getEventHandler()).thenReturn(eventHandler)
+        T > Mockito.`when`<T?>(outputService.canCreateSymlinkTree()).thenReturn(true)
 
-  @Test
-  public void withOutputService() throws Exception {
-    ActionExecutionContext context = mock(ActionExecutionContext.class);
-    OutputService outputService = mock(OutputService.class);
-    StoredEventHandler eventHandler = new StoredEventHandler();
-
-    when(context.getContext(SymlinkTreeActionContext.class))
-        .thenReturn(new SymlinkTreeStrategy(outputService, TestConstants.WORKSPACE_NAME));
-    when(context.getInputPath(any())).thenAnswer((i) -> ((Artifact) i.getArgument(0)).getPath());
-    when(context.getPathResolver()).thenReturn(ArtifactPathResolver.IDENTITY);
-    when(context.getEventHandler()).thenReturn(eventHandler);
-    when(outputService.canCreateSymlinkTree()).thenReturn(true);
-
-    Artifact inputManifest = getBinArtifactWithNoOwner("dir/manifest.in");
-    Artifact outputManifest = getBinArtifactWithNoOwner("dir.runfiles/MANIFEST");
-    Artifact runfile = getBinArtifactWithNoOwner("dir/runfile");
-    doAnswer(
-            (i) -> {
-              outputManifest.getPath().getParentDirectory().createDirectoryAndParents();
-              return null;
+        val inputManifest: Artifact = getBinArtifactWithNoOwner("dir/manifest.in")
+        val outputManifest: Artifact = getBinArtifactWithNoOwner("dir.runfiles/MANIFEST")
+        val runfile: Artifact = getBinArtifactWithNoOwner("dir/runfile")
+        Mockito.doAnswer(
+            Answer { i: InvocationOnMock? ->
+                outputManifest.getPath().getParentDirectory().createDirectoryAndParents()
+                null
             })
-        .when(outputService)
-        .createSymlinkTree(any(), any());
+            .`when`<Any?>(outputService)
+            .createSymlinkTree(TODO("Cannot convert element"))<T> ArgumentMatchers . any < kotlin . Any ? > ()
+        T > ArgumentMatchers.any<Any?>()
 
-    Runfiles runfiles =
-        new Runfiles.Builder("TESTING")
-            .setEmptyFilesSupplier(
-                new Runfiles.EmptyFilesSupplier() {
-                  @Override
-                  public ImmutableList<PathFragment> getExtraPaths(
-                      Set<PathFragment> manifestPaths) {
-                    return ImmutableList.of(PathFragment.create("dir/empty"));
-                  }
 
-                  @Override
-                  public void fingerprint(Fingerprint fingerprint) {}
-                })
-            .addArtifact(runfile)
-            .build();
-    SymlinkTreeAction action =
-        new SymlinkTreeAction(
-            ActionsTestUtil.NULL_ACTION_OWNER,
-            inputManifest,
-            runfiles,
-            outputManifest,
-            /* repoMappingManifest= */ null,
-            ActionEnvironment.EMPTY,
-            RunfileSymlinksMode.CREATE,
-            "workspace");
+        val runfiles: Runfiles? =
+            Builder("TESTING")
+                .setEmptyFilesSupplier(
+                    object : EmptyFilesSupplier() {
+                        public override fun getExtraPaths(
+                            manifestPaths: MutableSet<PathFragment?>?
+                        ): com.google.common.collect.ImmutableList<PathFragment?> {
+                            return com.google.common.collect.ImmutableList.of<E?>(PathFragment.create("dir/empty"))
+                        }
 
-    action.execute(context);
+                        public override fun fingerprint(fingerprint: Fingerprint?) {}
+                    })
+                .addArtifact(runfile)
+                .build()
+        val action: SymlinkTreeAction =
+            SymlinkTreeAction(
+                ActionsTestUtil.NULL_ACTION_OWNER,
+                inputManifest,
+                runfiles,
+                outputManifest,  /* repoMappingManifest= */
+                null,
+                ActionEnvironment.EMPTY,
+                RunfileSymlinksMode.CREATE,
+                "workspace"
+            )
 
-    @SuppressWarnings("unchecked")
-    ArgumentCaptor<Map<PathFragment, PathFragment>> capture = ArgumentCaptor.forClass(Map.class);
-    verify(outputService, times(1)).createSymlinkTree(capture.capture(), any());
-    assertThat(capture.getValue())
-        .containsExactly(
-            PathFragment.create("TESTING/dir/runfile"),
-            runfile.getPath().asFragment(),
-            PathFragment.create("TESTING/dir/empty"),
-            null);
-  }
+        action.execute(context)
 
-  @Test
-  public void withoutOutputService() throws Exception {
-    ActionExecutionContext context = mock(ActionExecutionContext.class);
-    OutputService outputService = mock(OutputService.class);
-    StoredEventHandler eventHandler = new StoredEventHandler();
+        val capture: ArgumentCaptor<MutableMap<PathFragment?, PathFragment?>?> =
+            ArgumentCaptor.forClass<MutableMap<PathFragment?, PathFragment?>?, MutableMap<*, *>?>(MutableMap::class.java)
+        Object > Mockito.verify<Any?>(outputService, Mockito.times(1)).createSymlinkTree(
+            capture.capture(),
+            TODO("Cannot convert element")
+        )<T> ArgumentMatchers . any < kotlin . Any ? > ()
 
-    when(context.getContext(SymlinkTreeActionContext.class))
-        .thenReturn(new SymlinkTreeStrategy(outputService, TestConstants.WORKSPACE_NAME));
-    when(context.getInputPath(any())).thenAnswer((i) -> ((Artifact) i.getArgument(0)).getPath());
-    when(context.getEventHandler()).thenReturn(eventHandler);
-    when(outputService.canCreateSymlinkTree()).thenReturn(false);
+        Truth.assertThat(capture.getValue())
+            .containsExactly(
+                PathFragment.create("TESTING/dir/runfile"),
+                runfile.getPath().asFragment(),
+                PathFragment.create("TESTING/dir/empty"),
+                null
+            )
+    }
 
-    Artifact inputManifest = getBinArtifactWithNoOwner("dir/manifest.in");
-    Artifact outputManifest = getBinArtifactWithNoOwner("dir.runfiles/MANIFEST");
-    Artifact runfile = getBinArtifactWithNoOwner("dir/runfile");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun withoutOutputService() {
+        val context: ActionExecutionContext = Mockito.mock<ActionExecutionContext>(ActionExecutionContext::class.java)
+        val outputService: OutputService = Mockito.mock<OutputService>(OutputService::class.java)
+        val eventHandler: StoredEventHandler = StoredEventHandler()
 
-    Runfiles runfiles =
-        new Runfiles.Builder("TESTING")
-            .setEmptyFilesSupplier(
-                new Runfiles.EmptyFilesSupplier() {
-                  @Override
-                  public ImmutableList<PathFragment> getExtraPaths(
-                      Set<PathFragment> manifestPaths) {
-                    return ImmutableList.of(PathFragment.create("dir/empty"));
-                  }
+        Mockito.`when`<T?>(context.getContext(SymlinkTreeActionContext::class.java))
+            .thenReturn(SymlinkTreeStrategy(outputService, TestConstants.WORKSPACE_NAME))
+        Mockito.`when`<T?>(context.getInputPath(ArgumentMatchers.any<T?>()))
+            .thenAnswer(Answer { i: InvocationOnMock? -> (i.getArgument<Any?>(0) as Artifact).getPath() })
+        Mockito.`when`<T?>(context.getEventHandler()).thenReturn(eventHandler)
+        Mockito.`when`<T?>(outputService.canCreateSymlinkTree()).thenReturn(false)
 
-                  @Override
-                  public void fingerprint(Fingerprint fingerprint) {}
-                })
-            .addArtifact(runfile)
-            .build();
-    SymlinkTreeAction action =
-        new SymlinkTreeAction(
-            ActionsTestUtil.NULL_ACTION_OWNER,
-            inputManifest,
-            runfiles,
-            outputManifest,
-            /* repoMappingManifest= */ null,
-            ActionEnvironment.EMPTY,
-            RunfileSymlinksMode.CREATE,
-            "workspace");
+        val inputManifest: Artifact = getBinArtifactWithNoOwner("dir/manifest.in")
+        val outputManifest: Artifact = getBinArtifactWithNoOwner("dir.runfiles/MANIFEST")
+        val runfile: Artifact = getBinArtifactWithNoOwner("dir/runfile")
 
-    action.execute(context);
-    // Check that the OutputService is not used.
-    verify(outputService, never()).createSymlinkTree(any(), any());
+        val runfiles: Runfiles? =
+            Builder("TESTING")
+                .setEmptyFilesSupplier(
+                    object : EmptyFilesSupplier() {
+                        public override fun getExtraPaths(
+                            manifestPaths: MutableSet<PathFragment?>?
+                        ): com.google.common.collect.ImmutableList<PathFragment?> {
+                            return com.google.common.collect.ImmutableList.of<E?>(PathFragment.create("dir/empty"))
+                        }
 
-    Path p = outputManifest.getPath().getParentDirectory().getRelative("TESTING/dir/runfile");
-    assertWithMessage("Path %s expected to exist", p).that(p.exists(Symlinks.NOFOLLOW)).isTrue();
-    assertWithMessage("Path %s expected to be a symlink", p).that(p.isSymbolicLink()).isTrue();
-    assertThat(p.readSymbolicLink()).isEqualTo(runfile.getPath().asFragment());
-    Path q = outputManifest.getPath().getParentDirectory().getRelative("TESTING/dir/empty");
-    assertWithMessage("Path %s expected to be a file", q).that(q.isFile()).isTrue();
-    assertThat(FileSystemUtils.readContent(q)).isEmpty();
-  }
+                        public override fun fingerprint(fingerprint: Fingerprint?) {}
+                    })
+                .addArtifact(runfile)
+                .build()
+        val action: SymlinkTreeAction =
+            SymlinkTreeAction(
+                ActionsTestUtil.NULL_ACTION_OWNER,
+                inputManifest,
+                runfiles,
+                outputManifest,  /* repoMappingManifest= */
+                null,
+                ActionEnvironment.EMPTY,
+                RunfileSymlinksMode.CREATE,
+                "workspace"
+            )
+
+        action.execute(context)
+        // Check that the OutputService is not used.
+        Mockito.verify<Any?>(outputService, Mockito.never())
+            .createSymlinkTree(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>())
+
+        val p: Path = outputManifest.getPath().getParentDirectory().getRelative("TESTING/dir/runfile")
+        Truth.assertWithMessage("Path %s expected to exist", p).that(p.exists(Symlinks.NOFOLLOW)).isTrue()
+        Truth.assertWithMessage("Path %s expected to be a symlink", p).that(p.isSymbolicLink()).isTrue()
+        assertThat(p.readSymbolicLink()).isEqualTo(runfile.getPath().asFragment())
+        val q: Path = outputManifest.getPath().getParentDirectory().getRelative("TESTING/dir/empty")
+        Truth.assertWithMessage("Path %s expected to be a file", q).that(q.isFile()).isTrue()
+        assertThat(FileSystemUtils.readContent(q)).isEmpty()
+    }
 }

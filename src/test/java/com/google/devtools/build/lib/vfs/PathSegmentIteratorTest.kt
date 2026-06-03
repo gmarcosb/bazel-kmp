@@ -11,66 +11,66 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.vfs;
+package com.google.devtools.build.lib.vfs
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.analysis.util.ConfigurationTestCase.create
+import com.google.devtools.build.lib.packages.util.MockToolsConfig.create
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import java.util.Iterator;
-import java.util.NoSuchElementException;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [PathSegmentIterator].  */
+@RunWith(JUnit4::class)
+class PathSegmentIteratorTest {
+    @org.junit.Test
+    fun emptyPath() {
+        Truth.assertThat(segmentIterator("",  /*driveStrLength=*/0)).isEmpty()
+    }
 
-/** Tests for {@link PathSegmentIterator}. */
-@RunWith(JUnit4.class)
-public final class PathSegmentIteratorTest {
+    @org.junit.Test
+    fun relativePath() {
+        Truth.assertThat(segmentIterator("this/is/a/relative/path",  /*driveStrLength=*/0))
+            .containsExactly("this", "is", "a", "relative", "path")
+            .inOrder()
+    }
 
-  @Test
-  public void emptyPath() {
-    assertThat(segmentIterator("", /*driveStrLength=*/ 0)).isEmpty();
-  }
+    @org.junit.Test
+    fun root_unix() {
+        Truth.assertThat(segmentIterator("/",  /*driveStrLength=*/1)).isEmpty()
+    }
 
-  @Test
-  public void relativePath() {
-    assertThat(segmentIterator("this/is/a/relative/path", /*driveStrLength=*/ 0))
-        .containsExactly("this", "is", "a", "relative", "path")
-        .inOrder();
-  }
+    @org.junit.Test
+    fun root_windows() {
+        Truth.assertThat(segmentIterator("C:/",  /*driveStrLength=*/3)).isEmpty()
+    }
 
-  @Test
-  public void root_unix() {
-    assertThat(segmentIterator("/", /*driveStrLength=*/ 1)).isEmpty();
-  }
+    @org.junit.Test
+    fun absolutePath_unix() {
+        Truth.assertThat(segmentIterator("/this/is/an/absolute/path",  /*driveStrLength=*/1))
+            .containsExactly("this", "is", "an", "absolute", "path")
+            .inOrder()
+    }
 
-  @Test
-  public void root_windows() {
-    assertThat(segmentIterator("C:/", /*driveStrLength=*/ 3)).isEmpty();
-  }
+    @org.junit.Test
+    fun absolutePath_windows() {
+        Truth.assertThat(segmentIterator("C:/this/is/an/absolute/path",  /*driveStrLength=*/3))
+            .containsExactly("this", "is", "an", "absolute", "path")
+            .inOrder()
+    }
 
-  @Test
-  public void absolutePath_unix() {
-    assertThat(segmentIterator("/this/is/an/absolute/path", /*driveStrLength=*/ 1))
-        .containsExactly("this", "is", "an", "absolute", "path")
-        .inOrder();
-  }
+    @org.junit.Test
+    fun noSuchElement() {
+        val it: MutableIterator<String?> = PathSegmentIterator.create("some/path",  /*driveStrLength=*/0)
+        it.next()
+        it.next()
+        org.junit.Assert.assertThrows<java.util.NoSuchElementException?>(
+            java.util.NoSuchElementException::class.java,
+            org.junit.function.ThrowingRunnable { it.next() })
+    }
 
-  @Test
-  public void absolutePath_windows() {
-    assertThat(segmentIterator("C:/this/is/an/absolute/path", /*driveStrLength=*/ 3))
-        .containsExactly("this", "is", "an", "absolute", "path")
-        .inOrder();
-  }
-
-  @Test
-  public void noSuchElement() {
-    Iterator<String> it = PathSegmentIterator.create("some/path", /*driveStrLength=*/ 0);
-    it.next();
-    it.next();
-    assertThrows(NoSuchElementException.class, it::next);
-  }
-
-  private static Iterable<String> segmentIterator(String normalizedPath, int driveStrLength) {
-    return () -> PathSegmentIterator.create(normalizedPath, driveStrLength);
-  }
+    companion object {
+        private fun segmentIterator(normalizedPath: String?, driveStrLength: Int): Iterable<String?> {
+            return Iterable { PathSegmentIterator.create(normalizedPath, driveStrLength) }
+        }
+    }
 }

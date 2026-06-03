@@ -11,355 +11,340 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages;
+package com.google.devtools.build.lib.packages
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.truth.Truth.assertWithMessage;
-import static com.google.devtools.build.lib.packages.Attribute.attr;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.packages.Attribute.attr
 
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.analysis.util.MockRule;
-import com.google.devtools.build.lib.analysis.util.MockRuleDefaults;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.Attribute.ComputedDefault;
-import com.google.devtools.build.lib.packages.Attribute.LateBoundDefault;
-import com.google.devtools.build.lib.testutil.TestRuleClassProvider;
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import java.util.Collections;
-import java.util.Iterator;
-import java.util.stream.IntStream;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-
-/** Tests for {@link Rule}'s attribute storage behavior. */
-@RunWith(TestParameterInjector.class)
-public final class RuleAttributeStorageTest extends BuildViewTestCase {
-
-  private static final String STRING_DEFAULT = Type.STRING.getDefaultValue();
-  private static final int COMPUTED_DEFAULT_OFFSET = 1;
-  private static final int LATE_BOUND_DEFAULT_OFFSET = 2;
-
-  private enum ContainerSize {
-    SMALL(16),
-    LARGE(128);
-
-    private final int numAttrs;
-
-    ContainerSize(int numAttrs) {
-      this.numAttrs = numAttrs;
-    }
-  }
-
-  @TestParameter private ContainerSize containerSize;
-
-  private Rule rule;
-  private int firstCustomAttrIndex;
-  private Attribute firstCustomAttr;
-  private int lastCustomAttrIndex;
-  private Attribute lastCustomAttr;
-  private int computedDefaultIndex;
-  private Attribute computedDefaultAttr;
-  private int lateBoundDefaultIndex;
-  private Attribute lateBoundDefaultAttr;
-
-  @Override
-  protected ConfiguredRuleClassProvider createRuleClassProvider() {
-    int numDefaultAttrs = MockRuleDefaults.DEFAULT_ATTRIBUTES.size() + 1; // +1 for name.
-    int numCustomAttrs = containerSize.numAttrs - numDefaultAttrs;
-    MockRule exampleRule =
-        () ->
-            MockRule.define(
-                "example_rule",
-                IntStream.range(0, numCustomAttrs)
-                    .mapToObj(
-                        i -> {
-                          // Make one attribute a computed default and one a late bound default.
-                          if (i == COMPUTED_DEFAULT_OFFSET) {
-                            return attr("attr" + i + "_computed_default", Type.STRING)
-                                .value(
-                                    new ComputedDefault() {
-                                      @Override
-                                      public Object getDefault(AttributeMap rule) {
-                                        return "computed";
-                                      }
-                                    });
-                          }
-                          if (i == LATE_BOUND_DEFAULT_OFFSET) {
-                            return attr(":attr" + i + "_late_bound_default", Type.STRING)
-                                .value(
-                                    new LateBoundDefault<>(Void.class, (rule) -> "late_bound") {
-                                      @Override
-                                      public String resolve(
-                                          Rule rule, AttributeMap attributes, Void input) {
-                                        return "late_bound";
-                                      }
-                                    });
-                          }
-                          return attr("attr" + i, Type.STRING);
-                        })
-                    .toArray(Attribute.Builder[]::new));
-    var builder = new ConfiguredRuleClassProvider.Builder().addRuleDefinition(exampleRule);
-    TestRuleClassProvider.addStandardRules(builder);
-    return builder.build();
-  }
-
-  @Before
-  public void setUpForRule() throws Exception {
-    scratch.file("foo/BUILD", "example_rule(name = 'example')");
-
-    // Make a mutable copy of the rule so we can set attributes.
-    Rule actualRule = (Rule) getTarget("//foo:example");
-    rule =
-        new Rule(
-            actualRule.getPackageoid(),
-            actualRule.getLabel(),
-            actualRule.getRuleClassObject(),
-            actualRule.getLocation(),
-            actualRule.getInteriorCallStack());
-
-    firstCustomAttrIndex =
-        rule.getRuleClassObject().getAttributeProvider().getAttributeIndex("attr0");
-    firstCustomAttr = attrAt(firstCustomAttrIndex);
-    lastCustomAttrIndex = rule.getRuleClassObject().getAttributeProvider().getAttributeCount() - 1;
-    lastCustomAttr = attrAt(lastCustomAttrIndex);
-    computedDefaultIndex = firstCustomAttrIndex + COMPUTED_DEFAULT_OFFSET;
-    computedDefaultAttr = attrAt(computedDefaultIndex);
-    lateBoundDefaultIndex = firstCustomAttrIndex + LATE_BOUND_DEFAULT_OFFSET;
-    lateBoundDefaultAttr = attrAt(lateBoundDefaultIndex);
-  }
-
-  @Test
-  public void attributeSettingAndRetrieval(@TestParameter boolean frozen) {
-    rule.setAttributeValue(firstCustomAttr, "val1", /* explicit= */ true);
-    rule.setAttributeValue(lastCustomAttr, "val2", /* explicit= */ true);
-
-    if (frozen) {
-      rule.freeze();
+/** Tests for [Rule]'s attribute storage behavior.  */
+@RunWith(TestParameterInjector::class)
+class RuleAttributeStorageTest : BuildViewTestCase() {
+    private enum class ContainerSize(private val numAttrs: Int) {
+        SMALL(16),
+        LARGE(128)
     }
 
-    assertThat(rule.getAttrIfStored(firstCustomAttrIndex)).isEqualTo("val1");
-    assertThat(rule.isAttributeValueExplicitlySpecified(firstCustomAttr)).isTrue();
-    assertThat(rule.getAttrIfStored(lastCustomAttrIndex)).isEqualTo("val2");
-    assertThat(rule.isAttributeValueExplicitlySpecified(lastCustomAttr)).isTrue();
-  }
+    @TestParameter
+    private val containerSize: ContainerSize? = null
 
-  @Test
-  public void indexOutOfBounds_throws(@TestParameter boolean frozen) {
-    if (frozen) {
-      rule.freeze();
-    }
-    assertThrows(
-        IndexOutOfBoundsException.class, () -> rule.getAttrIfStored(lastCustomAttrIndex + 1));
-  }
+    private var rule: Rule? = null
+    private var firstCustomAttrIndex = 0
+    private var firstCustomAttr: Attribute? = null
+    private var lastCustomAttrIndex = 0
+    private var lastCustomAttr: Attribute? = null
+    private var computedDefaultIndex = 0
+    private var computedDefaultAttr: Attribute? = null
+    private var lateBoundDefaultIndex = 0
+    private var lateBoundDefaultAttr: Attribute? = null
 
-  @Test
-  public void testForOffByOneError(@TestParameter boolean frozen) {
-    // Set an index explicitly and check neighbouring indices don't leak that.
-    rule.setAttributeValue(firstCustomAttr, "val", true);
-
-    if (frozen) {
-      rule.freeze();
-    }
-
-    assertThat(rule.getAttrIfStored(firstCustomAttrIndex - 1)).isNull();
-    assertThat(rule.isAttributeValueExplicitlySpecified(attrAt(firstCustomAttrIndex - 1)))
-        .isFalse();
-    assertThat(rule.getAttrIfStored(firstCustomAttrIndex + 1)).isNull();
-    assertThat(rule.isAttributeValueExplicitlySpecified(attrAt(firstCustomAttrIndex + 1)))
-        .isFalse();
-  }
-
-  @Test
-  public void testFreezeWorks() {
-    rule.setAttributeValue(firstCustomAttr, "val1", /* explicit= */ true);
-    rule.setAttributeValue(lastCustomAttr, "val2", /* explicit= */ false);
-    assertThat(rule.isFrozen()).isFalse();
-
-    rule.freeze();
-
-    assertThat(rule.isFrozen()).isTrue();
-    // Double freezing is a no-op
-    rule.freeze();
-    // reads/explicit bits work as expected
-    assertThat(rule.getAttrIfStored(firstCustomAttrIndex)).isEqualTo("val1");
-    assertThat(rule.isAttributeValueExplicitlySpecified(firstCustomAttr)).isTrue();
-    assertThat(rule.getAttrIfStored(lastCustomAttrIndex)).isEqualTo("val2");
-    assertThat(rule.isAttributeValueExplicitlySpecified(lastCustomAttr)).isFalse();
-    // writes no longer work.
-    assertThrows(
-        IllegalStateException.class,
-        () -> rule.setAttributeValue(lastCustomAttr, "different", true));
-  }
-
-  @Test
-  public void allAttributesSet(@TestParameter boolean frozen) {
-    int size = rule.getRuleClassObject().getAttributeProvider().getAttributeCount();
-    rule.setAttributeValue(attrAt(0), rule.getName(), /* explicit= */ true);
-    for (int i = 1; i < size; i++) {
-      rule.setAttributeValue(attrAt(i), "value " + i, i % 2 == 0);
+    override fun createRuleClassProvider(): ConfiguredRuleClassProvider {
+        val numDefaultAttrs: Int = MockRuleDefaults.DEFAULT_ATTRIBUTES.size + 1 // +1 for name.
+        val numCustomAttrs = containerSize.numAttrs - numDefaultAttrs
+        val exampleRule: MockRule =
+            MockRule {
+                MockRule.define(
+                    "example_rule",
+                    IntStream.range(0, numCustomAttrs)
+                        .mapToObj<Any?>(
+                            java.util.function.IntFunction { i: Int ->
+                                // Make one attribute a computed default and one a late bound default.
+                                if (i == COMPUTED_DEFAULT_OFFSET) {
+                                    return@mapToObj attr("attr" + i + "_computed_default", Type.STRING)
+                                        .value(
+                                            object : ComputedDefault() {
+                                                public override fun getDefault(rule: AttributeMap?): Any? {
+                                                    return@mapToObj "computed"
+                                                }
+                                            })
+                                }
+                                if (i == LATE_BOUND_DEFAULT_OFFSET) {
+                                    return@mapToObj attr(":attr" + i + "_late_bound_default", Type.STRING)
+                                        .value(
+                                            object :
+                                                LateBoundDefault(java.lang.Void::class.java, { rule -> "late_bound" }) {
+                                                public override fun resolve(
+                                                    rule: Rule?, attributes: AttributeMap?, input: java.lang.Void?
+                                                ): String? {
+                                                    return@mapToObj "late_bound"
+                                                }
+                                            })
+                                }
+                                attr("attr" + i, Type.STRING)
+                            })
+                        .toArray<Attribute.Builder?> { _Dummy_.__Array__() })
+            }
+        val builder: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            Builder().addRuleDefinition(exampleRule)
+        TestRuleClassProvider.addStandardRules(builder)
+        return builder.build()
     }
 
-    if (frozen) {
-      rule.freeze();
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun setUpForRule() {
+        scratch.file("foo/BUILD", "example_rule(name = 'example')")
+
+        // Make a mutable copy of the rule so we can set attributes.
+        val actualRule: Rule? = getTarget("//foo:example") as Rule?
+        rule =
+            Rule(
+                actualRule.getPackageoid(),
+                actualRule.getLabel(),
+                actualRule.getRuleClassObject(),
+                actualRule.getLocation(),
+                actualRule.getInteriorCallStack()
+            )
+
+        firstCustomAttrIndex =
+            rule.getRuleClassObject().getAttributeProvider().getAttributeIndex("attr0")
+        firstCustomAttr = attrAt(firstCustomAttrIndex)
+        lastCustomAttrIndex = rule.getRuleClassObject().getAttributeProvider().getAttributeCount() - 1
+        lastCustomAttr = attrAt(lastCustomAttrIndex)
+        computedDefaultIndex = firstCustomAttrIndex + COMPUTED_DEFAULT_OFFSET
+        computedDefaultAttr = attrAt(computedDefaultIndex)
+        lateBoundDefaultIndex = firstCustomAttrIndex + LATE_BOUND_DEFAULT_OFFSET
+        lateBoundDefaultAttr = attrAt(lateBoundDefaultIndex)
     }
 
-    for (int i = 1; i < size; i++) { // Skip attribute 0 (name) which is never stored.
-      assertThat(rule.getAttrIfStored(i)).isEqualTo("value " + i);
-      assertWithMessage("attribute %s", i)
-          .that(rule.isAttributeValueExplicitlySpecified(attrAt(i)))
-          .isEqualTo(i % 2 == 0);
-    }
-  }
+    @org.junit.Test
+    fun attributeSettingAndRetrieval(@TestParameter frozen: Boolean) {
+        rule.setAttributeValue(firstCustomAttr, "val1",  /* explicit= */true)
+        rule.setAttributeValue(lastCustomAttr, "val2",  /* explicit= */true)
 
-  @Test
-  public void getRawAttrValues_mutable_nullSafe() {
-    assertThat(rule.getRawAttrValues())
-        .containsAtLeastElementsIn(
-            Collections.nCopies(
-                rule.getRuleClassObject().getAttributeProvider().getAttributeCount(), null));
-  }
+        if (frozen) {
+            rule.freeze()
+        }
 
-  @Test
-  public void getRawAttrValues_frozen_noNulls() {
-    rule.setAttributeValue(firstCustomAttr, "hi", /* explicit= */ true);
-    rule.setAttributeValue(lastCustomAttr, null, /* explicit= */ false);
-    rule.freeze();
-    assertThat(rule.getRawAttrValues()).containsExactly("hi");
-  }
-
-  @Test
-  public void getRawAttrValues_unmodifiable(@TestParameter boolean frozen) {
-    rule.setAttributeValue(firstCustomAttr, "hi", /* explicit= */ true);
-
-    if (frozen) {
-      rule.freeze();
+        assertThat(rule.getAttrIfStored(firstCustomAttrIndex)).isEqualTo("val1")
+        assertThat(rule.isAttributeValueExplicitlySpecified(firstCustomAttr)).isTrue()
+        assertThat(rule.getAttrIfStored(lastCustomAttrIndex)).isEqualTo("val2")
+        assertThat(rule.isAttributeValueExplicitlySpecified(lastCustomAttr)).isTrue()
     }
 
-    Iterator<Object> it = rule.getRawAttrValues().iterator();
-    it.next();
-    assertThrows(UnsupportedOperationException.class, it::remove);
-  }
-
-  /** Regression test for b/269593252. */
-  @Test
-  public void boundaryOfFrozenContainer() {
-    String ruleName = rule.getName();
-    rule.setAttributeValue(attrAt(0), ruleName, /* explicit= */ true);
-    rule.setAttributeValue(lastCustomAttr, "last", /* explicit= */ true);
-
-    rule.freeze();
-
-    assertThat(rule.getAttr("name")).isEqualTo(ruleName);
-    assertThat(rule.isAttributeValueExplicitlySpecified("name")).isTrue();
-    assertThat(rule.getAttrIfStored(lastCustomAttrIndex)).isEqualTo("last");
-    assertThat(rule.isAttributeValueExplicitlySpecified(lastCustomAttr)).isTrue();
-  }
-
-  @Test
-  public void nameNotStoredAsRawAttr(@TestParameter boolean frozen) {
-    String ruleName = rule.getName();
-    rule.setAttributeValue(attrAt(0), ruleName, /* explicit= */ true);
-
-    if (frozen) {
-      rule.freeze();
+    @org.junit.Test
+    fun indexOutOfBounds_throws(@TestParameter frozen: Boolean) {
+        if (frozen) {
+            rule.freeze()
+        }
+        org.junit.Assert.assertThrows<java.lang.IndexOutOfBoundsException?>(
+            java.lang.IndexOutOfBoundsException::class.java,
+            org.junit.function.ThrowingRunnable { rule.getAttrIfStored(lastCustomAttrIndex + 1) })
     }
 
-    assertThat(rule.getAttrIfStored(0)).isNull();
-    assertThat(rule.getRawAttrValues()).doesNotContain(ruleName);
-    assertThat(rule.getAttr("name")).isEqualTo(ruleName);
-    assertThat(rule.isAttributeValueExplicitlySpecified("name")).isTrue();
-  }
+    @org.junit.Test
+    fun testForOffByOneError(@TestParameter frozen: Boolean) {
+        // Set an index explicitly and check neighbouring indices don't leak that.
+        rule.setAttributeValue(firstCustomAttr, "val", true)
 
-  @Test
-  public void explicitDefaultValue_stored(@TestParameter boolean frozen) {
-    rule.setAttributeValue(firstCustomAttr, STRING_DEFAULT, /* explicit= */ true);
+        if (frozen) {
+            rule.freeze()
+        }
 
-    if (frozen) {
-      rule.freeze();
+        assertThat(rule.getAttrIfStored(firstCustomAttrIndex - 1)).isNull()
+        assertThat(rule.isAttributeValueExplicitlySpecified(attrAt(firstCustomAttrIndex - 1)))
+            .isFalse()
+        assertThat(rule.getAttrIfStored(firstCustomAttrIndex + 1)).isNull()
+        assertThat(rule.isAttributeValueExplicitlySpecified(attrAt(firstCustomAttrIndex + 1)))
+            .isFalse()
     }
 
-    assertThat(rule.getAttrIfStored(firstCustomAttrIndex)).isNotNull();
-    assertThat(rule.isAttributeValueExplicitlySpecified(firstCustomAttr)).isTrue();
-  }
+    @org.junit.Test
+    fun testFreezeWorks() {
+        rule.setAttributeValue(firstCustomAttr, "val1",  /* explicit= */true)
+        rule.setAttributeValue(lastCustomAttr, "val2",  /* explicit= */false)
+        assertThat(rule.isFrozen()).isFalse()
 
-  @Test
-  public void nonExplicitDefaultValue_mutable_stored() {
-    rule.setAttributeValue(firstCustomAttr, STRING_DEFAULT, /* explicit= */ false);
+        rule.freeze()
 
-    assertThat(rule.getAttrIfStored(firstCustomAttrIndex)).isNotNull();
-    assertThat(rule.isAttributeValueExplicitlySpecified(firstCustomAttr)).isFalse();
-  }
+        assertThat(rule.isFrozen()).isTrue()
+        // Double freezing is a no-op
+        rule.freeze()
+        // reads/explicit bits work as expected
+        assertThat(rule.getAttrIfStored(firstCustomAttrIndex)).isEqualTo("val1")
+        assertThat(rule.isAttributeValueExplicitlySpecified(firstCustomAttr)).isTrue()
+        assertThat(rule.getAttrIfStored(lastCustomAttrIndex)).isEqualTo("val2")
+        assertThat(rule.isAttributeValueExplicitlySpecified(lastCustomAttr)).isFalse()
+        // writes no longer work.
+        org.junit.Assert.assertThrows<java.lang.IllegalStateException?>(
+            java.lang.IllegalStateException::class.java,
+            org.junit.function.ThrowingRunnable { rule.setAttributeValue(lastCustomAttr, "different", true) })
+    }
 
-  @Test
-  public void nonExplicitDefaultValue_frozen_notStored() {
-    rule.setAttributeValue(firstCustomAttr, STRING_DEFAULT, /* explicit= */ false);
+    @org.junit.Test
+    fun allAttributesSet(@TestParameter frozen: Boolean) {
+        val size: Int = rule.getRuleClassObject().getAttributeProvider().getAttributeCount()
+        rule.setAttributeValue(attrAt(0), rule.getName(),  /* explicit= */true)
+        for (i in 1..<size) {
+            rule.setAttributeValue(attrAt(i), "value " + i, i % 2 == 0)
+        }
 
-    rule.freeze();
+        if (frozen) {
+            rule.freeze()
+        }
 
-    assertThat(rule.getAttrIfStored(firstCustomAttrIndex)).isNull();
-    assertThat(rule.isAttributeValueExplicitlySpecified(firstCustomAttr)).isFalse();
-  }
+        for (i in 1..<size) { // Skip attribute 0 (name) which is never stored.
+            assertThat(rule.getAttrIfStored(i)).isEqualTo("value " + i)
+            Truth.assertWithMessage("attribute %s", i)
+                .that(rule.isAttributeValueExplicitlySpecified(attrAt(i)))
+                .isEqualTo(i % 2 == 0)
+        }
+    }
 
-  @Test
-  public void computedDefault_mutable_stored() {
-    var computedDefault = computedDefaultAttr.getDefaultValue(null);
-    assertThat(computedDefaultAttr.hasComputedDefault()).isTrue();
-    assertThat(computedDefault).isInstanceOf(ComputedDefault.class);
+    @get:org.junit.Test
+    val rawAttrValues_mutable_nullSafe: Unit
+        get() {
+            assertThat(rule.getRawAttrValues())
+                .containsAtLeastElementsIn(
+                    Collections.nCopies<T?>(
+                        rule.getRuleClassObject().getAttributeProvider().getAttributeCount(), null
+                    )
+                )
+        }
 
-    rule.setAttributeValue(computedDefaultAttr, computedDefault, /* explicit= */ false);
+    @get:org.junit.Test
+    val rawAttrValues_frozen_noNulls: Unit
+        get() {
+            rule.setAttributeValue(firstCustomAttr, "hi",  /* explicit= */true)
+            rule.setAttributeValue(lastCustomAttr, null,  /* explicit= */false)
+            rule.freeze()
+            assertThat(rule.getRawAttrValues()).containsExactly("hi")
+        }
 
-    assertThat(rule.getAttrIfStored(computedDefaultIndex)).isEqualTo(computedDefault);
-    assertThat(rule.getAttr(computedDefaultAttr.name)).isEqualTo(computedDefault);
-    assertThat(rule.isAttributeValueExplicitlySpecified(computedDefaultAttr)).isFalse();
-  }
+    @org.junit.Test
+    fun getRawAttrValues_unmodifiable(@TestParameter frozen: Boolean) {
+        rule.setAttributeValue(firstCustomAttr, "hi",  /* explicit= */true)
 
-  @Test
-  public void computedDefault_frozen_notStored() {
-    var computedDefault = computedDefaultAttr.getDefaultValue(null);
-    assertThat(computedDefaultAttr.hasComputedDefault()).isTrue();
-    assertThat(computedDefault).isInstanceOf(ComputedDefault.class);
+        if (frozen) {
+            rule.freeze()
+        }
 
-    rule.setAttributeValue(computedDefaultAttr, computedDefault, /* explicit= */ false);
-    rule.freeze();
+        val it: MutableIterator<Any?> = rule.getRawAttrValues().iterator()
+        it.next()
+        org.junit.Assert.assertThrows<java.lang.UnsupportedOperationException?>(
+            java.lang.UnsupportedOperationException::class.java,
+            org.junit.function.ThrowingRunnable { it.remove() })
+    }
 
-    assertThat(rule.getAttrIfStored(computedDefaultIndex)).isNull();
-    assertThat(rule.getAttr(computedDefaultAttr.name)).isEqualTo(computedDefault);
-    assertThat(rule.isAttributeValueExplicitlySpecified(computedDefaultAttr)).isFalse();
-  }
+    /** Regression test for b/269593252.  */
+    @org.junit.Test
+    fun boundaryOfFrozenContainer() {
+        val ruleName: String? = rule.getName()
+        rule.setAttributeValue(attrAt(0), ruleName,  /* explicit= */true)
+        rule.setAttributeValue(lastCustomAttr, "last",  /* explicit= */true)
 
-  @Test
-  public void lateBoundDefault_mutable_stored() {
-    var lateBoundDefault = lateBoundDefaultAttr.getLateBoundDefault();
+        rule.freeze()
 
-    rule.setAttributeValue(lateBoundDefaultAttr, lateBoundDefault, /* explicit= */ false);
+        assertThat(rule.getAttr("name")).isEqualTo(ruleName)
+        assertThat(rule.isAttributeValueExplicitlySpecified("name")).isTrue()
+        assertThat(rule.getAttrIfStored(lastCustomAttrIndex)).isEqualTo("last")
+        assertThat(rule.isAttributeValueExplicitlySpecified(lastCustomAttr)).isTrue()
+    }
 
-    assertThat(rule.getAttrIfStored(lateBoundDefaultIndex)).isEqualTo(lateBoundDefault);
-    assertThat(rule.getAttr(lateBoundDefaultAttr.name)).isEqualTo(lateBoundDefault);
-    assertThat(rule.isAttributeValueExplicitlySpecified(lateBoundDefaultAttr)).isFalse();
-  }
+    @org.junit.Test
+    fun nameNotStoredAsRawAttr(@TestParameter frozen: Boolean) {
+        val ruleName: String? = rule.getName()
+        rule.setAttributeValue(attrAt(0), ruleName,  /* explicit= */true)
 
-  @Test
-  public void lateBoundDefault_frozen_notStored() {
-    var lateBoundDefault = lateBoundDefaultAttr.getLateBoundDefault();
+        if (frozen) {
+            rule.freeze()
+        }
 
-    rule.setAttributeValue(lateBoundDefaultAttr, lateBoundDefault, /* explicit= */ false);
-    rule.freeze();
+        assertThat(rule.getAttrIfStored(0)).isNull()
+        assertThat(rule.getRawAttrValues()).doesNotContain(ruleName)
+        assertThat(rule.getAttr("name")).isEqualTo(ruleName)
+        assertThat(rule.isAttributeValueExplicitlySpecified("name")).isTrue()
+    }
 
-    assertThat(rule.getAttrIfStored(lateBoundDefaultIndex)).isNull();
-    assertThat(rule.getAttr(lateBoundDefaultAttr.name)).isEqualTo(lateBoundDefault);
-    assertThat(rule.isAttributeValueExplicitlySpecified(lateBoundDefaultAttr)).isFalse();
-  }
+    @org.junit.Test
+    fun explicitDefaultValue_stored(@TestParameter frozen: Boolean) {
+        rule.setAttributeValue(firstCustomAttr, STRING_DEFAULT,  /* explicit= */true)
 
-  @Test
-  public void incompatibleSimplifyUnconditionalSelectsInRuleAttrs() throws Exception {
-    setBuildLanguageOptions("--incompatible_simplify_unconditional_selects_in_rule_attrs=true");
-    scratch.file(
-        "x/BUILD",
-        """
+        if (frozen) {
+            rule.freeze()
+        }
+
+        assertThat(rule.getAttrIfStored(firstCustomAttrIndex)).isNotNull()
+        assertThat(rule.isAttributeValueExplicitlySpecified(firstCustomAttr)).isTrue()
+    }
+
+    @org.junit.Test
+    fun nonExplicitDefaultValue_mutable_stored() {
+        rule.setAttributeValue(firstCustomAttr, STRING_DEFAULT,  /* explicit= */false)
+
+        assertThat(rule.getAttrIfStored(firstCustomAttrIndex)).isNotNull()
+        assertThat(rule.isAttributeValueExplicitlySpecified(firstCustomAttr)).isFalse()
+    }
+
+    @org.junit.Test
+    fun nonExplicitDefaultValue_frozen_notStored() {
+        rule.setAttributeValue(firstCustomAttr, STRING_DEFAULT,  /* explicit= */false)
+
+        rule.freeze()
+
+        assertThat(rule.getAttrIfStored(firstCustomAttrIndex)).isNull()
+        assertThat(rule.isAttributeValueExplicitlySpecified(firstCustomAttr)).isFalse()
+    }
+
+    @org.junit.Test
+    fun computedDefault_mutable_stored() {
+        val computedDefault: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            computedDefaultAttr.getDefaultValue(null)
+        assertThat(computedDefaultAttr.hasComputedDefault()).isTrue()
+        assertThat(computedDefault).isInstanceOf(ComputedDefault::class.java)
+
+        rule.setAttributeValue(computedDefaultAttr, computedDefault,  /* explicit= */false)
+
+        assertThat(rule.getAttrIfStored(computedDefaultIndex)).isEqualTo(computedDefault)
+        assertThat(rule.getAttr(computedDefaultAttr.name)).isEqualTo(computedDefault)
+        assertThat(rule.isAttributeValueExplicitlySpecified(computedDefaultAttr)).isFalse()
+    }
+
+    @org.junit.Test
+    fun computedDefault_frozen_notStored() {
+        val computedDefault: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            computedDefaultAttr.getDefaultValue(null)
+        assertThat(computedDefaultAttr.hasComputedDefault()).isTrue()
+        assertThat(computedDefault).isInstanceOf(ComputedDefault::class.java)
+
+        rule.setAttributeValue(computedDefaultAttr, computedDefault,  /* explicit= */false)
+        rule.freeze()
+
+        assertThat(rule.getAttrIfStored(computedDefaultIndex)).isNull()
+        assertThat(rule.getAttr(computedDefaultAttr.name)).isEqualTo(computedDefault)
+        assertThat(rule.isAttributeValueExplicitlySpecified(computedDefaultAttr)).isFalse()
+    }
+
+    @org.junit.Test
+    fun lateBoundDefault_mutable_stored() {
+        val lateBoundDefault: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            lateBoundDefaultAttr.getLateBoundDefault()
+
+        rule.setAttributeValue(lateBoundDefaultAttr, lateBoundDefault,  /* explicit= */false)
+
+        assertThat(rule.getAttrIfStored(lateBoundDefaultIndex)).isEqualTo(lateBoundDefault)
+        assertThat(rule.getAttr(lateBoundDefaultAttr.name)).isEqualTo(lateBoundDefault)
+        assertThat(rule.isAttributeValueExplicitlySpecified(lateBoundDefaultAttr)).isFalse()
+    }
+
+    @org.junit.Test
+    fun lateBoundDefault_frozen_notStored() {
+        val lateBoundDefault: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            lateBoundDefaultAttr.getLateBoundDefault()
+
+        rule.setAttributeValue(lateBoundDefaultAttr, lateBoundDefault,  /* explicit= */false)
+        rule.freeze()
+
+        assertThat(rule.getAttrIfStored(lateBoundDefaultIndex)).isNull()
+        assertThat(rule.getAttr(lateBoundDefaultAttr.name)).isEqualTo(lateBoundDefault)
+        assertThat(rule.isAttributeValueExplicitlySpecified(lateBoundDefaultAttr)).isFalse()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun incompatibleSimplifyUnconditionalSelectsInRuleAttrs() {
+        setBuildLanguageOptions("--incompatible_simplify_unconditional_selects_in_rule_attrs=true")
+        scratch.file(
+            "x/BUILD",
+            """
         load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 
         cc_binary(
@@ -379,46 +364,62 @@ public final class RuleAttributeStorageTest extends BuildViewTestCase {
                 "//conditions:a": ["other.c"],
             })
         )
-        """);
-    Rule simplifiableSingleSelect = (Rule) getTarget("//x:simplifiable_single_select");
-    assertThat(
+        
+        """.trimIndent()
+        )
+        val simplifiableSingleSelect: Rule? = getTarget("//x:simplifiable_single_select") as Rule?
+        assertThat(
             BuildType.LABEL_LIST.cast(
-                simplifiableSingleSelect.getAttr("srcs", BuildType.LABEL_LIST)))
-        .containsExactly(Label.parseCanonicalUnchecked("//x:unconditional.cc"));
+                simplifiableSingleSelect.getAttr("srcs", BuildType.LABEL_LIST)
+            )
+        )
+            .containsExactly(Label.parseCanonicalUnchecked("//x:unconditional.cc"))
 
-    Rule simplifiableConcatOfSelects = (Rule) getTarget("//x:simplifiable_concat_of_selects");
-    assertThat(
+        val simplifiableConcatOfSelects: Rule? = getTarget("//x:simplifiable_concat_of_selects") as Rule?
+        assertThat(
             BuildType.LABEL_LIST.cast(
-                simplifiableConcatOfSelects.getAttr("srcs", BuildType.LABEL_LIST)))
-        .containsExactly(
-            Label.parseCanonicalUnchecked("//x:direct.cc"),
-            Label.parseCanonicalUnchecked("//x:unconditional.cc"))
-        .inOrder();
+                simplifiableConcatOfSelects.getAttr("srcs", BuildType.LABEL_LIST)
+            )
+        )
+            .containsExactly(
+                Label.parseCanonicalUnchecked("//x:direct.cc"),
+                Label.parseCanonicalUnchecked("//x:unconditional.cc")
+            )
+            .inOrder()
 
-    Rule nonSimplifiable = (Rule) getTarget("//x:non_simplifiable");
-    assertThat(nonSimplifiable.getAttr("srcs", BuildType.LABEL_LIST))
-        .isInstanceOf(BuildType.SelectorList.class);
-  }
+        val nonSimplifiable: Rule? = getTarget("//x:non_simplifiable") as Rule?
+        assertThat(nonSimplifiable.getAttr("srcs", BuildType.LABEL_LIST))
+            .isInstanceOf(BuildType.SelectorList::class.java)
+    }
 
-  @Test
-  public void noIncompatibleSimplifyUnconditionalSelectsInRuleAttrs() throws Exception {
-    setBuildLanguageOptions("--incompatible_simplify_unconditional_selects_in_rule_attrs=false");
-    scratch.file(
-        "x/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun noIncompatibleSimplifyUnconditionalSelectsInRuleAttrs() {
+        setBuildLanguageOptions("--incompatible_simplify_unconditional_selects_in_rule_attrs=false")
+        scratch.file(
+            "x/BUILD",
+            """
         load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 
         cc_binary(
             name = "simplifiable",
             srcs = select({"//conditions:default": ["unconditional.cc"]})
         )
-        """);
-    Rule simplifiable = (Rule) getTarget("//x:simplifiable");
-    assertThat(simplifiable.getAttr("srcs", BuildType.LABEL_LIST))
-        .isInstanceOf(BuildType.SelectorList.class);
-  }
+        
+        """.trimIndent()
+        )
+        val simplifiable: Rule? = getTarget("//x:simplifiable") as Rule?
+        assertThat(simplifiable.getAttr("srcs", BuildType.LABEL_LIST))
+            .isInstanceOf(BuildType.SelectorList::class.java)
+    }
 
-  private Attribute attrAt(int attrIndex) {
-    return rule.getRuleClassObject().getAttributeProvider().getAttribute(attrIndex);
-  }
+    private fun attrAt(attrIndex: Int): Attribute {
+        return rule.getRuleClassObject().getAttributeProvider().getAttribute(attrIndex)
+    }
+
+    companion object {
+        private val STRING_DEFAULT: String? = Type.STRING.getDefaultValue()
+        private const val COMPUTED_DEFAULT_OFFSET = 1
+        private const val LATE_BOUND_DEFAULT_OFFSET = 2
+    }
 }

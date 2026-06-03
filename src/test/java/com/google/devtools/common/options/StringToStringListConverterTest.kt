@@ -11,57 +11,87 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.common.options
 
-package com.google.devtools.common.options;
+import com.google.common.truth.Truth
+import com.google.devtools.common.options.Converters.StringToStringListConverter
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import static com.google.common.truth.Truth.assertThat;
+/** Test for [Converters.AssignmentToListOfValuesConverter].  */
+@RunWith(JUnit4::class)
+class StringToStringListConverterTest {
+    protected var converter: StringToStringListConverter = StringToStringListConverter()
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Maps;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun nameEqualsValue() {
+        Truth.assertThat(converter.convert("name=value"))
+            .isEqualTo(
+                com.google.common.collect.Maps.immutableEntry<String?, com.google.common.collect.ImmutableList<String?>?>(
+                    "name",
+                    com.google.common.collect.ImmutableList.of<String?>("value")
+                )
+            )
+    }
 
-/** Test for {@link Converters.AssignmentToListOfValuesConverter}. */
-@RunWith(JUnit4.class)
-public class StringToStringListConverterTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun nameEqualsMultipleValues() {
+        Truth.assertThat(converter.convert("name=value1,value2"))
+            .isEqualTo(
+                com.google.common.collect.Maps.immutableEntry<String?, com.google.common.collect.ImmutableList<String?>?>(
+                    "name",
+                    com.google.common.collect.ImmutableList.of<String?>("value1", "value2")
+                )
+            )
+    }
 
-  protected Converters.StringToStringListConverter converter =
-      new Converters.StringToStringListConverter();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun nameEqualsNoValue_setsEmptyValue() {
+        Truth.assertThat(converter.convert("name="))
+            .isEqualTo(
+                com.google.common.collect.Maps.immutableEntry<String?, com.google.common.collect.ImmutableList<Any?>?>(
+                    "name",
+                    com.google.common.collect.ImmutableList.of<Any?>()
+                )
+            )
+    }
 
-  @Test
-  public void nameEqualsValue() throws Exception {
-    assertThat(converter.convert("name=value"))
-        .isEqualTo(Maps.immutableEntry("name", ImmutableList.of("value")));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun equalsValue_setsEmptyKey() {
+        Truth.assertThat(converter.convert("=value"))
+            .isEqualTo(
+                com.google.common.collect.Maps.immutableEntry<String?, com.google.common.collect.ImmutableList<String?>?>(
+                    "",
+                    com.google.common.collect.ImmutableList.of<String?>("value")
+                )
+            )
+    }
 
-  @Test
-  public void nameEqualsMultipleValues() throws Exception {
-    assertThat(converter.convert("name=value1,value2"))
-        .isEqualTo(Maps.immutableEntry("name", ImmutableList.of("value1", "value2")));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun justValue_setsEmptyKey() {
+        Truth.assertThat(converter.convert("value"))
+            .isEqualTo(
+                com.google.common.collect.Maps.immutableEntry<String?, com.google.common.collect.ImmutableList<String?>?>(
+                    "",
+                    com.google.common.collect.ImmutableList.of<String?>("value")
+                )
+            )
+    }
 
-  @Test
-  public void nameEqualsNoValue_setsEmptyValue() throws Exception {
-    assertThat(converter.convert("name="))
-        .isEqualTo(Maps.immutableEntry("name", ImmutableList.of()));
-  }
-
-  @Test
-  public void equalsValue_setsEmptyKey() throws Exception {
-    assertThat(converter.convert("=value"))
-        .isEqualTo(Maps.immutableEntry("", ImmutableList.of("value")));
-  }
-
-  @Test
-  public void justValue_setsEmptyKey() throws Exception {
-    assertThat(converter.convert("value"))
-        .isEqualTo(Maps.immutableEntry("", ImmutableList.of("value")));
-  }
-
-  @Test
-  public void noNameMultipleValues() throws Exception {
-    assertThat(converter.convert("value1,value2"))
-        .isEqualTo(Maps.immutableEntry("", ImmutableList.of("value1", "value2")));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun noNameMultipleValues() {
+        Truth.assertThat(converter.convert("value1,value2"))
+            .isEqualTo(
+                com.google.common.collect.Maps.immutableEntry<String?, com.google.common.collect.ImmutableList<String?>?>(
+                    "",
+                    com.google.common.collect.ImmutableList.of<String?>("value1", "value2")
+                )
+            )
+    }
 }

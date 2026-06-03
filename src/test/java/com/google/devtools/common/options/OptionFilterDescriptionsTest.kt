@@ -11,63 +11,70 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.common.options;
+package com.google.devtools.common.options
 
-import static com.google.common.truth.Truth.assertThat;
+import OptionFilters.OptionEffectTag
+import OptionFilters.OptionMetadataTag
+import com.google.common.truth.Truth
+import com.google.devtools.common.options.OptionDocumentationCategory
+import com.google.devtools.common.options.OptionEffectTag
+import com.google.devtools.common.options.OptionFilterDescriptions
+import com.google.devtools.common.options.OptionMetadataTag
+import com.google.devtools.common.options.testing.ConverterTesterMap.Builder.add
+import com.google.devtools.common.options.testing.ConverterTesterMap.Builder.addAll
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.util.Collections
 
-import com.google.common.collect.ImmutableMap;
-import java.util.ArrayList;
-import java.util.Collections;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests that we have descriptions for every option tag.  */
+@RunWith(JUnit4::class)
+class OptionFilterDescriptionsTest {
+    @org.junit.Test
+    fun documentationOrderIncludesAllDocumentedCategories() {
+        // Expect the documentation order to include everything but the undocumented category.
+        val docOrderPlusUndocumented: java.util.ArrayList<OptionDocumentationCategory?> =
+            java.util.ArrayList<OptionDocumentationCategory?>()
+        Collections.addAll<OptionDocumentationCategory?>(
+            docOrderPlusUndocumented,
+            *OptionFilterDescriptions.documentationOrder
+        )
+        docOrderPlusUndocumented.add(OptionDocumentationCategory.UNDOCUMENTED)
 
-/** Tests that we have descriptions for every option tag. */
-@RunWith(JUnit4.class)
-public class OptionFilterDescriptionsTest {
+        Truth.assertThat<OptionDocumentationCategory?>(OptionDocumentationCategory.entries.toTypedArray())
+            .asList()
+            .containsExactlyElementsIn(docOrderPlusUndocumented)
+    }
 
-  @Test
-  public void documentationOrderIncludesAllDocumentedCategories() {
-    // Expect the documentation order to include everything but the undocumented category.
-    ArrayList<OptionDocumentationCategory> docOrderPlusUndocumented = new ArrayList<>();
-    Collections.addAll(docOrderPlusUndocumented, OptionFilterDescriptions.documentationOrder);
-    docOrderPlusUndocumented.add(OptionDocumentationCategory.UNDOCUMENTED);
+    @org.junit.Test
+    fun optionDocumentationCategoryDescriptionsContainsAllCategories() {
+        // Check that we have a description for all valid option categories.
+        val optionCategoryDescriptions: com.google.common.collect.ImmutableMap<OptionDocumentationCategory?, String?> =
+            OptionFilterDescriptions.getOptionCategoriesEnumDescription()
 
-    assertThat(OptionDocumentationCategory.values())
-        .asList()
-        .containsExactlyElementsIn(docOrderPlusUndocumented);
-  }
+        Truth.assertThat<OptionDocumentationCategory?>(OptionDocumentationCategory.entries.toTypedArray())
+            .asList()
+            .containsExactlyElementsIn(optionCategoryDescriptions.keys)
+    }
 
-  @Test
-  public void optionDocumentationCategoryDescriptionsContainsAllCategories() {
-    // Check that we have a description for all valid option categories.
-    ImmutableMap<OptionDocumentationCategory, String> optionCategoryDescriptions =
-        OptionFilterDescriptions.getOptionCategoriesEnumDescription();
+    @org.junit.Test
+    fun optionEffectTagDescriptionsContainsAllTags() {
+        // Check that we have a description for all valid option tags.
+        val optionEffectTagDescription: com.google.common.collect.ImmutableMap<OptionEffectTag?, String?> =
+            OptionFilterDescriptions.getOptionEffectTagDescription("blaze")
 
-    assertThat(OptionDocumentationCategory.values())
-        .asList()
-        .containsExactlyElementsIn(optionCategoryDescriptions.keySet());
-  }
+        Truth.assertThat<OptionEffectTag?>(OptionEffectTag.entries.toTypedArray())
+            .asList()
+            .containsExactlyElementsIn(optionEffectTagDescription.keys)
+    }
 
-  @Test
-  public void optionEffectTagDescriptionsContainsAllTags() {
-    // Check that we have a description for all valid option tags.
-    ImmutableMap<OptionEffectTag, String> optionEffectTagDescription =
-        OptionFilterDescriptions.getOptionEffectTagDescription("blaze");
+    @org.junit.Test
+    fun optionMetadataTagDescriptionsContainsAllTags() {
+        // Check that we have a description for all valid option tags.
+        val optionMetadataTagDescription: com.google.common.collect.ImmutableMap<OptionMetadataTag?, String?> =
+            OptionFilterDescriptions.getOptionMetadataTagDescription("blaze")
 
-    assertThat(OptionEffectTag.values())
-        .asList()
-        .containsExactlyElementsIn(optionEffectTagDescription.keySet());
-  }
-
-  @Test
-  public void optionMetadataTagDescriptionsContainsAllTags() {
-    // Check that we have a description for all valid option tags.
-    ImmutableMap<OptionMetadataTag, String> optionMetadataTagDescription =
-        OptionFilterDescriptions.getOptionMetadataTagDescription("blaze");
-
-    assertThat(OptionMetadataTag.values())
-        .asList()
-        .containsExactlyElementsIn(optionMetadataTagDescription.keySet());
-  }
+        Truth.assertThat<OptionMetadataTag?>(OptionMetadataTag.entries.toTypedArray())
+            .asList()
+            .containsExactlyElementsIn(optionMetadataTagDescription.keys)
+    }
 }

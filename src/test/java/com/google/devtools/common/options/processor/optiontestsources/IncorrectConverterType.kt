@@ -11,25 +11,23 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.common.options.processor.optiontestsources;
+package com.google.devtools.common.options.processor.optiontestsources
 
-import com.google.devtools.common.options.Converters.IntegerConverter;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
+import OptionFilters.OptionEffectTag
+import com.google.devtools.common.options.OptionDocumentationCategory
+import com.google.devtools.common.options.OptionEffectTag
+import com.google.devtools.common.options.OptionsBase
+import com.google.devtools.common.options.OptionsClass
 
-/** This example options class should fail to compile. */
+/** This example options class should fail to compile.  */
 @OptionsClass
-public abstract class IncorrectConverterType extends OptionsBase {
-  @Option(
-      name = "option_has_incorrect_converter_for_type",
-      defaultValue = "strings are strings, not integers",
-      converter = IntegerConverter.class,
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS})
-  public abstract String getBadOption();
-
-  public abstract void setBadOption(String value);
+abstract class IncorrectConverterType : OptionsBase() {
+    @get:com.google.devtools.common.options.Option(
+        name = "option_has_incorrect_converter_for_type",
+        defaultValue = "strings are strings, not integers",
+        converter = com.google.devtools.common.options.Converters.IntegerConverter::class,
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.AFFECTS_OUTPUTS]
+    )
+    abstract var badOption: String?
 }

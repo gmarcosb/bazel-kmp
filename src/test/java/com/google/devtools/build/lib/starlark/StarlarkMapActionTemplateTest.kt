@@ -11,48 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.starlark;
+package com.google.devtools.build.lib.starlark
 
-import static com.google.common.collect.ImmutableSet.toImmutableSet;
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.actions.ActionLookupData
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.actions.ActionLookupData;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.Artifact.SpecialArtifact;
-import com.google.devtools.build.lib.actions.Artifact.TreeFileArtifact;
-import com.google.devtools.build.lib.actions.BuildFailedException;
-import com.google.devtools.build.lib.analysis.ViewCreationFailedException;
-import com.google.devtools.build.lib.analysis.actions.SpawnAction;
-import com.google.devtools.build.lib.buildtool.util.BuildIntegrationTestCase;
-import com.google.devtools.build.lib.skyframe.ActionTemplateExpansionValue;
-import com.google.devtools.build.lib.skyframe.ActionTemplateExpansionValue.ActionTemplateExpansionKey;
-import com.google.devtools.build.lib.skyframe.TreeArtifactValue;
-import com.google.devtools.build.lib.testutil.SkyframeExecutorTestHelper;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import com.google.devtools.build.lib.util.io.RecordingOutErr;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import com.google.testing.junit.testparameterinjector.TestParameters;
-import java.util.Optional;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-
-@RunWith(TestParameterInjector.class)
-public final class StarlarkMapActionTemplateTest extends BuildIntegrationTestCase {
-
-  @Before
-  public void setUp() throws Exception {
-    addOptions("--experimental_allow_map_directory");
-    write(
-        "test/BUILD",
-        """
+@RunWith(TestParameterInjector::class)
+class StarlarkMapActionTemplateTest : BuildIntegrationTestCase() {
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun setUp() {
+        addOptions("--experimental_allow_map_directory")
+        write(
+            "test/BUILD",
+            """
         load(":my_rule.bzl", "my_rule")
         my_rule(
             name = "target",
@@ -66,24 +37,26 @@ public final class StarlarkMapActionTemplateTest extends BuildIntegrationTestCas
             name = "genrule_cat_tool",
             outs = ["cat_tool"],
             executable = True,
-            cmd = "echo 'cat $$@ > $$1' > $@",
+            cmd = "echo 'cat ${'$'}${'$'}@ > ${'$'}${'$'}1' > ${'$'}@",
         )
         genrule(
             name = "genrule_cp_dir",
             outs = ["cp_dir_tool"],
             executable = True,
-            cmd = "echo 'cp -R -L $$2/* $$1' > $@",
+            cmd = "echo 'cp -R -L ${'$'}${'$'}2/* ${'$'}${'$'}1' > ${'$'}@",
         )
         genrule(
             name = "genrule_gen_subdir_tool",
             outs = ["gen_subdir_tool"],
             executable = True,
-            cmd = "echo 'mkdir -p $$1; touch $$1/f1; touch $$1/f2;' > $@",
+            cmd = "echo 'mkdir -p ${'$'}${'$'}1; touch ${'$'}${'$'}1/f1; touch ${'$'}${'$'}1/f2;' > ${'$'}@",
         )
-        """);
-    write(
-        "test/my_rule.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        write(
+            "test/my_rule.bzl",
+            """
         load(":rule_def.bzl", "rule_impl")
         my_rule = rule(
             implementation = rule_impl,
@@ -96,16 +69,18 @@ public final class StarlarkMapActionTemplateTest extends BuildIntegrationTestCas
                 "gen_subdir_tool": attr.label(cfg = "exec", executable = True),
             },
         )
-        """);
-    write(
-        "test/helpers.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        write(
+            "test/helpers.bzl",
+            """
         def create_seed_dir(ctx, dir_name, start, end):
             input_dir = ctx.actions.declare_directory(ctx.attr.name + "_" + dir_name)
             ctx.actions.run_shell(
                 mnemonic = "SeedData",
                 outputs = [input_dir],
-                command = "for i in {%d..%d}; do echo $i > %s/%s_f$i; done" % (
+                command = "for i in {%d..%d}; do echo ${'$'}i > %s/%s_f${'$'}i; done" % (
                     start, end, input_dir.path, dir_name
                 ),
             )
@@ -204,17 +179,20 @@ public final class StarlarkMapActionTemplateTest extends BuildIntegrationTestCas
                     executable = tools["cat_tool"],
                     arguments = [args],
                 )
-        """);
-    write("test/data.txt", "some data");
-    write("test/data2.txt", "other data");
-  }
+        
+        """.trimIndent()
+        )
+        write("test/data.txt", "some data")
+        write("test/data2.txt", "other data")
+    }
 
-  @Test
-  public void doSimpleMappingWithAdditionalInputsAndParams() throws Exception {
-    SkyframeExecutorTestHelper.process(getSkyframeExecutor());
-    write(
-        "test/rule_def.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun doSimpleMappingWithAdditionalInputsAndParams() {
+        SkyframeExecutorTestHelper.process(skyframeExecutor)
+        write(
+            "test/rule_def.bzl",
+            """
         load(":helpers.bzl", "create_seed_dir", "append_data_impl")
 
         def rule_impl(ctx):
@@ -239,20 +217,23 @@ public final class StarlarkMapActionTemplateTest extends BuildIntegrationTestCas
                 },
             )
             return [DefaultInfo(files = depset([output_dir]))]
-        """);
-    buildTarget("//test:target");
-    SpecialArtifact outputTree = assertTreeBuilt("test/target_output_dir");
-    assertTreeContainsFileWithContents(outputTree, "input_dir_f1.out", "1", "some data");
-    assertTreeContainsFileWithContents(outputTree, "input_dir_f2.out", "2", "some data");
-    assertTreeContainsFileWithContents(outputTree, "input_dir_f3.out", "3", "some data");
-  }
+        
+        """.trimIndent()
+        )
+        buildTarget("//test:target")
+        val outputTree: SpecialArtifact = assertTreeBuilt("test/target_output_dir")
+        assertTreeContainsFileWithContents(outputTree, "input_dir_f1.out", "1", "some data")
+        assertTreeContainsFileWithContents(outputTree, "input_dir_f2.out", "2", "some data")
+        assertTreeContainsFileWithContents(outputTree, "input_dir_f3.out", "3", "some data")
+    }
 
-  @Test
-  public void multipleInputDirectories() throws Exception {
-    SkyframeExecutorTestHelper.process(getSkyframeExecutor());
-    write(
-        "test/rule_def.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun multipleInputDirectories() {
+        SkyframeExecutorTestHelper.process(skyframeExecutor)
+        write(
+            "test/rule_def.bzl",
+            """
         load(":helpers.bzl", "create_seed_dir", "zip_and_combine_impl")
 
         def rule_impl(ctx):
@@ -273,20 +254,23 @@ public final class StarlarkMapActionTemplateTest extends BuildIntegrationTestCas
                 },
             )
             return [DefaultInfo(files = depset([output_dir]))]
-        """);
-    buildTarget("//test:target");
-    SpecialArtifact outputTree = assertTreeBuilt("test/target_output_dir");
-    assertTreeContainsFileWithContents(outputTree, "input_dir1_f1_input_dir2_f4.out", "1", "4");
-    assertTreeContainsFileWithContents(outputTree, "input_dir1_f2_input_dir2_f5.out", "2", "5");
-    assertTreeContainsFileWithContents(outputTree, "input_dir1_f3_input_dir2_f6.out", "3", "6");
-  }
+        
+        """.trimIndent()
+        )
+        buildTarget("//test:target")
+        val outputTree: SpecialArtifact = assertTreeBuilt("test/target_output_dir")
+        assertTreeContainsFileWithContents(outputTree, "input_dir1_f1_input_dir2_f4.out", "1", "4")
+        assertTreeContainsFileWithContents(outputTree, "input_dir1_f2_input_dir2_f5.out", "2", "5")
+        assertTreeContainsFileWithContents(outputTree, "input_dir1_f3_input_dir2_f6.out", "3", "6")
+    }
 
-  @Test
-  public void multipleOutputDirectories() throws Exception {
-    SkyframeExecutorTestHelper.process(getSkyframeExecutor());
-    write(
-        "test/rule_def.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun multipleOutputDirectories() {
+        SkyframeExecutorTestHelper.process(skyframeExecutor)
+        write(
+            "test/rule_def.bzl",
+            """
         load(":helpers.bzl", "create_seed_dir", "split_directory_impl")
 
         def rule_impl(ctx):
@@ -307,22 +291,25 @@ public final class StarlarkMapActionTemplateTest extends BuildIntegrationTestCas
                 },
             )
             return [DefaultInfo(files = depset([output_dir1, output_dir2]))]
-        """);
-    buildTarget("//test:target");
-    SpecialArtifact outputTree1 = assertTreeBuilt("test/target_output_dir1");
-    SpecialArtifact outputTree2 = assertTreeBuilt("test/target_output_dir2");
-    assertTreeContainsFileWithContents(outputTree1, "input_dir_f1.out", "1");
-    assertTreeContainsFileWithContents(outputTree1, "input_dir_f3.out", "3");
-    assertTreeContainsFileWithContents(outputTree2, "input_dir_f2.out", "2");
-    assertTreeContainsFileWithContents(outputTree2, "input_dir_f4.out", "4");
-  }
+        
+        """.trimIndent()
+        )
+        buildTarget("//test:target")
+        val outputTree1: SpecialArtifact = assertTreeBuilt("test/target_output_dir1")
+        val outputTree2: SpecialArtifact = assertTreeBuilt("test/target_output_dir2")
+        assertTreeContainsFileWithContents(outputTree1, "input_dir_f1.out", "1")
+        assertTreeContainsFileWithContents(outputTree1, "input_dir_f3.out", "3")
+        assertTreeContainsFileWithContents(outputTree2, "input_dir_f2.out", "2")
+        assertTreeContainsFileWithContents(outputTree2, "input_dir_f4.out", "4")
+    }
 
-  @Test
-  public void outputDirectoriesCanBeChainedToSubsequentMapDirectoryCalls() throws Exception {
-    SkyframeExecutorTestHelper.process(getSkyframeExecutor());
-    write(
-        "test/rule_def.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun outputDirectoriesCanBeChainedToSubsequentMapDirectoryCalls() {
+        SkyframeExecutorTestHelper.process(skyframeExecutor)
+        write(
+            "test/rule_def.bzl",
+            """
         load(":helpers.bzl", "create_seed_dir", "append_data_impl", "zip_and_combine_impl")
 
         def rule_impl(ctx):
@@ -362,29 +349,35 @@ public final class StarlarkMapActionTemplateTest extends BuildIntegrationTestCas
                 },
             )
             return [DefaultInfo(files = depset([output_dir, output_dir2]))]
-        """);
-    buildTarget("//test:target");
-    SpecialArtifact outputTree = assertTreeBuilt("test/target_output_dir");
-    assertTreeContainsFileWithContents(outputTree, "input_dir1_f1.out", "1", "some data");
-    assertTreeContainsFileWithContents(outputTree, "input_dir1_f2.out", "2", "some data");
-    assertTreeContainsFileWithContents(outputTree, "input_dir1_f3.out", "3", "some data");
+        
+        """.trimIndent()
+        )
+        buildTarget("//test:target")
+        val outputTree: SpecialArtifact = assertTreeBuilt("test/target_output_dir")
+        assertTreeContainsFileWithContents(outputTree, "input_dir1_f1.out", "1", "some data")
+        assertTreeContainsFileWithContents(outputTree, "input_dir1_f2.out", "2", "some data")
+        assertTreeContainsFileWithContents(outputTree, "input_dir1_f3.out", "3", "some data")
 
-    buildTarget("//test:target");
-    SpecialArtifact outputTree2 = assertTreeBuilt("test/target_output_dir2");
-    assertTreeContainsFileWithContents(
-        outputTree2, "input_dir1_f1.out_input_dir2_f4.out", "1", "some data", "4");
-    assertTreeContainsFileWithContents(
-        outputTree2, "input_dir1_f2.out_input_dir2_f5.out", "2", "some data", "5");
-    assertTreeContainsFileWithContents(
-        outputTree2, "input_dir1_f3.out_input_dir2_f6.out", "3", "some data", "6");
-  }
+        buildTarget("//test:target")
+        val outputTree2: SpecialArtifact = assertTreeBuilt("test/target_output_dir2")
+        assertTreeContainsFileWithContents(
+            outputTree2, "input_dir1_f1.out_input_dir2_f4.out", "1", "some data", "4"
+        )
+        assertTreeContainsFileWithContents(
+            outputTree2, "input_dir1_f2.out_input_dir2_f5.out", "2", "some data", "5"
+        )
+        assertTreeContainsFileWithContents(
+            outputTree2, "input_dir1_f3.out_input_dir2_f6.out", "3", "some data", "6"
+        )
+    }
 
-  @Test
-  public void executionRequirementsPropagatedToExpandedActions() throws Exception {
-    SkyframeExecutorTestHelper.process(getSkyframeExecutor());
-    write(
-        "test/rule_def.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun executionRequirementsPropagatedToExpandedActions() {
+        SkyframeExecutorTestHelper.process(skyframeExecutor)
+        write(
+            "test/rule_def.bzl",
+            """
         load(":helpers.bzl", "create_seed_dir", "simple_map_impl")
 
         def rule_impl(ctx):
@@ -406,26 +399,29 @@ public final class StarlarkMapActionTemplateTest extends BuildIntegrationTestCas
                 }
             )
             return [DefaultInfo(files = depset([output_dir]))]
-        """);
-    buildTarget("//test:target");
-    SpecialArtifact outputTree = assertTreeBuilt("test/target_output_dir");
-    TreeFileArtifact treeFileArtifact1 = getTreeFileArtifact(outputTree, "input_dir_f1.out", 0);
-    TreeFileArtifact treeFileArtifact2 = getTreeFileArtifact(outputTree, "input_dir_f2.out", 1);
-    TreeFileArtifact treeFileArtifact3 = getTreeFileArtifact(outputTree, "input_dir_f3.out", 2);
-    SpawnAction action1 = (SpawnAction) getGeneratingAction(treeFileArtifact1);
-    SpawnAction action2 = (SpawnAction) getGeneratingAction(treeFileArtifact2);
-    SpawnAction action3 = (SpawnAction) getGeneratingAction(treeFileArtifact3);
-    assertThat(action1.getExecutionInfo()).containsEntry("local", "1");
-    assertThat(action2.getExecutionInfo()).containsEntry("local", "1");
-    assertThat(action3.getExecutionInfo()).containsEntry("local", "1");
-  }
+        
+        """.trimIndent()
+        )
+        buildTarget("//test:target")
+        val outputTree: SpecialArtifact = assertTreeBuilt("test/target_output_dir")
+        val treeFileArtifact1: TreeFileArtifact = getTreeFileArtifact(outputTree, "input_dir_f1.out", 0)
+        val treeFileArtifact2: TreeFileArtifact = getTreeFileArtifact(outputTree, "input_dir_f2.out", 1)
+        val treeFileArtifact3: TreeFileArtifact = getTreeFileArtifact(outputTree, "input_dir_f3.out", 2)
+        val action1: SpawnAction = getGeneratingAction(treeFileArtifact1) as SpawnAction
+        val action2: SpawnAction = getGeneratingAction(treeFileArtifact2) as SpawnAction
+        val action3: SpawnAction = getGeneratingAction(treeFileArtifact3) as SpawnAction
+        assertThat(action1.getExecutionInfo()).containsEntry("local", "1")
+        assertThat(action2.getExecutionInfo()).containsEntry("local", "1")
+        assertThat(action3.getExecutionInfo()).containsEntry("local", "1")
+    }
 
-  @Test
-  public void actionEnvironmentPropagatedToExpandedActions() throws Exception {
-    SkyframeExecutorTestHelper.process(getSkyframeExecutor());
-    write(
-        "test/rule_def.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun actionEnvironmentPropagatedToExpandedActions() {
+        SkyframeExecutorTestHelper.process(skyframeExecutor)
+        write(
+            "test/rule_def.bzl",
+            """
         load(":helpers.bzl", "create_seed_dir", "simple_map_impl")
 
         def rule_impl(ctx):
@@ -447,28 +443,29 @@ public final class StarlarkMapActionTemplateTest extends BuildIntegrationTestCas
                 }
             )
             return [DefaultInfo(files = depset([output_dir]))]
-        """);
-    buildTarget("//test:target");
-    SpecialArtifact outputTree = assertTreeBuilt("test/target_output_dir");
-    TreeFileArtifact treeFileArtifact1 = getTreeFileArtifact(outputTree, "input_dir_f1.out", 0);
-    TreeFileArtifact treeFileArtifact2 = getTreeFileArtifact(outputTree, "input_dir_f2.out", 1);
-    TreeFileArtifact treeFileArtifact3 = getTreeFileArtifact(outputTree, "input_dir_f3.out", 2);
-    SpawnAction action1 = (SpawnAction) getGeneratingAction(treeFileArtifact1);
-    SpawnAction action2 = (SpawnAction) getGeneratingAction(treeFileArtifact2);
-    SpawnAction action3 = (SpawnAction) getGeneratingAction(treeFileArtifact3);
-    assertThat(action1.getEnvironment().getFixedEnv()).containsEntry("SOME_ENV", "ENV_VALUE");
-    assertThat(action2.getEnvironment().getFixedEnv()).containsEntry("SOME_ENV", "ENV_VALUE");
-    assertThat(action3.getEnvironment().getFixedEnv()).containsEntry("SOME_ENV", "ENV_VALUE");
-  }
+        
+        """.trimIndent()
+        )
+        buildTarget("//test:target")
+        val outputTree: SpecialArtifact = assertTreeBuilt("test/target_output_dir")
+        val treeFileArtifact1: TreeFileArtifact = getTreeFileArtifact(outputTree, "input_dir_f1.out", 0)
+        val treeFileArtifact2: TreeFileArtifact = getTreeFileArtifact(outputTree, "input_dir_f2.out", 1)
+        val treeFileArtifact3: TreeFileArtifact = getTreeFileArtifact(outputTree, "input_dir_f3.out", 2)
+        val action1: SpawnAction = getGeneratingAction(treeFileArtifact1) as SpawnAction
+        val action2: SpawnAction = getGeneratingAction(treeFileArtifact2) as SpawnAction
+        val action3: SpawnAction = getGeneratingAction(treeFileArtifact3) as SpawnAction
+        assertThat(action1.getEnvironment().getFixedEnv()).containsEntry("SOME_ENV", "ENV_VALUE")
+        assertThat(action2.getEnvironment().getFixedEnv()).containsEntry("SOME_ENV", "ENV_VALUE")
+        assertThat(action3.getEnvironment().getFixedEnv()).containsEntry("SOME_ENV", "ENV_VALUE")
+    }
 
-  @Test
-  // Only boolean integer and strings are allowed in additional_params.
-  public void allowedAdditionalParams(@TestParameter({"1", "True", "\"some string\""}) String value)
-      throws Exception {
-    write(
-        "test/rule_def.bzl",
-        String.format(
-            """
+    @org.junit.Test // Only boolean integer and strings are allowed in additional_params.
+    @Throws(java.lang.Exception::class)
+    fun allowedAdditionalParams(@TestParameter("1", "True", "\"some string\"") value: String?) {
+        write(
+            "test/rule_def.bzl",
+            String.format(
+                """
             load(":helpers.bzl", "create_seed_dir", "simple_map_impl")
 
             def rule_impl(ctx):
@@ -490,25 +487,30 @@ public final class StarlarkMapActionTemplateTest extends BuildIntegrationTestCas
                     },
                 )
                 return [DefaultInfo(files = depset([output_dir]))]
-            """,
-            value));
-    buildTarget("//test:target");
-    SpecialArtifact outputTree = assertTreeBuilt("test/target_output_dir");
-    assertTreeContainsFileWithContents(outputTree, "input_dir_f1.out", "1");
-    assertTreeContainsFileWithContents(outputTree, "input_dir_f2.out", "2");
-    assertTreeContainsFileWithContents(outputTree, "input_dir_f3.out", "3");
-  }
+            
+            """.trimIndent(),
+                value
+            )
+        )
+        buildTarget("//test:target")
+        val outputTree: SpecialArtifact = assertTreeBuilt("test/target_output_dir")
+        assertTreeContainsFileWithContents(outputTree, "input_dir_f1.out", "1")
+        assertTreeContainsFileWithContents(outputTree, "input_dir_f2.out", "2")
+        assertTreeContainsFileWithContents(outputTree, "input_dir_f3.out", "3")
+    }
 
-  @Test
-  @TestParameters("{inputs: '{\"input_dir\": input_dir}', outputs: '{}', errorType: 'output'}")
-  @TestParameters("{inputs: '{}', outputs: '{\"output_dir\": output_dir}', errorType: 'input'}")
-  public void emptyInputOrOutputDirectoriesNotAllowed(
-      String inputs, String outputs, String errorType) throws Exception {
-    SkyframeExecutorTestHelper.process(getSkyframeExecutor());
-    write(
-        "test/rule_def.bzl",
-        String.format(
-            """
+    @org.junit.Test
+    @TestParameters("{inputs: '{\"input_dir\": input_dir}', outputs: '{}', errorType: 'output'}")
+    @TestParameters("{inputs: '{}', outputs: '{\"output_dir\": output_dir}', errorType: 'input'}")
+    @Throws(java.lang.Exception::class)
+    fun emptyInputOrOutputDirectoriesNotAllowed(
+        inputs: String?, outputs: String?, errorType: String?
+    ) {
+        SkyframeExecutorTestHelper.process(skyframeExecutor)
+        write(
+            "test/rule_def.bzl",
+            String.format(
+                """
             load(":helpers.bzl", "create_seed_dir", "unused_impl")
 
             def rule_impl(ctx):
@@ -523,21 +525,31 @@ public final class StarlarkMapActionTemplateTest extends BuildIntegrationTestCas
                     },
                 )
                 return [DefaultInfo(files = depset([output_dir]))]
-            """,
-            inputs, outputs));
-    RecordingOutErr recordingOutErr = new RecordingOutErr();
-    this.outErr = recordingOutErr;
-    assertThrows(ViewCreationFailedException.class, () -> buildTarget("//test:target"));
-    assertThat(recordingOutErr.errAsLatin1())
-        .contains(String.format("actions.map_directory() requires at least one %s.", errorType));
-  }
+            
+            """.trimIndent(),
+                inputs, outputs
+            )
+        )
+        val recordingOutErr: RecordingOutErr = RecordingOutErr()
+        this.outErr = recordingOutErr
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { buildTarget("//test:target") })
+        com.google.common.truth.Subject.contains(
+            String.format(
+                "actions.map_directory() requires at least one %s.",
+                errorType
+            )
+        )
+    }
 
-  @Test
-  public void failingImplementation() throws Exception {
-    SkyframeExecutorTestHelper.process(getSkyframeExecutor());
-    write(
-        "test/rule_def.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun failingImplementation() {
+        SkyframeExecutorTestHelper.process(skyframeExecutor)
+        write(
+            "test/rule_def.bzl",
+            """
         load(":helpers.bzl", "create_seed_dir")
 
         def failing_impl(template_ctx, **kwargs):
@@ -559,19 +571,24 @@ public final class StarlarkMapActionTemplateTest extends BuildIntegrationTestCas
                     },
                 )
                 return [DefaultInfo(files = depset([output_dir]))]
-        """);
-    RecordingOutErr recordingOutErr = new RecordingOutErr();
-    this.outErr = recordingOutErr;
-    assertThrows(BuildFailedException.class, () -> buildTarget("//test:target"));
-    assertThat(recordingOutErr.errAsLatin1()).contains("This is a test failure.");
-  }
+        
+        """.trimIndent()
+        )
+        val recordingOutErr: RecordingOutErr = RecordingOutErr()
+        this.outErr = recordingOutErr
+        org.junit.Assert.assertThrows<T?>(
+            BuildFailedException::class.java,
+            org.junit.function.ThrowingRunnable { buildTarget("//test:target") })
+        com.google.common.truth.Subject.contains("This is a test failure.")
+    }
 
-  @Test
-  public void cannotDeclareFileInNonOutputDirectory() throws Exception {
-    SkyframeExecutorTestHelper.process(getSkyframeExecutor());
-    write(
-        "test/rule_def.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun cannotDeclareFileInNonOutputDirectory() {
+        SkyframeExecutorTestHelper.process(skyframeExecutor)
+        write(
+            "test/rule_def.bzl",
+            """
         load(":helpers.bzl", "create_seed_dir")
 
         def wrong_declare_file_impl(template_ctx, input_directories, **kwargs):
@@ -593,22 +610,28 @@ public final class StarlarkMapActionTemplateTest extends BuildIntegrationTestCas
                 },
             )
             return [DefaultInfo(files = depset([output_dir]))]
-        """);
-    RecordingOutErr recordingOutErr = new RecordingOutErr();
-    this.outErr = recordingOutErr;
-    assertThrows(BuildFailedException.class, () -> buildTarget("//test:target"));
-    assertThat(recordingOutErr.errAsLatin1())
-        .containsMatch(
-            "Cannot declare file `child` in non-output directory File.*test/target_input_dir");
-  }
+        
+        """.trimIndent()
+        )
+        val recordingOutErr: RecordingOutErr = RecordingOutErr()
+        this.outErr = recordingOutErr
+        org.junit.Assert.assertThrows<T?>(
+            BuildFailedException::class.java,
+            org.junit.function.ThrowingRunnable { buildTarget("//test:target") })
+        assertThat(recordingOutErr.errAsLatin1())
+            .containsMatch(
+                "Cannot declare file `child` in non-output directory File.*test/target_input_dir"
+            )
+    }
 
-  @Test
-  public void actionConflicts_conflictingOutputsInSameDirectory() throws Exception {
-    // Don't check serialization here, since the action conflict only occurs during execution,
-    // but serialization checks end up throwing (due to action conflicts) before we get there.
-    write(
-        "test/rule_def.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun actionConflicts_conflictingOutputsInSameDirectory() {
+        // Don't check serialization here, since the action conflict only occurs during execution,
+        // but serialization checks end up throwing (due to action conflicts) before we get there.
+        write(
+            "test/rule_def.bzl",
+            """
         load(":helpers.bzl", "create_seed_dir")
 
         def conflict_impl(template_ctx, output_directories, tools, **kwargs):
@@ -637,30 +660,34 @@ public final class StarlarkMapActionTemplateTest extends BuildIntegrationTestCas
                 },
             )
             return [DefaultInfo(files = depset([output_dir]))]
-        """);
+        
+        """.trimIndent()
+        )
 
-    RecordingOutErr recordingOutErr = new RecordingOutErr();
-    this.outErr = recordingOutErr;
-    assertThrows(BuildFailedException.class, () -> buildTarget("//test:target"));
-    assertThat(recordingOutErr.errAsLatin1())
-        .contains(
+        val recordingOutErr: RecordingOutErr = RecordingOutErr()
+        this.outErr = recordingOutErr
+        org.junit.Assert.assertThrows<T?>(
+            BuildFailedException::class.java,
+            org.junit.function.ThrowingRunnable { buildTarget("//test:target") })
+        com.google.common.truth.Subject.contains(
             "ERROR: file 'test/target_output_dir/child' is generated by these conflicting"
-                + " actions:");
-  }
+                    + " actions:"
+        )
+    }
 
-  @Test
-  @TestParameters("{output: 'input_dir.directory', path: 'test/target_input_dir'}")
-  @TestParameters("{output: 'input_dir.children[0]', path: 'test/target_input_dir/input_dir_f1'}")
-  @TestParameters("{output: 'output_dir', path: 'test/target_output_dir'}")
-  @TestParameters("{output: 'cat_tool.executable', path: 'test/cat_tool'}")
-  @TestParameters("{output: 'some_file', path: 'test/some_file'}")
-  public void actionConflicts_conflictingOutputsFromOtherContext(String output, String path)
-      throws Exception {
-    SkyframeExecutorTestHelper.process(getSkyframeExecutor());
-    write(
-        "test/rule_def.bzl",
-        String.format(
-            """
+    @org.junit.Test
+    @TestParameters("{output: 'input_dir.directory', path: 'test/target_input_dir'}")
+    @TestParameters("{output: 'input_dir.children[0]', path: 'test/target_input_dir/input_dir_f1'}")
+    @TestParameters("{output: 'output_dir', path: 'test/target_output_dir'}")
+    @TestParameters("{output: 'cat_tool.executable', path: 'test/cat_tool'}")
+    @TestParameters("{output: 'some_file', path: 'test/some_file'}")
+    @Throws(java.lang.Exception::class)
+    fun actionConflicts_conflictingOutputsFromOtherContext(output: String?, path: String?) {
+        SkyframeExecutorTestHelper.process(skyframeExecutor)
+        write(
+            "test/rule_def.bzl",
+            String.format(
+                """
             load(":helpers.bzl", "create_seed_dir")
 
             def conflict_impl(
@@ -702,32 +729,39 @@ public final class StarlarkMapActionTemplateTest extends BuildIntegrationTestCas
                     },
                 )
                 return [DefaultInfo(files = depset([output_dir]))]
-            """,
-            output));
+            
+            """.trimIndent(),
+                output
+            )
+        )
 
-    RecordingOutErr recordingOutErr = new RecordingOutErr();
-    this.outErr = recordingOutErr;
-    assertThrows(BuildFailedException.class, () -> buildTarget("//test:target"));
-    assertThat(recordingOutErr.errAsLatin1())
-        .containsMatch(
+        val recordingOutErr: RecordingOutErr = RecordingOutErr()
+        this.outErr = recordingOutErr
+        org.junit.Assert.assertThrows<T?>(
+            BuildFailedException::class.java,
+            org.junit.function.ThrowingRunnable { buildTarget("//test:target") })
+        assertThat(recordingOutErr.errAsLatin1())
+            .containsMatch(
+                String.format(
+                    "action 'some conflicting action' has conflicting output '.*%s' that is an output"
+                            + " of another action, thus causing an action conflict.",
+                    path
+                )
+            )
+    }
+
+    @org.junit.Test
+    @TestParameters("{value: '1', repr: '1'}")
+    @TestParameters("{value: 'True', repr: 'True'}")
+    @TestParameters("{value: '[1]', repr: '\\[1\\]'}")
+    @TestParameters("{value: '(1, 2)', repr: '\\(1, 2\\)'}")
+    @Throws(java.lang.Exception::class)
+    fun implementationWithNonNoneReturnValueDisallowed(value: String?, repr: String?) {
+        SkyframeExecutorTestHelper.process(skyframeExecutor)
+        write(
+            "test/rule_def.bzl",
             String.format(
-                "action 'some conflicting action' has conflicting output '.*%s' that is an output"
-                    + " of another action, thus causing an action conflict.",
-                path));
-  }
-
-  @Test
-  @TestParameters("{value: '1', repr: '1'}")
-  @TestParameters("{value: 'True', repr: 'True'}")
-  @TestParameters("{value: '[1]', repr: '\\[1\\]'}")
-  @TestParameters("{value: '(1, 2)', repr: '\\(1, 2\\)'}")
-  public void implementationWithNonNoneReturnValueDisallowed(String value, String repr)
-      throws Exception {
-    SkyframeExecutorTestHelper.process(getSkyframeExecutor());
-    write(
-        "test/rule_def.bzl",
-        String.format(
-            """
+                """
             load(":helpers.bzl", "create_seed_dir")
 
             def non_none_impl(template_ctx, input_directories, **kwargs):
@@ -749,29 +783,37 @@ public final class StarlarkMapActionTemplateTest extends BuildIntegrationTestCas
                     },
                 )
                 return [DefaultInfo(files = depset([output_dir]))]
-            """,
-            value));
+            
+            """.trimIndent(),
+                value
+            )
+        )
 
-    RecordingOutErr recordingOutErr = new RecordingOutErr();
-    this.outErr = recordingOutErr;
-    assertThrows(BuildFailedException.class, () -> buildTarget("//test:target"));
-    assertThat(recordingOutErr.errAsLatin1())
-        .containsMatch(
+        val recordingOutErr: RecordingOutErr = RecordingOutErr()
+        this.outErr = recordingOutErr
+        org.junit.Assert.assertThrows<T?>(
+            BuildFailedException::class.java,
+            org.junit.function.ThrowingRunnable { buildTarget("//test:target") })
+        assertThat(recordingOutErr.errAsLatin1())
+            .containsMatch(
+                String.format(
+                    "actions.map_directory\\(\\) implementation non_none_impl at .* may not return a"
+                            + " non-None value \\(got %s\\)",
+                    repr
+                )
+            )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun nonTopLevelImplementationsDisallowed(
+        @TestParameter("non_top_level_impl", "lambda_impl") implementation: String?
+    ) {
+        SkyframeExecutorTestHelper.process(skyframeExecutor)
+        write(
+            "test/rule_def.bzl",
             String.format(
-                "actions.map_directory\\(\\) implementation non_none_impl at .* may not return a"
-                    + " non-None value \\(got %s\\)",
-                repr));
-  }
-
-  @Test
-  public void nonTopLevelImplementationsDisallowed(
-      @TestParameter({"non_top_level_impl", "lambda_impl"}) String implementation)
-      throws Exception {
-    SkyframeExecutorTestHelper.process(getSkyframeExecutor());
-    write(
-        "test/rule_def.bzl",
-        String.format(
-            """
+                """
             load(":helpers.bzl", "create_seed_dir")
 
             def rule_impl(ctx):
@@ -795,25 +837,32 @@ public final class StarlarkMapActionTemplateTest extends BuildIntegrationTestCas
                     },
                 )
                 return [DefaultInfo(files = depset([output_dir]))]
-            """,
-            implementation));
+            
+            """.trimIndent(),
+                implementation
+            )
+        )
 
-    RecordingOutErr recordingOutErr = new RecordingOutErr();
-    this.outErr = recordingOutErr;
-    assertThrows(ViewCreationFailedException.class, () -> buildTarget("//test:target"));
-    assertThat(recordingOutErr.errAsLatin1())
-        .containsMatch(
-            "Error in map_directory: to avoid unintended retention of analysis data structures,"
-                + " the function \\(declared at .*/test/rule_def.bzl:.*\\) must be declared by a"
-                + " top-level def statement");
-  }
+        val recordingOutErr: RecordingOutErr = RecordingOutErr()
+        this.outErr = recordingOutErr
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { buildTarget("//test:target") })
+        assertThat(recordingOutErr.errAsLatin1())
+            .containsMatch(
+                ("Error in map_directory: to avoid unintended retention of analysis data structures,"
+                        + " the function \\(declared at .*/test/rule_def.bzl:.*\\) must be declared by a"
+                        + " top-level def statement")
+            )
+    }
 
-  @Test
-  public void canDeclareSubdirectories() throws Exception {
-    SkyframeExecutorTestHelper.process(getSkyframeExecutor());
-    write(
-        "test/rule_def.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun canDeclareSubdirectories() {
+        SkyframeExecutorTestHelper.process(skyframeExecutor)
+        write(
+            "test/rule_def.bzl",
+            """
         load(":helpers.bzl", "create_seed_dir", "create_seed_subdir")
 
         def subdir_impl(
@@ -856,32 +905,36 @@ public final class StarlarkMapActionTemplateTest extends BuildIntegrationTestCas
                 },
             )
             return [DefaultInfo(files = depset([output_dir]))]
-        """);
-    buildTarget("//test:target");
-    SpecialArtifact outputTree = assertTreeBuilt("test/target_output_dir");
-    SpecialArtifact subdir1 = getSubdirArtifact(outputTree, "subdir_0", 1);
-    SpecialArtifact subdir2 = getSubdirArtifact(outputTree, "subdir_1", 2);
-    // The top-level tree artifact value should contain a flattened view of all the files under it
-    // (including the files from its subdirectories).
-    assertThat(getChildRelativePaths(outputTree, getTreeArtifactValueFromTemplate(outputTree)))
-        .containsExactly(
-            PathFragment.create("single_file.txt"),
-            PathFragment.create("subdir_0/f1"),
-            PathFragment.create("subdir_0/f2"),
-            PathFragment.create("subdir_1/f1"),
-            PathFragment.create("subdir_1/f2"));
-    assertThat(getChildRelativePaths(subdir1, getTreeArtifactValue(subdir1)))
-        .containsExactly(PathFragment.create("f1"), PathFragment.create("f2"));
-    assertThat(getChildRelativePaths(subdir2, getTreeArtifactValue(subdir2)))
-        .containsExactly(PathFragment.create("f1"), PathFragment.create("f2"));
-  }
+        
+        """.trimIndent()
+        )
+        buildTarget("//test:target")
+        val outputTree: SpecialArtifact = assertTreeBuilt("test/target_output_dir")
+        val subdir1: SpecialArtifact = getSubdirArtifact(outputTree, "subdir_0", 1)
+        val subdir2: SpecialArtifact = getSubdirArtifact(outputTree, "subdir_1", 2)
+        // The top-level tree artifact value should contain a flattened view of all the files under it
+        // (including the files from its subdirectories).
+        Truth.assertThat(getChildRelativePaths(outputTree, getTreeArtifactValueFromTemplate(outputTree)))
+            .containsExactly(
+                PathFragment.create("single_file.txt"),
+                PathFragment.create("subdir_0/f1"),
+                PathFragment.create("subdir_0/f2"),
+                PathFragment.create("subdir_1/f1"),
+                PathFragment.create("subdir_1/f2")
+            )
+        Truth.assertThat(getChildRelativePaths(subdir1, getTreeArtifactValue(subdir1)))
+            .containsExactly(PathFragment.create("f1"), PathFragment.create("f2"))
+        Truth.assertThat(getChildRelativePaths(subdir2, getTreeArtifactValue(subdir2)))
+            .containsExactly(PathFragment.create("f1"), PathFragment.create("f2"))
+    }
 
-  @Test
-  public void actionsCanTakeSubdirectoriesAsInputs() throws Exception {
-    SkyframeExecutorTestHelper.process(getSkyframeExecutor());
-    write(
-        "test/rule_def.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun actionsCanTakeSubdirectoriesAsInputs() {
+        SkyframeExecutorTestHelper.process(skyframeExecutor)
+        write(
+            "test/rule_def.bzl",
+            """
         load(":helpers.bzl", "create_seed_dir", "create_seed_subdir")
 
         def subdir_impl(
@@ -935,31 +988,35 @@ public final class StarlarkMapActionTemplateTest extends BuildIntegrationTestCas
             )
 
             return [DefaultInfo(files = depset([output_dir2]))]
-        """);
-    buildTarget("//test:target");
-    SpecialArtifact outputTree2 = assertTreeBuilt("test/target_output_dir2");
-    SpecialArtifact otherSubdir0 = getSubdirArtifact(outputTree2, "other_subdir_0", 2);
-    SpecialArtifact otherSubdir1 = getSubdirArtifact(outputTree2, "other_subdir_1", 3);
-    // The top-level tree artifact value should contain a flattened view of all the files under it
-    // (including the files from its subdirectories).
-    assertThat(getChildRelativePaths(outputTree2, getTreeArtifactValueFromTemplate(outputTree2)))
-        .containsExactly(
-            PathFragment.create("other_subdir_0/f1"),
-            PathFragment.create("other_subdir_0/f2"),
-            PathFragment.create("other_subdir_1/f1"),
-            PathFragment.create("other_subdir_1/f2"));
-    assertThat(getChildRelativePaths(otherSubdir0, getTreeArtifactValue(otherSubdir0)))
-        .containsExactly(PathFragment.create("f1"), PathFragment.create("f2"));
-    assertThat(getChildRelativePaths(otherSubdir1, getTreeArtifactValue(otherSubdir1)))
-        .containsExactly(PathFragment.create("f1"), PathFragment.create("f2"));
-  }
+        
+        """.trimIndent()
+        )
+        buildTarget("//test:target")
+        val outputTree2: SpecialArtifact = assertTreeBuilt("test/target_output_dir2")
+        val otherSubdir0: SpecialArtifact = getSubdirArtifact(outputTree2, "other_subdir_0", 2)
+        val otherSubdir1: SpecialArtifact = getSubdirArtifact(outputTree2, "other_subdir_1", 3)
+        // The top-level tree artifact value should contain a flattened view of all the files under it
+        // (including the files from its subdirectories).
+        Truth.assertThat(getChildRelativePaths(outputTree2, getTreeArtifactValueFromTemplate(outputTree2)))
+            .containsExactly(
+                PathFragment.create("other_subdir_0/f1"),
+                PathFragment.create("other_subdir_0/f2"),
+                PathFragment.create("other_subdir_1/f1"),
+                PathFragment.create("other_subdir_1/f2")
+            )
+        Truth.assertThat(getChildRelativePaths(otherSubdir0, getTreeArtifactValue(otherSubdir0)))
+            .containsExactly(PathFragment.create("f1"), PathFragment.create("f2"))
+        Truth.assertThat(getChildRelativePaths(otherSubdir1, getTreeArtifactValue(otherSubdir1)))
+            .containsExactly(PathFragment.create("f1"), PathFragment.create("f2"))
+    }
 
-  @Test
-  public void actionsCanTakeTopLevelDirectoriesAsInputs() throws Exception {
-    SkyframeExecutorTestHelper.process(getSkyframeExecutor());
-    write(
-        "test/rule_def.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun actionsCanTakeTopLevelDirectoriesAsInputs() {
+        SkyframeExecutorTestHelper.process(skyframeExecutor)
+        write(
+            "test/rule_def.bzl",
+            """
         load(":helpers.bzl", "create_seed_dir", "create_seed_subdir")
 
         def seed_subdir_impl(
@@ -998,26 +1055,30 @@ public final class StarlarkMapActionTemplateTest extends BuildIntegrationTestCas
                 arguments = [args],
             )
             return [DefaultInfo(files = depset([output_dir2]))]
-        """);
-    buildTarget("//test:target");
-    SpecialArtifact outputTree = assertTreeBuilt("test/target_output_dir2");
-    // The top-level tree artifact value should contain a flattened view of all the files under it
-    // (including the files from its subdirectories).
-    TreeArtifactValue treeArtifactValue = getTreeArtifactValue(outputTree);
-    assertThat(getChildRelativePaths(outputTree, treeArtifactValue))
-        .containsExactly(
-            PathFragment.create("subdir_0/f1"),
-            PathFragment.create("subdir_0/f2"),
-            PathFragment.create("subdir_1/f1"),
-            PathFragment.create("subdir_1/f2"));
-  }
+        
+        """.trimIndent()
+        )
+        buildTarget("//test:target")
+        val outputTree: SpecialArtifact = assertTreeBuilt("test/target_output_dir2")
+        // The top-level tree artifact value should contain a flattened view of all the files under it
+        // (including the files from its subdirectories).
+        val treeArtifactValue: TreeArtifactValue = getTreeArtifactValue(outputTree)
+        Truth.assertThat(getChildRelativePaths(outputTree, treeArtifactValue))
+            .containsExactly(
+                PathFragment.create("subdir_0/f1"),
+                PathFragment.create("subdir_0/f2"),
+                PathFragment.create("subdir_1/f1"),
+                PathFragment.create("subdir_1/f2")
+            )
+    }
 
-  @Test
-  public void internalActionsCannotTakeTopLevelDirectoriesAsInputs() throws Exception {
-    SkyframeExecutorTestHelper.process(getSkyframeExecutor());
-    write(
-        "test/rule_def.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun internalActionsCannotTakeTopLevelDirectoriesAsInputs() {
+        SkyframeExecutorTestHelper.process(skyframeExecutor)
+        write(
+            "test/rule_def.bzl",
+            """
         load(":helpers.bzl", "create_seed_dir", "create_seed_subdir")
 
         def combined_impl(
@@ -1059,24 +1120,30 @@ public final class StarlarkMapActionTemplateTest extends BuildIntegrationTestCas
                 },
             )
             return [DefaultInfo(files = depset([output_dir2]))]
-        """);
-    RecordingOutErr recordingOutErr = new RecordingOutErr();
-    this.outErr = recordingOutErr;
-    assertThrows(BuildFailedException.class, () -> buildTarget("//test:target"));
-    assertThat(recordingOutErr.errAsLatin1())
-        .containsMatch(
-            "ERROR: .*/test/BUILD:2:8: Expanding \\[File:\\[.*\\]test/target_input_dir\\] into"
-                + " actions failed: Output directory"
-                + " File:\\[.*\\]test/target_output_dir1"
-                + " cannot be used as an input to template_ctx\\.run\\(\\)");
-  }
+        
+        """.trimIndent()
+        )
+        val recordingOutErr: RecordingOutErr = RecordingOutErr()
+        this.outErr = recordingOutErr
+        org.junit.Assert.assertThrows<T?>(
+            BuildFailedException::class.java,
+            org.junit.function.ThrowingRunnable { buildTarget("//test:target") })
+        assertThat(recordingOutErr.errAsLatin1())
+            .containsMatch(
+                ("ERROR: .*/test/BUILD:2:8: Expanding \\[File:\\[.*\\]test/target_input_dir\\] into"
+                        + " actions failed: Output directory"
+                        + " File:\\[.*\\]test/target_output_dir1"
+                        + " cannot be used as an input to template_ctx\\.run\\(\\)")
+            )
+    }
 
-  @Test
-  public void actionConflicts_declaredFileWithPrefixOfSubdir() throws Exception {
-    SkyframeExecutorTestHelper.process(getSkyframeExecutor());
-    write(
-        "test/rule_def.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun actionConflicts_declaredFileWithPrefixOfSubdir() {
+        SkyframeExecutorTestHelper.process(skyframeExecutor)
+        write(
+            "test/rule_def.bzl",
+            """
         load(":helpers.bzl", "create_seed_dir", "create_seed_subdir")
 
         def subdir_impl(
@@ -1119,23 +1186,29 @@ public final class StarlarkMapActionTemplateTest extends BuildIntegrationTestCas
                 },
             )
             return [DefaultInfo(files = depset([output_dir]))]
-        """);
-    RecordingOutErr recordingOutErr = new RecordingOutErr();
-    this.outErr = recordingOutErr;
-    assertThrows(BuildFailedException.class, () -> buildTarget("//test:target"));
-    assertThat(recordingOutErr.errAsLatin1())
-        .containsMatch(
-            "ERROR: One of the output paths '.*test/target_output_dir/prefix_conflict'.* and "
-                + "'.*test/target_output_dir/prefix_conflict/single_file.txt'.*"
-                + " is a prefix of the other");
-  }
+        
+        """.trimIndent()
+        )
+        val recordingOutErr: RecordingOutErr = RecordingOutErr()
+        this.outErr = recordingOutErr
+        org.junit.Assert.assertThrows<T?>(
+            BuildFailedException::class.java,
+            org.junit.function.ThrowingRunnable { buildTarget("//test:target") })
+        assertThat(recordingOutErr.errAsLatin1())
+            .containsMatch(
+                ("ERROR: One of the output paths '.*test/target_output_dir/prefix_conflict'.* and "
+                        + "'.*test/target_output_dir/prefix_conflict/single_file.txt'.*"
+                        + " is a prefix of the other")
+            )
+    }
 
-  @Test
-  public void actionConflicts_declaredSubdirWithPrefixOfSubdir() throws Exception {
-    SkyframeExecutorTestHelper.process(getSkyframeExecutor());
-    write(
-        "test/rule_def.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun actionConflicts_declaredSubdirWithPrefixOfSubdir() {
+        SkyframeExecutorTestHelper.process(skyframeExecutor)
+        write(
+            "test/rule_def.bzl",
+            """
         load(":helpers.bzl", "create_seed_dir", "create_seed_subdir")
 
         def subdir_impl(
@@ -1165,23 +1238,29 @@ public final class StarlarkMapActionTemplateTest extends BuildIntegrationTestCas
                 },
             )
             return [DefaultInfo(files = depset([output_dir]))]
-        """);
-    RecordingOutErr recordingOutErr = new RecordingOutErr();
-    this.outErr = recordingOutErr;
-    assertThrows(BuildFailedException.class, () -> buildTarget("//test:target"));
-    assertThat(recordingOutErr.errAsLatin1())
-        .containsMatch(
-            "ERROR: One of the output paths '.*test/target_output_dir/prefix_conflict'.* and "
-                + "'.*test/target_output_dir/prefix_conflict/subdir'.*"
-                + " is a prefix of the other");
-  }
+        
+        """.trimIndent()
+        )
+        val recordingOutErr: RecordingOutErr = RecordingOutErr()
+        this.outErr = recordingOutErr
+        org.junit.Assert.assertThrows<T?>(
+            BuildFailedException::class.java,
+            org.junit.function.ThrowingRunnable { buildTarget("//test:target") })
+        assertThat(recordingOutErr.errAsLatin1())
+            .containsMatch(
+                ("ERROR: One of the output paths '.*test/target_output_dir/prefix_conflict'.* and "
+                        + "'.*test/target_output_dir/prefix_conflict/subdir'.*"
+                        + " is a prefix of the other")
+            )
+    }
 
-  @Test
-  public void actionConflicts_subdirAsParentOfAnotherSubdir() throws Exception {
-    SkyframeExecutorTestHelper.process(getSkyframeExecutor());
-    write(
-        "test/rule_def.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun actionConflicts_subdirAsParentOfAnotherSubdir() {
+        SkyframeExecutorTestHelper.process(skyframeExecutor)
+        write(
+            "test/rule_def.bzl",
+            """
         load(":helpers.bzl", "create_seed_dir", "create_seed_subdir")
 
         def subdir_impl(
@@ -1211,70 +1290,84 @@ public final class StarlarkMapActionTemplateTest extends BuildIntegrationTestCas
                 },
             )
             return [DefaultInfo(files = depset([output_dir]))]
-        """);
-    RecordingOutErr recordingOutErr = new RecordingOutErr();
-    this.outErr = recordingOutErr;
-    assertThrows(BuildFailedException.class, () -> buildTarget("//test:target"));
-    assertThat(recordingOutErr.errAsLatin1())
-        .containsMatch(
-            ".*Cannot declare subdirectory `.*subdir2`.* in another subdirectory "
-                + ".*test/target_output_dir/subdir1.*");
-  }
-
-  private SpecialArtifact assertTreeBuilt(String rootRelativePath) throws Exception {
-    ImmutableList<Artifact> artifacts = getArtifacts("//test:target");
-    Optional<Artifact> maybeTree =
-        artifacts.stream()
-            .filter(a -> a.getRootRelativePathString().equals(rootRelativePath))
-            .findFirst();
-    assertThat(maybeTree).isPresent();
-    return (SpecialArtifact) maybeTree.get();
-  }
-
-  private TreeFileArtifact getTreeFileArtifact(
-      SpecialArtifact tree, String relativeFilePath, int actionIndex) {
-    // The actionIndex of the ActionTemplateExpansionKey should correspond to the actionIndex of the
-    // StarlarkMapActionTemplate instance.
-    ActionTemplateExpansionKey key =
-        ActionTemplateExpansionValue.key(
-            tree.getArtifactOwner(), tree.getGeneratingActionKey().getActionIndex());
-    TreeFileArtifact treeFileArtifact =
-        TreeFileArtifact.createTemplateExpansionOutput(tree, relativeFilePath, key);
-    // OTOH, the actionIndex of the TreeFileArtifact's ActionLookupData should correspond to the
-    // actionIndex of the action (created with template_ctx) that generated the file.
-    treeFileArtifact.setGeneratingActionKey(ActionLookupData.create(key, actionIndex));
-    return treeFileArtifact;
-  }
-
-  private ImmutableSet<PathFragment> getChildRelativePaths(
-      SpecialArtifact tree, TreeArtifactValue treeValue) {
-    return treeValue.getChildren().stream()
-        .map(child -> child.getExecPath().relativeTo(tree.getExecPath()))
-        .collect(toImmutableSet());
-  }
-
-  private SpecialArtifact getSubdirArtifact(
-      SpecialArtifact parent, String subdir, int actionIndex) {
-    ActionTemplateExpansionKey key =
-        ActionTemplateExpansionValue.key(
-            parent.getArtifactOwner(), parent.getGeneratingActionKey().getActionIndex());
-    return SpecialArtifact.createSubTreeArtifact(
-        parent, PathFragment.create(subdir), ActionLookupData.create(key, actionIndex));
-  }
-
-  private TreeArtifactValue getTreeArtifactValueFromTemplate(SpecialArtifact artifact)
-      throws InterruptedException {
-    return (TreeArtifactValue) getSkyframeExecutor().getEvaluator().getExistingValue(artifact);
-  }
-
-  private void assertTreeContainsFileWithContents(
-      SpecialArtifact tree, String relativeFilePath, String... expectedContents) throws Exception {
-    Path execRoot = directories.getExecRoot(TestConstants.WORKSPACE_NAME);
-    Path path = execRoot.getRelative(tree.getExecPath().getChild(relativeFilePath));
-    assertThat(path.exists()).isTrue();
-    String actualContents = new String(FileSystemUtils.readContentAsLatin1(path));
-    for (String expected : expectedContents) {
-      assertThat(actualContents).contains(expected);
+        
+        """.trimIndent()
+        )
+        val recordingOutErr: RecordingOutErr = RecordingOutErr()
+        this.outErr = recordingOutErr
+        org.junit.Assert.assertThrows<T?>(
+            BuildFailedException::class.java,
+            org.junit.function.ThrowingRunnable { buildTarget("//test:target") })
+        assertThat(recordingOutErr.errAsLatin1())
+            .containsMatch(
+                ".*Cannot declare subdirectory `.*subdir2`.* in another subdirectory "
+                        + ".*test/target_output_dir/subdir1.*"
+            )
     }
-  }
+
+    @Throws(java.lang.Exception::class)
+    private fun assertTreeBuilt(rootRelativePath: String?): SpecialArtifact {
+        val artifacts: com.google.common.collect.ImmutableList<Artifact?> = getArtifacts("//test:target")
+        val maybeTree: java.util.Optional<Artifact?> =
+            artifacts.stream()
+                .filter { a: Artifact? -> a.getRootRelativePathString().equals(rootRelativePath) }
+                .findFirst()
+        Truth.assertThat(maybeTree).isPresent()
+        return maybeTree.get() as SpecialArtifact
+    }
+
+    private fun getTreeFileArtifact(
+        tree: SpecialArtifact, relativeFilePath: String?, actionIndex: Int
+    ): TreeFileArtifact {
+        // The actionIndex of the ActionTemplateExpansionKey should correspond to the actionIndex of the
+        // StarlarkMapActionTemplate instance.
+        val key: ActionTemplateExpansionKey? =
+            ActionTemplateExpansionValue.key(
+                tree.getArtifactOwner(), tree.getGeneratingActionKey().getActionIndex()
+            )
+        val treeFileArtifact: TreeFileArtifact =
+            TreeFileArtifact.createTemplateExpansionOutput(tree, relativeFilePath, key)
+        // OTOH, the actionIndex of the TreeFileArtifact's ActionLookupData should correspond to the
+        // actionIndex of the action (created with template_ctx) that generated the file.
+        treeFileArtifact.setGeneratingActionKey(ActionLookupData.create(key, actionIndex))
+        return treeFileArtifact
+    }
+
+    private fun getChildRelativePaths(
+        tree: SpecialArtifact, treeValue: TreeArtifactValue
+    ): com.google.common.collect.ImmutableSet<PathFragment?> {
+        return treeValue.getChildren().stream()
+            .map({ child -> child.getExecPath().relativeTo(tree.getExecPath()) })
+            .collect(com.google.common.collect.ImmutableSet.toImmutableSet<E?>())
+    }
+
+    private fun getSubdirArtifact(
+        parent: SpecialArtifact, subdir: String?, actionIndex: Int
+    ): SpecialArtifact {
+        val key: ActionTemplateExpansionKey? =
+            ActionTemplateExpansionValue.key(
+                parent.getArtifactOwner(), parent.getGeneratingActionKey().getActionIndex()
+            )
+        return SpecialArtifact.createSubTreeArtifact(
+            parent, PathFragment.create(subdir), ActionLookupData.create(key, actionIndex)
+        )
+    }
+
+    @Throws(java.lang.InterruptedException::class)
+    private fun getTreeArtifactValueFromTemplate(artifact: SpecialArtifact?): TreeArtifactValue? {
+        return skyframeExecutor.getEvaluator().getExistingValue(artifact) as TreeArtifactValue?
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun assertTreeContainsFileWithContents(
+        tree: SpecialArtifact, relativeFilePath: String?, vararg expectedContents: String?
+    ) {
+        val execRoot: Path = directories.getExecRoot(TestConstants.WORKSPACE_NAME)
+        val path: Path = execRoot.getRelative(tree.getExecPath().getChild(relativeFilePath))
+        assertThat(path.exists()).isTrue()
+        val actualContents = String(FileSystemUtils.readContentAsLatin1(path))
+        for (expected in expectedContents) {
+            Truth.assertThat(actualContents).contains(expected)
+        }
+    }
 }

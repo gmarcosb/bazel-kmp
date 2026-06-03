@@ -11,108 +11,111 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.vfs;
+package com.google.devtools.build.lib.vfs
 
-import com.google.common.collect.Iterables;
-import com.google.common.util.concurrent.Futures;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.common.util.concurrent.ListeningExecutorService;
-import com.google.common.util.concurrent.MoreExecutors;
-import com.google.devtools.build.lib.testutil.TestUtils;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.LinkOption;
-import java.nio.file.Paths;
-import java.nio.file.attribute.BasicFileAttributes;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-import org.junit.Test;
+import com.google.devtools.build.lib.exec.util.SpawnBuilder.build
+import com.google.devtools.build.lib.vfs.SymlinkAwareFileSystemTest
+import com.google.devtools.common.options.testing.ConverterTesterMap.Builder.build
+import net.starlark.java.syntax.FileOptions.Builder.build
+import net.starlark.java.syntax.Location.file
+import java.io.IOException
+import java.nio.file.LinkOption
+import java.nio.file.Path
+import java.nio.file.Paths
+import java.nio.file.attribute.BasicFileAttributes
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /**
- * Tests for the {@link JavaIoFileSystem}. That file system by itself is not capable of creating
+ * Tests for the [JavaIoFileSystem]. That file system by itself is not capable of creating
  * symlinks; use the unix one to create them, so that the test can check that the file system
  * handles their existence correctly.
  */
-public class JavaIoFileSystemTest extends SymlinkAwareFileSystemTest {
-
-  @Override
-  public FileSystem getFreshFileSystem(DigestHashFunction digestHashFunction) {
-    return new JavaIoFileSystem(digestHashFunction);
-  }
-
-  // Tests are inherited from the FileSystemTest
-
-  // JavaIoFileSystem incorrectly throws a FileNotFoundException for all IO errors. This means that
-  // statIfFound incorrectly suppresses those errors.
-  @Override
-  @Test
-  public void testBadPermissionsThrowsExceptionOnStatIfFound() {}
-
-  @Override
-  protected boolean isHardLinked(Path a, Path b) throws IOException {
-    return Files.readAttributes(
-            Paths.get(a.toString()), BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS)
-        .fileKey()
-        .equals(
-            Files.readAttributes(
-                    Paths.get(b.toString()), BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS)
-                .fileKey());
-  }
-
-  /**
-   * This test has a large number of threads racing to create the same subdirectories.
-   *
-   * <p>We create N number of distinct directory trees, eg. the tree "0-0/0-1/0-2/0-3/0-4" followed
-   * by the tree "1-0/1-1/1-2/1-3/1-4" etc. If there is race we should quickly get a deadlock.
-   *
-   * <p>A timeout of this test is likely because of a deadlock.
-   */
-  @Test
-  public void testCreateDirectoriesThreadSafety() throws Exception {
-    int threadCount = 200;
-    int directoryCreationCount = 500; // We create this many sets of directories
-    int subDirectoryCount = 5; // Each directory tree is this deep
-    ListeningExecutorService executor =
-        MoreExecutors.listeningDecorator(Executors.newFixedThreadPool(threadCount));
-    List<ListenableFuture<IOException>> futures = new ArrayList<>();
-    for (int threadIndex = 0; threadIndex < threadCount; ++threadIndex) {
-      futures.add(
-          executor.submit(
-              () -> {
-                try {
-                  for (int loopi = 0; loopi < directoryCreationCount; ++loopi) {
-                    List<Path> subDirs =
-                        getSubDirectories(xEmptyDirectory, loopi, subDirectoryCount);
-                    Path lastDir = Iterables.getLast(subDirs);
-                    lastDir.createDirectoryAndParents();
-                  }
-                } catch (IOException e) {
-                  return e;
-                }
-                return null;
-              }));
+class JavaIoFileSystemTest : SymlinkAwareFileSystemTest() {
+    public override fun getFreshFileSystem(digestHashFunction: DigestHashFunction?): FileSystem? {
+        return JavaIoFileSystem(digestHashFunction)
     }
-    ListenableFuture<List<IOException>> all = Futures.allAsList(futures);
-    // If the test times out here then there's likely to be a deadlock
-    List<IOException> exceptions =
-        all.get(TestUtils.WAIT_TIMEOUT_MILLISECONDS, TimeUnit.MILLISECONDS);
-    Optional<IOException> error = exceptions.stream().filter(Objects::nonNull).findFirst();
-    if (error.isPresent()) {
-      throw error.get();
-    }
-  }
 
-  private static List<Path> getSubDirectories(Path base, int loopi, int subDirectoryCount) {
-    Path path = base;
-    List<Path> subDirs = new ArrayList<>();
-    for (int subDirIndex = 0; subDirIndex < subDirectoryCount; ++subDirIndex) {
-      path = path.getChild(String.format("%d-%d", loopi, subDirIndex));
-      subDirs.add(path);
+    // Tests are inherited from the FileSystemTest
+    // JavaIoFileSystem incorrectly throws a FileNotFoundException for all IO errors. This means that
+    // statIfFound incorrectly suppresses those errors.
+    @org.junit.Test
+    override fun testBadPermissionsThrowsExceptionOnStatIfFound() {
     }
-    return subDirs;
-  }
+
+    @Throws(IOException::class)
+    override fun isHardLinked(a: Path, b: Path): Boolean {
+        return java.nio.file.Files.readAttributes(
+            Paths.get(a.toString()), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS
+        )
+            .fileKey()
+            .equals(
+                java.nio.file.Files.readAttributes(
+                    Paths.get(b.toString()), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS
+                )
+                    .fileKey()
+            )
+    }
+
+    /**
+     * This test has a large number of threads racing to create the same subdirectories.
+     * 
+     * 
+     * We create N number of distinct directory trees, eg. the tree "0-0/0-1/0-2/0-3/0-4" followed
+     * by the tree "1-0/1-1/1-2/1-3/1-4" etc. If there is race we should quickly get a deadlock.
+     * 
+     * 
+     * A timeout of this test is likely because of a deadlock.
+     */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCreateDirectoriesThreadSafety() {
+        val threadCount = 200
+        val directoryCreationCount = 500 // We create this many sets of directories
+        val subDirectoryCount = 5 // Each directory tree is this deep
+        val executor: com.google.common.util.concurrent.ListeningExecutorService =
+            com.google.common.util.concurrent.MoreExecutors.listeningDecorator(Executors.newFixedThreadPool(threadCount))
+        val futures: MutableList<com.google.common.util.concurrent.ListenableFuture<IOException?>?> =
+            java.util.ArrayList<com.google.common.util.concurrent.ListenableFuture<IOException?>?>()
+        for (threadIndex in 0..<threadCount) {
+            futures.add(
+                executor.submit<IOException?>(
+                    java.util.concurrent.Callable {
+                        try {
+                            for (loopi in 0..<directoryCreationCount) {
+                                val subDirs: MutableList<Path?> =
+                                    getSubDirectories(xEmptyDirectory, loopi, subDirectoryCount)
+                                val lastDir: Path? = com.google.common.collect.Iterables.getLast<Path?>(subDirs)
+                                lastDir.createDirectoryAndParents()
+                            }
+                        } catch (e: IOException) {
+                            return@submit e
+                        }
+                        null
+                    })
+            )
+        }
+        val all: com.google.common.util.concurrent.ListenableFuture<MutableList<IOException?>> =
+            com.google.common.util.concurrent.Futures.allAsList<IOException?>(futures)
+        // If the test times out here then there's likely to be a deadlock
+        val exceptions: MutableList<IOException?> =
+            all.get(com.google.devtools.build.lib.testutil.TestUtils.WAIT_TIMEOUT_MILLISECONDS, TimeUnit.MILLISECONDS)
+        val error: java.util.Optional<IOException?> =
+            exceptions.stream().filter { obj: IOException? -> java.util.Objects.nonNull(obj) }.findFirst()
+        if (error.isPresent()) {
+            throw error.get()
+        }
+    }
+
+    companion object {
+        private fun getSubDirectories(base: Path, loopi: Int, subDirectoryCount: Int): MutableList<Path?> {
+            var path: Path = base
+            val subDirs: MutableList<Path?> = java.util.ArrayList<Path?>()
+            for (subDirIndex in 0..<subDirectoryCount) {
+                path = path.getChild(String.format("%d-%d", loopi, subDirIndex))
+                subDirs.add(path)
+            }
+            return subDirs
+        }
+    }
 }

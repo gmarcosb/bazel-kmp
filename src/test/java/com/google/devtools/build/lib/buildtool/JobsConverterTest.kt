@@ -11,54 +11,49 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.buildtool;
+package com.google.devtools.build.lib.buildtool
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.actions.LocalHostCapacity
 
-import com.google.devtools.build.lib.actions.LocalHostCapacity;
-import com.google.devtools.build.lib.actions.ResourceSet;
-import com.google.devtools.build.lib.buildtool.BuildRequestOptions.JobsConverter;
-import com.google.devtools.common.options.OptionsParsingException;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests [com.google.devtools.build.lib.buildtool.BuildRequestOptions.JobsConverter].  */
+@RunWith(JUnit4::class)
+class JobsConverterTest {
+    var jobsConverter: JobsConverter? = null
 
-/** Tests {@link com.google.devtools.build.lib.buildtool.BuildRequestOptions.JobsConverter}. */
-@RunWith(JUnit4.class)
-public class JobsConverterTest {
+    @Before
+    fun setUp() {
+        jobsConverter = JobsConverter()
+    }
 
-  JobsConverter jobsConverter;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAutoJobsUsesHardwareSettings() {
+        LocalHostCapacity.setLocalHostCapacity(ResourceSet.createWithRamCpu(1, 123))
+        assertThat(jobsConverter.convert("auto")).isEqualTo(123)
+    }
 
-  @Before
-  public void setUp() {
-    jobsConverter = new JobsConverter();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAutoJobsAdjustsIfHardwareDetectionIsBogus() {
+        LocalHostCapacity.setLocalHostCapacity(
+            ResourceSet.createWithRamCpu(1, BuildRequestOptions.MAX_JOBS + 1)
+        )
+        assertThat(jobsConverter.convert("auto")).isEqualTo(BuildRequestOptions.MAX_JOBS)
+    }
 
-  @Test
-  public void testAutoJobsUsesHardwareSettings() throws Exception {
-    LocalHostCapacity.setLocalHostCapacity(ResourceSet.createWithRamCpu(1, 123));
-    assertThat(jobsConverter.convert("auto")).isEqualTo(123);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExplicitJobsLimited() {
+        assertThat(jobsConverter.convert((BuildRequestOptions.MAX_JOBS + 1).toString()))
+            .isEqualTo(BuildRequestOptions.MAX_JOBS)
+    }
 
-  @Test
-  public void testAutoJobsAdjustsIfHardwareDetectionIsBogus() throws Exception {
-    LocalHostCapacity.setLocalHostCapacity(
-        ResourceSet.createWithRamCpu(1, BuildRequestOptions.MAX_JOBS + 1));
-    assertThat(jobsConverter.convert("auto")).isEqualTo(BuildRequestOptions.MAX_JOBS);
-  }
-
-  @Test
-  public void testExplicitJobsLimited() throws Exception {
-    assertThat(jobsConverter.convert(Integer.toString(BuildRequestOptions.MAX_JOBS + 1)))
-        .isEqualTo(BuildRequestOptions.MAX_JOBS);
-  }
-
-  @Test
-  public void testUnboundedJobsDeprecated() {
-    OptionsParsingException thrown =
-        assertThrows(OptionsParsingException.class, () -> jobsConverter.convert("-1"));
-    assertThat(thrown).hasMessageThat().contains("must be at least 1");
-  }
+    @org.junit.Test
+    fun testUnboundedJobsDeprecated() {
+        val thrown: OptionsParsingException? =
+            org.junit.Assert.assertThrows<T?>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable { jobsConverter.convert("-1") })
+        assertThat(thrown).hasMessageThat().contains("must be at least 1")
+    }
 }

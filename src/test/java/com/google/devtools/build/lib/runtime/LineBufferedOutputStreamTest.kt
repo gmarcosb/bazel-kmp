@@ -11,80 +11,81 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-
-import java.io.IOException;
-import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.analysis.util.ScratchAttributeWriter.write
+import com.google.devtools.build.lib.buildtool.util.BuildIntegrationTestCase.write
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.io.IOException
 
 /**
- * Unit tests for {@link LineBufferedOutputStream} .
+ * Unit tests for [LineBufferedOutputStream] .
  */
-@RunWith(JUnit4.class)
-public class LineBufferedOutputStreamTest {
-  private static class MockOutputStream extends OutputStream {
-    private final List<String> writes = new ArrayList<>();
-    private boolean throwException = false;
+@RunWith(JUnit4::class)
+class LineBufferedOutputStreamTest {
+    private class MockOutputStream : java.io.OutputStream() {
+        private val writes: MutableList<String?> = java.util.ArrayList<String?>()
+        private var throwException = false
 
-    @Override
-    public void write(int byteAsInt) throws IOException {
-      byte b = (byte) byteAsInt; // make sure we work with bytes in comparisons
-      write(new byte[] {b}, 0, 1);
+        @Throws(IOException::class)
+        override fun write(byteAsInt: Int) {
+            val b = byteAsInt.toByte() // make sure we work with bytes in comparisons
+            write(byteArrayOf(b), 0, 1)
+        }
+
+        @kotlin.jvm.Synchronized
+        @Throws(IOException::class)
+        override fun write(b: ByteArray, off: Int, inlen: Int) {
+            writes.add(String(b, off, inlen, java.nio.charset.StandardCharsets.UTF_8))
+            if (throwException) {
+                throwException = false
+                throw IOException("thrown")
+            }
+        }
     }
 
-    @Override
-    public synchronized void write(byte[] b, int off, int inlen) throws IOException {
-      writes.add(new String(b, off, inlen, StandardCharsets.UTF_8));
-      if (throwException) {
-        throwException = false;
-        throw new IOException("thrown");
-      }
-    }
-  }
-
-  private List<String> lineBuffer(String... inputs) throws Exception {
-    MockOutputStream mockOutputStream = new MockOutputStream();
-    try (LineBufferedOutputStream cut = new LineBufferedOutputStream(mockOutputStream, 6)) {
-      for (String input : inputs) {
-        cut.write(input.getBytes(StandardCharsets.UTF_8));
-      }
+    @Throws(java.lang.Exception::class)
+    private fun lineBuffer(vararg inputs: String): MutableList<String?> {
+        val mockOutputStream = MockOutputStream()
+        LineBufferedOutputStream(mockOutputStream, 6).use { cut ->
+            for (input in inputs) {
+                cut.write(input.toByteArray(java.nio.charset.StandardCharsets.UTF_8))
+            }
+        }
+        return mockOutputStream.writes
     }
 
-    return mockOutputStream.writes;
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLineBuffering() {
+        val large: String = "a".repeat(100)
 
-  @Test
-  public void testLineBuffering() throws Exception {
-    String large = "a".repeat(100);
+        Truth.assertThat(lineBuffer("foo\nbar")).containsExactly("foo\n", "bar")
+        Truth.assertThat(lineBuffer("foobarfoobar")).containsExactly("foobar", "foobar")
+        Truth.assertThat(lineBuffer("fivey\none\n")).containsExactly("fivey\n", "one\n")
+        Truth.assertThat(lineBuffer("sixish\none\n")).containsExactly("sixish", "\n", "one\n")
+        Truth.assertThat(lineBuffer("s")).containsExactly("s")
+        Truth.assertThat(lineBuffer("\n\n\n\n")).containsExactly("\n", "\n", "\n", "\n")
+        Truth.assertThat(lineBuffer("foo\n\nbar\n")).containsExactly("foo\n", "\n", "bar\n")
 
-    assertThat(lineBuffer("foo\nbar")).containsExactly("foo\n", "bar");
-    assertThat(lineBuffer("foobarfoobar")).containsExactly("foobar", "foobar");
-    assertThat(lineBuffer("fivey\none\n")).containsExactly("fivey\n", "one\n");
-    assertThat(lineBuffer("sixish\none\n")).containsExactly("sixish", "\n", "one\n");
-    assertThat(lineBuffer("s")).containsExactly("s");
-    assertThat(lineBuffer("\n\n\n\n")).containsExactly("\n", "\n", "\n", "\n");
-    assertThat(lineBuffer("foo\n\nbar\n")).containsExactly("foo\n", "\n", "bar\n");
-
-    assertThat(lineBuffer("a", "a", large, large, "a")).containsExactly(
-        "aa", large, large, "a");
-  }
-
-  @Test
-  public void testIOErrorOnWrappedStream() throws Exception {
-    MockOutputStream mos = new MockOutputStream();
-    try (LineBufferedOutputStream cut = new LineBufferedOutputStream(mos, 4)) {
-      mos.throwException = true;
-      assertThrows(IOException.class, () -> cut.write("aaaa".getBytes(StandardCharsets.UTF_8)));
-      cut.write("a".getBytes(StandardCharsets.UTF_8));
+        Truth.assertThat(lineBuffer("a", "a", large, large, "a")).containsExactly(
+            "aa", large, large, "a"
+        )
     }
-    assertThat(mos.writes).containsExactly("aaaa", "a");
-  }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testIOErrorOnWrappedStream() {
+        val mos = MockOutputStream()
+        LineBufferedOutputStream(mos, 4).use { cut ->
+            mos.throwException = true
+            org.junit.Assert.assertThrows<IOException?>(
+                IOException::class.java,
+                org.junit.function.ThrowingRunnable { cut.write("aaaa".toByteArray(java.nio.charset.StandardCharsets.UTF_8)) })
+            cut.write("a".toByteArray(java.nio.charset.StandardCharsets.UTF_8))
+        }
+        Truth.assertThat(mos.writes).containsExactly("aaaa", "a")
+    }
 }

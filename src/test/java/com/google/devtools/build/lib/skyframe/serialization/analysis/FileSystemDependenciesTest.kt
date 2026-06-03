@@ -11,75 +11,67 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.analysis;
+package com.google.devtools.build.lib.skyframe.serialization.analysis
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.skyframe.serialization.analysis.VersionedChanges.CLIENT_CHANGE;
-import static com.google.devtools.build.lib.skyframe.serialization.analysis.VersionedChanges.NO_MATCH;
+import com.google.devtools.build.lib.skyframe.serialization.analysis.VersionedChanges.CLIENT_CHANGE
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.ListingDependencies.AvailableListingDependencies;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+@RunWith(JUnit4::class)
+class FileSystemDependenciesTest {
+    @org.junit.Test
+    fun fileDependencies_findEarliestMatch_matchesClientChange() {
+        val changes: VersionedChanges = VersionedChanges(com.google.common.collect.ImmutableList.of<E?>("abc/def"))
+        val dependencies: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            FileDependencies.builder("abc/def").build()
 
-@RunWith(JUnit4.class)
-public final class FileSystemDependenciesTest {
+        assertThat(dependencies.findEarliestMatch(changes, 0)).isEqualTo(CLIENT_CHANGE)
+    }
 
-  @Test
-  public void fileDependencies_findEarliestMatch_matchesClientChange() {
-    var changes = new VersionedChanges(ImmutableList.of("abc/def"));
-    var dependencies = FileDependencies.builder("abc/def").build();
+    @org.junit.Test
+    fun fileDependencies_findEarliestMatch_honorsValidityHorizon() {
+        val changes: VersionedChanges = VersionedChanges(com.google.common.collect.ImmutableList.of<E?>())
+        changes.registerFileChange("abc/def", 100)
 
-    assertThat(dependencies.findEarliestMatch(changes, 0)).isEqualTo(CLIENT_CHANGE);
-  }
+        val dependencies: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            FileDependencies.builder("abc/def").build()
 
-  @Test
-  public void fileDependencies_findEarliestMatch_honorsValidityHorizon() {
-    var changes = new VersionedChanges(ImmutableList.of());
-    changes.registerFileChange("abc/def", 100);
+        assertThat(dependencies.findEarliestMatch(changes, 99)).isEqualTo(100)
+        assertThat(dependencies.findEarliestMatch(changes, 100)).isEqualTo(NO_MATCH)
+    }
 
-    var dependencies = FileDependencies.builder("abc/def").build();
+    @org.junit.Test
+    fun fileDependencies_withMultiplePaths_findEarliestMatch_honorsValidityHorizon() {
+        val changes: VersionedChanges = VersionedChanges(com.google.common.collect.ImmutableList.of<E?>())
+        changes.registerFileChange("abc/def", 100)
+        changes.registerFileChange("foo/bar", 99)
 
-    assertThat(dependencies.findEarliestMatch(changes, 99)).isEqualTo(100);
-    assertThat(dependencies.findEarliestMatch(changes, 100)).isEqualTo(NO_MATCH);
-  }
+        val dependencies: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            FileDependencies.builder("abc/def").addPath("foo/bar").build()
 
-  @Test
-  public void fileDependencies_withMultiplePaths_findEarliestMatch_honorsValidityHorizon() {
-    var changes = new VersionedChanges(ImmutableList.of());
-    changes.registerFileChange("abc/def", 100);
-    changes.registerFileChange("foo/bar", 99);
+        assertThat(dependencies.findEarliestMatch(changes, 98)).isEqualTo(99)
+        assertThat(dependencies.findEarliestMatch(changes, 99)).isEqualTo(100)
+        assertThat(dependencies.findEarliestMatch(changes, 100)).isEqualTo(NO_MATCH)
+    }
 
-    var dependencies = FileDependencies.builder("abc/def").addPath("foo/bar").build();
+    @org.junit.Test
+    fun listingDependencies_findEarliestMatch_matchesClientChange() {
+        val changes: VersionedChanges = VersionedChanges(com.google.common.collect.ImmutableList.of<E?>("abc/def"))
+        val dependencies: AvailableListingDependencies =
+            ListingDependencies.from(FileDependencies.builder("abc").build()) as AvailableListingDependencies
 
-    assertThat(dependencies.findEarliestMatch(changes, 98)).isEqualTo(99);
-    assertThat(dependencies.findEarliestMatch(changes, 99)).isEqualTo(100);
-    assertThat(dependencies.findEarliestMatch(changes, 100)).isEqualTo(NO_MATCH);
-  }
+        assertThat(dependencies.findEarliestMatch(changes, 0)).isEqualTo(CLIENT_CHANGE)
+    }
 
-  @Test
-  public void listingDependencies_findEarliestMatch_matchesClientChange() {
-    var changes = new VersionedChanges(ImmutableList.of("abc/def"));
-    var dependencies =
-        (AvailableListingDependencies)
-            ListingDependencies.from(FileDependencies.builder("abc").build());
+    @org.junit.Test
+    fun listingDependencies_findEarliestMatch_honorsValidityHorizon() {
+        val changes: VersionedChanges = VersionedChanges(com.google.common.collect.ImmutableList.of<E?>())
+        changes.registerFileChange("abc/def", 99)
+        changes.registerFileChange("abc/ghi", 100)
 
-    assertThat(dependencies.findEarliestMatch(changes, 0)).isEqualTo(CLIENT_CHANGE);
-  }
+        val dependencies: AvailableListingDependencies =
+            ListingDependencies.from(FileDependencies.builder("abc").build()) as AvailableListingDependencies
 
-  @Test
-  public void listingDependencies_findEarliestMatch_honorsValidityHorizon() {
-    var changes = new VersionedChanges(ImmutableList.of());
-    changes.registerFileChange("abc/def", 99);
-    changes.registerFileChange("abc/ghi", 100);
-
-    var dependencies =
-        (AvailableListingDependencies)
-            ListingDependencies.from(FileDependencies.builder("abc").build());
-
-    assertThat(dependencies.findEarliestMatch(changes, 100)).isEqualTo(NO_MATCH);
-    assertThat(dependencies.findEarliestMatch(changes, 99)).isEqualTo(100);
-    assertThat(dependencies.findEarliestMatch(changes, 98)).isEqualTo(99);
-  }
+        assertThat(dependencies.findEarliestMatch(changes, 100)).isEqualTo(NO_MATCH)
+        assertThat(dependencies.findEarliestMatch(changes, 99)).isEqualTo(100)
+        assertThat(dependencies.findEarliestMatch(changes, 98)).isEqualTo(99)
+    }
 }

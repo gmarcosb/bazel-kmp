@@ -11,140 +11,118 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe
 
-package com.google.devtools.build.lib.skyframe;
+import com.google.devtools.build.lib.actions.ActionLookupData
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+@RunWith(JUnit4::class)
+class SkyframeInputMetadataProviderTest : FoundationTestCase() {
+    // The behavior this test verifies (that SkyValues are memoized over multiple restarts) is not
+    // actually necessary for the SkyframeInputMetadataProvider, but only due to a pretty brittle
+    // combination of happenstances: action rewinding may remove a value from the graph at any time
+    // and then MemoizingEvaluator.getExistingValue() will return null. However, Skyframe stores
+    // previously requested direct dependencies in SkyFunction.Environment, so when that happens,
+    // the requested metadata is still returned. But this relies on the particular implementation of
+    // Skyframe *and* SkyframeInputMetadataProvider and memoizing over restarts isn't that costly so
+    // it's useful to signal to someone who would remove this memoization, either accidentally or
+    // intentionally.
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun skyframeLookupsMemoizedOverMultipleRestarts() {
+        val perBuild: StaticInputMetadataProvider =
+            StaticInputMetadataProvider(com.google.common.collect.ImmutableMap.of<K?, V?>())
 
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.actions.ActionLookupData;
-import com.google.devtools.build.lib.actions.ActionLookupKey;
-import com.google.devtools.build.lib.actions.Artifact.DerivedArtifact;
-import com.google.devtools.build.lib.actions.ArtifactRoot;
-import com.google.devtools.build.lib.actions.ArtifactRoot.RootType;
-import com.google.devtools.build.lib.actions.FileArtifactValue;
-import com.google.devtools.build.lib.actions.MissingDepExecException;
-import com.google.devtools.build.lib.actions.StaticInputMetadataProvider;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.testutil.FoundationTestCase;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.skyframe.MemoizingEvaluator;
-import com.google.devtools.build.skyframe.SkyFunction;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+        val owner: ActionLookupKey? = ActionsTestUtil.createActionLookupKey("owner")
+        val actionKey: ActionLookupData? = ActionLookupData.create(owner, 0)
+        val artifact: DerivedArtifact =
+            DerivedArtifact.create(
+                ArtifactRoot.asDerivedRoot(root.asPath(), RootType.OUTPUT, "out"),
+                PathFragment.create("out/foo"),
+                owner
+            )
+        artifact.getPath().getParentDirectory().createDirectoryAndParents()
+        FileSystemUtils.writeContentAsLatin1(artifact.getPath(), "test")
+        artifact.setGeneratingActionKey(actionKey)
 
-@RunWith(JUnit4.class)
-public class SkyframeInputMetadataProviderTest extends FoundationTestCase {
-  // The behavior this test verifies (that SkyValues are memoized over multiple restarts) is not
-  // actually necessary for the SkyframeInputMetadataProvider, but only due to a pretty brittle
-  // combination of happenstances: action rewinding may remove a value from the graph at any time
-  // and then MemoizingEvaluator.getExistingValue() will return null. However, Skyframe stores
-  // previously requested direct dependencies in SkyFunction.Environment, so when that happens,
-  // the requested metadata is still returned. But this relies on the particular implementation of
-  // Skyframe *and* SkyframeInputMetadataProvider and memoizing over restarts isn't that costly so
-  // it's useful to signal to someone who would remove this memoization, either accidentally or
-  // intentionally.
-  @Test
-  public void skyframeLookupsMemoizedOverMultipleRestarts() throws Exception {
-    StaticInputMetadataProvider perBuild = new StaticInputMetadataProvider(ImmutableMap.of());
+        val evaluator: MemoizingEvaluator = Mockito.mock<MemoizingEvaluator>(MemoizingEvaluator::class.java)
+        val simp: SkyframeInputMetadataProvider =
+            SkyframeInputMetadataProvider(evaluator, perBuild, "out")
 
-    ActionLookupKey owner = ActionsTestUtil.createActionLookupKey("owner");
-    ActionLookupData actionKey = ActionLookupData.create(owner, 0);
-    DerivedArtifact artifact =
-        DerivedArtifact.create(
-            ArtifactRoot.asDerivedRoot(root.asPath(), RootType.OUTPUT, "out"),
-            PathFragment.create("out/foo"),
-            owner);
-    artifact.getPath().getParentDirectory().createDirectoryAndParents();
-    FileSystemUtils.writeContentAsLatin1(artifact.getPath(), "test");
-    artifact.setGeneratingActionKey(actionKey);
+        // On the first iteration, the dependency is not available yet. getInputMetadataChecked()
+        // should accordingly throw.
+        val env1: SkyFunction.Environment = Mockito.mock<SkyFunction.Environment>(SkyFunction.Environment::class.java)
+        Mockito.`when`<T?>(evaluator.getExistingValue(actionKey)).thenReturn(null)
+        Mockito.`when`<T?>(env1.getValue(actionKey)).thenReturn(null)
+        simp.withSkyframeAllowed(env1).use { unused ->
+            org.junit.Assert.assertThrows<T?>(
+                MissingDepExecException::class.java,
+                org.junit.function.ThrowingRunnable { simp.getInputMetadataChecked(artifact) })
+        }
+        val metadata: FileArtifactValue = FileArtifactValue.createForTesting(artifact)
+        val aev: ActionExecutionValue? =
+            ActionExecutionValue.create(
+                com.google.common.collect.ImmutableMap.of<K?, V?>(artifact, metadata),
+                com.google.common.collect.ImmutableMap.of<K?, V?>(),
+                null,
+                NestedSetBuilder.emptySet(Order.STABLE_ORDER)
+            )
 
-    MemoizingEvaluator evaluator = mock(MemoizingEvaluator.class);
-    SkyframeInputMetadataProvider simp =
-        new SkyframeInputMetadataProvider(evaluator, perBuild, "out");
-
-    // On the first iteration, the dependency is not available yet. getInputMetadataChecked()
-    // should accordingly throw.
-    SkyFunction.Environment env1 = mock(SkyFunction.Environment.class);
-    when(evaluator.getExistingValue(actionKey)).thenReturn(null);
-    when(env1.getValue(actionKey)).thenReturn(null);
-    try (var unused = simp.withSkyframeAllowed(env1)) {
-      assertThrows(MissingDepExecException.class, () -> simp.getInputMetadataChecked(artifact));
+        // Now the artifact in in Skyframe. Its metadata should be returned.
+        val env2: SkyFunction.Environment = Mockito.mock<SkyFunction.Environment>(SkyFunction.Environment::class.java)
+        Mockito.`when`<T?>(evaluator.getExistingValue(actionKey)).thenReturn(aev)
+        Mockito.`when`<T?>(env2.getValue(actionKey)).thenReturn(aev)
+        simp.withSkyframeAllowed(env2).use { unused ->
+            assertThat(simp.getInputMetadataChecked(artifact)).isEqualTo(metadata)
+        }
+        // No further methods on env3 or the evaluator should be called and the metadata should still be
+        // returned as normal.
+        Mockito.`when`<T?>(evaluator.getExistingValue(actionKey)).thenThrow(java.lang.IllegalStateException::class.java)
+        val env3: SkyFunction.Environment? = Mockito.mock<SkyFunction.Environment?>(SkyFunction.Environment::class.java)
+        simp.withSkyframeAllowed(env3).use { unused ->
+            assertThat(simp.getInputMetadataChecked(artifact)).isEqualTo(metadata)
+        }
+        Mockito.verify<Any?>(env3, Mockito.never()).getValue(actionKey)
     }
 
-    FileArtifactValue metadata = FileArtifactValue.createForTesting(artifact);
-    ActionExecutionValue aev =
-        ActionExecutionValue.create(
-            ImmutableMap.of(artifact, metadata),
-            ImmutableMap.of(),
-            null,
-            NestedSetBuilder.emptySet(Order.STABLE_ORDER));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun skyframeLookupsMemoizedWithinASingleRestart() {
+        val perBuild: StaticInputMetadataProvider =
+            StaticInputMetadataProvider(com.google.common.collect.ImmutableMap.of<K?, V?>())
 
-    // Now the artifact in in Skyframe. Its metadata should be returned.
-    SkyFunction.Environment env2 = mock(SkyFunction.Environment.class);
-    when(evaluator.getExistingValue(actionKey)).thenReturn(aev);
-    when(env2.getValue(actionKey)).thenReturn(aev);
-    try (var unused = simp.withSkyframeAllowed(env2)) {
-      assertThat(simp.getInputMetadataChecked(artifact)).isEqualTo(metadata);
+        val owner: ActionLookupKey? = ActionsTestUtil.createActionLookupKey("owner")
+        val actionKey: ActionLookupData? = ActionLookupData.create(owner, 0)
+        val artifact: DerivedArtifact =
+            DerivedArtifact.create(
+                ArtifactRoot.asDerivedRoot(root.asPath(), RootType.OUTPUT, "out"),
+                PathFragment.create("out/foo"),
+                owner
+            )
+        artifact.getPath().getParentDirectory().createDirectoryAndParents()
+        FileSystemUtils.writeContentAsLatin1(artifact.getPath(), "test")
+        artifact.setGeneratingActionKey(actionKey)
+        val metadata: FileArtifactValue = FileArtifactValue.createForTesting(artifact)
+        val aev: ActionExecutionValue? =
+            ActionExecutionValue.create(
+                com.google.common.collect.ImmutableMap.of<K?, V?>(artifact, metadata),
+                com.google.common.collect.ImmutableMap.of<K?, V?>(),
+                null,
+                NestedSetBuilder.emptySet(Order.STABLE_ORDER)
+            )
+
+        val evaluator: MemoizingEvaluator = Mockito.mock<MemoizingEvaluator>(MemoizingEvaluator::class.java)
+        val simp: SkyframeInputMetadataProvider =
+            SkyframeInputMetadataProvider(evaluator, perBuild, "out")
+
+        val env: SkyFunction.Environment? = Mockito.mock<SkyFunction.Environment?>(SkyFunction.Environment::class.java)
+        Mockito.`when`<T?>(evaluator.getExistingValue(actionKey))
+            .thenReturn(aev) // first call
+            .thenThrow(java.lang.IllegalStateException::class.java) // Subsequent calls
+
+        simp.withSkyframeAllowed(env).use { unused ->
+            assertThat(simp.getInputMetadataChecked(artifact)).isEqualTo(metadata)
+            assertThat(simp.getInputMetadataChecked(artifact)).isEqualTo(metadata)
+        }
+        Mockito.verify<Any?>(env, Mockito.never()).getValue(ArgumentMatchers.any<T?>())
     }
-
-    // No further methods on env3 or the evaluator should be called and the metadata should still be
-    // returned as normal.
-    when(evaluator.getExistingValue(actionKey)).thenThrow(IllegalStateException.class);
-    SkyFunction.Environment env3 = mock(SkyFunction.Environment.class);
-    try (var unused = simp.withSkyframeAllowed(env3)) {
-      assertThat(simp.getInputMetadataChecked(artifact)).isEqualTo(metadata);
-    }
-
-    verify(env3, never()).getValue(actionKey);
-  }
-
-  @Test
-  public void skyframeLookupsMemoizedWithinASingleRestart() throws Exception {
-    StaticInputMetadataProvider perBuild = new StaticInputMetadataProvider(ImmutableMap.of());
-
-    ActionLookupKey owner = ActionsTestUtil.createActionLookupKey("owner");
-    ActionLookupData actionKey = ActionLookupData.create(owner, 0);
-    DerivedArtifact artifact =
-        DerivedArtifact.create(
-            ArtifactRoot.asDerivedRoot(root.asPath(), RootType.OUTPUT, "out"),
-            PathFragment.create("out/foo"),
-            owner);
-    artifact.getPath().getParentDirectory().createDirectoryAndParents();
-    FileSystemUtils.writeContentAsLatin1(artifact.getPath(), "test");
-    artifact.setGeneratingActionKey(actionKey);
-    FileArtifactValue metadata = FileArtifactValue.createForTesting(artifact);
-    ActionExecutionValue aev =
-        ActionExecutionValue.create(
-            ImmutableMap.of(artifact, metadata),
-            ImmutableMap.of(),
-            null,
-            NestedSetBuilder.emptySet(Order.STABLE_ORDER));
-
-    MemoizingEvaluator evaluator = mock(MemoizingEvaluator.class);
-    SkyframeInputMetadataProvider simp =
-        new SkyframeInputMetadataProvider(evaluator, perBuild, "out");
-
-    SkyFunction.Environment env = mock(SkyFunction.Environment.class);
-    when(evaluator.getExistingValue(actionKey))
-        .thenReturn(aev) // first call
-        .thenThrow(IllegalStateException.class); // Subsequent calls
-
-    try (var unused = simp.withSkyframeAllowed(env)) {
-      assertThat(simp.getInputMetadataChecked(artifact)).isEqualTo(metadata);
-      assertThat(simp.getInputMetadataChecked(artifact)).isEqualTo(metadata);
-    }
-
-    verify(env, never()).getValue(any());
-  }
 }

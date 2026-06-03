@@ -11,62 +11,48 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.rules.java;
+package com.google.devtools.build.lib.rules.java
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.actions.util.ActionsTestUtil.prettyArtifactNames;
+import com.google.devtools.build.lib.actions.Artifact
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.ArtifactRoot;
-import com.google.devtools.build.lib.actions.ArtifactRoot.RootType;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.collect.nestedset.Depset;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.packages.StarlarkInfo;
-import com.google.devtools.build.lib.packages.StructProvider;
-import com.google.devtools.build.lib.rules.java.JavaPluginInfo.JavaPluginData;
-import com.google.devtools.build.lib.vfs.Path;
-import java.io.IOException;
-import java.util.Map;
-import net.starlark.java.eval.Starlark;
-import net.starlark.java.eval.StarlarkList;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests JavaInfo API for Starlark.  */
+@RunWith(JUnit4::class)
+class JavaInfoStarlarkApiTest : BuildViewTestCase() {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkJavaOutputsCanBeAddedToJavaPluginInfo() {
+        val classJar: Artifact = createArtifact("foo.jar")
+        val starlarkJavaOutput: StarlarkInfo =
+            makeStruct(
+                com.google.common.collect.ImmutableMap.of<String?, Any?>(
+                    "source_jars",
+                    Starlark.NONE,
+                    "class_jar",
+                    classJar
+                )
+            )
+        val starlarkPluginInfo: StarlarkInfo =
+            makeStruct(
+                com.google.common.collect.ImmutableMap.of<K?, V?>(
+                    "java_outputs", StarlarkList.immutableOf<Any?>(starlarkJavaOutput),
+                    "plugins", JavaPluginData.empty(),
+                    "api_generating_plugins", JavaPluginData.empty()
+                )
+            )
 
-/** Tests JavaInfo API for Starlark. */
-@RunWith(JUnit4.class)
-public class JavaInfoStarlarkApiTest extends BuildViewTestCase {
+        val pluginInfo: JavaPluginInfo? = JavaPluginInfo.wrap(starlarkPluginInfo)
 
-  @Test
-  public void starlarkJavaOutputsCanBeAddedToJavaPluginInfo() throws Exception {
-    Artifact classJar = createArtifact("foo.jar");
-    StarlarkInfo starlarkJavaOutput =
-        makeStruct(ImmutableMap.of("source_jars", Starlark.NONE, "class_jar", classJar));
-    StarlarkInfo starlarkPluginInfo =
-        makeStruct(
-            ImmutableMap.of(
-                "java_outputs", StarlarkList.immutableOf(starlarkJavaOutput),
-                "plugins", JavaPluginData.empty(),
-                "api_generating_plugins", JavaPluginData.empty()));
+        Truth.assertThat(pluginInfo).isNotNull()
+        assertThat(pluginInfo.getJavaOutputs()).hasSize(1)
+        assertThat(pluginInfo.getJavaOutputs().get(0).classJar()).isEqualTo(classJar)
+    }
 
-    JavaPluginInfo pluginInfo = JavaPluginInfo.wrap(starlarkPluginInfo);
-
-    assertThat(pluginInfo).isNotNull();
-    assertThat(pluginInfo.getJavaOutputs()).hasSize(1);
-    assertThat(pluginInfo.getJavaOutputs().get(0).classJar()).isEqualTo(classJar);
-  }
-
-  @Test
-  public void nativeAndStarlarkJavaOutputsCanBeAddedToADepset() throws Exception {
-    scratch.file(
-        "foo/extension.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun nativeAndStarlarkJavaOutputsCanBeAddedToADepset() {
+        scratch.file(
+            "foo/extension.bzl",
+            """
         load("@rules_java//java/common:java_info.bzl", "JavaInfo")
         def _impl(ctx):
             f = ctx.actions.declare_file(ctx.label.name + ".jar")
@@ -74,35 +60,43 @@ public class JavaInfoStarlarkApiTest extends BuildViewTestCase {
             return [JavaInfo(output_jar = f, compile_jar = None)]
 
         my_rule = rule(implementation = _impl)
-        """);
-    scratch.file(
-        "foo/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "foo/BUILD",
+            """
         load(":extension.bzl", "my_rule")
 
         my_rule(name = "my_starlark_rule")
-        """);
-    JavaOutput nativeOutput =
-        JavaOutput.builder().setClassJar(createArtifact("native.jar")).build();
-    ImmutableList<JavaOutput> starlarkOutputs =
-        JavaInfo.getJavaInfo(getConfiguredTarget("//foo:my_starlark_rule")).getJavaOutputs();
+        
+        """.trimIndent()
+        )
+        val nativeOutput: com.google.devtools.build.lib.rules.java.JavaOutput =
+            com.google.devtools.build.lib.rules.java.JavaOutput.builder().setClassJar(createArtifact("native.jar"))
+                .build()
+        val starlarkOutputs: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.rules.java.JavaOutput?> =
+            JavaInfo.Companion.getJavaInfo(getConfiguredTarget("//foo:my_starlark_rule")).javaOutputs
 
-    Depset depset =
-        Depset.fromDirectAndTransitive(
-            Order.STABLE_ORDER,
-            /* direct= */ ImmutableList.builder().add(nativeOutput).addAll(starlarkOutputs).build(),
-            /* transitive= */ ImmutableList.of(),
-            /* strict= */ true);
+        val depset: Depset =
+            Depset.fromDirectAndTransitive(
+                Order.STABLE_ORDER,  /* direct= */
+                com.google.common.collect.ImmutableList.builder<Any?>().add(nativeOutput).addAll(starlarkOutputs)
+                    .build(),  /* transitive= */
+                com.google.common.collect.ImmutableList.of<E?>(),  /* strict= */
+                true
+            )
 
-    assertThat(depset).isNotNull();
-    assertThat(depset.toList()).hasSize(2);
-  }
+        assertThat(depset).isNotNull()
+        assertThat(depset.toList()).hasSize(2)
+    }
 
-  @Test
-  public void testNeverlinkIsStoredAsABoolean() throws Exception {
-    scratch.file(
-        "foo/extension.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNeverlinkIsStoredAsABoolean() {
+        scratch.file(
+            "foo/extension.bzl",
+            """
         load("@rules_java//java/common:java_info.bzl", "JavaInfo")
         def _impl(ctx):
             f = ctx.actions.declare_file(ctx.label.name + ".jar")
@@ -110,182 +104,211 @@ public class JavaInfoStarlarkApiTest extends BuildViewTestCase {
             return [JavaInfo(output_jar = f, compile_jar = None, neverlink = 1)]
 
         my_rule = rule(implementation = _impl)
-        """);
-    scratch.file(
-        "foo/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "foo/BUILD",
+            """
         load(":extension.bzl", "my_rule")
 
         my_rule(name = "my_starlark_rule")
-        """);
+        
+        """.trimIndent()
+        )
 
-    JavaInfo javaInfo = JavaInfo.getJavaInfo(getConfiguredTarget("//foo:my_starlark_rule"));
+        val javaInfo: JavaInfo? = JavaInfo.Companion.getJavaInfo(getConfiguredTarget("//foo:my_starlark_rule"))
 
-    assertThat(javaInfo).isNotNull();
-    assertThat(javaInfo.isNeverlink()).isTrue();
-  }
+        Truth.assertThat(javaInfo).isNotNull()
+        Truth.assertThat(javaInfo.isNeverlink).isTrue()
+    }
 
-  @Test
-  public void translateStarlarkJavaInfo_minimal() throws Exception {
-    ImmutableMap<String, Object> fields = getBuilderWithMandataryFields().buildOrThrow();
-    StarlarkInfo starlarkInfo = makeStruct(fields);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun translateStarlarkJavaInfo_minimal() {
+        val fields: com.google.common.collect.ImmutableMap<String?, Any?> = builderWithMandataryFields.buildOrThrow()
+        val starlarkInfo: StarlarkInfo = makeStruct(fields)
 
-    JavaInfo javaInfo = JavaInfo.wrap(starlarkInfo);
+        val javaInfo: JavaInfo? = JavaInfo.Companion.wrap(starlarkInfo)
 
-    assertThat(javaInfo).isNotNull();
-    assertThat(javaInfo.getProvider(JavaCompilationArgsProvider.class)).isNotNull();
-    assertThat(javaInfo.getCompilationInfoProvider()).isNull();
-    assertThat(javaInfo.getJavaModuleFlagsInfo()).isEqualTo(JavaModuleFlagsProvider.EMPTY);
-    assertThat(javaInfo.getJavaPluginInfo())
-        .isEqualTo(JavaPluginInfo.empty(JavaPluginInfo.PROVIDER));
-  }
+        Truth.assertThat(javaInfo).isNotNull()
+        Truth.assertThat(javaInfo.getProvider<JavaCompilationArgsProvider?>(JavaCompilationArgsProvider::class.java))
+            .isNotNull()
+        Truth.assertThat(javaInfo.compilationInfoProvider).isNull()
+        Truth.assertThat(javaInfo.javaModuleFlagsInfo).isEqualTo(JavaModuleFlagsProvider.Companion.EMPTY)
+        Truth.assertThat(javaInfo.getJavaPluginInfo())
+            .isEqualTo(JavaPluginInfo.empty(JavaPluginInfo.PROVIDER))
+    }
 
-  @Test
-  public void translateStarlarkJavaInfo_binariesDoNotContainCompilationArgs() throws Exception {
-    ImmutableMap<String, Object> fields =
-        getBuilderWithMandataryFields().put("_is_binary", true).buildOrThrow();
-    StarlarkInfo starlarkInfo = makeStruct(fields);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun translateStarlarkJavaInfo_binariesDoNotContainCompilationArgs() {
+        val fields: com.google.common.collect.ImmutableMap<String?, Any?> =
+            builderWithMandataryFields.put("_is_binary", true).buildOrThrow()
+        val starlarkInfo: StarlarkInfo = makeStruct(fields)
 
-    JavaInfo javaInfo = JavaInfo.wrap(starlarkInfo);
+        val javaInfo: JavaInfo? = JavaInfo.Companion.wrap(starlarkInfo)
 
-    assertThat(javaInfo).isNotNull();
-    assertThat(javaInfo.getProvider(JavaCompilationArgsProvider.class)).isNull();
-  }
+        Truth.assertThat(javaInfo).isNotNull()
+        Truth.assertThat(javaInfo.getProvider<JavaCompilationArgsProvider?>(JavaCompilationArgsProvider::class.java))
+            .isNull()
+    }
 
-  @Test
-  public void translateStarlarkJavaInfo_compilationInfo() throws Exception {
-    ImmutableMap<String, Object> fields =
-        getBuilderWithMandataryFields()
-            .put(
-                "compilation_info",
-                makeStruct(
-                    ImmutableMap.of(
-                        "javac_options",
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun translateStarlarkJavaInfo_compilationInfo() {
+        val fields: com.google.common.collect.ImmutableMap<String?, Any?> =
+            builderWithMandataryFields
+                .put(
+                    "compilation_info",
+                    makeStruct(
+                        com.google.common.collect.ImmutableMap.of<K?, V?>(
+                            "javac_options",
                             Depset.of(
-                                String.class,
-                                NestedSetBuilder.create(Order.NAIVE_LINK_ORDER, "opt1", "opt2")),
-                        "boot_classpath", StarlarkList.immutableOf(createArtifact("cp.jar")))))
-            .buildOrThrow();
-    StarlarkInfo starlarkInfo = makeStruct(fields);
+                                String::class.java,
+                                NestedSetBuilder.create(Order.NAIVE_LINK_ORDER, "opt1", "opt2")
+                            ),
+                            "boot_classpath", StarlarkList.immutableOf<Any?>(createArtifact("cp.jar"))
+                        )
+                    )
+                )
+                .buildOrThrow()
+        val starlarkInfo: StarlarkInfo = makeStruct(fields)
 
-    JavaInfo javaInfo = JavaInfo.wrap(starlarkInfo);
+        val javaInfo: JavaInfo? = JavaInfo.Companion.wrap(starlarkInfo)
 
-    assertThat(javaInfo).isNotNull();
-    assertThat(javaInfo.getCompilationInfoProvider()).isNotNull();
-    assertThat(javaInfo.getCompilationInfoProvider().getJavacOptsList())
-        .containsExactly("opt1", "opt2");
-    assertThat(javaInfo.getCompilationInfoProvider().getBootClasspathList()).hasSize(1);
-    assertThat(prettyArtifactNames(javaInfo.getCompilationInfoProvider().getBootClasspathList()))
-        .containsExactly("cp.jar");
-  }
+        Truth.assertThat(javaInfo).isNotNull()
+        Truth.assertThat(javaInfo.compilationInfoProvider).isNotNull()
+        Truth.assertThat(javaInfo.compilationInfoProvider.getJavacOptsList())
+            .containsExactly("opt1", "opt2")
+        Truth.assertThat(javaInfo.compilationInfoProvider.bootClasspathList).hasSize(1)
+        assertThat(prettyArtifactNames(javaInfo.compilationInfoProvider.bootClasspathList))
+            .containsExactly("cp.jar")
+    }
 
-  @Test
-  public void translatedStarlarkCompilationInfoEqualsNativeInstance() throws Exception {
-    Artifact bootClasspathArtifact = createArtifact("boot.jar");
-    NestedSet<Artifact> compilationClasspath =
-        NestedSetBuilder.create(Order.NAIVE_LINK_ORDER, createArtifact("compile.jar"));
-    NestedSet<Artifact> runtimeClasspath =
-        NestedSetBuilder.create(Order.NAIVE_LINK_ORDER, createArtifact("runtime.jar"));
-    StarlarkInfo starlarkInfo =
-        makeStruct(
-            ImmutableMap.of(
-                "compilation_classpath", Depset.of(Artifact.class, compilationClasspath),
-                "runtime_classpath", Depset.of(Artifact.class, runtimeClasspath),
-                "javac_options",
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun translatedStarlarkCompilationInfoEqualsNativeInstance() {
+        val bootClasspathArtifact: Artifact = createArtifact("boot.jar")
+        val compilationClasspath: NestedSet<Artifact?>? =
+            NestedSetBuilder.create(Order.NAIVE_LINK_ORDER, createArtifact("compile.jar"))
+        val runtimeClasspath: NestedSet<Artifact?>? =
+            NestedSetBuilder.create(Order.NAIVE_LINK_ORDER, createArtifact("runtime.jar"))
+        val starlarkInfo: StarlarkInfo =
+            makeStruct(
+                com.google.common.collect.ImmutableMap.of<K?, V?>(
+                    "compilation_classpath", Depset.of(Artifact::class.java, compilationClasspath),
+                    "runtime_classpath", Depset.of(Artifact::class.java, runtimeClasspath),
+                    "javac_options",
                     Depset.of(
-                        String.class,
-                        NestedSetBuilder.create(Order.NAIVE_LINK_ORDER, "opt1", "opt2")),
-                "boot_classpath", StarlarkList.immutableOf(bootClasspathArtifact)));
-    JavaCompilationInfoProvider nativeCompilationInfo =
-        new JavaCompilationInfoProvider.Builder()
-            .setCompilationClasspath(compilationClasspath)
-            .setRuntimeClasspath(runtimeClasspath)
-            .setJavacOpts(NestedSetBuilder.create(Order.NAIVE_LINK_ORDER, "opt1", "opt2"))
-            .setBootClasspath(
-                NestedSetBuilder.create(Order.NAIVE_LINK_ORDER, bootClasspathArtifact))
-            .build();
+                        String::class.java,
+                        NestedSetBuilder.create(Order.NAIVE_LINK_ORDER, "opt1", "opt2")
+                    ),
+                    "boot_classpath", StarlarkList.immutableOf<Any?>(bootClasspathArtifact)
+                )
+            )
+        val nativeCompilationInfo: JavaCompilationInfoProvider? =
+            com.google.devtools.build.lib.rules.java.JavaCompilationInfoProvider.Builder()
+                .setCompilationClasspath(compilationClasspath)
+                .setRuntimeClasspath(runtimeClasspath)
+                .setJavacOpts(NestedSetBuilder.create(Order.NAIVE_LINK_ORDER, "opt1", "opt2"))
+                .setBootClasspath(
+                    NestedSetBuilder.create(Order.NAIVE_LINK_ORDER, bootClasspathArtifact)
+                )
+                .build()
 
-    JavaCompilationInfoProvider starlarkCompilationInfo =
-        JavaCompilationInfoProvider.fromStarlarkCompilationInfo(starlarkInfo);
+        val starlarkCompilationInfo: JavaCompilationInfoProvider? =
+            JavaCompilationInfoProvider.Companion.fromStarlarkCompilationInfo(starlarkInfo)
 
-    assertThat(starlarkCompilationInfo).isNotNull();
-    assertThat(starlarkCompilationInfo).isEqualTo(nativeCompilationInfo);
-  }
+        Truth.assertThat(starlarkCompilationInfo).isNotNull()
+        Truth.assertThat(starlarkCompilationInfo).isEqualTo(nativeCompilationInfo)
+    }
 
-  @Test
-  public void translateStarlarkJavaInfo_moduleFlagsInfo() throws Exception {
-    ImmutableMap<String, Object> fields =
-        getBuilderWithMandataryFields()
-            .put(
-                "module_flags_info",
-                makeStruct(
-                    ImmutableMap.of(
-                        "add_exports", makeDepset(String.class, "export1", "export2"),
-                        "add_opens", makeDepset(String.class, "open1", "open2"))))
-            .buildOrThrow();
-    StarlarkInfo starlarkInfo = makeStruct(fields);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun translateStarlarkJavaInfo_moduleFlagsInfo() {
+        val fields: com.google.common.collect.ImmutableMap<String?, Any?> =
+            builderWithMandataryFields
+                .put(
+                    "module_flags_info",
+                    makeStruct(
+                        com.google.common.collect.ImmutableMap.of<String?, Any?>(
+                            "add_exports", makeDepset<String?>(String::class.java, "export1", "export2"),
+                            "add_opens", makeDepset<String?>(String::class.java, "open1", "open2")
+                        )
+                    )
+                )
+                .buildOrThrow()
+        val starlarkInfo: StarlarkInfo = makeStruct(fields)
 
-    JavaInfo javaInfo = JavaInfo.wrap(starlarkInfo);
+        val javaInfo: JavaInfo? = JavaInfo.Companion.wrap(starlarkInfo)
 
-    assertThat(javaInfo).isNotNull();
-    assertThat(javaInfo.getJavaModuleFlagsInfo()).isNotNull();
-    assertThat(javaInfo.getJavaModuleFlagsInfo().addExports.toList())
-        .containsExactly("export1", "export2");
-    assertThat(javaInfo.getJavaModuleFlagsInfo().addOpens.toList())
-        .containsExactly("open1", "open2");
-  }
+        Truth.assertThat(javaInfo).isNotNull()
+        Truth.assertThat(javaInfo.javaModuleFlagsInfo).isNotNull()
+        assertThat(javaInfo.javaModuleFlagsInfo.addExports.toList())
+            .containsExactly("export1", "export2")
+        assertThat(javaInfo.javaModuleFlagsInfo.addOpens.toList())
+            .containsExactly("open1", "open2")
+    }
 
-  @Test
-  public void translateStarlarkJavaInfo_pluginInfo() throws Exception {
-    ImmutableMap<String, Object> fields =
-        getBuilderWithMandataryFields()
-            .put(
-                "plugins",
-                JavaPluginData.create(
-                    NestedSetBuilder.create(Order.STABLE_ORDER, "c1", "c2", "c3"),
-                    NestedSetBuilder.create(Order.STABLE_ORDER, createArtifact("f1")),
-                    NestedSetBuilder.emptySet(Order.STABLE_ORDER)))
-            .buildKeepingLast();
-    StarlarkInfo starlarkInfo = makeStruct(fields);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun translateStarlarkJavaInfo_pluginInfo() {
+        val fields: com.google.common.collect.ImmutableMap<String?, Any?> =
+            builderWithMandataryFields
+                .put(
+                    "plugins",
+                    JavaPluginData.create(
+                        NestedSetBuilder.create(Order.STABLE_ORDER, "c1", "c2", "c3"),
+                        NestedSetBuilder.create(Order.STABLE_ORDER, createArtifact("f1")),
+                        NestedSetBuilder.emptySet(Order.STABLE_ORDER)
+                    )
+                )
+                .buildKeepingLast()
+        val starlarkInfo: StarlarkInfo = makeStruct(fields)
 
-    JavaInfo javaInfo = JavaInfo.wrap(starlarkInfo);
+        val javaInfo: JavaInfo? = JavaInfo.Companion.wrap(starlarkInfo)
 
-    assertThat(javaInfo).isNotNull();
-    assertThat(javaInfo.plugins()).isNotNull();
-    assertThat(javaInfo.plugins().processorClasses().toList()).containsExactly("c1", "c2", "c3");
-    assertThat(prettyArtifactNames(javaInfo.plugins().processorClasspath())).containsExactly("f1");
-  }
+        Truth.assertThat(javaInfo).isNotNull()
+        Truth.assertThat(javaInfo.plugins()).isNotNull()
+        assertThat(javaInfo.plugins().processorClasses().toList()).containsExactly("c1", "c2", "c3")
+        assertThat(prettyArtifactNames(javaInfo.plugins().processorClasspath())).containsExactly("f1")
+    }
 
-  private static ImmutableMap.Builder<String, Object> getBuilderWithMandataryFields() {
-    Depset emptyDepset = Depset.of(Artifact.class, NestedSetBuilder.create(Order.STABLE_ORDER));
-    return ImmutableMap.<String, Object>builder()
-        .put("transitive_native_libraries", emptyDepset)
-        .put("compile_jars", emptyDepset)
-        .put("full_compile_jars", emptyDepset)
-        .put("transitive_compile_time_jars", emptyDepset)
-        .put("transitive_runtime_jars", emptyDepset)
-        .put("_transitive_full_compile_time_jars", emptyDepset)
-        .put("_compile_time_java_dependencies", emptyDepset)
-        .put("header_compilation_direct_deps", emptyDepset)
-        .put("plugins", JavaPluginData.empty())
-        .put("api_generating_plugins", JavaPluginData.empty())
-        .put("java_outputs", StarlarkList.empty())
-        .put("transitive_source_jars", emptyDepset)
-        .put("source_jars", StarlarkList.empty())
-        .put("runtime_output_jars", StarlarkList.empty());
-  }
+    @Throws(IOException::class)
+    private fun createArtifact(path: String?): Artifact {
+        val execRoot: Path? = scratch.dir("/")
+        val root: ArtifactRoot? = ArtifactRoot.asDerivedRoot(execRoot, RootType.OUTPUT, "fake-root")
+        return ActionsTestUtil.createArtifact(root, path)
+    }
 
-  private Artifact createArtifact(String path) throws IOException {
-    Path execRoot = scratch.dir("/");
-    ArtifactRoot root = ArtifactRoot.asDerivedRoot(execRoot, RootType.OUTPUT, "fake-root");
-    return ActionsTestUtil.createArtifact(root, path);
-  }
+    companion object {
+        private val builderWithMandataryFields: com.google.common.collect.ImmutableMap.Builder<String?, Any?>
+            get() {
+                val emptyDepset: Depset? = Depset.of(Artifact::class.java, NestedSetBuilder.create(Order.STABLE_ORDER))
+                return com.google.common.collect.ImmutableMap.builder<String?, Any?>()
+                    .put("transitive_native_libraries", emptyDepset)
+                    .put("compile_jars", emptyDepset)
+                    .put("full_compile_jars", emptyDepset)
+                    .put("transitive_compile_time_jars", emptyDepset)
+                    .put("transitive_runtime_jars", emptyDepset)
+                    .put("_transitive_full_compile_time_jars", emptyDepset)
+                    .put("_compile_time_java_dependencies", emptyDepset)
+                    .put("header_compilation_direct_deps", emptyDepset)
+                    .put("plugins", JavaPluginData.empty())
+                    .put("api_generating_plugins", JavaPluginData.empty())
+                    .put("java_outputs", StarlarkList.empty<Any?>())
+                    .put("transitive_source_jars", emptyDepset)
+                    .put("source_jars", StarlarkList.empty<Any?>())
+                    .put("runtime_output_jars", StarlarkList.empty<Any?>())
+            }
 
-  private static <T> Depset makeDepset(Class<T> clazz, T... elems) {
-    return Depset.of(clazz, NestedSetBuilder.create(Order.STABLE_ORDER, elems));
-  }
+        private fun <T> makeDepset(clazz: java.lang.Class<T?>?, vararg elems: T?): Depset {
+            return Depset.of(clazz, NestedSetBuilder.create(Order.STABLE_ORDER, elems))
+        }
 
-  private static StarlarkInfo makeStruct(Map<String, Object> struct) {
-    return StructProvider.STRUCT.create(struct, "");
-  }
+        private fun makeStruct(struct: MutableMap<String?, Any?>?): StarlarkInfo {
+            return StructProvider.STRUCT.create(struct, "")
+        }
+    }
 }

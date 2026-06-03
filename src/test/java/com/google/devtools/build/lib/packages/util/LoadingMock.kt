@@ -11,32 +11,29 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages.util;
+package com.google.devtools.build.lib.packages.util
 
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
-import com.google.devtools.build.lib.skyframe.packages.PackageFactoryBuilderWithSkyframeForTesting;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import com.google.devtools.build.lib.testutil.TestPackageFactoryBuilderFactory;
-import com.google.devtools.build.lib.testutil.TestRuleClassProvider;
+import com.google.devtools.build.lib.analysis.BlazeDirectories
 
-/** Create a mock client for the loading phase, as well as a configuration factory. */
-public class LoadingMock {
-  public static LoadingMock get() {
-    return new LoadingMock();
-  }
+/** Create a mock client for the loading phase, as well as a configuration factory.  */
+class LoadingMock {
+    val productName: String
+        get() = TestConstants.PRODUCT_NAME
 
-  public String getProductName() {
-    return TestConstants.PRODUCT_NAME;
-  }
+    fun getPackageFactoryBuilderForTesting(
+        directories: BlazeDirectories?
+    ): PackageFactoryBuilderWithSkyframeForTesting? {
+        return TestPackageFactoryBuilderFactory.getInstance()
+            .builder(directories) as PackageFactoryBuilderWithSkyframeForTesting?
+    }
 
-  public PackageFactoryBuilderWithSkyframeForTesting getPackageFactoryBuilderForTesting(
-      BlazeDirectories directories) {
-    return (PackageFactoryBuilderWithSkyframeForTesting)
-        TestPackageFactoryBuilderFactory.getInstance().builder(directories);
-  }
+    fun createRuleClassProvider(): ConfiguredRuleClassProvider? {
+        return TestRuleClassProvider.getRuleClassProvider()
+    }
 
-  public ConfiguredRuleClassProvider createRuleClassProvider() {
-    return TestRuleClassProvider.getRuleClassProvider();
-  }
+    companion object {
+        fun get(): LoadingMock {
+            return LoadingMock()
+        }
+    }
 }

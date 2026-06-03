@@ -11,62 +11,137 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util;
+package com.google.devtools.build.lib.util
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.util.StringUtil.joinEnglishList;
-import static com.google.devtools.build.lib.util.StringUtil.joinEnglishListSingleQuoted;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.exec.util.SpawnBuilder.build
+import com.google.devtools.common.options.testing.ConverterTesterMap.Builder.build
+import net.starlark.java.syntax.FileOptions.Builder.build
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import com.google.common.collect.ImmutableList;
-import java.util.Arrays;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** A test for [StringUtil].  */
+@RunWith(JUnit4::class)
+class StringUtilTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testJoinEnglishList() {
+        Truth.assertThat(com.google.devtools.build.lib.util.StringUtil.joinEnglishList(com.google.common.collect.ImmutableList.of<Any?>()))
+            .isEqualTo("nothing")
+        Truth.assertThat(com.google.devtools.build.lib.util.StringUtil.joinEnglishList(mutableListOf<String?>("one")))
+            .isEqualTo("one")
+        Truth.assertThat(
+            com.google.devtools.build.lib.util.StringUtil.joinEnglishList(
+                mutableListOf<String?>(
+                    "one",
+                    "two"
+                )
+            )
+        ).isEqualTo("one or two")
+        Truth.assertThat(
+            com.google.devtools.build.lib.util.StringUtil.joinEnglishList(
+                mutableListOf<String?>(
+                    "one",
+                    "two"
+                ), "and"
+            )
+        ).isEqualTo("one and two")
+        Truth.assertThat(
+            com.google.devtools.build.lib.util.StringUtil.joinEnglishList(
+                mutableListOf<String?>(
+                    "one",
+                    "two",
+                    "three"
+                )
+            )
+        )
+            .isEqualTo("one, two, or three")
+        Truth.assertThat(
+            com.google.devtools.build.lib.util.StringUtil.joinEnglishList(
+                mutableListOf<String?>(
+                    "one",
+                    "two",
+                    "three"
+                ), "and"
+            )
+        )
+            .isEqualTo("one, two, and three")
+        Truth.assertThat(
+            com.google.devtools.build.lib.util.StringUtil.joinEnglishList(
+                mutableListOf<String?>(
+                    "one",
+                    "two",
+                    "three"
+                ), "or even", "\"", true
+            )
+        )
+            .isEqualTo("\"one\", \"two\", or even \"three\"")
+        Truth.assertThat(
+            com.google.devtools.build.lib.util.StringUtil.joinEnglishList(
+                mutableListOf<String?>(
+                    "one",
+                    "two",
+                    "three"
+                ), "then", "'", false
+            )
+        )
+            .isEqualTo("'one', 'two' then 'three'")
+    }
 
-/** A test for {@link StringUtil}. */
-@RunWith(JUnit4.class)
-public class StringUtilTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testJoinEnglishListSingleQuoted() {
+        Truth.assertThat(com.google.devtools.build.lib.util.StringUtil.joinEnglishListSingleQuoted(com.google.common.collect.ImmutableList.of<Any?>()))
+            .isEqualTo("nothing")
+        Truth.assertThat(
+            com.google.devtools.build.lib.util.StringUtil.joinEnglishListSingleQuoted(
+                mutableListOf<String?>(
+                    "one"
+                )
+            )
+        ).isEqualTo("'one'")
+        Truth.assertThat(
+            com.google.devtools.build.lib.util.StringUtil.joinEnglishListSingleQuoted(
+                mutableListOf<String?>(
+                    "one",
+                    "two"
+                )
+            )
+        )
+            .isEqualTo("'one' or 'two'")
+        Truth.assertThat(
+            com.google.devtools.build.lib.util.StringUtil.joinEnglishListSingleQuoted(
+                mutableListOf<String?>(
+                    "one",
+                    "two",
+                    "three"
+                )
+            )
+        )
+            .isEqualTo("'one', 'two', or 'three'")
+    }
 
-  @Test
-  public void testJoinEnglishList() throws Exception {
-    assertThat(joinEnglishList(ImmutableList.of())).isEqualTo("nothing");
-    assertThat(joinEnglishList(Arrays.asList("one"))).isEqualTo("one");
-    assertThat(joinEnglishList(Arrays.asList("one", "two"))).isEqualTo("one or two");
-    assertThat(joinEnglishList(Arrays.asList("one", "two"), "and")).isEqualTo("one and two");
-    assertThat(joinEnglishList(Arrays.asList("one", "two", "three")))
-        .isEqualTo("one, two, or three");
-    assertThat(joinEnglishList(Arrays.asList("one", "two", "three"), "and"))
-        .isEqualTo("one, two, and three");
-    assertThat(joinEnglishList(Arrays.asList("one", "two", "three"), "or even", "\"", true))
-        .isEqualTo("\"one\", \"two\", or even \"three\"");
-    assertThat(joinEnglishList(Arrays.asList("one", "two", "three"), "then", "'", false))
-        .isEqualTo("'one', 'two' then 'three'");
-  }
-
-  @Test
-  public void testJoinEnglishListSingleQuoted() throws Exception {
-    assertThat(joinEnglishListSingleQuoted(ImmutableList.of())).isEqualTo("nothing");
-    assertThat(joinEnglishListSingleQuoted(Arrays.asList("one"))).isEqualTo("'one'");
-    assertThat(joinEnglishListSingleQuoted(Arrays.asList("one", "two")))
-        .isEqualTo("'one' or 'two'");
-    assertThat(joinEnglishListSingleQuoted(Arrays.asList("one", "two", "three")))
-        .isEqualTo("'one', 'two', or 'three'");
-  }
-
-  @Test
-  public void listItemsWithLimit() throws Exception {
-    assertThat(
-            StringUtil.listItemsWithLimit(
-                    new StringBuilder("begin/"), 3, ImmutableList.of("a", "b", "c"))
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun listItemsWithLimit() {
+        Truth.assertThat(
+            com.google.devtools.build.lib.util.StringUtil.listItemsWithLimit(
+                java.lang.StringBuilder("begin/"), 3, com.google.common.collect.ImmutableList.of<String?>("a", "b", "c")
+            )
                 .append("/end")
-                .toString())
-        .isEqualTo("begin/a, b, c/end");
+                .toString()
+        )
+            .isEqualTo("begin/a, b, c/end")
 
-    assertThat(
-            StringUtil.listItemsWithLimit(
-                    new StringBuilder("begin/"), 3, ImmutableList.of("a", "b", "c", "d", "e"))
+        Truth.assertThat(
+            com.google.devtools.build.lib.util.StringUtil.listItemsWithLimit(
+                java.lang.StringBuilder("begin/"),
+                3,
+                com.google.common.collect.ImmutableList.of<String?>("a", "b", "c", "d", "e")
+            )
                 .append("/end")
-                .toString())
-        .isEqualTo("begin/a, b, c ...(omitting 2 more item(s))/end");
-  }
+                .toString()
+        )
+            .isEqualTo("begin/a, b, c ...(omitting 2 more item(s))/end")
+    }
 }

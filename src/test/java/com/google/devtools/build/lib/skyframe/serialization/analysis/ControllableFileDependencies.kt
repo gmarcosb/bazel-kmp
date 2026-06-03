@@ -11,80 +11,71 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.analysis;
+package com.google.devtools.build.lib.skyframe.serialization.analysis
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.FileDependencies.AvailableFileDependencies;
-import java.util.concurrent.CountDownLatch;
+import com.google.devtools.build.lib.skyframe.serialization.analysis.FileDependencies.AvailableFileDependencies
 
 /**
- * {@link FileDependencies} implementation that waits for {@link #enable} inside {@link
- * findEarliestMatch}.
- *
- * <p>This can be used to exercise certain concurrency conditions.
+ * [FileDependencies] implementation that waits for [.enable] inside [ ].
+ * 
+ * 
+ * This can be used to exercise certain concurrency conditions.
  */
-final class ControllableFileDependencies extends AvailableFileDependencies {
-  private final ImmutableList<String> resolvedPaths;
-  private final ImmutableList<AvailableFileDependencies> dependencies;
+internal class ControllableFileDependencies(
+    resolvedPaths: com.google.common.collect.ImmutableList<String?>,
+    dependencies: com.google.common.collect.ImmutableList<AvailableFileDependencies?>
+) : AvailableFileDependencies() {
+    private val resolvedPaths: com.google.common.collect.ImmutableList<String?>
+    private val dependencies: com.google.common.collect.ImmutableList<AvailableFileDependencies?>
 
-  private final CountDownLatch findEarliestMatchEntered = new CountDownLatch(1);
-  private final CountDownLatch countDown = new CountDownLatch(1);
+    private val findEarliestMatchEntered: CountDownLatch = CountDownLatch(1)
+    private val countDown: CountDownLatch = CountDownLatch(1)
 
-  ControllableFileDependencies(
-      ImmutableList<String> resolvedPaths, ImmutableList<AvailableFileDependencies> dependencies) {
-    this.resolvedPaths = resolvedPaths;
-    this.dependencies = dependencies;
-  }
-
-  @Override
-  public boolean isMissingData() {
-    return false;
-  }
-
-  void awaitEarliestMatchEntered() throws InterruptedException {
-    findEarliestMatchEntered.await();
-  }
-
-  void enable() {
-    countDown.countDown();
-  }
-
-  @Override
-  int findEarliestMatch(VersionedChanges changes, int validityHorizon) {
-    findEarliestMatchEntered.countDown();
-    try {
-      countDown.await();
-    } catch (InterruptedException e) {
-      throw new AssertionError(e);
+    init {
+        this.resolvedPaths = resolvedPaths
+        this.dependencies = dependencies
     }
-    int minMatch = VersionedChanges.NO_MATCH;
-    for (String element : resolvedPaths) {
-      int result = changes.matchFileChange(element, validityHorizon);
-      if (result < minMatch) {
-        minMatch = result;
-      }
+
+    val isMissingData: Boolean
+        get() = false
+
+    @Throws(java.lang.InterruptedException::class)
+    fun awaitEarliestMatchEntered() {
+        findEarliestMatchEntered.await()
     }
-    return minMatch;
-  }
 
-  @Override
-  int getDependencyCount() {
-    return dependencies.size();
-  }
+    fun enable() {
+        countDown.countDown()
+    }
 
-  @Override
-  AvailableFileDependencies getDependency(int index) {
-    return dependencies.get(index);
-  }
+    public override fun findEarliestMatch(changes: VersionedChanges, validityHorizon: Int): Int {
+        findEarliestMatchEntered.countDown()
+        try {
+            countDown.await()
+        } catch (e: java.lang.InterruptedException) {
+            throw java.lang.AssertionError(e)
+        }
+        var minMatch: Int = VersionedChanges.NO_MATCH
+        for (element in resolvedPaths) {
+            val result: Int = changes.matchFileChange(element, validityHorizon)
+            if (result < minMatch) {
+                minMatch = result
+            }
+        }
+        return minMatch
+    }
 
-  @Override
-  String resolvedPath() {
-    return Iterables.getLast(resolvedPaths);
-  }
+    val dependencyCount: Int
+        get() = dependencies.size
 
-  @Override
-  ImmutableList<String> getAllResolvedPathsForTesting() {
-    return resolvedPaths;
-  }
+    public override fun getDependency(index: Int): AvailableFileDependencies? {
+        return dependencies.get(index)
+    }
+
+    public override fun resolvedPath(): String? {
+        return com.google.common.collect.Iterables.getLast<String?>(resolvedPaths)
+    }
+
+    val allResolvedPathsForTesting: com.google.common.collect.ImmutableList<String?>
+        get() = resolvedPaths
 }

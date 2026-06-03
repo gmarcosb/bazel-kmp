@@ -11,26 +11,21 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.annot.processor.testsources
 
-package net.starlark.java.annot.processor.testsources;
-
-import net.starlark.java.annot.Param;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.StarlarkValue;
+import net.starlark.java.eval.StarlarkValue
 
 /**
  * Test case for a StarlarkMethod method which has more arguments than are declared by the
  * annotation.
  */
-public class TooManyArguments implements StarlarkValue {
-
-  @StarlarkMethod(
-      name = "method_with_too_many_arguments",
-      documented = false,
-      parameters = {
-        @Param(name = "parameter_one", named = true),
-      })
-  public String methodWithTooManyArguments(String parameterOne, String parameterTwo) {
-    return "dolphin";
-  }
+class TooManyArguments : StarlarkValue {
+    @StarlarkMethod(
+        name = "method_with_too_many_arguments",
+        documented = false,
+        parameters = [net.starlark.java.annot.Param(name = "parameter_one", named = true)]
+    )
+    fun methodWithTooManyArguments(parameterOne: String?, parameterTwo: String?): String {
+        return "dolphin"
+    }
 }

@@ -11,47 +11,48 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.events;
+package com.google.devtools.build.lib.events
 
-import static com.google.common.truth.Truth.assertThat;
-
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Iterator;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.events.EventCollector
+import com.google.devtools.build.lib.events.EventTestTemplate
+import net.starlark.java.syntax.SyntaxError.location
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
 /**
- * Tests the {@link EventCollector} class.
+ * Tests the [EventCollector] class.
  */
-@RunWith(JUnit4.class)
-public class EventCollectorTest extends EventTestTemplate {
+@RunWith(JUnit4::class)
+class EventCollectorTest : EventTestTemplate() {
+    @org.junit.Test
+    fun usesPassedInCollection() {
+        val events: MutableCollection<com.google.devtools.build.lib.events.Event> =
+            java.util.ArrayList<com.google.devtools.build.lib.events.Event>()
+        val collector: EventCollector =
+            EventCollector(com.google.devtools.build.lib.events.EventKind.ALL_EVENTS, events)
+        collector.handle(event)
+        val onlyEvent: com.google.devtools.build.lib.events.Event = events.iterator().next()
+        Truth.assertThat(onlyEvent.getMessage()).isEqualTo(event.getMessage())
+        Truth.assertThat<net.starlark.java.syntax.Location?>(onlyEvent.getLocation()).isSameInstanceAs(location)
+        Truth.assertThat<com.google.devtools.build.lib.events.EventKind?>(onlyEvent.getKind())
+            .isEqualTo(event.getKind())
+        Truth.assertThat<net.starlark.java.syntax.Location?>(onlyEvent.getLocation()).isEqualTo(event.getLocation())
+        Truth.assertThat(collector.count()).isEqualTo(1)
+        Truth.assertThat(events).hasSize(1)
+    }
 
-  @Test
-  public void usesPassedInCollection() {
-    Collection<Event> events = new ArrayList<>();
-    EventCollector collector = new EventCollector(EventKind.ALL_EVENTS, events);
-    collector.handle(event);
-    Event onlyEvent = events.iterator().next();
-    assertThat(onlyEvent.getMessage()).isEqualTo(event.getMessage());
-    assertThat(onlyEvent.getLocation()).isSameInstanceAs(location);
-    assertThat(onlyEvent.getKind()).isEqualTo(event.getKind());
-    assertThat(onlyEvent.getLocation()).isEqualTo(event.getLocation());
-    assertThat(collector.count()).isEqualTo(1);
-    assertThat(events).hasSize(1);
-  }
-
-  @Test
-  public void collectsEvents() {
-    EventCollector collector = new EventCollector();
-    collector.handle(event);
-    Iterator<Event> collectedEventIt = collector.iterator();
-    Event onlyEvent = collectedEventIt.next();
-    assertThat(onlyEvent.getMessage()).isEqualTo(event.getMessage());
-    assertThat(onlyEvent.getLocation()).isSameInstanceAs(location);
-    assertThat(onlyEvent.getKind()).isEqualTo(event.getKind());
-    assertThat(onlyEvent.getLocation()).isEqualTo(event.getLocation());
-    assertThat(collectedEventIt.hasNext()).isFalse();
-  }
+    @org.junit.Test
+    fun collectsEvents() {
+        val collector: EventCollector = EventCollector()
+        collector.handle(event)
+        val collectedEventIt: MutableIterator<com.google.devtools.build.lib.events.Event> = collector.iterator()
+        val onlyEvent: com.google.devtools.build.lib.events.Event = collectedEventIt.next()
+        Truth.assertThat(onlyEvent.getMessage()).isEqualTo(event.getMessage())
+        Truth.assertThat<net.starlark.java.syntax.Location?>(onlyEvent.getLocation()).isSameInstanceAs(location)
+        Truth.assertThat<com.google.devtools.build.lib.events.EventKind?>(onlyEvent.getKind())
+            .isEqualTo(event.getKind())
+        Truth.assertThat<net.starlark.java.syntax.Location?>(onlyEvent.getLocation()).isEqualTo(event.getLocation())
+        Truth.assertThat(collectedEventIt.hasNext()).isFalse()
+    }
 }

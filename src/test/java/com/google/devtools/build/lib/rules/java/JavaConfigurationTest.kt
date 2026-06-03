@@ -11,30 +11,22 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.java
 
-package com.google.devtools.build.lib.rules.java;
-
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-
-import com.google.devtools.build.lib.analysis.config.InvalidConfigurationException;
-import com.google.devtools.build.lib.analysis.util.ConfigurationTestCase;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.analysis.config.InvalidConfigurationException
 
 /**
- * Tests for {@link JavaConfiguration}.
+ * Tests for [JavaConfiguration].
  */
-@RunWith(JUnit4.class)
-public class JavaConfigurationTest extends ConfigurationTestCase {
-
-  @Test
-  public void testExperimentalBytecodeOptimizersFlag() throws Exception {
-    InvalidConfigurationException thrown =
-        assertThrows(
-            InvalidConfigurationException.class,
-            () -> create("--experimental_bytecode_optimizers=somekey,somevalue"));
-    assertThat(thrown).hasMessageThat().contains("can only accept exactly one mapping");
-  }
+@RunWith(JUnit4::class)
+class JavaConfigurationTest : ConfigurationTestCase() {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExperimentalBytecodeOptimizersFlag() {
+        val thrown: InvalidConfigurationException? =
+            org.junit.Assert.assertThrows<T?>(
+                InvalidConfigurationException::class.java,
+                org.junit.function.ThrowingRunnable { create("--experimental_bytecode_optimizers=somekey,somevalue") })
+        assertThat(thrown).hasMessageThat().contains("can only accept exactly one mapping")
+    }
 }

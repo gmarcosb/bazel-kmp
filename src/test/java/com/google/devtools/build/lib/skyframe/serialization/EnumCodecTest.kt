@@ -11,24 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.AbstractObjectCodecTest
 
-import com.google.devtools.build.lib.skyframe.serialization.testutils.AbstractObjectCodecTest;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link EnumCodec}. */
-@RunWith(JUnit4.class)
-public class EnumCodecTest extends AbstractObjectCodecTest<EnumCodecTest.DummyEnum> {
-
-  /** Test enum (dummy comment for lint). */
-  public enum DummyEnum {
-    DUMB_ONE,
-    DUMB_TWO
-  }
-
-  public EnumCodecTest() {
-    super(new EnumCodec<>(DummyEnum.class), DummyEnum.DUMB_ONE, DummyEnum.DUMB_TWO);
-  }
+/** Tests for [EnumCodec].  */
+@RunWith(JUnit4::class)
+class EnumCodecTest :
+    AbstractObjectCodecTest<DummyEnum?>(EnumCodec(DummyEnum::class.java), DummyEnum.DUMB_ONE, DummyEnum.DUMB_TWO) {
+    /** Test enum (dummy comment for lint).  */
+    enum class DummyEnum {
+        DUMB_ONE,
+        DUMB_TWO
+    }
 }

@@ -11,281 +11,272 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-
-import com.google.common.base.Throwables;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.actions.Action;
-import com.google.devtools.build.lib.actions.ActionAnalysisMetadata;
-import com.google.devtools.build.lib.actions.ActionConflictException;
-import com.google.devtools.build.lib.actions.ActionLookupData;
-import com.google.devtools.build.lib.actions.ActionLookupValue;
-import com.google.devtools.build.lib.actions.Actions;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.Artifact.SpecialArtifact;
-import com.google.devtools.build.lib.actions.Artifact.SpecialArtifactType;
-import com.google.devtools.build.lib.actions.Artifact.TreeFileArtifact;
-import com.google.devtools.build.lib.actions.ArtifactRoot;
-import com.google.devtools.build.lib.actions.ArtifactRoot.RootType;
-import com.google.devtools.build.lib.actions.BasicActionLookupValue;
-import com.google.devtools.build.lib.actions.FileArtifactValue;
-import com.google.devtools.build.lib.actions.MissingInputFileException;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
-import com.google.devtools.build.lib.actions.util.TestAction.DummyAction;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.events.NullEventHandler;
-import com.google.devtools.build.lib.vfs.FileStatus;
-import com.google.devtools.build.lib.vfs.FileStatusWithDigestAdapter;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Symlinks;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import com.google.devtools.build.skyframe.Differencer.DiffWithDelta.Delta;
-import com.google.devtools.build.skyframe.EvaluationContext;
-import com.google.devtools.build.skyframe.EvaluationResult;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionException;
-import com.google.devtools.build.skyframe.SkyFunctionException.Transience;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.io.IOException;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Random;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.actions.Action
 
 /**
  * Test the behavior of ActionOutputMetadataStore and ArtifactFunction with respect to
  * TreeArtifacts.
  */
-@RunWith(JUnit4.class)
-public final class TreeArtifactMetadataTest extends ArtifactFunctionTestCase {
+@RunWith(JUnit4::class)
+class TreeArtifactMetadataTest : ArtifactFunctionTestCase() {
+    // A list of subpaths for the SetArtifact created by our custom ActionExecutionFunction.
+    private var testTreeArtifactContents: MutableList<PathFragment?>? = null
 
-  // A list of subpaths for the SetArtifact created by our custom ActionExecutionFunction.
-  private List<PathFragment> testTreeArtifactContents;
-
-  @Before
-  public void setUp() {
-    delegateActionExecutionFunction = new TreeArtifactExecutionFunction();
-  }
-
-  private TreeArtifactValue evaluateTreeArtifact(
-      Artifact treeArtifact, Iterable<PathFragment> children) throws Exception {
-    testTreeArtifactContents = ImmutableList.copyOf(children);
-    for (PathFragment child : children) {
-      file(treeArtifact.getPath().getRelative(child), child.toString());
+    @Before
+    fun setUp() {
+        delegateActionExecutionFunction = TreeArtifactExecutionFunction()
     }
-    return (TreeArtifactValue) evaluateArtifactValue(treeArtifact);
-  }
 
-  private TreeArtifactValue doTestTreeArtifacts(Iterable<PathFragment> children) throws Exception {
-    SpecialArtifact output = createTreeArtifact("output");
-    return doTestTreeArtifacts(output, children);
-  }
-
-  private TreeArtifactValue doTestTreeArtifacts(
-      SpecialArtifact tree, Iterable<PathFragment> children) throws Exception {
-    TreeArtifactValue value = evaluateTreeArtifact(tree, children);
-    assertThat(value.getChildPaths()).containsExactlyElementsIn(ImmutableSet.copyOf(children));
-    assertThat(value.getChildren())
-        .containsExactlyElementsIn(
-            Iterables.transform(children, child -> TreeFileArtifact.createTreeOutput(tree, child)));
-    return value;
-  }
-
-  @Test
-  public void testEmptyTreeArtifacts() throws Exception {
-    TreeArtifactValue value = doTestTreeArtifacts(ImmutableList.of());
-    // Additional test, only for this test method: we expect the FileArtifactValue is equal to
-    // the digest [0]
-    assertThat(value.getMetadata().getDigest()).isEqualTo(value.getDigest());
-    // Java zero-fills arrays.
-    assertThat(value.getDigest()).isEqualTo(new byte[1]);
-  }
-
-  @Test
-  public void testTreeArtifactOrdering() throws Exception {
-    int rangeSize = 100;
-    int attempts = 10;
-    List<PathFragment> children =
-        IntStream.range(0, rangeSize)
-            .mapToObj(i -> PathFragment.create("file" + i))
-            .collect(Collectors.toList());
-
-    for (int i = 0; i < attempts; i++) {
-      Collections.shuffle(children, new Random());
-      Artifact treeArtifact = createTreeArtifact("out");
-      TreeArtifactValue value = evaluateTreeArtifact(treeArtifact, children);
-      assertThat(value.getChildPaths()).containsExactlyElementsIn(children);
-      assertThat(value.getChildPaths()).isInOrder(Comparator.naturalOrder());
-    }
-  }
-
-  @Test
-  public void testEqualTreeArtifacts() throws Exception {
-    Artifact treeArtifact = createTreeArtifact("out");
-    ImmutableList<PathFragment> children =
-        ImmutableList.of(PathFragment.create("one"), PathFragment.create("two"));
-    TreeArtifactValue valueOne = evaluateTreeArtifact(treeArtifact, children);
-    // Delete action execution node to force our artifacts to be re-evaluated.
-    evaluator.delete(key -> actions.contains(key.argument()));
-    TreeArtifactValue valueTwo = evaluateTreeArtifact(treeArtifact, children);
-    assertThat(valueOne.getDigest()).isNotSameInstanceAs(valueTwo.getDigest());
-    assertThat(valueOne).isEqualTo(valueTwo);
-  }
-
-  @Test
-  public void testTreeArtifactsWithDigests() throws Exception {
-    fastDigest = true;
-    doTestTreeArtifacts(ImmutableList.of(PathFragment.create("one")));
-  }
-
-  @Test
-  public void testTreeArtifactsWithoutDigests() throws Exception {
-    fastDigest = false;
-    doTestTreeArtifacts(ImmutableList.of(PathFragment.create("one")));
-  }
-
-  @Test
-  public void testTreeArtifactMultipleDigests() throws Exception {
-    doTestTreeArtifacts(ImmutableList.of(PathFragment.create("one"), PathFragment.create("two")));
-  }
-
-  @Test
-  public void testIdenticalTreeArtifactsProduceTheSameDigests() throws Exception {
-    // Make sure different root dirs for set artifacts don't produce different digests.
-    Artifact one = createTreeArtifact("outOne");
-    Artifact two = createTreeArtifact("outTwo");
-    ImmutableList<PathFragment> children =
-        ImmutableList.of(PathFragment.create("one"), PathFragment.create("two"));
-    TreeArtifactValue valueOne = evaluateTreeArtifact(one, children);
-    TreeArtifactValue valueTwo = evaluateTreeArtifact(two, children);
-    assertThat(valueOne.getDigest()).isEqualTo(valueTwo.getDigest());
-  }
-
-  /**
-   * Tests that ArtifactFunction rethrows transitive {@link IOException}s as {@link
-   * MissingInputFileException}s.
-   */
-  @Test
-  public void testIOExceptionEndToEnd() throws Throwable {
-    final IOException exception = new IOException("boop");
-    setupRoot(
-        new CustomInMemoryFs() {
-          @Override
-          public FileStatus statIfFound(PathFragment path, boolean followSymlinks)
-              throws IOException {
-            if (path.getBaseName().equals("one")) {
-              throw exception;
-            }
-            return super.statIfFound(path, followSymlinks);
-          }
-        });
-    Artifact artifact = createTreeArtifact("outOne");
-    Exception e =
-        assertThrows(
-            Exception.class,
-            () -> evaluateTreeArtifact(artifact, ImmutableList.of(PathFragment.create("one"))));
-    assertThat(Throwables.getRootCause(e)).hasMessageThat().contains(exception.getMessage());
-  }
-
-  private static void file(Path path, String contents) throws Exception {
-    path.getParentDirectory().createDirectoryAndParents();
-    writeFile(path, contents);
-  }
-
-  private SpecialArtifact createTreeArtifact(String path) throws IOException {
-    PathFragment execPath = PathFragment.create("out").getRelative(path);
-    Path fullPath = root.getRelative(execPath);
-    SpecialArtifact output =
-        SpecialArtifact.create(
-            ArtifactRoot.asDerivedRoot(root, RootType.OUTPUT, "out"),
-            execPath,
-            ALL_OWNER,
-            SpecialArtifactType.TREE);
-    actions.add(new DummyAction(NestedSetBuilder.emptySet(Order.STABLE_ORDER), output));
-    fullPath.createDirectoryAndParents();
-    return output;
-  }
-
-  private SkyValue evaluateArtifactValue(Artifact artifact) throws Exception {
-    SkyKey key = Artifact.key(artifact);
-    EvaluationResult<SkyValue> result = evaluate(key);
-    if (result.hasError()) {
-      throw result.getError().getException();
-    }
-    return result.get(key);
-  }
-
-  private void setGeneratingActions()
-      throws InterruptedException, ActionConflictException,
-          Actions.ArtifactGeneratedByOtherRuleException {
-    if (evaluator.getExistingValue(ALL_OWNER) == null) {
-      ImmutableList<ActionAnalysisMetadata> generatingActions = ImmutableList.copyOf(actions);
-      Actions.assignOwnersAndThrowIfConflictToleratingSharedActions(
-          actionKeyContext, generatingActions, ALL_OWNER);
-      differencer.inject(
-          ImmutableMap.of(ALL_OWNER, Delta.justNew(new BasicActionLookupValue(generatingActions))));
-    }
-  }
-
-  private <E extends SkyValue> EvaluationResult<E> evaluate(SkyKey... keys)
-      throws InterruptedException, ActionConflictException,
-          Actions.ArtifactGeneratedByOtherRuleException {
-    setGeneratingActions();
-    EvaluationContext evaluationContext =
-        EvaluationContext.newBuilder()
-            .setKeepGoing(false)
-            .setParallelism(SkyframeExecutor.DEFAULT_THREAD_COUNT)
-            .setEventHandler(NullEventHandler.INSTANCE)
-            .build();
-    return evaluator.evaluate(Arrays.asList(keys), evaluationContext);
-  }
-
-  private class TreeArtifactExecutionFunction implements SkyFunction {
-    @Override
-    public SkyValue compute(SkyKey skyKey, Environment env)
-        throws SkyFunctionException, InterruptedException {
-      ActionLookupData actionLookupData = (ActionLookupData) skyKey.argument();
-      ActionLookupValue actionLookupValue =
-          (ActionLookupValue) env.getValue(actionLookupData.getActionLookupKey());
-      Action action = actionLookupValue.getAction(actionLookupData.getActionIndex());
-      SpecialArtifact output = (SpecialArtifact) Iterables.getOnlyElement(action.getOutputs());
-      TreeArtifactValue.Builder tree = TreeArtifactValue.newBuilder(output);
-      for (PathFragment subpath : testTreeArtifactContents) {
-        try {
-          TreeFileArtifact suboutput = TreeFileArtifact.createTreeOutput(output, subpath);
-          Path path = suboutput.getPath();
-          FileArtifactValue noDigest =
-              ActionOutputMetadataStore.fileArtifactValueFromArtifact(
-                  suboutput,
-                  FileStatusWithDigestAdapter.maybeAdapt(path.statIfFound(Symlinks.NOFOLLOW)),
-                  SyscallCache.NO_CACHE,
-                  null);
-          FileArtifactValue withDigest =
-              FileArtifactValue.createFromInjectedDigest(noDigest, path.getDigest());
-          tree.putChild(suboutput, withDigest);
-        } catch (IOException e) {
-          throw new SkyFunctionException(e, Transience.TRANSIENT) {};
+    @Throws(java.lang.Exception::class)
+    private fun evaluateTreeArtifact(
+        treeArtifact: Artifact, children: Iterable<PathFragment>
+    ): TreeArtifactValue {
+        testTreeArtifactContents = com.google.common.collect.ImmutableList.copyOf<PathFragment?>(children)
+        for (child in children) {
+            file(treeArtifact.getPath().getRelative(child), child.toString())
         }
-      }
-
-      return ActionsTestUtil.createActionExecutionValue(
-          /* artifactData= */ ImmutableMap.of(), ImmutableMap.of(output, tree.build()));
+        return evaluateArtifactValue(treeArtifact) as TreeArtifactValue
     }
-  }
+
+    @Throws(java.lang.Exception::class)
+    private fun doTestTreeArtifacts(children: Iterable<PathFragment>): TreeArtifactValue {
+        val output: SpecialArtifact = createTreeArtifact("output")
+        return doTestTreeArtifacts(output, children)
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun doTestTreeArtifacts(
+        tree: SpecialArtifact, children: Iterable<PathFragment>
+    ): TreeArtifactValue {
+        val value: TreeArtifactValue = evaluateTreeArtifact(tree, children)
+        assertThat(value.getChildPaths()).containsExactlyElementsIn(com.google.common.collect.ImmutableSet.< E > copyOf < E ? > (children))
+        assertThat(value.getChildren())
+            .containsExactlyElementsIn(
+                com.google.common.collect.Iterables.transform<F?, T?>(
+                    children,
+                    com.google.common.base.Function { child: F? -> TreeFileArtifact.createTreeOutput(tree, child) })
+            )
+        return value
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEmptyTreeArtifacts() {
+        val value: TreeArtifactValue = doTestTreeArtifacts(com.google.common.collect.ImmutableList.of<PathFragment?>())
+        // Additional test, only for this test method: we expect the FileArtifactValue is equal to
+        // the digest [0]
+        assertThat(value.getMetadata().getDigest()).isEqualTo(value.getDigest())
+        // Java zero-fills arrays.
+        assertThat(value.getDigest()).isEqualTo(ByteArray(1))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTreeArtifactOrdering() {
+        val rangeSize = 100
+        val attempts = 10
+        val children: MutableList<PathFragment> =
+            IntStream.range(0, rangeSize)
+                .mapToObj<Any?>(java.util.function.IntFunction { i: Int -> PathFragment.create("file" + i) })
+                .collect(Collectors.toList())
+
+        for (i in 0..<attempts) {
+            Collections.shuffle(children, Random())
+            val treeArtifact: Artifact = createTreeArtifact("out")
+            val value: TreeArtifactValue = evaluateTreeArtifact(treeArtifact, children)
+            assertThat(value.getChildPaths()).containsExactlyElementsIn(children)
+            assertThat(value.getChildPaths()).isInOrder(java.util.Comparator.naturalOrder<T?>())
+        }
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEqualTreeArtifacts() {
+        val treeArtifact: Artifact = createTreeArtifact("out")
+        val children: com.google.common.collect.ImmutableList<PathFragment> =
+            com.google.common.collect.ImmutableList.of<E>(PathFragment.create("one"), PathFragment.create("two"))
+        val valueOne: TreeArtifactValue = evaluateTreeArtifact(treeArtifact, children)
+        // Delete action execution node to force our artifacts to be re-evaluated.
+        evaluator.delete({ key -> actions.contains(key.argument()) })
+        val valueTwo: TreeArtifactValue = evaluateTreeArtifact(treeArtifact, children)
+        assertThat(valueOne.getDigest()).isNotSameInstanceAs(valueTwo.getDigest())
+        assertThat(valueOne).isEqualTo(valueTwo)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTreeArtifactsWithDigests() {
+        fastDigest = true
+        doTestTreeArtifacts(com.google.common.collect.ImmutableList.of<E?>(PathFragment.create("one")))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTreeArtifactsWithoutDigests() {
+        fastDigest = false
+        doTestTreeArtifacts(com.google.common.collect.ImmutableList.of<E?>(PathFragment.create("one")))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTreeArtifactMultipleDigests() {
+        doTestTreeArtifacts(
+            com.google.common.collect.ImmutableList.of<E?>(
+                PathFragment.create("one"),
+                PathFragment.create("two")
+            )
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testIdenticalTreeArtifactsProduceTheSameDigests() {
+        // Make sure different root dirs for set artifacts don't produce different digests.
+        val one: Artifact = createTreeArtifact("outOne")
+        val two: Artifact = createTreeArtifact("outTwo")
+        val children: com.google.common.collect.ImmutableList<PathFragment> =
+            com.google.common.collect.ImmutableList.of<E>(PathFragment.create("one"), PathFragment.create("two"))
+        val valueOne: TreeArtifactValue = evaluateTreeArtifact(one, children)
+        val valueTwo: TreeArtifactValue = evaluateTreeArtifact(two, children)
+        assertThat(valueOne.getDigest()).isEqualTo(valueTwo.getDigest())
+    }
+
+    /**
+     * Tests that ArtifactFunction rethrows transitive [IOException]s as [ ]s.
+     */
+    @org.junit.Test
+    @Throws(Throwable::class)
+    fun testIOExceptionEndToEnd() {
+        val exception: IOException = IOException("boop")
+        setupRoot(
+            object : CustomInMemoryFs() {
+                @Throws(IOException::class)
+                public override fun statIfFound(path: PathFragment, followSymlinks: Boolean): FileStatus {
+                    if (path.getBaseName().equals("one")) {
+                        throw exception
+                    }
+                    return super.statIfFound(path, followSymlinks)
+                }
+            })
+        val artifact: Artifact = createTreeArtifact("outOne")
+        val e: java.lang.Exception =
+            org.junit.Assert.assertThrows<java.lang.Exception>(
+                java.lang.Exception::class.java,
+                org.junit.function.ThrowingRunnable {
+                    evaluateTreeArtifact(
+                        artifact,
+                        com.google.common.collect.ImmutableList.of<E?>(PathFragment.create("one"))
+                    )
+                })
+        Truth.assertThat(com.google.common.base.Throwables.getRootCause(e)).hasMessageThat().contains(exception.message)
+    }
+
+    @Throws(IOException::class)
+    private fun createTreeArtifact(path: String?): SpecialArtifact {
+        val execPath: PathFragment? = PathFragment.create("out").getRelative(path)
+        val fullPath: Path = root.getRelative(execPath)
+        val output: SpecialArtifact =
+            SpecialArtifact.create(
+                ArtifactRoot.asDerivedRoot(root, RootType.OUTPUT, "out"),
+                execPath,
+                ALL_OWNER,
+                SpecialArtifactType.TREE
+            )
+        actions.add(DummyAction(NestedSetBuilder.emptySet(Order.STABLE_ORDER), output))
+        fullPath.createDirectoryAndParents()
+        return output
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun evaluateArtifactValue(artifact: Artifact?): SkyValue {
+        val key: SkyKey? = Artifact.key(artifact)
+        val result: EvaluationResult<SkyValue?> = evaluate<SkyValue?>(key)
+        if (result.hasError()) {
+            throw result.getError().getException()
+        }
+        return result.get(key)
+    }
+
+    @Throws(
+        java.lang.InterruptedException::class,
+        ActionConflictException::class,
+        Actions.ArtifactGeneratedByOtherRuleException::class
+    )
+    private fun setGeneratingActions() {
+        if (evaluator.getExistingValue(ALL_OWNER) == null) {
+            val generatingActions: com.google.common.collect.ImmutableList<ActionAnalysisMetadata?> =
+                com.google.common.collect.ImmutableList.copyOf(actions)
+            Actions.assignOwnersAndThrowIfConflictToleratingSharedActions(
+                actionKeyContext, generatingActions, ALL_OWNER
+            )
+            differencer.inject(
+                com.google.common.collect.ImmutableMap.of<K?, V?>(
+                    ALL_OWNER,
+                    Delta.justNew(BasicActionLookupValue(generatingActions))
+                )
+            )
+        }
+    }
+
+    @Throws(
+        java.lang.InterruptedException::class,
+        ActionConflictException::class,
+        Actions.ArtifactGeneratedByOtherRuleException::class
+    )
+    private fun <E : SkyValue?> evaluate(vararg keys: SkyKey?): EvaluationResult<E?> {
+        setGeneratingActions()
+        val evaluationContext: EvaluationContext? =
+            EvaluationContext.newBuilder()
+                .setKeepGoing(false)
+                .setParallelism(SkyframeExecutor.DEFAULT_THREAD_COUNT)
+                .setEventHandler(NullEventHandler.INSTANCE)
+                .build()
+        return evaluator.evaluate(java.util.Arrays.< T > asList < T ? > (keys), evaluationContext)
+    }
+
+    private inner class TreeArtifactExecutionFunction : SkyFunction {
+        @Throws(SkyFunctionException::class, java.lang.InterruptedException::class)
+        public override fun compute(skyKey: SkyKey, env: Environment): SkyValue {
+            val actionLookupData: ActionLookupData = skyKey.argument() as ActionLookupData
+            val actionLookupValue: ActionLookupValue =
+                env.getValue(actionLookupData.getActionLookupKey()) as ActionLookupValue
+            val action: Action = actionLookupValue.getAction(actionLookupData.getActionIndex())
+            val output: SpecialArtifact? =
+                com.google.common.collect.Iterables.getOnlyElement<T?>(action.getOutputs()) as SpecialArtifact?
+            val tree: TreeArtifactValue.Builder = TreeArtifactValue.newBuilder(output)
+            for (subpath in testTreeArtifactContents!!) {
+                try {
+                    val suboutput: TreeFileArtifact = TreeFileArtifact.createTreeOutput(output, subpath)
+                    val path: Path = suboutput.getPath()
+                    val noDigest: FileArtifactValue? =
+                        ActionOutputMetadataStore.fileArtifactValueFromArtifact(
+                            suboutput,
+                            FileStatusWithDigestAdapter.maybeAdapt(path.statIfFound(Symlinks.NOFOLLOW)),
+                            SyscallCache.NO_CACHE,
+                            null
+                        )
+                    val withDigest: FileArtifactValue? =
+                        FileArtifactValue.createFromInjectedDigest(noDigest, path.getDigest())
+                    tree.putChild(suboutput, withDigest)
+                } catch (e: IOException) {
+                    throw object : SkyFunctionException(e, Transience.TRANSIENT) {}
+                }
+            }
+
+            return ActionsTestUtil.createActionExecutionValue( /* artifactData= */
+                com.google.common.collect.ImmutableMap.of<K?, V?>(),
+                com.google.common.collect.ImmutableMap.of<K?, V?>(output, tree.build())
+            )
+        }
+    }
+
+    companion object {
+        @Throws(java.lang.Exception::class)
+        private fun file(path: Path, contents: String?) {
+            path.getParentDirectory().createDirectoryAndParents()
+            writeFile(path, contents)
+        }
+    }
 }

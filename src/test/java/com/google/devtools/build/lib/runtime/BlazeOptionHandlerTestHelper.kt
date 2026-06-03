@@ -11,121 +11,102 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.analysis.ServerDirectories;
-import com.google.devtools.build.lib.bazel.rules.BazelRulesModule;
-import com.google.devtools.build.lib.events.StoredEventHandler;
-import com.google.devtools.build.lib.runtime.proto.InvocationPolicyOuterClass.InvocationPolicy;
-import com.google.devtools.build.lib.testutil.Scratch;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsParser;
-import com.google.devtools.common.options.OptionsParsingResult;
-import com.google.devtools.common.options.TestOptions;
-import java.util.List;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.analysis.BlazeDirectories
 
-/** Helper class for setting up tests that make use of {@link BlazeOptionHandler}. */
-class BlazeOptionHandlerTestHelper {
+/** Helper class for setting up tests that make use of [BlazeOptionHandler].  */
+internal class BlazeOptionHandlerTestHelper @kotlin.jvm.JvmOverloads constructor(
+    optionsClasses: MutableList<java.lang.Class<out OptionsBase?>?>?,
+    allowResidue: Boolean,
+    aliasFlag: String? = null,
+    skipStarlarkPrefixes: Boolean = false
+) {
+    private val scratch: Scratch = Scratch()
+    val eventHandler: StoredEventHandler = StoredEventHandler()
+    private val parser: OptionsParser?
+    private val optionHandler: BlazeOptionHandler
 
-  private final Scratch scratch = new Scratch();
-  private final StoredEventHandler eventHandler = new StoredEventHandler();
-  private final OptionsParser parser;
-  private final BlazeOptionHandler optionHandler;
+    init {
+        parser = createOptionsParser(optionsClasses, allowResidue, aliasFlag, skipStarlarkPrefixes)
 
-  public BlazeOptionHandlerTestHelper(
-      List<Class<? extends OptionsBase>> optionsClasses,
-      boolean allowResidue,
-      @Nullable String aliasFlag,
-      boolean skipStarlarkPrefixes)
-      throws Exception {
-    parser = createOptionsParser(optionsClasses, allowResidue, aliasFlag, skipStarlarkPrefixes);
+        val productName: String = TestConstants.PRODUCT_NAME
+        val serverDirectories: ServerDirectories =
+            ServerDirectories(
+                scratch.dir("install_base"), scratch.dir("output_base"), scratch.dir("user_root")
+            )
 
-    String productName = TestConstants.PRODUCT_NAME;
-    ServerDirectories serverDirectories =
-        new ServerDirectories(
-            scratch.dir("install_base"), scratch.dir("output_base"), scratch.dir("user_root"));
+        val runtime: BlazeRuntime =
+            Builder()
+                .setFileSystem(scratch.getFileSystem())
+                .setServerDirectories(serverDirectories)
+                .setProductName(productName)
+                .setStartupOptionsProvider(
+                    OptionsParser.builder().optionsClasses(BlazeServerStartupOptions::class.java).build()
+                )
+                .addBlazeModule(BazelRulesModule())
+                .build()
+        runtime.overrideCommands(com.google.common.collect.ImmutableList.of<E?>(MockBuildCommand()))
 
-    BlazeRuntime runtime =
-        new BlazeRuntime.Builder()
-            .setFileSystem(scratch.getFileSystem())
-            .setServerDirectories(serverDirectories)
-            .setProductName(productName)
-            .setStartupOptionsProvider(
-                OptionsParser.builder().optionsClasses(BlazeServerStartupOptions.class).build())
-            .addBlazeModule(new BazelRulesModule())
-            .build();
-    runtime.overrideCommands(ImmutableList.of(new MockBuildCommand()));
+        val directories: BlazeDirectories =
+            BlazeDirectories(
+                serverDirectories,
+                scratch.dir("workspace"),
+                productName
+            )
+        runtime.initWorkspace(directories,  /*binTools=*/null)
 
-    BlazeDirectories directories =
-        new BlazeDirectories(
-            serverDirectories,
-            scratch.dir("workspace"),
-            productName);
-    runtime.initWorkspace(directories, /*binTools=*/ null);
-
-    optionHandler =
-        new BlazeOptionHandler(
-            runtime,
-            runtime.getWorkspace(),
-            new MockBuildCommand(),
-            MockBuildCommand.class.getAnnotation(Command.class),
-            parser,
-            InvocationPolicy.getDefaultInstance());
-  }
-
-  public BlazeOptionHandlerTestHelper(
-      List<Class<? extends OptionsBase>> optionsClasses, boolean allowResidue) throws Exception {
-    this(optionsClasses, allowResidue, /* aliasFlag= */ null, /* skipStarlarkPrefixes= */ false);
-  }
-
-  private static OptionsParser createOptionsParser(
-      List<Class<? extends OptionsBase>> optionsClasses,
-      boolean allowResidue,
-      @Nullable String aliasFlag,
-      boolean skipStarlarkPrefixes) {
-
-    OptionsParser.Builder optionsParserBuilder =
-        OptionsParser.builder()
-            .optionsClasses(optionsClasses)
-            .allowResidue(allowResidue)
-            .withAliasFlag(aliasFlag);
-
-    if (skipStarlarkPrefixes) {
-      optionsParserBuilder.skipStarlarkOptionPrefixes();
+        optionHandler =
+            BlazeOptionHandler(
+                runtime,
+                runtime.getWorkspace(),
+                MockBuildCommand(),
+                MockBuildCommand::class.java.getAnnotation<A?>(Command::class.java),
+                parser,
+                InvocationPolicy.getDefaultInstance()
+            )
     }
 
-    return optionsParserBuilder.build();
-  }
+    val optionsParser: OptionsParser?
+        get() = parser
 
-  public OptionsParser getOptionsParser() {
-    return parser;
-  }
-
-  public StoredEventHandler getEventHandler() {
-    return eventHandler;
-  }
-
-  public BlazeOptionHandler getOptionHandler() {
-    return optionHandler;
-  }
-
-  /** Custom command for testing. */
-  @Command(
-      name = "build",
-      shortDescription = "mock build desc",
-      help = "mock build help",
-      options = {TestOptions.class})
-  protected static class MockBuildCommand implements BlazeCommand {
-    @Override
-    public BlazeCommandResult exec(CommandEnvironment env, OptionsParsingResult options) {
-      throw new UnsupportedOperationException();
+    fun getOptionHandler(): BlazeOptionHandler {
+        return optionHandler
     }
 
-    @Override
-    public void editOptions(OptionsParser optionsParser) {}
-  }
+    /** Custom command for testing.  */
+    @Command(
+        name = "build",
+        shortDescription = "mock build desc",
+        help = "mock build help",
+        options = [com.google.devtools.common.options.TestOptions::class]
+    )
+    protected class MockBuildCommand : BlazeCommand {
+        public override fun exec(env: CommandEnvironment?, options: OptionsParsingResult?): BlazeCommandResult? {
+            throw java.lang.UnsupportedOperationException()
+        }
+
+        public override fun editOptions(optionsParser: OptionsParser?) {}
+    }
+
+    companion object {
+        private fun createOptionsParser(
+            optionsClasses: MutableList<java.lang.Class<out OptionsBase?>?>?,
+            allowResidue: Boolean,
+            aliasFlag: String?,
+            skipStarlarkPrefixes: Boolean
+        ): OptionsParser? {
+            val optionsParserBuilder: com.google.devtools.common.options.OptionsParser.Builder =
+                OptionsParser.builder()
+                    .optionsClasses(optionsClasses)
+                    .allowResidue(allowResidue)
+                    .withAliasFlag(aliasFlag)
+
+            if (skipStarlarkPrefixes) {
+                optionsParserBuilder.skipStarlarkOptionPrefixes()
+            }
+
+            return optionsParserBuilder.build()
+        }
+    }
 }

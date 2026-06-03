@@ -11,115 +11,122 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.exec;
+package com.google.devtools.build.lib.exec
 
-import static com.google.common.truth.Truth.assertThat;
-import static java.nio.charset.StandardCharsets.ISO_8859_1;
+import com.google.devtools.build.lib.vfs.Path
 
-import com.google.devtools.build.lib.testutil.FoundationTestCase;
-import com.google.devtools.build.lib.vfs.Path;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Test for TestLogHelper.  */
+@RunWith(JUnit4::class)
+class TestLogHelperTest : FoundationTestCase() {
+    @org.junit.Test
+    fun testShouldOutputTestLog() {
+        assertThat(TestLogHelper.shouldOutputTestLog(ExecutionOptions.TestOutputFormat.ALL, true))
+            .isTrue()
+        assertThat(TestLogHelper.shouldOutputTestLog(ExecutionOptions.TestOutputFormat.ALL, false))
+            .isTrue()
+        assertThat(TestLogHelper.shouldOutputTestLog(ExecutionOptions.TestOutputFormat.ERRORS, false))
+            .isTrue()
+        assertThat(TestLogHelper.shouldOutputTestLog(ExecutionOptions.TestOutputFormat.ERRORS, true))
+            .isFalse()
+    }
 
-/** Test for TestLogHelper. */
-@RunWith(JUnit4.class)
-public final class TestLogHelperTest extends FoundationTestCase {
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun testFormatEmptyTestLog() {
+        val logPath: Path = scratch.file("/test.log", "")
+        val result = getTestLog(logPath, "testFormatEmptyTestLog")
+        Truth.assertThat(result)
+            .isEqualTo(
+                ("==================== Test output for testFormatEmptyTestLog:\n"
+                        + "\n"
+                        + "================================================================================\n")
+            )
+    }
 
-  @Test
-  public void testShouldOutputTestLog() {
-    assertThat(TestLogHelper.shouldOutputTestLog(ExecutionOptions.TestOutputFormat.ALL, true))
-        .isTrue();
-    assertThat(TestLogHelper.shouldOutputTestLog(ExecutionOptions.TestOutputFormat.ALL, false))
-        .isTrue();
-    assertThat(TestLogHelper.shouldOutputTestLog(ExecutionOptions.TestOutputFormat.ERRORS, false))
-        .isTrue();
-    assertThat(TestLogHelper.shouldOutputTestLog(ExecutionOptions.TestOutputFormat.ERRORS, true))
-        .isFalse();
-  }
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun testFormatTestLogWithHeader() {
+        val logPath: Path? =
+            scratch.file("/test.log", "Header", TestLogHelper.HEADER_DELIMITER, "Empty line")
+        val result = getTestLog(logPath, "testFormatTestLogWithHeader")
+        Truth.assertThat(result)
+            .isEqualTo(
+                ("==================== Test output for testFormatTestLogWithHeader:\n"
+                        + "Empty line\n"
+                        + "================================================================================\n")
+            )
+    }
 
-  @Test
-  public void testFormatEmptyTestLog() throws IOException {
-    Path logPath = scratch.file("/test.log", "");
-    String result = getTestLog(logPath, "testFormatEmptyTestLog");
-    assertThat(result)
-        .isEqualTo(
-            "==================== Test output for testFormatEmptyTestLog:\n"
-                + "\n"
-                + "================================================================================\n");
-  }
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun testFormatTestLogWithNoHeader() {
+        val logPath: Path = scratch.file("/test.log", "Line 1", "Line 2")
+        val result = getTestLog(logPath, "testFormatTestLogWithNoHeader")
+        Truth.assertThat(result)
+            .isEqualTo(
+                ("==================== Test output for testFormatTestLogWithNoHeader:\n"
+                        + "Line 1\n"
+                        + "Line 2\n"
+                        + "================================================================================\n")
+            )
+    }
 
-  @Test
-  public void testFormatTestLogWithHeader() throws IOException {
-    Path logPath =
-        scratch.file("/test.log", "Header", TestLogHelper.HEADER_DELIMITER, "Empty line");
-    String result = getTestLog(logPath, "testFormatTestLogWithHeader");
-    assertThat(result)
-        .isEqualTo(
-            "==================== Test output for testFormatTestLogWithHeader:\n"
-                + "Empty line\n"
-                + "================================================================================\n");
-  }
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun testFormatTestLogTooLarge() {
+        val logPath: Path = scratch.file("/test.log", ByteArray(1000))
 
-  @Test
-  public void testFormatTestLogWithNoHeader() throws IOException {
-    Path logPath = scratch.file("/test.log", "Line 1", "Line 2");
-    String result = getTestLog(logPath, "testFormatTestLogWithNoHeader");
-    assertThat(result)
-        .isEqualTo(
-            "==================== Test output for testFormatTestLogWithNoHeader:\n"
-                + "Line 1\n"
-                + "Line 2\n"
-                + "================================================================================\n");
-  }
+        val bytesOut: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        TestLogHelper.writeTestLog(logPath, "myTest", bytesOut,  /*maxTestOutputBytes=*/10)
+        Truth.assertThat(bytesOut.toString(java.nio.charset.StandardCharsets.ISO_8859_1))
+            .isEqualTo(
+                ("==================== Test output for myTest:\n"
+                        + "Test log too large (1000 > 10), skipping...\n"
+                        + "================================================================================\n")
+            )
+    }
 
-  @Test
-  public void testFormatTestLogTooLarge() throws IOException {
-    Path logPath = scratch.file("/test.log", new byte[1000]);
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun testFormatTestLog0ByteMax0ByteFilePrintsNothing() {
+        val logPath: Path = scratch.file("/test.log", ByteArray(0))
 
-    ByteArrayOutputStream bytesOut = new ByteArrayOutputStream();
-    TestLogHelper.writeTestLog(logPath, "myTest", bytesOut, /*maxTestOutputBytes=*/ 10);
-    assertThat(bytesOut.toString(ISO_8859_1))
-        .isEqualTo(
-            "==================== Test output for myTest:\n"
-                + "Test log too large (1000 > 10), skipping...\n"
-                + "================================================================================\n");
-  }
+        val bytesOut: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        TestLogHelper.writeTestLog(logPath, "myTest", bytesOut,  /*maxTestOutputBytes=*/0)
+        Truth.assertThat(bytesOut.toString(java.nio.charset.StandardCharsets.ISO_8859_1))
+            .isEqualTo(
+                "==================== Test output for myTest:\n"
+                        + "================================================================================\n"
+            )
+    }
 
-  @Test
-  public void testFormatTestLog0ByteMax0ByteFilePrintsNothing() throws IOException {
-    Path logPath = scratch.file("/test.log", new byte[0]);
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun testFormatTestLogMaxBytesIncludesHeader() {
+        val logPath: Path? = scratch.file(
+            "/test.log",
+            TestLogHelper.HEADER_DELIMITER.getBytes(java.nio.charset.StandardCharsets.ISO_8859_1)
+        )
 
-    ByteArrayOutputStream bytesOut = new ByteArrayOutputStream();
-    TestLogHelper.writeTestLog(logPath, "myTest", bytesOut, /*maxTestOutputBytes=*/ 0);
-    assertThat(bytesOut.toString(ISO_8859_1))
-        .isEqualTo(
-            "==================== Test output for myTest:\n"
-                + "================================================================================\n");
-  }
-
-  @Test
-  public void testFormatTestLogMaxBytesIncludesHeader() throws IOException {
-    Path logPath = scratch.file("/test.log", TestLogHelper.HEADER_DELIMITER.getBytes(ISO_8859_1));
-
-    int testLogHeaderLength = TestLogHelper.HEADER_DELIMITER.length();
-    ByteArrayOutputStream bytesOut = new ByteArrayOutputStream();
-    TestLogHelper.writeTestLog(
-        logPath, "myTest", bytesOut, /*maxTestOutputBytes=*/ testLogHeaderLength - 1);
-    assertThat(bytesOut.toString(ISO_8859_1))
-        .isEqualTo(
-            "==================== Test output for myTest:\n"
-                + String.format(
+        val testLogHeaderLength: Int = TestLogHelper.HEADER_DELIMITER.length()
+        val bytesOut: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        TestLogHelper.writeTestLog(
+            logPath, "myTest", bytesOut,  /*maxTestOutputBytes=*/testLogHeaderLength - 1
+        )
+        Truth.assertThat(bytesOut.toString(java.nio.charset.StandardCharsets.ISO_8859_1))
+            .isEqualTo(
+                ("==================== Test output for myTest:\n"
+                        + String.format(
                     "Test log too large (%d > %d), skipping...\n",
-                    testLogHeaderLength, testLogHeaderLength - 1)
-                + "================================================================================\n");
-  }
+                    testLogHeaderLength, testLogHeaderLength - 1
+                ) + "================================================================================\n")
+            )
+    }
 
-  private String getTestLog(Path path, String name) throws IOException {
-    ByteArrayOutputStream output = new ByteArrayOutputStream();
-    TestLogHelper.writeTestLog(path, name, output, /*maxTestOutputBytes=*/ -1);
-    return output.toString(ISO_8859_1);
-  }
+    @Throws(IOException::class)
+    private fun getTestLog(path: Path?, name: String?): String? {
+        val output: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        TestLogHelper.writeTestLog(path, name, output,  /*maxTestOutputBytes=*/-1)
+        return output.toString(java.nio.charset.StandardCharsets.ISO_8859_1)
+    }
 }

@@ -11,123 +11,125 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package net.starlark.java.eval;
+package net.starlark.java.eval
 
-import com.google.common.collect.ImmutableMap;
-import java.io.IOException;
-import net.starlark.java.annot.Param;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.syntax.FileOptions;
-import net.starlark.java.syntax.ParserInput;
-import net.starlark.java.syntax.Program;
-import net.starlark.java.syntax.StarlarkFile;
-import net.starlark.java.syntax.SyntaxError;
-import net.starlark.java.syntax.TestUtils;
+import net.starlark.java.annot.Param
 
 /**
- * Examples of typical API usage of the Starlark interpreter.<br>
+ * Examples of typical API usage of the Starlark interpreter.<br></br>
  * This is not a test, but it is checked by the compiler.
  */
-final class Examples {
+internal class Examples {
+    /**
+     * This example reads, parses, compiles, and executes a Starlark file. It returns the module,
+     * which holds the values of global variables.
+     */
+    @Throws(
+        IOException::class,
+        net.starlark.java.syntax.SyntaxError.Exception::class,
+        EvalException::class,
+        java.lang.InterruptedException::class
+    )
+    fun execFile(filename: String?): java.lang.Module? {
+        // Read input from the named file.
+        val input: net.starlark.java.syntax.ParserInput = net.starlark.java.syntax.ParserInput.readFile(filename)
 
-  /**
-   * This example reads, parses, compiles, and executes a Starlark file. It returns the module,
-   * which holds the values of global variables.
-   */
-  Module execFile(String filename)
-      throws IOException, SyntaxError.Exception, EvalException, InterruptedException {
-    // Read input from the named file.
-    ParserInput input = ParserInput.readFile(filename);
+        // Create the module that will be populated by executing the file.
+        // It holds the global variables, initially empty.
+        // Its predeclared environment defines only the standard builtins:
+        // None, True, len, and so on.
+        val module: java.lang.Module? = java.lang.Module.create()
 
-    // Create the module that will be populated by executing the file.
-    // It holds the global variables, initially empty.
-    // Its predeclared environment defines only the standard builtins:
-    // None, True, len, and so on.
-    Module module = Module.create();
-
-    // Resolve, compile, and execute the file.
-    //
-    // The Mutability will be associated with all the values created by this thread.
-    // The try-with-resources statement ensures that all values become frozen
-    // after execution.
-    try (Mutability mu = Mutability.create(input.getFile())) {
-      StarlarkThread thread = StarlarkThread.createTransient(mu, StarlarkSemantics.DEFAULT);
-      Starlark.execFile(input, FileOptions.DEFAULT, module, thread);
+        Mutability.create(input.getFile()).use { mu ->
+            val thread: StarlarkThread? = StarlarkThread.createTransient(mu, StarlarkSemantics.DEFAULT)
+            Starlark.execFile(input, net.starlark.java.syntax.FileOptions.DEFAULT, module, thread)
+        }
+        return module
     }
 
-    return module;
-  }
+    /**
+     * This example evaluates a Starlark expression in the specified environment and returns its
+     * value.
+     */
+    @Throws(
+        net.starlark.java.syntax.SyntaxError.Exception::class,
+        EvalException::class,
+        java.lang.InterruptedException::class
+    )
+    fun evalExpr(expr: String?, env: com.google.common.collect.ImmutableMap<String?, Any?>?): Any {
+        // The apparent file name (for error messages) will be "<expr>".
+        val input: net.starlark.java.syntax.ParserInput =
+            net.starlark.java.syntax.ParserInput.fromString(expr, "<expr>")
 
-  /**
-   * This example evaluates a Starlark expression in the specified environment and returns its
-   * value.
-   */
-  Object evalExpr(String expr, ImmutableMap<String, Object> env)
-      throws SyntaxError.Exception, EvalException, InterruptedException {
-    // The apparent file name (for error messages) will be "<expr>".
-    ParserInput input = ParserInput.fromString(expr, "<expr>");
+        // Create the module in which the expression is evaluated.
+        // It may define additional predeclared environment bindings.
+        val module: java.lang.Module? = java.lang.Module.withPredeclared(StarlarkSemantics.DEFAULT, env)
 
-    // Create the module in which the expression is evaluated.
-    // It may define additional predeclared environment bindings.
-    Module module = Module.withPredeclared(StarlarkSemantics.DEFAULT, env);
-
-    // Resolve, compile, and execute the expression.
-    try (Mutability mu = Mutability.create(input.getFile())) {
-      StarlarkThread thread = StarlarkThread.createTransient(mu, StarlarkSemantics.DEFAULT);
-      return Starlark.eval(input, FileOptions.DEFAULT, module, thread);
+        Mutability.create(input.getFile()).use { mu ->
+            val thread: StarlarkThread? = StarlarkThread.createTransient(mu, StarlarkSemantics.DEFAULT)
+            return Starlark.eval(input, net.starlark.java.syntax.FileOptions.DEFAULT, module, thread)
+        }
     }
-  }
 
-  /**
-   * This advanced example reads, parses, and compiles a Starlark file to a Program, then later
-   * executes it.
-   */
-  Module compileThenExecute()
-      throws IOException, SyntaxError.Exception, EvalException, InterruptedException {
-    // Read and parse the named file.
-    ParserInput input = ParserInput.readFile("my/file.star");
-    StarlarkFile file = StarlarkFile.parse(input);
+    /**
+     * This advanced example reads, parses, and compiles a Starlark file to a Program, then later
+     * executes it.
+     */
+    @Throws(
+        IOException::class,
+        net.starlark.java.syntax.SyntaxError.Exception::class,
+        EvalException::class,
+        java.lang.InterruptedException::class
+    )
+    fun compileThenExecute(): java.lang.Module? {
+        // Read and parse the named file.
+        val input: net.starlark.java.syntax.ParserInput? = net.starlark.java.syntax.ParserInput.readFile("my/file.star")
+        val file: net.starlark.java.syntax.StarlarkFile? = net.starlark.java.syntax.StarlarkFile.parse(input)
 
-    // Compile the program, with additional predeclared environment bindings.
-    // TODO(adonovan): supply Starlark.UNIVERSE somehow.
-    Program prog = Program.compileFile(file, TestUtils.Module.withPredeclared("zero", "square"));
+        // Compile the program, with additional predeclared environment bindings.
+        // TODO(adonovan): supply Starlark.UNIVERSE somehow.
+        val prog: net.starlark.java.syntax.Program = net.starlark.java.syntax.Program.compileFile(
+            file,
+            net.starlark.java.syntax.TestUtils.Module.Companion.withPredeclared("zero", "square")
+        )
 
-    // . . .
+        // . . .
 
-    // TODO(adonovan): when supported, show how the compiled program can be
-    // saved and reloaded, to avoid repeating the cost of parsing and
-    // compilation.
+        // TODO(adonovan): when supported, show how the compiled program can be
+        // saved and reloaded, to avoid repeating the cost of parsing and
+        // compilation.
 
-    // Execute the compiled program to populate a module.
-    // The module's predeclared environment must match the
-    // names provided during compilation.
-    Module module = Module.withPredeclared(StarlarkSemantics.DEFAULT, makeEnvironment());
-    try (Mutability mu = Mutability.create(prog.getFilename())) {
-      StarlarkThread thread = StarlarkThread.createTransient(mu, StarlarkSemantics.DEFAULT);
-      Starlark.execFileProgram(prog, module, thread);
+        // Execute the compiled program to populate a module.
+        // The module's predeclared environment must match the
+        // names provided during compilation.
+        val module: java.lang.Module? = java.lang.Module.withPredeclared(StarlarkSemantics.DEFAULT, makeEnvironment())
+        Mutability.create(prog.getFilename()).use { mu ->
+            val thread: StarlarkThread? = StarlarkThread.createTransient(mu, StarlarkSemantics.DEFAULT)
+            Starlark.execFileProgram(prog, module, thread)
+        }
+        return module
     }
-    return module;
-  }
 
-  /** This function shows how to construct a callable Starlark value from a Java method. */
-  ImmutableMap<String, Object> makeEnvironment() {
-    ImmutableMap.Builder<String, Object> env = ImmutableMap.builder();
-    env.put("zero", 0);
-    Starlark.addMethods(env, new MyFunctions(), StarlarkSemantics.DEFAULT); // adds 'square'
-    return env.buildOrThrow();
-  }
-
-  /**
-   * The annotated methods of this class are added to the environment by {@link
-   * Starlark#addMethods}.
-   */
-  static final class MyFunctions {
-    @StarlarkMethod(
-        name = "square",
-        parameters = {@Param(name = "x")},
-        doc = "Returns the square of its integer argument.")
-    public StarlarkInt square(StarlarkInt x) {
-      return StarlarkInt.multiply(x, x);
+    /** This function shows how to construct a callable Starlark value from a Java method.  */
+    fun makeEnvironment(): com.google.common.collect.ImmutableMap<String?, Any?> {
+        val env: com.google.common.collect.ImmutableMap.Builder<String?, Any?> =
+            com.google.common.collect.ImmutableMap.builder<String?, Any?>()
+        env.put("zero", 0)
+        Starlark.addMethods(env, MyFunctions(), StarlarkSemantics.DEFAULT) // adds 'square'
+        return env.buildOrThrow()
     }
-  }
+
+    /**
+     * The annotated methods of this class are added to the environment by [ ][Starlark.addMethods].
+     */
+    internal class MyFunctions {
+        @StarlarkMethod(
+            name = "square",
+            parameters = [Param(name = "x")],
+            doc = "Returns the square of its integer argument."
+        )
+        fun square(x: StarlarkInt?): StarlarkInt {
+            return StarlarkInt.multiply(x, x)
+        }
+    }
 }

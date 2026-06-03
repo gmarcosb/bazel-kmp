@@ -11,186 +11,214 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.concurrent.BlazeInterners
 
-import com.google.common.collect.Interner;
-import com.google.devtools.build.lib.concurrent.BlazeInterners;
-import com.google.devtools.build.skyframe.NodeEntry.DependencyState;
-import java.util.ArrayList;
-import java.util.List;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
-import org.junit.runners.Parameterized.Parameters;
-
-/** Test for {@code ReverseDepsUtility}. */
-@RunWith(Parameterized.class)
-public final class ReverseDepsUtilityTest {
-
-  private static final SkyKey KEY = GraphTester.skyKey("KEY");
-
-  private final int numElements;
-
-  @Parameters(name = "numElements-{0}")
-  public static List<Object[]> parameters() {
-    List<Object[]> params = new ArrayList<>();
-    for (int i = 0; i < 20; i++) {
-      params.add(new Object[] {i});
-    }
-    return params;
-  }
-
-  public ReverseDepsUtilityTest(int numElements) {
-    this.numElements = numElements;
-  }
-
-  @Test
-  public void testAddAndRemove() {
-    for (int numRemovals = 0; numRemovals <= numElements; numRemovals++) {
-      var example = new IncrementalInMemoryNodeEntry(KEY);
-      for (int j = 0; j < numElements; j++) {
-        ReverseDepsUtility.addReverseDep(example, Key.create(j));
-      }
-      // Not a big test but at least check that it does not blow up.
-      assertThat(ReverseDepsUtility.toString(example)).isNotEmpty();
-      assertThat(
-              ReverseDepsUtility.consolidateAndGetReverseDeps(
-                  example, /* checkConsistency= */ true))
-          .hasSize(numElements);
-      for (int i = 0; i < numRemovals; i++) {
-        ReverseDepsUtility.removeReverseDep(example, Key.create(i));
-      }
-      assertThat(
-              ReverseDepsUtility.consolidateAndGetReverseDeps(
-                  example, /* checkConsistency= */ true))
-          .hasSize(numElements - numRemovals);
-      assertThat(example.getReverseDepsDataToConsolidateForReverseDepsUtil()).isNull();
-    }
-  }
-
-  // Same as testAdditionAndRemoval but we add all the reverse deps in one call.
-  @Test
-  public void testAddAllAndRemove() {
-    for (int numRemovals = 0; numRemovals <= numElements; numRemovals++) {
-      var example = new IncrementalInMemoryNodeEntry(KEY);
-      for (int j = 0; j < numElements; j++) {
-        ReverseDepsUtility.addReverseDep(example, Key.create(j));
-      }
-      assertThat(
-              ReverseDepsUtility.consolidateAndGetReverseDeps(
-                  example, /* checkConsistency= */ true))
-          .hasSize(numElements);
-      for (int i = 0; i < numRemovals; i++) {
-        ReverseDepsUtility.removeReverseDep(example, Key.create(i));
-      }
-      assertThat(
-              ReverseDepsUtility.consolidateAndGetReverseDeps(
-                  example, /* checkConsistency= */ true))
-          .hasSize(numElements - numRemovals);
-      assertThat(example.getReverseDepsDataToConsolidateForReverseDepsUtil()).isNull();
-    }
-  }
-
-  @Test
-  public void testDuplicateCheckOnGetReverseDeps() {
-    var example = new IncrementalInMemoryNodeEntry(KEY);
-    for (int i = 0; i < numElements; i++) {
-      ReverseDepsUtility.addReverseDep(example, Key.create(i));
-    }
-    // Should only fail when we call getReverseDeps().
-    ReverseDepsUtility.addReverseDep(example, Key.create(0));
-    if (numElements == 0) {
-      // Will not throw.
-      assertThat(
-              ReverseDepsUtility.consolidateAndGetReverseDeps(
-                  example, /* checkConsistency= */ true))
-          .hasSize(1);
-    } else {
-      assertThrows(
-          RuntimeException.class,
-          () ->
-              ReverseDepsUtility.consolidateAndGetReverseDeps(
-                  example, /* checkConsistency= */ true));
-    }
-  }
-
-  @Test
-  public void duplicateAddNoThrowWithoutCheck() {
-    var example = new IncrementalInMemoryNodeEntry(KEY);
-    for (int i = 0; i < numElements; i++) {
-      ReverseDepsUtility.addReverseDep(example, Key.create(i));
-    }
-    ReverseDepsUtility.addReverseDep(example, Key.create(0));
-    assertThat(
-            ReverseDepsUtility.consolidateAndGetReverseDeps(example, /* checkConsistency= */ false))
-        .hasSize(numElements + 1);
-  }
-
-  @Test
-  public void doubleAddThenRemove() {
-    var example = new IncrementalInMemoryNodeEntry(KEY);
-    SkyKey key = Key.create(0);
-    ReverseDepsUtility.addReverseDep(example, key);
-    // Should only fail when we call getReverseDeps().
-    ReverseDepsUtility.addReverseDep(example, key);
-    ReverseDepsUtility.removeReverseDep(example, key);
-    assertThrows(
-        IllegalStateException.class,
-        () ->
-            ReverseDepsUtility.consolidateAndGetReverseDeps(example, /* checkConsistency= */ true));
-  }
-
-  @Test
-  public void doubleAddThenRemoveCheckedOnSize() {
-    var example = new IncrementalInMemoryNodeEntry(KEY);
-    SkyKey fixedKey = Key.create(0);
-    ReverseDepsUtility.addReverseDep(example, fixedKey);
-    SkyKey key = Key.create(1);
-    ReverseDepsUtility.addReverseDep(example, key);
-    // Should only fail when we reach the limit.
-    ReverseDepsUtility.addReverseDep(example, key);
-    example.addReverseDepAndCheckIfDone(null);
-    assertThat(example.checkIfDoneForDirtyReverseDep(fixedKey))
-        .isEqualTo(DependencyState.ALREADY_EVALUATING);
-    assertThat(example.checkIfDoneForDirtyReverseDep(key))
-        .isEqualTo(DependencyState.ALREADY_EVALUATING);
-    var e =
-        assertThrows(
-            IllegalStateException.class, () -> ReverseDepsUtility.removeReverseDep(example, key));
-    assertThat(e).hasMessageThat().contains("1 duplicate");
-  }
-
-  @Test
-  public void addRemoveAdd() {
-    var example = new IncrementalInMemoryNodeEntry(KEY);
-    SkyKey fixedKey = Key.create(0);
-    ReverseDepsUtility.addReverseDep(example, fixedKey);
-    SkyKey key = Key.create(1);
-    ReverseDepsUtility.addReverseDep(example, key);
-    ReverseDepsUtility.removeReverseDep(example, key);
-    ReverseDepsUtility.addReverseDep(example, key);
-    assertThat(
-            ReverseDepsUtility.consolidateAndGetReverseDeps(example, /* checkConsistency= */ true))
-        .containsExactly(fixedKey, key);
-  }
-
-  private static class Key extends AbstractSkyKey<Integer> {
-    private static final Interner<Key> interner = BlazeInterners.newWeakInterner();
-
-    private Key(Integer arg) {
-      super(arg);
+/** Test for `ReverseDepsUtility`.  */
+@RunWith(org.junit.runners.Parameterized::class)
+class ReverseDepsUtilityTest(private val numElements: Int) {
+    @org.junit.Test
+    fun testAddAndRemove() {
+        for (numRemovals in 0..numElements) {
+            val example: IncrementalInMemoryNodeEntry = IncrementalInMemoryNodeEntry(KEY)
+            for (j in 0..<numElements) {
+                ReverseDepsUtility.addReverseDep(
+                    example,
+                    com.google.devtools.build.skyframe.ReverseDepsUtilityTest.Key.Companion.create(j)
+                )
+            }
+            // Not a big test but at least check that it does not blow up.
+            assertThat(ReverseDepsUtility.toString(example)).isNotEmpty()
+            assertThat(
+                ReverseDepsUtility.consolidateAndGetReverseDeps(
+                    example,  /* checkConsistency= */true
+                )
+            )
+                .hasSize(numElements)
+            for (i in 0..<numRemovals) {
+                ReverseDepsUtility.removeReverseDep(
+                    example,
+                    com.google.devtools.build.skyframe.ReverseDepsUtilityTest.Key.Companion.create(i)
+                )
+            }
+            assertThat(
+                ReverseDepsUtility.consolidateAndGetReverseDeps(
+                    example,  /* checkConsistency= */true
+                )
+            )
+                .hasSize(numElements - numRemovals)
+            assertThat(example.getReverseDepsDataToConsolidateForReverseDepsUtil()).isNull()
+        }
     }
 
-    private static Key create(Integer arg) {
-      return interner.intern(new Key(arg));
+    // Same as testAdditionAndRemoval but we add all the reverse deps in one call.
+    @org.junit.Test
+    fun testAddAllAndRemove() {
+        for (numRemovals in 0..numElements) {
+            val example: IncrementalInMemoryNodeEntry = IncrementalInMemoryNodeEntry(KEY)
+            for (j in 0..<numElements) {
+                ReverseDepsUtility.addReverseDep(
+                    example,
+                    com.google.devtools.build.skyframe.ReverseDepsUtilityTest.Key.Companion.create(j)
+                )
+            }
+            assertThat(
+                ReverseDepsUtility.consolidateAndGetReverseDeps(
+                    example,  /* checkConsistency= */true
+                )
+            )
+                .hasSize(numElements)
+            for (i in 0..<numRemovals) {
+                ReverseDepsUtility.removeReverseDep(
+                    example,
+                    com.google.devtools.build.skyframe.ReverseDepsUtilityTest.Key.Companion.create(i)
+                )
+            }
+            assertThat(
+                ReverseDepsUtility.consolidateAndGetReverseDeps(
+                    example,  /* checkConsistency= */true
+                )
+            )
+                .hasSize(numElements - numRemovals)
+            assertThat(example.getReverseDepsDataToConsolidateForReverseDepsUtil()).isNull()
+        }
     }
 
-    @Override
-    public SkyFunctionName functionName() {
-      return SkyFunctionName.FOR_TESTING;
+    @org.junit.Test
+    fun testDuplicateCheckOnGetReverseDeps() {
+        val example: IncrementalInMemoryNodeEntry = IncrementalInMemoryNodeEntry(KEY)
+        for (i in 0..<numElements) {
+            ReverseDepsUtility.addReverseDep(
+                example,
+                com.google.devtools.build.skyframe.ReverseDepsUtilityTest.Key.Companion.create(i)
+            )
+        }
+        // Should only fail when we call getReverseDeps().
+        ReverseDepsUtility.addReverseDep(
+            example,
+            com.google.devtools.build.skyframe.ReverseDepsUtilityTest.Key.Companion.create(0)
+        )
+        if (numElements == 0) {
+            // Will not throw.
+            assertThat(
+                ReverseDepsUtility.consolidateAndGetReverseDeps(
+                    example,  /* checkConsistency= */true
+                )
+            )
+                .hasSize(1)
+        } else {
+            org.junit.Assert.assertThrows<java.lang.RuntimeException?>(
+                java.lang.RuntimeException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    ReverseDepsUtility.consolidateAndGetReverseDeps(
+                        example,  /* checkConsistency= */true
+                    )
+                })
+        }
     }
-  }
+
+    @org.junit.Test
+    fun duplicateAddNoThrowWithoutCheck() {
+        val example: IncrementalInMemoryNodeEntry = IncrementalInMemoryNodeEntry(KEY)
+        for (i in 0..<numElements) {
+            ReverseDepsUtility.addReverseDep(
+                example,
+                com.google.devtools.build.skyframe.ReverseDepsUtilityTest.Key.Companion.create(i)
+            )
+        }
+        ReverseDepsUtility.addReverseDep(
+            example,
+            com.google.devtools.build.skyframe.ReverseDepsUtilityTest.Key.Companion.create(0)
+        )
+        assertThat(
+            ReverseDepsUtility.consolidateAndGetReverseDeps(example,  /* checkConsistency= */false)
+        )
+            .hasSize(numElements + 1)
+    }
+
+    @org.junit.Test
+    fun doubleAddThenRemove() {
+        val example: IncrementalInMemoryNodeEntry = IncrementalInMemoryNodeEntry(KEY)
+        val key: SkyKey = com.google.devtools.build.skyframe.ReverseDepsUtilityTest.Key.Companion.create(0)
+        ReverseDepsUtility.addReverseDep(example, key)
+        // Should only fail when we call getReverseDeps().
+        ReverseDepsUtility.addReverseDep(example, key)
+        ReverseDepsUtility.removeReverseDep(example, key)
+        org.junit.Assert.assertThrows<java.lang.IllegalStateException?>(
+            java.lang.IllegalStateException::class.java,
+            org.junit.function.ThrowingRunnable {
+                ReverseDepsUtility.consolidateAndGetReverseDeps(
+                    example,  /* checkConsistency= */
+                    true
+                )
+            })
+    }
+
+    @org.junit.Test
+    fun doubleAddThenRemoveCheckedOnSize() {
+        val example: IncrementalInMemoryNodeEntry = IncrementalInMemoryNodeEntry(KEY)
+        val fixedKey: SkyKey = com.google.devtools.build.skyframe.ReverseDepsUtilityTest.Key.Companion.create(0)
+        ReverseDepsUtility.addReverseDep(example, fixedKey)
+        val key: SkyKey = com.google.devtools.build.skyframe.ReverseDepsUtilityTest.Key.Companion.create(1)
+        ReverseDepsUtility.addReverseDep(example, key)
+        // Should only fail when we reach the limit.
+        ReverseDepsUtility.addReverseDep(example, key)
+        example.addReverseDepAndCheckIfDone(null)
+        assertThat(example.checkIfDoneForDirtyReverseDep(fixedKey))
+            .isEqualTo(DependencyState.ALREADY_EVALUATING)
+        assertThat(example.checkIfDoneForDirtyReverseDep(key))
+            .isEqualTo(DependencyState.ALREADY_EVALUATING)
+        val e: java.lang.IllegalStateException? =
+            org.junit.Assert.assertThrows<java.lang.IllegalStateException?>(
+                java.lang.IllegalStateException::class.java,
+                org.junit.function.ThrowingRunnable { ReverseDepsUtility.removeReverseDep(example, key) })
+        Truth.assertThat(e).hasMessageThat().contains("1 duplicate")
+    }
+
+    @org.junit.Test
+    fun addRemoveAdd() {
+        val example: IncrementalInMemoryNodeEntry = IncrementalInMemoryNodeEntry(KEY)
+        val fixedKey: SkyKey = com.google.devtools.build.skyframe.ReverseDepsUtilityTest.Key.Companion.create(0)
+        ReverseDepsUtility.addReverseDep(example, fixedKey)
+        val key: SkyKey = com.google.devtools.build.skyframe.ReverseDepsUtilityTest.Key.Companion.create(1)
+        ReverseDepsUtility.addReverseDep(example, key)
+        ReverseDepsUtility.removeReverseDep(example, key)
+        ReverseDepsUtility.addReverseDep(example, key)
+        assertThat(
+            ReverseDepsUtility.consolidateAndGetReverseDeps(example,  /* checkConsistency= */true)
+        )
+            .containsExactly(fixedKey, key)
+    }
+
+    private class Key(arg: Int?) : AbstractSkyKey<Int?>(arg) {
+        public override fun functionName(): SkyFunctionName {
+            return SkyFunctionName.FOR_TESTING
+        }
+
+        companion object {
+            private val interner: com.google.common.collect.Interner<Key> = BlazeInterners.newWeakInterner()
+
+            private fun create(arg: Int?): Key {
+                return com.google.devtools.build.skyframe.ReverseDepsUtilityTest.Key.Companion.interner.intern(
+                    com.google.devtools.build.skyframe.ReverseDepsUtilityTest.Key(
+                        arg
+                    )
+                )
+            }
+        }
+    }
+
+    companion object {
+        private val KEY: SkyKey? = GraphTester.Companion.skyKey("KEY")
+
+        @org.junit.runners.Parameterized.Parameters(name = "numElements-{0}")
+        fun parameters(): MutableList<Array<Any?>?> {
+            val params: MutableList<Array<Any?>?> = java.util.ArrayList<Array<Any?>?>()
+            for (i in 0..19) {
+                params.add(arrayOf<Any>(i))
+            }
+            return params
+        }
+    }
 }

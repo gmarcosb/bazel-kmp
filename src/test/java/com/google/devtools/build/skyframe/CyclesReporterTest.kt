@@ -11,117 +11,140 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoMoreInteractions;
-import static org.mockito.Mockito.when;
+import com.google.devtools.build.skyframe.CyclesReporter.SingleCycleReporter
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.events.NullEventHandler;
-import com.google.devtools.build.skyframe.CyclesReporter.SingleCycleReporter;
-import java.util.concurrent.atomic.AtomicBoolean;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-@RunWith(JUnit4.class)
-public class CyclesReporterTest {
-
-  private static final SkyKey DUMMY_KEY = () -> SkyFunctionName.createHermetic("func");
-
-  @Test
-  public void nullEventHandler() {
-    CyclesReporter cyclesReporter = new CyclesReporter();
-    try {
-      cyclesReporter.reportCycles(ImmutableList.<CycleInfo>of(), DUMMY_KEY, null);
-      assertThat(false).isTrue();
-    } catch (NullPointerException e) {
-      // Expected.
+@RunWith(JUnit4::class)
+class CyclesReporterTest {
+    @org.junit.Test
+    fun nullEventHandler() {
+        val cyclesReporter: CyclesReporter = CyclesReporter()
+        try {
+            cyclesReporter.reportCycles(com.google.common.collect.ImmutableList.of<CycleInfo?>(), DUMMY_KEY, null)
+            Truth.assertThat(false).isTrue()
+        } catch (e: java.lang.NullPointerException) {
+            // Expected.
+        }
     }
-  }
 
-  @Test
-  public void notReportedAssertion() {
-    SingleCycleReporter singleReporter =
-        (topLevelKey, cycleInfo, alreadyReported, eventHandler) -> false;
+    @org.junit.Test
+    fun notReportedAssertion() {
+        val singleReporter: SingleCycleReporter =
+            SingleCycleReporter { topLevelKey, cycleInfo, alreadyReported, eventHandler -> false }
 
-    CycleInfo cycleInfo = CycleInfo.createCycleInfo(ImmutableList.of(DUMMY_KEY));
-    CyclesReporter cyclesReporter = new CyclesReporter(singleReporter);
-    assertThrows(
-        IllegalStateException.class,
-        () ->
-            cyclesReporter.reportCycles(
-                ImmutableList.of(cycleInfo), DUMMY_KEY, NullEventHandler.INSTANCE));
-  }
+        val cycleInfo: CycleInfo = CycleInfo.createCycleInfo(com.google.common.collect.ImmutableList.of<E?>(DUMMY_KEY))
+        val cyclesReporter: CyclesReporter = CyclesReporter(singleReporter)
+        org.junit.Assert.assertThrows<java.lang.IllegalStateException?>(
+            java.lang.IllegalStateException::class.java,
+            org.junit.function.ThrowingRunnable {
+                cyclesReporter.reportCycles(
+                    com.google.common.collect.ImmutableList.of<E?>(cycleInfo), DUMMY_KEY, NullEventHandler.INSTANCE
+                )
+            })
+    }
 
-  @Test
-  public void smoke() {
-    final AtomicBoolean reported = new AtomicBoolean();
-    SingleCycleReporter singleReporter =
-        (topLevelKey, cycleInfo, alreadyReported, eventHandler) -> {
-          reported.set(true);
-          return true;
-        };
+    @org.junit.Test
+    fun smoke() {
+        val reported: AtomicBoolean = AtomicBoolean()
+        val singleReporter: SingleCycleReporter =
+            SingleCycleReporter { topLevelKey, cycleInfo, alreadyReported, eventHandler ->
+                reported.set(true)
+                true
+            }
 
-    CycleInfo cycleInfo = CycleInfo.createCycleInfo(ImmutableList.of(DUMMY_KEY));
-    CyclesReporter cyclesReporter = new CyclesReporter(singleReporter);
-    cyclesReporter.reportCycles(ImmutableList.of(cycleInfo), DUMMY_KEY, NullEventHandler.INSTANCE);
-    assertThat(reported.get()).isTrue();
-  }
+        val cycleInfo: CycleInfo = CycleInfo.createCycleInfo(com.google.common.collect.ImmutableList.of<E?>(DUMMY_KEY))
+        val cyclesReporter: CyclesReporter = CyclesReporter(singleReporter)
+        cyclesReporter.reportCycles(
+            com.google.common.collect.ImmutableList.of<E?>(cycleInfo),
+            DUMMY_KEY,
+            NullEventHandler.INSTANCE
+        )
+        Truth.assertThat(reported.get()).isTrue()
+    }
 
-  @Test
-  public void alreadyReportedCycles() {
-    SingleCycleReporter mockReporter = mock(SingleCycleReporter.class);
-    when(mockReporter.maybeReportCycle(any(), any(), anyBoolean(), any())).thenReturn(true);
-    CyclesReporter cyclesReporter = new CyclesReporter(mockReporter);
-    SkyKey top1 = () -> SkyFunctionName.createHermetic("top1");
-    SkyKey top2 = () -> SkyFunctionName.createHermetic("top2");
-    SkyKey path1 = () -> SkyFunctionName.createHermetic("path1");
-    SkyKey path2 = () -> SkyFunctionName.createHermetic("path2");
-    SkyKey cycle1 = () -> SkyFunctionName.createHermetic("cycle1");
-    SkyKey cycle2 = () -> SkyFunctionName.createHermetic("cycle2");
-    CycleInfo top1FirstCycle =
-        CycleInfo.createCycleInfo(ImmutableList.of(top1, path1), ImmutableList.of(cycle1, cycle2));
-    cyclesReporter.reportCycles(
-        ImmutableList.of(
-            top1FirstCycle,
+    @org.junit.Test
+    fun alreadyReportedCycles() {
+        val mockReporter: SingleCycleReporter = Mockito.mock<SingleCycleReporter>(SingleCycleReporter::class.java)
+        Mockito.`when`<T?>(
+            mockReporter.maybeReportCycle(
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.anyBoolean(),
+                ArgumentMatchers.any<T?>()
+            )
+        ).thenReturn(true)
+        val cyclesReporter: CyclesReporter = CyclesReporter(mockReporter)
+        val top1: SkyKey = SkyKey { SkyFunctionName.createHermetic("top1") }
+        val top2: SkyKey = SkyKey { SkyFunctionName.createHermetic("top2") }
+        val path1: SkyKey = SkyKey { SkyFunctionName.createHermetic("path1") }
+        val path2: SkyKey = SkyKey { SkyFunctionName.createHermetic("path2") }
+        val cycle1: SkyKey = SkyKey { SkyFunctionName.createHermetic("cycle1") }
+        val cycle2: SkyKey = SkyKey { SkyFunctionName.createHermetic("cycle2") }
+        val top1FirstCycle: CycleInfo? =
             CycleInfo.createCycleInfo(
-                ImmutableList.of(top1, path2), ImmutableList.of(cycle1, cycle2)),
-            CycleInfo.createCycleInfo(
-                ImmutableList.of(top1, path1), ImmutableList.of(cycle2, cycle1)),
-            CycleInfo.createCycleInfo(
-                ImmutableList.of(top1, path2), ImmutableList.of(cycle2, cycle1))),
-        top1,
-        NullEventHandler.INSTANCE);
-    verify(mockReporter)
-        .maybeReportCycle(
-            top1, top1FirstCycle, /*alreadyReported=*/ false, NullEventHandler.INSTANCE);
-    // Second cycle is filtered out because it is equivalent but for the path and cycle order.
-    verifyNoMoreInteractions(mockReporter);
+                com.google.common.collect.ImmutableList.of<E?>(top1, path1),
+                com.google.common.collect.ImmutableList.of<E?>(cycle1, cycle2)
+            )
+        cyclesReporter.reportCycles(
+            com.google.common.collect.ImmutableList.of<E?>(
+                top1FirstCycle,
+                CycleInfo.createCycleInfo(
+                    com.google.common.collect.ImmutableList.of<E?>(top1, path2),
+                    com.google.common.collect.ImmutableList.of<E?>(cycle1, cycle2)
+                ),
+                CycleInfo.createCycleInfo(
+                    com.google.common.collect.ImmutableList.of<E?>(top1, path1),
+                    com.google.common.collect.ImmutableList.of<E?>(cycle2, cycle1)
+                ),
+                CycleInfo.createCycleInfo(
+                    com.google.common.collect.ImmutableList.of<E?>(top1, path2),
+                    com.google.common.collect.ImmutableList.of<E?>(cycle2, cycle1)
+                )
+            ),
+            top1,
+            NullEventHandler.INSTANCE
+        )
+        Mockito.verify<Any?>(mockReporter)
+            .maybeReportCycle(
+                top1, top1FirstCycle,  /*alreadyReported=*/false, NullEventHandler.INSTANCE
+            )
+        // Second cycle is filtered out because it is equivalent but for the path and cycle order.
+        Mockito.verifyNoMoreInteractions(mockReporter)
 
-    CycleInfo top2FirstCycle =
-        CycleInfo.createCycleInfo(ImmutableList.of(top2, path1), ImmutableList.of(cycle1, cycle2));
-    cyclesReporter.reportCycles(
-        ImmutableList.of(
-            top2FirstCycle,
+        val top2FirstCycle: CycleInfo? =
             CycleInfo.createCycleInfo(
-                ImmutableList.of(top2, path2), ImmutableList.of(cycle1, cycle2)),
-            CycleInfo.createCycleInfo(
-                ImmutableList.of(top2, path1), ImmutableList.of(cycle2, cycle1)),
-            CycleInfo.createCycleInfo(
-                ImmutableList.of(top2, path2), ImmutableList.of(cycle2, cycle1))),
-        top2,
-        NullEventHandler.INSTANCE);
+                com.google.common.collect.ImmutableList.of<E?>(top2, path1),
+                com.google.common.collect.ImmutableList.of<E?>(cycle1, cycle2)
+            )
+        cyclesReporter.reportCycles(
+            com.google.common.collect.ImmutableList.of<E?>(
+                top2FirstCycle,
+                CycleInfo.createCycleInfo(
+                    com.google.common.collect.ImmutableList.of<E?>(top2, path2),
+                    com.google.common.collect.ImmutableList.of<E?>(cycle1, cycle2)
+                ),
+                CycleInfo.createCycleInfo(
+                    com.google.common.collect.ImmutableList.of<E?>(top2, path1),
+                    com.google.common.collect.ImmutableList.of<E?>(cycle2, cycle1)
+                ),
+                CycleInfo.createCycleInfo(
+                    com.google.common.collect.ImmutableList.of<E?>(top2, path2),
+                    com.google.common.collect.ImmutableList.of<E?>(cycle2, cycle1)
+                )
+            ),
+            top2,
+            NullEventHandler.INSTANCE
+        )
 
-    verify(mockReporter)
-        .maybeReportCycle(
-            top2, top2FirstCycle, /*alreadyReported=*/ true, NullEventHandler.INSTANCE);
-    verifyNoMoreInteractions(mockReporter);
-  }
+        Mockito.verify<Any?>(mockReporter)
+            .maybeReportCycle(
+                top2, top2FirstCycle,  /*alreadyReported=*/true, NullEventHandler.INSTANCE
+            )
+        Mockito.verifyNoMoreInteractions(mockReporter)
+    }
+
+    companion object {
+        private val DUMMY_KEY: SkyKey = SkyKey { SkyFunctionName.createHermetic("func") }
+    }
 }

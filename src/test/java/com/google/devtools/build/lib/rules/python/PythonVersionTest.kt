@@ -11,85 +11,91 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.python
 
-package com.google.devtools.build.lib.rules.python;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.rules.python.PythonVersion
+import com.google.devtools.build.lib.rules.python.PythonVersion.isTargetValue
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+/** Tests for [PythonVersion].  */
+@RunWith(JUnit4::class)
+class PythonVersionTest {
+    @get:org.junit.Test
+    val isTargetValue: Unit
+        get() {
+            Truth.assertThat(PythonVersion.PY2.isTargetValue).isTrue()
+            Truth.assertThat(PythonVersion.PY3.isTargetValue).isTrue()
+            Truth.assertThat(PythonVersion.PY2AND3.isTargetValue).isFalse()
+            Truth.assertThat(PythonVersion.PY2ONLY.isTargetValue).isFalse()
+            Truth.assertThat(PythonVersion.PY3ONLY.isTargetValue).isFalse()
+            Truth.assertThat(PythonVersion._INTERNAL_SENTINEL.isTargetValue).isFalse()
+        }
 
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @org.junit.Test
+    fun parseTargetValue() {
+        assertThat(PythonVersion.parseTargetValue("PY2")).isEqualTo(PythonVersion.PY2)
+        assertThat(PythonVersion.parseTargetValue("PY3")).isEqualTo(PythonVersion.PY3)
+        assertIsInvalidForParseTargetValue("PY2AND3")
+        assertIsInvalidForParseTargetValue("PY2ONLY")
+        assertIsInvalidForParseTargetValue("PY3ONLY")
+        assertIsInvalidForParseTargetValue("_INTERNAL_SENTINEL")
+        assertIsInvalidForParseTargetValue("not an enum value")
+    }
 
-/** Tests for {@link PythonVersion}. */
-@RunWith(JUnit4.class)
-public class PythonVersionTest {
+    @org.junit.Test
+    fun parseTargetOrSentinelValue() {
+        assertThat(PythonVersion.parseTargetOrSentinelValue("PY2")).isEqualTo(PythonVersion.PY2)
+        assertThat(PythonVersion.parseTargetOrSentinelValue("PY3")).isEqualTo(PythonVersion.PY3)
+        assertIsInvalidForParseTargetOrSentinelValue("PY2AND3")
+        assertIsInvalidForParseTargetOrSentinelValue("PY2ONLY")
+        assertIsInvalidForParseTargetOrSentinelValue("PY3ONLY")
+        assertThat(PythonVersion.parseTargetOrSentinelValue("_INTERNAL_SENTINEL"))
+            .isEqualTo(PythonVersion._INTERNAL_SENTINEL)
+        assertIsInvalidForParseTargetOrSentinelValue("not an enum value")
+    }
 
-  private static void assertIsInvalidForParseTargetValue(String value) {
-    assertThat(
-            assertThrows(
-                IllegalArgumentException.class, () -> PythonVersion.parseTargetValue(value)))
-        .hasMessageThat()
-        .contains("not a valid Python major version");
-  }
+    @org.junit.Test
+    fun parseSrcsValue() {
+        assertThat(PythonVersion.parseSrcsValue("PY2")).isEqualTo(PythonVersion.PY2)
+        assertThat(PythonVersion.parseSrcsValue("PY3")).isEqualTo(PythonVersion.PY3)
+        assertThat(PythonVersion.parseSrcsValue("PY2AND3")).isEqualTo(PythonVersion.PY2AND3)
+        assertThat(PythonVersion.parseSrcsValue("PY2ONLY")).isEqualTo(PythonVersion.PY2ONLY)
+        assertThat(PythonVersion.parseSrcsValue("PY3ONLY")).isEqualTo(PythonVersion.PY3ONLY)
+        assertIsInvalidForParseSrcsValue("_INTERNAL_SENTINEL")
+        assertIsInvalidForParseSrcsValue("not an enum value")
+    }
 
-  private static void assertIsInvalidForParseTargetOrSentinelValue(String value) {
-    assertThat(
-            assertThrows(
-                IllegalArgumentException.class,
-                () -> PythonVersion.parseTargetOrSentinelValue(value)))
-        .hasMessageThat()
-        .contains("not a valid Python major version");
-  }
+    companion object {
+        private fun assertIsInvalidForParseTargetValue(value: String?) {
+            Truth.assertThat(
+                org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+                    java.lang.IllegalArgumentException::class.java,
+                    org.junit.function.ThrowingRunnable { PythonVersion.parseTargetValue(value) })
+            )
+                .hasMessageThat()
+                .contains("not a valid Python major version")
+        }
 
-  private static void assertIsInvalidForParseSrcsValue(String value) {
-    assertThat(
-            assertThrows(IllegalArgumentException.class, () -> PythonVersion.parseSrcsValue(value)))
-        .hasMessageThat()
-        .contains("not a valid Python srcs_version value");
-  }
+        private fun assertIsInvalidForParseTargetOrSentinelValue(value: String?) {
+            Truth.assertThat(
+                org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+                    java.lang.IllegalArgumentException::class.java,
+                    org.junit.function.ThrowingRunnable { PythonVersion.parseTargetOrSentinelValue(value) })
+            )
+                .hasMessageThat()
+                .contains("not a valid Python major version")
+        }
 
-  @Test
-  public void isTargetValue() {
-    assertThat(PythonVersion.PY2.isTargetValue()).isTrue();
-    assertThat(PythonVersion.PY3.isTargetValue()).isTrue();
-    assertThat(PythonVersion.PY2AND3.isTargetValue()).isFalse();
-    assertThat(PythonVersion.PY2ONLY.isTargetValue()).isFalse();
-    assertThat(PythonVersion.PY3ONLY.isTargetValue()).isFalse();
-    assertThat(PythonVersion._INTERNAL_SENTINEL.isTargetValue()).isFalse();
-  }
-
-  @Test
-  public void parseTargetValue() {
-    assertThat(PythonVersion.parseTargetValue("PY2")).isEqualTo(PythonVersion.PY2);
-    assertThat(PythonVersion.parseTargetValue("PY3")).isEqualTo(PythonVersion.PY3);
-    assertIsInvalidForParseTargetValue("PY2AND3");
-    assertIsInvalidForParseTargetValue("PY2ONLY");
-    assertIsInvalidForParseTargetValue("PY3ONLY");
-    assertIsInvalidForParseTargetValue("_INTERNAL_SENTINEL");
-    assertIsInvalidForParseTargetValue("not an enum value");
-  }
-
-  @Test
-  public void parseTargetOrSentinelValue() {
-    assertThat(PythonVersion.parseTargetOrSentinelValue("PY2")).isEqualTo(PythonVersion.PY2);
-    assertThat(PythonVersion.parseTargetOrSentinelValue("PY3")).isEqualTo(PythonVersion.PY3);
-    assertIsInvalidForParseTargetOrSentinelValue("PY2AND3");
-    assertIsInvalidForParseTargetOrSentinelValue("PY2ONLY");
-    assertIsInvalidForParseTargetOrSentinelValue("PY3ONLY");
-    assertThat(PythonVersion.parseTargetOrSentinelValue("_INTERNAL_SENTINEL"))
-        .isEqualTo(PythonVersion._INTERNAL_SENTINEL);
-    assertIsInvalidForParseTargetOrSentinelValue("not an enum value");
-  }
-
-  @Test
-  public void parseSrcsValue() {
-    assertThat(PythonVersion.parseSrcsValue("PY2")).isEqualTo(PythonVersion.PY2);
-    assertThat(PythonVersion.parseSrcsValue("PY3")).isEqualTo(PythonVersion.PY3);
-    assertThat(PythonVersion.parseSrcsValue("PY2AND3")).isEqualTo(PythonVersion.PY2AND3);
-    assertThat(PythonVersion.parseSrcsValue("PY2ONLY")).isEqualTo(PythonVersion.PY2ONLY);
-    assertThat(PythonVersion.parseSrcsValue("PY3ONLY")).isEqualTo(PythonVersion.PY3ONLY);
-    assertIsInvalidForParseSrcsValue("_INTERNAL_SENTINEL");
-    assertIsInvalidForParseSrcsValue("not an enum value");
-  }
+        private fun assertIsInvalidForParseSrcsValue(value: String?) {
+            Truth.assertThat(
+                org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+                    java.lang.IllegalArgumentException::class.java,
+                    org.junit.function.ThrowingRunnable { PythonVersion.parseSrcsValue(value) })
+            )
+                .hasMessageThat()
+                .contains("not a valid Python srcs_version value")
+        }
+    }
 }

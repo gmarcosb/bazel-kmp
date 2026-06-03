@@ -11,61 +11,64 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.io.FileSymlinkCycleException
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.io.FileSymlinkCycleException;
-import com.google.devtools.build.lib.io.FileSymlinkException;
-import com.google.devtools.build.lib.io.FileSymlinkInfiniteExpansionException;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.FsUtils;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.lib.vfs.RootedPath;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [FileSymlinkException] serialization.  */
+@RunWith(JUnit4::class)
+class FileSymlinkExceptionCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun smoke() {
+        val root: Root? = Root.absoluteRoot(FsUtils.TEST_FILESYSTEM)
+        val serializationTester: SerializationTester =
+            SerializationTester(
+                FileSymlinkInfiniteExpansionException(
+                    com.google.common.collect.ImmutableList.of<E?>(
+                        RootedPath.toRootedPath(
+                            root,
+                            PathFragment.create("/dir")
+                        )
+                    ),
+                    com.google.common.collect.ImmutableList.of<E?>(
+                        RootedPath.toRootedPath(root, PathFragment.create("/dir/chain"))
+                    )
+                ),
+                FileSymlinkCycleException(
+                    com.google.common.collect.ImmutableList.of<E?>(
+                        RootedPath.toRootedPath(
+                            root,
+                            PathFragment.create("/dir")
+                        )
+                    ),
+                    com.google.common.collect.ImmutableList.of<E?>(
+                        RootedPath.toRootedPath(root, PathFragment.create("/dir/cycle"))
+                    )
+                )
+            )
+                .makeMemoizing()
+                .setVerificationFunction(verifyDeserialization)
+        FsUtils.addDependencies(serializationTester)
+        serializationTester.runTests()
+    }
 
-/** Tests for {@link FileSymlinkException} serialization. */
-@RunWith(JUnit4.class)
-public class FileSymlinkExceptionCodecTest {
-
-  @Test
-  public void smoke() throws Exception {
-    Root root = Root.absoluteRoot(FsUtils.TEST_FILESYSTEM);
-    SerializationTester serializationTester =
-        new SerializationTester(
-                new FileSymlinkInfiniteExpansionException(
-                    ImmutableList.of(RootedPath.toRootedPath(root, PathFragment.create("/dir"))),
-                    ImmutableList.of(
-                        RootedPath.toRootedPath(root, PathFragment.create("/dir/chain")))),
-                new FileSymlinkCycleException(
-                    ImmutableList.of(RootedPath.toRootedPath(root, PathFragment.create("/dir"))),
-                    ImmutableList.of(
-                        RootedPath.toRootedPath(root, PathFragment.create("/dir/cycle")))))
-            .makeMemoizing()
-            .setVerificationFunction(verifyDeserialization);
-    FsUtils.addDependencies(serializationTester);
-    serializationTester.runTests();
-  }
-
-  private static final SerializationTester.VerificationFunction<FileSymlinkException>
-      verifyDeserialization =
-          (deserialized, subject) -> {
-            assertThat(deserialized).hasMessageThat().isEqualTo(subject.getMessage());
-            if (deserialized instanceof FileSymlinkInfiniteExpansionException fsDeserialized) {
-              FileSymlinkInfiniteExpansionException fsSubject =
-                  (FileSymlinkInfiniteExpansionException) subject;
-              assertThat(fsDeserialized.getPathToChain()).isEqualTo(fsSubject.getPathToChain());
-              assertThat(fsDeserialized.getChain()).isEqualTo(fsSubject.getChain());
-            } else if (deserialized instanceof FileSymlinkCycleException fsDeserialized) {
-              FileSymlinkCycleException fsSubject = (FileSymlinkCycleException) subject;
-              assertThat(fsDeserialized.getPathToCycle()).isEqualTo(fsSubject.getPathToCycle());
-              assertThat(fsDeserialized.getCycle()).isEqualTo(fsSubject.getCycle());
-            } else {
-              throw new AssertionError("unexpected subclass of FileSymlinkException");
+    companion object {
+        private val verifyDeserialization: SerializationTester.VerificationFunction<FileSymlinkException?> =
+            SerializationTester.VerificationFunction { deserialized, subject ->
+                assertThat(deserialized).hasMessageThat().isEqualTo(subject.getMessage())
+                if (deserialized is FileSymlinkInfiniteExpansionException) {
+                    val fsSubject: FileSymlinkInfiniteExpansionException =
+                        subject as FileSymlinkInfiniteExpansionException
+                    assertThat(deserialized.getPathToChain()).isEqualTo(fsSubject.getPathToChain())
+                    assertThat(deserialized.getChain()).isEqualTo(fsSubject.getChain())
+                } else if (deserialized is FileSymlinkCycleException) {
+                    val fsSubject: FileSymlinkCycleException = subject as FileSymlinkCycleException
+                    assertThat(deserialized.getPathToCycle()).isEqualTo(fsSubject.getPathToCycle())
+                    assertThat(deserialized.getCycle()).isEqualTo(fsSubject.getCycle())
+                } else {
+                    throw java.lang.AssertionError("unexpected subclass of FileSymlinkException")
+                }
             }
-          };
+    }
 }

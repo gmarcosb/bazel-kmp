@@ -11,23 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import com.google.devtools.build.lib.skyframe.serialization.testutils.ObjectCodecTester;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.ObjectCodecTester
 
-/** Tests for {@link IntegerCodec}. */
-@RunWith(JUnit4.class)
-public class IntegerCodecTest {
-
-  @Test
-  public void testCodec() throws Exception {
-    ObjectCodecTester.newBuilder(new IntegerCodec())
-        // Codec has no redundancy for error correction.
-        .skipBadDataTest()
-        .addSubjects(0, 1, 42, -5)
-        .buildAndRunTests();
-  }
+/** Tests for [IntegerCodec].  */
+@RunWith(JUnit4::class)
+class IntegerCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCodec() {
+        ObjectCodecTester.newBuilder(IntegerCodec()) // Codec has no redundancy for error correction.
+            .skipBadDataTest()
+            .addSubjects(0, 1, 42, -5)
+            .buildAndRunTests()
+    }
 }

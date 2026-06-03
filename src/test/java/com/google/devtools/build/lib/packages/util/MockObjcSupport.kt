@@ -11,124 +11,120 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages.util
 
-package com.google.devtools.build.lib.packages.util;
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.ImmutableSet
+import com.google.devtools.build.lib.cmdline.Label
+import java.util.stream.Stream
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.devtools.build.lib.rules.python.PythonTestUtils.getPyLoad;
+/** Creates mock BUILD files required for the objc rules.  */
+object MockObjcSupport {
+    private val OSX_ARCHS: ImmutableList<String?> = ImmutableList.of<String?>(
+        "x64_windows",
+        "ios_x86_64",
+        "ios_i386",
+        "ios_armv7",
+        "ios_arm64",
+        "ios_arm64e",
+        "darwin_x86_64",
+        "darwin_arm64",
+        "watchos_i386",
+        "watchos_x86_64",
+        "watchos_armv7k",
+        "watchos_arm64_32",
+        "tvos_x86_64",
+        "tvos_arm64"
+    )
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.util.Crosstool.CcToolchainConfig;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import java.io.IOException;
-import java.util.stream.Stream;
+    const val DEFAULT_OSX_CROSSTOOL_DIR: String = "tools/osx/crosstool"
+    private const val MOCK_OSX_TOOLCHAIN_CONFIG_PATH =
+        "com/google/devtools/build/lib/packages/util/mock/osx_cc_toolchain_config.bzl"
 
-/** Creates mock BUILD files required for the objc rules. */
-public final class MockObjcSupport {
+    /** The label of the `xcode_config` target used in test to enumerate available xcodes.  */
+    val XCODE_VERSION_CONFIG: String = TestConstants.TOOLS_REPOSITORY.toString() + "//tools/objc:host_xcodes"
 
-  private static final ImmutableList<String> OSX_ARCHS =
-      ImmutableList.of(
-          "x64_windows",
-          "ios_x86_64",
-          "ios_i386",
-          "ios_armv7",
-          "ios_arm64",
-          "ios_arm64e",
-          "darwin_x86_64",
-          "darwin_arm64",
-          "watchos_i386",
-          "watchos_x86_64",
-          "watchos_armv7k",
-          "watchos_arm64_32",
-          "tvos_x86_64",
-          "tvos_arm64");
+    /** The build label for the mock OSX crosstool configuration.  */
+    val DEFAULT_OSX_CROSSTOOL: String = "//" + DEFAULT_OSX_CROSSTOOL_DIR + ":crosstool"
 
-  public static final String DEFAULT_OSX_CROSSTOOL_DIR = "tools/osx/crosstool";
-  private static final String MOCK_OSX_TOOLCHAIN_CONFIG_PATH =
-      "com/google/devtools/build/lib/packages/util/mock/osx_cc_toolchain_config.bzl";
+    const val DEFAULT_XCODE_VERSION: String = "7.3.1"
+    const val DEFAULT_IOS_SDK_VERSION: String = "8.4"
 
-  /** The label of the {@code xcode_config} target used in test to enumerate available xcodes. */
-  public static final String XCODE_VERSION_CONFIG =
-      TestConstants.TOOLS_REPOSITORY + "//tools/objc:host_xcodes";
+    val APPLE_SIMULATOR_PLATFORM_PACKAGE: String = (TestConstants.APPLE_PLATFORM_PACKAGE_ROOT
+            + (if (TestConstants.PRODUCT_NAME == "bazel") "" else "/simulator"))
 
-  /** The build label for the mock OSX crosstool configuration. */
-  public static final String DEFAULT_OSX_CROSSTOOL =
-      "//" + DEFAULT_OSX_CROSSTOOL_DIR + ":crosstool";
+    @kotlin.jvm.JvmField
+    val DARWIN_X86_64: String = TestConstants.APPLE_PLATFORM_PACKAGE_ROOT + ":darwin_x86_64"
+    @kotlin.jvm.JvmField
+    val DARWIN_ARM64: String = TestConstants.APPLE_PLATFORM_PACKAGE_ROOT + ":darwin_arm64"
+    @kotlin.jvm.JvmField
+    val IOS_X86_64: String = APPLE_SIMULATOR_PLATFORM_PACKAGE + ":ios_x86_64"
+    @kotlin.jvm.JvmField
+    val IOS_ARM64: String = TestConstants.APPLE_PLATFORM_PACKAGE_ROOT + ":ios_arm64"
 
-  public static final String DEFAULT_XCODE_VERSION = "7.3.1";
-  public static final String DEFAULT_IOS_SDK_VERSION = "8.4";
+    @kotlin.jvm.JvmField
+    val IOS_ARM64E: String = TestConstants.APPLE_PLATFORM_PACKAGE_ROOT + ":ios_arm64e"
+    @kotlin.jvm.JvmField
+    val IOS_ARMV7: String = TestConstants.APPLE_PLATFORM_PACKAGE_ROOT + ":ios_armv7" // legacy for testing
+    @kotlin.jvm.JvmField
+    val IOS_I386: String = APPLE_SIMULATOR_PLATFORM_PACKAGE + ":ios_i386" // legacy for testing
+    @kotlin.jvm.JvmField
+    val WATCHOS_ARMV7K: String = TestConstants.APPLE_PLATFORM_PACKAGE_ROOT + ":watchos_armv7k"
 
-  public static final String APPLE_SIMULATOR_PLATFORM_PACKAGE =
-      TestConstants.APPLE_PLATFORM_PACKAGE_ROOT
-          + (TestConstants.PRODUCT_NAME.equals("bazel") ? "" : "/simulator");
+    @kotlin.jvm.JvmField
+    val WATCHOS_ARM64_32: String = TestConstants.APPLE_PLATFORM_PACKAGE_ROOT + ":watchos_arm64_32"
 
-  public static final String DARWIN_X86_64 =
-      TestConstants.APPLE_PLATFORM_PACKAGE_ROOT + ":darwin_x86_64";
-  public static final String DARWIN_ARM64 =
-      TestConstants.APPLE_PLATFORM_PACKAGE_ROOT + ":darwin_arm64";
-  public static final String IOS_X86_64 = APPLE_SIMULATOR_PLATFORM_PACKAGE + ":ios_x86_64";
-  public static final String IOS_ARM64 = TestConstants.APPLE_PLATFORM_PACKAGE_ROOT + ":ios_arm64";
-
-  public static final String IOS_ARM64E = TestConstants.APPLE_PLATFORM_PACKAGE_ROOT + ":ios_arm64e";
-  public static final String IOS_ARMV7 =
-      TestConstants.APPLE_PLATFORM_PACKAGE_ROOT + ":ios_armv7"; // legacy for testing
-  public static final String IOS_I386 =
-      APPLE_SIMULATOR_PLATFORM_PACKAGE + ":ios_i386"; // legacy for testing
-  public static final String WATCHOS_ARMV7K =
-      TestConstants.APPLE_PLATFORM_PACKAGE_ROOT + ":watchos_armv7k";
-
-  public static final String WATCHOS_ARM64_32 =
-      TestConstants.APPLE_PLATFORM_PACKAGE_ROOT + ":watchos_arm64_32";
-
-  public static ImmutableList<String> requiredObjcPlatformFlags(String... args) {
-    ImmutableList.Builder<String> builder = ImmutableList.builder();
-    return builder
-        .addAll(requiredObjcPlatformFlagsNoXcodeConfig(args))
-        .add("--xcode_version_config=" + MockObjcSupport.XCODE_VERSION_CONFIG)
-        .build();
-  }
-
-  /** Returns the set of flags required to build objc libraries using the mock OSX crosstool. */
-  public static ImmutableList<String> requiredObjcCrosstoolFlags(String... args) {
-    ImmutableList.Builder<String> builder = ImmutableList.builder();
-    return builder
-        .addAll(requiredObjcCrosstoolFlagsNoXcodeConfig(args))
-        .add("--xcode_version_config=" + MockObjcSupport.XCODE_VERSION_CONFIG)
-        .build();
-  }
-
-  public static ImmutableList<String> requiredObjcPlatformFlagsNoXcodeConfig(String... args) {
-    ImmutableList.Builder<String> argsBuilder = ImmutableList.builder();
-    argsBuilder.addAll(Stream.of(args).collect(toImmutableList()));
-    if (Stream.of(args).noneMatch(arg -> arg.startsWith("--platforms="))) {
-      argsBuilder.add("--platforms=" + MockObjcSupport.DARWIN_X86_64);
+    @kotlin.jvm.JvmStatic
+    fun requiredObjcPlatformFlags(vararg args: String?): ImmutableList<String?> {
+        val builder = ImmutableList.builder<String?>()
+        return builder
+            .addAll(requiredObjcPlatformFlagsNoXcodeConfig(*args))
+            .add("--xcode_version_config=" + XCODE_VERSION_CONFIG)
+            .build()
     }
 
-    return argsBuilder.build();
-  }
-
-  /**
-   * Returns the set of flags required to build objc libraries using the mock OSX crosstool except
-   * for --xcode_version_config.
-   */
-  public static ImmutableList<String> requiredObjcCrosstoolFlagsNoXcodeConfig(String... args) {
-
-    ImmutableList.Builder<String> argsBuilder = ImmutableList.builder();
-    argsBuilder.addAll(Stream.of(args).collect(toImmutableList()));
-    if (Stream.of(args).noneMatch(arg -> arg.startsWith("--platforms="))) {
-      argsBuilder.add("--platforms=" + MockObjcSupport.DARWIN_X86_64);
+    /** Returns the set of flags required to build objc libraries using the mock OSX crosstool.  */
+    @kotlin.jvm.JvmStatic
+    fun requiredObjcCrosstoolFlags(vararg args: String?): ImmutableList<String?> {
+        val builder = ImmutableList.builder<String?>()
+        return builder
+            .addAll(requiredObjcCrosstoolFlagsNoXcodeConfig(*args))
+            .add("--xcode_version_config=" + XCODE_VERSION_CONFIG)
+            .build()
     }
 
-    return argsBuilder.build();
-  }
+    @kotlin.jvm.JvmStatic
+    fun requiredObjcPlatformFlagsNoXcodeConfig(vararg args: String?): ImmutableList<String?> {
+        val argsBuilder = ImmutableList.builder<String?>()
+        argsBuilder.addAll(Stream.of<String?>(*args).collect(ImmutableList.toImmutableList<String?>()))
+        if (Stream.of<String?>(*args).noneMatch { arg: String? -> arg.startsWith("--platforms=") }) {
+            argsBuilder.add("--platforms=" + DARWIN_X86_64)
+        }
 
-  public static void setupXcodeRules(MockToolsConfig config) throws IOException {
-    config.create("build_bazel_apple_support/xcode/BUILD");
-    config.create(
-        "build_bazel_apple_support/xcode/xcode_version.bzl",
-        """
+        return argsBuilder.build()
+    }
+
+    /**
+     * Returns the set of flags required to build objc libraries using the mock OSX crosstool except
+     * for --xcode_version_config.
+     */
+    @kotlin.jvm.JvmStatic
+    fun requiredObjcCrosstoolFlagsNoXcodeConfig(vararg args: String?): ImmutableList<String?> {
+        val argsBuilder = ImmutableList.builder<String?>()
+        argsBuilder.addAll(Stream.of<String?>(*args).collect(ImmutableList.toImmutableList<String?>()))
+        if (Stream.of<String?>(*args).noneMatch { arg: String? -> arg.startsWith("--platforms=") }) {
+            argsBuilder.add("--platforms=" + DARWIN_X86_64)
+        }
+
+        return argsBuilder.build()
+    }
+
+    @Throws(IOException::class)
+    fun setupXcodeRules(config: MockToolsConfig) {
+        config.create("build_bazel_apple_support/xcode/BUILD")
+        config.create(
+            "build_bazel_apple_support/xcode/xcode_version.bzl",
+            """
         XcodeVersionRuleInfo = provider(fields = ["aliases", "label", "xcode_version_properties"])
 
         def _xcode_version_properties_info_init(
@@ -191,10 +187,12 @@ public final class MockObjcSupport {
             },
             implementation = _xcode_version_impl,
         )
-        """);
-    config.create(
-        "build_bazel_apple_support/xcode/available_xcodes.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        config.create(
+            "build_bazel_apple_support/xcode/available_xcodes.bzl",
+            """
         load(":xcode_version.bzl", "XcodeVersionRuleInfo")
         AvailableXcodesInfo = provider(fields = ["available_versions", "default_version"])
 
@@ -229,10 +227,12 @@ public final class MockObjcSupport {
             implementation = _available_xcodes_impl,
             provides = [AvailableXcodesInfo],
         )
-        """);
-    config.create(
-        "build_bazel_apple_support/xcode/xcode_config.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        config.create(
+            "build_bazel_apple_support/xcode/xcode_config.bzl",
+            """
         load(":available_xcodes.bzl", "AvailableXcodesInfo")
         load(":xcode_version.bzl", "XcodeVersionRuleInfo", "XcodeVersionPropertiesInfo")
 
@@ -548,10 +548,12 @@ public final class MockObjcSupport {
 
         def _dotted_version_or_default(field, default):
             return apple_common.dotted_version(field) or default
-        """);
-    config.create(
-        "build_bazel_apple_support/xcode/xcode_config_alias.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        config.create(
+            "build_bazel_apple_support/xcode/xcode_config_alias.bzl",
+            """
         load(":xcode_version.bzl", "XcodeVersionPropertiesInfo")
 
         def _xcode_config_alias_impl(ctx):
@@ -573,183 +575,190 @@ public final class MockObjcSupport {
             fragments = ["apple"],
             implementation = _xcode_config_alias_impl,
         )
-        """);
-  }
-
-  /**
-   * Sets up the support for building ObjC. Any partial toolchain line will be merged into every
-   * toolchain stanza in the crosstool loaded from file.
-   */
-  public static void setup(MockToolsConfig config) throws IOException {
-
-    // Create default, simple Apple toolchains based on the default Apple Crosstool.
-    config.create(
-        "tools/build_defs/apple/toolchains/BUILD",
-        "package(default_visibility=['//visibility:public'])",
-        "toolchain(",
-        "  name = 'darwin_x86_64_any',",
-        "  toolchain = '//"
-            + MockObjcSupport.DEFAULT_OSX_CROSSTOOL_DIR
-            + ":cc-compiler-darwin_x86_64',",
-        "  toolchain_type = '" + TestConstants.TOOLS_REPOSITORY + "//tools/cpp:toolchain_type',",
-        "  target_compatible_with = [",
-        "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:osx',",
-        "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:x86_64',",
-        "  ],",
-        ")",
-        "toolchain(",
-        "  name = 'ios_arm64_any',",
-        "  toolchain = '//"
-            + MockObjcSupport.DEFAULT_OSX_CROSSTOOL_DIR
-            + ":cc-compiler-ios_arm64',",
-        "  toolchain_type = '" + TestConstants.TOOLS_REPOSITORY + "//tools/cpp:toolchain_type',",
-        "  target_compatible_with = [",
-        "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:ios',",
-        "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:arm64',",
-        "  ],",
-        ")");
-
-    // Create default Apple target platforms.
-    // Any device, simulator or maccatalyst platforms created by Apple tests should consider
-    // building on one of these targets as parents, to ensure that the proper constraints are set.
-    config.create(
-        TestConstants.APPLE_PLATFORM_PATH + "/BUILD",
-        "package(default_visibility=['//visibility:public'])",
-        "licenses(['notice'])",
-        "platform(",
-        "  name = 'darwin_x86_64',",
-        "  constraint_values = [",
-        "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:osx',",
-        "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:x86_64',",
-        "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "env:device',",
-        "  ],",
-        ")",
-        "platform(",
-        "  name = 'darwin_arm64',",
-        "  constraint_values = [",
-        "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:osx',",
-        "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:arm64',",
-        "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "env:device',",
-        "  ],",
-        ")",
-        "platform(",
-        "  name = 'ios_arm64',",
-        "  constraint_values = [",
-        "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:ios',",
-        "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:arm64',",
-        "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "env:device',",
-        "  ],",
-        ")",
-        "platform(",
-        "  name = 'ios_arm64e',",
-        "  constraint_values = [",
-        "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:ios',",
-        "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:arm64e',",
-        "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "env:device',",
-        "  ],",
-        ")",
-        "platform(", // legacy platform only used to support tests
-        "  name = 'ios_armv7',",
-        "  constraint_values = [",
-        "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:ios',",
-        "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:armv7',",
-        "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "env:device',",
-        "  ],",
-        ")",
-        "platform(",
-        "  name = 'watchos_armv7k',",
-        "  constraint_values = [",
-        "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:watchos',",
-        "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:armv7k',",
-        "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "env:device',",
-        "  ],",
-        ")",
-        "platform(",
-        "  name = 'watchos_arm64_32',",
-        "  constraint_values = [",
-        "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:watchos',",
-        "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:arm64_32',",
-        "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "env:device',",
-        "  ],",
-        ")");
-
-    String[] simulatorPlatforms = {
-      "platform(",
-      "  name = 'ios_x86_64',",
-      "  constraint_values = [",
-      "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:ios',",
-      "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:x86_64',",
-      "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "env:simulator',",
-      "  ],",
-      ")",
-      "platform(",
-      "  name = 'ios_i386',", // legacy platform only used to support tests
-      "  constraint_values = [",
-      "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:ios',",
-      "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:x86_32',",
-      "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "env:simulator',",
-      "  ],",
-      ")",
-      "platform(",
-      "  name = 'watchos_x86_64',",
-      "  constraint_values = [",
-      "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:watchos',",
-      "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:x86_64',",
-      "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "env:simulator',",
-      "  ],",
-      ")"
-    };
-
-    if (TestConstants.PRODUCT_NAME.equals("bazel")) {
-      config.append(TestConstants.APPLE_PLATFORM_PATH + "/BUILD", simulatorPlatforms);
-    } else {
-      config.create(TestConstants.APPLE_PLATFORM_PATH + "/simulator/BUILD", simulatorPlatforms);
+        
+        """.trimIndent()
+        )
     }
 
-    for (String tool : ImmutableSet.of("gcov", "testrunner", "mcov", "libtool")) {
-      config.create(TestConstants.TOOLS_REPOSITORY_SCRATCH + "tools/objc/" + tool);
-    }
-    setupXcodeRules(config);
-    config.create(
-        TestConstants.TOOLS_REPOSITORY_SCRATCH + "tools/objc/BUILD",
-        getPyLoad("py_binary"),
-        "load('@build_bazel_apple_support//xcode:xcode_version.bzl', 'xcode_version')",
-        "load('@build_bazel_apple_support//xcode:xcode_config.bzl', 'xcode_config')",
-        "package(default_visibility=['//visibility:public'])",
-        "exports_files(glob(['**']))",
-        "filegroup(name = 'default_provisioning_profile', srcs = ['foo.mobileprovision'])",
-        "filegroup(name = 'xctest_infoplist', srcs = ['xctest.plist'])",
-        "xcode_config(name = 'host_xcodes',",
-        "  default = ':version7_3_1',",
-        "  versions = [':version7_3_1', ':version5_0', ':version7_3', ':version5_8', ':version5'])",
-        "xcode_version(",
-        "  name = 'version7_3_1',",
-        "  version = '" + DEFAULT_XCODE_VERSION + "',",
-        "  default_ios_sdk_version = \"" + DEFAULT_IOS_SDK_VERSION + "\",",
-        ")",
-        "xcode_version(",
-        "  name = 'version7_3',",
-        "  version = '7.3',",
-        ")",
-        "xcode_version(",
-        "  name = 'version5_0',",
-        "  version = '5.0',",
-        ")",
-        "xcode_version(",
-        "  name = 'version5_8',",
-        "  version = '5.8',",
-        ")",
-        "xcode_version(",
-        "  name = 'version5',",
-        "  version = '5',",
-        ")");
-    // If the bazel tools repository is not in the workspace, also create a workspace tools/objc
-    // package with a few lingering dependencies.
-    // TODO(b/64537078): Move these dependencies underneath the tools workspace.
-    if (TestConstants.TOOLS_REPOSITORY_SCRATCH.length() > 0) {
-      config.create(
-          "tools/objc/BUILD",
-          """
+    /**
+     * Sets up the support for building ObjC. Any partial toolchain line will be merged into every
+     * toolchain stanza in the crosstool loaded from file.
+     */
+    @kotlin.jvm.JvmStatic
+    @Throws(IOException::class)
+    fun setup(config: MockToolsConfig) {
+        // Create default, simple Apple toolchains based on the default Apple Crosstool.
+
+        config.create(
+            "tools/build_defs/apple/toolchains/BUILD",
+            "package(default_visibility=['//visibility:public'])",
+            "toolchain(",
+            "  name = 'darwin_x86_64_any',",
+            ("  toolchain = '//"
+                    + DEFAULT_OSX_CROSSTOOL_DIR
+                    + ":cc-compiler-darwin_x86_64',"),
+            "  toolchain_type = '" + TestConstants.TOOLS_REPOSITORY + "//tools/cpp:toolchain_type',",
+            "  target_compatible_with = [",
+            "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:osx',",
+            "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:x86_64',",
+            "  ],",
+            ")",
+            "toolchain(",
+            "  name = 'ios_arm64_any',",
+            ("  toolchain = '//"
+                    + DEFAULT_OSX_CROSSTOOL_DIR
+                    + ":cc-compiler-ios_arm64',"),
+            "  toolchain_type = '" + TestConstants.TOOLS_REPOSITORY + "//tools/cpp:toolchain_type',",
+            "  target_compatible_with = [",
+            "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:ios',",
+            "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:arm64',",
+            "  ],",
+            ")"
+        )
+
+        // Create default Apple target platforms.
+        // Any device, simulator or maccatalyst platforms created by Apple tests should consider
+        // building on one of these targets as parents, to ensure that the proper constraints are set.
+        config.create(
+            TestConstants.APPLE_PLATFORM_PATH + "/BUILD",
+            "package(default_visibility=['//visibility:public'])",
+            "licenses(['notice'])",
+            "platform(",
+            "  name = 'darwin_x86_64',",
+            "  constraint_values = [",
+            "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:osx',",
+            "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:x86_64',",
+            "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "env:device',",
+            "  ],",
+            ")",
+            "platform(",
+            "  name = 'darwin_arm64',",
+            "  constraint_values = [",
+            "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:osx',",
+            "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:arm64',",
+            "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "env:device',",
+            "  ],",
+            ")",
+            "platform(",
+            "  name = 'ios_arm64',",
+            "  constraint_values = [",
+            "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:ios',",
+            "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:arm64',",
+            "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "env:device',",
+            "  ],",
+            ")",
+            "platform(",
+            "  name = 'ios_arm64e',",
+            "  constraint_values = [",
+            "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:ios',",
+            "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:arm64e',",
+            "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "env:device',",
+            "  ],",
+            ")",
+            "platform(",  // legacy platform only used to support tests
+            "  name = 'ios_armv7',",
+            "  constraint_values = [",
+            "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:ios',",
+            "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:armv7',",
+            "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "env:device',",
+            "  ],",
+            ")",
+            "platform(",
+            "  name = 'watchos_armv7k',",
+            "  constraint_values = [",
+            "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:watchos',",
+            "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:armv7k',",
+            "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "env:device',",
+            "  ],",
+            ")",
+            "platform(",
+            "  name = 'watchos_arm64_32',",
+            "  constraint_values = [",
+            "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:watchos',",
+            "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:arm64_32',",
+            "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "env:device',",
+            "  ],",
+            ")"
+        )
+
+        val simulatorPlatforms = arrayOf<String?>(
+            "platform(",
+            "  name = 'ios_x86_64',",
+            "  constraint_values = [",
+            "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:ios',",
+            "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:x86_64',",
+            "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "env:simulator',",
+            "  ],",
+            ")",
+            "platform(",
+            "  name = 'ios_i386',",  // legacy platform only used to support tests
+            "  constraint_values = [",
+            "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:ios',",
+            "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:x86_32',",
+            "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "env:simulator',",
+            "  ],",
+            ")",
+            "platform(",
+            "  name = 'watchos_x86_64',",
+            "  constraint_values = [",
+            "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:watchos',",
+            "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:x86_64',",
+            "    '" + TestConstants.CONSTRAINTS_PACKAGE_ROOT + "env:simulator',",
+            "  ],",
+            ")"
+        )
+
+        if (TestConstants.PRODUCT_NAME == "bazel") {
+            config.append(TestConstants.APPLE_PLATFORM_PATH + "/BUILD", *simulatorPlatforms)
+        } else {
+            config.create(TestConstants.APPLE_PLATFORM_PATH + "/simulator/BUILD", *simulatorPlatforms)
+        }
+
+        for (tool in ImmutableSet.of<String?>("gcov", "testrunner", "mcov", "libtool")) {
+            config.create(TestConstants.TOOLS_REPOSITORY_SCRATCH + "tools/objc/" + tool)
+        }
+        setupXcodeRules(config)
+        config.create(
+            TestConstants.TOOLS_REPOSITORY_SCRATCH + "tools/objc/BUILD",
+            PythonTestUtils.getPyLoad("py_binary"),
+            "load('@build_bazel_apple_support//xcode:xcode_version.bzl', 'xcode_version')",
+            "load('@build_bazel_apple_support//xcode:xcode_config.bzl', 'xcode_config')",
+            "package(default_visibility=['//visibility:public'])",
+            "exports_files(glob(['**']))",
+            "filegroup(name = 'default_provisioning_profile', srcs = ['foo.mobileprovision'])",
+            "filegroup(name = 'xctest_infoplist', srcs = ['xctest.plist'])",
+            "xcode_config(name = 'host_xcodes',",
+            "  default = ':version7_3_1',",
+            "  versions = [':version7_3_1', ':version5_0', ':version7_3', ':version5_8', ':version5'])",
+            "xcode_version(",
+            "  name = 'version7_3_1',",
+            "  version = '" + DEFAULT_XCODE_VERSION + "',",
+            "  default_ios_sdk_version = \"" + DEFAULT_IOS_SDK_VERSION + "\",",
+            ")",
+            "xcode_version(",
+            "  name = 'version7_3',",
+            "  version = '7.3',",
+            ")",
+            "xcode_version(",
+            "  name = 'version5_0',",
+            "  version = '5.0',",
+            ")",
+            "xcode_version(",
+            "  name = 'version5_8',",
+            "  version = '5.8',",
+            ")",
+            "xcode_version(",
+            "  name = 'version5',",
+            "  version = '5',",
+            ")"
+        )
+        // If the bazel tools repository is not in the workspace, also create a workspace tools/objc
+        // package with a few lingering dependencies.
+        // TODO(b/64537078): Move these dependencies underneath the tools workspace.
+        if (TestConstants.TOOLS_REPOSITORY_SCRATCH.length > 0) {
+            config.create(
+                "tools/objc/BUILD",
+                """
           package(default_visibility = ["//visibility:public"])
 
           exports_files(glob(["**"]))
@@ -763,560 +772,603 @@ public final class MockObjcSupport {
               name = "xctest_infoplist",
               srcs = ["xctest.plist"],
           )
-          """);
+          
+          """.trimIndent()
+            )
+        }
+        config.create(
+            TestConstants.TOOLS_REPOSITORY_SCRATCH + "tools/objc/foo.mobileprovision", "No such luck"
+        )
+        config.create(TestConstants.TOOLS_REPOSITORY_SCRATCH + "tools/objc/xctest.plist")
+        setupCcToolchainConfig(config)
     }
-    config.create(
-        TestConstants.TOOLS_REPOSITORY_SCRATCH + "tools/objc/foo.mobileprovision", "No such luck");
-    config.create(TestConstants.TOOLS_REPOSITORY_SCRATCH + "tools/objc/xctest.plist");
-    setupCcToolchainConfig(config);
-  }
 
-  public static void setupCcToolchainConfig(
-      MockToolsConfig config, CcToolchainConfig.Builder ccToolchainConfig) throws IOException {
-    if (config.isRealFileSystem()) {
-      config.linkTools(DEFAULT_OSX_CROSSTOOL_DIR);
-    } else {
-      CcToolchainConfig toolchainConfig = ccToolchainConfig.build();
-      ImmutableList.Builder<CcToolchainConfig> toolchainConfigBuilder = ImmutableList.builder();
-      toolchainConfigBuilder.add(toolchainConfig);
-      if (!toolchainConfig.getTargetCpu().equals("darwin_x86_64")) {
-        toolchainConfigBuilder.add(darwinX86_64().build());
-      }
+    @kotlin.jvm.JvmStatic
+    @Throws(IOException::class)
+    fun setupCcToolchainConfig(
+        config: MockToolsConfig, ccToolchainConfig: Crosstool.CcToolchainConfig.Builder
+    ) {
+        if (config.isRealFileSystem()) {
+            config.linkTools(DEFAULT_OSX_CROSSTOOL_DIR)
+        } else {
+            val toolchainConfig: CcToolchainConfig = ccToolchainConfig.build()
+            val toolchainConfigBuilder: ImmutableList.Builder<CcToolchainConfig?> =
+                ImmutableList.builder<CcToolchainConfig?>()
+            toolchainConfigBuilder.add(toolchainConfig)
+            if (toolchainConfig.getTargetCpu() != "darwin_x86_64") {
+                toolchainConfigBuilder.add(darwinX86_64()!!.build())
+            }
 
-      new Crosstool(
-              config,
-              DEFAULT_OSX_CROSSTOOL_DIR,
-              Label.parseCanonicalUnchecked("@bazel_tools//tools/osx"))
-          .setCcToolchainFile(readCcToolchainConfigFile())
-          .setSupportedArchs(OSX_ARCHS)
-          .setToolchainConfigs(toolchainConfigBuilder.build())
-          .setSupportsHeaderParsing(true)
-          .writeOSX();
+            Crosstool(
+                config,
+                DEFAULT_OSX_CROSSTOOL_DIR,
+                Label.parseCanonicalUnchecked("@bazel_tools//tools/osx")
+            )
+                .setCcToolchainFile(readCcToolchainConfigFile())
+                .setSupportedArchs(OSX_ARCHS)
+                .setToolchainConfigs(toolchainConfigBuilder.build())
+                .setSupportsHeaderParsing(true)
+                .writeOSX()
+        }
     }
-  }
 
-  public static void setupCcToolchainConfig(MockToolsConfig config) throws IOException {
-    if (config.isRealFileSystem()) {
-      config.linkTools(DEFAULT_OSX_CROSSTOOL_DIR);
-    } else {
-      new Crosstool(
-              config,
-              DEFAULT_OSX_CROSSTOOL_DIR,
-              Label.parseCanonicalUnchecked("@bazel_tools//tools/osx"))
-          .setCcToolchainFile(readCcToolchainConfigFile())
-          .setSupportedArchs(OSX_ARCHS)
-          .setToolchainConfigs(getDefaultCcToolchainConfigs())
-          .setSupportsHeaderParsing(true)
-          .writeOSX();
+    @Throws(IOException::class)
+    fun setupCcToolchainConfig(config: MockToolsConfig) {
+        if (config.isRealFileSystem()) {
+            config.linkTools(DEFAULT_OSX_CROSSTOOL_DIR)
+        } else {
+            Crosstool(
+                config,
+                DEFAULT_OSX_CROSSTOOL_DIR,
+                Label.parseCanonicalUnchecked("@bazel_tools//tools/osx")
+            )
+                .setCcToolchainFile(readCcToolchainConfigFile())
+                .setSupportedArchs(OSX_ARCHS)
+                .setToolchainConfigs(defaultCcToolchainConfigs)
+                .setSupportsHeaderParsing(true)
+                .writeOSX()
+        }
     }
-  }
 
-  private static ImmutableList<CcToolchainConfig> getDefaultCcToolchainConfigs() {
-    return ImmutableList.of(
-        darwinX86_64().build(),
-        darwin_arm64().build(),
-        x64_windows().build(),
-        ios_arm64().build(),
-        ios_arm64e().build(),
-        ios_armv7().build(),
-        ios_i386().build(),
-        iosX86_64().build(),
-        tvos_arm64().build(),
-        tvosX86_64().build(),
-        watchos_armv7k().build(),
-        watchos_arm64_32().build(),
-        watchos_i386().build(),
-        watchosX86_64().build());
-  }
+    private val defaultCcToolchainConfigs: ImmutableList<CcToolchainConfig>
+        get() = ImmutableList.of<CcToolchainConfig?>(
+            darwinX86_64()!!.build(),
+            darwin_arm64()!!.build(),
+            x64_windows()!!.build(),
+            ios_arm64()!!.build(),
+            ios_arm64e()!!.build(),
+            ios_armv7()!!.build(),
+            ios_i386()!!.build(),
+            iosX86_64()!!.build(),
+            tvos_arm64()!!.build(),
+            tvosX86_64()!!.build(),
+            watchos_armv7k()!!.build(),
+            watchos_arm64_32()!!.build(),
+            watchos_i386()!!.build(),
+            watchosX86_64()!!.build()
+        )
 
-  public static CcToolchainConfig.Builder darwinX86_64() {
-    return CcToolchainConfig.builder()
-        .withCpu("darwin_x86_64")
-        .withCompiler("compiler")
-        .withToolchainIdentifier("darwin_x86_64")
-        .withHostSystemName("x86_64-apple-macosx")
-        .withTargetSystemName("x86_64-apple-macosx")
-        .withTargetLibc("macosx")
-        .withAbiVersion("darwin_x86_64")
-        .withAbiLibcVersion("darwin_x86_64")
-        .withCcTargetOs("apple")
-        .withSysroot("")
-        .withCxxBuiltinIncludeDirectories(
-            "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_7.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_7.3.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.2.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs",
-            "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs",
-            "/Applications/Xcode_7.2.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs",
-            "/Applications/Xcode_7.3.1.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs",
-            "/Applications/Xcode_8.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs",
-            "/Applications/Xcode_8.1.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs",
-            "/Applications/Xcode_8.2.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs",
-            "/Applications/Xcode_8.2.1.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs",
-            "/usr/include")
-        .withToolchainTargetConstraints(
-            TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:x86_64",
-            TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:osx");
-  }
+    @kotlin.jvm.JvmStatic
+    fun darwinX86_64(): Crosstool.CcToolchainConfig.Builder? {
+        return CcToolchainConfig.Companion.builder()
+            .withCpu("darwin_x86_64")
+            .withCompiler("compiler")
+            .withToolchainIdentifier("darwin_x86_64")
+            .withHostSystemName("x86_64-apple-macosx")
+            .withTargetSystemName("x86_64-apple-macosx")
+            .withTargetLibc("macosx")
+            .withAbiVersion("darwin_x86_64")
+            .withAbiLibcVersion("darwin_x86_64")
+            .withCcTargetOs("apple")
+            .withSysroot("")
+            .withCxxBuiltinIncludeDirectories(
+                "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_7.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_7.3.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.2.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs",
+                "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs",
+                "/Applications/Xcode_7.2.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs",
+                "/Applications/Xcode_7.3.1.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs",
+                "/Applications/Xcode_8.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs",
+                "/Applications/Xcode_8.1.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs",
+                "/Applications/Xcode_8.2.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs",
+                "/Applications/Xcode_8.2.1.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs",
+                "/usr/include"
+            )
+            .withToolchainTargetConstraints(
+                TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:x86_64",
+                TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:osx"
+            )
+    }
 
-  public static CcToolchainConfig.Builder darwin_arm64() {
-    return CcToolchainConfig.builder()
-        .withCpu("darwin_arm64")
-        .withCompiler("compiler")
-        .withToolchainIdentifier("darwin_arm64")
-        .withHostSystemName("x86_64-apple-macosx")
-        .withTargetSystemName("arm64-apple-macosx")
-        .withTargetLibc("macosx")
-        .withAbiVersion("local")
-        .withAbiLibcVersion("local")
-        .withCcTargetOs("apple")
-        .withSysroot("")
-        .withCxxBuiltinIncludeDirectories(
-            "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_7.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_7.3.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.2.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs",
-            "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs",
-            "/Applications/Xcode_7.2.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs",
-            "/Applications/Xcode_7.3.1.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs",
-            "/Applications/Xcode_8.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs",
-            "/Applications/Xcode_8.1.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs",
-            "/Applications/Xcode_8.2.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs",
-            "/Applications/Xcode_8.2.1.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs",
-            "/usr/include")
-        .withToolchainTargetConstraints(
-            TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:arm64",
-            TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:osx")
-        .withToolchainExecConstraints(
-            TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:arm64",
-            TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:osx");
-  }
+    fun darwin_arm64(): Crosstool.CcToolchainConfig.Builder? {
+        return CcToolchainConfig.Companion.builder()
+            .withCpu("darwin_arm64")
+            .withCompiler("compiler")
+            .withToolchainIdentifier("darwin_arm64")
+            .withHostSystemName("x86_64-apple-macosx")
+            .withTargetSystemName("arm64-apple-macosx")
+            .withTargetLibc("macosx")
+            .withAbiVersion("local")
+            .withAbiLibcVersion("local")
+            .withCcTargetOs("apple")
+            .withSysroot("")
+            .withCxxBuiltinIncludeDirectories(
+                "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_7.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_7.3.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.2.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs",
+                "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs",
+                "/Applications/Xcode_7.2.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs",
+                "/Applications/Xcode_7.3.1.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs",
+                "/Applications/Xcode_8.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs",
+                "/Applications/Xcode_8.1.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs",
+                "/Applications/Xcode_8.2.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs",
+                "/Applications/Xcode_8.2.1.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs",
+                "/usr/include"
+            )
+            .withToolchainTargetConstraints(
+                TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:arm64",
+                TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:osx"
+            )
+            .withToolchainExecConstraints(
+                TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:arm64",
+                TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:osx"
+            )
+    }
 
-  public static CcToolchainConfig.Builder x64_windows() {
-    return CcToolchainConfig.builder()
-        .withCpu("x64_windows")
-        .withCompiler("compiler")
-        .withToolchainIdentifier("x64_windows")
-        .withHostSystemName("x86_64-apple-macosx")
-        .withTargetSystemName("x86_64-apple-macosx")
-        .withTargetLibc("macosx")
-        .withAbiVersion("darwin_x86_64")
-        .withAbiLibcVersion("darwin_x86_64")
-        .withCcTargetOs("apple")
-        .withSysroot("")
-        .withCxxBuiltinIncludeDirectories(
-            "/Applications/<xcode_version>/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/<xcode_version>/Contents/Developer/Platforms/<platform>.platform/Developer/SDKs",
-            "/usr/include");
-  }
+    fun x64_windows(): Crosstool.CcToolchainConfig.Builder? {
+        return CcToolchainConfig.Companion.builder()
+            .withCpu("x64_windows")
+            .withCompiler("compiler")
+            .withToolchainIdentifier("x64_windows")
+            .withHostSystemName("x86_64-apple-macosx")
+            .withTargetSystemName("x86_64-apple-macosx")
+            .withTargetLibc("macosx")
+            .withAbiVersion("darwin_x86_64")
+            .withAbiLibcVersion("darwin_x86_64")
+            .withCcTargetOs("apple")
+            .withSysroot("")
+            .withCxxBuiltinIncludeDirectories(
+                "/Applications/<xcode_version>/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/<xcode_version>/Contents/Developer/Platforms/<platform>.platform/Developer/SDKs",
+                "/usr/include"
+            )
+    }
 
-  public static CcToolchainConfig.Builder ios_arm64() {
-    return CcToolchainConfig.builder()
-        .withCpu("ios_arm64")
-        .withCompiler("compiler")
-        .withToolchainIdentifier("ios_arm64")
-        .withHostSystemName("x86_64-apple-macosx")
-        .withTargetSystemName("arm64-apple-ios")
-        .withTargetLibc("ios")
-        .withAbiVersion("local")
-        .withAbiLibcVersion("local")
-        .withCcTargetOs("apple")
-        .withSysroot("")
-        .withCxxBuiltinIncludeDirectories(
-            "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_7.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_7.3.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.2.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
-            "/Applications/Xcode-beta.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
-            "/Applications/Xcode_7.2.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
-            "/Applications/Xcode_7.3.1.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
-            "/Applications/Xcode_8.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
-            "/Applications/Xcode_8.1.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
-            "/Applications/Xcode_8.2.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
-            "/Applications/Xcode_8.2.1.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
-            "/usr/include")
-        .withToolchainTargetConstraints(
-            TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:arm64",
-            TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:ios");
-  }
+    @kotlin.jvm.JvmStatic
+    fun ios_arm64(): Crosstool.CcToolchainConfig.Builder? {
+        return CcToolchainConfig.Companion.builder()
+            .withCpu("ios_arm64")
+            .withCompiler("compiler")
+            .withToolchainIdentifier("ios_arm64")
+            .withHostSystemName("x86_64-apple-macosx")
+            .withTargetSystemName("arm64-apple-ios")
+            .withTargetLibc("ios")
+            .withAbiVersion("local")
+            .withAbiLibcVersion("local")
+            .withCcTargetOs("apple")
+            .withSysroot("")
+            .withCxxBuiltinIncludeDirectories(
+                "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_7.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_7.3.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.2.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
+                "/Applications/Xcode-beta.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
+                "/Applications/Xcode_7.2.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
+                "/Applications/Xcode_7.3.1.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
+                "/Applications/Xcode_8.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
+                "/Applications/Xcode_8.1.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
+                "/Applications/Xcode_8.2.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
+                "/Applications/Xcode_8.2.1.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
+                "/usr/include"
+            )
+            .withToolchainTargetConstraints(
+                TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:arm64",
+                TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:ios"
+            )
+    }
 
-  public static CcToolchainConfig.Builder ios_arm64e() {
-    return CcToolchainConfig.builder()
-        .withCpu("ios_arm64e")
-        .withCompiler("compiler")
-        .withToolchainIdentifier("ios_arm64e")
-        .withHostSystemName("x86_64e-apple-macosx")
-        .withTargetSystemName("arm64e-apple-ios")
-        .withTargetLibc("ios")
-        .withAbiVersion("local")
-        .withAbiLibcVersion("local")
-        .withCcTargetOs("apple")
-        .withSysroot("")
-        .withCxxBuiltinIncludeDirectories(
-            "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_7.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_7.3.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.2.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
-            "/Applications/Xcode-beta.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
-            "/Applications/Xcode_7.2.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
-            "/Applications/Xcode_7.3.1.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
-            "/Applications/Xcode_8.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
-            "/Applications/Xcode_8.1.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
-            "/Applications/Xcode_8.2.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
-            "/Applications/Xcode_8.2.1.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
-            "/usr/include")
-        .withToolchainTargetConstraints(
-            TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:arm64e",
-            TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:ios");
-  }
+    fun ios_arm64e(): Crosstool.CcToolchainConfig.Builder? {
+        return CcToolchainConfig.Companion.builder()
+            .withCpu("ios_arm64e")
+            .withCompiler("compiler")
+            .withToolchainIdentifier("ios_arm64e")
+            .withHostSystemName("x86_64e-apple-macosx")
+            .withTargetSystemName("arm64e-apple-ios")
+            .withTargetLibc("ios")
+            .withAbiVersion("local")
+            .withAbiLibcVersion("local")
+            .withCcTargetOs("apple")
+            .withSysroot("")
+            .withCxxBuiltinIncludeDirectories(
+                "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_7.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_7.3.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.2.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
+                "/Applications/Xcode-beta.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
+                "/Applications/Xcode_7.2.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
+                "/Applications/Xcode_7.3.1.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
+                "/Applications/Xcode_8.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
+                "/Applications/Xcode_8.1.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
+                "/Applications/Xcode_8.2.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
+                "/Applications/Xcode_8.2.1.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
+                "/usr/include"
+            )
+            .withToolchainTargetConstraints(
+                TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:arm64e",
+                TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:ios"
+            )
+    }
 
-  public static CcToolchainConfig.Builder ios_armv7() {
-    return CcToolchainConfig.builder()
-        .withCpu("ios_armv7")
-        .withCompiler("compiler")
-        .withToolchainIdentifier("ios_armv7")
-        .withHostSystemName("x86_64-apple-macosx")
-        .withTargetSystemName("armv7-apple-ios")
-        .withTargetLibc("ios")
-        .withAbiVersion("local")
-        .withAbiLibcVersion("local")
-        .withCcTargetOs("apple")
-        .withSysroot("")
-        .withCxxBuiltinIncludeDirectories(
-            "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_7.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_7.3.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.2.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
-            "/Applications/Xcode-beta.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
-            "/Applications/Xcode_7.2.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
-            "/Applications/Xcode_7.3.1.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
-            "/Applications/Xcode_8.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
-            "/Applications/Xcode_8.1.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
-            "/Applications/Xcode_8.2.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
-            "/Applications/Xcode_8.2.1.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
-            "/usr/include")
-        .withToolchainTargetConstraints(
-            TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:armv7",
-            TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:ios");
-  }
+    fun ios_armv7(): Crosstool.CcToolchainConfig.Builder? {
+        return CcToolchainConfig.Companion.builder()
+            .withCpu("ios_armv7")
+            .withCompiler("compiler")
+            .withToolchainIdentifier("ios_armv7")
+            .withHostSystemName("x86_64-apple-macosx")
+            .withTargetSystemName("armv7-apple-ios")
+            .withTargetLibc("ios")
+            .withAbiVersion("local")
+            .withAbiLibcVersion("local")
+            .withCcTargetOs("apple")
+            .withSysroot("")
+            .withCxxBuiltinIncludeDirectories(
+                "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_7.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_7.3.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.2.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
+                "/Applications/Xcode-beta.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
+                "/Applications/Xcode_7.2.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
+                "/Applications/Xcode_7.3.1.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
+                "/Applications/Xcode_8.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
+                "/Applications/Xcode_8.1.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
+                "/Applications/Xcode_8.2.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
+                "/Applications/Xcode_8.2.1.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs",
+                "/usr/include"
+            )
+            .withToolchainTargetConstraints(
+                TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:armv7",
+                TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:ios"
+            )
+    }
 
-  public static CcToolchainConfig.Builder ios_i386() {
-    return CcToolchainConfig.builder()
-        .withCpu("ios_i386")
-        .withCompiler("compiler")
-        .withToolchainIdentifier("ios_i386")
-        .withHostSystemName("x86_64-apple-macosx")
-        .withTargetSystemName("i386-apple-ios")
-        .withTargetLibc("ios")
-        .withAbiVersion("local")
-        .withAbiLibcVersion("local")
-        .withCcTargetOs("apple")
-        .withSysroot("")
-        .withCxxBuiltinIncludeDirectories(
-            "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_7.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_7.3.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.2.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs",
-            "/Applications/Xcode-beta.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs",
-            "/Applications/Xcode_7.2.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs",
-            "/Applications/Xcode_7.3.1.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs",
-            "/Applications/Xcode_8.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs",
-            "/Applications/Xcode_8.1.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs",
-            "/Applications/Xcode_8.2.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs",
-            "/Applications/Xcode_8.2.1.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs",
-            "/usr/include")
-        .withToolchainTargetConstraints(
-            TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:x86_32",
-            TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:ios");
-  }
+    fun ios_i386(): Crosstool.CcToolchainConfig.Builder? {
+        return CcToolchainConfig.Companion.builder()
+            .withCpu("ios_i386")
+            .withCompiler("compiler")
+            .withToolchainIdentifier("ios_i386")
+            .withHostSystemName("x86_64-apple-macosx")
+            .withTargetSystemName("i386-apple-ios")
+            .withTargetLibc("ios")
+            .withAbiVersion("local")
+            .withAbiLibcVersion("local")
+            .withCcTargetOs("apple")
+            .withSysroot("")
+            .withCxxBuiltinIncludeDirectories(
+                "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_7.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_7.3.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.2.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs",
+                "/Applications/Xcode-beta.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs",
+                "/Applications/Xcode_7.2.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs",
+                "/Applications/Xcode_7.3.1.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs",
+                "/Applications/Xcode_8.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs",
+                "/Applications/Xcode_8.1.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs",
+                "/Applications/Xcode_8.2.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs",
+                "/Applications/Xcode_8.2.1.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs",
+                "/usr/include"
+            )
+            .withToolchainTargetConstraints(
+                TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:x86_32",
+                TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:ios"
+            )
+    }
 
-  public static CcToolchainConfig.Builder iosX86_64() {
-    return CcToolchainConfig.builder()
-        .withCpu("ios_x86_64")
-        .withCompiler("compiler")
-        .withToolchainIdentifier("ios_x86_64")
-        .withHostSystemName("x86_64-apple-ios")
-        .withTargetSystemName("x86_64-apple-ios")
-        .withTargetLibc("ios")
-        .withAbiVersion("local")
-        .withAbiLibcVersion("local")
-        .withCcTargetOs("apple")
-        .withSysroot("")
-        .withCxxBuiltinIncludeDirectories(
-            "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_7.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_7.3.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.2.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs",
-            "/Applications/Xcode-beta.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs",
-            "/Applications/Xcode_7.2.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs",
-            "/Applications/Xcode_7.3.1.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs",
-            "/Applications/Xcode_8.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs",
-            "/Applications/Xcode_8.1.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs",
-            "/Applications/Xcode_8.2.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs",
-            "/Applications/Xcode_8.2.1.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs",
-            "/usr/include")
-        .withToolchainTargetConstraints(
-            TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:x86_64",
-            TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:ios");
-  }
+    fun iosX86_64(): Crosstool.CcToolchainConfig.Builder? {
+        return CcToolchainConfig.Companion.builder()
+            .withCpu("ios_x86_64")
+            .withCompiler("compiler")
+            .withToolchainIdentifier("ios_x86_64")
+            .withHostSystemName("x86_64-apple-ios")
+            .withTargetSystemName("x86_64-apple-ios")
+            .withTargetLibc("ios")
+            .withAbiVersion("local")
+            .withAbiLibcVersion("local")
+            .withCcTargetOs("apple")
+            .withSysroot("")
+            .withCxxBuiltinIncludeDirectories(
+                "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_7.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_7.3.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.2.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs",
+                "/Applications/Xcode-beta.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs",
+                "/Applications/Xcode_7.2.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs",
+                "/Applications/Xcode_7.3.1.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs",
+                "/Applications/Xcode_8.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs",
+                "/Applications/Xcode_8.1.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs",
+                "/Applications/Xcode_8.2.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs",
+                "/Applications/Xcode_8.2.1.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs",
+                "/usr/include"
+            )
+            .withToolchainTargetConstraints(
+                TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:x86_64",
+                TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:ios"
+            )
+    }
 
-  public static CcToolchainConfig.Builder tvos_arm64() {
-    return CcToolchainConfig.builder()
-        .withCpu("tvos_arm64")
-        .withCompiler("compiler")
-        .withToolchainIdentifier("tvos_arm64")
-        .withHostSystemName("x86_64-apple-ios")
-        .withTargetSystemName("arm64-apple-tvos")
-        .withTargetLibc("tvos")
-        .withAbiVersion("local")
-        .withAbiLibcVersion("local")
-        .withCcTargetOs("apple")
-        .withSysroot("")
-        .withCxxBuiltinIncludeDirectories(
-            "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_7.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_7.3.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.2.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode.app/Contents/Developer/Platforms/AppleTVOS.platform/Developer/SDKs",
-            "/Applications/Xcode-beta.app/Contents/Developer/Platforms/AppleTVOS.platform/Developer/SDKs",
-            "/Applications/Xcode_7.2.app/Contents/Developer/Platforms/AppleTVOS.platform/Developer/SDKs",
-            "/Applications/Xcode_7.3.1.app/Contents/Developer/Platforms/AppleTVOS.platform/Developer/SDKs",
-            "/Applications/Xcode_8.app/Contents/Developer/Platforms/AppleTVOS.platform/Developer/SDKs",
-            "/Applications/Xcode_8.1.app/Contents/Developer/Platforms/AppleTVOS.platform/Developer/SDKs",
-            "/Applications/Xcode_8.2.app/Contents/Developer/Platforms/AppleTVOS.platform/Developer/SDKs",
-            "/Applications/Xcode_8.2.1.app/Contents/Developer/Platforms/AppleTVOS.platform/Developer/SDKs",
-            "/usr/include")
-        .withToolchainTargetConstraints(
-            TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:arm64",
-            TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:tvos");
-  }
+    fun tvos_arm64(): Crosstool.CcToolchainConfig.Builder? {
+        return CcToolchainConfig.Companion.builder()
+            .withCpu("tvos_arm64")
+            .withCompiler("compiler")
+            .withToolchainIdentifier("tvos_arm64")
+            .withHostSystemName("x86_64-apple-ios")
+            .withTargetSystemName("arm64-apple-tvos")
+            .withTargetLibc("tvos")
+            .withAbiVersion("local")
+            .withAbiLibcVersion("local")
+            .withCcTargetOs("apple")
+            .withSysroot("")
+            .withCxxBuiltinIncludeDirectories(
+                "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_7.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_7.3.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.2.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode.app/Contents/Developer/Platforms/AppleTVOS.platform/Developer/SDKs",
+                "/Applications/Xcode-beta.app/Contents/Developer/Platforms/AppleTVOS.platform/Developer/SDKs",
+                "/Applications/Xcode_7.2.app/Contents/Developer/Platforms/AppleTVOS.platform/Developer/SDKs",
+                "/Applications/Xcode_7.3.1.app/Contents/Developer/Platforms/AppleTVOS.platform/Developer/SDKs",
+                "/Applications/Xcode_8.app/Contents/Developer/Platforms/AppleTVOS.platform/Developer/SDKs",
+                "/Applications/Xcode_8.1.app/Contents/Developer/Platforms/AppleTVOS.platform/Developer/SDKs",
+                "/Applications/Xcode_8.2.app/Contents/Developer/Platforms/AppleTVOS.platform/Developer/SDKs",
+                "/Applications/Xcode_8.2.1.app/Contents/Developer/Platforms/AppleTVOS.platform/Developer/SDKs",
+                "/usr/include"
+            )
+            .withToolchainTargetConstraints(
+                TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:arm64",
+                TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:tvos"
+            )
+    }
 
-  public static CcToolchainConfig.Builder tvosX86_64() {
-    return CcToolchainConfig.builder()
-        .withCpu("tvos_x86_64")
-        .withCompiler("compiler")
-        .withToolchainIdentifier("tvos_x86_64")
-        .withHostSystemName("x86_64-apple-ios")
-        .withTargetSystemName("x86_64-apple-tvos")
-        .withTargetLibc("tvos")
-        .withAbiVersion("local")
-        .withAbiLibcVersion("local")
-        .withCcTargetOs("apple")
-        .withSysroot("")
-        .withCxxBuiltinIncludeDirectories(
-            "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_7.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_7.3.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.2.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode.app/Contents/Developer/Platforms/AppleTVSimulator.platform/Developer/SDKs",
-            "/Applications/Xcode-beta.app/Contents/Developer/Platforms/AppleTVSimulator.platform/Developer/SDKs",
-            "/Applications/Xcode_7.2.app/Contents/Developer/Platforms/AppleTVSimulator.platform/Developer/SDKs",
-            "/Applications/Xcode_7.3.1.app/Contents/Developer/Platforms/AppleTVSimulator.platform/Developer/SDKs",
-            "/Applications/Xcode_8.app/Contents/Developer/Platforms/AppleTVSimulator.platform/Developer/SDKs",
-            "/Applications/Xcode_8.1.app/Contents/Developer/Platforms/AppleTVSimulator.platform/Developer/SDKs",
-            "/Applications/Xcode_8.2.app/Contents/Developer/Platforms/AppleTVSimulator.platform/Developer/SDKs",
-            "/Applications/Xcode_8.2.1.app/Contents/Developer/Platforms/AppleTVSimulator.platform/Developer/SDKs",
-            "/usr/include")
-        .withToolchainTargetConstraints(
-            TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:x86_64",
-            TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:tvos");
-  }
+    fun tvosX86_64(): Crosstool.CcToolchainConfig.Builder? {
+        return CcToolchainConfig.Companion.builder()
+            .withCpu("tvos_x86_64")
+            .withCompiler("compiler")
+            .withToolchainIdentifier("tvos_x86_64")
+            .withHostSystemName("x86_64-apple-ios")
+            .withTargetSystemName("x86_64-apple-tvos")
+            .withTargetLibc("tvos")
+            .withAbiVersion("local")
+            .withAbiLibcVersion("local")
+            .withCcTargetOs("apple")
+            .withSysroot("")
+            .withCxxBuiltinIncludeDirectories(
+                "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_7.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_7.3.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.2.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode.app/Contents/Developer/Platforms/AppleTVSimulator.platform/Developer/SDKs",
+                "/Applications/Xcode-beta.app/Contents/Developer/Platforms/AppleTVSimulator.platform/Developer/SDKs",
+                "/Applications/Xcode_7.2.app/Contents/Developer/Platforms/AppleTVSimulator.platform/Developer/SDKs",
+                "/Applications/Xcode_7.3.1.app/Contents/Developer/Platforms/AppleTVSimulator.platform/Developer/SDKs",
+                "/Applications/Xcode_8.app/Contents/Developer/Platforms/AppleTVSimulator.platform/Developer/SDKs",
+                "/Applications/Xcode_8.1.app/Contents/Developer/Platforms/AppleTVSimulator.platform/Developer/SDKs",
+                "/Applications/Xcode_8.2.app/Contents/Developer/Platforms/AppleTVSimulator.platform/Developer/SDKs",
+                "/Applications/Xcode_8.2.1.app/Contents/Developer/Platforms/AppleTVSimulator.platform/Developer/SDKs",
+                "/usr/include"
+            )
+            .withToolchainTargetConstraints(
+                TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:x86_64",
+                TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:tvos"
+            )
+    }
 
-  public static CcToolchainConfig.Builder watchos_armv7k() {
-    return CcToolchainConfig.builder()
-        .withCpu("watchos_armv7k")
-        .withCompiler("compiler")
-        .withToolchainIdentifier("watchos_armv7k")
-        .withHostSystemName("x86_64-apple-ios")
-        .withTargetSystemName("armv7k-apple-watchos")
-        .withTargetLibc("watchos")
-        .withAbiVersion("local")
-        .withAbiLibcVersion("local")
-        .withCcTargetOs("apple")
-        .withSysroot("")
-        .withCxxBuiltinIncludeDirectories(
-            "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_7.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_7.3.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.2.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode.app/Contents/Developer/Platforms/WatchOS.platform/Developer/SDKs",
-            "/Applications/Xcode-beta.app/Contents/Developer/Platforms/WatchOS.platform/Developer/SDKs",
-            "/Applications/Xcode_7.2.app/Contents/Developer/Platforms/WatchOS.platform/Developer/SDKs",
-            "/Applications/Xcode_7.3.1.app/Contents/Developer/Platforms/WatchOS.platform/Developer/SDKs",
-            "/Applications/Xcode_8.app/Contents/Developer/Platforms/WatchOS.platform/Developer/SDKs",
-            "/Applications/Xcode_8.1.app/Contents/Developer/Platforms/WatchOS.platform/Developer/SDKs",
-            "/Applications/Xcode_8.2.app/Contents/Developer/Platforms/WatchOS.platform/Developer/SDKs",
-            "/Applications/Xcode_8.2.1.app/Contents/Developer/Platforms/WatchOS.platform/Developer/SDKs",
-            "/usr/include")
-        .withToolchainTargetConstraints(
-            TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:armv7k",
-            TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:watchos");
-  }
+    fun watchos_armv7k(): Crosstool.CcToolchainConfig.Builder? {
+        return CcToolchainConfig.Companion.builder()
+            .withCpu("watchos_armv7k")
+            .withCompiler("compiler")
+            .withToolchainIdentifier("watchos_armv7k")
+            .withHostSystemName("x86_64-apple-ios")
+            .withTargetSystemName("armv7k-apple-watchos")
+            .withTargetLibc("watchos")
+            .withAbiVersion("local")
+            .withAbiLibcVersion("local")
+            .withCcTargetOs("apple")
+            .withSysroot("")
+            .withCxxBuiltinIncludeDirectories(
+                "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_7.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_7.3.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.2.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode.app/Contents/Developer/Platforms/WatchOS.platform/Developer/SDKs",
+                "/Applications/Xcode-beta.app/Contents/Developer/Platforms/WatchOS.platform/Developer/SDKs",
+                "/Applications/Xcode_7.2.app/Contents/Developer/Platforms/WatchOS.platform/Developer/SDKs",
+                "/Applications/Xcode_7.3.1.app/Contents/Developer/Platforms/WatchOS.platform/Developer/SDKs",
+                "/Applications/Xcode_8.app/Contents/Developer/Platforms/WatchOS.platform/Developer/SDKs",
+                "/Applications/Xcode_8.1.app/Contents/Developer/Platforms/WatchOS.platform/Developer/SDKs",
+                "/Applications/Xcode_8.2.app/Contents/Developer/Platforms/WatchOS.platform/Developer/SDKs",
+                "/Applications/Xcode_8.2.1.app/Contents/Developer/Platforms/WatchOS.platform/Developer/SDKs",
+                "/usr/include"
+            )
+            .withToolchainTargetConstraints(
+                TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:armv7k",
+                TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:watchos"
+            )
+    }
 
-  @SuppressWarnings("MemberName") // Following style of other mock toolchain config methods.
-  public static CcToolchainConfig.Builder watchos_arm64_32() {
-    return CcToolchainConfig.builder()
-        .withCpu("watchos_arm64_32")
-        .withCompiler("compiler")
-        .withToolchainIdentifier("watchos_arm64_32")
-        .withHostSystemName("x86_64-apple-ios")
-        .withTargetSystemName("arm64_32-apple-watchos")
-        .withTargetLibc("watchos")
-        .withAbiVersion("local")
-        .withAbiLibcVersion("local")
-        .withCcTargetOs("apple")
-        .withSysroot("")
-        .withCxxBuiltinIncludeDirectories(
-            "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_7.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_7.3.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.2.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode.app/Contents/Developer/Platforms/WatchOS.platform/Developer/SDKs",
-            "/Applications/Xcode-beta.app/Contents/Developer/Platforms/WatchOS.platform/Developer/SDKs",
-            "/Applications/Xcode_7.2.app/Contents/Developer/Platforms/WatchOS.platform/Developer/SDKs",
-            "/Applications/Xcode_7.3.1.app/Contents/Developer/Platforms/WatchOS.platform/Developer/SDKs",
-            "/Applications/Xcode_8.app/Contents/Developer/Platforms/WatchOS.platform/Developer/SDKs",
-            "/Applications/Xcode_8.1.app/Contents/Developer/Platforms/WatchOS.platform/Developer/SDKs",
-            "/Applications/Xcode_8.2.app/Contents/Developer/Platforms/WatchOS.platform/Developer/SDKs",
-            "/Applications/Xcode_8.2.1.app/Contents/Developer/Platforms/WatchOS.platform/Developer/SDKs",
-            "/usr/include")
-        .withToolchainTargetConstraints(
-            TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:arm64_32",
-            TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:watchos");
-  }
+    // Following style of other mock toolchain config methods.
+    fun watchos_arm64_32(): Crosstool.CcToolchainConfig.Builder? {
+        return CcToolchainConfig.Companion.builder()
+            .withCpu("watchos_arm64_32")
+            .withCompiler("compiler")
+            .withToolchainIdentifier("watchos_arm64_32")
+            .withHostSystemName("x86_64-apple-ios")
+            .withTargetSystemName("arm64_32-apple-watchos")
+            .withTargetLibc("watchos")
+            .withAbiVersion("local")
+            .withAbiLibcVersion("local")
+            .withCcTargetOs("apple")
+            .withSysroot("")
+            .withCxxBuiltinIncludeDirectories(
+                "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_7.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_7.3.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.2.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode.app/Contents/Developer/Platforms/WatchOS.platform/Developer/SDKs",
+                "/Applications/Xcode-beta.app/Contents/Developer/Platforms/WatchOS.platform/Developer/SDKs",
+                "/Applications/Xcode_7.2.app/Contents/Developer/Platforms/WatchOS.platform/Developer/SDKs",
+                "/Applications/Xcode_7.3.1.app/Contents/Developer/Platforms/WatchOS.platform/Developer/SDKs",
+                "/Applications/Xcode_8.app/Contents/Developer/Platforms/WatchOS.platform/Developer/SDKs",
+                "/Applications/Xcode_8.1.app/Contents/Developer/Platforms/WatchOS.platform/Developer/SDKs",
+                "/Applications/Xcode_8.2.app/Contents/Developer/Platforms/WatchOS.platform/Developer/SDKs",
+                "/Applications/Xcode_8.2.1.app/Contents/Developer/Platforms/WatchOS.platform/Developer/SDKs",
+                "/usr/include"
+            )
+            .withToolchainTargetConstraints(
+                TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:arm64_32",
+                TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:watchos"
+            )
+    }
 
-  public static CcToolchainConfig.Builder watchos_i386() {
-    return CcToolchainConfig.builder()
-        .withCpu("watchos_i386")
-        .withCompiler("compiler")
-        .withToolchainIdentifier("watchos_i386")
-        .withHostSystemName("x86_64-apple-ios")
-        .withTargetSystemName("i386-apple-watchos")
-        .withTargetLibc("watchos")
-        .withAbiVersion("local")
-        .withAbiLibcVersion("local")
-        .withCcTargetOs("apple")
-        .withSysroot("")
-        .withCxxBuiltinIncludeDirectories(
-            "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_7.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_7.3.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.2.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode.app/Contents/Developer/Platforms/WatchSimulator.platform/Developer/SDKs",
-            "/Applications/Xcode-beta.app/Contents/Developer/Platforms/WatchSimulator.platform/Developer/SDKs",
-            "/Applications/Xcode_7.2.app/Contents/Developer/Platforms/WatchSimulator.platform/Developer/SDKs",
-            "/Applications/Xcode_7.3.1.app/Contents/Developer/Platforms/WatchSimulator.platform/Developer/SDKs",
-            "/Applications/Xcode_8.app/Contents/Developer/Platforms/WatchSimulator.platform/Developer/SDKs",
-            "/Applications/Xcode_8.1.app/Contents/Developer/Platforms/WatchSimulator.platform/Developer/SDKs",
-            "/Applications/Xcode_8.2.app/Contents/Developer/Platforms/WatchSimulator.platform/Developer/SDKs",
-            "/Applications/Xcode_8.2.1.app/Contents/Developer/Platforms/WatchSimulator.platform/Developer/SDKs",
-            "/usr/include")
-        .withToolchainTargetConstraints(
-            TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:x86_32",
-            TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:watchos");
-  }
+    fun watchos_i386(): Crosstool.CcToolchainConfig.Builder? {
+        return CcToolchainConfig.Companion.builder()
+            .withCpu("watchos_i386")
+            .withCompiler("compiler")
+            .withToolchainIdentifier("watchos_i386")
+            .withHostSystemName("x86_64-apple-ios")
+            .withTargetSystemName("i386-apple-watchos")
+            .withTargetLibc("watchos")
+            .withAbiVersion("local")
+            .withAbiLibcVersion("local")
+            .withCcTargetOs("apple")
+            .withSysroot("")
+            .withCxxBuiltinIncludeDirectories(
+                "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_7.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_7.3.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.2.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode.app/Contents/Developer/Platforms/WatchSimulator.platform/Developer/SDKs",
+                "/Applications/Xcode-beta.app/Contents/Developer/Platforms/WatchSimulator.platform/Developer/SDKs",
+                "/Applications/Xcode_7.2.app/Contents/Developer/Platforms/WatchSimulator.platform/Developer/SDKs",
+                "/Applications/Xcode_7.3.1.app/Contents/Developer/Platforms/WatchSimulator.platform/Developer/SDKs",
+                "/Applications/Xcode_8.app/Contents/Developer/Platforms/WatchSimulator.platform/Developer/SDKs",
+                "/Applications/Xcode_8.1.app/Contents/Developer/Platforms/WatchSimulator.platform/Developer/SDKs",
+                "/Applications/Xcode_8.2.app/Contents/Developer/Platforms/WatchSimulator.platform/Developer/SDKs",
+                "/Applications/Xcode_8.2.1.app/Contents/Developer/Platforms/WatchSimulator.platform/Developer/SDKs",
+                "/usr/include"
+            )
+            .withToolchainTargetConstraints(
+                TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:x86_32",
+                TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:watchos"
+            )
+    }
 
-  @SuppressWarnings("MemberName") // Following style of other mock toolchain config methods.
-  public static CcToolchainConfig.Builder watchosX86_64() {
-    return CcToolchainConfig.builder()
-        .withCpu("watchos_x86_64")
-        .withCompiler("compiler")
-        .withToolchainIdentifier("watchos_x86_64")
-        .withHostSystemName("x86_64-apple-ios")
-        .withTargetSystemName("x86_64-apple-watchos")
-        .withTargetLibc("watchos")
-        .withAbiVersion("local")
-        .withAbiLibcVersion("local")
-        .withCcTargetOs("apple")
-        .withSysroot("")
-        .withCxxBuiltinIncludeDirectories(
-            "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_7.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_7.3.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode_8.2.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
-            "/Applications/Xcode.app/Contents/Developer/Platforms/WatchSimulator.platform/Developer/SDKs",
-            "/Applications/Xcode-beta.app/Contents/Developer/Platforms/WatchSimulator.platform/Developer/SDKs",
-            "/Applications/Xcode_7.2.app/Contents/Developer/Platforms/WatchSimulator.platform/Developer/SDKs",
-            "/Applications/Xcode_7.3.1.app/Contents/Developer/Platforms/WatchSimulator.platform/Developer/SDKs",
-            "/Applications/Xcode_8.app/Contents/Developer/Platforms/WatchSimulator.platform/Developer/SDKs",
-            "/Applications/Xcode_8.1.app/Contents/Developer/Platforms/WatchSimulator.platform/Developer/SDKs",
-            "/Applications/Xcode_8.2.app/Contents/Developer/Platforms/WatchSimulator.platform/Developer/SDKs",
-            "/Applications/Xcode_8.2.1.app/Contents/Developer/Platforms/WatchSimulator.platform/Developer/SDKs",
-            "/usr/include")
-        .withToolchainTargetConstraints(
-            TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:x86_64",
-            TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:watchos");
-  }
+    // Following style of other mock toolchain config methods.
+    fun watchosX86_64(): Crosstool.CcToolchainConfig.Builder? {
+        return CcToolchainConfig.Companion.builder()
+            .withCpu("watchos_x86_64")
+            .withCompiler("compiler")
+            .withToolchainIdentifier("watchos_x86_64")
+            .withHostSystemName("x86_64-apple-ios")
+            .withTargetSystemName("x86_64-apple-watchos")
+            .withTargetLibc("watchos")
+            .withAbiVersion("local")
+            .withAbiLibcVersion("local")
+            .withCcTargetOs("apple")
+            .withSysroot("")
+            .withCxxBuiltinIncludeDirectories(
+                "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_7.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_7.3.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.2.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode_8.2.1.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/",
+                "/Applications/Xcode.app/Contents/Developer/Platforms/WatchSimulator.platform/Developer/SDKs",
+                "/Applications/Xcode-beta.app/Contents/Developer/Platforms/WatchSimulator.platform/Developer/SDKs",
+                "/Applications/Xcode_7.2.app/Contents/Developer/Platforms/WatchSimulator.platform/Developer/SDKs",
+                "/Applications/Xcode_7.3.1.app/Contents/Developer/Platforms/WatchSimulator.platform/Developer/SDKs",
+                "/Applications/Xcode_8.app/Contents/Developer/Platforms/WatchSimulator.platform/Developer/SDKs",
+                "/Applications/Xcode_8.1.app/Contents/Developer/Platforms/WatchSimulator.platform/Developer/SDKs",
+                "/Applications/Xcode_8.2.app/Contents/Developer/Platforms/WatchSimulator.platform/Developer/SDKs",
+                "/Applications/Xcode_8.2.1.app/Contents/Developer/Platforms/WatchSimulator.platform/Developer/SDKs",
+                "/usr/include"
+            )
+            .withToolchainTargetConstraints(
+                TestConstants.CONSTRAINTS_PACKAGE_ROOT + "cpu:x86_64",
+                TestConstants.CONSTRAINTS_PACKAGE_ROOT + "os:watchos"
+            )
+    }
 
-  /** Test setup for the Apple SDK targets that are used in tests. */
-  public static void setupAppleSdks(MockToolsConfig config) throws IOException {
-    config.create(
-        "third_party/apple_sdks/BUILD",
-        "package(default_visibility=['//visibility:public'])\n"
-            + "licenses([\"notice\"])\n"
-            + "filegroup(name = \"apple_sdk_compile\")");
-  }
+    /** Test setup for the Apple SDK targets that are used in tests.  */
+    @Throws(IOException::class)
+    fun setupAppleSdks(config: MockToolsConfig) {
+        config.create(
+            "third_party/apple_sdks/BUILD",
+            ("package(default_visibility=['//visibility:public'])\n"
+                    + "licenses([\"notice\"])\n"
+                    + "filegroup(name = \"apple_sdk_compile\")")
+        )
+    }
 
-  public static String readCcToolchainConfigFile() throws IOException {
-    return ResourceLoader.readFromResources(MOCK_OSX_TOOLCHAIN_CONFIG_PATH);
-  }
+    @Throws(IOException::class)
+    fun readCcToolchainConfigFile(): String {
+        return ResourceLoader.readFromResources(MOCK_OSX_TOOLCHAIN_CONFIG_PATH)
+    }
 }

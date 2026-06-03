@@ -11,154 +11,161 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.python
 
-package com.google.devtools.build.lib.rules.python;
+import com.google.devtools.build.lib.actions.Artifact
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.rules.python.PythonTestUtils.getPyLoad;
+/** Tests for [PyInfo].  */
+@RunWith(JUnit4::class)
+class PyInfoTest : BuildViewTestCase() {
+    private var dummyArtifact: Artifact? = null
 
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import java.util.regex.Pattern;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link PyInfo}. */
-@RunWith(JUnit4.class)
-public class PyInfoTest extends BuildViewTestCase {
-
-  private Artifact dummyArtifact;
-
-  @Before
-  public void setUp() throws Exception {
-    dummyArtifact = getSourceArtifact("dummy");
-  }
-
-  private void writeCreatePyInfo(String... lines) throws Exception {
-    var builder = new StringBuilder();
-    for (var line : lines) {
-      builder.append("    ").append(line).append(",\n");
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun setUp() {
+        dummyArtifact = getSourceArtifact("dummy")
     }
-    scratch.overwriteFile(
-        "defs.bzl",
-        getPyLoad("PyInfo"),
-        "def _impl(ctx):",
-        "    dummy_file = ctx.file.dummy_file",
-        "    info = PyInfo(",
-        builder.toString(),
-        "    )",
-        "    return [info]",
-        "create_py_info = rule(implementation=_impl, attrs={",
-        "  'dummy_file': attr.label(default='dummy', allow_single_file=True),",
-        "})",
-        "");
-    scratch.overwriteFile(
-        "BUILD", "load(':defs.bzl', 'create_py_info')", "create_py_info(name='subject')");
-  }
 
-  private PyInfo getPyInfo() throws Exception {
-    return PyInfo.fromTarget(getConfiguredTarget("//:subject"));
-  }
+    @Throws(java.lang.Exception::class)
+    private fun writeCreatePyInfo(vararg lines: String?) {
+        val builder: java.lang.StringBuilder = java.lang.StringBuilder()
+        for (line in lines) {
+            builder.append("    ").append(line).append(",\n")
+        }
+        scratch.overwriteFile(
+            "defs.bzl",
+            PythonTestUtils.getPyLoad("PyInfo"),
+            "def _impl(ctx):",
+            "    dummy_file = ctx.file.dummy_file",
+            "    info = PyInfo(",
+            builder.toString(),
+            "    )",
+            "    return [info]",
+            "create_py_info = rule(implementation=_impl, attrs={",
+            "  'dummy_file': attr.label(default='dummy', allow_single_file=True),",
+            "})",
+            ""
+        )
+        scratch.overwriteFile(
+            "BUILD", "load(':defs.bzl', 'create_py_info')", "create_py_info(name='subject')"
+        )
+    }
 
-  /** We need this because {@code NestedSet}s don't have value equality. */
-  private static void assertHasOrderAndContainsExactly(
-      NestedSet<?> set, Order order, Object... values) {
-    assertThat(set.getOrder()).isEqualTo(order);
-    assertThat(set.toList()).containsExactly(values);
-  }
+    @get:Throws(java.lang.Exception::class)
+    private val pyInfo: PyInfo
+        get() = PyInfo.Companion.fromTarget(getConfiguredTarget("//:subject"))
 
-  private void assertContainsError(String pattern) throws Exception {
-    reporter.removeHandler(failFastHandler); // expect errors
+    @Throws(java.lang.Exception::class)
+    private fun assertContainsError(pattern: String?) {
+        reporter.removeHandler(failFastHandler) // expect errors
 
-    getConfiguredTarget("//:subject");
+        getConfiguredTarget("//:subject")
 
-    // The Starlark messages are within a long multi-line traceback string, so
-    // add the implicit .* for convenience.
-    // NOTE: failures and events are accumulated between getConfiguredTarget() calls.
-    assertContainsEvent(Pattern.compile(".*" + pattern));
-  }
+        // The Starlark messages are within a long multi-line traceback string, so
+        // add the implicit .* for convenience.
+        // NOTE: failures and events are accumulated between getConfiguredTarget() calls.
+        assertContainsEvent(java.util.regex.Pattern.compile(".*" + pattern))
+    }
 
-  @Test
-  public void starlarkConstructor() throws Exception {
-    writeCreatePyInfo(
-        "    transitive_sources = depset(direct=[dummy_file])",
-        "    uses_shared_libraries = True",
-        "    imports = depset(direct=['abc'])",
-        "    has_py2_only_sources = False",
-        "    has_py3_only_sources = True");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkConstructor() {
+        writeCreatePyInfo(
+            "    transitive_sources = depset(direct=[dummy_file])",
+            "    uses_shared_libraries = True",
+            "    imports = depset(direct=['abc'])",
+            "    has_py2_only_sources = False",
+            "    has_py3_only_sources = True"
+        )
 
-    PyInfo info = getPyInfo();
+        val info: PyInfo = this.pyInfo
 
-    assertHasOrderAndContainsExactly(
-        info.getTransitiveSourcesSet(), Order.STABLE_ORDER, dummyArtifact);
-    assertThat(info.getUsesSharedLibraries()).isTrue();
-    assertHasOrderAndContainsExactly(info.getImportsSet(), Order.STABLE_ORDER, "abc");
-    assertThat(info.getHasPy2OnlySources()).isFalse();
-  }
+        assertHasOrderAndContainsExactly(
+            info.getTransitiveSourcesSet(), Order.STABLE_ORDER, dummyArtifact
+        )
+        Truth.assertThat(info.getUsesSharedLibraries()).isTrue()
+        assertHasOrderAndContainsExactly(info.getImportsSet(), Order.STABLE_ORDER, "abc")
+        Truth.assertThat(info.getHasPy2OnlySources()).isFalse()
+    }
 
-  @Test
-  public void starlarkConstructorDefaults() throws Exception {
-    writeCreatePyInfo("transitive_sources = depset(direct=[dummy_file])");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkConstructorDefaults() {
+        writeCreatePyInfo("transitive_sources = depset(direct=[dummy_file])")
 
-    PyInfo info = getPyInfo();
+        val info: PyInfo = this.pyInfo
 
-    assertHasOrderAndContainsExactly(
-        info.getTransitiveSourcesSet(), Order.STABLE_ORDER, dummyArtifact);
-    assertThat(info.getUsesSharedLibraries()).isFalse();
-    assertHasOrderAndContainsExactly(info.getImportsSet(), Order.STABLE_ORDER);
-    assertThat(info.getHasPy2OnlySources()).isFalse();
-  }
+        assertHasOrderAndContainsExactly(
+            info.getTransitiveSourcesSet(), Order.STABLE_ORDER, dummyArtifact
+        )
+        Truth.assertThat(info.getUsesSharedLibraries()).isFalse()
+        assertHasOrderAndContainsExactly(info.getImportsSet(), Order.STABLE_ORDER)
+        Truth.assertThat(info.getHasPy2OnlySources()).isFalse()
+    }
 
-  @Test
-  public void starlarkConstructorErrors_transitiveSources_missing() throws Exception {
-    writeCreatePyInfo();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkConstructorErrors_transitiveSources_missing() {
+        writeCreatePyInfo()
 
-    assertContainsError("missing.*argument.*transitive_sources");
-  }
+        assertContainsError("missing.*argument.*transitive_sources")
+    }
 
-  @Test
-  public void starlarkConstructorErrors_transitiveSources_badType() throws Exception {
-    writeCreatePyInfo("transitive_sources = 'abc'");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkConstructorErrors_transitiveSources_badType() {
+        writeCreatePyInfo("transitive_sources = 'abc'")
 
-    assertContainsError("transitive_sources.*got.*string.*want.*depset");
-  }
+        assertContainsError("transitive_sources.*got.*string.*want.*depset")
+    }
 
-  @Test
-  public void starlarkConstructorErrors_transitiveSources_rejectsPreOrder() throws Exception {
-    writeCreatePyInfo("transitive_sources = depset(direct=[dummy_file], order='preorder')");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkConstructorErrors_transitiveSources_rejectsPreOrder() {
+        writeCreatePyInfo("transitive_sources = depset(direct=[dummy_file], order='preorder')")
 
-    assertContainsError("Order.*postorder.*incompatible.*preorder");
-  }
+        assertContainsError("Order.*postorder.*incompatible.*preorder")
+    }
 
-  @Test
-  public void starlarkConstructorErrors_UsesSharedLibraries() throws Exception {
-    writeCreatePyInfo("transitive_sources = depset()", "uses_shared_libraries = 'abc'");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkConstructorErrors_UsesSharedLibraries() {
+        writeCreatePyInfo("transitive_sources = depset()", "uses_shared_libraries = 'abc'")
 
-    assertContainsError("uses_shared_libraries.*got.*string.*want.*bool");
-  }
+        assertContainsError("uses_shared_libraries.*got.*string.*want.*bool")
+    }
 
-  @Test
-  public void starlarkConstructorErrors_imports_badType() throws Exception {
-    writeCreatePyInfo("transitive_sources = depset()", "imports = 'abc'");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkConstructorErrors_imports_badType() {
+        writeCreatePyInfo("transitive_sources = depset()", "imports = 'abc'")
 
-    assertContainsError("imports.*got.*string.*want.*depset");
-  }
+        assertContainsError("imports.*got.*string.*want.*depset")
+    }
 
-  @Test
-  public void starlarkConstructorErrors_HasPy2OnlySources() throws Exception {
-    writeCreatePyInfo("transitive_sources = depset()", "has_py2_only_sources = 'abc'");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkConstructorErrors_HasPy2OnlySources() {
+        writeCreatePyInfo("transitive_sources = depset()", "has_py2_only_sources = 'abc'")
 
-    assertContainsError("has_py2_only_sources.*got.*string.*want.*bool");
-  }
+        assertContainsError("has_py2_only_sources.*got.*string.*want.*bool")
+    }
 
-  @Test
-  public void starlarkConstructorErrors_HasPy3OnlySources() throws Exception {
-    writeCreatePyInfo("transitive_sources = depset()", "has_py3_only_sources = 'abc'");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkConstructorErrors_HasPy3OnlySources() {
+        writeCreatePyInfo("transitive_sources = depset()", "has_py3_only_sources = 'abc'")
 
-    assertContainsError("has_py3_only_sources.*got.*string.*want.*bool");
-  }
+        assertContainsError("has_py3_only_sources.*got.*string.*want.*bool")
+    }
+
+    companion object {
+        /** We need this because `NestedSet`s don't have value equality.  */
+        private fun assertHasOrderAndContainsExactly(
+            set: NestedSet<*>, order: Order?, vararg values: Any?
+        ) {
+            assertThat(set.getOrder()).isEqualTo(order)
+            assertThat(set.toList()).containsExactly(values)
+        }
+    }
 }

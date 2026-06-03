@@ -11,90 +11,87 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages;
+package com.google.devtools.build.lib.packages
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.common.truth.Truth
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.util.HashSet
 
-import com.google.common.collect.ImmutableList;
-import java.util.HashSet;
-import java.util.Set;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+@RunWith(JUnit4::class)
+class TargetSuggesterTest {
+    @org.junit.Test
+    fun testRangeDoesntSuggestTarget() {
+        val requestedTarget = "range"
+        val packageTargets: MutableSet<String?> = HashSet<String?>()
+        packageTargets.add("target")
 
-@RunWith(JUnit4.class)
-public class TargetSuggesterTest {
+        val suggestedTargets: com.google.common.collect.ImmutableList<String?>? =
+            TargetSuggester.suggestedTargets(requestedTarget, packageTargets)
+        Truth.assertThat(suggestedTargets).isEmpty()
+    }
 
-  @Test
-  public void testRangeDoesntSuggestTarget() {
-    String requestedTarget = "range";
-    Set<String> packageTargets = new HashSet<>();
-    packageTargets.add("target");
+    @org.junit.Test
+    fun testMisspelledTargetRetrievesProperSuggestion() {
+        val misspelledTarget = "AnrdiodTest"
 
-    ImmutableList<String> suggestedTargets =
-        TargetSuggester.suggestedTargets(requestedTarget, packageTargets);
-    assertThat(suggestedTargets).isEmpty();
-  }
+        val packageTargets: MutableSet<String?> = HashSet<String?>()
+        packageTargets.add("AndroidTest")
+        packageTargets.add("AndroidTest_deploy")
+        packageTargets.add("AndroidTest_java")
 
-  @Test
-  public void testMisspelledTargetRetrievesProperSuggestion() {
-    String misspelledTarget = "AnrdiodTest";
+        val suggestedTargets: com.google.common.collect.ImmutableList<String?>? =
+            TargetSuggester.suggestedTargets(misspelledTarget, packageTargets)
+        Truth.assertThat(suggestedTargets).containsExactly("AndroidTest")
+    }
 
-    Set<String> packageTargets = new HashSet<>();
-    packageTargets.add("AndroidTest");
-    packageTargets.add("AndroidTest_deploy");
-    packageTargets.add("AndroidTest_java");
+    @org.junit.Test
+    fun testRetrieveMultipleTargets() {
+        val misspelledTarget = "pixel_2_test"
 
-    ImmutableList<String> suggestedTargets =
-        TargetSuggester.suggestedTargets(misspelledTarget, packageTargets);
-    assertThat(suggestedTargets).containsExactly("AndroidTest");
-  }
+        val packageTargets: MutableSet<String?> = HashSet<String?>()
+        packageTargets.add("pixel_5_test")
+        packageTargets.add("pixel_6_test")
+        packageTargets.add("android_2_test")
 
-  @Test
-  public void testRetrieveMultipleTargets() {
-    String misspelledTarget = "pixel_2_test";
+        val suggestedTargets: com.google.common.collect.ImmutableList<String?>? =
+            TargetSuggester.suggestedTargets(misspelledTarget, packageTargets)
+        Truth.assertThat(suggestedTargets).containsExactly("pixel_5_test", "pixel_6_test")
+    }
 
-    Set<String> packageTargets = new HashSet<>();
-    packageTargets.add("pixel_5_test");
-    packageTargets.add("pixel_6_test");
-    packageTargets.add("android_2_test");
+    @org.junit.Test
+    fun testOnlyClosestTargetIsReturned() {
+        val misspelledTarget = "Pixel_5_test"
 
-    ImmutableList<String> suggestedTargets =
-        TargetSuggester.suggestedTargets(misspelledTarget, packageTargets);
-    assertThat(suggestedTargets).containsExactly("pixel_5_test", "pixel_6_test");
-  }
+        val packageTargets: MutableSet<String?> = HashSet<String?>()
+        packageTargets.add("pixel_5_test")
+        packageTargets.add("pixel_6_test")
+        packageTargets.add("android_2_test")
 
-  @Test
-  public void testOnlyClosestTargetIsReturned() {
-    String misspelledTarget = "Pixel_5_test";
+        val suggestedTargets: com.google.common.collect.ImmutableList<String?>? =
+            TargetSuggester.suggestedTargets(misspelledTarget, packageTargets)
+        Truth.assertThat(suggestedTargets).containsExactly("pixel_5_test")
+    }
 
-    Set<String> packageTargets = new HashSet<>();
-    packageTargets.add("pixel_5_test");
-    packageTargets.add("pixel_6_test");
-    packageTargets.add("android_2_test");
+    @org.junit.Test
+    fun prettyPrintEmpty() {
+        val empty: String? = TargetSuggester.prettyPrintTargets(com.google.common.collect.ImmutableList.of<E?>())
+        Truth.assertThat(empty).isEmpty()
+    }
 
-    ImmutableList<String> suggestedTargets =
-        TargetSuggester.suggestedTargets(misspelledTarget, packageTargets);
-    assertThat(suggestedTargets).containsExactly("pixel_5_test");
-  }
+    @org.junit.Test
+    fun prettyPrintSingleTarget_returnsSingleTarget() {
+        val targets: com.google.common.collect.ImmutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>("pixel_5_test")
+        val targetString: String? = TargetSuggester.prettyPrintTargets(targets)
+        Truth.assertThat(targetString).isEqualTo(" (did you mean pixel_5_test?)")
+    }
 
-  @Test
-  public void prettyPrintEmpty() {
-    String empty = TargetSuggester.prettyPrintTargets(ImmutableList.of());
-    assertThat(empty).isEmpty();
-  }
-
-  @Test
-  public void prettyPrintSingleTarget_returnsSingleTarget() {
-    ImmutableList<String> targets = ImmutableList.of("pixel_5_test");
-    String targetString = TargetSuggester.prettyPrintTargets(targets);
-    assertThat(targetString).isEqualTo(" (did you mean pixel_5_test?)");
-  }
-
-  @Test
-  public void prettyPrintMultipleTargets_returnsMultipleTargets() {
-    ImmutableList<String> targets = ImmutableList.of("pixel_5_test", "pixel_6_test");
-    String targetString = TargetSuggester.prettyPrintTargets(targets);
-    assertThat(targetString).isEqualTo(" (did you mean pixel_5_test, or pixel_6_test?)");
-  }
+    @org.junit.Test
+    fun prettyPrintMultipleTargets_returnsMultipleTargets() {
+        val targets: com.google.common.collect.ImmutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>("pixel_5_test", "pixel_6_test")
+        val targetString: String? = TargetSuggester.prettyPrintTargets(targets)
+        Truth.assertThat(targetString).isEqualTo(" (did you mean pixel_5_test, or pixel_6_test?)")
+    }
 }

@@ -11,70 +11,67 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.sandbox.cgroups
 
-package com.google.devtools.build.lib.sandbox.cgroups;
+import com.google.common.io.Files
+import com.google.devtools.build.lib.sandbox.cgroups.controller.Controller.Memory
+import org.junit.Test
+import java.io.File
+import java.nio.charset.StandardCharsets
 
-import static com.google.common.truth.Truth.assertThat;
-import static java.nio.charset.StandardCharsets.UTF_8;
+@RunWith(JUnit4::class)
+class MemoryTest {
+    private val scratch: FsApparatus = FsApparatus.newNative()
 
-import com.google.common.io.Files;
-import com.google.devtools.build.lib.sandbox.cgroups.controller.Controller.Memory;
-import com.google.devtools.build.lib.sandbox.cgroups.controller.v1.LegacyMemory;
-import com.google.devtools.build.lib.sandbox.cgroups.controller.v2.UnifiedMemory;
-import com.google.devtools.build.lib.vfs.util.FsApparatus;
-import java.io.File;
-import java.io.IOException;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @Test
+    @Throws(IOException::class)
+    fun setMemoryLimit_v1() {
+        val limit: File = scratch.file("cgroup/memory/memory.limit_in_bytes", "0").getPathFile()
+        val memory: Memory = LegacyMemory(scratch.path("cgroup/memory").getPathFile().toPath())
+        memory.maxBytes = 1000
+        Truth.assertThat(Files.asCharSource(limit, StandardCharsets.UTF_8).read()).isEqualTo("1000")
+    }
 
-@RunWith(JUnit4.class)
-public class MemoryTest {
-  private final FsApparatus scratch = FsApparatus.newNative();
+    @Test
+    @Throws(IOException::class)
+    fun getMemoryLimit_v1() {
+        scratch.file("cgroup/memory/memory.limit_in_bytes", "100")
+        val memory: Memory = LegacyMemory(scratch.path("cgroup/memory").getPathFile().toPath())
+        assertThat(memory.maxBytes).isEqualTo(100)
+    }
 
-  @Test
-  public void setMemoryLimit_v1() throws IOException {
-    File limit = scratch.file("cgroup/memory/memory.limit_in_bytes", "0").getPathFile();
-    Memory memory = new LegacyMemory(scratch.path("cgroup/memory").getPathFile().toPath());
-    memory.maxBytes = 1000;
-    assertThat(Files.asCharSource(limit, UTF_8).read()).isEqualTo("1000");
-  }
+    @Test
+    @Throws(IOException::class)
+    fun getMemoryUsage_v1() {
+        scratch.file("cgroup/memory/memory.usage_in_bytes", "2000")
+        val memory: Memory = LegacyMemory(scratch.path("cgroup/memory").getPathFile().toPath())
+        assertThat(memory.usageInBytes).isEqualTo(2000)
+    }
 
-  @Test
-  public void getMemoryLimit_v1() throws IOException {
-    scratch.file("cgroup/memory/memory.limit_in_bytes", "100");
-    Memory memory = new LegacyMemory(scratch.path("cgroup/memory").getPathFile().toPath());
-    assertThat(memory.maxBytes).isEqualTo(100);
-  }
+    @Test
+    @Throws(IOException::class)
+    fun setMemoryLimit_v2() {
+        val limit: File = scratch.file("cgroup/memory/memory.max", "0").getPathFile()
+        val swap: File = scratch.file("cgroup/memory/memory.swap.max", "0").getPathFile()
+        val memory: Memory = UnifiedMemory(scratch.path("cgroup/memory").getPathFile().toPath())
+        memory.maxBytes = 1000
+        Truth.assertThat(Files.asCharSource(limit, StandardCharsets.UTF_8).read()).isEqualTo("1000")
+        Truth.assertThat(Files.asCharSource(swap, StandardCharsets.UTF_8).read()).isEqualTo("0")
+    }
 
-  @Test
-  public void getMemoryUsage_v1() throws IOException {
-    scratch.file("cgroup/memory/memory.usage_in_bytes", "2000");
-    Memory memory = new LegacyMemory(scratch.path("cgroup/memory").getPathFile().toPath());
-    assertThat(memory.usageInBytes).isEqualTo(2000);
-  }
+    @Test
+    @Throws(IOException::class)
+    fun getMemoryLimit_v2() {
+        scratch.file("cgroup/memory/memory.max", "100")
+        val memory: Memory = UnifiedMemory(scratch.path("cgroup/memory").getPathFile().toPath())
+        assertThat(memory.maxBytes).isEqualTo(100)
+    }
 
-  @Test
-  public void setMemoryLimit_v2() throws IOException {
-    File limit = scratch.file("cgroup/memory/memory.max", "0").getPathFile();
-    File swap = scratch.file("cgroup/memory/memory.swap.max", "0").getPathFile();
-    Memory memory = new UnifiedMemory(scratch.path("cgroup/memory").getPathFile().toPath());
-    memory.maxBytes = 1000;
-    assertThat(Files.asCharSource(limit, UTF_8).read()).isEqualTo("1000");
-    assertThat(Files.asCharSource(swap, UTF_8).read()).isEqualTo("0");
-  }
-
-  @Test
-  public void getMemoryLimit_v2() throws IOException {
-    scratch.file("cgroup/memory/memory.max", "100");
-    Memory memory = new UnifiedMemory(scratch.path("cgroup/memory").getPathFile().toPath());
-    assertThat(memory.maxBytes).isEqualTo(100);
-  }
-
-  @Test
-  public void getMemoryUsage_v2() throws IOException {
-    scratch.file("cgroup/memory/memory.current", "2000");
-    Memory memory = new UnifiedMemory(scratch.path("cgroup/memory").getPathFile().toPath());
-    assertThat(memory.usageInBytes).isEqualTo(2000);
-  }
+    @Test
+    @Throws(IOException::class)
+    fun getMemoryUsage_v2() {
+        scratch.file("cgroup/memory/memory.current", "2000")
+        val memory: Memory = UnifiedMemory(scratch.path("cgroup/memory").getPathFile().toPath())
+        assertThat(memory.usageInBytes).isEqualTo(2000)
+    }
 }

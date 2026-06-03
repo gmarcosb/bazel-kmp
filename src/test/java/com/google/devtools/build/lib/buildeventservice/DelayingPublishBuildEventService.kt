@@ -11,286 +11,267 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.buildeventservice
 
-package com.google.devtools.build.lib.buildeventservice;
-
-import static com.google.common.truth.Truth.assertThat;
-
-import build.bazel.remote.execution.v2.RequestMetadata;
-import com.google.common.base.MoreObjects;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.Sets;
-import com.google.common.util.concurrent.Uninterruptibles;
-import com.google.devtools.build.lib.remote.util.TracingMetadataUtils;
-import com.google.devtools.build.v1.BuildEvent.BuildComponentStreamFinished.FinishType;
-import com.google.devtools.build.v1.PublishBuildEventGrpc.PublishBuildEventImplBase;
-import com.google.devtools.build.v1.PublishBuildToolEventStreamRequest;
-import com.google.devtools.build.v1.PublishBuildToolEventStreamResponse;
-import com.google.devtools.build.v1.PublishLifecycleEventRequest;
-import com.google.devtools.build.v1.StreamId;
-import com.google.protobuf.Empty;
-import io.grpc.Status;
-import io.grpc.StatusRuntimeException;
-import io.grpc.stub.StreamObserver;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.SortedSet;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.atomic.AtomicInteger;
-import javax.annotation.Nullable;
-import javax.annotation.concurrent.GuardedBy;
+import build.bazel.remote.execution.v2.RequestMetadata
 
 /**
- * Trivial implementation of {@link PublishBuildEventImplBase} that can insert sleeps at critical
+ * Trivial implementation of [PublishBuildEventImplBase] that can insert sleeps at critical
  * junctures.
  */
-public class DelayingPublishBuildEventService extends PublishBuildEventImplBase {
-  @GuardedBy("this")
-  private Duration delayBeforeClosingStream = Duration.ZERO;
+class DelayingPublishBuildEventService : PublishBuildEventImplBase() {
+    @javax.annotation.concurrent.GuardedBy("this")
+    private var delayBeforeClosingStream: java.time.Duration = java.time.Duration.ZERO
 
-  @GuardedBy("this")
-  private Duration delayBeforeHalfClosingStream = Duration.ZERO;
+    @javax.annotation.concurrent.GuardedBy("this")
+    private var delayBeforeHalfClosingStream: java.time.Duration = java.time.Duration.ZERO
 
-  @GuardedBy("this")
-  @Nullable
-  private String errorMessage = null;
+    @javax.annotation.concurrent.GuardedBy("this")
+    private var errorMessage: String? = null
 
-  @GuardedBy("this")
-  @Nullable
-  private Status errorCode = null;
+    @javax.annotation.concurrent.GuardedBy("this")
+    private var errorCode: io.grpc.Status? = null
 
-  private final AtomicInteger requestsReceived = new AtomicInteger(0);
-  private boolean errorEarlyInStream = false;
+    private val requestsReceived: AtomicInteger = AtomicInteger(0)
+    private var errorEarlyInStream = false
 
-  /**
-   * Synchronizing this method can lead to deadlocks -- it calls into {@link
-   * io.grpc.inprocess.InProcessTransport} which takes a locks on itself. Opposite order of locks
-   * happens for {@link #publishBuildToolEventStream} called while holding the lock on {@link
-   * io.grpc.inprocess.InProcessTransport}.
-   */
-  @Override
-  public void publishLifecycleEvent(
-      PublishLifecycleEventRequest request, StreamObserver<Empty> responseObserver) {
-    RequestMetadata metadata = TracingMetadataUtils.fromCurrentContext();
-    assertThat(metadata.getToolInvocationId()).isNotEmpty();
-    assertThat(metadata.getCorrelatedInvocationsId()).isNotEmpty();
-    assertThat(metadata.getActionId()).isEqualTo("publish_lifecycle_event");
+    /**
+     * Synchronizing this method can lead to deadlocks -- it calls into [ ] which takes a locks on itself. Opposite order of locks
+     * happens for [.publishBuildToolEventStream] called while holding the lock on [ ].
+     */
+    public override fun publishLifecycleEvent(
+        request: PublishLifecycleEventRequest?, responseObserver: StreamObserver<Empty?>
+    ) {
+        val metadata: RequestMetadata = TracingMetadataUtils.fromCurrentContext()
+        assertThat(metadata.getToolInvocationId()).isNotEmpty()
+        assertThat(metadata.getCorrelatedInvocationsId()).isNotEmpty()
+        assertThat(metadata.getActionId()).isEqualTo("publish_lifecycle_event")
 
-    responseObserver.onNext(Empty.getDefaultInstance());
-    responseObserver.onCompleted();
-  }
-
-  @Override
-  public synchronized StreamObserver<PublishBuildToolEventStreamRequest>
-      publishBuildToolEventStream(
-          StreamObserver<PublishBuildToolEventStreamResponse> responseObserver) {
-    requestsReceived.incrementAndGet();
-    RequestMetadata metadata = TracingMetadataUtils.fromCurrentContext();
-    assertThat(metadata.getToolInvocationId()).isNotEmpty();
-    assertThat(metadata.getCorrelatedInvocationsId()).isNotEmpty();
-    assertThat(metadata.getActionId()).isEqualTo("publish_build_tool_event_stream");
-
-    if (errorMessage != null) {
-      return new ErroringPublishBuildStreamObserver(
-          responseObserver, errorMessage, errorCode, errorEarlyInStream);
-    }
-    DelayingPublishBuildStreamObserver observer =
-        new DelayingPublishBuildStreamObserver(
-            responseObserver, delayBeforeClosingStream, delayBeforeHalfClosingStream);
-    observer.startAckingThread();
-    return observer;
-  }
-
-  synchronized void setErrorMessage(String errorMessage) {
-    setErrorMessageAndCode(errorMessage, Status.DATA_LOSS);
-  }
-
-  synchronized void setErrorMessageAndCode(String errorMessage, Status code) {
-    this.errorMessage = errorMessage;
-    this.errorCode = code;
-  }
-
-  synchronized void setErrorEarlyInStream(boolean errorEarlyInStream) {
-    this.errorEarlyInStream = errorEarlyInStream;
-  }
-
-  public synchronized void setDelayBeforeClosingStream(Duration delay) {
-    this.delayBeforeClosingStream = delay;
-  }
-
-  synchronized void setDelayBeforeHalfClosingStream(Duration delay) {
-    this.delayBeforeHalfClosingStream = delay;
-  }
-
-  int getRequestsReceivedCount() {
-    return requestsReceived.get();
-  }
-
-  /**
-   * A {@link StreamObserver} that simulates a server that terminates the stream with an error,
-   * either immediately or when the client closes its end of the stream.
-   */
-  private static final class ErroringPublishBuildStreamObserver
-      implements StreamObserver<PublishBuildToolEventStreamRequest> {
-
-    private final StreamObserver<PublishBuildToolEventStreamResponse> responseObserver;
-    private final String errorMessage;
-    private final Status errorCode;
-    private final boolean errorEarlyInStream;
-
-    ErroringPublishBuildStreamObserver(
-        StreamObserver<PublishBuildToolEventStreamResponse> responseObserver,
-        String errorMessage,
-        Status errorCode,
-        boolean errorEarlyInStream) {
-      this.responseObserver = responseObserver;
-      this.errorMessage = errorMessage;
-      this.errorCode = errorCode;
-      this.errorEarlyInStream = errorEarlyInStream;
+        responseObserver.onNext(Empty.getDefaultInstance())
+        responseObserver.onCompleted()
     }
 
-    @Override
-    public void onNext(PublishBuildToolEventStreamRequest value) {
-      if (errorEarlyInStream) {
-        responseObserver.onError(
-            new StatusRuntimeException(errorCode.withDescription(errorMessage)));
-      }
-      responseObserver.onNext(
-          PublishBuildToolEventStreamResponse.newBuilder()
-              .setStreamId(value.getOrderedBuildEventOrBuilder().getStreamId())
-              .setSequenceNumber(value.getOrderedBuildEvent().getSequenceNumber())
-              .build());
-    }
+    @kotlin.jvm.Synchronized
+    public override fun publishBuildToolEventStream(
+        responseObserver: StreamObserver<PublishBuildToolEventStreamResponse?>
+    ): StreamObserver<PublishBuildToolEventStreamRequest?> {
+        requestsReceived.incrementAndGet()
+        val metadata: RequestMetadata = TracingMetadataUtils.fromCurrentContext()
+        assertThat(metadata.getToolInvocationId()).isNotEmpty()
+        assertThat(metadata.getCorrelatedInvocationsId()).isNotEmpty()
+        assertThat(metadata.getActionId()).isEqualTo("publish_build_tool_event_stream")
 
-    @Override
-    public void onError(Throwable t) {}
-
-    @Override
-    public void onCompleted() {
-      responseObserver.onError(new StatusRuntimeException(errorCode.withDescription(errorMessage)));
-    }
-  }
-
-  /**
-   * Trivial, in-memory implementation of a PublishBuildToolEventStream handler that can have
-   * pre-configured sleeps triggered at critical junctures.
-   */
-  private static class DelayingPublishBuildStreamObserver
-      implements StreamObserver<PublishBuildToolEventStreamRequest> {
-
-    private final StreamObserver<PublishBuildToolEventStreamResponse> responseObserver;
-    private final Duration delayBeforeClosingStream;
-    private final Duration delayBeforeHalfClosingStream;
-
-    @GuardedBy("this")
-    private final SortedSet<Long> unackedSequenceNumbers = Sets.newTreeSet();
-
-    private final BlockingQueue<Long> ackQueue = new ArrayBlockingQueue<>(10);
-
-    @GuardedBy("this")
-    private Thread ackingThread = null;
-
-    @GuardedBy("this")
-    private StreamId streamId = null;
-
-    @GuardedBy("this")
-    private boolean finished = false;
-
-    private DelayingPublishBuildStreamObserver(
-        StreamObserver<PublishBuildToolEventStreamResponse> responseObserver,
-        Duration delayBeforeClosingStream,
-        Duration delayBeforeHalfClosingStream) {
-      this.responseObserver = responseObserver;
-      this.delayBeforeClosingStream = delayBeforeClosingStream;
-      this.delayBeforeHalfClosingStream = delayBeforeHalfClosingStream;
-    }
-
-    /** Creates the acking thread, safely callable after the constructor finishes. */
-    synchronized void startAckingThread() {
-      Preconditions.checkState(ackingThread == null, "startAckingThread() called twice");
-      ackingThread = new Thread(new AckingThread());
-      ackingThread.start();
-    }
-
-    @Override
-    public void onNext(PublishBuildToolEventStreamRequest req) {
-      List<Long> longsToPut = new ArrayList<>();
-      synchronized (this) {
-        if (!unackedSequenceNumbers.add(req.getOrderedBuildEvent().getSequenceNumber())) {
-          return; // dupe, ignore
+        if (errorMessage != null) {
+            return ErroringPublishBuildStreamObserver(
+                responseObserver, errorMessage, errorCode, errorEarlyInStream
+            )
         }
-        streamId = MoreObjects.firstNonNull(streamId, req.getOrderedBuildEvent().getStreamId());
-        if (req.getOrderedBuildEvent().getEvent().getComponentStreamFinished().getType()
-            == FinishType.FINISH_TYPE_UNSPECIFIED) {
-          // We did not get the final event. Ack the *previous* event, if there is a previous event.
-          if (unackedSequenceNumbers.size() > 1) {
-            longsToPut.add(ackLowestSequenceNumber());
-          }
-        } else {
-          Uninterruptibles.sleepUninterruptibly(delayBeforeHalfClosingStream);
-          // final event. ack everything remaining.
-          while (!unackedSequenceNumbers.isEmpty()) {
-            longsToPut.add(ackLowestSequenceNumber());
-          }
-          if (finished) {
-            longsToPut.add(SENTINEL_VALUE);
-          }
+        val observer =
+            DelayingPublishBuildStreamObserver(
+                responseObserver, delayBeforeClosingStream, delayBeforeHalfClosingStream
+            )
+        observer.startAckingThread()
+        return observer
+    }
+
+    @kotlin.jvm.Synchronized
+    fun setErrorMessage(errorMessage: String?) {
+        setErrorMessageAndCode(errorMessage, io.grpc.Status.DATA_LOSS)
+    }
+
+    @kotlin.jvm.Synchronized
+    fun setErrorMessageAndCode(errorMessage: String?, code: io.grpc.Status?) {
+        this.errorMessage = errorMessage
+        this.errorCode = code
+    }
+
+    @kotlin.jvm.Synchronized
+    fun setErrorEarlyInStream(errorEarlyInStream: Boolean) {
+        this.errorEarlyInStream = errorEarlyInStream
+    }
+
+    @kotlin.jvm.Synchronized
+    fun setDelayBeforeClosingStream(delay: java.time.Duration) {
+        this.delayBeforeClosingStream = delay
+    }
+
+    @kotlin.jvm.Synchronized
+    fun setDelayBeforeHalfClosingStream(delay: java.time.Duration) {
+        this.delayBeforeHalfClosingStream = delay
+    }
+
+    val requestsReceivedCount: Int
+        get() = requestsReceived.get()
+
+    /**
+     * A [StreamObserver] that simulates a server that terminates the stream with an error,
+     * either immediately or when the client closes its end of the stream.
+     */
+    private class ErroringPublishBuildStreamObserver
+        (
+        responseObserver: StreamObserver<PublishBuildToolEventStreamResponse?>,
+        errorMessage: String?,
+        errorCode: io.grpc.Status,
+        errorEarlyInStream: Boolean
+    ) : StreamObserver<PublishBuildToolEventStreamRequest?> {
+        private val responseObserver: StreamObserver<PublishBuildToolEventStreamResponse?>
+        private val errorMessage: String?
+        private val errorCode: io.grpc.Status
+        private val errorEarlyInStream: Boolean
+
+        init {
+            this.responseObserver = responseObserver
+            this.errorMessage = errorMessage
+            this.errorCode = errorCode
+            this.errorEarlyInStream = errorEarlyInStream
         }
-      }
-      for (Long seqNum : longsToPut) {
-        Uninterruptibles.putUninterruptibly(ackQueue, seqNum);
-      }
-    }
 
-    @GuardedBy("this")
-    private Long ackLowestSequenceNumber() {
-      Long firstUnacked = unackedSequenceNumbers.first();
-      unackedSequenceNumbers.remove(firstUnacked);
-      return firstUnacked;
-    }
-
-    @Override
-    public synchronized void onError(Throwable t) {
-      finished = true;
-      responseObserver.onError(t);
-    }
-
-    @Override
-    public void onCompleted() {
-      boolean putSentinel;
-      synchronized (this) {
-        finished = true;
-        putSentinel = unackedSequenceNumbers.isEmpty();
-      }
-      if (putSentinel) {
-        Uninterruptibles.putUninterruptibly(ackQueue, SENTINEL_VALUE);
-      }
-    }
-
-    static final Long SENTINEL_VALUE = -1L;
-
-    private class AckingThread implements Runnable {
-
-      @Override
-      public void run() {
-        while (true) {
-          Long firstUnacked = Uninterruptibles.takeUninterruptibly(ackQueue);
-          synchronized (DelayingPublishBuildStreamObserver.this) {
-            if (firstUnacked.equals(SENTINEL_VALUE)) {
-              Uninterruptibles.sleepUninterruptibly(delayBeforeClosingStream);
-              responseObserver.onCompleted();
-              return;
+        override fun onNext(value: PublishBuildToolEventStreamRequest) {
+            if (errorEarlyInStream) {
+                responseObserver.onError(
+                    StatusRuntimeException(errorCode.withDescription(errorMessage))
+                )
             }
             responseObserver.onNext(
                 PublishBuildToolEventStreamResponse.newBuilder()
-                    .setStreamId(streamId)
-                    .setSequenceNumber(firstUnacked)
-                    .build());
-          }
+                    .setStreamId(value.getOrderedBuildEventOrBuilder().getStreamId())
+                    .setSequenceNumber(value.getOrderedBuildEvent().getSequenceNumber())
+                    .build()
+            )
         }
-      }
+
+        override fun onError(t: Throwable?) {}
+
+        override fun onCompleted() {
+            responseObserver.onError(StatusRuntimeException(errorCode.withDescription(errorMessage)))
+        }
     }
-  }
+
+    /**
+     * Trivial, in-memory implementation of a PublishBuildToolEventStream handler that can have
+     * pre-configured sleeps triggered at critical junctures.
+     */
+    private class DelayingPublishBuildStreamObserver
+        (
+        responseObserver: StreamObserver<PublishBuildToolEventStreamResponse?>,
+        delayBeforeClosingStream: java.time.Duration,
+        delayBeforeHalfClosingStream: java.time.Duration
+    ) : StreamObserver<PublishBuildToolEventStreamRequest?> {
+        private val responseObserver: StreamObserver<PublishBuildToolEventStreamResponse?>
+        private val delayBeforeClosingStream: java.time.Duration
+        private val delayBeforeHalfClosingStream: java.time.Duration
+
+        @javax.annotation.concurrent.GuardedBy("this")
+        private val unackedSequenceNumbers: SortedSet<Long?> = com.google.common.collect.Sets.newTreeSet<Long?>()
+
+        private val ackQueue: BlockingQueue<Long?> = ArrayBlockingQueue<Long?>(10)
+
+        @javax.annotation.concurrent.GuardedBy("this")
+        private var ackingThread: java.lang.Thread? = null
+
+        @javax.annotation.concurrent.GuardedBy("this")
+        private var streamId: StreamId? = null
+
+        @javax.annotation.concurrent.GuardedBy("this")
+        private var finished = false
+
+        /** Creates the acking thread, safely callable after the constructor finishes.  */
+        @kotlin.jvm.Synchronized
+        fun startAckingThread() {
+            com.google.common.base.Preconditions.checkState(ackingThread == null, "startAckingThread() called twice")
+            ackingThread = java.lang.Thread(AckingThread())
+            ackingThread.start()
+        }
+
+        override fun onNext(req: PublishBuildToolEventStreamRequest) {
+            val longsToPut: MutableList<Long?> = java.util.ArrayList<Long?>()
+            synchronized(this) {
+                if (!unackedSequenceNumbers.add(req.getOrderedBuildEvent().getSequenceNumber())) {
+                    return  // dupe, ignore
+                }
+                streamId = com.google.common.base.MoreObjects.firstNonNull<T?>(
+                    streamId,
+                    req.getOrderedBuildEvent().getStreamId()
+                )
+                if (req.getOrderedBuildEvent().getEvent().getComponentStreamFinished().getType()
+                    === FinishType.FINISH_TYPE_UNSPECIFIED
+                ) {
+                    // We did not get the final event. Ack the *previous* event, if there is a previous event.
+                    if (unackedSequenceNumbers.size > 1) {
+                        longsToPut.add(ackLowestSequenceNumber())
+                    }
+                } else {
+                    com.google.common.util.concurrent.Uninterruptibles.sleepUninterruptibly(delayBeforeHalfClosingStream)
+                    // final event. ack everything remaining.
+                    while (!unackedSequenceNumbers.isEmpty()) {
+                        longsToPut.add(ackLowestSequenceNumber())
+                    }
+                    if (finished) {
+                        longsToPut.add(SENTINEL_VALUE)
+                    }
+                }
+            }
+            for (seqNum in longsToPut) {
+                com.google.common.util.concurrent.Uninterruptibles.putUninterruptibly<Long?>(ackQueue, seqNum)
+            }
+        }
+
+        @javax.annotation.concurrent.GuardedBy("this")
+        fun ackLowestSequenceNumber(): Long? {
+            val firstUnacked: Long? = unackedSequenceNumbers.first()
+            unackedSequenceNumbers.remove(firstUnacked)
+            return firstUnacked
+        }
+
+        @kotlin.jvm.Synchronized
+        override fun onError(t: Throwable?) {
+            finished = true
+            responseObserver.onError(t)
+        }
+
+        override fun onCompleted() {
+            val putSentinel: Boolean
+            synchronized(this) {
+                finished = true
+                putSentinel = unackedSequenceNumbers.isEmpty()
+            }
+            if (putSentinel) {
+                com.google.common.util.concurrent.Uninterruptibles.putUninterruptibly<Long?>(ackQueue, SENTINEL_VALUE)
+            }
+        }
+
+        init {
+            this.responseObserver = responseObserver
+            this.delayBeforeClosingStream = delayBeforeClosingStream
+            this.delayBeforeHalfClosingStream = delayBeforeHalfClosingStream
+        }
+
+        private inner class AckingThread : java.lang.Runnable {
+            override fun run() {
+                while (true) {
+                    val firstUnacked: Long =
+                        com.google.common.util.concurrent.Uninterruptibles.takeUninterruptibly<Long>(ackQueue)
+                    synchronized(this@DelayingPublishBuildStreamObserver) {
+                        if (firstUnacked == SENTINEL_VALUE) {
+                            com.google.common.util.concurrent.Uninterruptibles.sleepUninterruptibly(
+                                delayBeforeClosingStream
+                            )
+                            responseObserver.onCompleted()
+                            return
+                        }
+                        responseObserver.onNext(
+                            PublishBuildToolEventStreamResponse.newBuilder()
+                                .setStreamId(streamId)
+                                .setSequenceNumber(firstUnacked)
+                                .build()
+                        )
+                    }
+                }
+            }
+        }
+
+        companion object {
+            val SENTINEL_VALUE: Long = -1L
+        }
+    }
 }

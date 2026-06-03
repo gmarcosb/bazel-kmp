@@ -11,98 +11,69 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.cpp
 
-package com.google.devtools.build.lib.rules.cpp;
+import com.google.devtools.build.lib.actions.InputMetadataProvider
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+/** Tests for toolchain features.  */
+@RunWith(JUnit4::class)
+class CcToolchainFeaturesTest : BuildViewTestCase() {
+    private val starlarkConfigCounter: AtomicInteger = AtomicInteger(0)
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ArrayListMultimap;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.ListMultimap;
-import com.google.devtools.build.lib.actions.InputMetadataProvider;
-import com.google.devtools.build.lib.actions.PathMapper;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.packages.util.ResourceLoader;
-import com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.ActionConfig;
-import com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.ExpansionException;
-import com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.FeatureConfiguration;
-import com.google.devtools.build.lib.rules.cpp.CcToolchainVariables.Sequence;
-import com.google.devtools.build.lib.rules.cpp.CcToolchainVariables.StringValue;
-import com.google.devtools.build.lib.rules.cpp.CcToolchainVariables.VariableValue;
-import com.google.devtools.build.lib.rules.cpp.CcToolchainVariables.VariableValueAdapter;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.RoundTripping;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
-import javax.annotation.Nullable;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @Throws(java.lang.Exception::class)
+    private fun loadCcToolchainConfigLib() {
+        scratch.appendFile("tools/cpp/BUILD", "")
+        scratch.overwriteFile(
+            "tools/cpp/cc_toolchain_config_lib.bzl",
+            com.google.devtools.build.lib.packages.util.ResourceLoader.readFromResources(
+                TestConstants.RULES_CC_REPOSITORY_EXECROOT + "cc/cc_toolchain_config_lib.bzl"
+            )
+        )
+    }
 
-/** Tests for toolchain features. */
-@RunWith(JUnit4.class)
-public final class CcToolchainFeaturesTest extends BuildViewTestCase {
-
-  private final AtomicInteger starlarkConfigCounter = new AtomicInteger(0);
-
-  private void loadCcToolchainConfigLib() throws Exception {
-    scratch.appendFile("tools/cpp/BUILD", "");
-    scratch.overwriteFile(
-        "tools/cpp/cc_toolchain_config_lib.bzl",
-        ResourceLoader.readFromResources(
-            TestConstants.RULES_CC_REPOSITORY_EXECROOT + "cc/cc_toolchain_config_lib.bzl"));
-  }
-
-  private CcToolchainFeatures buildFeatures(String... content) throws Exception {
-    loadCcToolchainConfigLib();
-    String packageName = "crosstool" + starlarkConfigCounter.getAndIncrement();
-    scratch.overwriteFile(
-        packageName + "/crosstool.bzl",
-        "load(",
-        "    '//tools/cpp:cc_toolchain_config_lib.bzl',",
-        "    'action_config',",
-        "    'artifact_name_pattern',",
-        "    'env_entry',",
-        "    'env_set',",
-        "    'feature',",
-        "    'feature_set',",
-        "    'flag_group',",
-        "    'flag_set',",
-        "    'tool',",
-        "    'variable_with_value',",
-        "    'with_feature_set',",
-        ")",
-        "load('@rules_cc//cc/toolchains:cc_toolchain_config_info.bzl',"
-            + " 'CcToolchainConfigInfo')",
-        "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
-        "",
-        "def _impl(ctx):",
-        "    return cc_common.create_cc_toolchain_config_info(",
-        "        ctx = ctx,",
-        String.join("\n", content) + ",",
-        "        toolchain_identifier = 'toolchain',",
-        "        host_system_name = 'host',",
-        "        target_system_name = 'target',",
-        "        target_cpu = 'cpu',",
-        "        target_libc = 'libc',",
-        "        compiler = 'compiler',",
-        "    )",
-        "",
-        "cc_toolchain_config_rule = rule(implementation = _impl, provides ="
-            + " [CcToolchainConfigInfo])");
-    scratch.overwriteFile("bazel_internal/test_rules/cc/BUILD");
-    scratch.overwriteFile(
-        "bazel_internal/test_rules/cc/ctf_rule.bzl",
-        """
+    @Throws(java.lang.Exception::class)
+    private fun buildFeatures(vararg content: String?): CcToolchainFeatures {
+        loadCcToolchainConfigLib()
+        val packageName = "crosstool" + starlarkConfigCounter.getAndIncrement()
+        scratch.overwriteFile(
+            packageName + "/crosstool.bzl",
+            "load(",
+            "    '//tools/cpp:cc_toolchain_config_lib.bzl',",
+            "    'action_config',",
+            "    'artifact_name_pattern',",
+            "    'env_entry',",
+            "    'env_set',",
+            "    'feature',",
+            "    'feature_set',",
+            "    'flag_group',",
+            "    'flag_set',",
+            "    'tool',",
+            "    'variable_with_value',",
+            "    'with_feature_set',",
+            ")",
+            "load('@rules_cc//cc/toolchains:cc_toolchain_config_info.bzl',"
+                    + " 'CcToolchainConfigInfo')",
+            "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
+            "",
+            "def _impl(ctx):",
+            "    return cc_common.create_cc_toolchain_config_info(",
+            "        ctx = ctx,",
+            java.lang.String.join("\n", *content) + ",",
+            "        toolchain_identifier = 'toolchain',",
+            "        host_system_name = 'host',",
+            "        target_system_name = 'target',",
+            "        target_cpu = 'cpu',",
+            "        target_libc = 'libc',",
+            "        compiler = 'compiler',",
+            "    )",
+            "",
+            "cc_toolchain_config_rule = rule(implementation = _impl, provides ="
+                    + " [CcToolchainConfigInfo])"
+        )
+        scratch.overwriteFile("bazel_internal/test_rules/cc/BUILD")
+        scratch.overwriteFile(
+            "bazel_internal/test_rules/cc/ctf_rule.bzl",
+            """
         load('@rules_cc//cc/toolchains:cc_toolchain_config_info.bzl', 'CcToolchainConfigInfo')
         load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')
         MyInfo = provider()
@@ -112,72 +83,38 @@ public final class CcToolchainFeaturesTest extends BuildViewTestCase {
                     tools_directory = "crosstool",
                   ))]
         cc_toolchain_features = rule(_impl, attrs = {"config":attr.label()})
-        """);
-    scratch.overwriteFile(
-        packageName + "/BUILD",
-        "load(':crosstool.bzl', 'cc_toolchain_config_rule')",
-        "load('//bazel_internal/test_rules/cc:ctf_rule.bzl', 'cc_toolchain_features')",
-        "cc_toolchain_features(name = 'f', config = ':r')",
-        "cc_toolchain_config_rule(name = 'r')");
+        
+        """.trimIndent()
+        )
+        scratch.overwriteFile(
+            packageName + "/BUILD",
+            "load(':crosstool.bzl', 'cc_toolchain_config_rule')",
+            "load('//bazel_internal/test_rules/cc:ctf_rule.bzl', 'cc_toolchain_features')",
+            "cc_toolchain_features(name = 'f', config = ':r')",
+            "cc_toolchain_config_rule(name = 'r')"
+        )
 
-    ConfiguredTarget target = getConfiguredTarget("//" + packageName + ":f");
-    assertThat(target).isNotNull();
-    return (CcToolchainFeatures) getStarlarkProvider(target, "MyInfo").getValue("f");
-  }
+        val target: ConfiguredTarget = getConfiguredTarget("//" + packageName + ":f")
+        assertThat(target).isNotNull()
+        return getStarlarkProvider(target, "MyInfo").getValue("f") as CcToolchainFeatures
+    }
 
-  /**
-   * Creates a {@code Variables} configuration from a list of key/value pairs.
-   *
-   * <p>If there are multiple entries with the same key, the variable will be treated as sequence
-   * type.
-   */
-  private static CcToolchainVariables createVariables(String... entries) {
-    if (entries.length % 2 != 0) {
-      throw new IllegalArgumentException(
-          "createVariables takes an even number of arguments (key/value pairs)");
-    }
-    ListMultimap<String, String> entryMap = ArrayListMultimap.create();
-    for (int i = 0; i < entries.length; i += 2) {
-      entryMap.put(entries[i], entries[i + 1]);
-    }
-    CcToolchainVariables.Builder variables = CcToolchainVariables.builder();
-    for (String name : entryMap.keySet()) {
-      List<String> value = entryMap.get(name);
-      if (value.size() == 1) {
-        variables.addVariable(name, value.get(0));
-      } else {
-        variables.addStringSequenceVariable(name, ImmutableList.copyOf(value));
-      }
-    }
-    return variables.build();
-  }
-
-  private static ImmutableSet<String> getEnabledFeatures(
-      CcToolchainFeatures features, String... requestedFeatures) throws Exception {
-    FeatureConfiguration configuration =
-        features.getFeatureConfiguration(ImmutableSet.copyOf(requestedFeatures));
-    ImmutableSet.Builder<String> enabledFeatures = ImmutableSet.builder();
-    for (String feature : features.getActivatableNames()) {
-      if (configuration.isEnabled(feature)) {
-        enabledFeatures.add(feature);
-      }
-    }
-    return enabledFeatures.build();
-  }
-
-  @Test
-  public void testFeatureConfigurationCodec() throws Exception {
-    FeatureConfiguration emptyConfiguration =
-        FeatureConfiguration.intern(
-            buildFeatures("features=[feature(name = 'no_legacy_features')]")
-                .getFeatureConfiguration(ImmutableSet.of()));
-    FeatureConfiguration emptyFeatures =
-        buildFeatures(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFeatureConfigurationCodec() {
+        val emptyConfiguration: FeatureConfiguration? =
+            FeatureConfiguration.intern(
+                buildFeatures("features=[feature(name = 'no_legacy_features')]")
+                    .getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>())
+            )
+        val emptyFeatures: FeatureConfiguration? =
+            buildFeatures(
                 "features=[feature(name = 'no_legacy_features'),feature(name='a'),"
-                    + " feature(name='b')]")
-            .getFeatureConfiguration(ImmutableSet.of("a", "b"));
-    FeatureConfiguration featuresWithFlags =
-        buildFeatures(
+                        + " feature(name='b')]"
+            )
+                .getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("a", "b"))
+        val featuresWithFlags: FeatureConfiguration? =
+            buildFeatures(
                 "features = [",
                 "    feature(name = 'no_legacy_features'),",
                 "    feature(",
@@ -202,10 +139,11 @@ public final class CcToolchainFeaturesTest extends BuildViewTestCase {
                 "            ),",
                 "        ],",
                 "    ),",
-                "]")
-            .getFeatureConfiguration(ImmutableSet.of("a", "b"));
-    FeatureConfiguration featureWithEnvSet =
-        buildFeatures(
+                "]"
+            )
+                .getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("a", "b"))
+        val featureWithEnvSet: FeatureConfiguration? =
+            buildFeatures(
                 "features = [",
                 "    feature(name = 'no_legacy_features'),",
                 "    feature(",
@@ -220,43 +158,50 @@ public final class CcToolchainFeaturesTest extends BuildViewTestCase {
                 "            ),",
                 "        ],",
                 "    ),",
-                "]")
-            .getFeatureConfiguration(ImmutableSet.of("a"));
+                "]"
+            )
+                .getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("a"))
 
-    new SerializationTester(emptyConfiguration, emptyFeatures, featuresWithFlags, featureWithEnvSet)
-        .runTests();
-  }
+        SerializationTester(emptyConfiguration, emptyFeatures, featuresWithFlags, featureWithEnvSet)
+            .runTests()
+    }
 
-  @Test
-  public void testUnconditionalFeature() throws Exception {
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testUnconditionalFeature() {
+        assertThat(
             buildFeatures("features = []")
-                .getFeatureConfiguration(ImmutableSet.of("a"))
-                .isEnabled("a"))
-        .isFalse();
-    assertThat(
+                .getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("a"))
+                .isEnabled("a")
+        )
+            .isFalse()
+        assertThat(
             buildFeatures("features = [feature(name = 'a')]")
-                .getFeatureConfiguration(ImmutableSet.of("b"))
-                .isEnabled("a"))
-        .isFalse();
-    assertThat(
+                .getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("b"))
+                .isEnabled("a")
+        )
+            .isFalse()
+        assertThat(
             buildFeatures("features = [feature(name = 'a')]")
-                .getFeatureConfiguration(ImmutableSet.of("a"))
-                .isEnabled("a"))
-        .isTrue();
-  }
+                .getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("a"))
+                .isEnabled("a")
+        )
+            .isTrue()
+    }
 
-  @Test
-  public void testUnsupportedAction() throws Exception {
-    FeatureConfiguration configuration =
-        buildFeatures("features = []").getFeatureConfiguration(ImmutableSet.of());
-    assertThat(configuration.getCommandLine("invalid-action", createVariables())).isEmpty();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testUnsupportedAction() {
+        val configuration: FeatureConfiguration =
+            buildFeatures("features = []").getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>())
+        assertThat(configuration.getCommandLine("invalid-action", createVariables())).isEmpty()
+    }
 
-  @Test
-  public void testFlagOrderEqualsSpecOrder() throws Exception {
-    FeatureConfiguration configuration =
-        buildFeatures(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFlagOrderEqualsSpecOrder() {
+        val configuration: FeatureConfiguration =
+            buildFeatures(
                 "features = [",
                 "    feature(",
                 "        name = 'a',",
@@ -284,17 +229,19 @@ public final class CcToolchainFeaturesTest extends BuildViewTestCase {
                 "            ),",
                 "        ],",
                 "    ),",
-                "]")
-            .getFeatureConfiguration(ImmutableSet.of("a", "b"));
-    List<String> commandLine =
-        configuration.getCommandLine(CppActionNames.CPP_COMPILE, createVariables());
-    assertThat(commandLine).containsExactly("-a-c++-compile", "-b-c++-compile").inOrder();
-  }
+                "]"
+            )
+                .getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("a", "b"))
+        val commandLine: MutableList<String?>? =
+            configuration.getCommandLine(CppActionNames.CPP_COMPILE, createVariables())
+        Truth.assertThat(commandLine).containsExactly("-a-c++-compile", "-b-c++-compile").inOrder()
+    }
 
-  @Test
-  public void testEnvVars() throws Exception {
-    FeatureConfiguration configuration =
-        buildFeatures(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEnvVars() {
+        val configuration: FeatureConfiguration =
+            buildFeatures(
                 "features = [",
                 "    feature(",
                 "        name = 'a',",
@@ -330,19 +277,19 @@ public final class CcToolchainFeaturesTest extends BuildViewTestCase {
                 "                actions = ['c++-compile'],",
                 "                with_features = [with_feature_set(features = ['e'])],",
                 "                env_entries = [env_entry(key = 'withoutFeature', value ="
-                    + " 'value2')],",
+                        + " 'value2')],",
                 "            ),",
                 "            env_set(",
                 "                actions = ['c++-compile'],",
                 "                with_features = [with_feature_set(not_features = ['f'])],",
                 "                env_entries = [env_entry(key = 'withNotFeature', value ="
-                    + " 'value3')],",
+                        + " 'value3')],",
                 "            ),",
                 "            env_set(",
                 "                actions = ['c++-compile'],",
                 "                with_features = [with_feature_set(not_features = ['g'])],",
                 "                env_entries = [env_entry(key = 'withoutNotFeature', value ="
-                    + " 'value4')],",
+                        + " 'value4')],",
                 "            ),",
                 "        ],",
                 "    ),",
@@ -352,7 +299,7 @@ public final class CcToolchainFeaturesTest extends BuildViewTestCase {
                 "            env_set(",
                 "                actions = ['c++-compile'],",
                 "                env_entries = [env_entry(key = 'doNotInclude', value ="
-                    + " 'doNotIncludePlease')],",
+                        + " 'doNotIncludePlease')],",
                 "            ),",
                 "        ],",
                 "    ),",
@@ -360,33 +307,37 @@ public final class CcToolchainFeaturesTest extends BuildViewTestCase {
                 "    feature(name = 'e'),",
                 "    feature(name = 'f'),",
                 "    feature(name = 'g'),",
-                "]")
-            .getFeatureConfiguration(ImmutableSet.of("a", "b", "d", "f"));
-    ImmutableMap<String, String> env =
-        configuration.getEnvironmentVariables(
-            CppActionNames.CPP_COMPILE, createVariables(), PathMapper.NOOP);
-    assertThat(env)
-        .containsExactly(
-            "foo",
-            "bar",
-            "cat",
-            "meow",
-            "dog",
-            "woof",
-            "withFeature",
-            "value1",
-            "withoutNotFeature",
-            "value4")
-        .inOrder();
-    assertThat(env).doesNotContainEntry("withoutFeature", "value2");
-    assertThat(env).doesNotContainEntry("withNotFeature", "value3");
-    assertThat(env).doesNotContainEntry("doNotInclude", "doNotIncludePlease");
-  }
+                "]"
+            )
+                .getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("a", "b", "d", "f"))
+        val env: com.google.common.collect.ImmutableMap<String?, String?>? =
+            configuration.getEnvironmentVariables(
+                CppActionNames.CPP_COMPILE, createVariables(), PathMapper.NOOP
+            )
+        Truth.assertThat(env)
+            .containsExactly(
+                "foo",
+                "bar",
+                "cat",
+                "meow",
+                "dog",
+                "woof",
+                "withFeature",
+                "value1",
+                "withoutNotFeature",
+                "value4"
+            )
+            .inOrder()
+        Truth.assertThat(env).doesNotContainEntry("withoutFeature", "value2")
+        Truth.assertThat(env).doesNotContainEntry("withNotFeature", "value3")
+        Truth.assertThat(env).doesNotContainEntry("doNotInclude", "doNotIncludePlease")
+    }
 
-  @Test
-  public void testEnvVarsWithMissingVariableIsNotExpanded() throws Exception {
-    FeatureConfiguration configuration =
-        buildFeatures(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEnvVarsWithMissingVariableIsNotExpanded() {
+        val configuration: FeatureConfiguration =
+            buildFeatures(
                 "features = [",
                 "    feature(",
                 "        name = 'a',",
@@ -395,25 +346,28 @@ public final class CcToolchainFeaturesTest extends BuildViewTestCase {
                 "                actions = ['c++-compile'],",
                 "                env_entries = [",
                 "                    env_entry(key = 'foo', value = 'bar', expand_if_available"
-                    + " = 'v')",
+                        + " = 'v')",
                 "                ],",
                 "            ),",
                 "        ],",
                 "    ),",
-                "]")
-            .getFeatureConfiguration(ImmutableSet.of("a"));
+                "]"
+            )
+                .getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("a"))
 
-    ImmutableMap<String, String> env =
-        configuration.getEnvironmentVariables(
-            CppActionNames.CPP_COMPILE, createVariables(), PathMapper.NOOP);
+        val env: com.google.common.collect.ImmutableMap<String?, String?>? =
+            configuration.getEnvironmentVariables(
+                CppActionNames.CPP_COMPILE, createVariables(), PathMapper.NOOP
+            )
 
-    assertThat(env).doesNotContainEntry("foo", "bar");
-  }
+        Truth.assertThat(env).doesNotContainEntry("foo", "bar")
+    }
 
-  @Test
-  public void testEnvVarsWithAllVariablesPresentAreExpanded() throws Exception {
-    FeatureConfiguration configuration =
-        buildFeatures(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEnvVarsWithAllVariablesPresentAreExpanded() {
+        val configuration: FeatureConfiguration =
+            buildFeatures(
                 "features = [",
                 "    feature(",
                 "        name = 'a',",
@@ -422,26 +376,28 @@ public final class CcToolchainFeaturesTest extends BuildViewTestCase {
                 "                actions = ['c++-compile'],",
                 "                env_entries = [",
                 "                    env_entry(key = 'foo', value = 'bar', expand_if_available"
-                    + " = 'v')",
+                        + " = 'v')",
                 "                ],",
                 "            ),",
                 "        ],",
                 "    ),",
-                "]")
-            .getFeatureConfiguration(ImmutableSet.of("a"));
+                "]"
+            )
+                .getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("a"))
 
-    ImmutableMap<String, String> env =
-        configuration.getEnvironmentVariables(
-            CppActionNames.CPP_COMPILE, createVariables("v", "1"), PathMapper.NOOP);
+        val env: com.google.common.collect.ImmutableMap<String?, String?>? =
+            configuration.getEnvironmentVariables(
+                CppActionNames.CPP_COMPILE, createVariables("v", "1"), PathMapper.NOOP
+            )
 
-    assertThat(env).containsExactly("foo", "bar").inOrder();
-  }
+        Truth.assertThat(env).containsExactly("foo", "bar").inOrder()
+    }
 
-  @Test
-  public void testEnvVarsWithAllVariablesPresentAreExpandedWithVariableExpansion()
-      throws Exception {
-    FeatureConfiguration configuration =
-        buildFeatures(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEnvVarsWithAllVariablesPresentAreExpandedWithVariableExpansion() {
+        val configuration: FeatureConfiguration =
+            buildFeatures(
                 "features = [",
                 "    feature(",
                 "        name = 'a',",
@@ -450,43 +406,51 @@ public final class CcToolchainFeaturesTest extends BuildViewTestCase {
                 "                actions = ['c++-compile'],",
                 "                env_entries = [",
                 "                    env_entry(key = 'foo', value = '%{v}', expand_if_available"
-                    + " = 'v')",
+                        + " = 'v')",
                 "                ],",
                 "            ),",
                 "        ],",
                 "    ),",
-                "]")
-            .getFeatureConfiguration(ImmutableSet.of("a"));
+                "]"
+            )
+                .getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("a"))
 
-    ImmutableMap<String, String> env =
-        configuration.getEnvironmentVariables(
-            CppActionNames.CPP_COMPILE, createVariables("v", "1"), PathMapper.NOOP);
+        val env: com.google.common.collect.ImmutableMap<String?, String?>? =
+            configuration.getEnvironmentVariables(
+                CppActionNames.CPP_COMPILE, createVariables("v", "1"), PathMapper.NOOP
+            )
 
-    assertThat(env).containsExactly("foo", "1").inOrder();
-  }
+        Truth.assertThat(env).containsExactly("foo", "1").inOrder()
+    }
 
-  private String getExpansionOfFlag(String value) throws Exception {
-    return getExpansionOfFlag(value, createVariables());
-  }
+    @Throws(java.lang.Exception::class)
+    private fun getExpansionOfFlag(value: String?): String? {
+        return getExpansionOfFlag(value, createVariables())
+    }
 
-  private String getExpansionOfFlag(String value, CcToolchainVariables variables) throws Exception {
-    return getExpansionOfFlag(value, variables, PathMapper.NOOP);
-  }
+    @Throws(java.lang.Exception::class)
+    private fun getExpansionOfFlag(value: String?, variables: CcToolchainVariables?): String? {
+        return getExpansionOfFlag(value, variables, PathMapper.NOOP)
+    }
 
-  private String getExpansionOfFlag(
-      String value, CcToolchainVariables variables, PathMapper pathMapper) throws Exception {
-    return getCommandLineForFlag(value, variables, pathMapper).getFirst();
-  }
+    @Throws(java.lang.Exception::class)
+    private fun getExpansionOfFlag(
+        value: String?, variables: CcToolchainVariables?, pathMapper: PathMapper?
+    ): String? {
+        return getCommandLineForFlag(value, variables, pathMapper).getFirst()
+    }
 
-  private List<String> getCommandLineForFlagGroups(String groups, CcToolchainVariables variables)
-      throws Exception {
-    return getCommandLineForFlagGroups(groups, variables, PathMapper.NOOP);
-  }
+    @Throws(java.lang.Exception::class)
+    private fun getCommandLineForFlagGroups(groups: String?, variables: CcToolchainVariables?): MutableList<String?> {
+        return getCommandLineForFlagGroups(groups, variables, PathMapper.NOOP)
+    }
 
-  private List<String> getCommandLineForFlagGroups(
-      String groups, CcToolchainVariables variables, PathMapper pathMapper) throws Exception {
-    FeatureConfiguration configuration =
-        buildFeatures(
+    @Throws(java.lang.Exception::class)
+    private fun getCommandLineForFlagGroups(
+        groups: String?, variables: CcToolchainVariables?, pathMapper: PathMapper?
+    ): MutableList<String?> {
+        val configuration: FeatureConfiguration =
+            buildFeatures(
                 "features = [",
                 "   feature(name = 'no_legacy_features'),",
                 "   feature(",
@@ -497,888 +461,1021 @@ public final class CcToolchainFeaturesTest extends BuildViewTestCase {
                 "            flag_groups = [" + groups + "],",
                 "        ),",
                 "    ],",
-                ")]")
-            .getFeatureConfiguration(ImmutableSet.of("a"));
-    return configuration.getCommandLine(
-        CppActionNames.CPP_COMPILE, variables, /* inputMetadataProvider= */ null, pathMapper);
-  }
+                ")]"
+            )
+                .getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("a"))
+        return configuration.getCommandLine(
+            CppActionNames.CPP_COMPILE, variables,  /* inputMetadataProvider= */null, pathMapper
+        )
+    }
 
-  private List<String> getCommandLineForFlag(
-      String value, CcToolchainVariables variables, PathMapper pathMapper) throws Exception {
-    return getCommandLineForFlagGroups(
-        "flag_group(flags = ['" + value + "'])", variables, pathMapper);
-  }
+    @Throws(java.lang.Exception::class)
+    private fun getCommandLineForFlag(
+        value: String?, variables: CcToolchainVariables?, pathMapper: PathMapper?
+    ): MutableList<String?> {
+        return getCommandLineForFlagGroups(
+            "flag_group(flags = ['" + value + "'])", variables, pathMapper
+        )
+    }
 
-  private String getFlagParsingError(String value) {
-    return assertThrows(AssertionError.class, () -> getExpansionOfFlag(value)).getMessage();
-  }
+    private fun getFlagParsingError(value: String?): String? {
+        return org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getExpansionOfFlag(value) }).message
+    }
 
-  private String getFlagExpansionError(String value, CcToolchainVariables variables) {
-    return assertThrows(ExpansionException.class, () -> getExpansionOfFlag(value, variables))
-        .getMessage();
-  }
+    private fun getFlagExpansionError(value: String?, variables: CcToolchainVariables?): String {
+        return org.junit.Assert.assertThrows<T?>(
+            ExpansionException::class.java,
+            org.junit.function.ThrowingRunnable { getExpansionOfFlag(value, variables) })
+            .getMessage()
+    }
 
-  private String getFlagGroupsExpansionError(String flagGroups, CcToolchainVariables variables) {
-    return assertThrows(
-            ExpansionException.class, () -> getCommandLineForFlagGroups(flagGroups, variables))
-        .getMessage();
-  }
+    private fun getFlagGroupsExpansionError(flagGroups: String?, variables: CcToolchainVariables?): String {
+        return org.junit.Assert.assertThrows<T?>(
+            ExpansionException::class.java,
+            org.junit.function.ThrowingRunnable { getCommandLineForFlagGroups(flagGroups, variables) })
+            .getMessage()
+    }
 
-  @Test
-  public void testVariableExpansion() throws Exception {
-    assertThat(getExpansionOfFlag("%%")).isEqualTo("%");
-    assertThat(getExpansionOfFlag("%% a %% b %%")).isEqualTo("% a % b %");
-    assertThat(getExpansionOfFlag("%%{var}")).isEqualTo("%{var}");
-    assertThat(getExpansionOfFlag("%{v}", createVariables("v", "<flag>"))).isEqualTo("<flag>");
-    assertThat(getExpansionOfFlag(" %{v1} %{v2} ", createVariables("v1", "1", "v2", "2")))
-        .isEqualTo(" 1 2 ");
-    assertThat(getFlagParsingError("%"))
-        .contains("expected '{' at position 1 while parsing a flag containing '%'");
-    assertThat(getFlagParsingError("% "))
-        .contains("expected '{' at position 1 while parsing a flag containing '% '");
-    assertThat(getFlagParsingError("%{")).contains("expected variable name");
-    assertThat(getFlagParsingError("%{}")).contains("expected variable name");
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testVariableExpansion() {
+        Truth.assertThat(getExpansionOfFlag("%%")).isEqualTo("%")
+        Truth.assertThat(getExpansionOfFlag("%% a %% b %%")).isEqualTo("% a % b %")
+        Truth.assertThat(getExpansionOfFlag("%%{var}")).isEqualTo("%{var}")
+        Truth.assertThat(getExpansionOfFlag("%{v}", createVariables("v", "<flag>"))).isEqualTo("<flag>")
+        Truth.assertThat(getExpansionOfFlag(" %{v1} %{v2} ", createVariables("v1", "1", "v2", "2")))
+            .isEqualTo(" 1 2 ")
+        Truth.assertThat(getFlagParsingError("%"))
+            .contains("expected '{' at position 1 while parsing a flag containing '%'")
+        Truth.assertThat(getFlagParsingError("% "))
+            .contains("expected '{' at position 1 while parsing a flag containing '% '")
+        Truth.assertThat(getFlagParsingError("%{")).contains("expected variable name")
+        Truth.assertThat(getFlagParsingError("%{}")).contains("expected variable name")
+        Truth.assertThat(
             getCommandLineForFlagGroups(
                 "flag_group(iterate_over = 'v', flags = ['%{v}'])",
                 CcToolchainVariables.builder()
-                    .addStringSequenceVariable("v", ImmutableList.of())
-                    .build()))
-        .isEmpty();
-    assertThat(getFlagExpansionError("%{v}", createVariables()))
-        .contains("Invalid toolchain configuration: Cannot find variable named 'v'");
-  }
+                    .addStringSequenceVariable("v", com.google.common.collect.ImmutableList.of<E?>())
+                    .build()
+            )
+        )
+            .isEmpty()
+        Truth.assertThat(getFlagExpansionError("%{v}", createVariables()))
+            .contains("Invalid toolchain configuration: Cannot find variable named 'v'")
+    }
 
-  @Test
-  public void testPathExpansion() throws Exception {
-    PathMapper pathMapper =
-        (PathFragment path) ->
-            path.startsWith(PathFragment.create("bazel-out"))
-                ? path.subFragment(0, 1).getRelative("cfg").getRelative(path.subFragment(2))
-                : path;
-    assertThat(getExpansionOfFlag("%{path:my/source.c}", CcToolchainVariables.empty(), pathMapper))
-        .isEqualTo("my/source.c");
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testPathExpansion() {
+        val pathMapper: PathMapper =
+            PathMapper { path: PathFragment? ->
+                if (path.startsWith(PathFragment.create("bazel-out")))
+                    path.subFragment(0, 1).getRelative("cfg").getRelative(path.subFragment(2))
+                else
+                    path
+            }
+        Truth.assertThat(getExpansionOfFlag("%{path:my/source.c}", CcToolchainVariables.empty(), pathMapper))
+            .isEqualTo("my/source.c")
+        Truth.assertThat(
             getExpansionOfFlag(
                 "%{path:bazel-out/foobar/bin/my/artifact.a}",
-                CcToolchainVariables.empty(), pathMapper))
-        .isEqualTo("bazel-out/cfg/bin/my/artifact.a");
+                CcToolchainVariables.empty(), pathMapper
+            )
+        )
+            .isEqualTo("bazel-out/cfg/bin/my/artifact.a")
 
-    reporter.removeHandler(failFastHandler);
-    assertThrows(Throwable.class, () -> getExpansionOfFlag("%{path:/absolute/path}"));
-    assertContainsEvent(
-        "Invalid toolchain configuration: expected relative Unix-style path after 'path:' at"
-            + " position 2 while parsing a flag containing '%{path:/absolute/path}");
+        reporter.removeHandler(failFastHandler)
+        org.junit.Assert.assertThrows<Throwable?>(
+            Throwable::class.java,
+            org.junit.function.ThrowingRunnable { getExpansionOfFlag("%{path:/absolute/path}") })
+        assertContainsEvent(
+            "Invalid toolchain configuration: expected relative Unix-style path after 'path:' at"
+                    + " position 2 while parsing a flag containing '%{path:/absolute/path}"
+        )
 
-    assertThrows(Throwable.class, () -> getExpansionOfFlag("%{path:}"));
-    assertContainsEvent(
-        "Invalid toolchain configuration: expected path after 'path:' at position 2 while parsing a"
-            + " flag containing '%{path:}");
-  }
-
-  private static CcToolchainVariables createStructureSequenceVariables(
-      String name, VariableValue... values) {
-    return CcToolchainVariables.builder().addVariable(name, ImmutableList.copyOf(values)).build();
-  }
-
-  /**
-   * Single structure value. Be careful not to create sequences of single structures, as the memory
-   * overhead is prohibitively big.
-   */
-  @Immutable
-  private record StructureValue(ImmutableMap<String, VariableValue> value)
-      implements VariableValueAdapter {
-    private static final String STRUCTURE_VARIABLE_TYPE_NAME = "structure";
-
-    @Nullable
-    @Override
-    public VariableValue getFieldValue(
-        String variableName,
-        String field,
-        @Nullable InputMetadataProvider inputMetadataProvider,
-        PathMapper pathMapper,
-        boolean throwOnMissingVariable) {
-      return value.getOrDefault(field, null);
+        org.junit.Assert.assertThrows<Throwable?>(
+            Throwable::class.java,
+            org.junit.function.ThrowingRunnable { getExpansionOfFlag("%{path:}") })
+        assertContainsEvent(
+            "Invalid toolchain configuration: expected path after 'path:' at position 2 while parsing a"
+                    + " flag containing '%{path:}"
+        )
     }
 
-    @Override
-    public String getVariableTypeName() {
-      return STRUCTURE_VARIABLE_TYPE_NAME;
+    /**
+     * Single structure value. Be careful not to create sequences of single structures, as the memory
+     * overhead is prohibitively big.
+     */
+    @com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
+    private class StructureValue(value: com.google.common.collect.ImmutableMap<String?, VariableValue?>?) :
+        VariableValueAdapter {
+        public override fun getFieldValue(
+            variableName: String?,
+            field: String?,
+            inputMetadataProvider: InputMetadataProvider?,
+            pathMapper: PathMapper?,
+            throwOnMissingVariable: Boolean
+        ): VariableValue? {
+            return value.getOrDefault(field, null)
+        }
+
+        val isTruthy: Boolean
+            get() = !value.isEmpty()
+        val value: com.google.common.collect.ImmutableMap<String?, VariableValue?>?
+
+        init {
+            this.value = value
+        }
+
+        companion object {
+            val variableTypeName: String = "structure"
+                get() = Companion.field
+        }
     }
 
-    @Override
-    public boolean isTruthy() {
-      return !value.isEmpty();
+    /** Builder for StructureValue.  */
+    class StructureBuilder {
+        private val fields: com.google.common.collect.ImmutableMap.Builder<String?, VariableValue?> =
+            com.google.common.collect.ImmutableMap.builder<String?, VariableValue?>()
+
+        /** Adds a field to the structure.  */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addField(name: String?, value: VariableValue?): StructureBuilder {
+            fields.put(name, value)
+            return this
+        }
+
+        /** Adds a field to the structure.  */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addField(name: String?, valueBuilder: StructureBuilder): StructureBuilder {
+            com.google.common.base.Preconditions.checkArgument(
+                valueBuilder != null,
+                "Cannot use null builder to get a field value for field '%s'",
+                name
+            )
+            fields.put(name, valueBuilder.build())
+            return this
+        }
+
+        /** Adds a field to the structure.  */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addField(name: String?, value: String?): StructureBuilder {
+            fields.put(name, StringValue(value))
+            return this
+        }
+
+        /** Adds a field to the structure.  */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addField(name: String?, values: com.google.common.collect.ImmutableList<String?>?): StructureBuilder {
+            fields.put(name, Sequence(values))
+            return this
+        }
+
+        /** Returns an immutable structure.  */
+        fun build(): StructureValue {
+            return StructureValue(fields.buildOrThrow())
+        }
     }
-  }
 
-  /** Builder for StructureValue. */
-  public static class StructureBuilder {
-    private final ImmutableMap.Builder<String, VariableValue> fields = ImmutableMap.builder();
-
-    /** Adds a field to the structure. */
-    @CanIgnoreReturnValue
-    public StructureBuilder addField(String name, VariableValue value) {
-      fields.put(name, value);
-      return this;
-    }
-
-    /** Adds a field to the structure. */
-    @CanIgnoreReturnValue
-    public StructureBuilder addField(String name, StructureBuilder valueBuilder) {
-      Preconditions.checkArgument(
-          valueBuilder != null,
-          "Cannot use null builder to get a field value for field '%s'",
-          name);
-      fields.put(name, valueBuilder.build());
-      return this;
-    }
-
-    /** Adds a field to the structure. */
-    @CanIgnoreReturnValue
-    public StructureBuilder addField(String name, String value) {
-      fields.put(name, new StringValue(value));
-      return this;
-    }
-
-    /** Adds a field to the structure. */
-    @CanIgnoreReturnValue
-    public StructureBuilder addField(String name, ImmutableList<String> values) {
-      fields.put(name, new Sequence(values));
-      return this;
-    }
-
-    /** Returns an immutable structure. */
-    public StructureValue build() {
-      return new StructureValue(fields.buildOrThrow());
-    }
-  }
-
-  private static CcToolchainVariables createStructureVariables(
-      String name, StructureBuilder value) {
-    return CcToolchainVariables.builder().addVariable(name, value.build()).build();
-  }
-
-  @Test
-  public void testSimpleStructureVariableExpansion() throws Exception {
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSimpleStructureVariableExpansion() {
+        Truth.assertThat(
             getCommandLineForFlagGroups(
                 "flag_group(flags = ['-A%{struct.foo}', '-B%{struct.bar}'])",
                 createStructureVariables(
                     "struct",
-                    new StructureBuilder()
+                    StructureBuilder()
                         .addField("foo", "fooValue")
-                        .addField("bar", "barValue"))))
-        .containsExactly("-AfooValue", "-BbarValue");
-  }
+                        .addField("bar", "barValue")
+                )
+            )
+        )
+            .containsExactly("-AfooValue", "-BbarValue")
+    }
 
-  @Test
-  public void testNestedStructureVariableExpansion() throws Exception {
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNestedStructureVariableExpansion() {
+        Truth.assertThat(
             getCommandLineForFlagGroups(
                 "flag_group(flags = ['-A%{struct.foo.bar}'])",
                 createStructureVariables(
                     "struct",
-                    new StructureBuilder()
-                        .addField("foo", new StructureBuilder().addField("bar", "fooBarValue")))))
-        .containsExactly("-AfooBarValue");
-  }
+                    StructureBuilder()
+                        .addField("foo", StructureBuilder().addField("bar", "fooBarValue"))
+                )
+            )
+        )
+            .containsExactly("-AfooBarValue")
+    }
 
-  @Test
-  public void testAccessingStructureAsStringFails() {
-    assertThat(
+    @org.junit.Test
+    fun testAccessingStructureAsStringFails() {
+        Truth.assertThat(
             getFlagGroupsExpansionError(
                 "flag_group(flags = ['-A%{struct}'])",
                 createStructureVariables(
                     "struct",
-                    new StructureBuilder()
+                    StructureBuilder()
                         .addField("foo", "fooValue")
-                        .addField("bar", "barValue"))))
-        .isEqualTo(
-            "Invalid toolchain configuration: Cannot expand variable 'struct': expected string, "
-                + "found structure");
-  }
+                        .addField("bar", "barValue")
+                )
+            )
+        )
+            .isEqualTo(
+                "Invalid toolchain configuration: Cannot expand variable 'struct': expected string, "
+                        + "found structure"
+            )
+    }
 
-  @Test
-  public void testAccessingStringValueAsStructureFails() {
-    assertThat(
+    @org.junit.Test
+    fun testAccessingStringValueAsStructureFails() {
+        Truth.assertThat(
             getFlagGroupsExpansionError(
                 "flag_group(flags = ['-A%{stringVar.foo}'])",
-                createVariables("stringVar", "stringVarValue")))
-        .isEqualTo(
-            "Invalid toolchain configuration: Cannot expand variable 'stringVar.foo': variable "
-                + "'stringVar' is string, expected structure");
-  }
+                createVariables("stringVar", "stringVarValue")
+            )
+        )
+            .isEqualTo(
+                "Invalid toolchain configuration: Cannot expand variable 'stringVar.foo': variable "
+                        + "'stringVar' is string, expected structure"
+            )
+    }
 
-  @Test
-  public void testAccessingSequenceAsStructureFails() {
-    assertThat(
+    @org.junit.Test
+    fun testAccessingSequenceAsStructureFails() {
+        Truth.assertThat(
             getFlagGroupsExpansionError(
                 "flag_group(flags = ['-A%{sequence.foo}'])",
-                createVariables("sequence", "foo1", "sequence", "foo2")))
-        .isEqualTo(
-            "Invalid toolchain configuration: Cannot expand variable 'sequence.foo': variable "
-                + "'sequence' is sequence, expected structure");
-  }
+                createVariables("sequence", "foo1", "sequence", "foo2")
+            )
+        )
+            .isEqualTo(
+                "Invalid toolchain configuration: Cannot expand variable 'sequence.foo': variable "
+                        + "'sequence' is sequence, expected structure"
+            )
+    }
 
-  @Test
-  public void testAccessingMissingStructureFieldFails() {
-    assertThat(
+    @org.junit.Test
+    fun testAccessingMissingStructureFieldFails() {
+        Truth.assertThat(
             getFlagGroupsExpansionError(
                 "flag_group(flags = ['-A%{struct.missing}'])",
                 createStructureVariables(
-                    "struct", new StructureBuilder().addField("bar", "barValue"))))
-        .isEqualTo(
-            "Invalid toolchain configuration: Cannot expand variable 'struct.missing': structure "
-                + "struct doesn't have a field named 'missing'");
-  }
+                    "struct", StructureBuilder().addField("bar", "barValue")
+                )
+            )
+        )
+            .isEqualTo(
+                "Invalid toolchain configuration: Cannot expand variable 'struct.missing': structure "
+                        + "struct doesn't have a field named 'missing'"
+            )
+    }
 
-  @Test
-  public void testSequenceOfStructuresExpansion() throws Exception {
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSequenceOfStructuresExpansion() {
+        Truth.assertThat(
             getCommandLineForFlagGroups(
                 "flag_group(iterate_over = 'structs', flags = ['-A%{structs.foo}'])",
                 createStructureSequenceVariables(
                     "structs",
-                    new StructureBuilder().addField("foo", "foo1Value").build(),
-                    new StructureBuilder().addField("foo", "foo2Value").build())))
-        .containsExactly("-Afoo1Value", "-Afoo2Value");
-  }
+                    StructureBuilder().addField("foo", "foo1Value").build(),
+                    StructureBuilder().addField("foo", "foo2Value").build()
+                )
+            )
+        )
+            .containsExactly("-Afoo1Value", "-Afoo2Value")
+    }
 
-  @Test
-  public void testStructureOfSequencesExpansion() throws Exception {
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStructureOfSequencesExpansion() {
+        Truth.assertThat(
             getCommandLineForFlagGroups(
-                "flag_group("
-                    + "  iterate_over = 'struct.sequences',"
-                    + "  flags = ['-A%{struct.sequences.foo}']"
-                    + ")",
+                ("flag_group("
+                        + "  iterate_over = 'struct.sequences',"
+                        + "  flags = ['-A%{struct.sequences.foo}']"
+                        + ")"),
                 createStructureVariables(
                     "struct",
-                    new StructureBuilder()
+                    StructureBuilder()
                         .addField(
                             "sequences",
-                            new Sequence(
-                                ImmutableList.of(
-                                    new StructureBuilder().addField("foo", "foo1Value").build(),
-                                    new StructureBuilder()
+                            Sequence(
+                                com.google.common.collect.ImmutableList.of<E?>(
+                                    StructureBuilder().addField("foo", "foo1Value").build(),
+                                    StructureBuilder()
                                         .addField("foo", "foo2Value")
-                                        .build()))))))
-        .containsExactly("-Afoo1Value", "-Afoo2Value");
-  }
+                                        .build()
+                                )
+                            )
+                        )
+                )
+            )
+        )
+            .containsExactly("-Afoo1Value", "-Afoo2Value")
+    }
 
-  @Test
-  public void testDottedNamesNotAlwaysMeanStructures() throws Exception {
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDottedNamesNotAlwaysMeanStructures() {
+        Truth.assertThat(
             getCommandLineForFlagGroups(
-                "flag_group("
-                    + "  iterate_over = 'struct.sequence',"
-                    + "  flag_groups = [flag_group("
-                    + "    iterate_over = 'other_sequence',"
-                    + "    flag_groups = [flag_group("
-                    + "      flags = ['-A%{struct.sequence} -B%{other_sequence}']"
-                    + "    )]"
-                    + "  )]"
-                    + ")",
+                ("flag_group("
+                        + "  iterate_over = 'struct.sequence',"
+                        + "  flag_groups = [flag_group("
+                        + "    iterate_over = 'other_sequence',"
+                        + "    flag_groups = [flag_group("
+                        + "      flags = ['-A%{struct.sequence} -B%{other_sequence}']"
+                        + "    )]"
+                        + "  )]"
+                        + ")"),
                 CcToolchainVariables.builder()
                     .addVariable(
                         "struct",
-                        new StructureBuilder()
-                            .addField("sequence", ImmutableList.of("first", "second"))
-                            .build())
-                    .addStringSequenceVariable("other_sequence", ImmutableList.of("foo", "bar"))
-                    .build()))
-        .containsExactly("-Afirst -Bfoo", "-Afirst -Bbar", "-Asecond -Bfoo", "-Asecond -Bbar");
-  }
+                        StructureBuilder()
+                            .addField(
+                                "sequence",
+                                com.google.common.collect.ImmutableList.of<String?>("first", "second")
+                            )
+                            .build()
+                    )
+                    .addStringSequenceVariable(
+                        "other_sequence",
+                        com.google.common.collect.ImmutableList.of<E?>("foo", "bar")
+                    )
+                    .build()
+            )
+        )
+            .containsExactly("-Afirst -Bfoo", "-Afirst -Bbar", "-Asecond -Bfoo", "-Asecond -Bbar")
+    }
 
-  @Test
-  public void testExpandIfAllAvailableWithStructsExpandsIfPresent() throws Exception {
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExpandIfAllAvailableWithStructsExpandsIfPresent() {
+        Truth.assertThat(
             getCommandLineForFlagGroups(
-                "flag_group("
-                    + "  expand_if_available = 'struct',"
-                    + "  flags = ['-A%{struct.foo}', '-B%{struct.bar}']"
-                    + ")",
+                ("flag_group("
+                        + "  expand_if_available = 'struct',"
+                        + "  flags = ['-A%{struct.foo}', '-B%{struct.bar}']"
+                        + ")"),
                 createStructureVariables(
                     "struct",
-                    new StructureBuilder()
+                    StructureBuilder()
                         .addField("foo", "fooValue")
-                        .addField("bar", "barValue"))))
-        .containsExactly("-AfooValue", "-BbarValue");
-  }
+                        .addField("bar", "barValue")
+                )
+            )
+        )
+            .containsExactly("-AfooValue", "-BbarValue")
+    }
 
-  @Test
-  public void testExpandIfAllAvailableWithStructsDoesntExpandIfMissing() throws Exception {
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExpandIfAllAvailableWithStructsDoesntExpandIfMissing() {
+        Truth.assertThat(
             getCommandLineForFlagGroups(
-                "flag_group("
-                    + "  expand_if_available = 'nonexistent',"
-                    + "  flags = ['-A%{struct.foo}','-B%{struct.bar}']"
-                    + ")",
+                ("flag_group("
+                        + "  expand_if_available = 'nonexistent',"
+                        + "  flags = ['-A%{struct.foo}','-B%{struct.bar}']"
+                        + ")"),
                 createStructureVariables(
                     "struct",
-                    new StructureBuilder()
+                    StructureBuilder()
                         .addField("foo", "fooValue")
-                        .addField("bar", "barValue"))))
-        .isEmpty();
-  }
+                        .addField("bar", "barValue")
+                )
+            )
+        )
+            .isEmpty()
+    }
 
-  @Test
-  public void testExpandIfAllAvailableWithStructsDoesntCrashIfMissing() throws Exception {
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExpandIfAllAvailableWithStructsDoesntCrashIfMissing() {
+        Truth.assertThat(
             getCommandLineForFlagGroups(
-                "flag_group("
-                    + "  expand_if_available = 'nonexistent',"
-                    + "  flags = ['-A%{nonexistent.foo}','-B%{nonexistent.bar}']"
-                    + ")",
-                createVariables()))
-        .isEmpty();
-  }
+                ("flag_group("
+                        + "  expand_if_available = 'nonexistent',"
+                        + "  flags = ['-A%{nonexistent.foo}','-B%{nonexistent.bar}']"
+                        + ")"),
+                createVariables()
+            )
+        )
+            .isEmpty()
+    }
 
-  @Test
-  public void testExpandIfAllAvailableWithStructFieldDoesntCrashIfMissing() throws Exception {
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExpandIfAllAvailableWithStructFieldDoesntCrashIfMissing() {
+        Truth.assertThat(
             getCommandLineForFlagGroups(
-                "flag_group("
-                    + "  expand_if_available = 'nonexistent.nonexistant_field',"
-                    + "  flags = ['-A%{nonexistent.foo}','-B%{nonexistent.bar}']"
-                    + ")",
-                createVariables()))
-        .isEmpty();
-  }
+                ("flag_group("
+                        + "  expand_if_available = 'nonexistent.nonexistant_field',"
+                        + "  flags = ['-A%{nonexistent.foo}','-B%{nonexistent.bar}']"
+                        + ")"),
+                createVariables()
+            )
+        )
+            .isEmpty()
+    }
 
-  @Test
-  public void testExpandIfAllAvailableWithStructFieldExpandsIfPresent() throws Exception {
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExpandIfAllAvailableWithStructFieldExpandsIfPresent() {
+        Truth.assertThat(
             getCommandLineForFlagGroups(
-                "flag_group("
-                    + "  expand_if_available = 'struct.foo',"
-                    + "  flags = ['-A%{struct.foo}','-B%{struct.bar}']"
-                    + ")",
+                ("flag_group("
+                        + "  expand_if_available = 'struct.foo',"
+                        + "  flags = ['-A%{struct.foo}','-B%{struct.bar}']"
+                        + ")"),
                 createStructureVariables(
                     "struct",
-                    new StructureBuilder()
+                    StructureBuilder()
                         .addField("foo", "fooValue")
-                        .addField("bar", "barValue"))))
-        .containsExactly("-AfooValue", "-BbarValue");
-  }
+                        .addField("bar", "barValue")
+                )
+            )
+        )
+            .containsExactly("-AfooValue", "-BbarValue")
+    }
 
-  @Test
-  public void testExpandIfAllAvailableWithStructFieldDoesntExpandIfMissing() throws Exception {
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExpandIfAllAvailableWithStructFieldDoesntExpandIfMissing() {
+        Truth.assertThat(
             getCommandLineForFlagGroups(
-                "flag_group("
-                    + "  expand_if_available = 'struct.foo',"
-                    + "  flags = ['-A%{struct.foo}','-B%{struct.bar}']"
-                    + ")",
+                ("flag_group("
+                        + "  expand_if_available = 'struct.foo',"
+                        + "  flags = ['-A%{struct.foo}','-B%{struct.bar}']"
+                        + ")"),
                 createStructureVariables(
-                    "struct", new StructureBuilder().addField("bar", "barValue"))))
-        .isEmpty();
-  }
+                    "struct", StructureBuilder().addField("bar", "barValue")
+                )
+            )
+        )
+            .isEmpty()
+    }
 
-  @Test
-  public void testExpandIfAllAvailableWithStructFieldScopesRight() throws Exception {
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExpandIfAllAvailableWithStructFieldScopesRight() {
+        Truth.assertThat(
             getCommandLineForFlagGroups(
-                "flag_group(flag_groups = [flag_group("
-                    + "    expand_if_available = 'struct.foo',"
-                    + "    flags = ['-A%{struct.foo}']"
-                    + "  ),"
-                    + "  flag_group("
-                    + "    flags = ['-B%{struct.bar}']"
-                    + "  )]"
-                    + ")",
+                ("flag_group(flag_groups = [flag_group("
+                        + "    expand_if_available = 'struct.foo',"
+                        + "    flags = ['-A%{struct.foo}']"
+                        + "  ),"
+                        + "  flag_group("
+                        + "    flags = ['-B%{struct.bar}']"
+                        + "  )]"
+                        + ")"),
                 createStructureVariables(
-                    "struct", new StructureBuilder().addField("bar", "barValue"))))
-        .containsExactly("-BbarValue");
-  }
+                    "struct", StructureBuilder().addField("bar", "barValue")
+                )
+            )
+        )
+            .containsExactly("-BbarValue")
+    }
 
-  @Test
-  public void testExpandIfNoneAvailableExpandsIfNotAvailable() throws Exception {
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExpandIfNoneAvailableExpandsIfNotAvailable() {
+        Truth.assertThat(
             getCommandLineForFlagGroups(
-                "flag_group(flag_groups = [flag_group("
-                    + "    expand_if_not_available = 'not_available',"
-                    + "    flags = ['-foo']"
-                    + "  ),"
-                    + "  flag_group("
-                    + "    expand_if_not_available = 'available',"
-                    + "    flags = ['-bar']"
-                    + "  )]"
-                    + ")",
-                createVariables("available", "available")))
-        .containsExactly("-foo");
-  }
+                ("flag_group(flag_groups = [flag_group("
+                        + "    expand_if_not_available = 'not_available',"
+                        + "    flags = ['-foo']"
+                        + "  ),"
+                        + "  flag_group("
+                        + "    expand_if_not_available = 'available',"
+                        + "    flags = ['-bar']"
+                        + "  )]"
+                        + ")"),
+                createVariables("available", "available")
+            )
+        )
+            .containsExactly("-foo")
+    }
 
-  @Test
-  public void testExpandIfNoneAvailableDoesntExpandIfThereIsOneOfManyAvailable() throws Exception {
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExpandIfNoneAvailableDoesntExpandIfThereIsOneOfManyAvailable() {
+        Truth.assertThat(
             getCommandLineForFlagGroups(
-                "flag_group("
-                    + "  expand_if_not_available = 'not_available',"
-                    + "  flag_groups = [flag_group("
-                    + "    expand_if_not_available = 'available',"
-                    + "    flags = ['-foo']"
-                    + "  )]"
-                    + ")",
-                createVariables("available", "available")))
-        .isEmpty();
-  }
+                ("flag_group("
+                        + "  expand_if_not_available = 'not_available',"
+                        + "  flag_groups = [flag_group("
+                        + "    expand_if_not_available = 'available',"
+                        + "    flags = ['-foo']"
+                        + "  )]"
+                        + ")"),
+                createVariables("available", "available")
+            )
+        )
+            .isEmpty()
+    }
 
-  @Test
-  public void testExpandIfTrueDoesntExpandIfMissing() throws Exception {
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExpandIfTrueDoesntExpandIfMissing() {
+        Truth.assertThat(
             getCommandLineForFlagGroups(
-                "flag_group("
-                    + "  expand_if_true = 'missing',"
-                    + "  flags = ['-A%{missing}']"
-                    + "),"
-                    + "flag_group("
-                    + "  expand_if_false = 'missing',"
-                    + "  flags = ['-B%{missing}']"
-                    + ")",
-                createVariables()))
-        .isEmpty();
-  }
+                ("flag_group("
+                        + "  expand_if_true = 'missing',"
+                        + "  flags = ['-A%{missing}']"
+                        + "),"
+                        + "flag_group("
+                        + "  expand_if_false = 'missing',"
+                        + "  flags = ['-B%{missing}']"
+                        + ")"),
+                createVariables()
+            )
+        )
+            .isEmpty()
+    }
 
-  @Test
-  public void testExpandIfTrueExpandsIfOne() throws Exception {
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExpandIfTrueExpandsIfOne() {
+        Truth.assertThat(
             getCommandLineForFlagGroups(
-                "flag_group("
-                    + "  expand_if_true = 'struct.bool',"
-                    + "  flags = ['-A%{struct.foo}','-B%{struct.bar}']"
-                    + "),"
-                    + "flag_group("
-                    + "  expand_if_false = 'struct.bool',"
-                    + "  flags = ['-X%{struct.foo}','-Y%{struct.bar}']"
-                    + ")",
+                ("flag_group("
+                        + "  expand_if_true = 'struct.bool',"
+                        + "  flags = ['-A%{struct.foo}','-B%{struct.bar}']"
+                        + "),"
+                        + "flag_group("
+                        + "  expand_if_false = 'struct.bool',"
+                        + "  flags = ['-X%{struct.foo}','-Y%{struct.bar}']"
+                        + ")"),
                 createStructureVariables(
                     "struct",
-                    new StructureBuilder()
+                    StructureBuilder()
                         .addField("bool", booleanValue(true))
                         .addField("foo", "fooValue")
-                        .addField("bar", "barValue"))))
-        .containsExactly("-AfooValue", "-BbarValue");
-  }
+                        .addField("bar", "barValue")
+                )
+            )
+        )
+            .containsExactly("-AfooValue", "-BbarValue")
+    }
 
-  @Test
-  public void testExpandIfTrueExpandsIfZero() throws Exception {
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExpandIfTrueExpandsIfZero() {
+        Truth.assertThat(
             getCommandLineForFlagGroups(
-                "flag_group("
-                    + "  expand_if_true = 'struct.bool',"
-                    + "  flags = ['-A%{struct.foo}','-B%{struct.bar}']"
-                    + "),"
-                    + "flag_group("
-                    + "  expand_if_false = 'struct.bool',"
-                    + "  flags = ['-X%{struct.foo}', '-Y%{struct.bar}']"
-                    + ")",
+                ("flag_group("
+                        + "  expand_if_true = 'struct.bool',"
+                        + "  flags = ['-A%{struct.foo}','-B%{struct.bar}']"
+                        + "),"
+                        + "flag_group("
+                        + "  expand_if_false = 'struct.bool',"
+                        + "  flags = ['-X%{struct.foo}', '-Y%{struct.bar}']"
+                        + ")"),
                 createStructureVariables(
                     "struct",
-                    new StructureBuilder()
+                    StructureBuilder()
                         .addField("bool", booleanValue(false))
                         .addField("foo", "fooValue")
-                        .addField("bar", "barValue"))))
-        .containsExactly("-XfooValue", "-YbarValue");
-  }
+                        .addField("bar", "barValue")
+                )
+            )
+        )
+            .containsExactly("-XfooValue", "-YbarValue")
+    }
 
-  private static VariableValue booleanValue(boolean val) throws ExpansionException {
-    return CcToolchainVariables.builder()
-        .addVariable("name", val)
-        .build()
-        .getVariable("name", PathMapper.NOOP);
-  }
-
-  @Test
-  public void testExpandIfEqual() throws Exception {
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExpandIfEqual() {
+        Truth.assertThat(
             getCommandLineForFlagGroups(
-                "flag_group(  expand_if_equal = variable_with_value(name = 'var', value ="
-                    + " 'equal_value'),  flags = ['-foo_%{var}']),flag_group(  expand_if_equal ="
-                    + " variable_with_value(name = 'var', value = 'non_equal_value'),  flags ="
-                    + " ['-bar_%{var}']),flag_group(  expand_if_equal = variable_with_value(name ="
-                    + " 'non_existing_var', value = 'non_existing'),  flags ="
-                    + " ['-baz_%{non_existing_var}'])",
-                createVariables("var", "equal_value")))
-        .containsExactly("-foo_equal_value");
-  }
+                ("flag_group(  expand_if_equal = variable_with_value(name = 'var', value ="
+                        + " 'equal_value'),  flags = ['-foo_%{var}']),flag_group(  expand_if_equal ="
+                        + " variable_with_value(name = 'var', value = 'non_equal_value'),  flags ="
+                        + " ['-bar_%{var}']),flag_group(  expand_if_equal = variable_with_value(name ="
+                        + " 'non_existing_var', value = 'non_existing'),  flags ="
+                        + " ['-baz_%{non_existing_var}'])"),
+                createVariables("var", "equal_value")
+            )
+        )
+            .containsExactly("-foo_equal_value")
+    }
 
-  @Test
-  public void testListVariableExpansion() throws Exception {
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testListVariableExpansion() {
+        Truth.assertThat(
             getCommandLineForFlagGroups(
                 "flag_group(iterate_over = 'v', flags = ['%{v}'])",
-                createVariables("v", "1", "v", "2")))
-        .containsExactly("1", "2");
-  }
+                createVariables("v", "1", "v", "2")
+            )
+        )
+            .containsExactly("1", "2")
+    }
 
-  @Test
-  public void testListVariableExpansionMixedWithNonListVariable() throws Exception {
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testListVariableExpansionMixedWithNonListVariable() {
+        Truth.assertThat(
             getCommandLineForFlagGroups(
                 "flag_group(iterate_over = 'v1', flags = ['%{v1} %{v2}'])",
-                createVariables("v1", "a1", "v1", "a2", "v2", "b")))
-        .containsExactly("a1 b", "a2 b");
-  }
+                createVariables("v1", "a1", "v1", "a2", "v2", "b")
+            )
+        )
+            .containsExactly("a1 b", "a2 b")
+    }
 
-  @Test
-  public void testNestedListVariableExpansion() throws Exception {
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNestedListVariableExpansion() {
+        Truth.assertThat(
             getCommandLineForFlagGroups(
-                "flag_group("
-                    + "  iterate_over = 'v1',"
-                    + "  flag_groups = [flag_group("
-                    + "    iterate_over = 'v2',"
-                    + "    flags = ['%{v1} %{v2}'],"
-                    + "  )]"
-                    + ")",
-                createVariables("v1", "a1", "v1", "a2", "v2", "b1", "v2", "b2")))
-        .containsExactly("a1 b1", "a1 b2", "a2 b1", "a2 b2");
-  }
+                ("flag_group("
+                        + "  iterate_over = 'v1',"
+                        + "  flag_groups = [flag_group("
+                        + "    iterate_over = 'v2',"
+                        + "    flags = ['%{v1} %{v2}'],"
+                        + "  )]"
+                        + ")"),
+                createVariables("v1", "a1", "v1", "a2", "v2", "b1", "v2", "b2")
+            )
+        )
+            .containsExactly("a1 b1", "a1 b2", "a2 b1", "a2 b2")
+    }
 
-  @Test
-  public void testListVariableExpansionMixedWithImplicitlyAccessedListVariableFails() {
-    assertThat(
+    @org.junit.Test
+    fun testListVariableExpansionMixedWithImplicitlyAccessedListVariableFails() {
+        Truth.assertThat(
             getFlagGroupsExpansionError(
                 "flag_group(iterate_over = 'v1', flags = ['%{v1} %{v2}'])",
-                createVariables("v1", "a1", "v1", "a2", "v2", "b1", "v2", "b2")))
-        .contains("Cannot expand variable 'v2': expected string, found sequence");
-  }
-
-  @Test
-  public void testFlagGroupVariableExpansion() throws Exception {
-    assertThat(
-            getCommandLineForFlagGroups(
-                ""
-                    + "flag_group(iterate_over = 'v', flags = ['-f', '%{v}']),"
-                    + "flag_group(flags = ['-end'])",
-                createVariables("v", "1", "v", "2")))
-        .containsExactly("-f", "1", "-f", "2", "-end");
-    assertThat(
-            getCommandLineForFlagGroups(
-                ""
-                    + "flag_group(iterate_over = 'v', flags = ['-f', '%{v}']),"
-                    + "flag_group(iterate_over = 'v', flags = ['%{v}'])",
-                createVariables("v", "1", "v", "2")))
-        .containsExactly("-f", "1", "-f", "2", "1", "2");
-    assertThat(
-            getCommandLineForFlagGroups(
-                ""
-                    + "flag_group(iterate_over = 'v', flags = ['-f', '%{v}']),"
-                    + "flag_group(iterate_over = 'v', flags = ['%{v}'])",
-                createVariables("v", "1", "v", "2")))
-        .containsExactly("-f", "1", "-f", "2", "1", "2");
-  }
-
-  private static ImmutableList<VariableValue> createNestedSequence(
-      int depth, int count, String prefix) {
-    ImmutableList.Builder<VariableValue> builder = ImmutableList.builder();
-    if (depth == 0) {
-      for (int i = 0; i < count; ++i) {
-        String value = prefix + i;
-        builder.add(new StringValue(value));
-      }
-    } else {
-      for (int i = 0; i < count; ++i) {
-        String value = prefix + i;
-        builder.add(new Sequence(createNestedSequence(depth - 1, count, value)));
-      }
+                createVariables("v1", "a1", "v1", "a2", "v2", "b1", "v2", "b2")
+            )
+        )
+            .contains("Cannot expand variable 'v2': expected string, found sequence")
     }
-    return builder.build();
-  }
 
-  private static CcToolchainVariables createNestedVariables(String name, int depth, int count) {
-    return CcToolchainVariables.builder()
-        .addVariable(name, createNestedSequence(depth, count, ""))
-        .build();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFlagGroupVariableExpansion() {
+        Truth.assertThat(
+            getCommandLineForFlagGroups(
+                (""
+                        + "flag_group(iterate_over = 'v', flags = ['-f', '%{v}']),"
+                        + "flag_group(flags = ['-end'])"),
+                createVariables("v", "1", "v", "2")
+            )
+        )
+            .containsExactly("-f", "1", "-f", "2", "-end")
+        Truth.assertThat(
+            getCommandLineForFlagGroups(
+                (""
+                        + "flag_group(iterate_over = 'v', flags = ['-f', '%{v}']),"
+                        + "flag_group(iterate_over = 'v', flags = ['%{v}'])"),
+                createVariables("v", "1", "v", "2")
+            )
+        )
+            .containsExactly("-f", "1", "-f", "2", "1", "2")
+        Truth.assertThat(
+            getCommandLineForFlagGroups(
+                (""
+                        + "flag_group(iterate_over = 'v', flags = ['-f', '%{v}']),"
+                        + "flag_group(iterate_over = 'v', flags = ['%{v}'])"),
+                createVariables("v", "1", "v", "2")
+            )
+        )
+            .containsExactly("-f", "1", "-f", "2", "1", "2")
+    }
 
-  @Test
-  public void testFlagTreeVariableExpansion() throws Exception {
-    String nestedGroup =
-        ""
-            + "flag_group("
-            + "  iterate_over = 'v',"
-            + "  flag_groups = ["
-            + "    flag_group(flags = ['-a']),"
-            + "    flag_group(iterate_over = 'v', flags = ['%{v}']),"
-            + "    flag_group(flags = ['-b']),"
-            + "  ],"
-            + ")";
-    assertThat(getCommandLineForFlagGroups(nestedGroup, createNestedVariables("v", 1, 3)))
-        .containsExactly(
-            "-a", "00", "01", "02", "-b", "-a", "10", "11", "12", "-b", "-a", "20", "21", "22",
-            "-b");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFlagTreeVariableExpansion() {
+        val nestedGroup =
+            (""
+                    + "flag_group("
+                    + "  iterate_over = 'v',"
+                    + "  flag_groups = ["
+                    + "    flag_group(flags = ['-a']),"
+                    + "    flag_group(iterate_over = 'v', flags = ['%{v}']),"
+                    + "    flag_group(flags = ['-b']),"
+                    + "  ],"
+                    + ")")
+        Truth.assertThat(getCommandLineForFlagGroups(nestedGroup, createNestedVariables("v", 1, 3)))
+            .containsExactly(
+                "-a", "00", "01", "02", "-b", "-a", "10", "11", "12", "-b", "-a", "20", "21", "22",
+                "-b"
+            )
 
-    ExpansionException e =
-        assertThrows(
-            ExpansionException.class,
-            () -> getCommandLineForFlagGroups(nestedGroup, createNestedVariables("v", 2, 3)));
-    assertThat(e).hasMessageThat().contains("'v'");
+        val e: ExpansionException? =
+            org.junit.Assert.assertThrows<T?>(
+                ExpansionException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    getCommandLineForFlagGroups(
+                        nestedGroup,
+                        createNestedVariables("v", 2, 3)
+                    )
+                })
+        assertThat(e).hasMessageThat().contains("'v'")
 
-    AssertionError ae =
-        assertThrows(
-            AssertionError.class,
-            () ->
-                buildFeatures(
-                    "features = [feature(",
-                    "  name =  'a',",
-                    "  flag_sets = [flag_set(",
-                    "    action = 'c++-compile',",
-                    "    flag_groups = [flag_group(",
-                    "      flag_groups = [flag_group(flags = ['-f'])],",
-                    "      flags = ['-f'],",
-                    "    )],",
-                    "  )],",
-                    ")]"));
-    assertThat(ae)
-        .hasMessageThat()
-        .contains("flag_group must not contain both a flag and another flag_group.");
-  }
+        val ae: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable {
+                    buildFeatures(
+                        "features = [feature(",
+                        "  name =  'a',",
+                        "  flag_sets = [flag_set(",
+                        "    action = 'c++-compile',",
+                        "    flag_groups = [flag_group(",
+                        "      flag_groups = [flag_group(flags = ['-f'])],",
+                        "      flags = ['-f'],",
+                        "    )],",
+                        "  )],",
+                        ")]"
+                    )
+                })
+        Truth.assertThat(ae)
+            .hasMessageThat()
+            .contains("flag_group must not contain both a flag and another flag_group.")
+    }
 
-  @Test
-  public void testImplies() throws Exception {
-    CcToolchainFeatures features =
-        buildFeatures(
-            "features = [",
-            "    feature(name = 'a', implies = ['b', 'c']),",
-            "    feature(name = 'b'),",
-            "    feature(name = 'c', implies = ['d']),",
-            "    feature(name = 'd'),",
-            "    feature(name = 'e'),",
-            "]");
-    assertThat(getEnabledFeatures(features, "a")).containsExactly("a", "b", "c", "d");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testImplies() {
+        val features: CcToolchainFeatures =
+            buildFeatures(
+                "features = [",
+                "    feature(name = 'a', implies = ['b', 'c']),",
+                "    feature(name = 'b'),",
+                "    feature(name = 'c', implies = ['d']),",
+                "    feature(name = 'd'),",
+                "    feature(name = 'e'),",
+                "]"
+            )
+        Truth.assertThat(getEnabledFeatures(features, "a")).containsExactly("a", "b", "c", "d")
+    }
 
-  @Test
-  public void testRequires() throws Exception {
-    CcToolchainFeatures features =
-        buildFeatures(
-            "features = [",
-            "    feature(name = 'a', requires = [feature_set(features = ['b'])]),",
-            "    feature(name = 'b', requires = [feature_set(features = ['c'])]),",
-            "    feature(name = 'c'),",
-            "]");
-    assertThat(getEnabledFeatures(features, "a")).isEmpty();
-    assertThat(getEnabledFeatures(features, "a", "b")).isEmpty();
-    assertThat(getEnabledFeatures(features, "a", "c")).containsExactly("c");
-    assertThat(getEnabledFeatures(features, "a", "b", "c")).containsExactly("a", "b", "c");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRequires() {
+        val features: CcToolchainFeatures =
+            buildFeatures(
+                "features = [",
+                "    feature(name = 'a', requires = [feature_set(features = ['b'])]),",
+                "    feature(name = 'b', requires = [feature_set(features = ['c'])]),",
+                "    feature(name = 'c'),",
+                "]"
+            )
+        Truth.assertThat(getEnabledFeatures(features, "a")).isEmpty()
+        Truth.assertThat(getEnabledFeatures(features, "a", "b")).isEmpty()
+        Truth.assertThat(getEnabledFeatures(features, "a", "c")).containsExactly("c")
+        Truth.assertThat(getEnabledFeatures(features, "a", "b", "c")).containsExactly("a", "b", "c")
+    }
 
-  @Test
-  public void testDisabledRequirementChain() throws Exception {
-    CcToolchainFeatures features =
-        buildFeatures(
-            "features = [",
-            "    feature(name = 'a'),",
-            "    feature(name = 'b', requires = [feature_set(features = ['c'])], implies ="
-                + " ['a']),",
-            "    feature(name = 'c'),",
-            "]");
-    assertThat(getEnabledFeatures(features, "b")).isEmpty();
-    features =
-        buildFeatures(
-            "features = [",
-            "    feature(name = 'a'),",
-            "    feature(name = 'b', requires = [feature_set(features = ['a'])], implies ="
-                + " ['c']),",
-            "    feature(name = 'c'),",
-            "    feature(name = 'd', requires = [feature_set(features = ['c'])], implies ="
-                + " ['e']),",
-            "    feature(name = 'e'),",
-            "]");
-    assertThat(getEnabledFeatures(features, "b", "d")).isEmpty();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDisabledRequirementChain() {
+        var features: CcToolchainFeatures =
+            buildFeatures(
+                "features = [",
+                "    feature(name = 'a'),",
+                "    feature(name = 'b', requires = [feature_set(features = ['c'])], implies ="
+                        + " ['a']),",
+                "    feature(name = 'c'),",
+                "]"
+            )
+        Truth.assertThat(getEnabledFeatures(features, "b")).isEmpty()
+        features =
+            buildFeatures(
+                "features = [",
+                "    feature(name = 'a'),",
+                "    feature(name = 'b', requires = [feature_set(features = ['a'])], implies ="
+                        + " ['c']),",
+                "    feature(name = 'c'),",
+                "    feature(name = 'd', requires = [feature_set(features = ['c'])], implies ="
+                        + " ['e']),",
+                "    feature(name = 'e'),",
+                "]"
+            )
+        Truth.assertThat(getEnabledFeatures(features, "b", "d")).isEmpty()
+    }
 
-  @Test
-  public void testEnabledRequirementChain() throws Exception {
-    CcToolchainFeatures features =
-        buildFeatures(
-            "features = [",
-            "    feature(name = '0', implies = ['a']),",
-            "    feature(name = 'a'),",
-            "    feature(name = 'b', requires = [feature_set(features = ['a'])], implies ="
-                + " ['c']),",
-            "    feature(name = 'c'),",
-            "    feature(name = 'd', requires = [feature_set(features = ['c'])], implies ="
-                + " ['e']),",
-            "    feature(name = 'e'),",
-            "]");
-    assertThat(getEnabledFeatures(features, "0", "b", "d"))
-        .containsExactly("0", "a", "b", "c", "d", "e");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEnabledRequirementChain() {
+        val features: CcToolchainFeatures =
+            buildFeatures(
+                "features = [",
+                "    feature(name = '0', implies = ['a']),",
+                "    feature(name = 'a'),",
+                "    feature(name = 'b', requires = [feature_set(features = ['a'])], implies ="
+                        + " ['c']),",
+                "    feature(name = 'c'),",
+                "    feature(name = 'd', requires = [feature_set(features = ['c'])], implies ="
+                        + " ['e']),",
+                "    feature(name = 'e'),",
+                "]"
+            )
+        Truth.assertThat(getEnabledFeatures(features, "0", "b", "d"))
+            .containsExactly("0", "a", "b", "c", "d", "e")
+    }
 
-  @Test
-  public void testLogicInRequirements() throws Exception {
-    CcToolchainFeatures features =
-        buildFeatures(
-            "features = [",
-            "    feature(",
-            "        name = 'a',",
-            "        requires = [",
-            "            feature_set(features = ['b', 'c']),",
-            "            feature_set(features = ['d']),",
-            "        ],",
-            "    ),",
-            "    feature(name = 'b'),",
-            "    feature(name = 'c'),",
-            "    feature(name = 'd'),",
-            "]");
-    assertThat(getEnabledFeatures(features, "a", "b", "c")).containsExactly("a", "b", "c");
-    assertThat(getEnabledFeatures(features, "a", "b")).containsExactly("b");
-    assertThat(getEnabledFeatures(features, "a", "c")).containsExactly("c");
-    assertThat(getEnabledFeatures(features, "a", "d")).containsExactly("a", "d");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLogicInRequirements() {
+        val features: CcToolchainFeatures =
+            buildFeatures(
+                "features = [",
+                "    feature(",
+                "        name = 'a',",
+                "        requires = [",
+                "            feature_set(features = ['b', 'c']),",
+                "            feature_set(features = ['d']),",
+                "        ],",
+                "    ),",
+                "    feature(name = 'b'),",
+                "    feature(name = 'c'),",
+                "    feature(name = 'd'),",
+                "]"
+            )
+        Truth.assertThat(getEnabledFeatures(features, "a", "b", "c")).containsExactly("a", "b", "c")
+        Truth.assertThat(getEnabledFeatures(features, "a", "b")).containsExactly("b")
+        Truth.assertThat(getEnabledFeatures(features, "a", "c")).containsExactly("c")
+        Truth.assertThat(getEnabledFeatures(features, "a", "d")).containsExactly("a", "d")
+    }
 
-  @Test
-  public void testImpliesImpliesRequires() throws Exception {
-    CcToolchainFeatures features =
-        buildFeatures(
-            "features = [",
-            "    feature(name = 'a', implies = ['b']),",
-            "    feature(name = 'b', requires = [feature_set(features = ['c'])]),",
-            "    feature(name = 'c'),",
-            "]");
-    assertThat(getEnabledFeatures(features, "a")).isEmpty();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testImpliesImpliesRequires() {
+        val features: CcToolchainFeatures =
+            buildFeatures(
+                "features = [",
+                "    feature(name = 'a', implies = ['b']),",
+                "    feature(name = 'b', requires = [feature_set(features = ['c'])]),",
+                "    feature(name = 'c'),",
+                "]"
+            )
+        Truth.assertThat(getEnabledFeatures(features, "a")).isEmpty()
+    }
 
-  @Test
-  public void testMultipleImplies() throws Exception {
-    CcToolchainFeatures features =
-        buildFeatures(
-            "features = [",
-            "    feature(name = 'a', implies = ['b', 'c', 'd']),",
-            "    feature(name = 'b'),",
-            "    feature(name = 'c', requires = [feature_set(features = ['e'])]),",
-            "    feature(name = 'd'),",
-            "    feature(name = 'e'),",
-            "]");
-    assertThat(getEnabledFeatures(features, "a")).isEmpty();
-    assertThat(getEnabledFeatures(features, "a", "e")).containsExactly("a", "b", "c", "d", "e");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMultipleImplies() {
+        val features: CcToolchainFeatures =
+            buildFeatures(
+                "features = [",
+                "    feature(name = 'a', implies = ['b', 'c', 'd']),",
+                "    feature(name = 'b'),",
+                "    feature(name = 'c', requires = [feature_set(features = ['e'])]),",
+                "    feature(name = 'd'),",
+                "    feature(name = 'e'),",
+                "]"
+            )
+        Truth.assertThat(getEnabledFeatures(features, "a")).isEmpty()
+        Truth.assertThat(getEnabledFeatures(features, "a", "e")).containsExactly("a", "b", "c", "d", "e")
+    }
 
-  @Test
-  public void testDisabledFeaturesDoNotEnableImplications() throws Exception {
-    CcToolchainFeatures features =
-        buildFeatures(
-            "features = [",
-            "    feature(name = 'a', implies = ['b'], requires = [feature_set(features = ['c'])]),",
-            "    feature(name = 'b'),",
-            "    feature(name = 'c'),",
-            "]");
-    assertThat(getEnabledFeatures(features, "a")).isEmpty();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDisabledFeaturesDoNotEnableImplications() {
+        val features: CcToolchainFeatures =
+            buildFeatures(
+                "features = [",
+                "    feature(name = 'a', implies = ['b'], requires = [feature_set(features = ['c'])]),",
+                "    feature(name = 'b'),",
+                "    feature(name = 'c'),",
+                "]"
+            )
+        Truth.assertThat(getEnabledFeatures(features, "a")).isEmpty()
+    }
 
-  @Test
-  public void testFeatureNameCollision() {
-    AssertionError e =
-        assertThrows(
-            AssertionError.class,
-            () ->
-                buildFeatures(
-                    "features = [",
-                    "    feature(name = '+++collision+++'),",
-                    "    feature(name = '+++collision+++'),",
-                    "]"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("feature or action config '+++collision+++' was specified multiple times.");
-  }
+    @org.junit.Test
+    fun testFeatureNameCollision() {
+        val e: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable {
+                    buildFeatures(
+                        "features = [",
+                        "    feature(name = '+++collision+++'),",
+                        "    feature(name = '+++collision+++'),",
+                        "]"
+                    )
+                })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("feature or action config '+++collision+++' was specified multiple times.")
+    }
 
-  @Test
-  public void testReferenceToUndefinedFeature() {
-    AssertionError e =
-        assertThrows(
-            AssertionError.class,
-            () -> buildFeatures("features = [feature(name = 'a', implies = ['<<<undefined>>>'])]"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains(
-            "feature '<<<undefined>>>', which is referenced from feature 'a', is not defined");
-  }
+    @org.junit.Test
+    fun testReferenceToUndefinedFeature() {
+        val e: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { buildFeatures("features = [feature(name = 'a', implies = ['<<<undefined>>>'])]") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains(
+                "feature '<<<undefined>>>', which is referenced from feature 'a', is not defined"
+            )
+    }
 
-  @Test
-  public void testImpliesWithCycle() throws Exception {
-    CcToolchainFeatures features =
-        buildFeatures(
-            "features = [",
-            "    feature(name = 'a', implies = ['b']),",
-            "    feature(name = 'b', implies = ['a']),",
-            "]");
-    assertThat(getEnabledFeatures(features, "a")).containsExactly("a", "b");
-    assertThat(getEnabledFeatures(features, "b")).containsExactly("a", "b");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testImpliesWithCycle() {
+        val features: CcToolchainFeatures =
+            buildFeatures(
+                "features = [",
+                "    feature(name = 'a', implies = ['b']),",
+                "    feature(name = 'b', implies = ['a']),",
+                "]"
+            )
+        Truth.assertThat(getEnabledFeatures(features, "a")).containsExactly("a", "b")
+        Truth.assertThat(getEnabledFeatures(features, "b")).containsExactly("a", "b")
+    }
 
-  @Test
-  public void testMultipleImpliesCycle() throws Exception {
-    CcToolchainFeatures features =
-        buildFeatures(
-            "features = [",
-            "    feature(name = 'a', implies = ['b', 'c', 'd']),",
-            "    feature(name = 'b'),",
-            "    feature(name = 'c', requires = [feature_set(features = ['e'])]),",
-            "    feature(name = 'd', requires = [feature_set(features = ['f'])]),",
-            "    feature(name = 'e', requires = [feature_set(features = ['c'])]),",
-            "    feature(name = 'f'),",
-            "]");
-    assertThat(getEnabledFeatures(features, "a", "e")).isEmpty();
-    assertThat(getEnabledFeatures(features, "a", "e", "f"))
-        .containsExactly("a", "b", "c", "d", "e", "f");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMultipleImpliesCycle() {
+        val features: CcToolchainFeatures =
+            buildFeatures(
+                "features = [",
+                "    feature(name = 'a', implies = ['b', 'c', 'd']),",
+                "    feature(name = 'b'),",
+                "    feature(name = 'c', requires = [feature_set(features = ['e'])]),",
+                "    feature(name = 'd', requires = [feature_set(features = ['f'])]),",
+                "    feature(name = 'e', requires = [feature_set(features = ['c'])]),",
+                "    feature(name = 'f'),",
+                "]"
+            )
+        Truth.assertThat(getEnabledFeatures(features, "a", "e")).isEmpty()
+        Truth.assertThat(getEnabledFeatures(features, "a", "e", "f"))
+            .containsExactly("a", "b", "c", "d", "e", "f")
+    }
 
-  @Test
-  public void testRequiresWithCycle() throws Exception {
-    CcToolchainFeatures features =
-        buildFeatures(
-            "features = [",
-            "    feature(name = 'a', requires = [feature_set(features = ['b'])]),",
-            "    feature(name = 'b', requires = [feature_set(features = ['a'])]),",
-            "    feature(name = 'c', implies = ['a']),",
-            "    feature(name = 'd', implies = ['b']),",
-            "]");
-    assertThat(getEnabledFeatures(features, "c")).isEmpty();
-    assertThat(getEnabledFeatures(features, "d")).isEmpty();
-    assertThat(getEnabledFeatures(features, "c", "d")).containsExactly("a", "b", "c", "d");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRequiresWithCycle() {
+        val features: CcToolchainFeatures =
+            buildFeatures(
+                "features = [",
+                "    feature(name = 'a', requires = [feature_set(features = ['b'])]),",
+                "    feature(name = 'b', requires = [feature_set(features = ['a'])]),",
+                "    feature(name = 'c', implies = ['a']),",
+                "    feature(name = 'd', implies = ['b']),",
+                "]"
+            )
+        Truth.assertThat(getEnabledFeatures(features, "c")).isEmpty()
+        Truth.assertThat(getEnabledFeatures(features, "d")).isEmpty()
+        Truth.assertThat(getEnabledFeatures(features, "c", "d")).containsExactly("a", "b", "c", "d")
+    }
 
-  @Test
-  public void testImpliedByOneEnabledAndOneDisabledFeature() throws Exception {
-    CcToolchainFeatures features =
-        buildFeatures(
-            "features = [",
-            "    feature(name = 'a'),",
-            "    feature(name = 'b', requires = [feature_set(features = ['a'])], implies ="
-                + " ['d']),",
-            "    feature(name = 'c', implies = ['d']),",
-            "    feature(name = 'd'),",
-            "]");
-    assertThat(getEnabledFeatures(features, "b", "c")).containsExactly("c", "d");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testImpliedByOneEnabledAndOneDisabledFeature() {
+        val features: CcToolchainFeatures =
+            buildFeatures(
+                "features = [",
+                "    feature(name = 'a'),",
+                "    feature(name = 'b', requires = [feature_set(features = ['a'])], implies ="
+                        + " ['d']),",
+                "    feature(name = 'c', implies = ['d']),",
+                "    feature(name = 'd'),",
+                "]"
+            )
+        Truth.assertThat(getEnabledFeatures(features, "b", "c")).containsExactly("c", "d")
+    }
 
-  @Test
-  public void testRequiresOneEnabledAndOneUnsupportedFeature() throws Exception {
-    CcToolchainFeatures features =
-        buildFeatures(
-            "features = [",
-            "    feature(",
-            "        name = 'a',",
-            "        requires = [",
-            "            feature_set(features = ['b']),",
-            "            feature_set(features = ['c'])",
-            "        ],",
-            "    ),",
-            "    feature(name = 'b'),",
-            "    feature(name = 'c', requires = [feature_set(features = ['d'])]),",
-            "    feature(name = 'd'),",
-            "]");
-    assertThat(getEnabledFeatures(features, "a", "b", "c")).containsExactly("a", "b");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRequiresOneEnabledAndOneUnsupportedFeature() {
+        val features: CcToolchainFeatures =
+            buildFeatures(
+                "features = [",
+                "    feature(",
+                "        name = 'a',",
+                "        requires = [",
+                "            feature_set(features = ['b']),",
+                "            feature_set(features = ['c'])",
+                "        ],",
+                "    ),",
+                "    feature(name = 'b'),",
+                "    feature(name = 'c', requires = [feature_set(features = ['d'])]),",
+                "    feature(name = 'd'),",
+                "]"
+            )
+        Truth.assertThat(getEnabledFeatures(features, "a", "b", "c")).containsExactly("a", "b")
+    }
 
-  @Test
-  public void testFlagGroupsWithMissingVariableIsNotExpanded() throws Exception {
-    FeatureConfiguration configuration =
-        buildFeatures(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFlagGroupsWithMissingVariableIsNotExpanded() {
+        val configuration: FeatureConfiguration =
+            buildFeatures(
                 "features = [feature(",
                 "    name = 'a',",
                 "    flag_sets = [",
@@ -1393,17 +1490,19 @@ public final class CcToolchainFeaturesTest extends BuildViewTestCase {
                 "            flag_groups = [flag_group(flags = ['unconditional'])],",
                 "        ),",
                 "    ],",
-                ")]")
-            .getFeatureConfiguration(ImmutableSet.of("a"));
+                ")]"
+            )
+                .getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("a"))
 
-    assertThat(configuration.getCommandLine(CppActionNames.CPP_COMPILE, createVariables()))
-        .containsExactly("unconditional");
-  }
+        assertThat(configuration.getCommandLine(CppActionNames.CPP_COMPILE, createVariables()))
+            .containsExactly("unconditional")
+    }
 
-  @Test
-  public void testOnlyFlagGroupsWithAllVariablesPresentAreExpanded() throws Exception {
-    FeatureConfiguration configuration =
-        buildFeatures(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testOnlyFlagGroupsWithAllVariablesPresentAreExpanded() {
+        val configuration: FeatureConfiguration =
+            buildFeatures(
                 "features = [feature(",
                 "    name = 'a',",
                 "    flag_sets = [",
@@ -1429,17 +1528,19 @@ public final class CcToolchainFeaturesTest extends BuildViewTestCase {
                 "            flag_groups = [flag_group(flags = ['unconditional'])],",
                 "        ),",
                 "    ],",
-                ")]")
-            .getFeatureConfiguration(ImmutableSet.of("a"));
+                ")]"
+            )
+                .getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("a"))
 
-    assertThat(configuration.getCommandLine(CppActionNames.CPP_COMPILE, createVariables("v", "1")))
-        .containsExactly("1", "unconditional");
-  }
+        assertThat(configuration.getCommandLine(CppActionNames.CPP_COMPILE, createVariables("v", "1")))
+            .containsExactly("1", "unconditional")
+    }
 
-  @Test
-  public void testOnlyInnerFlagGroupIsIteratedWithSequenceVariable() throws Exception {
-    FeatureConfiguration configuration =
-        buildFeatures(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testOnlyInnerFlagGroupIsIteratedWithSequenceVariable() {
+        val configuration: FeatureConfiguration =
+            buildFeatures(
                 "features = [feature(",
                 "    name = 'a',",
                 "    flag_sets = [",
@@ -1470,20 +1571,24 @@ public final class CcToolchainFeaturesTest extends BuildViewTestCase {
                 "            flag_groups = [flag_group(flags = ['unconditional'])],",
                 "        ),",
                 "    ],",
-                ")]")
-            .getFeatureConfiguration(ImmutableSet.of("a"));
+                ")]"
+            )
+                .getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("a"))
 
-    assertThat(
+        assertThat(
             configuration.getCommandLine(
-                CppActionNames.CPP_COMPILE, createVariables("v", "1", "v", "2")))
-        .containsExactly("1", "2", "unconditional")
-        .inOrder();
-  }
+                CppActionNames.CPP_COMPILE, createVariables("v", "1", "v", "2")
+            )
+        )
+            .containsExactly("1", "2", "unconditional")
+            .inOrder()
+    }
 
-  @Test
-  public void testFlagSetsAreIteratedIndividuallyForSequenceVariables() throws Exception {
-    FeatureConfiguration configuration =
-        buildFeatures(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFlagSetsAreIteratedIndividuallyForSequenceVariables() {
+        val configuration: FeatureConfiguration =
+            buildFeatures(
                 "features = [feature(",
                 "    name = 'a',",
                 "    flag_sets = [",
@@ -1512,286 +1617,328 @@ public final class CcToolchainFeaturesTest extends BuildViewTestCase {
                 "            flag_groups = [flag_group(flags = ['unconditional'])],",
                 "        ),",
                 "    ],",
-                ")]")
-            .getFeatureConfiguration(ImmutableSet.of("a"));
+                ")]"
+            )
+                .getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("a"))
 
-    assertThat(
+        assertThat(
             configuration.getCommandLine(
-                CppActionNames.CPP_COMPILE, createVariables("v", "1", "v", "2", "w", "3")))
-        .containsExactly("1", "2", "13", "23", "unconditional")
-        .inOrder();
-  }
+                CppActionNames.CPP_COMPILE, createVariables("v", "1", "v", "2", "w", "3")
+            )
+        )
+            .containsExactly("1", "2", "13", "23", "unconditional")
+            .inOrder()
+    }
 
-  @Test
-  public void testConfiguration() throws Exception {
-    CcToolchainFeatures features =
-        buildFeatures(
-            "features = [",
-            "    feature(",
-            "        name = 'a',",
-            "        flag_sets = [",
-            "            flag_set(",
-            "                actions = ['c++-compile'],",
-            "                flag_groups = [flag_group(flags = ['-f', '%{v}'])],",
-            "            ),",
-            "        ],",
-            "    ),",
-            "    feature(name = 'b', implies = ['a']),",
-            "]");
-    assertThat(getEnabledFeatures(features, "b")).containsExactly("a", "b");
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testConfiguration() {
+        val features: CcToolchainFeatures =
+            buildFeatures(
+                "features = [",
+                "    feature(",
+                "        name = 'a',",
+                "        flag_sets = [",
+                "            flag_set(",
+                "                actions = ['c++-compile'],",
+                "                flag_groups = [flag_group(flags = ['-f', '%{v}'])],",
+                "            ),",
+                "        ],",
+                "    ),",
+                "    feature(name = 'b', implies = ['a']),",
+                "]"
+            )
+        Truth.assertThat(getEnabledFeatures(features, "b")).containsExactly("a", "b")
+        assertThat(
             features
-                .getFeatureConfiguration(ImmutableSet.of("b"))
-                .getCommandLine(CppActionNames.CPP_COMPILE, createVariables("v", "1")))
-        .containsExactly("-f", "1");
+                .getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("b"))
+                .getCommandLine(CppActionNames.CPP_COMPILE, createVariables("v", "1"))
+        )
+            .containsExactly("-f", "1")
 
-    CcToolchainFeatures deserialized = RoundTripping.roundTrip(features);
-    assertThat(getEnabledFeatures(deserialized, "b")).containsExactly("a", "b");
-    assertThat(
+        val deserialized: CcToolchainFeatures = RoundTripping.roundTrip(features)
+        Truth.assertThat(getEnabledFeatures(deserialized, "b")).containsExactly("a", "b")
+        assertThat(
             features
-                .getFeatureConfiguration(ImmutableSet.of("b"))
-                .getCommandLine(CppActionNames.CPP_COMPILE, createVariables("v", "1")))
-        .containsExactly("-f", "1");
-  }
+                .getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("b"))
+                .getCommandLine(CppActionNames.CPP_COMPILE, createVariables("v", "1"))
+        )
+            .containsExactly("-f", "1")
+    }
 
-  @Test
-  public void testDefaultFeatures() throws Exception {
-    CcToolchainFeatures features =
-        buildFeatures(
-            "features = ["
-                + "feature(name = 'no_legacy_features'),"
-                + "feature(name = 'a'), feature(name = 'b', enabled = True)"
-                + "]");
-    assertThat(features.getDefaultFeaturesAndActionConfigs()).containsExactly("b");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDefaultFeatures() {
+        val features: CcToolchainFeatures =
+            buildFeatures(
+                ("features = ["
+                        + "feature(name = 'no_legacy_features'),"
+                        + "feature(name = 'a'), feature(name = 'b', enabled = True)"
+                        + "]")
+            )
+        assertThat(features.getDefaultFeaturesAndActionConfigs()).containsExactly("b")
+    }
 
-  @Test
-  public void testDefaultActionConfigs() throws Exception {
-    CcToolchainFeatures features =
-        buildFeatures(
-            "features = [feature(name = 'no_legacy_features')],",
-            "action_configs = [",
-            "    action_config(action_name = 'a'),",
-            "    action_config(action_name = 'b', enabled = True),",
-            "]");
-    assertThat(features.getDefaultFeaturesAndActionConfigs()).containsExactly("b");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDefaultActionConfigs() {
+        val features: CcToolchainFeatures =
+            buildFeatures(
+                "features = [feature(name = 'no_legacy_features')],",
+                "action_configs = [",
+                "    action_config(action_name = 'a'),",
+                "    action_config(action_name = 'b', enabled = True),",
+                "]"
+            )
+        assertThat(features.getDefaultFeaturesAndActionConfigs()).containsExactly("b")
+    }
 
-  @Test
-  public void testWithFeature_oneSetOneFeature() throws Exception {
-    CcToolchainFeatures features =
-        buildFeatures(
-            "features = [",
-            "feature(name = 'no_legacy_features'),",
-            "    feature(",
-            "        name = 'a',",
-            "        flag_sets = [",
-            "            flag_set(",
-            "                with_features = [with_feature_set(features = ['b'])],",
-            "                actions = ['c++-compile'],",
-            "                flag_groups = [flag_group(flags = ['dummy_flag'])],",
-            "            ),",
-            "        ],",
-            "    ),",
-            "    feature(name = 'b'),",
-            "]");
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testWithFeature_oneSetOneFeature() {
+        val features: CcToolchainFeatures =
+            buildFeatures(
+                "features = [",
+                "feature(name = 'no_legacy_features'),",
+                "    feature(",
+                "        name = 'a',",
+                "        flag_sets = [",
+                "            flag_set(",
+                "                with_features = [with_feature_set(features = ['b'])],",
+                "                actions = ['c++-compile'],",
+                "                flag_groups = [flag_group(flags = ['dummy_flag'])],",
+                "            ),",
+                "        ],",
+                "    ),",
+                "    feature(name = 'b'),",
+                "]"
+            )
+        assertThat(
             features
-                .getFeatureConfiguration(ImmutableSet.of("a", "b"))
-                .getCommandLine(CppActionNames.CPP_COMPILE, createVariables()))
-        .containsExactly("dummy_flag");
-    assertThat(
+                .getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("a", "b"))
+                .getCommandLine(CppActionNames.CPP_COMPILE, createVariables())
+        )
+            .containsExactly("dummy_flag")
+        assertThat(
             features
-                .getFeatureConfiguration(ImmutableSet.of("a"))
-                .getCommandLine(CppActionNames.CPP_COMPILE, createVariables()))
-        .doesNotContain("dummy_flag");
-  }
+                .getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("a"))
+                .getCommandLine(CppActionNames.CPP_COMPILE, createVariables())
+        )
+            .doesNotContain("dummy_flag")
+    }
 
-  @Test
-  public void testWithFeature_oneSetMultipleFeatures() throws Exception {
-    CcToolchainFeatures features =
-        buildFeatures(
-            "features = [",
-            "    feature(",
-            "        name = 'a',",
-            "        flag_sets = [",
-            "            flag_set(",
-            "                with_features = [with_feature_set(features = ['b', 'c'])],",
-            "                actions = ['c++-compile'],",
-            "                flag_groups = [flag_group(flags = ['dummy_flag'])],",
-            "            ),",
-            "        ],",
-            "    ),",
-            "    feature(name = 'b'),",
-            "    feature(name = 'c'),",
-            "]");
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testWithFeature_oneSetMultipleFeatures() {
+        val features: CcToolchainFeatures =
+            buildFeatures(
+                "features = [",
+                "    feature(",
+                "        name = 'a',",
+                "        flag_sets = [",
+                "            flag_set(",
+                "                with_features = [with_feature_set(features = ['b', 'c'])],",
+                "                actions = ['c++-compile'],",
+                "                flag_groups = [flag_group(flags = ['dummy_flag'])],",
+                "            ),",
+                "        ],",
+                "    ),",
+                "    feature(name = 'b'),",
+                "    feature(name = 'c'),",
+                "]"
+            )
+        assertThat(
             features
-                .getFeatureConfiguration(ImmutableSet.of("a", "b", "c"))
-                .getCommandLine(CppActionNames.CPP_COMPILE, createVariables()))
-        .containsExactly("dummy_flag");
-    assertThat(
+                .getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("a", "b", "c"))
+                .getCommandLine(CppActionNames.CPP_COMPILE, createVariables())
+        )
+            .containsExactly("dummy_flag")
+        assertThat(
             features
-                .getFeatureConfiguration(ImmutableSet.of("a", "b"))
-                .getCommandLine(CppActionNames.CPP_COMPILE, createVariables()))
-        .doesNotContain("dummy_flag");
-    assertThat(
+                .getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("a", "b"))
+                .getCommandLine(CppActionNames.CPP_COMPILE, createVariables())
+        )
+            .doesNotContain("dummy_flag")
+        assertThat(
             features
-                .getFeatureConfiguration(ImmutableSet.of("a"))
-                .getCommandLine(CppActionNames.CPP_COMPILE, createVariables()))
-        .doesNotContain("dummy_flag");
-  }
+                .getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("a"))
+                .getCommandLine(CppActionNames.CPP_COMPILE, createVariables())
+        )
+            .doesNotContain("dummy_flag")
+    }
 
-  @Test
-  public void testWithFeature_mulipleSetsMultipleFeatures() throws Exception {
-    CcToolchainFeatures features =
-        buildFeatures(
-            "features = [",
-            "    feature(",
-            "        name = 'a',",
-            "        flag_sets = [",
-            "            flag_set(",
-            "                with_features = [",
-            "                    with_feature_set(features = ['b1', 'c1']),",
-            "                    with_feature_set(features = ['b2', 'c2']),",
-            "                ],",
-            "                actions = ['c++-compile'],",
-            "                flag_groups = [flag_group(flags = ['dummy_flag'])],",
-            "            ),",
-            "        ],",
-            "    ),",
-            "    feature(name = 'b1'),",
-            "    feature(name = 'c1'),",
-            "    feature(name = 'b2'),",
-            "    feature(name = 'c2'),",
-            "]");
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testWithFeature_mulipleSetsMultipleFeatures() {
+        val features: CcToolchainFeatures =
+            buildFeatures(
+                "features = [",
+                "    feature(",
+                "        name = 'a',",
+                "        flag_sets = [",
+                "            flag_set(",
+                "                with_features = [",
+                "                    with_feature_set(features = ['b1', 'c1']),",
+                "                    with_feature_set(features = ['b2', 'c2']),",
+                "                ],",
+                "                actions = ['c++-compile'],",
+                "                flag_groups = [flag_group(flags = ['dummy_flag'])],",
+                "            ),",
+                "        ],",
+                "    ),",
+                "    feature(name = 'b1'),",
+                "    feature(name = 'c1'),",
+                "    feature(name = 'b2'),",
+                "    feature(name = 'c2'),",
+                "]"
+            )
+        assertThat(
             features
-                .getFeatureConfiguration(ImmutableSet.of("a", "b1", "c1", "b2", "c2"))
-                .getCommandLine(CppActionNames.CPP_COMPILE, createVariables()))
-        .containsExactly("dummy_flag");
-    assertThat(
+                .getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("a", "b1", "c1", "b2", "c2"))
+                .getCommandLine(CppActionNames.CPP_COMPILE, createVariables())
+        )
+            .containsExactly("dummy_flag")
+        assertThat(
             features
-                .getFeatureConfiguration(ImmutableSet.of("a", "b1", "c1"))
-                .getCommandLine(CppActionNames.CPP_COMPILE, createVariables()))
-        .containsExactly("dummy_flag");
-    assertThat(
+                .getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("a", "b1", "c1"))
+                .getCommandLine(CppActionNames.CPP_COMPILE, createVariables())
+        )
+            .containsExactly("dummy_flag")
+        assertThat(
             features
-                .getFeatureConfiguration(ImmutableSet.of("a", "b1", "b2"))
-                .getCommandLine(CppActionNames.CPP_COMPILE, createVariables()))
-        .doesNotContain("dummy_flag");
-  }
+                .getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("a", "b1", "b2"))
+                .getCommandLine(CppActionNames.CPP_COMPILE, createVariables())
+        )
+            .doesNotContain("dummy_flag")
+    }
 
-  @Test
-  public void testWithFeature_notFeature() throws Exception {
-    CcToolchainFeatures features =
-        buildFeatures(
-            "features = [",
-            "    feature(",
-            "        name = 'a',",
-            "        flag_sets = [",
-            "            flag_set(",
-            "                with_features = [",
-            "                    with_feature_set(not_features = ['x', 'y'], features = ['z']),",
-            "                    with_feature_set(not_features = ['q']),",
-            "                ],",
-            "                actions = ['c++-compile'],",
-            "                flag_groups = [flag_group(flags = ['dummy_flag'])],",
-            "            ),",
-            "        ],",
-            "    ),",
-            "    feature(name = 'x'),",
-            "    feature(name = 'y'),",
-            "    feature(name = 'z'),",
-            "    feature(name = 'q'),",
-            "]");
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testWithFeature_notFeature() {
+        val features: CcToolchainFeatures =
+            buildFeatures(
+                "features = [",
+                "    feature(",
+                "        name = 'a',",
+                "        flag_sets = [",
+                "            flag_set(",
+                "                with_features = [",
+                "                    with_feature_set(not_features = ['x', 'y'], features = ['z']),",
+                "                    with_feature_set(not_features = ['q']),",
+                "                ],",
+                "                actions = ['c++-compile'],",
+                "                flag_groups = [flag_group(flags = ['dummy_flag'])],",
+                "            ),",
+                "        ],",
+                "    ),",
+                "    feature(name = 'x'),",
+                "    feature(name = 'y'),",
+                "    feature(name = 'z'),",
+                "    feature(name = 'q'),",
+                "]"
+            )
+        assertThat(
             features
-                .getFeatureConfiguration(ImmutableSet.of("a"))
-                .getCommandLine(CppActionNames.CPP_COMPILE, createVariables()))
-        .containsExactly("dummy_flag");
-    assertThat(
+                .getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("a"))
+                .getCommandLine(CppActionNames.CPP_COMPILE, createVariables())
+        )
+            .containsExactly("dummy_flag")
+        assertThat(
             features
-                .getFeatureConfiguration(ImmutableSet.of("a", "q"))
-                .getCommandLine(CppActionNames.CPP_COMPILE, createVariables()))
-        .doesNotContain("dummy_flag");
-    assertThat(
+                .getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("a", "q"))
+                .getCommandLine(CppActionNames.CPP_COMPILE, createVariables())
+        )
+            .doesNotContain("dummy_flag")
+        assertThat(
             features
-                .getFeatureConfiguration(ImmutableSet.of("a", "q", "z"))
-                .getCommandLine(CppActionNames.CPP_COMPILE, createVariables()))
-        .containsExactly("dummy_flag");
-    assertThat(
+                .getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("a", "q", "z"))
+                .getCommandLine(CppActionNames.CPP_COMPILE, createVariables())
+        )
+            .containsExactly("dummy_flag")
+        assertThat(
             features
-                .getFeatureConfiguration(ImmutableSet.of("a", "q", "x", "z"))
-                .getCommandLine(CppActionNames.CPP_COMPILE, createVariables()))
-        .doesNotContain("dummy_flag");
-    assertThat(
+                .getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("a", "q", "x", "z"))
+                .getCommandLine(CppActionNames.CPP_COMPILE, createVariables())
+        )
+            .doesNotContain("dummy_flag")
+        assertThat(
             features
-                .getFeatureConfiguration(ImmutableSet.of("a", "q", "x", "y", "z"))
-                .getCommandLine(CppActionNames.CPP_COMPILE, createVariables()))
-        .doesNotContain("dummy_flag");
-  }
+                .getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("a", "q", "x", "y", "z"))
+                .getCommandLine(CppActionNames.CPP_COMPILE, createVariables())
+        )
+            .doesNotContain("dummy_flag")
+    }
 
-  @Test
-  public void testActivateActionConfigFromFeature() throws Exception {
-    CcToolchainFeatures toolchainFeatures =
-        buildFeatures(
-            "action_configs = [",
-            "    action_config(",
-            "        action_name = 'action-a',",
-            "        tools = [",
-            "            tool(",
-            "                path = 'toolchain/feature-a',",
-            "                with_features = [with_feature_set(features = ['feature-a'])],",
-            "            ),",
-            "        ],",
-            "    ),",
-            "],",
-            "features = [",
-            "    feature(name = 'activates-action-a', implies = ['action-a']),",
-            "]");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testActivateActionConfigFromFeature() {
+        val toolchainFeatures: CcToolchainFeatures =
+            buildFeatures(
+                "action_configs = [",
+                "    action_config(",
+                "        action_name = 'action-a',",
+                "        tools = [",
+                "            tool(",
+                "                path = 'toolchain/feature-a',",
+                "                with_features = [with_feature_set(features = ['feature-a'])],",
+                "            ),",
+                "        ],",
+                "    ),",
+                "],",
+                "features = [",
+                "    feature(name = 'activates-action-a', implies = ['action-a']),",
+                "]"
+            )
 
-    FeatureConfiguration featureConfiguration =
-        toolchainFeatures.getFeatureConfiguration(ImmutableSet.of("activates-action-a"));
+        val featureConfiguration: FeatureConfiguration =
+            toolchainFeatures.getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("activates-action-a"))
 
-    assertThat(featureConfiguration.actionIsConfigured("action-a")).isTrue();
-  }
+        assertThat(featureConfiguration.actionIsConfigured("action-a")).isTrue()
+    }
 
-  @Test
-  public void testFeatureCanRequireActionConfig() throws Exception {
-    CcToolchainFeatures toolchainFeatures =
-        buildFeatures(
-            "action_configs = [",
-            "    action_config(",
-            "        action_name = 'action-a',",
-            "        tools = [",
-            "            tool(",
-            "                path = 'toolchain/feature-a',",
-            "                with_features = [with_feature_set(features = ['feature-a'])],",
-            "            ),",
-            "        ],",
-            "    ),",
-            "],",
-            "features = [",
-            "    feature(",
-            "        name = 'requires-action-a',",
-            "        requires = [feature_set(features = ['action-a'])],",
-            "    ),",
-            "]");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFeatureCanRequireActionConfig() {
+        val toolchainFeatures: CcToolchainFeatures =
+            buildFeatures(
+                "action_configs = [",
+                "    action_config(",
+                "        action_name = 'action-a',",
+                "        tools = [",
+                "            tool(",
+                "                path = 'toolchain/feature-a',",
+                "                with_features = [with_feature_set(features = ['feature-a'])],",
+                "            ),",
+                "        ],",
+                "    ),",
+                "],",
+                "features = [",
+                "    feature(",
+                "        name = 'requires-action-a',",
+                "        requires = [feature_set(features = ['action-a'])],",
+                "    ),",
+                "]"
+            )
 
-    FeatureConfiguration featureConfigurationWithoutAction =
-        toolchainFeatures.getFeatureConfiguration(ImmutableSet.of("requires-action-a"));
-    assertThat(featureConfigurationWithoutAction.isEnabled("requires-action-a")).isFalse();
+        val featureConfigurationWithoutAction: FeatureConfiguration =
+            toolchainFeatures.getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("requires-action-a"))
+        assertThat(featureConfigurationWithoutAction.isEnabled("requires-action-a")).isFalse()
 
-    FeatureConfiguration featureConfigurationWithAction =
-        toolchainFeatures.getFeatureConfiguration(ImmutableSet.of("action-a", "requires-action-a"));
-    assertThat(featureConfigurationWithAction.isEnabled("requires-action-a")).isTrue();
-  }
+        val featureConfigurationWithAction: FeatureConfiguration =
+            toolchainFeatures.getFeatureConfiguration(
+                com.google.common.collect.ImmutableSet.of<E?>(
+                    "action-a",
+                    "requires-action-a"
+                )
+            )
+        assertThat(featureConfigurationWithAction.isEnabled("requires-action-a")).isTrue()
+    }
 
-  @Test
-  public void testSimpleActionTool() throws Exception {
-    FeatureConfiguration configuration =
-        buildFeatures(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSimpleActionTool() {
+        val configuration: FeatureConfiguration =
+            buildFeatures(
                 "action_configs = [",
                 "    action_config(",
                 "        action_name = 'action-a',",
@@ -1800,200 +1947,218 @@ public final class CcToolchainFeaturesTest extends BuildViewTestCase {
                 "],",
                 "features = [",
                 "    feature(name = 'activates-action-a', implies = ['action-a']),",
-                "]")
-            .getFeatureConfiguration(ImmutableSet.of("activates-action-a"));
-    assertThat(configuration.getToolPathForAction("action-a")).isEqualTo("crosstool/toolchain/a");
-  }
+                "]"
+            )
+                .getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("activates-action-a"))
+        assertThat(configuration.getToolPathForAction("action-a")).isEqualTo("crosstool/toolchain/a")
+    }
 
-  @Test
-  public void testActionToolFromFeatureSet() throws Exception {
-    CcToolchainFeatures toolchainFeatures =
-        buildFeatures(
-            "action_configs = [",
-            "    action_config(",
-            "        action_name = 'action-a',",
-            "        tools = [",
-            "            tool(",
-            "                path = 'toolchain/features-a-and-b',",
-            "                with_features = [with_feature_set(features = ['feature-a',"
-                + " 'feature-b'])],",
-            "            ),",
-            "            tool(",
-            "                path = 'toolchain/feature-a-and-not-c',",
-            "                with_features = [with_feature_set(features = ['feature-a'],"
-                + " not_features = ['feature-c'])],",
-            "            ),",
-            "            tool(",
-            "                path = 'toolchain/feature-b-or-c',",
-            "                with_features = [",
-            "                    with_feature_set(features = ['feature-b']),",
-            "                    with_feature_set(features = ['feature-c'])",
-            "                ],",
-            "            ),",
-            "            tool(path = 'toolchain/default'),",
-            "        ],",
-            "    ),",
-            "],",
-            "features = [",
-            "    feature(name = 'feature-a'),",
-            "    feature(name = 'feature-b'),",
-            "    feature(name = 'feature-c'),",
-            "    feature(name = 'activates-action-a', implies = ['action-a']),",
-            "]");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testActionToolFromFeatureSet() {
+        val toolchainFeatures: CcToolchainFeatures =
+            buildFeatures(
+                "action_configs = [",
+                "    action_config(",
+                "        action_name = 'action-a',",
+                "        tools = [",
+                "            tool(",
+                "                path = 'toolchain/features-a-and-b',",
+                "                with_features = [with_feature_set(features = ['feature-a',"
+                        + " 'feature-b'])],",
+                "            ),",
+                "            tool(",
+                "                path = 'toolchain/feature-a-and-not-c',",
+                "                with_features = [with_feature_set(features = ['feature-a'],"
+                        + " not_features = ['feature-c'])],",
+                "            ),",
+                "            tool(",
+                "                path = 'toolchain/feature-b-or-c',",
+                "                with_features = [",
+                "                    with_feature_set(features = ['feature-b']),",
+                "                    with_feature_set(features = ['feature-c'])",
+                "                ],",
+                "            ),",
+                "            tool(path = 'toolchain/default'),",
+                "        ],",
+                "    ),",
+                "],",
+                "features = [",
+                "    feature(name = 'feature-a'),",
+                "    feature(name = 'feature-b'),",
+                "    feature(name = 'feature-c'),",
+                "    feature(name = 'activates-action-a', implies = ['action-a']),",
+                "]"
+            )
 
-    FeatureConfiguration featureAConfiguration =
-        toolchainFeatures.getFeatureConfiguration(
-            ImmutableSet.of("feature-a", "activates-action-a"));
-    assertThat(featureAConfiguration.getToolPathForAction("action-a"))
-        .isEqualTo("crosstool/toolchain/feature-a-and-not-c");
+        val featureAConfiguration: FeatureConfiguration =
+            toolchainFeatures.getFeatureConfiguration(
+                com.google.common.collect.ImmutableSet.of<E?>("feature-a", "activates-action-a")
+            )
+        assertThat(featureAConfiguration.getToolPathForAction("action-a"))
+            .isEqualTo("crosstool/toolchain/feature-a-and-not-c")
 
-    FeatureConfiguration featureAAndCConfiguration =
-        toolchainFeatures.getFeatureConfiguration(
-            ImmutableSet.of("feature-a", "feature-c", "activates-action-a"));
-    assertThat(featureAAndCConfiguration.getToolPathForAction("action-a"))
-        .isEqualTo("crosstool/toolchain/feature-b-or-c");
+        val featureAAndCConfiguration: FeatureConfiguration =
+            toolchainFeatures.getFeatureConfiguration(
+                com.google.common.collect.ImmutableSet.of<E?>("feature-a", "feature-c", "activates-action-a")
+            )
+        assertThat(featureAAndCConfiguration.getToolPathForAction("action-a"))
+            .isEqualTo("crosstool/toolchain/feature-b-or-c")
 
-    FeatureConfiguration featureBConfiguration =
-        toolchainFeatures.getFeatureConfiguration(
-            ImmutableSet.of("feature-b", "activates-action-a"));
-    assertThat(featureBConfiguration.getToolPathForAction("action-a"))
-        .isEqualTo("crosstool/toolchain/feature-b-or-c");
+        val featureBConfiguration: FeatureConfiguration =
+            toolchainFeatures.getFeatureConfiguration(
+                com.google.common.collect.ImmutableSet.of<E?>("feature-b", "activates-action-a")
+            )
+        assertThat(featureBConfiguration.getToolPathForAction("action-a"))
+            .isEqualTo("crosstool/toolchain/feature-b-or-c")
 
-    FeatureConfiguration featureCConfiguration =
-        toolchainFeatures.getFeatureConfiguration(
-            ImmutableSet.of("feature-c", "activates-action-a"));
-    assertThat(featureCConfiguration.getToolPathForAction("action-a"))
-        .isEqualTo("crosstool/toolchain/feature-b-or-c");
+        val featureCConfiguration: FeatureConfiguration =
+            toolchainFeatures.getFeatureConfiguration(
+                com.google.common.collect.ImmutableSet.of<E?>("feature-c", "activates-action-a")
+            )
+        assertThat(featureCConfiguration.getToolPathForAction("action-a"))
+            .isEqualTo("crosstool/toolchain/feature-b-or-c")
 
-    FeatureConfiguration featureAAndBConfiguration =
-        toolchainFeatures.getFeatureConfiguration(
-            ImmutableSet.of("feature-a", "feature-b", "activates-action-a"));
-    assertThat(featureAAndBConfiguration.getToolPathForAction("action-a"))
-        .isEqualTo("crosstool/toolchain/features-a-and-b");
+        val featureAAndBConfiguration: FeatureConfiguration =
+            toolchainFeatures.getFeatureConfiguration(
+                com.google.common.collect.ImmutableSet.of<E?>("feature-a", "feature-b", "activates-action-a")
+            )
+        assertThat(featureAAndBConfiguration.getToolPathForAction("action-a"))
+            .isEqualTo("crosstool/toolchain/features-a-and-b")
 
-    FeatureConfiguration noFeaturesConfiguration =
-        toolchainFeatures.getFeatureConfiguration(ImmutableSet.of("activates-action-a"));
-    assertThat(noFeaturesConfiguration.getToolPathForAction("action-a"))
-        .isEqualTo("crosstool/toolchain/default");
-  }
+        val noFeaturesConfiguration: FeatureConfiguration =
+            toolchainFeatures.getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("activates-action-a"))
+        assertThat(noFeaturesConfiguration.getToolPathForAction("action-a"))
+            .isEqualTo("crosstool/toolchain/default")
+    }
 
-  @Test
-  public void testErrorForNoMatchingTool() throws Exception {
-    CcToolchainFeatures toolchainFeatures =
-        buildFeatures(
-            "action_configs = [",
-            "    action_config(",
-            "        action_name = 'action-a',",
-            "        tools = [",
-            "            tool(",
-            "                path = 'toolchain/feature-a',",
-            "                with_features = [with_feature_set(features = ['feature-a'])],",
-            "            ),",
-            "        ],",
-            "    ),",
-            "],",
-            "features = [",
-            "    feature(name = 'feature-a'),",
-            "    feature(name = 'activates-action-a', implies = ['action-a']),",
-            "]");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testErrorForNoMatchingTool() {
+        val toolchainFeatures: CcToolchainFeatures =
+            buildFeatures(
+                "action_configs = [",
+                "    action_config(",
+                "        action_name = 'action-a',",
+                "        tools = [",
+                "            tool(",
+                "                path = 'toolchain/feature-a',",
+                "                with_features = [with_feature_set(features = ['feature-a'])],",
+                "            ),",
+                "        ],",
+                "    ),",
+                "],",
+                "features = [",
+                "    feature(name = 'feature-a'),",
+                "    feature(name = 'activates-action-a', implies = ['action-a']),",
+                "]"
+            )
 
-    FeatureConfiguration noFeaturesConfiguration =
-        toolchainFeatures.getFeatureConfiguration(ImmutableSet.of("activates-action-a"));
+        val noFeaturesConfiguration: FeatureConfiguration =
+            toolchainFeatures.getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("activates-action-a"))
 
-    IllegalArgumentException e =
-        assertThrows(
-            IllegalArgumentException.class,
-            () -> noFeaturesConfiguration.getToolPathForAction("action-a"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("Matching tool for action action-a not found for given feature configuration");
-  }
+        val e: java.lang.IllegalArgumentException? =
+            org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+                java.lang.IllegalArgumentException::class.java,
+                org.junit.function.ThrowingRunnable { noFeaturesConfiguration.getToolPathForAction("action-a") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("Matching tool for action action-a not found for given feature configuration")
+    }
 
-  @Test
-  public void testActivateActionConfigDirectly() throws Exception {
-    CcToolchainFeatures toolchainFeatures =
-        buildFeatures(
-            "action_configs = [",
-            "    action_config(",
-            "        action_name = 'action-a',",
-            "        tools = [",
-            "            tool(",
-            "                path = 'toolchain/feature-a',",
-            "                with_features = [with_feature_set(features = ['feature-a'])],",
-            "            ),",
-            "        ],",
-            "    ),",
-            "]");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testActivateActionConfigDirectly() {
+        val toolchainFeatures: CcToolchainFeatures =
+            buildFeatures(
+                "action_configs = [",
+                "    action_config(",
+                "        action_name = 'action-a',",
+                "        tools = [",
+                "            tool(",
+                "                path = 'toolchain/feature-a',",
+                "                with_features = [with_feature_set(features = ['feature-a'])],",
+                "            ),",
+                "        ],",
+                "    ),",
+                "]"
+            )
 
-    FeatureConfiguration featureConfiguration =
-        toolchainFeatures.getFeatureConfiguration(ImmutableSet.of("action-a"));
+        val featureConfiguration: FeatureConfiguration =
+            toolchainFeatures.getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("action-a"))
 
-    assertThat(featureConfiguration.actionIsConfigured("action-a")).isTrue();
-  }
+        assertThat(featureConfiguration.actionIsConfigured("action-a")).isTrue()
+    }
 
-  @Test
-  public void testActionConfigCanActivateFeature() throws Exception {
-    CcToolchainFeatures toolchainFeatures =
-        buildFeatures(
-            "action_configs = [",
-            "    action_config(",
-            "        action_name = 'action-a',",
-            "        tools = [",
-            "            tool(",
-            "                path = 'toolchain/feature-a',",
-            "                with_features = [with_feature_set(features = ['feature-a'])],",
-            "            ),",
-            "        ],",
-            "        implies = ['activated-feature'],",
-            "    ),",
-            "],",
-            "features = [",
-            "    feature(name = 'activated-feature'),",
-            "]");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testActionConfigCanActivateFeature() {
+        val toolchainFeatures: CcToolchainFeatures =
+            buildFeatures(
+                "action_configs = [",
+                "    action_config(",
+                "        action_name = 'action-a',",
+                "        tools = [",
+                "            tool(",
+                "                path = 'toolchain/feature-a',",
+                "                with_features = [with_feature_set(features = ['feature-a'])],",
+                "            ),",
+                "        ],",
+                "        implies = ['activated-feature'],",
+                "    ),",
+                "],",
+                "features = [",
+                "    feature(name = 'activated-feature'),",
+                "]"
+            )
 
-    FeatureConfiguration featureConfiguration =
-        toolchainFeatures.getFeatureConfiguration(ImmutableSet.of("action-a"));
+        val featureConfiguration: FeatureConfiguration =
+            toolchainFeatures.getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("action-a"))
 
-    assertThat(featureConfiguration.isEnabled("activated-feature")).isTrue();
-  }
+        assertThat(featureConfiguration.isEnabled("activated-feature")).isTrue()
+    }
 
-  @Test
-  public void testInvalidActionConfigurationMultipleActionConfigsForAction() {
-    AssertionError e =
-        assertThrows(
-            AssertionError.class,
-            () ->
-                buildFeatures(
-                    "action_configs = [",
-                    "    action_config(action_name = 'action-a'),",
-                    "    action_config(action_name = 'action-a'),",
-                    "]"));
-    assertThat(e).hasMessageThat().contains("multiple action configs for action 'action-a'");
-  }
+    @org.junit.Test
+    fun testInvalidActionConfigurationMultipleActionConfigsForAction() {
+        val e: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable {
+                    buildFeatures(
+                        "action_configs = [",
+                        "    action_config(action_name = 'action-a'),",
+                        "    action_config(action_name = 'action-a'),",
+                        "]"
+                    )
+                })
+        Truth.assertThat(e).hasMessageThat().contains("multiple action configs for action 'action-a'")
+    }
 
-  @Test
-  public void testFlagsFromActionConfig() throws Exception {
-    FeatureConfiguration featureConfiguration =
-        buildFeatures(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFlagsFromActionConfig() {
+        val featureConfiguration: FeatureConfiguration =
+            buildFeatures(
                 "action_configs = [",
                 "    action_config(",
                 "        action_name = 'c++-compile',",
                 "        flag_sets = [flag_set(flag_groups = [flag_group(flags = ['foo'])])],",
                 "    ),",
-                "]")
-            .getFeatureConfiguration(ImmutableSet.of("c++-compile"));
-    List<String> commandLine =
-        featureConfiguration.getCommandLine("c++-compile", createVariables());
-    assertThat(commandLine).contains("foo");
-  }
+                "]"
+            )
+                .getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("c++-compile"))
+        val commandLine: MutableList<String?>? =
+            featureConfiguration.getCommandLine("c++-compile", createVariables())
+        Truth.assertThat(commandLine).contains("foo")
+    }
 
-  @Test
-  public void testErrorForFlagFromActionConfigWithSpecifiedAction() {
-    AssertionError e =
-        assertThrows(
-            AssertionError.class,
-            () ->
-                buildFeatures(
+    @org.junit.Test
+    fun testErrorForFlagFromActionConfigWithSpecifiedAction() {
+        val e: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable {
+                    buildFeatures(
                         "action_configs = [",
                         "    action_config(",
                         "        action_name = 'c++-compile',",
@@ -2004,55 +2169,157 @@ public final class CcToolchainFeaturesTest extends BuildViewTestCase {
                         "            ),",
                         "        ],",
                         "    ),",
-                        "]")
-                    .getFeatureConfiguration(ImmutableSet.of("c++-compile")));
-    assertThat(e)
-        .hasMessageThat()
-        .contains(String.format(ActionConfig.FLAG_SET_WITH_ACTION_ERROR, "c++-compile"));
-  }
+                        "]"
+                    )
+                        .getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("c++-compile"))
+                })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains(java.lang.String.format(ActionConfig.FLAG_SET_WITH_ACTION_ERROR, "c++-compile"))
+    }
 
-  @Test
-  public void testProvidesCollision() {
-    Exception e =
-        assertThrows(
-            Exception.class,
-            () ->
-                buildFeatures(
+    @org.junit.Test
+    fun testProvidesCollision() {
+        val e: java.lang.Exception? =
+            org.junit.Assert.assertThrows<java.lang.Exception?>(
+                java.lang.Exception::class.java,
+                org.junit.function.ThrowingRunnable {
+                    buildFeatures(
                         "features = [",
                         "    feature(name = 'a', provides = ['provides_string']),",
                         "    feature(name = 'b', provides = ['provides_string']),",
-                        "]")
-                    .getFeatureConfiguration(ImmutableSet.of("a", "b")));
-    assertThat(e).hasMessageThat().contains("a b");
-  }
+                        "]"
+                    )
+                        .getFeatureConfiguration(com.google.common.collect.ImmutableSet.of<E?>("a", "b"))
+                })
+        Truth.assertThat(e).hasMessageThat().contains("a b")
+    }
 
-  @Test
-  public void testGetArtifactNameExtensionForCategory() throws Exception {
-    CcToolchainFeatures toolchainFeatures =
-        buildFeatures(
-            "artifact_name_patterns = [",
-            "    artifact_name_pattern(",
-            "        category_name = 'object_file',",
-            "        prefix = '',",
-            "        extension = '.obj',",
-            "    ),",
-            "    artifact_name_pattern(",
-            "        category_name = 'executable',",
-            "        prefix = '',",
-            "        extension = '',",
-            "    ),",
-            "    artifact_name_pattern(",
-            "        category_name = 'static_library',",
-            "        prefix = '',",
-            "        extension = '.a',",
-            "    ),",
-            "]");
-    assertThat(toolchainFeatures.getArtifactNameExtensionForCategory(ArtifactCategory.OBJECT_FILE))
-        .isEqualTo(".obj");
-    assertThat(toolchainFeatures.getArtifactNameExtensionForCategory(ArtifactCategory.EXECUTABLE))
-        .isEmpty();
-    assertThat(
-            toolchainFeatures.getArtifactNameExtensionForCategory(ArtifactCategory.STATIC_LIBRARY))
-        .isEqualTo(".a");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGetArtifactNameExtensionForCategory() {
+        val toolchainFeatures: CcToolchainFeatures =
+            buildFeatures(
+                "artifact_name_patterns = [",
+                "    artifact_name_pattern(",
+                "        category_name = 'object_file',",
+                "        prefix = '',",
+                "        extension = '.obj',",
+                "    ),",
+                "    artifact_name_pattern(",
+                "        category_name = 'executable',",
+                "        prefix = '',",
+                "        extension = '',",
+                "    ),",
+                "    artifact_name_pattern(",
+                "        category_name = 'static_library',",
+                "        prefix = '',",
+                "        extension = '.a',",
+                "    ),",
+                "]"
+            )
+        assertThat(toolchainFeatures.getArtifactNameExtensionForCategory(ArtifactCategory.OBJECT_FILE))
+            .isEqualTo(".obj")
+        assertThat(toolchainFeatures.getArtifactNameExtensionForCategory(ArtifactCategory.EXECUTABLE))
+            .isEmpty()
+        assertThat(
+            toolchainFeatures.getArtifactNameExtensionForCategory(ArtifactCategory.STATIC_LIBRARY)
+        )
+            .isEqualTo(".a")
+    }
+
+    companion object {
+        /**
+         * Creates a `Variables` configuration from a list of key/value pairs.
+         * 
+         * 
+         * If there are multiple entries with the same key, the variable will be treated as sequence
+         * type.
+         */
+        private fun createVariables(vararg entries: String?): CcToolchainVariables {
+            require(entries.size % 2 == 0) { "createVariables takes an even number of arguments (key/value pairs)" }
+            val entryMap: com.google.common.collect.ListMultimap<String?, String?> =
+                com.google.common.collect.ArrayListMultimap.create<String?, String?>()
+            var i = 0
+            while (i < entries.size) {
+                entryMap.put(entries[i], entries[i + 1])
+                i += 2
+            }
+            val variables: CcToolchainVariables.Builder = CcToolchainVariables.builder()
+            for (name in entryMap.keySet()) {
+                val value: MutableList<String?> = entryMap.get(name)
+                if (value.size == 1) {
+                    variables.addVariable(name, value.get(0))
+                } else {
+                    variables.addStringSequenceVariable(
+                        name,
+                        com.google.common.collect.ImmutableList.< E > copyOf < E ? > (value)
+                    )
+                }
+            }
+            return variables.build()
+        }
+
+        @Throws(java.lang.Exception::class)
+        private fun getEnabledFeatures(
+            features: CcToolchainFeatures, vararg requestedFeatures: String?
+        ): com.google.common.collect.ImmutableSet<String?> {
+            val configuration: FeatureConfiguration =
+                features.getFeatureConfiguration(com.google.common.collect.ImmutableSet.< E > copyOf < E ? > (requestedFeatures))
+            val enabledFeatures: com.google.common.collect.ImmutableSet.Builder<String?> =
+                com.google.common.collect.ImmutableSet.builder<String?>()
+            for (feature in features.getActivatableNames()) {
+                if (configuration.isEnabled(feature)) {
+                    enabledFeatures.add(feature)
+                }
+            }
+            return enabledFeatures.build()
+        }
+
+        private fun createStructureSequenceVariables(
+            name: String?, vararg values: VariableValue?
+        ): CcToolchainVariables {
+            return CcToolchainVariables.builder()
+                .addVariable(name, com.google.common.collect.ImmutableList.< E > copyOf < E ? > (values)).build()
+        }
+
+        private fun createStructureVariables(
+            name: String?, value: StructureBuilder
+        ): CcToolchainVariables {
+            return CcToolchainVariables.builder().addVariable(name, value.build()).build()
+        }
+
+        @Throws(ExpansionException::class)
+        private fun booleanValue(`val`: Boolean): VariableValue {
+            return CcToolchainVariables.builder()
+                .addVariable("name", `val`)
+                .build()
+                .getVariable("name", PathMapper.NOOP)
+        }
+
+        private fun createNestedSequence(
+            depth: Int, count: Int, prefix: String
+        ): com.google.common.collect.ImmutableList<VariableValue?> {
+            val builder: com.google.common.collect.ImmutableList.Builder<VariableValue?> =
+                com.google.common.collect.ImmutableList.builder<VariableValue?>()
+            if (depth == 0) {
+                for (i in 0..<count) {
+                    val value = prefix + i
+                    builder.add(StringValue(value))
+                }
+            } else {
+                for (i in 0..<count) {
+                    val value = prefix + i
+                    builder.add(Sequence(createNestedSequence(depth - 1, count, value)))
+                }
+            }
+            return builder.build()
+        }
+
+        private fun createNestedVariables(name: String?, depth: Int, count: Int): CcToolchainVariables {
+            return CcToolchainVariables.builder()
+                .addVariable(name, createNestedSequence(depth, count, ""))
+                .build()
+        }
+    }
 }

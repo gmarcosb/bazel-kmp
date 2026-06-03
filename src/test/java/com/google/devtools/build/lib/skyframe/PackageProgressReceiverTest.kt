@@ -11,111 +11,104 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.truth.Truth.assertWithMessage;
-
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.cmdline.PackageIdentifier
 
 /**
- * Tests {@link PackageProgressReceiver}.
+ * Tests [PackageProgressReceiver].
  */
-@RunWith(JUnit4.class)
-public class PackageProgressReceiverTest {
+@RunWith(JUnit4::class)
+class PackageProgressReceiverTest {
+    @org.junit.Test
+    fun testPackageVisible() {
+        // If there is only a single package being loaded, it is visible in
+        // the activity part of the progress state.
+        val id: PackageIdentifier = PackageIdentifier.createInMainRepo("foo/bar/baz")
+        val progress: PackageProgressReceiver = PackageProgressReceiver()
+        progress.startReadPackage(id)
+        val activity: String = progress.progressState().getSecond()
 
-  @Test
-  public void testPackageVisible() {
-    // If there is only a single package being loaded, it is visible in
-    // the activity part of the progress state.
-    PackageIdentifier id = PackageIdentifier.createInMainRepo("foo/bar/baz");
-    PackageProgressReceiver progress = new PackageProgressReceiver();
-    progress.startReadPackage(id);
-    String activity = progress.progressState().getSecond();
-
-    assertWithMessage("Unfinished package '%s' should be visible in activity: %s", id, activity)
-        .that(activity.contains(id.toString()))
-        .isTrue();
-  }
-
-  @Test
-  public void testPackageCounted() {
-    // If the loading of a package is completed, it is no longer visible as activity,
-    // but counted as one package fully loaded.
-    PackageIdentifier id = PackageIdentifier.createInMainRepo("foo/bar/baz");
-    PackageProgressReceiver progress = new PackageProgressReceiver();
-    progress.startReadPackage(id);
-    progress.doneReadPackage(id);
-    String state = progress.progressState().getFirst();
-    String activity = progress.progressState().getSecond();
-
-    assertWithMessage("Finished package '%s' should not be visible in activity: %s", id, activity)
-        .that(activity.contains(id.toString()))
-        .isFalse();
-    assertWithMessage("Number of completed packages should be visible in state")
-        .that(state.contains("1 package"))
-        .isTrue();
-  }
-
-  @Test
-  public void testReset() {
-    // After resetting, messages should be as immediately after creation.
-    PackageProgressReceiver progress = new PackageProgressReceiver();
-    String defaultState = progress.progressState().getFirst();
-    String defaultActivity = progress.progressState().getSecond();
-    PackageIdentifier id = PackageIdentifier.createInMainRepo("foo/bar/baz");
-    progress.startReadPackage(id);
-    progress.doneReadPackage(id);
-    progress.reset();
-    assertThat(progress.progressState().getFirst()).isEqualTo(defaultState);
-    assertThat(progress.progressState().getSecond()).isEqualTo(defaultActivity);
-  }
-
-  @Test
-  public void testLargeNumbersFormattedWithCommas() {
-    // Verify that large package counts (>= 10,000) are formatted with comma separators.
-    PackageProgressReceiver progress = new PackageProgressReceiver();
-
-    for (int i = 0; i < 11234; i++) {
-      PackageIdentifier id = PackageIdentifier.createInMainRepo("pkg" + i);
-      progress.startReadPackage(id);
-      progress.doneReadPackage(id);
+        Truth.assertWithMessage("Unfinished package '%s' should be visible in activity: %s", id, activity)
+            .that(activity.contains(id.toString()))
+            .isTrue()
     }
 
-    String state = progress.progressState().getFirst();
-    assertThat(state).contains("11,234 packages loaded");
-  }
+    @org.junit.Test
+    fun testPackageCounted() {
+        // If the loading of a package is completed, it is no longer visible as activity,
+        // but counted as one package fully loaded.
+        val id: PackageIdentifier = PackageIdentifier.createInMainRepo("foo/bar/baz")
+        val progress: PackageProgressReceiver = PackageProgressReceiver()
+        progress.startReadPackage(id)
+        progress.doneReadPackage(id)
+        val state: String = progress.progressState().getFirst()
+        val activity: String = progress.progressState().getSecond()
 
-  @Test
-  public void testLargePendingSetFormattedWithCommas() {
-    // Verify that large pending package counts (>= 10,000) are formatted with comma separators.
-    PackageProgressReceiver progress = new PackageProgressReceiver();
-
-    for (int i = 0; i < 11500; i++) {
-      PackageIdentifier id = PackageIdentifier.createInMainRepo("pending/pkg" + i);
-      progress.startReadPackage(id);
+        Truth.assertWithMessage("Finished package '%s' should not be visible in activity: %s", id, activity)
+            .that(activity.contains(id.toString()))
+            .isFalse()
+        Truth.assertWithMessage("Number of completed packages should be visible in state")
+            .that(state.contains("1 package"))
+            .isTrue()
     }
 
-    String activity = progress.progressState().getSecond();
-    assertThat(activity).contains("(11,500 packages)");
-  }
-
-  @Test
-  public void testSmallNumbersNotFormattedWithCommas() {
-    // Verify that counts below 10,000 (IEEE style threshold) are NOT formatted with commas.
-    PackageProgressReceiver progress = new PackageProgressReceiver();
-
-    for (int i = 0; i < 1234; i++) {
-      PackageIdentifier id = PackageIdentifier.createInMainRepo("pkg" + i);
-      progress.startReadPackage(id);
-      progress.doneReadPackage(id);
+    @org.junit.Test
+    fun testReset() {
+        // After resetting, messages should be as immediately after creation.
+        val progress: PackageProgressReceiver = PackageProgressReceiver()
+        val defaultState: String? = progress.progressState().getFirst()
+        val defaultActivity: String? = progress.progressState().getSecond()
+        val id: PackageIdentifier? = PackageIdentifier.createInMainRepo("foo/bar/baz")
+        progress.startReadPackage(id)
+        progress.doneReadPackage(id)
+        progress.reset()
+        assertThat(progress.progressState().getFirst()).isEqualTo(defaultState)
+        assertThat(progress.progressState().getSecond()).isEqualTo(defaultActivity)
     }
 
-    String state = progress.progressState().getFirst();
-    assertThat(state).contains("1234 packages loaded");
-    assertThat(state).doesNotContain("1,234");
-  }
+    @org.junit.Test
+    fun testLargeNumbersFormattedWithCommas() {
+        // Verify that large package counts (>= 10,000) are formatted with comma separators.
+        val progress: PackageProgressReceiver = PackageProgressReceiver()
+
+        for (i in 0..11233) {
+            val id: PackageIdentifier? = PackageIdentifier.createInMainRepo("pkg" + i)
+            progress.startReadPackage(id)
+            progress.doneReadPackage(id)
+        }
+
+        val state: String? = progress.progressState().getFirst()
+        Truth.assertThat(state).contains("11,234 packages loaded")
+    }
+
+    @org.junit.Test
+    fun testLargePendingSetFormattedWithCommas() {
+        // Verify that large pending package counts (>= 10,000) are formatted with comma separators.
+        val progress: PackageProgressReceiver = PackageProgressReceiver()
+
+        for (i in 0..11499) {
+            val id: PackageIdentifier? = PackageIdentifier.createInMainRepo("pending/pkg" + i)
+            progress.startReadPackage(id)
+        }
+
+        val activity: String? = progress.progressState().getSecond()
+        Truth.assertThat(activity).contains("(11,500 packages)")
+    }
+
+    @org.junit.Test
+    fun testSmallNumbersNotFormattedWithCommas() {
+        // Verify that counts below 10,000 (IEEE style threshold) are NOT formatted with commas.
+        val progress: PackageProgressReceiver = PackageProgressReceiver()
+
+        for (i in 0..1233) {
+            val id: PackageIdentifier? = PackageIdentifier.createInMainRepo("pkg" + i)
+            progress.startReadPackage(id)
+            progress.doneReadPackage(id)
+        }
+
+        val state: String? = progress.progressState().getFirst()
+        Truth.assertThat(state).contains("1234 packages loaded")
+        Truth.assertThat(state).doesNotContain("1,234")
+    }
 }

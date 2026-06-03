@@ -11,22 +11,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.annot.processor.testsources
 
-package net.starlark.java.annot.processor.testsources;
+import net.starlark.java.eval.Dict
 
-import net.starlark.java.annot.Param;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.Dict;
-import net.starlark.java.eval.StarlarkValue;
-
-/** Test case for a StarlarkMethod method which specifies an undocumented positional parameter. */
-public class UndocumentedPositionalParam implements StarlarkValue {
-
-  @StarlarkMethod(
-      name = "undocumented_positional",
-      documented = false,
-      parameters = {@Param(name = "one", documented = false)})
-  public String threeArgMethod(String one, Dict<?, ?> kwargs) {
-    return "bar";
-  }
+/** Test case for a StarlarkMethod method which specifies an undocumented positional parameter.  */
+class UndocumentedPositionalParam : StarlarkValue {
+    @StarlarkMethod(
+        name = "undocumented_positional",
+        documented = false,
+        parameters = [net.starlark.java.annot.Param(name = "one", documented = false)]
+    )
+    fun threeArgMethod(one: String?, kwargs: Dict<*, *>?): String {
+        return "bar"
+    }
 }

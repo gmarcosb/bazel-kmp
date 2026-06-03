@@ -11,20 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.annot.processor.testsources
 
-package net.starlark.java.annot.processor.testsources;
-
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.StarlarkValue;
+import net.starlark.java.eval.StarlarkValue
 
 /**
  * Test case for a StarlarkMethod method which has no documentation and is not explicitly marked
  * "documented=false".
  */
-public class DocumentationMissing implements StarlarkValue {
-
-  @StarlarkMethod(name = "undocumented_method")
-  public String undocumentedMethod() {
-    return "fox";
-  }
+class DocumentationMissing : StarlarkValue {
+    @StarlarkMethod(name = "undocumented_method")
+    fun undocumentedMethod(): String {
+        return "fox"
+    }
 }

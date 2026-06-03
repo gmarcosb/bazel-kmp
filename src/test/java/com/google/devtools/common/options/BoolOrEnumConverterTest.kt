@@ -11,96 +11,116 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.common.options
 
-package com.google.devtools.common.options;
-
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import OptionFilters.OptionEffectTag
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.exec.util.SpawnBuilder.build
+import com.google.devtools.common.options.BoolOrEnumConverter
+import com.google.devtools.common.options.OptionDocumentationCategory
+import com.google.devtools.common.options.OptionEffectTag
+import com.google.devtools.common.options.OptionsBase
+import com.google.devtools.common.options.OptionsClass
+import com.google.devtools.common.options.OptionsParser
+import com.google.devtools.common.options.OptionsParsingException
+import com.google.devtools.common.options.testing.ConverterTesterMap.Builder.build
+import net.starlark.java.syntax.FileOptions.Builder.build
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
 /**
- * A test for {@link BoolOrEnumConverter}.
+ * A test for [BoolOrEnumConverter].
  */
-@RunWith(JUnit4.class)
-public class BoolOrEnumConverterTest {
-
-  public enum CompilationMode {
-    DBG, OPT
-  }
-
-  private static class CompilationModeConverter
-    extends BoolOrEnumConverter<CompilationMode> {
-
-    public CompilationModeConverter() {
-      super(CompilationMode.class, "compilation mode",
-          CompilationMode.DBG, CompilationMode.OPT);
-    }
-  }
-
-  /** The test options for the CompilationMode hybrid converter. */
-  @OptionsClass
-  public abstract static class CompilationModeTestOptions extends OptionsBase {
-    @Option(
-        name = "compile_mode",
-        converter = CompilationModeConverter.class,
-        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "dbg")
-    public abstract CompilationMode getCompileMode();
-  }
-
-  @Test
-  public void converterFromEnum() throws Exception {
-    CompilationModeConverter converter = new CompilationModeConverter();
-    assertThat(converter.convert("dbg")).isEqualTo(CompilationMode.DBG);
-    assertThat(converter.convert("opt")).isEqualTo(CompilationMode.OPT);
-
-    OptionsParsingException e =
-        assertThrows(OptionsParsingException.class, () -> converter.convert("none"));
-    assertThat(e)
-        .hasMessageThat()
-        .isEqualTo("Not a valid compilation mode: 'none' (should be dbg or opt)");
-    assertThat(converter.getTypeDescription()).isEqualTo("dbg or opt");
-  }
-
-  @Test
-  public void convertFromBooleanValues() throws Exception {
-    String[] falseValues = new String[]{"false", "0"};
-    String[] trueValues = new String[]{"true", "1"};
-    CompilationModeConverter converter = new CompilationModeConverter();
-
-    for (String falseValue : falseValues) {
-      assertThat(converter.convert(falseValue)).isEqualTo(CompilationMode.OPT);
+@RunWith(JUnit4::class)
+class BoolOrEnumConverterTest {
+    enum class CompilationMode {
+        DBG, OPT
     }
 
-    for (String trueValue : trueValues) {
-      assertThat(converter.convert(trueValue)).isEqualTo(CompilationMode.DBG);
+    private class CompilationModeConverter
+
+        : BoolOrEnumConverter<CompilationMode?>(
+        com.google.devtools.common.options.BoolOrEnumConverterTest.CompilationMode::class.java,
+        "compilation mode",
+        com.google.devtools.common.options.BoolOrEnumConverterTest.CompilationMode.DBG,
+        com.google.devtools.common.options.BoolOrEnumConverterTest.CompilationMode.OPT
+    )
+
+    /** The test options for the CompilationMode hybrid converter.  */
+    @OptionsClass
+    abstract class CompilationModeTestOptions : OptionsBase() {
+        @get:com.google.devtools.common.options.Option(
+            name = "compile_mode",
+            converter = com.google.devtools.common.options.BoolOrEnumConverterTest.CompilationModeConverter::class,
+            documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "dbg"
+        )
+        abstract val compileMode: CompilationMode?
     }
-  }
 
-  @Test
-  public void prefixedWithNo() throws OptionsParsingException {
-    OptionsParser parser =
-        OptionsParser.builder().optionsClasses(CompilationModeTestOptions.class).build();
-    parser.parse("--nocompile_mode");
-    CompilationModeTestOptions options =
-        parser.getOptions(CompilationModeTestOptions.class);
-    assertThat(options.getCompileMode()).isNotNull();
-    assertThat(options.getCompileMode()).isEqualTo(CompilationMode.OPT);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun converterFromEnum() {
+        val converter: CompilationModeConverter =
+            com.google.devtools.common.options.BoolOrEnumConverterTest.CompilationModeConverter()
+        Truth.assertThat<CompilationMode?>(converter.convert("dbg"))
+            .isEqualTo(com.google.devtools.common.options.BoolOrEnumConverterTest.CompilationMode.DBG)
+        Truth.assertThat<CompilationMode?>(converter.convert("opt"))
+            .isEqualTo(com.google.devtools.common.options.BoolOrEnumConverterTest.CompilationMode.OPT)
 
-  @Test
-  public void missingValueAsBoolConversion() throws OptionsParsingException {
-    OptionsParser parser =
-        OptionsParser.builder().optionsClasses(CompilationModeTestOptions.class).build();
-    parser.parse("--compile_mode");
-    CompilationModeTestOptions options =
-        parser.getOptions(CompilationModeTestOptions.class);
-    assertThat(options.getCompileMode()).isNotNull();
-    assertThat(options.getCompileMode()).isEqualTo(CompilationMode.DBG);
-  }
+        val e: OptionsParsingException? =
+            org.junit.Assert.assertThrows<OptionsParsingException?>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable { converter.convert("none") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .isEqualTo("Not a valid compilation mode: 'none' (should be dbg or opt)")
+        Truth.assertThat(converter.getTypeDescription()).isEqualTo("dbg or opt")
+    }
 
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun convertFromBooleanValues() {
+        val falseValues: Array<String?> = arrayOf<String>("false", "0")
+        val trueValues: Array<String?> = arrayOf<String>("true", "1")
+        val converter: CompilationModeConverter =
+            com.google.devtools.common.options.BoolOrEnumConverterTest.CompilationModeConverter()
+
+        for (falseValue in falseValues) {
+            Truth.assertThat<CompilationMode?>(converter.convert(falseValue))
+                .isEqualTo(com.google.devtools.common.options.BoolOrEnumConverterTest.CompilationMode.OPT)
+        }
+
+        for (trueValue in trueValues) {
+            Truth.assertThat<CompilationMode?>(converter.convert(trueValue))
+                .isEqualTo(com.google.devtools.common.options.BoolOrEnumConverterTest.CompilationMode.DBG)
+        }
+    }
+
+    @org.junit.Test
+    @Throws(OptionsParsingException::class)
+    fun prefixedWithNo() {
+        val parser: OptionsParser =
+            OptionsParser.builder().optionsClasses(CompilationModeTestOptions::class.java).build()
+        parser.parse("--nocompile_mode")
+        val options: CompilationModeTestOptions? =
+            parser.getOptions<CompilationModeTestOptions?>(CompilationModeTestOptions::class.java)
+        Truth.assertThat<CompilationMode?>(options!!.compileMode).isNotNull()
+        Truth.assertThat<CompilationMode?>(options.compileMode)
+            .isEqualTo(com.google.devtools.common.options.BoolOrEnumConverterTest.CompilationMode.OPT)
+    }
+
+    @org.junit.Test
+    @Throws(OptionsParsingException::class)
+    fun missingValueAsBoolConversion() {
+        val parser: OptionsParser =
+            OptionsParser.builder().optionsClasses(CompilationModeTestOptions::class.java).build()
+        parser.parse("--compile_mode")
+        val options: CompilationModeTestOptions? =
+            parser.getOptions<CompilationModeTestOptions?>(CompilationModeTestOptions::class.java)
+        Truth.assertThat<CompilationMode?>(options!!.compileMode).isNotNull()
+        Truth.assertThat<CompilationMode?>(options.compileMode)
+            .isEqualTo(com.google.devtools.common.options.BoolOrEnumConverterTest.CompilationMode.DBG)
+    }
 }

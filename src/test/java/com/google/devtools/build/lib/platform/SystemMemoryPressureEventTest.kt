@@ -11,90 +11,78 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.platform
 
-package com.google.devtools.build.lib.platform;
+import com.google.devtools.build.lib.runtime.BlazeModule
 
-import static com.google.common.truth.Truth.assertThat;
+/** Tests [SystemMemoryPressureEvent] by sending fake notifications.  */
+@RunWith(JUnit4::class)
+class SystemMemoryPressureEventTest : BuildIntegrationTestCase() {
+    internal class SystemMemoryPressureEventListener : BlazeModule() {
+        var memoryPressureNormalEventCount: Int = 0
+        var memoryPressureWarningEventCount: Int = 0
+        var memoryPressureCriticalEventCount: Int = 0
 
-import com.google.common.eventbus.Subscribe;
-import com.google.devtools.build.lib.buildtool.util.BuildIntegrationTestCase;
-import com.google.devtools.build.lib.runtime.BlazeModule;
-import com.google.devtools.build.lib.runtime.BlazeRuntime;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.util.OS;
-import com.google.devtools.build.runfiles.Runfiles;
-import org.junit.Assume;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+        public override fun beforeCommand(env: CommandEnvironment) {
+            env.getEventBus().register(this)
+        }
 
-/** Tests {@link SystemMemoryPressureEvent} by sending fake notifications. */
-@RunWith(JUnit4.class)
-public final class SystemMemoryPressureEventTest extends BuildIntegrationTestCase {
-  static class SystemMemoryPressureEventListener extends BlazeModule {
-    public int memoryPressureNormalEventCount = 0;
-    public int memoryPressureWarningEventCount = 0;
-    public int memoryPressureCriticalEventCount = 0;
+        @com.google.common.eventbus.Subscribe
+        fun memoryPressureEvent(event: SystemMemoryPressureEvent) {
+            when (event.level()) {
+                NORMAL -> {
+                    ++memoryPressureNormalEventCount
+                    assertThat(event.logString()).isEqualTo("SystemMemoryPressureEvent: Normal")
+                }
 
-    @Override
-    public void beforeCommand(CommandEnvironment env) {
-      env.getEventBus().register(this);
+                WARNING -> {
+                    ++memoryPressureWarningEventCount
+                    assertThat(event.logString()).isEqualTo("SystemMemoryPressureEvent: Warning")
+                }
+
+                CRITICAL -> {
+                    ++memoryPressureCriticalEventCount
+                    assertThat(event.logString()).isEqualTo("SystemMemoryPressureEvent: Critical")
+                }
+            }
+        }
     }
 
-    @Subscribe
-    public void memoryPressureEvent(SystemMemoryPressureEvent event) {
-      switch (event.level()) {
-        case NORMAL:
-          ++memoryPressureNormalEventCount;
-          assertThat(event.logString()).isEqualTo("SystemMemoryPressureEvent: Normal");
-          break;
-        case WARNING:
-          ++memoryPressureWarningEventCount;
-          assertThat(event.logString()).isEqualTo("SystemMemoryPressureEvent: Warning");
-          break;
+    private val eventListener = SystemMemoryPressureEventListener()
 
-        case CRITICAL:
-          ++memoryPressureCriticalEventCount;
-          assertThat(event.logString()).isEqualTo("SystemMemoryPressureEvent: Critical");
-          break;
-      }
+    @get:Throws(java.lang.Exception::class)
+    val runtimeBuilder: BlazeRuntime.Builder
+        get() = super.runtimeBuilder
+            .addBlazeModule(eventListener)
+            .addBlazeModule(SystemMemoryPressureModule())
+            .addBlazeService(PlatformNativeDepsServiceImpl())
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMemoryPressure() {
+        Assume.assumeTrue(com.google.devtools.build.lib.util.OS.getCurrent() == com.google.devtools.build.lib.util.OS.DARWIN)
+        val runfiles: Runfiles = Runfiles.create()
+        val notifierFilePath: String? =
+            runfiles.rlocation(
+                "io_bazel/src/test/java/com/google/devtools/build/lib/platform/darwin/notifier"
+            )
+        write(
+            "system_memory_pressure_event/BUILD",
+            "genrule(",
+            "  name = 'fire_memory_pressure_notifications',",
+            "  outs = ['fire_memory_pressure_notifications.out'],",
+            ("  cmd = '"
+                    + notifierFilePath
+                    + " com.google.bazel.test.memorypressurelevel 0 > $@ && ' + "),
+            ("        '"
+                    + notifierFilePath
+                    + " com.google.bazel.test.memorypressurelevel 1 >> $@ && ' + "),
+            "        '" + notifierFilePath + " com.google.bazel.test.memorypressurelevel 2 >> $@',",
+            ")"
+        )
+        buildTarget("//system_memory_pressure_event:fire_memory_pressure_notifications")
+        Truth.assertThat(eventListener.memoryPressureNormalEventCount).isGreaterThan(0)
+        Truth.assertThat(eventListener.memoryPressureWarningEventCount).isGreaterThan(0)
+        Truth.assertThat(eventListener.memoryPressureCriticalEventCount).isGreaterThan(0)
     }
-  }
-
-  private final SystemMemoryPressureEventListener eventListener =
-      new SystemMemoryPressureEventListener();
-
-  @Override
-  protected BlazeRuntime.Builder getRuntimeBuilder() throws Exception {
-    return super.getRuntimeBuilder()
-        .addBlazeModule(eventListener)
-        .addBlazeModule(new SystemMemoryPressureModule())
-        .addBlazeService(new PlatformNativeDepsServiceImpl());
-  }
-
-  @Test
-  public void testMemoryPressure() throws Exception {
-    Assume.assumeTrue(OS.getCurrent() == OS.DARWIN);
-    Runfiles runfiles = Runfiles.create();
-    String notifierFilePath =
-        runfiles.rlocation(
-            "io_bazel/src/test/java/com/google/devtools/build/lib/platform/darwin/notifier");
-    write(
-        "system_memory_pressure_event/BUILD",
-        "genrule(",
-        "  name = 'fire_memory_pressure_notifications',",
-        "  outs = ['fire_memory_pressure_notifications.out'],",
-        "  cmd = '"
-            + notifierFilePath
-            + " com.google.bazel.test.memorypressurelevel 0 > $@ && ' + ",
-        "        '"
-            + notifierFilePath
-            + " com.google.bazel.test.memorypressurelevel 1 >> $@ && ' + ",
-        "        '" + notifierFilePath + " com.google.bazel.test.memorypressurelevel 2 >> $@',",
-        ")");
-    buildTarget("//system_memory_pressure_event:fire_memory_pressure_notifications");
-    assertThat(eventListener.memoryPressureNormalEventCount).isGreaterThan(0);
-    assertThat(eventListener.memoryPressureWarningEventCount).isGreaterThan(0);
-    assertThat(eventListener.memoryPressureCriticalEventCount).isGreaterThan(0);
-  }
 }

@@ -11,219 +11,239 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.grpc;
+package com.google.devtools.build.lib.remote.grpc
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.remote.grpc.SharedConnectionFactory.SharedConnection
+import io.reactivex.rxjava3.core.Single
+import io.reactivex.rxjava3.core.SingleEmitter
+import io.reactivex.rxjava3.core.SingleOnSubscribe
+import io.reactivex.rxjava3.functions.Action
+import io.reactivex.rxjava3.functions.Cancellable
+import io.reactivex.rxjava3.functions.Consumer
+import io.reactivex.rxjava3.functions.Predicate
+import io.reactivex.rxjava3.plugins.RxJavaPlugins
+import org.junit.After
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import org.mockito.Mock
+import org.mockito.Mockito
+import org.mockito.invocation.InvocationOnMock
+import org.mockito.junit.MockitoJUnit
+import org.mockito.junit.MockitoRule
+import org.mockito.stubbing.Answer
+import java.io.IOException
+import java.util.concurrent.Semaphore
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
-import com.google.devtools.build.lib.remote.grpc.SharedConnectionFactory.SharedConnection;
-import io.reactivex.rxjava3.core.Single;
-import io.reactivex.rxjava3.observers.TestObserver;
-import io.reactivex.rxjava3.plugins.RxJavaPlugins;
-import java.io.IOException;
-import java.util.concurrent.Semaphore;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnit;
-import org.mockito.junit.MockitoRule;
+/** Tests for [DynamicConnectionPool].  */
+@RunWith(JUnit4::class)
+class DynamicConnectionPoolTest {
+    @Rule
+    val mockito: MockitoRule = MockitoJUnit.rule()
+    private val rxGlobalThrowable = AtomicReference<Throwable?>(null)
 
-/** Tests for {@link DynamicConnectionPool}. */
-@RunWith(JUnit4.class)
-public class DynamicConnectionPoolTest {
-  @Rule public final MockitoRule mockito = MockitoJUnit.rule();
-  private final AtomicReference<Throwable> rxGlobalThrowable = new AtomicReference<>(null);
+    @Mock
+    private val connection0: Connection? = null
 
-  @Mock private Connection connection0;
-  @Mock private Connection connection1;
-  @Mock private ConnectionFactory connectionFactory;
-  private final AtomicInteger connectionFactoryCreateTimes = new AtomicInteger(0);
+    @Mock
+    private val connection1: Connection? = null
 
-  @Before
-  public void setUp() {
-    RxJavaPlugins.setErrorHandler(rxGlobalThrowable::set);
+    @Mock
+    private val connectionFactory: ConnectionFactory? = null
+    private val connectionFactoryCreateTimes = AtomicInteger(0)
 
-    when(connectionFactory.create())
-        .thenAnswer(
-            invocation -> {
-              int times = connectionFactoryCreateTimes.getAndIncrement();
-              if (times == 0) {
-                return Single.just(connection0);
-              } else {
-                return Single.just(connection1);
-              }
-            });
-  }
+    @Before
+    fun setUp() {
+        RxJavaPlugins.setErrorHandler(Consumer { newValue: Throwable? -> rxGlobalThrowable.set(newValue) })
 
-  @After
-  public void tearDown() throws Throwable {
-    // Make sure rxjava didn't receive global errors
-    Throwable t = rxGlobalThrowable.getAndSet(null);
-    if (t != null) {
-      throw t;
+        Mockito.`when`<Any?>(connectionFactory!!.create())
+            .thenAnswer(
+                Answer { invocation: InvocationOnMock? ->
+                    val times = connectionFactoryCreateTimes.getAndIncrement()
+                    if (times == 0) {
+                        return@thenAnswer Single.just<Connection?>(connection0)
+                    } else {
+                        return@thenAnswer Single.just<Connection?>(connection1)
+                    }
+                })
     }
-  }
 
-  @Test
-  public void create_smoke() {
-    DynamicConnectionPool pool = new DynamicConnectionPool(connectionFactory, 1);
+    @After
+    @Throws(Throwable::class)
+    fun tearDown() {
+        // Make sure rxjava didn't receive global errors
+        val t = rxGlobalThrowable.getAndSet(null)
+        if (t != null) {
+            throw t
+        }
+    }
 
-    TestObserver<SharedConnection> observer = pool.create().test();
+    @Test
+    fun create_smoke() {
+        val pool = DynamicConnectionPool(connectionFactory, 1)
 
-    observer.assertValue(conn -> conn.getUnderlyingConnection() == connection0).assertComplete();
-    assertThat(connectionFactoryCreateTimes.get()).isEqualTo(1);
-  }
+        val observer = pool.create()!!.test()
 
-  @Test
-  public void create_exceedingMaxConcurrent_createNewConnection() {
-    DynamicConnectionPool pool = new DynamicConnectionPool(connectionFactory, 1);
+        observer.assertValue(Predicate { conn: SharedConnection? -> conn!!.underlyingConnection === connection0 })
+            .assertComplete()
+        Truth.assertThat(connectionFactoryCreateTimes.get()).isEqualTo(1)
+    }
 
-    TestObserver<SharedConnection> observer0 = pool.create().test();
-    TestObserver<SharedConnection> observer1 = pool.create().test();
+    @Test
+    fun create_exceedingMaxConcurrent_createNewConnection() {
+        val pool = DynamicConnectionPool(connectionFactory, 1)
 
-    observer0.assertValue(conn -> conn.getUnderlyingConnection() == connection0).assertComplete();
-    observer1.assertValue(conn -> conn.getUnderlyingConnection() == connection1).assertComplete();
-    assertThat(connectionFactoryCreateTimes.get()).isEqualTo(2);
-  }
+        val observer0 = pool.create()!!.test()
+        val observer1 = pool.create()!!.test()
 
-  @Test
-  public void create_pendingConnectionCreationAndExceedingMaxConcurrent_createNewConnection() {
-    AtomicBoolean terminated = new AtomicBoolean(false);
-    ConnectionFactory connectionFactory = mock(ConnectionFactory.class);
-    when(connectionFactory.create())
-        .thenAnswer(
-            invocation -> {
-              if (connectionFactoryCreateTimes.getAndIncrement() == 0) {
-                return Single.create(
-                    emitter -> {
-                      Thread t =
-                          new Thread(
-                              () -> {
-                                try {
-                                  Thread.sleep(Integer.MAX_VALUE);
-                                  emitter.onSuccess(connection0);
-                                } catch (InterruptedException e) {
-                                  emitter.onError(e);
-                                }
-                                terminated.set(true);
-                              });
-                      t.start();
-                    });
-              } else {
-                return Single.just(connection1);
-              }
-            });
-    DynamicConnectionPool pool = new DynamicConnectionPool(connectionFactory, 1);
+        observer0.assertValue(Predicate { conn: SharedConnection? -> conn!!.underlyingConnection === connection0 })
+            .assertComplete()
+        observer1.assertValue(Predicate { conn: SharedConnection? -> conn!!.underlyingConnection === connection1 })
+            .assertComplete()
+        Truth.assertThat(connectionFactoryCreateTimes.get()).isEqualTo(2)
+    }
 
-    TestObserver<SharedConnection> observer0 = pool.create().test();
-    TestObserver<SharedConnection> observer1 = pool.create().test();
+    @Test
+    fun create_pendingConnectionCreationAndExceedingMaxConcurrent_createNewConnection() {
+        val terminated = AtomicBoolean(false)
+        val connectionFactory: ConnectionFactory = Mockito.mock<ConnectionFactory>(ConnectionFactory::class.java)
+        Mockito.`when`<Any?>(connectionFactory.create())
+            .thenAnswer(
+                Answer { invocation: InvocationOnMock? ->
+                    if (connectionFactoryCreateTimes.getAndIncrement() == 0) {
+                        return@thenAnswer Single.create<Any?>(
+                            SingleOnSubscribe { emitter: SingleEmitter<Any?>? ->
+                                val t =
+                                    Thread(
+                                        Runnable {
+                                            try {
+                                                Thread.sleep(Int.Companion.MAX_VALUE.toLong())
+                                                emitter!!.onSuccess(connection0)
+                                            } catch (e: InterruptedException) {
+                                                emitter!!.onError(e)
+                                            }
+                                            terminated.set(true)
+                                        })
+                                t.start()
+                            })
+                    } else {
+                        return@thenAnswer Single.just<Connection?>(connection1)
+                    }
+                })
+        val pool = DynamicConnectionPool(connectionFactory, 1)
 
-    assertThat(terminated.get()).isFalse();
-    observer0.assertEmpty();
-    observer1.assertValue(conn -> conn.getUnderlyingConnection() == connection1).assertComplete();
-    assertThat(connectionFactoryCreateTimes.get()).isEqualTo(2);
-  }
+        val observer0 = pool.create()!!.test()
+        val observer1 = pool.create()!!.test()
 
-  @Test
-  public void create_belowMaxConcurrency_shareConnections() {
-    DynamicConnectionPool pool = new DynamicConnectionPool(connectionFactory, 2);
+        Truth.assertThat(terminated.get()).isFalse()
+        observer0.assertEmpty()
+        observer1.assertValue(Predicate { conn: SharedConnection? -> conn!!.underlyingConnection === connection1 })
+            .assertComplete()
+        Truth.assertThat(connectionFactoryCreateTimes.get()).isEqualTo(2)
+    }
 
-    TestObserver<SharedConnection> observer0 = pool.create().test();
-    TestObserver<SharedConnection> observer1 = pool.create().test();
+    @Test
+    fun create_belowMaxConcurrency_shareConnections() {
+        val pool = DynamicConnectionPool(connectionFactory, 2)
 
-    observer0.assertValue(conn -> conn.getUnderlyingConnection() == connection0).assertComplete();
-    observer1.assertValue(conn -> conn.getUnderlyingConnection() == connection0).assertComplete();
-    assertThat(connectionFactoryCreateTimes.get()).isEqualTo(1);
-  }
+        val observer0 = pool.create()!!.test()
+        val observer1 = pool.create()!!.test()
 
-  @Test
-  public void create_afterConnectionClosed_shareConnections() throws IOException {
-    DynamicConnectionPool pool = new DynamicConnectionPool(connectionFactory, 1);
-    TestObserver<SharedConnection> observer0 = pool.create().test();
-    observer0.assertValue(conn -> conn.getUnderlyingConnection() == connection0).assertComplete();
-    observer0.values().get(0).close();
+        observer0.assertValue(Predicate { conn: SharedConnection? -> conn!!.underlyingConnection === connection0 })
+            .assertComplete()
+        observer1.assertValue(Predicate { conn: SharedConnection? -> conn!!.underlyingConnection === connection0 })
+            .assertComplete()
+        Truth.assertThat(connectionFactoryCreateTimes.get()).isEqualTo(1)
+    }
 
-    TestObserver<SharedConnection> observer1 = pool.create().test();
+    @Test
+    @Throws(IOException::class)
+    fun create_afterConnectionClosed_shareConnections() {
+        val pool = DynamicConnectionPool(connectionFactory, 1)
+        val observer0 = pool.create()!!.test()
+        observer0.assertValue(Predicate { conn: SharedConnection? -> conn!!.underlyingConnection === connection0 })
+            .assertComplete()
+        observer0.values().get(0)!!.close()
 
-    observer1.assertValue(conn -> conn.getUnderlyingConnection() == connection0).assertComplete();
-    assertThat(connectionFactoryCreateTimes.get()).isEqualTo(1);
-  }
+        val observer1 = pool.create()!!.test()
 
-  @Test
-  public void closePool_noNewConnectionAllowed() throws IOException {
-    DynamicConnectionPool pool = new DynamicConnectionPool(connectionFactory, 1);
-    pool.close();
+        observer1.assertValue(Predicate { conn: SharedConnection? -> conn!!.underlyingConnection === connection0 })
+            .assertComplete()
+        Truth.assertThat(connectionFactoryCreateTimes.get()).isEqualTo(1)
+    }
 
-    TestObserver<SharedConnection> observer = pool.create().test();
+    @Test
+    @Throws(IOException::class)
+    fun closePool_noNewConnectionAllowed() {
+        val pool = DynamicConnectionPool(connectionFactory, 1)
+        pool.close()
 
-    observer
-        .assertError(IllegalStateException.class)
-        .assertError(e -> e.getMessage().contains("closed"));
-  }
+        val observer = pool.create()!!.test()
 
-  @Test
-  public void closePool_closeUnderlyingConnection() throws IOException {
-    DynamicConnectionPool pool = new DynamicConnectionPool(connectionFactory, 1);
-    TestObserver<SharedConnection> observer = pool.create().test();
-    observer.assertComplete();
+        observer
+            .assertError(IllegalStateException::class.java)
+            .assertError(Predicate { e: Throwable? -> e!!.message.contains("closed") })
+    }
 
-    pool.close();
+    @Test
+    @Throws(IOException::class)
+    fun closePool_closeUnderlyingConnection() {
+        val pool = DynamicConnectionPool(connectionFactory, 1)
+        val observer = pool.create()!!.test()
+        observer.assertComplete()
 
-    verify(connection0, times(1)).close();
-  }
+        pool.close()
 
-  @Test
-  public void closePool_pendingConnectionCreation_closedError()
-      throws IOException, InterruptedException {
-    AtomicBoolean canceled = new AtomicBoolean(false);
-    AtomicBoolean finished = new AtomicBoolean(false);
-    Semaphore terminated = new Semaphore(0);
-    ConnectionFactory connectionFactory = mock(ConnectionFactory.class);
-    when(connectionFactory.create())
-        .thenAnswer(
-            invocation ->
-                Single.create(
-                        emitter -> {
-                          Thread t =
-                              new Thread(
-                                  () -> {
-                                    try {
-                                      Thread.sleep(Integer.MAX_VALUE);
-                                      finished.set(true);
-                                      emitter.onSuccess(connection0);
-                                    } catch (InterruptedException ignored) {
-                                      /* no-op */
-                                    }
+        Mockito.verify<Connection?>(connection0, Mockito.times(1)).close()
+    }
 
-                                    terminated.release();
-                                  });
-                          t.start();
-
-                          emitter.setCancellable(t::interrupt);
+    @Test
+    @Throws(IOException::class, InterruptedException::class)
+    fun closePool_pendingConnectionCreation_closedError() {
+        val canceled = AtomicBoolean(false)
+        val finished = AtomicBoolean(false)
+        val terminated = Semaphore(0)
+        val connectionFactory: ConnectionFactory = Mockito.mock<ConnectionFactory>(ConnectionFactory::class.java)
+        Mockito.`when`<Any?>(connectionFactory.create())
+            .thenAnswer(
+                Answer { invocation: InvocationOnMock? ->
+                    Single.create<Any?>(
+                        SingleOnSubscribe { emitter: SingleEmitter<Any?>? ->
+                            val t =
+                                Thread(
+                                    Runnable {
+                                        try {
+                                            Thread.sleep(Int.Companion.MAX_VALUE.toLong())
+                                            finished.set(true)
+                                            emitter!!.onSuccess(connection0)
+                                        } catch (ignored: InterruptedException) {
+                                            /* no-op */
+                                        }
+                                        terminated.release()
+                                    })
+                            t.start()
+                            emitter!!.setCancellable(Cancellable { t.interrupt() })
                         })
-                    .doOnDispose(() -> canceled.set(true)));
-    DynamicConnectionPool pool = new DynamicConnectionPool(connectionFactory, 1);
-    TestObserver<SharedConnection> observer = pool.create().test();
-    observer.assertEmpty();
+                        .doOnDispose(Action { canceled.set(true) })
+                })
+        val pool = DynamicConnectionPool(connectionFactory, 1)
+        val observer = pool.create()!!.test()
+        observer.assertEmpty()
 
-    assertThat(canceled.get()).isFalse();
-    pool.close();
+        Truth.assertThat(canceled.get()).isFalse()
+        pool.close()
 
-    terminated.acquire();
-    observer
-        .assertError(IllegalStateException.class)
-        .assertError(e -> e.getMessage().contains("closed"));
-    assertThat(canceled.get()).isTrue();
-    assertThat(finished.get()).isFalse();
-  }
+        terminated.acquire()
+        observer
+            .assertError(IllegalStateException::class.java)
+            .assertError(Predicate { e: Throwable? -> e!!.message.contains("closed") })
+        Truth.assertThat(canceled.get()).isTrue()
+        Truth.assertThat(finished.get()).isFalse()
+    }
 }

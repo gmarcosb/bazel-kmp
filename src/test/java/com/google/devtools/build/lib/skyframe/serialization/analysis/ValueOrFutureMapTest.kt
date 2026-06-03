@@ -11,113 +11,142 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.analysis;
+package com.google.devtools.build.lib.skyframe.serialization.analysis
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.concurrent.SettableFutureKeyedValue
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.atomic.AtomicBoolean
 
-import com.google.common.util.concurrent.SettableFuture;
-import com.google.devtools.build.lib.concurrent.SettableFutureKeyedValue;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.function.BiConsumer;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+@RunWith(JUnit4::class)
+class ValueOrFutureMapTest {
+    private interface ValueOrFuture
 
-@RunWith(JUnit4.class)
-public final class ValueOrFutureMapTest {
-  private sealed interface ValueOrFuture permits Value, FutureValue {}
+    @kotlin.jvm.JvmRecord
+    private data class Value(val text: String?) : ValueOrFuture
 
-  private record Value(String text) implements ValueOrFuture {}
+    private class FutureValue
+        (key: String?, consumer: java.util.function.BiConsumer<String?, Value?>?) :
+        SettableFutureKeyedValue<FutureValue?, String?, Value?>(key, consumer), ValueOrFuture
 
-  private static final class FutureValue
-      extends SettableFutureKeyedValue<FutureValue, String, Value> implements ValueOrFuture {
-    private FutureValue(String key, BiConsumer<String, Value> consumer) {
-      super(key, consumer);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun incomplete_fails() {
+        val map: ValueOrFutureMap =
+            ValueOrFutureMap(
+                ConcurrentHashMap<String?, ValueOrFuture?>(),
+                { key: String?, consumer: java.util.function.BiConsumer<kotlin.String?, com.google.devtools.build.lib.skyframe.serialization.analysis.ValueOrFutureMapTest.Value?>? ->
+                    FutureValue(
+                        key,
+                        consumer
+                    )
+                },
+                { future -> future },  // a faulty, no-op populator
+                com.google.devtools.build.lib.skyframe.serialization.analysis.ValueOrFutureMapTest.FutureValue::class.java
+            )
+        val result = map.getValueOrFuture("key") as FutureValue
+
+        val thrown: ExecutionException? = org.junit.Assert.assertThrows<ExecutionException?>(
+            ExecutionException::class.java,
+            org.junit.function.ThrowingRunnable { result.get() })
+        Truth.assertThat(thrown).hasCauseThat().hasMessageThat().contains("future was unexpectedly unset")
     }
-  }
 
-  @Test
-  public void incomplete_fails() throws Exception {
-    var map =
-        new ValueOrFutureMap<>(
-            new ConcurrentHashMap<String, ValueOrFuture>(),
-            FutureValue::new,
-            future -> future, // a faulty, no-op populator
-            FutureValue.class);
-    var result = (FutureValue) map.getValueOrFuture("key");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun immediatePopulatorResult_returnsImmediateValue() {
+        val value: Value =
+            com.google.devtools.build.lib.skyframe.serialization.analysis.ValueOrFutureMapTest.Value("value")
+        val map: ValueOrFutureMap =
+            ValueOrFutureMap(
+                ConcurrentHashMap<String?, ValueOrFuture?>(),
+                { key: String?, consumer: java.util.function.BiConsumer<kotlin.String?, com.google.devtools.build.lib.skyframe.serialization.analysis.ValueOrFutureMapTest.Value?>? ->
+                    FutureValue(
+                        key,
+                        consumer
+                    )
+                },  // populator that just returns value
+                { future ->
+                    assertThat(future.key()).isEqualTo("key")
+                    future.completeWith(value)
+                },
+                com.google.devtools.build.lib.skyframe.serialization.analysis.ValueOrFutureMapTest.FutureValue::class.java
+            )
 
-    var thrown = assertThrows(ExecutionException.class, result::get);
-    assertThat(thrown).hasCauseThat().hasMessageThat().contains("future was unexpectedly unset");
-  }
+        val result: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            map.getValueOrFuture("key")
+        assertThat(result).isSameInstanceAs(value)
+    }
 
-  @Test
-  public void immediatePopulatorResult_returnsImmediateValue() throws Exception {
-    var value = new Value("value");
-    var map =
-        new ValueOrFutureMap<>(
-            new ConcurrentHashMap<String, ValueOrFuture>(),
-            FutureValue::new,
-            // populator that just returns value
-            future -> {
-              assertThat(future.key()).isEqualTo("key");
-              return future.completeWith(value);
-            },
-            FutureValue.class);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun asyncCompletion_propagates() {
+        val settable: com.google.common.util.concurrent.SettableFuture<Value?> =
+            com.google.common.util.concurrent.SettableFuture.create<Value?>()
+        val map: ValueOrFutureMap =
+            ValueOrFutureMap(
+                ConcurrentHashMap<String?, ValueOrFuture?>(),
+                { key: String?, consumer: java.util.function.BiConsumer<kotlin.String?, com.google.devtools.build.lib.skyframe.serialization.analysis.ValueOrFutureMapTest.Value?>? ->
+                    FutureValue(
+                        key,
+                        consumer
+                    )
+                },
+                { future ->
+                    assertThat(future.key()).isEqualTo("key")
+                    future.completeWith(settable)
+                },
+                com.google.devtools.build.lib.skyframe.serialization.analysis.ValueOrFutureMapTest.FutureValue::class.java
+            )
 
-    var result = map.getValueOrFuture("key");
-    assertThat(result).isSameInstanceAs(value);
-  }
+        val result = map.getValueOrFuture("key") as FutureValue
+        Truth.assertThat(result.isDone()).isFalse()
 
-  @Test
-  public void asyncCompletion_propagates() throws Exception {
-    var settable = SettableFuture.<Value>create();
-    var map =
-        new ValueOrFutureMap<>(
-            new ConcurrentHashMap<String, ValueOrFuture>(),
-            FutureValue::new,
-            future -> {
-              assertThat(future.key()).isEqualTo("key");
-              return future.completeWith(settable);
-            },
-            FutureValue.class);
+        val value: Value =
+            com.google.devtools.build.lib.skyframe.serialization.analysis.ValueOrFutureMapTest.Value("value")
+        settable.set(value)
 
-    var result = (FutureValue) map.getValueOrFuture("key");
-    assertThat(result.isDone()).isFalse();
+        Truth.assertThat(result.get()).isSameInstanceAs(value)
 
-    var value = new Value("value");
-    settable.set(value);
+        // After completion, the map contains the value directly, not wrapped by the future.
+        assertThat(map.getValueOrFuture("key")).isSameInstanceAs(value)
+    }
 
-    assertThat(result.get()).isSameInstanceAs(value);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun sameKey_returnsCachedValue() {
+        val called: AtomicBoolean = AtomicBoolean(false)
+        val value: Value =
+            com.google.devtools.build.lib.skyframe.serialization.analysis.ValueOrFutureMapTest.Value("value")
+        val map: ValueOrFutureMap =
+            ValueOrFutureMap(
+                ConcurrentHashMap<String?, ValueOrFuture?>(),
+                { key: String?, consumer: java.util.function.BiConsumer<kotlin.String?, com.google.devtools.build.lib.skyframe.serialization.analysis.ValueOrFutureMapTest.Value?>? ->
+                    FutureValue(
+                        key,
+                        consumer
+                    )
+                },
+                { future ->
+                    assertThat(future.key()).isEqualTo("key")
+                    // Asserts that the populator is called just once.
+                    Truth.assertThat(called.compareAndSet(false, true)).isTrue()
+                    future.completeWith(value)
+                },
+                com.google.devtools.build.lib.skyframe.serialization.analysis.ValueOrFutureMapTest.FutureValue::class.java
+            )
 
-    // After completion, the map contains the value directly, not wrapped by the future.
-    assertThat(map.getValueOrFuture("key")).isSameInstanceAs(value);
-  }
+        val result: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            map.getValueOrFuture("key")
+        assertThat(result).isSameInstanceAs(value)
 
-  @Test
-  public void sameKey_returnsCachedValue() throws Exception {
-    var called = new AtomicBoolean(false);
-    var value = new Value("value");
-    var map =
-        new ValueOrFutureMap<>(
-            new ConcurrentHashMap<String, ValueOrFuture>(),
-            FutureValue::new,
-            future -> {
-              assertThat(future.key()).isEqualTo("key");
-              // Asserts that the populator is called just once.
-              assertThat(called.compareAndSet(false, true)).isTrue();
-              return future.completeWith(value);
-            },
-            FutureValue.class);
+        Truth.assertThat(called.get()).isTrue()
 
-    var result = map.getValueOrFuture("key");
-    assertThat(result).isSameInstanceAs(value);
-
-    assertThat(called.get()).isTrue();
-
-    var result2 = map.getValueOrFuture("key");
-    assertThat(result2).isSameInstanceAs(value);
-  }
+        val result2: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            map.getValueOrFuture("key")
+        assertThat(result2).isSameInstanceAs(value)
+    }
 }

@@ -11,58 +11,59 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe
 
-package com.google.devtools.build.lib.skyframe;
+import com.google.devtools.build.lib.actions.FileStateValue
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.actions.FileStateValue;
-import com.google.devtools.build.lib.actions.FileValue;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.FsUtils;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link FileValue}. */
-@RunWith(JUnit4.class)
-public class FileValueTest {
-  @Test
-  public void testCodec() throws Exception {
-    // This test case assumes we have adequate coverage for FileStateValue serialization.
-    SerializationTester serializationTester =
-        new SerializationTester(
-            new FileValue.DifferentRealPathFileValueWithUnboundedAncestorExpansion(
-                FsUtils.TEST_ROOTED_PATH,
-                FileStateValue.DIRECTORY_FILE_STATE_NODE,
-                ImmutableList.of(FsUtils.TEST_ROOTED_PATH),
-                ImmutableList.of(),
-                ImmutableList.of(FsUtils.TEST_ROOTED_PATH)),
-            new FileValue.SymlinkFileValueWithUnboundedAncestorExpansion(
-                FsUtils.TEST_ROOTED_PATH,
-                FileStateValue.DIRECTORY_FILE_STATE_NODE,
-                ImmutableList.of(FsUtils.TEST_ROOTED_PATH),
-                PathFragment.create("doesntmatter"),
-                ImmutableList.of(),
-                ImmutableList.of(FsUtils.TEST_ROOTED_PATH)),
-            new FileValue.DifferentRealPathFileValueWithStoredChain(
-                FsUtils.TEST_ROOTED_PATH,
-                FileStateValue.DIRECTORY_FILE_STATE_NODE,
-                ImmutableList.of(FsUtils.TEST_ROOTED_PATH)),
-            new FileValue.DifferentRealPathFileValueWithoutStoredChain(
-                FsUtils.TEST_ROOTED_PATH, FileStateValue.DIRECTORY_FILE_STATE_NODE),
-            new FileValue.SymlinkFileValueWithStoredChain(
-                FsUtils.TEST_ROOTED_PATH,
-                new FileStateValue.RegularFileStateValueWithDigest(
-                    /* size= */ 100, /* digest= */ new byte[] {1, 2, 3, 4, 5}),
-                ImmutableList.of(FsUtils.TEST_ROOTED_PATH),
-                PathFragment.create("somewhere/else")),
-            new FileValue.SymlinkFileValueWithoutStoredChain(
-                FsUtils.TEST_ROOTED_PATH,
-                new FileStateValue.RegularFileStateValueWithDigest(
-                    /* size= */ 100, /* digest= */ new byte[] {1, 2, 3, 4, 5}),
-                PathFragment.create("somewhere/else")));
-    FsUtils.addDependencies(serializationTester);
-    serializationTester.runTests();
-  }
+/** Tests for [FileValue].  */
+@RunWith(JUnit4::class)
+class FileValueTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCodec() {
+        // This test case assumes we have adequate coverage for FileStateValue serialization.
+        val serializationTester: SerializationTester =
+            SerializationTester(
+                DifferentRealPathFileValueWithUnboundedAncestorExpansion(
+                    FsUtils.TEST_ROOTED_PATH,
+                    FileStateValue.DIRECTORY_FILE_STATE_NODE,
+                    com.google.common.collect.ImmutableList.of<E?>(FsUtils.TEST_ROOTED_PATH),
+                    com.google.common.collect.ImmutableList.of<E?>(),
+                    com.google.common.collect.ImmutableList.of<E?>(FsUtils.TEST_ROOTED_PATH)
+                ),
+                SymlinkFileValueWithUnboundedAncestorExpansion(
+                    FsUtils.TEST_ROOTED_PATH,
+                    FileStateValue.DIRECTORY_FILE_STATE_NODE,
+                    com.google.common.collect.ImmutableList.of<E?>(FsUtils.TEST_ROOTED_PATH),
+                    PathFragment.create("doesntmatter"),
+                    com.google.common.collect.ImmutableList.of<E?>(),
+                    com.google.common.collect.ImmutableList.of<E?>(FsUtils.TEST_ROOTED_PATH)
+                ),
+                DifferentRealPathFileValueWithStoredChain(
+                    FsUtils.TEST_ROOTED_PATH,
+                    FileStateValue.DIRECTORY_FILE_STATE_NODE,
+                    com.google.common.collect.ImmutableList.of<E?>(FsUtils.TEST_ROOTED_PATH)
+                ),
+                DifferentRealPathFileValueWithoutStoredChain(
+                    FsUtils.TEST_ROOTED_PATH, FileStateValue.DIRECTORY_FILE_STATE_NODE
+                ),
+                SymlinkFileValueWithStoredChain(
+                    FsUtils.TEST_ROOTED_PATH,
+                    RegularFileStateValueWithDigest( /* size= */
+                        100,  /* digest= */byteArrayOf(1, 2, 3, 4, 5)
+                    ),
+                    com.google.common.collect.ImmutableList.of<E?>(FsUtils.TEST_ROOTED_PATH),
+                    PathFragment.create("somewhere/else")
+                ),
+                SymlinkFileValueWithoutStoredChain(
+                    FsUtils.TEST_ROOTED_PATH,
+                    RegularFileStateValueWithDigest( /* size= */
+                        100,  /* digest= */byteArrayOf(1, 2, 3, 4, 5)
+                    ),
+                    PathFragment.create("somewhere/else")
+                )
+            )
+        FsUtils.addDependencies(serializationTester)
+        serializationTester.runTests()
+    }
 }

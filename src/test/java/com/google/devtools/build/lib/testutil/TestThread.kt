@@ -11,63 +11,62 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.testutil
 
-package com.google.devtools.build.lib.testutil;
-
-import static com.google.common.truth.Truth.assertWithMessage;
+import com.google.common.truth.Truth
 
 /**
  * Test thread implementation that allows the use of assertions within spawned threads.
- *
- * <p>Main test method must call {@link TestThread#joinAndAssertState(long)} for each spawned test
+ * 
+ * 
+ * Main test method must call [TestThread.joinAndAssertState] for each spawned test
  * thread.
  */
-public final class TestThread extends Thread {
-  private final TestRunnable runnable;
+class TestThread
+/** Constructs a new test thread that will run the given runnable.  */(private val runnable: TestRunnable) :
+    java.lang.Thread() {
+    private var testException: Throwable? = null
+    private var isSucceeded = false
 
-  private Throwable testException = null;
-  private boolean isSucceeded = false;
-
-  /** Same as a {@link Runnable} but allowed to throw any exception. */
-  @FunctionalInterface
-  public interface TestRunnable {
-    void run() throws Exception;
-  }
-
-  /** Constructs a new test thread that will run the given runnable. */
-  public TestThread(TestRunnable runnable) {
-    this.runnable = runnable;
-  }
-
-  @Override
-  public void run() {
-    try {
-      runnable.run();
-      isSucceeded = true;
-    } catch (Exception | AssertionError e) {
-      testException = e;
+    /** Same as a [Runnable] but allowed to throw any exception.  */
+    fun interface TestRunnable {
+        @Throws(java.lang.Exception::class)
+        fun run()
     }
-  }
 
-  /**
-   * Joins test thread (waiting specified number of ms) and validates that
-   * it has been completed successfully.
-   */
-  public void joinAndAssertState(long timeout) throws InterruptedException {
-    join(timeout);
-    Throwable exception = this.testException;
-    if (isAlive()) {
-      exception = new AssertionError (
-          "Test thread " + getName() + " is still alive");
-      exception.setStackTrace(getStackTrace());
+    override fun run() {
+        try {
+            runnable.run()
+            isSucceeded = true
+        } catch (e: java.lang.Exception) {
+            testException = e
+        } catch (e: java.lang.AssertionError) {
+            testException = e
+        }
     }
-    if(exception != null) {
-      AssertionError error = new AssertionError("Test thread " + getName() + " failed to execute");
-      error.initCause(exception);
-      throw error;
+
+    /**
+     * Joins test thread (waiting specified number of ms) and validates that
+     * it has been completed successfully.
+     */
+    @Throws(java.lang.InterruptedException::class)
+    fun joinAndAssertState(timeout: Long) {
+        join(timeout)
+        var exception = this.testException
+        if (isAlive()) {
+            exception = java.lang.AssertionError(
+                "Test thread " + getName() + " is still alive"
+            )
+            exception.setStackTrace(getStackTrace())
+        }
+        if (exception != null) {
+            val error: java.lang.AssertionError =
+                java.lang.AssertionError("Test thread " + getName() + " failed to execute")
+            error.initCause(exception)
+            throw error
+        }
+        Truth.assertWithMessage("Test thread %s has not run successfully", getName())
+            .that(isSucceeded)
+            .isTrue()
     }
-    assertWithMessage("Test thread %s has not run successfully", getName())
-        .that(isSucceeded)
-        .isTrue();
-  }
 }

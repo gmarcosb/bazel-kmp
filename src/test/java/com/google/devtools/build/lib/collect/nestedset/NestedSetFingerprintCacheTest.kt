@@ -11,279 +11,282 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.collect.nestedset;
+package com.google.devtools.build.lib.collect.nestedset
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.actions.CommandLineExpansionException
 
-import com.google.common.base.Objects;
-import com.google.common.collect.HashMultiset;
-import com.google.common.collect.Multiset;
-import com.google.devtools.build.lib.actions.CommandLineExpansionException;
-import com.google.devtools.build.lib.actions.CommandLineItem;
-import com.google.devtools.build.lib.actions.CommandLineItem.MapFn;
-import com.google.devtools.build.lib.util.Fingerprint;
-import java.util.function.Consumer;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [NestedSetFingerprintCache].  */
+@RunWith(JUnit4::class)
+class NestedSetFingerprintCacheTest {
+    private inner class TestNestedSetFingerprintCache : NestedSetFingerprintCache() {
+        private val fingerprinted: com.google.common.collect.Multiset<Any?> =
+            com.google.common.collect.HashMultiset.create<Any?>()
 
-/** Tests for {@link NestedSetFingerprintCache}. */
-@RunWith(JUnit4.class)
-public class NestedSetFingerprintCacheTest {
-
-  private class TestNestedSetFingerprintCache extends NestedSetFingerprintCache {
-    private Multiset<Object> fingerprinted = HashMultiset.create();
-
-    @Override
-    <T> void addToFingerprint(MapFn<? super T> mapFn, Fingerprint fingerprint, T object)
-        throws CommandLineExpansionException, InterruptedException {
-      super.addToFingerprint(mapFn, fingerprint, object);
-      fingerprinted.add(object);
-    }
-  }
-
-  private TestNestedSetFingerprintCache cache;
-
-  @Before
-  public void setup() {
-    cache = new TestNestedSetFingerprintCache();
-  }
-
-  @Test
-  public void testBasic() throws Exception {
-    NestedSet<String> nestedSet = NestedSetBuilder.<String>stableOrder().add("a").add("b").build();
-
-    // This test does reimplement the inner algorithm of the cache, but serves
-    // as a simple check that the basic operations do something sensible
-    Fingerprint fingerprint = new Fingerprint();
-    fingerprint.addInt(nestedSet.getOrder().ordinal());
-    Fingerprint subFingerprint = new Fingerprint();
-    subFingerprint.addString("a");
-    subFingerprint.addString("b");
-    fingerprint.addBytes(subFingerprint.digestAndReset());
-    String controlDigest = fingerprint.hexDigestAndReset();
-
-    Fingerprint nestedSetFingerprint = new Fingerprint();
-    cache.addNestedSetToFingerprint(nestedSetFingerprint, nestedSet);
-    String nestedSetDigest = nestedSetFingerprint.hexDigestAndReset();
-
-    assertThat(controlDigest).isEqualTo(nestedSetDigest);
-  }
-
-  @Test
-  public void testOnlyFingerprintedOncePerString() throws Exception {
-    // Leaving leaf nodes with a single item will defeat this check
-    // The nested set builder will effectively inline single-item objects into their parent,
-    // meaning they will get hashed multiple times.
-    NestedSet<String> a = NestedSetBuilder.<String>stableOrder().add("a0").add("a1").build();
-    NestedSet<String> b = NestedSetBuilder.<String>stableOrder().add("b0").add("b1").build();
-    NestedSet<String> c =
-        NestedSetBuilder.<String>stableOrder().add("c").addTransitive(a).addTransitive(b).build();
-    NestedSet<String> d =
-        NestedSetBuilder.<String>stableOrder().add("d").addTransitive(a).addTransitive(b).build();
-    NestedSet<String> e =
-        NestedSetBuilder.<String>stableOrder().add("e").addTransitive(c).addTransitive(d).build();
-    cache.addNestedSetToFingerprint(new Fingerprint(), e);
-    assertThat(cache.fingerprinted.elementSet())
-        .containsExactly("a0", "a1", "b0", "b1", "c", "d", "e");
-    for (Multiset.Entry<Object> entry : cache.fingerprinted.entrySet()) {
-      assertThat(entry.getCount()).isEqualTo(1);
-    }
-  }
-
-  @Test
-  public void testMapFn() throws Exception {
-    // Make sure that the map function assigns completely different key spaces
-    NestedSet<String> a = NestedSetBuilder.<String>stableOrder().add("a0").add("a1").build();
-
-    Fingerprint defaultMapFnFingerprint = new Fingerprint();
-    cache.addNestedSetToFingerprint(defaultMapFnFingerprint, a);
-    Fingerprint explicitDefaultMapFnFingerprint = new Fingerprint();
-    cache.addNestedSetToFingerprint(
-        CommandLineItem.MapFn.DEFAULT, explicitDefaultMapFnFingerprint, a);
-    Fingerprint mappedFingerprint = new Fingerprint();
-    cache.addNestedSetToFingerprint((s, args) -> args.accept(s + "_mapped"), mappedFingerprint, a);
-
-    String defaultMapFnDigest = defaultMapFnFingerprint.hexDigestAndReset();
-    String explicitDefaultMapFnDigest = explicitDefaultMapFnFingerprint.hexDigestAndReset();
-    String mappedDigest = mappedFingerprint.hexDigestAndReset();
-    assertThat(defaultMapFnDigest).isEqualTo(explicitDefaultMapFnDigest);
-    assertThat(mappedDigest).isNotEqualTo(defaultMapFnDigest);
-
-    assertThat(cache.fingerprinted.elementSet()).containsExactly("a0", "a1");
-    for (Multiset.Entry<Object> entry : cache.fingerprinted.entrySet()) {
-      assertThat(entry.getCount()).isEqualTo(2);
-    }
-  }
-
-  @Test
-  public void testMultipleInstancesOfMapFnThrows() throws Exception {
-    NestedSet<String> nestedSet =
-        NestedSetBuilder.<String>stableOrder().add("a0").add("a1").build();
-
-    // Make sure a normal method reference doesn't get denied.
-    for (int i = 0; i < 2; ++i) {
-      cache.addNestedSetToFingerprint(
-          NestedSetFingerprintCacheTest::simpleExpand, new Fingerprint(), nestedSet);
+        @Throws(CommandLineExpansionException::class, java.lang.InterruptedException::class)
+        public override fun <T> addToFingerprint(mapFn: MapFn<in T?>?, fingerprint: Fingerprint?, `object`: T?) {
+            super.addToFingerprint(mapFn, fingerprint, `object`)
+            fingerprinted.add(`object`)
+        }
     }
 
-    // Try again to make sure Java synthesizes a new class for a second method reference.
-    for (int i = 0; i < 2; ++i) {
-      cache.addNestedSetToFingerprint(
-          NestedSetFingerprintCacheTest::simpleExpand2, new Fingerprint(), nestedSet);
+    private var cache: TestNestedSetFingerprintCache? = null
+
+    @Before
+    fun setup() {
+        cache = TestNestedSetFingerprintCache()
     }
 
-    // Make sure a non-capturing lambda doesn't get denied
-    for (int i = 0; i < 2; ++i) {
-      cache.addNestedSetToFingerprint(
-          (s, args) -> args.accept(s + "_mapped"), new Fingerprint(), nestedSet);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBasic() {
+        val nestedSet: NestedSet<String?> =
+            NestedSetBuilder.< String > stableOrder < kotlin . String ? > ().add("a").add("b").build()
+
+        // This test does reimplement the inner algorithm of the cache, but serves
+        // as a simple check that the basic operations do something sensible
+        val fingerprint: Fingerprint = Fingerprint()
+        fingerprint.addInt(nestedSet.getOrder().ordinal())
+        val subFingerprint: Fingerprint = Fingerprint()
+        subFingerprint.addString("a")
+        subFingerprint.addString("b")
+        fingerprint.addBytes(subFingerprint.digestAndReset())
+        val controlDigest: String? = fingerprint.hexDigestAndReset()
+
+        val nestedSetFingerprint: Fingerprint = Fingerprint()
+        cache.addNestedSetToFingerprint(nestedSetFingerprint, nestedSet)
+        val nestedSetDigest: String? = nestedSetFingerprint.hexDigestAndReset()
+
+        Truth.assertThat(controlDigest).isEqualTo(nestedSetDigest)
     }
 
-    // Make sure a ParametrizedMapFn doesn't get denied until it exceeds its instance count
-    cache.addNestedSetToFingerprint(new IntParametrizedMapFn(1), new Fingerprint(), nestedSet);
-    cache.addNestedSetToFingerprint(new IntParametrizedMapFn(2), new Fingerprint(), nestedSet);
-    assertThrows(
-        IllegalArgumentException.class,
-        () ->
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testOnlyFingerprintedOncePerString() {
+        // Leaving leaf nodes with a single item will defeat this check
+        // The nested set builder will effectively inline single-item objects into their parent,
+        // meaning they will get hashed multiple times.
+        val a: NestedSet<String?>? =
+            NestedSetBuilder.< String > stableOrder < kotlin . String ? > ().add("a0").add("a1").build()
+        val b: NestedSet<String?>? =
+            NestedSetBuilder.< String > stableOrder < kotlin . String ? > ().add("b0").add("b1").build()
+        val c: NestedSet<String?>? =
+            NestedSetBuilder.< String > stableOrder < kotlin . String ? > ().add("c").addTransitive(a).addTransitive(b)
+                .build()
+        val d: NestedSet<String?>? =
+            NestedSetBuilder.< String > stableOrder < kotlin . String ? > ().add("d").addTransitive(a).addTransitive(b)
+                .build()
+        val e: NestedSet<String?>? =
+            NestedSetBuilder.< String > stableOrder < kotlin . String ? > ().add("e").addTransitive(c).addTransitive(d)
+                .build()
+        cache.addNestedSetToFingerprint(Fingerprint(), e)
+        Truth.assertThat(cache.fingerprinted.elementSet())
+            .containsExactly("a0", "a1", "b0", "b1", "c", "d", "e")
+        for (entry in cache.fingerprinted.entrySet()) {
+            Truth.assertThat(entry.getCount()).isEqualTo(1)
+        }
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMapFn() {
+        // Make sure that the map function assigns completely different key spaces
+        val a: NestedSet<String?>? =
+            NestedSetBuilder.< String > stableOrder < kotlin . String ? > ().add("a0").add("a1").build()
+
+        val defaultMapFnFingerprint: Fingerprint = Fingerprint()
+        cache.addNestedSetToFingerprint(defaultMapFnFingerprint, a)
+        val explicitDefaultMapFnFingerprint: Fingerprint = Fingerprint()
+        cache.addNestedSetToFingerprint(
+            CommandLineItem.MapFn.DEFAULT, explicitDefaultMapFnFingerprint, a
+        )
+        val mappedFingerprint: Fingerprint = Fingerprint()
+        cache.addNestedSetToFingerprint({ s, args -> args.accept(s.toString() + "_mapped") }, mappedFingerprint, a)
+
+        val defaultMapFnDigest: String? = defaultMapFnFingerprint.hexDigestAndReset()
+        val explicitDefaultMapFnDigest: String? = explicitDefaultMapFnFingerprint.hexDigestAndReset()
+        val mappedDigest: String? = mappedFingerprint.hexDigestAndReset()
+        Truth.assertThat(defaultMapFnDigest).isEqualTo(explicitDefaultMapFnDigest)
+        Truth.assertThat(mappedDigest).isNotEqualTo(defaultMapFnDigest)
+
+        Truth.assertThat(cache.fingerprinted.elementSet()).containsExactly("a0", "a1")
+        for (entry in cache.fingerprinted.entrySet()) {
+            Truth.assertThat(entry.getCount()).isEqualTo(2)
+        }
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMultipleInstancesOfMapFnThrows() {
+        val nestedSet: NestedSet<String?>? =
+            NestedSetBuilder.< String > stableOrder < kotlin . String ? > ().add("a0").add("a1").build()
+
+        // Make sure a normal method reference doesn't get denied.
+        for (i in 0..1) {
             cache.addNestedSetToFingerprint(
-                new IntParametrizedMapFn(3), new Fingerprint(), nestedSet));
+                { o: String?, args: java.util.function.Consumer<kotlin.String?> -> simpleExpand(o, args) },
+                Fingerprint(),
+                nestedSet
+            )
+        }
 
-    // Make sure a capturing method reference gets denied. The for loop causes the variable i
-    // to be captured, so that str::expand becomes a capturing lambda, not a plain method reference.
-    // This test case ensures that the captured lambda cannot be used twice.
-    assertThrows(
-        IllegalArgumentException.class,
-        () -> {
-          for (int i = 0; i < 2; ++i) {
-            StringJoiner str = new StringJoiner("hello");
-            cache.addNestedSetToFingerprint(str::expand, new Fingerprint(), nestedSet);
-          }
-        });
-
-    // Do make sure that a capturing lambda gets denied. The loop exists for the same reason as
-    // the above case.
-    assertThrows(
-        IllegalArgumentException.class,
-        () -> {
-          for (int i = 0; i < 2; ++i) {
-            final int capturedVariable = i;
+        // Try again to make sure Java synthesizes a new class for a second method reference.
+        for (i in 0..1) {
             cache.addNestedSetToFingerprint(
-                (s, args) -> args.accept(s + capturedVariable), new Fingerprint(), nestedSet);
-          }
-        });
-  }
+                { o: String?, args: java.util.function.Consumer<kotlin.String?> -> simpleExpand2(o, args) },
+                Fingerprint(),
+                nestedSet
+            )
+        }
 
-  private static class IntParametrizedMapFn extends CommandLineItem.ParametrizedMapFn<String> {
-    private final int i;
+        // Make sure a non-capturing lambda doesn't get denied
+        for (i in 0..1) {
+            cache.addNestedSetToFingerprint(
+                { s, args -> args.accept(s.toString() + "_mapped") }, Fingerprint(), nestedSet
+            )
+        }
 
-    private IntParametrizedMapFn(int i) {
-      this.i = i;
+        // Make sure a ParametrizedMapFn doesn't get denied until it exceeds its instance count
+        cache.addNestedSetToFingerprint(IntParametrizedMapFn(1), Fingerprint(), nestedSet)
+        cache.addNestedSetToFingerprint(IntParametrizedMapFn(2), Fingerprint(), nestedSet)
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable {
+                cache.addNestedSetToFingerprint(
+                    IntParametrizedMapFn(3), Fingerprint(), nestedSet
+                )
+            })
+
+        // Make sure a capturing method reference gets denied. The for loop causes the variable i
+        // to be captured, so that str::expand becomes a capturing lambda, not a plain method reference.
+        // This test case ensures that the captured lambda cannot be used twice.
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable {
+                for (i in 0..1) {
+                    val str: StringJoiner =
+                        com.google.devtools.build.lib.collect.nestedset.NestedSetFingerprintCacheTest.StringJoiner("hello")
+                    cache.addNestedSetToFingerprint({ other: String?, args: java.util.function.Consumer<kotlin.String?> ->
+                        str.expand(
+                            other,
+                            args
+                        )
+                    }, Fingerprint(), nestedSet)
+                }
+            })
+
+        // Do make sure that a capturing lambda gets denied. The loop exists for the same reason as
+        // the above case.
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable {
+                for (i in 0..1) {
+                    val capturedVariable = i
+                    cache.addNestedSetToFingerprint(
+                        { s, args -> args.accept(s + capturedVariable) }, Fingerprint(), nestedSet
+                    )
+                }
+            })
     }
 
-    @Override
-    public void expandToCommandLine(String object, Consumer<String> args) {
-      args.accept(object + i);
+    private class IntParametrizedMapFn(private val i: Int) : CommandLineItem.ParametrizedMapFn<String?>() {
+        public override fun expandToCommandLine(`object`: String?, args: java.util.function.Consumer<String?>) {
+            args.accept(`object` + i)
+        }
+
+        override fun equals(o: Any?): Boolean {
+            if (this === o) {
+                return true
+            }
+            if (o == null || javaClass != o.javaClass) {
+                return false
+            }
+            val that = o as IntParametrizedMapFn
+            return i == that.i
+        }
+
+        public override fun maxInstancesAllowed(): Int {
+            return 2
+        }
+
+        override fun hashCode(): Int {
+            return com.google.common.base.Objects.hashCode(i)
+        }
     }
 
-    @Override
-    public boolean equals(Object o) {
-      if (this == o) {
-        return true;
-      }
-      if (o == null || getClass() != o.getClass()) {
-        return false;
-      }
-      IntParametrizedMapFn that = (IntParametrizedMapFn) o;
-      return i == that.i;
+    private class StringJoiner(private val str: String?) {
+        fun expand(other: String?, args: java.util.function.Consumer<String?>) {
+            args.accept(str + other)
+        }
     }
 
-    @Override
-    public int maxInstancesAllowed() {
-      return 2;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFingerprintDeduplicationOfIdenticalTransitiveSets() {
+        val a: NestedSet<String?> =
+            NestedSetBuilder.< String > stableOrder < kotlin . String ? > ().add("a").add("b").build()
+        val b: NestedSet<String?> =
+            NestedSetBuilder.< String > stableOrder < kotlin . String ? > ().add("a").add("b").build()
+
+        // Verify assumption that a and b are distinct objects (otherwise this test is trivial)
+        assertThat(a).isNotSameInstanceAs(b)
+        // Verify assumption that they have the same content
+        assertThat(a.toList()).containsExactly("a", "b").inOrder()
+        assertThat(b.toList()).containsExactly("a", "b").inOrder()
+
+        // Verify fingerprints of transitive sets are identical
+        val fA: Fingerprint = Fingerprint()
+        cache.addNestedSetToFingerprint(fA, a)
+        val hexA: String? = fA.hexDigestAndReset()
+
+        val fB: Fingerprint = Fingerprint()
+        cache.addNestedSetToFingerprint(fB, b)
+        val hexB: String? = fB.hexDigestAndReset()
+
+        Truth.assertThat(hexA).isEqualTo(hexB)
+
+        // Add a leaf to ensure that the NestedSet is not optimized to just return the transitive set.
+        val includesBoth: NestedSet<String?>? =
+            NestedSetBuilder.< String > stableOrder < kotlin . String ? > ()
+                .add("leaf")
+                .addTransitive(a)
+                .addTransitive(b)
+                .build()
+        val includesOne: NestedSet<String?>? =
+            NestedSetBuilder.< String > stableOrder < kotlin . String ? > ().add("leaf").addTransitive(a).build()
+
+        val fingerprintOne: Fingerprint = Fingerprint()
+        cache.addNestedSetToFingerprint(fingerprintOne, includesOne)
+        val digestOne: String? = fingerprintOne.hexDigestAndReset()
+
+        val fingerprintBoth: Fingerprint = Fingerprint()
+        cache.addNestedSetToFingerprint(fingerprintBoth, includesBoth)
+        val digestBoth: String? = fingerprintBoth.hexDigestAndReset()
+
+        Truth.assertThat(digestBoth).isEqualTo(digestOne)
+
+        val c: NestedSet<String?>? =
+            NestedSetBuilder.< String > stableOrder < kotlin . String ? > ().add("a").add("c").build()
+        val includesDifferent: NestedSet<String?>? =
+            NestedSetBuilder.< String > stableOrder < kotlin . String ? > ()
+                .add("leaf")
+                .addTransitive(a)
+                .addTransitive(c)
+                .build()
+
+        val fingerprintDifferent: Fingerprint = Fingerprint()
+        cache.addNestedSetToFingerprint(fingerprintDifferent, includesDifferent)
+        val digestDifferent: String? = fingerprintDifferent.hexDigestAndReset()
+
+        Truth.assertThat(digestBoth).isNotEqualTo(digestDifferent)
     }
 
-    @Override
-    public int hashCode() {
-      return Objects.hashCode(i);
+    companion object {
+        private fun simpleExpand(o: String?, args: java.util.function.Consumer<String?>) {
+            args.accept(o + "_mapped")
+        }
+
+        private fun simpleExpand2(o: String?, args: java.util.function.Consumer<String?>) {
+            args.accept(o + "_mapped2")
+        }
     }
-  }
-
-  private static class StringJoiner {
-    private final String str;
-
-    private StringJoiner(String str) {
-      this.str = str;
-    }
-
-    private void expand(String other, Consumer<String> args) {
-      args.accept(str + other);
-    }
-  }
-
-  private static void simpleExpand(String o, Consumer<String> args) {
-    args.accept(o + "_mapped");
-  }
-
-  private static void simpleExpand2(String o, Consumer<String> args) {
-    args.accept(o + "_mapped2");
-  }
-
-  @Test
-  public void testFingerprintDeduplicationOfIdenticalTransitiveSets() throws Exception {
-    NestedSet<String> a = NestedSetBuilder.<String>stableOrder().add("a").add("b").build();
-    NestedSet<String> b = NestedSetBuilder.<String>stableOrder().add("a").add("b").build();
-
-    // Verify assumption that a and b are distinct objects (otherwise this test is trivial)
-    assertThat(a).isNotSameInstanceAs(b);
-    // Verify assumption that they have the same content
-    assertThat(a.toList()).containsExactly("a", "b").inOrder();
-    assertThat(b.toList()).containsExactly("a", "b").inOrder();
-
-    // Verify fingerprints of transitive sets are identical
-    Fingerprint fA = new Fingerprint();
-    cache.addNestedSetToFingerprint(fA, a);
-    String hexA = fA.hexDigestAndReset();
-
-    Fingerprint fB = new Fingerprint();
-    cache.addNestedSetToFingerprint(fB, b);
-    String hexB = fB.hexDigestAndReset();
-
-    assertThat(hexA).isEqualTo(hexB);
-
-    // Add a leaf to ensure that the NestedSet is not optimized to just return the transitive set.
-    NestedSet<String> includesBoth =
-        NestedSetBuilder.<String>stableOrder()
-            .add("leaf")
-            .addTransitive(a)
-            .addTransitive(b)
-            .build();
-    NestedSet<String> includesOne =
-        NestedSetBuilder.<String>stableOrder().add("leaf").addTransitive(a).build();
-
-    Fingerprint fingerprintOne = new Fingerprint();
-    cache.addNestedSetToFingerprint(fingerprintOne, includesOne);
-    String digestOne = fingerprintOne.hexDigestAndReset();
-
-    Fingerprint fingerprintBoth = new Fingerprint();
-    cache.addNestedSetToFingerprint(fingerprintBoth, includesBoth);
-    String digestBoth = fingerprintBoth.hexDigestAndReset();
-
-    assertThat(digestBoth).isEqualTo(digestOne);
-
-    NestedSet<String> c = NestedSetBuilder.<String>stableOrder().add("a").add("c").build();
-    NestedSet<String> includesDifferent =
-        NestedSetBuilder.<String>stableOrder()
-            .add("leaf")
-            .addTransitive(a)
-            .addTransitive(c)
-            .build();
-
-    Fingerprint fingerprintDifferent = new Fingerprint();
-    cache.addNestedSetToFingerprint(fingerprintDifferent, includesDifferent);
-    String digestDifferent = fingerprintDifferent.hexDigestAndReset();
-
-    assertThat(digestBoth).isNotEqualTo(digestDifferent);
-  }
 }

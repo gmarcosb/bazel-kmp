@@ -11,597 +11,651 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.skyframe.NodeEntrySubjectFactory.assertThatNodeEntry;
-import static org.junit.Assert.assertThrows;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.events.Reportable;
-import com.google.devtools.build.skyframe.NodeEntry.DependencyState;
-import com.google.devtools.build.skyframe.NodeEntry.DirtyType;
-import com.google.devtools.build.skyframe.NodeEntry.LifecycleState;
-import com.google.devtools.build.skyframe.SkyFunctionException.ReifiedSkyFunctionException;
-import com.google.devtools.build.skyframe.SkyFunctionException.Transience;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import com.google.errorprone.annotations.ForOverride;
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import java.util.Set;
-import javax.annotation.Nullable;
-import org.junit.Test;
+import com.google.devtools.build.lib.collect.nestedset.NestedSet
 
 /**
- * Tests for {@link InMemoryNodeEntry} implementations.
- *
- * <p>Contains test cases that are relevant to both {@link IncrementalInMemoryNodeEntry} and {@link
- * NonIncrementalInMemoryNodeEntry}. Test cases that are only partially relevant to one or the other
- * may branch on {@link InMemoryNodeEntry#keepsEdges} and return early.
- *
- * @param <V> The type of {@link Version} used by the {@link InMemoryNodeEntry} class under test
- */
-abstract class InMemoryNodeEntryTest<V extends Version> {
-  private static final SkyKey REGULAR_KEY = GraphTester.skyKey("regular");
-  private static final SkyKey PARTIAL_REEVALUATION_KEY =
-      new SkyKey() {
-        @Override
-        public SkyFunctionName functionName() {
-          return SkyFunctionName.FOR_TESTING;
+ * Tests for [InMemoryNodeEntry] implementations.
+ * 
+ * 
+ * Contains test cases that are relevant to both [IncrementalInMemoryNodeEntry] and [ ]. Test cases that are only partially relevant to one or the other
+ * may branch on [InMemoryNodeEntry.keepsEdges] and return early.
+ * 
+ * @param <V> The type of [Version] used by the [InMemoryNodeEntry] class under test
+</V> */
+internal abstract class InMemoryNodeEntryTest<V : Version?> {
+    @TestParameter
+    var isPartialReevaluation: Boolean = false
+    protected val initialVersion: V? = getInitialVersion()
+
+    fun createEntry(): InMemoryNodeEntry {
+        return createEntry(if (isPartialReevaluation) PARTIAL_REEVALUATION_KEY else REGULAR_KEY)
+    }
+
+    @com.google.errorprone.annotations.ForOverride
+    protected abstract fun createEntry(key: SkyKey?): InMemoryNodeEntry
+
+    @com.google.errorprone.annotations.ForOverride
+    abstract fun getInitialVersion(): V?
+
+    @org.junit.Test
+    fun entryAtStartOfEvaluation() {
+        val entry: InMemoryNodeEntry = createEntry()
+        assertThat(entry.isDirty()).isTrue()
+        assertThat(entry.isDone()).isFalse()
+        assertThat(entry.getLifecycleState()).isEqualTo(LifecycleState.NOT_YET_EVALUATING)
+        entry.addReverseDepAndCheckIfDone(null) // Start evaluation.
+        assertThat(entry.isDirty()).isTrue()
+        assertThat(entry.isDone()).isFalse()
+        assertThat(entry.getLifecycleState()).isEqualTo(LifecycleState.NEEDS_REBUILDING)
+        assertThat(entry.isReadyToEvaluate()).isTrue()
+        assertThat(entry.hasUnsignaledDeps()).isFalse()
+        assertThat(entry.isChanged()).isTrue()
+        assertThat(entry.getTemporaryDirectDeps()).isEmpty()
+        Truth.assertThat(entry.getTemporaryDirectDeps() is GroupedDeps.WithHashSet)
+            .isEqualTo(isPartialReevaluation)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.InterruptedException::class)
+    fun signalEntry() {
+        val entry: InMemoryNodeEntry = createEntry()
+        entry.addReverseDepAndCheckIfDone(null) // Start evaluation.
+        entry.markRebuilding()
+        val dep1: SkyKey = key("dep1")
+        entry.addSingletonTemporaryDirectDep(dep1)
+        assertThat(entry.isReadyToEvaluate()).isEqualTo(isPartialReevaluation)
+        assertThat(entry.hasUnsignaledDeps()).isTrue()
+        assertThat(entry.signalDep(initialVersion, dep1)).isTrue()
+        assertThat(entry.isReadyToEvaluate()).isTrue()
+        assertThat(entry.hasUnsignaledDeps()).isFalse()
+        NodeEntrySubjectFactory.Companion.assertThatNodeEntry(entry).hasTemporaryDirectDepsThat().containsExactly(dep1)
+        val dep2: SkyKey = key("dep2")
+        val dep3: SkyKey = key("dep3")
+        entry.addSingletonTemporaryDirectDep(dep2)
+        entry.addSingletonTemporaryDirectDep(dep3)
+        assertThat(entry.isReadyToEvaluate()).isEqualTo(isPartialReevaluation)
+        assertThat(entry.hasUnsignaledDeps()).isTrue()
+        assertThat(entry.signalDep(initialVersion, dep2)).isFalse()
+        assertThat(entry.isReadyToEvaluate()).isEqualTo(isPartialReevaluation)
+        assertThat(entry.hasUnsignaledDeps()).isTrue()
+        assertThat(entry.signalDep(initialVersion, dep3)).isTrue()
+        assertThat(entry.isReadyToEvaluate()).isTrue()
+        assertThat(entry.hasUnsignaledDeps()).isFalse()
+        Truth.assertThat(setValue(entry, object : SkyValue() {},  /* errorInfo= */null, initialVersion)).isEmpty()
+        assertThat(entry.isDone()).isTrue()
+        assertThat(entry.getLifecycleState()).isEqualTo(LifecycleState.DONE)
+        assertThat(entry.getVersion()).isEqualTo(initialVersion)
+        if (!entry.keepsEdges()) {
+            return
+        }
+        assertThat(entry.directDeps).containsExactly(dep1, dep2, dep3)
+    }
+
+    @org.junit.Test
+    fun signalExternalDep() {
+        val entry: InMemoryNodeEntry = createEntry()
+        entry.addReverseDepAndCheckIfDone(null) // Start evaluation.
+        entry.markRebuilding()
+        entry.addExternalDep()
+        assertThat(entry.isReadyToEvaluate()).isEqualTo(isPartialReevaluation)
+        assertThat(entry.hasUnsignaledDeps()).isTrue()
+        assertThat(entry.signalDep(initialVersion, null)).isTrue()
+        assertThat(entry.isReadyToEvaluate()).isTrue()
+        assertThat(entry.hasUnsignaledDeps()).isFalse()
+        entry.addExternalDep()
+        assertThat(entry.isReadyToEvaluate()).isEqualTo(isPartialReevaluation)
+        assertThat(entry.hasUnsignaledDeps()).isTrue()
+        assertThat(entry.signalDep(initialVersion, null)).isTrue()
+        assertThat(entry.isReadyToEvaluate()).isTrue()
+        assertThat(entry.hasUnsignaledDeps()).isFalse()
+        NodeEntrySubjectFactory.Companion.assertThatNodeEntry(entry).hasTemporaryDirectDepsThat().containsExactly()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.InterruptedException::class)
+    fun reverseDeps() {
+        val entry: InMemoryNodeEntry = createEntry()
+        val mother: SkyKey = key("mother")
+        val father: SkyKey = key("father")
+        assertThat(entry.addReverseDepAndCheckIfDone(mother))
+            .isEqualTo(DependencyState.NEEDS_SCHEDULING)
+        assertThat(entry.addReverseDepAndCheckIfDone(null))
+            .isEqualTo(DependencyState.ALREADY_EVALUATING)
+        assertThat(entry.addReverseDepAndCheckIfDone(father))
+            .isEqualTo(DependencyState.ALREADY_EVALUATING)
+        entry.markRebuilding()
+        Truth.assertThat(setValue(entry, object : SkyValue() {},  /* errorInfo= */null, initialVersion))
+            .containsExactly(mother, father)
+        if (!entry.keepsEdges()) {
+            return
+        }
+        assertThat(entry.reverseDepsForDoneEntry).containsExactly(mother, father)
+        assertThat(entry.isDone()).isTrue()
+        entry.removeReverseDep(mother)
+        assertThat(entry.reverseDepsForDoneEntry).doesNotContain(mother)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.InterruptedException::class)
+    fun errorValue() {
+        val entry: InMemoryNodeEntry = createEntry()
+        entry.addReverseDepAndCheckIfDone(null) // Start evaluation.
+        entry.markRebuilding()
+        val exception: ReifiedSkyFunctionException =
+            ReifiedSkyFunctionException(
+                GenericFunctionException(SomeErrorException("oops"), Transience.PERSISTENT)
+            )
+        val errorInfo: ErrorInfo? = ErrorInfo.fromException(exception, false)
+        Truth.assertThat(setValue(entry,  /* value= */null, errorInfo, initialVersion)).isEmpty()
+        assertThat(entry.isDone()).isTrue()
+        assertThat(entry.getLifecycleState()).isEqualTo(LifecycleState.DONE)
+        assertThat(entry.value).isNull()
+        assertThat(entry.toValue()).isNull()
+        assertThat(entry.errorInfo).isEqualTo(errorInfo)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.InterruptedException::class)
+    fun errorAndValue() {
+        val entry: InMemoryNodeEntry = createEntry()
+        entry.addReverseDepAndCheckIfDone(null) // Start evaluation.
+        entry.markRebuilding()
+        val exception: ReifiedSkyFunctionException =
+            ReifiedSkyFunctionException(
+                GenericFunctionException(SomeErrorException("oops"), Transience.PERSISTENT)
+            )
+        val errorInfo: ErrorInfo? = ErrorInfo.fromException(exception, false)
+        setValue(entry, object : SkyValue() {}, errorInfo, initialVersion)
+        assertThat(entry.isDone()).isTrue()
+        assertThat(entry.getLifecycleState()).isEqualTo(LifecycleState.DONE)
+        assertThat(entry.errorInfo).isEqualTo(errorInfo)
+    }
+
+    @org.junit.Test
+    fun crashOnNullErrorAndValue() {
+        val entry: InMemoryNodeEntry = createEntry()
+        entry.addReverseDepAndCheckIfDone(null) // Start evaluation.
+        entry.markRebuilding()
+        org.junit.Assert.assertThrows<java.lang.IllegalStateException?>(
+            java.lang.IllegalStateException::class.java,
+            org.junit.function.ThrowingRunnable {
+                setValue(
+                    entry,  /* value= */
+                    null,  /* errorInfo= */
+                    null,
+                    initialVersion
+                )
+            })
+    }
+
+    @org.junit.Test
+    fun crashOnTooManySignals() {
+        val entry: InMemoryNodeEntry = createEntry()
+        entry.addReverseDepAndCheckIfDone(null) // Start evaluation.
+        entry.markRebuilding()
+        org.junit.Assert.assertThrows<java.lang.IllegalStateException?>(
+            java.lang.IllegalStateException::class.java,
+            org.junit.function.ThrowingRunnable { entry.signalDep(initialVersion, null) })
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.InterruptedException::class)
+    fun crashOnSetValueWhenDone() {
+        val entry: InMemoryNodeEntry = createEntry()
+        entry.addReverseDepAndCheckIfDone(null) // Start evaluation.
+        entry.markRebuilding()
+        setValue(entry, object : SkyValue() {},  /* errorInfo= */null, initialVersion)
+        assertThat(entry.isDone()).isTrue()
+        org.junit.Assert.assertThrows<java.lang.IllegalStateException?>(
+            java.lang.IllegalStateException::class.java,
+            org.junit.function.ThrowingRunnable {
+                setValue(
+                    entry,
+                    object : SkyValue() {},  /* errorInfo= */
+                    null,
+                    initialVersion
+                )
+            })
+    }
+
+    @org.junit.Test
+    fun crashOnAddReverseDepTwice() {
+        val entry: InMemoryNodeEntry = createEntry()
+        val parent: SkyKey = key("parent")
+        assertThat(entry.addReverseDepAndCheckIfDone(parent))
+            .isEqualTo(DependencyState.NEEDS_SCHEDULING)
+        entry.addReverseDepAndCheckIfDone(parent)
+        entry.markRebuilding()
+        val e: java.lang.IllegalStateException? =
+            org.junit.Assert.assertThrows<java.lang.IllegalStateException?>(
+                "Cannot add same dep twice",
+                java.lang.IllegalStateException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    setValue(
+                        entry,
+                        object : SkyValue() {},  /* errorInfo= */
+                        null,
+                        initialVersion
+                    )
+                })
+        Truth.assertThat(e).hasMessageThat().containsMatch("[Dd]uplicate( new)? reverse deps")
+    }
+
+    internal class IntegerValue(private val value: Int) : SkyValue {
+        override fun equals(that: Any?): Boolean {
+            return (that is IntegerValue) && (that.value == value)
         }
 
-        @Override
-        public boolean supportsPartialReevaluation() {
-          return true;
+        override fun hashCode(): Int {
+            return value
         }
-      };
-  private static final NestedSet<Reportable> NO_EVENTS =
-      NestedSetBuilder.emptySet(Order.STABLE_ORDER);
 
-  @TestParameter boolean isPartialReevaluation;
-  protected final V initialVersion = getInitialVersion();
-
-  static SkyKey key(String name) {
-    return GraphTester.skyKey(name);
-  }
-
-  final InMemoryNodeEntry createEntry() {
-    return createEntry(isPartialReevaluation ? PARTIAL_REEVALUATION_KEY : REGULAR_KEY);
-  }
-
-  @ForOverride
-  protected abstract InMemoryNodeEntry createEntry(SkyKey key);
-
-  @ForOverride
-  abstract V getInitialVersion();
-
-  @Test
-  public void entryAtStartOfEvaluation() {
-    InMemoryNodeEntry entry = createEntry();
-    assertThat(entry.isDirty()).isTrue();
-    assertThat(entry.isDone()).isFalse();
-    assertThat(entry.getLifecycleState()).isEqualTo(LifecycleState.NOT_YET_EVALUATING);
-    entry.addReverseDepAndCheckIfDone(null); // Start evaluation.
-    assertThat(entry.isDirty()).isTrue();
-    assertThat(entry.isDone()).isFalse();
-    assertThat(entry.getLifecycleState()).isEqualTo(LifecycleState.NEEDS_REBUILDING);
-    assertThat(entry.isReadyToEvaluate()).isTrue();
-    assertThat(entry.hasUnsignaledDeps()).isFalse();
-    assertThat(entry.isChanged()).isTrue();
-    assertThat(entry.getTemporaryDirectDeps()).isEmpty();
-    assertThat(entry.getTemporaryDirectDeps() instanceof GroupedDeps.WithHashSet)
-        .isEqualTo(isPartialReevaluation);
-  }
-
-  @Test
-  public void signalEntry() throws InterruptedException {
-    InMemoryNodeEntry entry = createEntry();
-    entry.addReverseDepAndCheckIfDone(null); // Start evaluation.
-    entry.markRebuilding();
-    SkyKey dep1 = key("dep1");
-    entry.addSingletonTemporaryDirectDep(dep1);
-    assertThat(entry.isReadyToEvaluate()).isEqualTo(isPartialReevaluation);
-    assertThat(entry.hasUnsignaledDeps()).isTrue();
-    assertThat(entry.signalDep(initialVersion, dep1)).isTrue();
-    assertThat(entry.isReadyToEvaluate()).isTrue();
-    assertThat(entry.hasUnsignaledDeps()).isFalse();
-    assertThatNodeEntry(entry).hasTemporaryDirectDepsThat().containsExactly(dep1);
-    SkyKey dep2 = key("dep2");
-    SkyKey dep3 = key("dep3");
-    entry.addSingletonTemporaryDirectDep(dep2);
-    entry.addSingletonTemporaryDirectDep(dep3);
-    assertThat(entry.isReadyToEvaluate()).isEqualTo(isPartialReevaluation);
-    assertThat(entry.hasUnsignaledDeps()).isTrue();
-    assertThat(entry.signalDep(initialVersion, dep2)).isFalse();
-    assertThat(entry.isReadyToEvaluate()).isEqualTo(isPartialReevaluation);
-    assertThat(entry.hasUnsignaledDeps()).isTrue();
-    assertThat(entry.signalDep(initialVersion, dep3)).isTrue();
-    assertThat(entry.isReadyToEvaluate()).isTrue();
-    assertThat(entry.hasUnsignaledDeps()).isFalse();
-    assertThat(setValue(entry, new SkyValue() {}, /* errorInfo= */ null, initialVersion)).isEmpty();
-    assertThat(entry.isDone()).isTrue();
-    assertThat(entry.getLifecycleState()).isEqualTo(LifecycleState.DONE);
-    assertThat(entry.getVersion()).isEqualTo(initialVersion);
-    if (!entry.keepsEdges()) {
-      return;
-    }
-    assertThat(entry.directDeps).containsExactly(dep1, dep2, dep3);
-  }
-
-  @Test
-  public void signalExternalDep() {
-    InMemoryNodeEntry entry = createEntry();
-    entry.addReverseDepAndCheckIfDone(null); // Start evaluation.
-    entry.markRebuilding();
-    entry.addExternalDep();
-    assertThat(entry.isReadyToEvaluate()).isEqualTo(isPartialReevaluation);
-    assertThat(entry.hasUnsignaledDeps()).isTrue();
-    assertThat(entry.signalDep(initialVersion, null)).isTrue();
-    assertThat(entry.isReadyToEvaluate()).isTrue();
-    assertThat(entry.hasUnsignaledDeps()).isFalse();
-    entry.addExternalDep();
-    assertThat(entry.isReadyToEvaluate()).isEqualTo(isPartialReevaluation);
-    assertThat(entry.hasUnsignaledDeps()).isTrue();
-    assertThat(entry.signalDep(initialVersion, null)).isTrue();
-    assertThat(entry.isReadyToEvaluate()).isTrue();
-    assertThat(entry.hasUnsignaledDeps()).isFalse();
-    assertThatNodeEntry(entry).hasTemporaryDirectDepsThat().containsExactly();
-  }
-
-  @Test
-  public void reverseDeps() throws InterruptedException {
-    InMemoryNodeEntry entry = createEntry();
-    SkyKey mother = key("mother");
-    SkyKey father = key("father");
-    assertThat(entry.addReverseDepAndCheckIfDone(mother))
-        .isEqualTo(DependencyState.NEEDS_SCHEDULING);
-    assertThat(entry.addReverseDepAndCheckIfDone(null))
-        .isEqualTo(DependencyState.ALREADY_EVALUATING);
-    assertThat(entry.addReverseDepAndCheckIfDone(father))
-        .isEqualTo(DependencyState.ALREADY_EVALUATING);
-    entry.markRebuilding();
-    assertThat(setValue(entry, new SkyValue() {}, /* errorInfo= */ null, initialVersion))
-        .containsExactly(mother, father);
-    if (!entry.keepsEdges()) {
-      return;
-    }
-    assertThat(entry.reverseDepsForDoneEntry).containsExactly(mother, father);
-    assertThat(entry.isDone()).isTrue();
-    entry.removeReverseDep(mother);
-    assertThat(entry.reverseDepsForDoneEntry).doesNotContain(mother);
-  }
-
-  @Test
-  public void errorValue() throws InterruptedException {
-    InMemoryNodeEntry entry = createEntry();
-    entry.addReverseDepAndCheckIfDone(null); // Start evaluation.
-    entry.markRebuilding();
-    ReifiedSkyFunctionException exception =
-        new ReifiedSkyFunctionException(
-            new GenericFunctionException(new SomeErrorException("oops"), Transience.PERSISTENT));
-    ErrorInfo errorInfo = ErrorInfo.fromException(exception, false);
-    assertThat(setValue(entry, /* value= */ null, errorInfo, initialVersion)).isEmpty();
-    assertThat(entry.isDone()).isTrue();
-    assertThat(entry.getLifecycleState()).isEqualTo(LifecycleState.DONE);
-    assertThat(entry.value).isNull();
-    assertThat(entry.toValue()).isNull();
-    assertThat(entry.errorInfo).isEqualTo(errorInfo);
-  }
-
-  @Test
-  public void errorAndValue() throws InterruptedException {
-    InMemoryNodeEntry entry = createEntry();
-    entry.addReverseDepAndCheckIfDone(null); // Start evaluation.
-    entry.markRebuilding();
-    ReifiedSkyFunctionException exception =
-        new ReifiedSkyFunctionException(
-            new GenericFunctionException(new SomeErrorException("oops"), Transience.PERSISTENT));
-    ErrorInfo errorInfo = ErrorInfo.fromException(exception, false);
-    setValue(entry, new SkyValue() {}, errorInfo, initialVersion);
-    assertThat(entry.isDone()).isTrue();
-    assertThat(entry.getLifecycleState()).isEqualTo(LifecycleState.DONE);
-    assertThat(entry.errorInfo).isEqualTo(errorInfo);
-  }
-
-  @Test
-  public void crashOnNullErrorAndValue() {
-    InMemoryNodeEntry entry = createEntry();
-    entry.addReverseDepAndCheckIfDone(null); // Start evaluation.
-    entry.markRebuilding();
-    assertThrows(
-        IllegalStateException.class,
-        () -> setValue(entry, /* value= */ null, /* errorInfo= */ null, initialVersion));
-  }
-
-  @Test
-  public void crashOnTooManySignals() {
-    InMemoryNodeEntry entry = createEntry();
-    entry.addReverseDepAndCheckIfDone(null); // Start evaluation.
-    entry.markRebuilding();
-    assertThrows(IllegalStateException.class, () -> entry.signalDep(initialVersion, null));
-  }
-
-  @Test
-  public void crashOnSetValueWhenDone() throws InterruptedException {
-    InMemoryNodeEntry entry = createEntry();
-    entry.addReverseDepAndCheckIfDone(null); // Start evaluation.
-    entry.markRebuilding();
-    setValue(entry, new SkyValue() {}, /* errorInfo= */ null, initialVersion);
-    assertThat(entry.isDone()).isTrue();
-    assertThrows(
-        IllegalStateException.class,
-        () -> setValue(entry, new SkyValue() {}, /* errorInfo= */ null, initialVersion));
-  }
-
-  @Test
-  public void crashOnAddReverseDepTwice() {
-    InMemoryNodeEntry entry = createEntry();
-    SkyKey parent = key("parent");
-    assertThat(entry.addReverseDepAndCheckIfDone(parent))
-        .isEqualTo(DependencyState.NEEDS_SCHEDULING);
-    entry.addReverseDepAndCheckIfDone(parent);
-    entry.markRebuilding();
-    IllegalStateException e =
-        assertThrows(
-            "Cannot add same dep twice",
-            IllegalStateException.class,
-            () -> setValue(entry, new SkyValue() {}, /* errorInfo= */ null, initialVersion));
-    assertThat(e).hasMessageThat().containsMatch("[Dd]uplicate( new)? reverse deps");
-  }
-
-  static final class IntegerValue implements SkyValue {
-    private final int value;
-
-    IntegerValue(int value) {
-      this.value = value;
+        override fun toString(): String {
+            return "IntegerValue{" + value + "}"
+        }
     }
 
-    @Override
-    public boolean equals(Object that) {
-      return (that instanceof IntegerValue) && (((IntegerValue) that).value == value);
+    @org.junit.Test
+    fun addTemporaryDirectDepsInGroups() {
+        val entry: InMemoryNodeEntry = createEntry()
+        entry.addReverseDepAndCheckIfDone(null)
+        entry.addTemporaryDirectDepsInGroups(
+            com.google.common.collect.ImmutableSet.of<E?>(
+                key("1A"), key("2A"), key("2B"), key("3A"), key("3B"), key("3C"), key("4A"), key("4B"),
+                key("4C"), key("4D")
+            ),
+            com.google.common.collect.ImmutableList.of<E?>(1, 2, 3, 4)
+        )
+        assertThat(entry.getTemporaryDirectDeps())
+            .containsExactly(
+                com.google.common.collect.ImmutableList.of<E?>(key("1A")),
+                com.google.common.collect.ImmutableList.of<E?>(key("2A"), key("2B")),
+                com.google.common.collect.ImmutableList.of<E?>(key("3A"), key("3B"), key("3C")),
+                com.google.common.collect.ImmutableList.of<E?>(key("4A"), key("4B"), key("4C"), key("4D"))
+            )
+            .inOrder()
     }
 
-    @Override
-    public int hashCode() {
-      return value;
+    @org.junit.Test
+    fun addTemporaryDirectDepsInGroups_toleratesEmpty() {
+        val entry: InMemoryNodeEntry = createEntry()
+        entry.addReverseDepAndCheckIfDone(null)
+        entry.addTemporaryDirectDepsInGroups(
+            com.google.common.collect.ImmutableSet.of<E?>(),
+            com.google.common.collect.ImmutableList.of<E?>()
+        )
+        assertThat(entry.getTemporaryDirectDeps()).isEmpty()
     }
 
-    @Override
-    public String toString() {
-      return "IntegerValue{" + value + "}";
+    @org.junit.Test
+    fun addTemporaryDirectDepsInGroups_toleratesGroupSizeOfZero() {
+        val entry: InMemoryNodeEntry = createEntry()
+        entry.addReverseDepAndCheckIfDone(null)
+        entry.addTemporaryDirectDepsInGroups(
+            com.google.common.collect.ImmutableSet.of<E?>(key("dep")),
+            com.google.common.collect.ImmutableList.of<E?>(0, 1, 0)
+        )
+        assertThat(entry.getTemporaryDirectDeps()).containsExactly(com.google.common.collect.ImmutableList.of<E?>(key("dep")))
     }
-  }
 
-  @Test
-  public void addTemporaryDirectDepsInGroups() {
-    InMemoryNodeEntry entry = createEntry();
-    entry.addReverseDepAndCheckIfDone(null);
-    entry.addTemporaryDirectDepsInGroups(
-        ImmutableSet.of(
-            key("1A"), key("2A"), key("2B"), key("3A"), key("3B"), key("3C"), key("4A"), key("4B"),
-            key("4C"), key("4D")),
-        ImmutableList.of(1, 2, 3, 4));
-    assertThat(entry.getTemporaryDirectDeps())
-        .containsExactly(
-            ImmutableList.of(key("1A")),
-            ImmutableList.of(key("2A"), key("2B")),
-            ImmutableList.of(key("3A"), key("3B"), key("3C")),
-            ImmutableList.of(key("4A"), key("4B"), key("4C"), key("4D")))
-        .inOrder();
-  }
-
-  @Test
-  public void addTemporaryDirectDepsInGroups_toleratesEmpty() {
-    InMemoryNodeEntry entry = createEntry();
-    entry.addReverseDepAndCheckIfDone(null);
-    entry.addTemporaryDirectDepsInGroups(ImmutableSet.of(), ImmutableList.of());
-    assertThat(entry.getTemporaryDirectDeps()).isEmpty();
-  }
-
-  @Test
-  public void addTemporaryDirectDepsInGroups_toleratesGroupSizeOfZero() {
-    InMemoryNodeEntry entry = createEntry();
-    entry.addReverseDepAndCheckIfDone(null);
-    entry.addTemporaryDirectDepsInGroups(ImmutableSet.of(key("dep")), ImmutableList.of(0, 1, 0));
-    assertThat(entry.getTemporaryDirectDeps()).containsExactly(ImmutableList.of(key("dep")));
-  }
-
-  @Test
-  public void addTemporaryDirectDepsInGroups_notEnoughGroups_throws() {
-    InMemoryNodeEntry entry = createEntry();
-    entry.addReverseDepAndCheckIfDone(null);
-    assertThrows(
-        RuntimeException.class,
-        () ->
-            entry.addTemporaryDirectDepsInGroups(ImmutableSet.of(key("dep")), ImmutableList.of()));
-  }
-
-  @Test
-  public void addTemporaryDirectDepsInGroups_tooManyGroups_throws() {
-    InMemoryNodeEntry entry = createEntry();
-    assertThrows(
-        RuntimeException.class,
-        () -> entry.addTemporaryDirectDepsInGroups(ImmutableSet.of(), ImmutableList.of(1)));
-  }
-
-  @Test
-  public void addTemporaryDirectDepsInGroups_depsLeftOver_throws() {
-    InMemoryNodeEntry entry = createEntry();
-    entry.addReverseDepAndCheckIfDone(null);
-    assertThrows(
-        RuntimeException.class,
-        () ->
-            entry.addTemporaryDirectDepsInGroups(
-                ImmutableSet.of(key("1"), key("2"), key("3")), ImmutableList.of(1, 1)));
-  }
-
-  @Test
-  public void addTemporaryDirectDepsInGroups_depsExhausted_throws() {
-    InMemoryNodeEntry entry = createEntry();
-    entry.addReverseDepAndCheckIfDone(null);
-    assertThrows(
-        RuntimeException.class,
-        () ->
-            entry.addTemporaryDirectDepsInGroups(
-                ImmutableSet.of(key("1"), key("2"), key("3")), ImmutableList.of(1, 1, 2)));
-  }
-
-  @Test
-  public void resetLifecycle() throws Exception {
-    InMemoryNodeEntry entry = createEntry();
-    entry.addReverseDepAndCheckIfDone(null); // Start evaluation.
-    entry.markRebuilding();
-    // Rdep added before reset.
-    SkyKey parent1 = key("parent1");
-    assertThatNodeEntry(entry)
-        .addReverseDepAndCheckIfDone(parent1)
-        .isEqualTo(DependencyState.ALREADY_EVALUATING);
-    // Dep added before reset.
-    SkyKey dep1 = key("dep1");
-    entry.addSingletonTemporaryDirectDep(dep1);
-    assertThat(entry.signalDep(initialVersion, dep1)).isTrue();
-    assertThat(entry.getResetDirectDeps()).isEmpty();
-    // Reset clears temporary direct deps.
-    entry.resetEvaluationFromScratch();
-    assertThat(entry.getLifecycleState()).isEqualTo(LifecycleState.REBUILDING);
-    assertThat(entry.getTemporaryDirectDeps()).isEmpty();
-    assertThat(entry.getTemporaryDirectDeps() instanceof GroupedDeps.WithHashSet)
-        .isEqualTo(isPartialReevaluation);
-    // Rdep added after reset.
-    SkyKey parent2 = key("parent2");
-    assertThatNodeEntry(entry)
-        .addReverseDepAndCheckIfDone(parent2)
-        .isEqualTo(DependencyState.ALREADY_EVALUATING);
-    // Add back same dep.
-    entry.addSingletonTemporaryDirectDep(dep1);
-    assertThat(entry.signalDep(initialVersion, dep1)).isTrue();
-    assertThat(entry.getTemporaryDirectDeps()).containsExactly(ImmutableList.of(dep1));
-    // Dep added after reset.
-    SkyKey dep2 = key("dep2");
-    entry.addSingletonTemporaryDirectDep(dep2);
-    assertThat(entry.signalDep(initialVersion, dep2)).isTrue();
-    assertThat(entry.getTemporaryDirectDeps())
-        .containsExactly(ImmutableList.of(dep1), ImmutableList.of(dep2));
-    // Deps registered before the reset must be tracked if keeping edges.
-    if (entry.keepsEdges()) {
-      assertThat(entry.getResetDirectDeps()).containsExactly(dep1);
+    @org.junit.Test
+    fun addTemporaryDirectDepsInGroups_notEnoughGroups_throws() {
+        val entry: InMemoryNodeEntry = createEntry()
+        entry.addReverseDepAndCheckIfDone(null)
+        org.junit.Assert.assertThrows<java.lang.RuntimeException?>(
+            java.lang.RuntimeException::class.java,
+            org.junit.function.ThrowingRunnable {
+                entry.addTemporaryDirectDepsInGroups(
+                    com.google.common.collect.ImmutableSet.of<E?>(
+                        key("dep")
+                    ), com.google.common.collect.ImmutableList.of<E?>()
+                )
+            })
     }
-    // Set value and check that both parents will be signaled.
-    assertThat(setValue(entry, new IntegerValue(1), /* errorInfo= */ null, initialVersion))
-        .containsExactly(parent1, parent2);
-  }
 
-  @Test
-  public void resetTwice_moreDepsRequestedBeforeFirstReset() throws Exception {
-    InMemoryNodeEntry entry = createEntry();
-    entry.addReverseDepAndCheckIfDone(null); // Start evaluation.
-    entry.markRebuilding();
-    // Rdep added before any reset.
-    SkyKey parent = key("parent");
-    assertThatNodeEntry(entry)
-        .addReverseDepAndCheckIfDone(parent)
-        .isEqualTo(DependencyState.ALREADY_EVALUATING);
-    // Two deps added before first reset.
-    SkyKey dep1 = key("dep1");
-    entry.addSingletonTemporaryDirectDep(dep1);
-    assertThat(entry.signalDep(initialVersion, dep1)).isTrue();
-    SkyKey dep2 = key("dep2");
-    entry.addSingletonTemporaryDirectDep(dep2);
-    assertThat(entry.signalDep(initialVersion, dep2)).isTrue();
-    // First reset.
-    entry.resetEvaluationFromScratch();
-    assertThat(entry.getTemporaryDirectDeps()).isEmpty();
-    // Add back only one dep.
-    entry.addSingletonTemporaryDirectDep(dep1);
-    assertThat(entry.signalDep(initialVersion, dep1)).isTrue();
-    assertThat(entry.getTemporaryDirectDeps()).containsExactly(ImmutableList.of(dep1));
-    // Second reset.
-    entry.resetEvaluationFromScratch();
-    assertThat(entry.getTemporaryDirectDeps()).isEmpty();
-    // Both deps added back.
-    entry.addSingletonTemporaryDirectDep(dep1);
-    assertThat(entry.signalDep(initialVersion, dep1)).isTrue();
-    entry.addSingletonTemporaryDirectDep(dep2);
-    assertThat(entry.signalDep(initialVersion, dep2)).isTrue();
-    assertThat(entry.getTemporaryDirectDeps())
-        .containsExactly(ImmutableList.of(dep1), ImmutableList.of(dep2));
-    // If tracking of reset deps is required, make sure both deps are reported even though only dep1
-    // was registered during the most recent evaluation attempt.
-    if (entry.keepsEdges()) {
-      assertThat(entry.getResetDirectDeps()).containsExactly(dep1, dep2);
+    @org.junit.Test
+    fun addTemporaryDirectDepsInGroups_tooManyGroups_throws() {
+        val entry: InMemoryNodeEntry = createEntry()
+        org.junit.Assert.assertThrows<java.lang.RuntimeException?>(
+            java.lang.RuntimeException::class.java,
+            org.junit.function.ThrowingRunnable {
+                entry.addTemporaryDirectDepsInGroups(
+                    com.google.common.collect.ImmutableSet.of<E?>(),
+                    com.google.common.collect.ImmutableList.of<E?>(1)
+                )
+            })
     }
-    // Set value and check that parent will be signaled.
-    assertThat(setValue(entry, new IntegerValue(1), /* errorInfo= */ null, initialVersion))
-        .containsExactly(parent);
-  }
 
-  @Test
-  public void rewindingLifecycle() throws InterruptedException {
-    InMemoryNodeEntry entry = createEntry();
-    // Rdep that will eventually rewind the entry.
-    SkyKey resetParent = key("resetParent");
-    assertThatNodeEntry(entry)
-        .addReverseDepAndCheckIfDone(resetParent)
-        .isEqualTo(DependencyState.NEEDS_SCHEDULING);
-    entry.markRebuilding();
+    @org.junit.Test
+    fun addTemporaryDirectDepsInGroups_depsLeftOver_throws() {
+        val entry: InMemoryNodeEntry = createEntry()
+        entry.addReverseDepAndCheckIfDone(null)
+        org.junit.Assert.assertThrows<java.lang.RuntimeException?>(
+            java.lang.RuntimeException::class.java,
+            org.junit.function.ThrowingRunnable {
+                entry.addTemporaryDirectDepsInGroups(
+                    com.google.common.collect.ImmutableSet.of<E?>(key("1"), key("2"), key("3")),
+                    com.google.common.collect.ImmutableList.of<E?>(1, 1)
+                )
+            })
+    }
 
-    // Node completes.
-    SkyValue oldValue = new IntegerValue(1);
-    assertThat(setValue(entry, oldValue, /* errorInfo= */ null, initialVersion))
-        .containsExactly(resetParent);
-    assertThat(entry.isDirty()).isFalse();
-    assertThat(entry.isDone()).isTrue();
+    @org.junit.Test
+    fun addTemporaryDirectDepsInGroups_depsExhausted_throws() {
+        val entry: InMemoryNodeEntry = createEntry()
+        entry.addReverseDepAndCheckIfDone(null)
+        org.junit.Assert.assertThrows<java.lang.RuntimeException?>(
+            java.lang.RuntimeException::class.java,
+            org.junit.function.ThrowingRunnable {
+                entry.addTemporaryDirectDepsInGroups(
+                    com.google.common.collect.ImmutableSet.of<E?>(key("1"), key("2"), key("3")),
+                    com.google.common.collect.ImmutableList.of<E?>(1, 1, 2)
+                )
+            })
+    }
 
-    // Rewinding initiated.
-    entry.markDirty(DirtyType.REWIND);
-    assertThat(entry.isDirty()).isTrue();
-    assertThat(entry.isChanged()).isTrue();
-    assertThat(entry.isDone()).isFalse();
-    assertThat(entry.getTemporaryDirectDeps() instanceof GroupedDeps.WithHashSet)
-        .isEqualTo(isPartialReevaluation);
-    assertThat(entry.toValue()).isEqualTo(oldValue);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resetLifecycle() {
+        val entry: InMemoryNodeEntry = createEntry()
+        entry.addReverseDepAndCheckIfDone(null) // Start evaluation.
+        entry.markRebuilding()
+        // Rdep added before reset.
+        val parent1: SkyKey = key("parent1")
+        NodeEntrySubjectFactory.Companion.assertThatNodeEntry(entry)
+            .addReverseDepAndCheckIfDone(parent1)
+            .isEqualTo(DependencyState.ALREADY_EVALUATING)
+        // Dep added before reset.
+        val dep1: SkyKey = key("dep1")
+        entry.addSingletonTemporaryDirectDep(dep1)
+        assertThat(entry.signalDep(initialVersion, dep1)).isTrue()
+        assertThat(entry.getResetDirectDeps()).isEmpty()
+        // Reset clears temporary direct deps.
+        entry.resetEvaluationFromScratch()
+        assertThat(entry.getLifecycleState()).isEqualTo(LifecycleState.REBUILDING)
+        assertThat(entry.getTemporaryDirectDeps()).isEmpty()
+        Truth.assertThat(entry.getTemporaryDirectDeps() is GroupedDeps.WithHashSet)
+            .isEqualTo(isPartialReevaluation)
+        // Rdep added after reset.
+        val parent2: SkyKey = key("parent2")
+        NodeEntrySubjectFactory.Companion.assertThatNodeEntry(entry)
+            .addReverseDepAndCheckIfDone(parent2)
+            .isEqualTo(DependencyState.ALREADY_EVALUATING)
+        // Add back same dep.
+        entry.addSingletonTemporaryDirectDep(dep1)
+        assertThat(entry.signalDep(initialVersion, dep1)).isTrue()
+        assertThat(entry.getTemporaryDirectDeps()).containsExactly(com.google.common.collect.ImmutableList.of<E?>(dep1))
+        // Dep added after reset.
+        val dep2: SkyKey = key("dep2")
+        entry.addSingletonTemporaryDirectDep(dep2)
+        assertThat(entry.signalDep(initialVersion, dep2)).isTrue()
+        assertThat(entry.getTemporaryDirectDeps())
+            .containsExactly(
+                com.google.common.collect.ImmutableList.of<E?>(dep1),
+                com.google.common.collect.ImmutableList.of<E?>(dep2)
+            )
+        // Deps registered before the reset must be tracked if keeping edges.
+        if (entry.keepsEdges()) {
+            assertThat(entry.getResetDirectDeps()).containsExactly(dep1)
+        }
+        // Set value and check that both parents will be signaled.
+        Truth.assertThat(
+            setValue(
+                entry,
+                com.google.devtools.build.skyframe.InMemoryNodeEntryTest.IntegerValue(1),  /* errorInfo= */
+                null,
+                initialVersion
+            )
+        )
+            .containsExactly(parent1, parent2)
+    }
 
-    // Parent declares dep again after resetting.
-    var dependencyState =
-        entry.keepsEdges()
-            ? entry.checkIfDoneForDirtyReverseDep(resetParent)
-            : entry.addReverseDepAndCheckIfDone(resetParent);
-    assertThat(dependencyState).isEqualTo(DependencyState.NEEDS_SCHEDULING);
-    assertThat(entry.getLifecycleState()).isEqualTo(LifecycleState.NEEDS_REBUILDING);
-    assertThat(entry.isReadyToEvaluate()).isTrue();
-    assertThat(entry.hasUnsignaledDeps()).isFalse();
-    assertThat(entry.getTemporaryDirectDeps()).isEmpty();
-    entry.markRebuilding();
-    assertThat(entry.getLifecycleState()).isEqualTo(LifecycleState.REBUILDING);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resetTwice_moreDepsRequestedBeforeFirstReset() {
+        val entry: InMemoryNodeEntry = createEntry()
+        entry.addReverseDepAndCheckIfDone(null) // Start evaluation.
+        entry.markRebuilding()
+        // Rdep added before any reset.
+        val parent: SkyKey = key("parent")
+        NodeEntrySubjectFactory.Companion.assertThatNodeEntry(entry)
+            .addReverseDepAndCheckIfDone(parent)
+            .isEqualTo(DependencyState.ALREADY_EVALUATING)
+        // Two deps added before first reset.
+        val dep1: SkyKey = key("dep1")
+        entry.addSingletonTemporaryDirectDep(dep1)
+        assertThat(entry.signalDep(initialVersion, dep1)).isTrue()
+        val dep2: SkyKey = key("dep2")
+        entry.addSingletonTemporaryDirectDep(dep2)
+        assertThat(entry.signalDep(initialVersion, dep2)).isTrue()
+        // First reset.
+        entry.resetEvaluationFromScratch()
+        assertThat(entry.getTemporaryDirectDeps()).isEmpty()
+        // Add back only one dep.
+        entry.addSingletonTemporaryDirectDep(dep1)
+        assertThat(entry.signalDep(initialVersion, dep1)).isTrue()
+        assertThat(entry.getTemporaryDirectDeps()).containsExactly(com.google.common.collect.ImmutableList.of<E?>(dep1))
+        // Second reset.
+        entry.resetEvaluationFromScratch()
+        assertThat(entry.getTemporaryDirectDeps()).isEmpty()
+        // Both deps added back.
+        entry.addSingletonTemporaryDirectDep(dep1)
+        assertThat(entry.signalDep(initialVersion, dep1)).isTrue()
+        entry.addSingletonTemporaryDirectDep(dep2)
+        assertThat(entry.signalDep(initialVersion, dep2)).isTrue()
+        assertThat(entry.getTemporaryDirectDeps())
+            .containsExactly(
+                com.google.common.collect.ImmutableList.of<E?>(dep1),
+                com.google.common.collect.ImmutableList.of<E?>(dep2)
+            )
+        // If tracking of reset deps is required, make sure both deps are reported even though only dep1
+        // was registered during the most recent evaluation attempt.
+        if (entry.keepsEdges()) {
+            assertThat(entry.getResetDirectDeps()).containsExactly(dep1, dep2)
+        }
+        // Set value and check that parent will be signaled.
+        Truth.assertThat(
+            setValue(
+                entry,
+                com.google.devtools.build.skyframe.InMemoryNodeEntryTest.IntegerValue(1),  /* errorInfo= */
+                null,
+                initialVersion
+            )
+        )
+            .containsExactly(parent)
+    }
 
-    // Rewound evaluation completes. The parent that initiated rewinding is signalled.
-    SkyValue newValue = new IntegerValue(2);
-    assertThat(setValue(entry, newValue, /* errorInfo= */ null, initialVersion))
-        .containsExactly(resetParent);
-    assertThat(entry.value).isEqualTo(newValue);
-    assertThat(entry.toValue()).isEqualTo(newValue);
-    assertThat(entry.getVersion()).isEqualTo(initialVersion);
-  }
+    @org.junit.Test
+    @Throws(java.lang.InterruptedException::class)
+    fun rewindingLifecycle() {
+        val entry: InMemoryNodeEntry = createEntry()
+        // Rdep that will eventually rewind the entry.
+        val resetParent: SkyKey = key("resetParent")
+        NodeEntrySubjectFactory.Companion.assertThatNodeEntry(entry)
+            .addReverseDepAndCheckIfDone(resetParent)
+            .isEqualTo(DependencyState.NEEDS_SCHEDULING)
+        entry.markRebuilding()
 
-  @Test
-  public void resetAfterRewind() throws InterruptedException {
-    InMemoryNodeEntry entry = createEntry();
-    // Rdep that will eventually rewind the entry.
-    SkyKey resetParent = key("resetParent");
-    assertThatNodeEntry(entry)
-        .addReverseDepAndCheckIfDone(resetParent)
-        .isEqualTo(DependencyState.NEEDS_SCHEDULING);
-    entry.markRebuilding();
+        // Node completes.
+        val oldValue: SkyValue = com.google.devtools.build.skyframe.InMemoryNodeEntryTest.IntegerValue(1)
+        Truth.assertThat(setValue(entry, oldValue,  /* errorInfo= */null, initialVersion))
+            .containsExactly(resetParent)
+        assertThat(entry.isDirty()).isFalse()
+        assertThat(entry.isDone()).isTrue()
 
-    // One dep declared.
-    SkyKey dep = key("dep");
-    entry.addSingletonTemporaryDirectDep(dep);
-    entry.signalDep(initialVersion, dep);
+        // Rewinding initiated.
+        entry.markDirty(DirtyType.REWIND)
+        assertThat(entry.isDirty()).isTrue()
+        assertThat(entry.isChanged()).isTrue()
+        assertThat(entry.isDone()).isFalse()
+        Truth.assertThat(entry.getTemporaryDirectDeps() is GroupedDeps.WithHashSet)
+            .isEqualTo(isPartialReevaluation)
+        assertThat(entry.toValue()).isEqualTo(oldValue)
 
-    // Node completes.
-    SkyValue oldValue = new IntegerValue(1);
-    assertThat(setValue(entry, oldValue, /* errorInfo= */ null, initialVersion))
-        .containsExactly(resetParent);
-    assertThat(entry.isDirty()).isFalse();
-    assertThat(entry.isDone()).isTrue();
+        // Parent declares dep again after resetting.
+        val dependencyState: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            if (entry.keepsEdges())
+                entry.checkIfDoneForDirtyReverseDep(resetParent)
+            else
+                entry.addReverseDepAndCheckIfDone(resetParent)
+        assertThat(dependencyState).isEqualTo(DependencyState.NEEDS_SCHEDULING)
+        assertThat(entry.getLifecycleState()).isEqualTo(LifecycleState.NEEDS_REBUILDING)
+        assertThat(entry.isReadyToEvaluate()).isTrue()
+        assertThat(entry.hasUnsignaledDeps()).isFalse()
+        assertThat(entry.getTemporaryDirectDeps()).isEmpty()
+        entry.markRebuilding()
+        assertThat(entry.getLifecycleState()).isEqualTo(LifecycleState.REBUILDING)
 
-    // Rewinding initiated.
-    entry.markDirty(DirtyType.REWIND);
-    assertThat(entry.isDirty()).isTrue();
-    assertThat(entry.isChanged()).isTrue();
-    assertThat(entry.isDone()).isFalse();
-    assertThat(entry.getTemporaryDirectDeps() instanceof GroupedDeps.WithHashSet)
-        .isEqualTo(isPartialReevaluation);
-    assertThat(entry.toValue()).isEqualTo(oldValue);
+        // Rewound evaluation completes. The parent that initiated rewinding is signalled.
+        val newValue: SkyValue = com.google.devtools.build.skyframe.InMemoryNodeEntryTest.IntegerValue(2)
+        Truth.assertThat(setValue(entry, newValue,  /* errorInfo= */null, initialVersion))
+            .containsExactly(resetParent)
+        assertThat(entry.value).isEqualTo(newValue)
+        assertThat(entry.toValue()).isEqualTo(newValue)
+        assertThat(entry.getVersion()).isEqualTo(initialVersion)
+    }
 
-    // Parent declares dep again after resetting.
-    var dependencyState =
-        entry.keepsEdges()
-            ? entry.checkIfDoneForDirtyReverseDep(resetParent)
-            : entry.addReverseDepAndCheckIfDone(resetParent);
-    assertThat(dependencyState).isEqualTo(DependencyState.NEEDS_SCHEDULING);
-    assertThat(entry.getLifecycleState()).isEqualTo(LifecycleState.NEEDS_REBUILDING);
-    assertThat(entry.isReadyToEvaluate()).isTrue();
-    assertThat(entry.hasUnsignaledDeps()).isFalse();
-    assertThat(entry.getTemporaryDirectDeps()).isEmpty();
-    entry.markRebuilding();
-    assertThat(entry.getLifecycleState()).isEqualTo(LifecycleState.REBUILDING);
+    @org.junit.Test
+    @Throws(java.lang.InterruptedException::class)
+    fun resetAfterRewind() {
+        val entry: InMemoryNodeEntry = createEntry()
+        // Rdep that will eventually rewind the entry.
+        val resetParent: SkyKey = key("resetParent")
+        NodeEntrySubjectFactory.Companion.assertThatNodeEntry(entry)
+            .addReverseDepAndCheckIfDone(resetParent)
+            .isEqualTo(DependencyState.NEEDS_SCHEDULING)
+        entry.markRebuilding()
 
-    // Dep declared again, then there's a reset.
-    entry.addSingletonTemporaryDirectDep(dep);
-    entry.signalDep(initialVersion, dep);
-    entry.resetEvaluationFromScratch();
-    assertThat(entry.toValue()).isEqualTo(oldValue);
+        // One dep declared.
+        val dep: SkyKey = key("dep")
+        entry.addSingletonTemporaryDirectDep(dep)
+        entry.signalDep(initialVersion, dep)
 
-    // Dep declared again post-reset.
-    entry.addSingletonTemporaryDirectDep(dep);
-    entry.signalDep(initialVersion, dep);
-    assertThat(entry.toValue()).isEqualTo(oldValue);
+        // Node completes.
+        val oldValue: SkyValue = com.google.devtools.build.skyframe.InMemoryNodeEntryTest.IntegerValue(1)
+        Truth.assertThat(setValue(entry, oldValue,  /* errorInfo= */null, initialVersion))
+            .containsExactly(resetParent)
+        assertThat(entry.isDirty()).isFalse()
+        assertThat(entry.isDone()).isTrue()
 
-    // Rewound evaluation completes. The parent that initiated rewinding is signalled.
-    SkyValue newValue = new IntegerValue(2);
-    assertThat(setValue(entry, newValue, /* errorInfo= */ null, initialVersion))
-        .containsExactly(resetParent);
-    assertThat(entry.value).isEqualTo(newValue);
-    assertThat(entry.toValue()).isEqualTo(newValue);
-    assertThat(entry.getVersion()).isEqualTo(initialVersion);
-  }
+        // Rewinding initiated.
+        entry.markDirty(DirtyType.REWIND)
+        assertThat(entry.isDirty()).isTrue()
+        assertThat(entry.isChanged()).isTrue()
+        assertThat(entry.isDone()).isFalse()
+        Truth.assertThat(entry.getTemporaryDirectDeps() is GroupedDeps.WithHashSet)
+            .isEqualTo(isPartialReevaluation)
+        assertThat(entry.toValue()).isEqualTo(oldValue)
 
-  @Test
-  public void concurrentRewindingAllowed() throws InterruptedException {
-    InMemoryNodeEntry entry = createEntry();
-    entry.addReverseDepAndCheckIfDone(null); // Start evaluation.
-    entry.markRebuilding();
-    setValue(entry, new SkyValue() {}, /* errorInfo= */ null, initialVersion);
-    assertThat(entry.isDirty()).isFalse();
-    assertThat(entry.isDone()).isTrue();
-    assertThat(entry.markDirty(DirtyType.REWIND)).isNotNull();
-    assertThat(entry.markDirty(DirtyType.REWIND)).isNull();
-    assertThat(entry.isDirty()).isTrue();
-    assertThat(entry.isChanged()).isTrue();
-    assertThat(entry.isDone()).isFalse();
-    assertThat(entry.getLifecycleState()).isEqualTo(LifecycleState.NEEDS_REBUILDING);
-  }
+        // Parent declares dep again after resetting.
+        val dependencyState: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            if (entry.keepsEdges())
+                entry.checkIfDoneForDirtyReverseDep(resetParent)
+            else
+                entry.addReverseDepAndCheckIfDone(resetParent)
+        assertThat(dependencyState).isEqualTo(DependencyState.NEEDS_SCHEDULING)
+        assertThat(entry.getLifecycleState()).isEqualTo(LifecycleState.NEEDS_REBUILDING)
+        assertThat(entry.isReadyToEvaluate()).isTrue()
+        assertThat(entry.hasUnsignaledDeps()).isFalse()
+        assertThat(entry.getTemporaryDirectDeps()).isEmpty()
+        entry.markRebuilding()
+        assertThat(entry.getLifecycleState()).isEqualTo(LifecycleState.REBUILDING)
 
-  @Test
-  public void rewindErrorfulNode_toleratedButNoOp(@TestParameter Transience transience)
-      throws InterruptedException {
-    InMemoryNodeEntry entry = createEntry();
-    entry.addReverseDepAndCheckIfDone(null); // Start evaluation.
-    entry.markRebuilding();
+        // Dep declared again, then there's a reset.
+        entry.addSingletonTemporaryDirectDep(dep)
+        entry.signalDep(initialVersion, dep)
+        entry.resetEvaluationFromScratch()
+        assertThat(entry.toValue()).isEqualTo(oldValue)
 
-    ReifiedSkyFunctionException exception =
-        new ReifiedSkyFunctionException(
-            new GenericFunctionException(new SomeErrorException("oops"), transience));
-    ErrorInfo errorInfo = ErrorInfo.fromException(exception, transience == Transience.TRANSIENT);
-    assertThat(setValue(entry, /* value= */ null, errorInfo, initialVersion)).isEmpty();
+        // Dep declared again post-reset.
+        entry.addSingletonTemporaryDirectDep(dep)
+        entry.signalDep(initialVersion, dep)
+        assertThat(entry.toValue()).isEqualTo(oldValue)
 
-    assertThat(entry.markDirty(DirtyType.REWIND)).isNull();
-    assertThat(entry.isDone()).isTrue();
-    assertThat(entry.getLifecycleState()).isEqualTo(LifecycleState.DONE);
-    assertThat(entry.value).isNull();
-    assertThat(entry.toValue()).isNull();
-    assertThat(entry.errorInfo).isEqualTo(errorInfo);
-  }
+        // Rewound evaluation completes. The parent that initiated rewinding is signalled.
+        val newValue: SkyValue = com.google.devtools.build.skyframe.InMemoryNodeEntryTest.IntegerValue(2)
+        Truth.assertThat(setValue(entry, newValue,  /* errorInfo= */null, initialVersion))
+            .containsExactly(resetParent)
+        assertThat(entry.value).isEqualTo(newValue)
+        assertThat(entry.toValue()).isEqualTo(newValue)
+        assertThat(entry.getVersion()).isEqualTo(initialVersion)
+    }
 
-  @Test
-  public void skipsBatchPrefetch_testTemporaryDepsContainsHashSet() {
-    InMemoryNodeEntry entry = createEntry(GraphTester.skipBatchPrefetchKey("dropBatchPrefetch"));
-    entry.addReverseDepAndCheckIfDone(null); // Start evaluation
-    assertThat(entry.getTemporaryDirectDeps()).isInstanceOf(GroupedDeps.WithHashSet.class);
-  }
+    @org.junit.Test
+    @Throws(java.lang.InterruptedException::class)
+    fun concurrentRewindingAllowed() {
+        val entry: InMemoryNodeEntry = createEntry()
+        entry.addReverseDepAndCheckIfDone(null) // Start evaluation.
+        entry.markRebuilding()
+        setValue(entry, object : SkyValue() {},  /* errorInfo= */null, initialVersion)
+        assertThat(entry.isDirty()).isFalse()
+        assertThat(entry.isDone()).isTrue()
+        assertThat(entry.markDirty(DirtyType.REWIND)).isNotNull()
+        assertThat(entry.markDirty(DirtyType.REWIND)).isNull()
+        assertThat(entry.isDirty()).isTrue()
+        assertThat(entry.isChanged()).isTrue()
+        assertThat(entry.isDone()).isFalse()
+        assertThat(entry.getLifecycleState()).isEqualTo(LifecycleState.NEEDS_REBUILDING)
+    }
 
-  @CanIgnoreReturnValue
-  static Set<SkyKey> setValue(
-      NodeEntry entry, SkyValue value, @Nullable ErrorInfo errorInfo, Version graphVersion)
-      throws InterruptedException {
-    return entry.setValue(
-        ValueWithMetadata.normal(value, errorInfo, NO_EVENTS),
-        checkNotNull(graphVersion),
-        /* maxTransitiveSourceVersion= */ null);
-  }
+    @org.junit.Test
+    @Throws(java.lang.InterruptedException::class)
+    fun rewindErrorfulNode_toleratedButNoOp(@TestParameter transience: Transience?) {
+        val entry: InMemoryNodeEntry = createEntry()
+        entry.addReverseDepAndCheckIfDone(null) // Start evaluation.
+        entry.markRebuilding()
+
+        val exception: ReifiedSkyFunctionException =
+            ReifiedSkyFunctionException(
+                GenericFunctionException(SomeErrorException("oops"), transience)
+            )
+        val errorInfo: ErrorInfo? = ErrorInfo.fromException(exception, transience === Transience.TRANSIENT)
+        Truth.assertThat(setValue(entry,  /* value= */null, errorInfo, initialVersion)).isEmpty()
+
+        assertThat(entry.markDirty(DirtyType.REWIND)).isNull()
+        assertThat(entry.isDone()).isTrue()
+        assertThat(entry.getLifecycleState()).isEqualTo(LifecycleState.DONE)
+        assertThat(entry.value).isNull()
+        assertThat(entry.toValue()).isNull()
+        assertThat(entry.errorInfo).isEqualTo(errorInfo)
+    }
+
+    @org.junit.Test
+    fun skipsBatchPrefetch_testTemporaryDepsContainsHashSet() {
+        val entry: InMemoryNodeEntry = createEntry(GraphTester.Companion.skipBatchPrefetchKey("dropBatchPrefetch"))
+        entry.addReverseDepAndCheckIfDone(null) // Start evaluation
+        assertThat(entry.getTemporaryDirectDeps()).isInstanceOf(GroupedDeps.WithHashSet::class.java)
+    }
+
+    companion object {
+        private val REGULAR_KEY: SkyKey = GraphTester.Companion.skyKey("regular")
+        private val PARTIAL_REEVALUATION_KEY: SkyKey = object : SkyKey() {
+            public override fun functionName(): SkyFunctionName {
+                return SkyFunctionName.FOR_TESTING
+            }
+
+            public override fun supportsPartialReevaluation(): Boolean {
+                return true
+            }
+        }
+        private val NO_EVENTS: NestedSet<Reportable?>? = NestedSetBuilder.emptySet(Order.STABLE_ORDER)
+
+        fun key(name: String?): SkyKey {
+            return GraphTester.Companion.skyKey(name)
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        @Throws(java.lang.InterruptedException::class)
+        fun setValue(
+            entry: NodeEntry, value: SkyValue?, errorInfo: ErrorInfo?, graphVersion: Version?
+        ): MutableSet<SkyKey?> {
+            return entry.setValue(
+                ValueWithMetadata.normal(value, errorInfo, NO_EVENTS),
+                com.google.common.base.Preconditions.checkNotNull<T?>(graphVersion),  /* maxTransitiveSourceVersion= */
+                null
+            )
+        }
+    }
 }

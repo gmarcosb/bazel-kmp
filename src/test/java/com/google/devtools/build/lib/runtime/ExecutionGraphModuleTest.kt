@@ -11,1040 +11,1061 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.truth.extensions.proto.ProtoTruth.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
+import com.github.luben.zstd.ZstdInputStream
 
-import com.github.luben.zstd.ZstdInputStream;
-import com.github.luben.zstd.ZstdOutputStream;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.eventbus.EventBus;
-import com.google.devtools.build.lib.actions.Action;
-import com.google.devtools.build.lib.actions.ActionAnalysisMetadata;
-import com.google.devtools.build.lib.actions.ActionChangePrunedEvent;
-import com.google.devtools.build.lib.actions.ActionCompletionEvent;
-import com.google.devtools.build.lib.actions.ActionInput;
-import com.google.devtools.build.lib.actions.ActionInputHelper;
-import com.google.devtools.build.lib.actions.ActionLookupData;
-import com.google.devtools.build.lib.actions.ActionLookupKey;
-import com.google.devtools.build.lib.actions.ActionLookupValue;
-import com.google.devtools.build.lib.actions.ActionOwner;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.Artifact.DerivedArtifact;
-import com.google.devtools.build.lib.actions.ArtifactRoot;
-import com.google.devtools.build.lib.actions.ArtifactRoot.RootType;
-import com.google.devtools.build.lib.actions.DiscoveredInputsEvent;
-import com.google.devtools.build.lib.actions.ExecutionGraph;
-import com.google.devtools.build.lib.actions.ResourceSet;
-import com.google.devtools.build.lib.actions.SimpleSpawn;
-import com.google.devtools.build.lib.actions.Spawn;
-import com.google.devtools.build.lib.actions.SpawnExecutedEvent;
-import com.google.devtools.build.lib.actions.SpawnMetrics;
-import com.google.devtools.build.lib.actions.SpawnResult;
-import com.google.devtools.build.lib.actions.SpawnResult.Status;
-import com.google.devtools.build.lib.actions.cache.OutputMetadataStore;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil.MockAction;
-import com.google.devtools.build.lib.bugreport.BugReporter;
-import com.google.devtools.build.lib.buildtool.BuildResult;
-import com.google.devtools.build.lib.buildtool.BuildResult.BuildToolLogCollection;
-import com.google.devtools.build.lib.buildtool.buildevent.BuildCompleteEvent;
-import com.google.devtools.build.lib.clock.BlazeClock;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.exec.util.FakeActionInputFileCache;
-import com.google.devtools.build.lib.exec.util.FakeOwner;
-import com.google.devtools.build.lib.exec.util.SpawnBuilder;
-import com.google.devtools.build.lib.runtime.ExecutionGraphModule.ActionDumpWriter;
-import com.google.devtools.build.lib.runtime.ExecutionGraphModule.DependencyInfo;
-import com.google.devtools.build.lib.testutil.FoundationTestCase;
-import com.google.devtools.build.lib.testutil.TestFileOutErr;
-import com.google.devtools.build.lib.util.Pair;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.devtools.build.skyframe.WalkableGraph;
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.time.Instant;
-import java.util.Map;
-import javax.annotation.Nullable;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.mockito.ArgumentCaptor;
+/** Unit tests for [ExecutionGraphModule].  */
+@RunWith(TestParameterInjector::class)
+class ExecutionGraphModuleTest : FoundationTestCase() {
+    @TestParameter("-1", "1", "256")
+    private val queueSize = 0
 
-/** Unit tests for {@link ExecutionGraphModule}. */
-@RunWith(TestParameterInjector.class)
-public final class ExecutionGraphModuleTest extends FoundationTestCase {
+    @TestParameter("-1", "1", "256")
+    private val queuedBytesLimit = 0
 
-  @TestParameter({"-1", "1", "256"})
-  private int queueSize;
+    private val module: ExecutionGraphModule = ExecutionGraphModule()
+    private var artifactRoot: ArtifactRoot? = null
 
-  @TestParameter({"-1", "1", "256"})
-  private int queuedBytesLimit;
-
-  private final ExecutionGraphModule module = new ExecutionGraphModule();
-  private ArtifactRoot artifactRoot;
-
-  @Before
-  public void initializeRoots() {
-    artifactRoot = ArtifactRoot.asDerivedRoot(scratch.resolve("/"), RootType.OUTPUT, "output");
-  }
-
-  private static ImmutableList<ExecutionGraph.Node> parse(ByteArrayOutputStream buffer)
-      throws IOException {
-    byte[] data = buffer.toByteArray();
-    try (InputStream in = new ZstdInputStream(new ByteArrayInputStream(data))) {
-      ImmutableList.Builder<ExecutionGraph.Node> nodeListBuilder = new ImmutableList.Builder<>();
-      ExecutionGraph.Node node;
-      while ((node = ExecutionGraph.Node.parseDelimitedFrom(in)) != null) {
-        nodeListBuilder.add(node);
-      }
-      return nodeListBuilder.build();
+    @Before
+    fun initializeRoots() {
+        artifactRoot = ArtifactRoot.asDerivedRoot(scratch.resolve("/"), RootType.OUTPUT, "output")
     }
-  }
 
-  @Test
-  public void testOneSpawn() throws Exception {
-    ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-    Spawn spawn =
-        new SimpleSpawn(
-            new FakeOwnerWithPrimaryOutput(
-                "Mnemonic", "Progress message", "//foo", "output/foo/out"),
-            ImmutableList.of("cmd"),
-            ImmutableMap.of("env", "value"),
-            ImmutableMap.of("exec", "value"),
-            /* inputs= */ NestedSetBuilder.emptySet(Order.STABLE_ORDER),
-            /* outputs= */ ImmutableSet.of(ActionInputHelper.fromPath("output/foo/out")),
-            ResourceSet.ZERO);
-    SpawnResult result =
-        new SpawnResult.Builder()
-            .setRunnerName("local")
-            .setStatus(Status.SUCCESS)
-            .setExitCode(0)
-            .setSpawnMetrics(
-                SpawnMetrics.Builder.forLocalExec()
-                    .setTotalTimeInMs(1234)
-                    .setExecutionWallTimeInMs(2345)
-                    .setProcessOutputsTimeInMs(3456)
-                    .build())
-            .build();
-    startLogging(eventBus, buffer, DependencyInfo.NONE);
-    Instant startTimeInstant = Instant.now();
-    module.spawnExecuted(
-        new SpawnExecutedEvent(
-            spawn,
-            new FakeActionInputFileCache(),
-            null,
-            new TestFileOutErr(),
-            result,
-            startTimeInstant,
-            /* spawnIdentifier= */ "foo"));
-    module.buildComplete(
-        new BuildCompleteEvent(new BuildResult(startTimeInstant.toEpochMilli() + 1000)));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testOneSpawn() {
+        val buffer: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        val spawn: Spawn =
+            SimpleSpawn(
+                FakeOwnerWithPrimaryOutput(
+                    "Mnemonic", "Progress message", "//foo", "output/foo/out"
+                ),
+                com.google.common.collect.ImmutableList.of<E?>("cmd"),
+                com.google.common.collect.ImmutableMap.of<K?, V?>("env", "value"),
+                com.google.common.collect.ImmutableMap.of<K?, V?>("exec", "value"),  /* inputs= */
+                NestedSetBuilder.emptySet(Order.STABLE_ORDER),  /* outputs= */
+                com.google.common.collect.ImmutableSet.of<E?>(ActionInputHelper.fromPath("output/foo/out")),
+                ResourceSet.ZERO
+            )
+        val result: SpawnResult? =
+            Builder()
+                .setRunnerName("local")
+                .setStatus(Status.SUCCESS)
+                .setExitCode(0)
+                .setSpawnMetrics(
+                    SpawnMetrics.Builder.forLocalExec()
+                        .setTotalTimeInMs(1234)
+                        .setExecutionWallTimeInMs(2345)
+                        .setProcessOutputsTimeInMs(3456)
+                        .build()
+                )
+                .build()
+        startLogging(eventBus, buffer, DependencyInfo.NONE)
+        val startTimeInstant: Instant = Instant.now()
+        module.spawnExecuted(
+            SpawnExecutedEvent(
+                spawn,
+                FakeActionInputFileCache(),
+                null,
+                TestFileOutErr(),
+                result,
+                startTimeInstant,  /* spawnIdentifier= */
+                "foo"
+            )
+        )
+        module.buildComplete(
+            BuildCompleteEvent(BuildResult(startTimeInstant.toEpochMilli() + 1000))
+        )
 
-    ImmutableList<ExecutionGraph.Node> nodes = parse(buffer);
-    assertThat(nodes).hasSize(1);
-    assertThat(nodes.get(0).getTargetLabel()).isEqualTo("//foo:foo");
-    assertThat(nodes.get(0).getMnemonic()).isEqualTo("Mnemonic");
-    assertThat(nodes.get(0).getMetrics().getDurationMillis()).isEqualTo(1234L);
-    assertThat(nodes.get(0).getMetrics().getFetchMillis()).isEqualTo(0);
-    assertThat(nodes.get(0).getMetrics().getProcessOutputsMillis()).isEqualTo(3456);
-    assertThat(nodes.get(0).getMetrics().getStartTimestampMillis())
-        .isEqualTo(startTimeInstant.toEpochMilli());
-    assertThat(nodes.get(0).getIndex()).isEqualTo(0);
-    assertThat(nodes.get(0).getDependentIndexList()).isEmpty();
-    assertThat(nodes.get(0).getIdentifier()).isEqualTo("foo");
-  }
+        val nodes: com.google.common.collect.ImmutableList<ExecutionGraph.Node?> = parse(buffer)
+        Truth.assertThat(nodes).hasSize(1)
+        assertThat(nodes.get(0).getTargetLabel()).isEqualTo("//foo:foo")
+        assertThat(nodes.get(0).getMnemonic()).isEqualTo("Mnemonic")
+        assertThat(nodes.get(0).getMetrics().getDurationMillis()).isEqualTo(1234L)
+        assertThat(nodes.get(0).getMetrics().getFetchMillis()).isEqualTo(0)
+        assertThat(nodes.get(0).getMetrics().getProcessOutputsMillis()).isEqualTo(3456)
+        assertThat(nodes.get(0).getMetrics().getStartTimestampMillis())
+            .isEqualTo(startTimeInstant.toEpochMilli())
+        assertThat(nodes.get(0).getIndex()).isEqualTo(0)
+        assertThat(nodes.get(0).getDependentIndexList()).isEmpty()
+        assertThat(nodes.get(0).getIdentifier()).isEqualTo("foo")
+    }
 
-  @Test
-  public void testSpawnWithDiscoverInputs() throws Exception {
-    ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-    Spawn spawn =
-        new SimpleSpawn(
-            new FakeOwnerWithPrimaryOutput(
-                "Mnemonic", "Progress message", "//foo", "output/foo/out"),
-            ImmutableList.of("cmd"),
-            ImmutableMap.of("env", "value"),
-            ImmutableMap.of("exec", "value"),
-            /* inputs= */ NestedSetBuilder.emptySet(Order.STABLE_ORDER),
-            /* outputs= */ ImmutableSet.of(createOutputArtifact("output/foo/out")),
-            ResourceSet.ZERO);
-    SpawnResult result =
-        new SpawnResult.Builder()
-            .setRunnerName("local")
-            .setStatus(Status.SUCCESS)
-            .setExitCode(0)
-            .setSpawnMetrics(
-                SpawnMetrics.Builder.forLocalExec()
-                    .setTotalTimeInMs(1234)
-                    .setExecutionWallTimeInMs(2345)
-                    .setProcessOutputsTimeInMs(3456)
-                    .setParseTimeInMs(2000)
-                    .build())
-            .build();
-    startLogging(eventBus, buffer, DependencyInfo.NONE);
-    Instant startTimeInstant = Instant.ofEpochMilli(999888777L);
-    module.discoverInputs(
-        new DiscoveredInputsEvent(
-            SpawnMetrics.Builder.forOtherExec().setParseTimeInMs(987).setTotalTimeInMs(987).build(),
-            new ActionsTestUtil.NullAction(createOutputArtifact("output/foo/out")),
-            0));
-    module.spawnExecuted(
-        new SpawnExecutedEvent(
-            spawn,
-            new FakeActionInputFileCache(),
-            null,
-            new TestFileOutErr(),
-            result,
-            startTimeInstant,
-            /* spawnIdentifier= */ "foo"));
-    module.buildComplete(
-        new BuildCompleteEvent(new BuildResult(startTimeInstant.toEpochMilli() + 1000)));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSpawnWithDiscoverInputs() {
+        val buffer: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        val spawn: Spawn =
+            SimpleSpawn(
+                FakeOwnerWithPrimaryOutput(
+                    "Mnemonic", "Progress message", "//foo", "output/foo/out"
+                ),
+                com.google.common.collect.ImmutableList.of<E?>("cmd"),
+                com.google.common.collect.ImmutableMap.of<K?, V?>("env", "value"),
+                com.google.common.collect.ImmutableMap.of<K?, V?>("exec", "value"),  /* inputs= */
+                NestedSetBuilder.emptySet(Order.STABLE_ORDER),  /* outputs= */
+                com.google.common.collect.ImmutableSet.of<E?>(createOutputArtifact("output/foo/out")),
+                ResourceSet.ZERO
+            )
+        val result: SpawnResult? =
+            Builder()
+                .setRunnerName("local")
+                .setStatus(Status.SUCCESS)
+                .setExitCode(0)
+                .setSpawnMetrics(
+                    SpawnMetrics.Builder.forLocalExec()
+                        .setTotalTimeInMs(1234)
+                        .setExecutionWallTimeInMs(2345)
+                        .setProcessOutputsTimeInMs(3456)
+                        .setParseTimeInMs(2000)
+                        .build()
+                )
+                .build()
+        startLogging(eventBus, buffer, DependencyInfo.NONE)
+        val startTimeInstant: Instant = Instant.ofEpochMilli(999888777L)
+        module.discoverInputs(
+            DiscoveredInputsEvent(
+                SpawnMetrics.Builder.forOtherExec().setParseTimeInMs(987).setTotalTimeInMs(987).build(),
+                NullAction(createOutputArtifact("output/foo/out")),
+                0
+            )
+        )
+        module.spawnExecuted(
+            SpawnExecutedEvent(
+                spawn,
+                FakeActionInputFileCache(),
+                null,
+                TestFileOutErr(),
+                result,
+                startTimeInstant,  /* spawnIdentifier= */
+                "foo"
+            )
+        )
+        module.buildComplete(
+            BuildCompleteEvent(BuildResult(startTimeInstant.toEpochMilli() + 1000))
+        )
 
-    ImmutableList<ExecutionGraph.Node> nodes = parse(buffer);
-    ExecutionGraph.Metrics metrics = nodes.get(0).getMetrics();
-    assertThat(metrics.getDurationMillis()).isEqualTo(2221);
-    assertThat(metrics.getFetchMillis()).isEqualTo(0);
-    assertThat(metrics.getProcessMillis()).isEqualTo(2345);
-    assertThat(metrics.getProcessOutputsMillis()).isEqualTo(3456);
-    assertThat(metrics.getParseMillis()).isEqualTo(2000);
-    assertThat(metrics.getDiscoverInputsMillis()).isEqualTo(987);
-    assertThat(nodes.get(0).getIdentifier()).isEqualTo("foo");
-  }
+        val nodes: com.google.common.collect.ImmutableList<ExecutionGraph.Node?> = parse(buffer)
+        val metrics: ExecutionGraph.Metrics = nodes.get(0).getMetrics()
+        assertThat(metrics.getDurationMillis()).isEqualTo(2221)
+        assertThat(metrics.getFetchMillis()).isEqualTo(0)
+        assertThat(metrics.getProcessMillis()).isEqualTo(2345)
+        assertThat(metrics.getProcessOutputsMillis()).isEqualTo(3456)
+        assertThat(metrics.getParseMillis()).isEqualTo(2000)
+        assertThat(metrics.getDiscoverInputsMillis()).isEqualTo(987)
+        assertThat(nodes.get(0).getIdentifier()).isEqualTo("foo")
+    }
 
-  @Test
-  public void actionDepsWithThreeSpawns() throws Exception {
-    ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun actionDepsWithThreeSpawns() {
+        val buffer: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
 
-    ActionInput out1 = ActionInputHelper.fromPath("output/foo/out1");
-    ActionInput out2 = ActionInputHelper.fromPath("output/foo/out2");
-    ActionInput outTop = ActionInputHelper.fromPath("output/foo/out.top");
+        val out1: ActionInput = ActionInputHelper.fromPath("output/foo/out1")
+        val out2: ActionInput = ActionInputHelper.fromPath("output/foo/out2")
+        val outTop: ActionInput = ActionInputHelper.fromPath("output/foo/out.top")
 
-    Spawn spawnOut1 =
-        new SimpleSpawn(
-            new FakeOwnerWithPrimaryOutput(
-                "Mnemonic", "Progress message", "//foo", out1.getExecPathString()),
-            ImmutableList.of("cmd"),
-            ImmutableMap.of("env", "value"),
-            ImmutableMap.of("exec", "value"),
-            /* inputs= */ NestedSetBuilder.emptySet(Order.STABLE_ORDER),
-            /* outputs= */ ImmutableSet.of(out1),
-            ResourceSet.ZERO);
-    Spawn spawnOut2 =
-        new SimpleSpawn(
-            new FakeOwnerWithPrimaryOutput(
-                "Mnemonic", "Progress message", "//foo", out2.getExecPathString()),
-            ImmutableList.of("cmd"),
-            ImmutableMap.of("env", "value"),
-            ImmutableMap.of("exec", "value"),
-            /* inputs= */ NestedSetBuilder.emptySet(Order.STABLE_ORDER),
-            /* outputs= */ ImmutableSet.of(out2),
-            ResourceSet.ZERO);
-    Spawn spawnTop =
-        new SimpleSpawn(
-            new FakeOwnerWithPrimaryOutput(
-                "Mnemonic", "Progress message", "//foo", outTop.getExecPathString()),
-            ImmutableList.of("cmd"),
-            ImmutableMap.of("env", "value"),
-            ImmutableMap.of("exec", "value"),
-            /* inputs= */ NestedSetBuilder.create(Order.COMPILE_ORDER, out1, out2),
-            /* outputs= */ ImmutableSet.of(outTop),
-            ResourceSet.ZERO);
-    SpawnResult result =
-        new SpawnResult.Builder()
-            .setRunnerName("local")
-            .setStatus(Status.SUCCESS)
-            .setExitCode(0)
-            .setSpawnMetrics(
-                SpawnMetrics.Builder.forLocalExec()
-                    .setTotalTimeInMs(1234)
-                    .setExecutionWallTimeInMs(2345)
-                    .setProcessOutputsTimeInMs(3456)
-                    .build())
-            .build();
-    startLogging(eventBus, buffer, DependencyInfo.ALL);
-    Instant startTimeInstant = Instant.now();
-    module.spawnExecuted(
-        new SpawnExecutedEvent(
-            spawnOut1,
-            new FakeActionInputFileCache(),
-            null,
-            new TestFileOutErr(),
-            result,
-            startTimeInstant,
-            /* spawnIdentifier= */ "out1"));
-    module.spawnExecuted(
-        new SpawnExecutedEvent(
-            spawnOut2,
-            new FakeActionInputFileCache(),
-            null,
-            new TestFileOutErr(),
-            result,
-            startTimeInstant,
-            /* spawnIdentifier= */ "out2"));
-    module.spawnExecuted(
-        new SpawnExecutedEvent(
-            spawnTop,
-            new FakeActionInputFileCache(),
-            null,
-            new TestFileOutErr(),
-            result,
-            startTimeInstant,
-            /* spawnIdentifier= */ "top"));
-    module.buildComplete(
-        new BuildCompleteEvent(new BuildResult(startTimeInstant.plusMillis(1000).toEpochMilli())));
+        val spawnOut1: Spawn =
+            SimpleSpawn(
+                FakeOwnerWithPrimaryOutput(
+                    "Mnemonic", "Progress message", "//foo", out1.getExecPathString()
+                ),
+                com.google.common.collect.ImmutableList.of<E?>("cmd"),
+                com.google.common.collect.ImmutableMap.of<K?, V?>("env", "value"),
+                com.google.common.collect.ImmutableMap.of<K?, V?>("exec", "value"),  /* inputs= */
+                NestedSetBuilder.emptySet(Order.STABLE_ORDER),  /* outputs= */
+                com.google.common.collect.ImmutableSet.of<E?>(out1),
+                ResourceSet.ZERO
+            )
+        val spawnOut2: Spawn =
+            SimpleSpawn(
+                FakeOwnerWithPrimaryOutput(
+                    "Mnemonic", "Progress message", "//foo", out2.getExecPathString()
+                ),
+                com.google.common.collect.ImmutableList.of<E?>("cmd"),
+                com.google.common.collect.ImmutableMap.of<K?, V?>("env", "value"),
+                com.google.common.collect.ImmutableMap.of<K?, V?>("exec", "value"),  /* inputs= */
+                NestedSetBuilder.emptySet(Order.STABLE_ORDER),  /* outputs= */
+                com.google.common.collect.ImmutableSet.of<E?>(out2),
+                ResourceSet.ZERO
+            )
+        val spawnTop: Spawn =
+            SimpleSpawn(
+                FakeOwnerWithPrimaryOutput(
+                    "Mnemonic", "Progress message", "//foo", outTop.getExecPathString()
+                ),
+                com.google.common.collect.ImmutableList.of<E?>("cmd"),
+                com.google.common.collect.ImmutableMap.of<K?, V?>("env", "value"),
+                com.google.common.collect.ImmutableMap.of<K?, V?>("exec", "value"),  /* inputs= */
+                NestedSetBuilder.create(Order.COMPILE_ORDER, out1, out2),  /* outputs= */
+                com.google.common.collect.ImmutableSet.of<E?>(outTop),
+                ResourceSet.ZERO
+            )
+        val result: SpawnResult? =
+            Builder()
+                .setRunnerName("local")
+                .setStatus(Status.SUCCESS)
+                .setExitCode(0)
+                .setSpawnMetrics(
+                    SpawnMetrics.Builder.forLocalExec()
+                        .setTotalTimeInMs(1234)
+                        .setExecutionWallTimeInMs(2345)
+                        .setProcessOutputsTimeInMs(3456)
+                        .build()
+                )
+                .build()
+        startLogging(eventBus, buffer, DependencyInfo.ALL)
+        val startTimeInstant: Instant = Instant.now()
+        module.spawnExecuted(
+            SpawnExecutedEvent(
+                spawnOut1,
+                FakeActionInputFileCache(),
+                null,
+                TestFileOutErr(),
+                result,
+                startTimeInstant,  /* spawnIdentifier= */
+                "out1"
+            )
+        )
+        module.spawnExecuted(
+            SpawnExecutedEvent(
+                spawnOut2,
+                FakeActionInputFileCache(),
+                null,
+                TestFileOutErr(),
+                result,
+                startTimeInstant,  /* spawnIdentifier= */
+                "out2"
+            )
+        )
+        module.spawnExecuted(
+            SpawnExecutedEvent(
+                spawnTop,
+                FakeActionInputFileCache(),
+                null,
+                TestFileOutErr(),
+                result,
+                startTimeInstant,  /* spawnIdentifier= */
+                "top"
+            )
+        )
+        module.buildComplete(
+            BuildCompleteEvent(BuildResult(startTimeInstant.plusMillis(1000).toEpochMilli()))
+        )
 
-    ImmutableList<ExecutionGraph.Node> nodes = parse(buffer);
-    assertThat(nodes).hasSize(3);
+        val nodes: com.google.common.collect.ImmutableList<ExecutionGraph.Node?> = parse(buffer)
+        Truth.assertThat(nodes).hasSize(3)
 
-    assertThat(nodes.get(0).getIndex()).isEqualTo(0);
-    assertThat(nodes.get(0).getDependentIndexList()).isEmpty();
+        assertThat(nodes.get(0).getIndex()).isEqualTo(0)
+        assertThat(nodes.get(0).getDependentIndexList()).isEmpty()
 
-    assertThat(nodes.get(1).getIndex()).isEqualTo(1);
-    assertThat(nodes.get(1).getDependentIndexList()).isEmpty();
+        assertThat(nodes.get(1).getIndex()).isEqualTo(1)
+        assertThat(nodes.get(1).getDependentIndexList()).isEmpty()
 
-    assertThat(nodes.get(2).getIndex()).isEqualTo(2);
-    assertThat(nodes.get(2).getDependentIndexList()).containsExactly(0, 1);
-  }
+        assertThat(nodes.get(2).getIndex()).isEqualTo(2)
+        assertThat(nodes.get(2).getDependentIndexList()).containsExactly(0, 1)
+    }
 
-  @Test
-  public void changePruning_hasEdgesToPrunedSpawn() throws Exception {
-    ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun changePruning_hasEdgesToPrunedSpawn() {
+        val buffer: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
 
-    var out1 = createOutputArtifact("foo/out1");
-    var out2 = (DerivedArtifact) createOutputArtifact("foo/out2");
-    var out3 = createOutputArtifact("foo/out3");
+        val out1: Artifact = createOutputArtifact("foo/out1")
+        val out2: DerivedArtifact = createOutputArtifact("foo/out2") as DerivedArtifact
+        val out3: Artifact = createOutputArtifact("foo/out3")
 
-    Spawn spawnOut1 =
-        new SimpleSpawn(
-            new FakeOwnerWithPrimaryOutput(
-                "Mnemonic", "Progress message", "//foo1", out1.getExecPathString()),
-            ImmutableList.of("cmd"),
-            ImmutableMap.of("env", "value"),
-            ImmutableMap.of("exec", "value"),
-            /* inputs= */ NestedSetBuilder.emptySet(Order.STABLE_ORDER),
-            /* outputs= */ ImmutableSet.of(out1),
-            ResourceSet.ZERO);
-    var actionOut2 = new MockAction(ImmutableList.of(out1), ImmutableSet.of(out2));
-    Spawn spawnOut2 =
-        new SimpleSpawn(
-            actionOut2,
-            ImmutableList.of("cmd"),
-            ImmutableMap.of("env", "value"),
-            ImmutableMap.of("exec", "value"),
-            /* inputs= */ NestedSetBuilder.create(Order.STABLE_ORDER, out1),
-            /* outputs= */ ImmutableSet.of(out2),
-            ResourceSet.ZERO);
-    Spawn spawnOut3 =
-        new SimpleSpawn(
-            new FakeOwnerWithPrimaryOutput(
-                "Mnemonic", "Progress message", "//foo3", out3.getExecPathString()),
-            ImmutableList.of("cmd"),
-            ImmutableMap.of("env", "value"),
-            ImmutableMap.of("exec", "value"),
-            /* inputs= */ NestedSetBuilder.create(Order.COMPILE_ORDER, out2),
-            /* outputs= */ ImmutableSet.of(out3),
-            ResourceSet.ZERO);
-    SpawnResult result =
-        new SpawnResult.Builder()
-            .setRunnerName("local")
-            .setStatus(Status.SUCCESS)
-            .setExitCode(0)
-            .setSpawnMetrics(
-                SpawnMetrics.Builder.forLocalExec()
-                    .setTotalTimeInMs(1234)
-                    .setExecutionWallTimeInMs(2345)
-                    .setProcessOutputsTimeInMs(3456)
-                    .build())
-            .build();
-    module.setGraph(
-        new WalkableGraph() {
-          @Override
-          public SkyValue getValue(SkyKey key) {
-            if (key instanceof ActionLookupKey) {
-              return new ActionLookupValue() {
-                @Override
-                public ImmutableList<ActionAnalysisMetadata> getActions() {
-                  return ImmutableList.of(actionOut2);
+        val spawnOut1: Spawn =
+            SimpleSpawn(
+                FakeOwnerWithPrimaryOutput(
+                    "Mnemonic", "Progress message", "//foo1", out1.getExecPathString()
+                ),
+                com.google.common.collect.ImmutableList.of<E?>("cmd"),
+                com.google.common.collect.ImmutableMap.of<K?, V?>("env", "value"),
+                com.google.common.collect.ImmutableMap.of<K?, V?>("exec", "value"),  /* inputs= */
+                NestedSetBuilder.emptySet(Order.STABLE_ORDER),  /* outputs= */
+                com.google.common.collect.ImmutableSet.of<E?>(out1),
+                ResourceSet.ZERO
+            )
+        val actionOut2: MockAction = MockAction(
+            com.google.common.collect.ImmutableList.of<Artifact>(out1),
+            com.google.common.collect.ImmutableSet.of<Artifact>(out2)
+        )
+        val spawnOut2: Spawn =
+            SimpleSpawn(
+                actionOut2,
+                com.google.common.collect.ImmutableList.of<E?>("cmd"),
+                com.google.common.collect.ImmutableMap.of<K?, V?>("env", "value"),
+                com.google.common.collect.ImmutableMap.of<K?, V?>("exec", "value"),  /* inputs= */
+                NestedSetBuilder.create(Order.STABLE_ORDER, out1),  /* outputs= */
+                com.google.common.collect.ImmutableSet.of<E?>(out2),
+                ResourceSet.ZERO
+            )
+        val spawnOut3: Spawn =
+            SimpleSpawn(
+                FakeOwnerWithPrimaryOutput(
+                    "Mnemonic", "Progress message", "//foo3", out3.getExecPathString()
+                ),
+                com.google.common.collect.ImmutableList.of<E?>("cmd"),
+                com.google.common.collect.ImmutableMap.of<K?, V?>("env", "value"),
+                com.google.common.collect.ImmutableMap.of<K?, V?>("exec", "value"),  /* inputs= */
+                NestedSetBuilder.create(Order.COMPILE_ORDER, out2),  /* outputs= */
+                com.google.common.collect.ImmutableSet.of<E?>(out3),
+                ResourceSet.ZERO
+            )
+        val result: SpawnResult? =
+            Builder()
+                .setRunnerName("local")
+                .setStatus(Status.SUCCESS)
+                .setExitCode(0)
+                .setSpawnMetrics(
+                    SpawnMetrics.Builder.forLocalExec()
+                        .setTotalTimeInMs(1234)
+                        .setExecutionWallTimeInMs(2345)
+                        .setProcessOutputsTimeInMs(3456)
+                        .build()
+                )
+                .build()
+        module.setGraph(
+            object : WalkableGraph() {
+                public override fun getValue(key: SkyKey?): SkyValue? {
+                    if (key is ActionLookupKey) {
+                        return object : ActionLookupValue() {
+                            val actions: com.google.common.collect.ImmutableList<ActionAnalysisMetadata?>
+                                get() = com.google.common.collect.ImmutableList.of<E?>(actionOut2)
+                        }
+                    }
+                    throw java.lang.UnsupportedOperationException()
                 }
-              };
+
+                public override fun getSuccessfulValues(keys: Iterable<out SkyKey?>?): MutableMap<SkyKey?, SkyValue?>? {
+                    throw java.lang.UnsupportedOperationException()
+                }
+
+                public override fun getMissingAndExceptions(keys: Iterable<SkyKey?>?): MutableMap<SkyKey?, java.lang.Exception?>? {
+                    throw java.lang.UnsupportedOperationException()
+                }
+
+                public override fun getException(key: SkyKey?): java.lang.Exception? {
+                    throw java.lang.UnsupportedOperationException()
+                }
+
+                public override fun isCycle(key: SkyKey?): Boolean {
+                    throw java.lang.UnsupportedOperationException()
+                }
+
+                public override fun getDirectDeps(keys: Iterable<SkyKey?>?): MutableMap<SkyKey?, Iterable<SkyKey?>?>? {
+                    throw java.lang.UnsupportedOperationException()
+                }
+
+                public override fun getDirectDeps(key: SkyKey?): Iterable<SkyKey?>? {
+                    throw java.lang.UnsupportedOperationException()
+                }
+
+                public override fun getReverseDeps(keys: Iterable<out SkyKey?>?): MutableMap<SkyKey?, Iterable<SkyKey?>?>? {
+                    throw java.lang.UnsupportedOperationException()
+                }
+
+                public override fun getValueAndRdeps(
+                    keys: Iterable<SkyKey?>?
+                ): MutableMap<SkyKey?, Pair<SkyValue?, Iterable<SkyKey?>?>?>? {
+                    throw java.lang.UnsupportedOperationException()
+                }
+            })
+        val startTimeInstant: Instant = Instant.now()
+        startLogging(eventBus, buffer, DependencyInfo.ALL)
+        module.spawnExecuted(
+            SpawnExecutedEvent(
+                spawnOut1,
+                FakeActionInputFileCache(),
+                null,
+                TestFileOutErr(),
+                result,
+                startTimeInstant,  /* spawnIdentifier= */
+                "out1"
+            )
+        )
+        // spawnOut2 is change pruned.
+        val unused: Spawn = spawnOut2
+        module.actionChangePruned(
+            ActionChangePrunedEvent(
+                ActionsTestUtil.NULL_ACTION_LOOKUP_DATA, startTimeInstant.toEpochMilli() * 1000000
+            )
+        )
+        module.spawnExecuted(
+            SpawnExecutedEvent(
+                spawnOut3,
+                FakeActionInputFileCache(),
+                null,
+                TestFileOutErr(),
+                result,
+                startTimeInstant,  /* spawnIdentifier= */
+                "out3"
+            )
+        )
+        module.buildComplete(
+            BuildCompleteEvent(BuildResult(startTimeInstant.plusMillis(1000).toEpochMilli()))
+        )
+
+        val nodes: com.google.common.collect.ImmutableList<ExecutionGraph.Node?> = parse(buffer)
+        Truth.assertThat(nodes).hasSize(3)
+
+        assertThat(nodes.get(0).getTargetLabel()).isEqualTo("//foo1:foo1")
+        assertThat(nodes.get(0).getIndex()).isEqualTo(0)
+        assertThat(nodes.get(0).getDependentIndexList()).isEmpty()
+
+        assertThat(nodes.get(1).getTargetLabel()).isEqualTo("//null/action:owner")
+        assertThat(nodes.get(1).getDependentIndexList()).containsExactly(nodes.get(0).getIndex())
+
+        assertThat(nodes.get(2).getTargetLabel()).isEqualTo("//foo3:foo3")
+        assertThat(nodes.get(2).getDependentIndexList()).containsExactly(nodes.get(1).getIndex())
+    }
+
+    private enum class FailingOutputStreamFactory {
+        CLOSE {
+            @Throws(IOException::class)
+            public override fun get(): ZstdOutputStream? {
+                return object : ZstdOutputStream(java.io.OutputStream.nullOutputStream()) {
+                    @kotlin.jvm.Synchronized
+                    @Throws(IOException::class)
+                    public override fun close() {
+                        throw IOException("Simulated close failure")
+                    }
+                }
             }
-            throw new UnsupportedOperationException();
-          }
+        },
 
-          @Override
-          public Map<SkyKey, SkyValue> getSuccessfulValues(Iterable<? extends SkyKey> keys) {
-            throw new UnsupportedOperationException();
-          }
-
-          @Override
-          public Map<SkyKey, Exception> getMissingAndExceptions(Iterable<SkyKey> keys) {
-            throw new UnsupportedOperationException();
-          }
-
-          @Nullable
-          @Override
-          public Exception getException(SkyKey key) {
-            throw new UnsupportedOperationException();
-          }
-
-          @Override
-          public boolean isCycle(SkyKey key) {
-            throw new UnsupportedOperationException();
-          }
-
-          @Override
-          public Map<SkyKey, Iterable<SkyKey>> getDirectDeps(Iterable<SkyKey> keys) {
-            throw new UnsupportedOperationException();
-          }
-
-          @Override
-          public Iterable<SkyKey> getDirectDeps(SkyKey key) {
-            throw new UnsupportedOperationException();
-          }
-
-          @Override
-          public Map<SkyKey, Iterable<SkyKey>> getReverseDeps(Iterable<? extends SkyKey> keys) {
-            throw new UnsupportedOperationException();
-          }
-
-          @Override
-          public Map<SkyKey, Pair<SkyValue, Iterable<SkyKey>>> getValueAndRdeps(
-              Iterable<SkyKey> keys) {
-            throw new UnsupportedOperationException();
-          }
-        });
-    Instant startTimeInstant = Instant.now();
-    startLogging(eventBus, buffer, DependencyInfo.ALL);
-    module.spawnExecuted(
-        new SpawnExecutedEvent(
-            spawnOut1,
-            new FakeActionInputFileCache(),
-            null,
-            new TestFileOutErr(),
-            result,
-            startTimeInstant,
-            /* spawnIdentifier= */ "out1"));
-    // spawnOut2 is change pruned.
-    var unused = spawnOut2;
-    module.actionChangePruned(
-        new ActionChangePrunedEvent(
-            ActionsTestUtil.NULL_ACTION_LOOKUP_DATA, startTimeInstant.toEpochMilli() * 1_000_000));
-    module.spawnExecuted(
-        new SpawnExecutedEvent(
-            spawnOut3,
-            new FakeActionInputFileCache(),
-            null,
-            new TestFileOutErr(),
-            result,
-            startTimeInstant,
-            /* spawnIdentifier= */ "out3"));
-    module.buildComplete(
-        new BuildCompleteEvent(new BuildResult(startTimeInstant.plusMillis(1000).toEpochMilli())));
-
-    ImmutableList<ExecutionGraph.Node> nodes = parse(buffer);
-    assertThat(nodes).hasSize(3);
-
-    assertThat(nodes.get(0).getTargetLabel()).isEqualTo("//foo1:foo1");
-    assertThat(nodes.get(0).getIndex()).isEqualTo(0);
-    assertThat(nodes.get(0).getDependentIndexList()).isEmpty();
-
-    assertThat(nodes.get(1).getTargetLabel()).isEqualTo("//null/action:owner");
-    assertThat(nodes.get(1).getDependentIndexList()).containsExactly(nodes.get(0).getIndex());
-
-    assertThat(nodes.get(2).getTargetLabel()).isEqualTo("//foo3:foo3");
-    assertThat(nodes.get(2).getDependentIndexList()).containsExactly(nodes.get(1).getIndex());
-  }
-
-  private enum FailingOutputStreamFactory {
-    CLOSE {
-      @Override
-      public ZstdOutputStream get() throws IOException {
-        return new ZstdOutputStream(OutputStream.nullOutputStream()) {
-          @Override
-          public synchronized void close() throws IOException {
-            throw new IOException("Simulated close failure");
-          }
+        /** Called from [com.google.protobuf.CodedOutputStream.flush].  */
+        WRITE {
+            @Throws(IOException::class)
+            public override fun get(): ZstdOutputStream? {
+                return object : ZstdOutputStream(java.io.OutputStream.nullOutputStream()) {
+                    @kotlin.jvm.Synchronized
+                    @Throws(IOException::class)
+                    public override fun write(b: ByteArray?, off: Int, len: Int) {
+                        throw IOException("oh no!")
+                    }
+                }
+            }
         };
-      }
-    },
-    /** Called from {@link com.google.protobuf.CodedOutputStream#flush}. */
-    WRITE {
-      @Override
-      public ZstdOutputStream get() throws IOException {
-        return new ZstdOutputStream(OutputStream.nullOutputStream()) {
-          @Override
-          public synchronized void write(byte[] b, int off, int len) throws IOException {
-            throw new IOException("oh no!");
-          }
-        };
-      }
-    };
 
-    abstract ZstdOutputStream get() throws IOException;
-  }
+        @Throws(IOException::class)
+        abstract fun get(): ZstdOutputStream?
+    }
 
-  /** Regression test for b/218721483. */
-  @Test(timeout = 30_000)
-  public void failureInOutputDoesNotHang(
-      @TestParameter FailingOutputStreamFactory failingOutputStream) {
-    ActionDumpWriter writer =
-        new ActionDumpWriter(
-            BugReporter.defaultInstance(),
-            new EventBus(),
-            /* localLockFreeOutputEnabled= */ false,
-            /* logFileWriteEdges= */ false,
-            OutputStream.nullOutputStream(),
-            DependencyInfo.NONE,
-            queueSize,
-            queuedBytesLimit) {
-          @Override
-          protected void updateLogs(BuildToolLogCollection logs) {}
+    /** Regression test for b/218721483.  */
+    @org.junit.Test(timeout = 30000)
+    fun failureInOutputDoesNotHang(
+        @TestParameter failingOutputStream: FailingOutputStreamFactory
+    ) {
+        val writer: ActionDumpWriter =
+            object : ActionDumpWriter(
+                BugReporter.defaultInstance(),
+                com.google.common.eventbus.EventBus(),  /* localLockFreeOutputEnabled= */
+                false,  /* logFileWriteEdges= */
+                false,
+                java.io.OutputStream.nullOutputStream(),
+                DependencyInfo.NONE,
+                queueSize,
+                queuedBytesLimit
+            ) {
+                protected override fun updateLogs(logs: BuildToolLogCollection?) {}
 
-          @Override
-          protected ZstdOutputStream createCompressingOutputStream() throws IOException {
-            return failingOutputStream.get();
-          }
-        };
-    module.setWriter(writer);
-    eventBus.register(module);
+                @Throws(IOException::class)
+                protected override fun createCompressingOutputStream(): ZstdOutputStream? {
+                    return failingOutputStream.get()
+                }
+            }
+        module.setWriter(writer)
+        eventBus.register(module)
 
-    Instant startTimeInstant = Instant.now();
-    eventBus.post(new BuildCompleteEvent(new BuildResult(startTimeInstant.toEpochMilli() + 1000)));
-  }
+        val startTimeInstant: Instant = Instant.now()
+        eventBus.post(BuildCompleteEvent(BuildResult(startTimeInstant.toEpochMilli() + 1000)))
+    }
 
-  private void startLogging(EventBus eventBus, OutputStream buffer, DependencyInfo depType) {
-    startLogging(
-        eventBus,
-        BugReporter.defaultInstance(),
-        /* localLockFreeOutputEnabled= */ false,
-        /* logFileWriteEdges= */ false,
-        buffer,
-        depType);
-  }
-
-  private void startLogging(
-      EventBus eventBus,
-      BugReporter bugReporter,
-      boolean localLockFreeOutputEnabled,
-      boolean logFileWriteEdges,
-      OutputStream buffer,
-      DependencyInfo depType) {
-    ActionDumpWriter writer =
-        new ActionDumpWriter(
-            bugReporter,
+    private fun startLogging(
+        eventBus: com.google.common.eventbus.EventBus,
+        buffer: java.io.OutputStream?,
+        depType: DependencyInfo?
+    ) {
+        startLogging(
             eventBus,
-            localLockFreeOutputEnabled,
-            logFileWriteEdges,
+            BugReporter.defaultInstance(),  /* localLockFreeOutputEnabled= */
+            false,  /* logFileWriteEdges= */
+            false,
             buffer,
-            depType,
-            queueSize,
-            queuedBytesLimit) {
-          @Override
-          protected void updateLogs(BuildToolLogCollection logs) {}
+            depType
+        )
+    }
+
+    private fun startLogging(
+        eventBus: com.google.common.eventbus.EventBus,
+        bugReporter: BugReporter?,
+        localLockFreeOutputEnabled: Boolean,
+        logFileWriteEdges: Boolean,
+        buffer: java.io.OutputStream?,
+        depType: DependencyInfo?
+    ) {
+        val writer: ActionDumpWriter =
+            object : ActionDumpWriter(
+                bugReporter,
+                eventBus,
+                localLockFreeOutputEnabled,
+                logFileWriteEdges,
+                buffer,
+                depType,
+                queueSize,
+                queuedBytesLimit
+            ) {
+                protected override fun updateLogs(logs: BuildToolLogCollection?) {}
+            }
+        module.setWriter(writer)
+        eventBus.register(module)
+    }
+
+    @org.junit.Test
+    fun shutDownWithoutStartTolerated() {
+        eventBus.register(module)
+        val startTimeInstant: Instant = Instant.now()
+        // Doesn't crash.
+        eventBus.post(BuildCompleteEvent(BuildResult(startTimeInstant.toEpochMilli() + 1000)))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSpawnWithNullOwnerLabel() {
+        val buffer: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        val spawn: Spawn =
+            SimpleSpawn(
+                object : FakeOwnerWithPrimaryOutput(
+                    "Mnemonic", "Progress message", "//unused:label", "output/foo/out"
+                ) {
+                    val owner: ActionOwner
+                        get() = ActionOwner.create( /* label= */
+                            null,
+                            ActionsTestUtil.NULL_ACTION_OWNER.getLocation(),
+                            ActionsTestUtil.NULL_ACTION_OWNER.getTargetKind(),
+                            ActionsTestUtil.NULL_ACTION_OWNER.getBuildConfigurationInfo(),
+                            ActionsTestUtil.NULL_ACTION_OWNER.getExecutionPlatform(),
+                            ActionsTestUtil.NULL_ACTION_OWNER.getAspectDescriptors(),
+                            ActionsTestUtil.NULL_ACTION_OWNER.getExecProperties()
+                        )
+                },
+                com.google.common.collect.ImmutableList.of<E?>("cmd"),
+                com.google.common.collect.ImmutableMap.of<K?, V?>("env", "value"),
+                com.google.common.collect.ImmutableMap.of<K?, V?>("exec", "value"),  /* inputs= */
+                NestedSetBuilder.emptySet(Order.STABLE_ORDER),  /* outputs= */
+                com.google.common.collect.ImmutableSet.of<E?>(ActionInputHelper.fromPath("output/foo/out")),
+                ResourceSet.ZERO
+            )
+        val result: SpawnResult? =
+            Builder()
+                .setRunnerName("local")
+                .setStatus(Status.SUCCESS)
+                .setExitCode(0)
+                .setSpawnMetrics(
+                    SpawnMetrics.Builder.forLocalExec()
+                        .setTotalTimeInMs(1234)
+                        .setExecutionWallTimeInMs(2345)
+                        .setProcessOutputsTimeInMs(3456)
+                        .build()
+                )
+                .build()
+        startLogging(eventBus, buffer, DependencyInfo.NONE)
+        val startTimeInstant: Instant = Instant.now()
+        module.spawnExecuted(
+            SpawnExecutedEvent(
+                spawn,
+                FakeActionInputFileCache(),
+                null,
+                TestFileOutErr(),
+                result,
+                startTimeInstant,  /* spawnIdentifier= */
+                "foo"
+            )
+        )
+        module.buildComplete(
+            BuildCompleteEvent(BuildResult(startTimeInstant.toEpochMilli() + 1000))
+        )
+
+        val nodes: com.google.common.collect.ImmutableList<ExecutionGraph.Node?> = parse(buffer)
+        Truth.assertThat(nodes).hasSize(1)
+        assertThat(nodes.get(0).getTargetLabel()).isEmpty()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun spawnAndAction_withSameOutputs() {
+        val buffer: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        startLogging(eventBus, buffer, DependencyInfo.ALL)
+
+        module.spawnExecuted(
+            SpawnExecutedEvent(
+                SpawnBuilder().withOwnerPrimaryOutput(createOutputArtifact("foo/out")).build(),
+                FakeActionInputFileCache(),
+                null,
+                TestFileOutErr(),
+                createRemoteSpawnResult(200),
+                Instant.ofEpochMilli(100),  /* spawnIdentifier= */
+                "foo"
+            )
+        )
+        module.actionComplete(
+            ActionCompletionEvent(
+                0,
+                0,
+                NullAction(createOutputArtifact("foo/out")),
+                FakeActionInputFileCache(),
+                < T > mock < T ? > (OutputMetadataStore::class.java),
+            < T > mock < T ? > (ActionLookupData::class.java)))
+        module.buildComplete(BuildCompleteEvent(BuildResult(1000)))
+
+        Truth.assertThat(parse(buffer))
+            .containsExactly(
+                executionGraphNodeBuilderForSpawnBuilderSpawn()
+                    .setIndex(0)
+                    .setMetrics(
+                        ExecutionGraph.Metrics.newBuilder()
+                            .setStartTimestampMillis(100)
+                            .setDurationMillis(200)
+                            .setOtherMillis(200)
+                    )
+                    .setRunner("remote")
+                    .setIdentifier("foo")
+                    .setRuleClass("dummy-target-kind")
+                    .build()
+            )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun spawnAndAction_withDifferentOutputs() {
+        val buffer: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        startLogging(eventBus, buffer, DependencyInfo.ALL)
+        val nanosToMillis: com.google.devtools.build.lib.clock.BlazeClock.NanosToMillisSinceEpochConverter =
+            com.google.devtools.build.lib.clock.BlazeClock.createNanosToMillisSinceEpochConverter()
+        module.setNanosToMillis(nanosToMillis)
+
+        module.spawnExecuted(
+            SpawnExecutedEvent(
+                SpawnBuilder().withOwnerPrimaryOutput(createOutputArtifact("foo/out")).build(),
+                FakeActionInputFileCache(),
+                null,
+                TestFileOutErr(),
+                createRemoteSpawnResult(200),
+                Instant.ofEpochMilli(100),  /* spawnIdentifier= */
+                "foo"
+            )
+        )
+        val action: NullAction = NullAction(createOutputArtifact("bar/out"))
+        module.actionComplete(
+            ActionCompletionEvent(
+                0,
+                0,
+                action,
+                FakeActionInputFileCache(),
+                < T > mock < T ? > (OutputMetadataStore::class.java),
+            < T > mock < T ? > (ActionLookupData::class.java)))
+        module.buildComplete(BuildCompleteEvent(BuildResult(1000)))
+
+        Truth.assertThat(parse(buffer))
+            .containsExactly(
+                executionGraphNodeBuilderForSpawnBuilderSpawn()
+                    .setIndex(0)
+                    .setMetrics(
+                        ExecutionGraph.Metrics.newBuilder()
+                            .setStartTimestampMillis(100)
+                            .setDurationMillis(200)
+                            .setOtherMillis(200)
+                    )
+                    .setRuleClass("dummy-target-kind")
+                    .setRunner("remote")
+                    .setIdentifier("foo")
+                    .build(),
+                executionGraphNodeBuilderForAction(action)
+                    .setIndex(1)
+                    .setMetrics(
+                        ExecutionGraph.Metrics.newBuilder()
+                            .setStartTimestampMillis(nanosToMillis.toEpochMillis(0))
+                    )
+                    .setRuleClass("dummy-kind")
+                    .build()
+            )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun noSpawnAction_hasCorrectDuration() {
+        val buffer: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        startLogging(eventBus, buffer, DependencyInfo.ALL)
+        val nanosToMillis: com.google.devtools.build.lib.clock.BlazeClock.NanosToMillisSinceEpochConverter =
+            com.google.devtools.build.lib.clock.BlazeClock.createNanosToMillisSinceEpochConverter()
+        module.setNanosToMillis(nanosToMillis)
+
+        val action: NullAction = NullAction(createOutputArtifact("foo/out"))
+        module.actionComplete(
+            ActionCompletionEvent(
+                1000000,
+                2000000,
+                action,
+                FakeActionInputFileCache(),
+                < T > mock < T ? > (OutputMetadataStore::class.java),
+            < T > mock < T ? > (ActionLookupData::class.java)))
+        module.buildComplete(BuildCompleteEvent(BuildResult(1000)))
+
+        Truth.assertThat(parse(buffer))
+            .containsExactly(
+                executionGraphNodeBuilderForAction(action)
+                    .setMetrics(
+                        ExecutionGraph.Metrics.newBuilder()
+                            .setStartTimestampMillis(nanosToMillis.toEpochMillis(1000000))
+                            .setDurationMillis(1)
+                            .setProcessMillis(1)
+                    )
+                    .setRuleClass("dummy-kind")
+                    .build()
+            )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun multipleSpawnsWithSameOutput_recordsBothSpawnsWithRetry() {
+        val buffer: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        startLogging(eventBus, buffer, DependencyInfo.ALL)
+        val localResult: SpawnResult = createLocalSpawnResult(100)
+        val remoteResult: SpawnResult = createRemoteSpawnResult(200)
+        val spawn: Spawn =
+            SpawnBuilder().withOwnerPrimaryOutput(createOutputArtifact("foo/out")).build()
+
+        module.spawnExecuted(
+            SpawnExecutedEvent(
+                spawn,
+                FakeActionInputFileCache(),
+                null,
+                TestFileOutErr(),
+                localResult,
+                Instant.EPOCH,  /* spawnIdentifier= */
+                "foo1"
+            )
+        )
+        module.spawnExecuted(
+            SpawnExecutedEvent(
+                spawn,
+                FakeActionInputFileCache(),
+                null,
+                TestFileOutErr(),
+                remoteResult,
+                Instant.ofEpochMilli(100),  /* spawnIdentifier= */
+                "foo2"
+            )
+        )
+        module.buildComplete(BuildCompleteEvent(BuildResult(1000)))
+
+        val nodes: com.google.common.collect.ImmutableList<ExecutionGraph.Node?> = parse(buffer)
+        Truth.assertThat(nodes)
+            .containsExactly(
+                executionGraphNodeBuilderForSpawnBuilderSpawn()
+                    .setIndex(0)
+                    .setMetrics(
+                        ExecutionGraph.Metrics.newBuilder()
+                            .setStartTimestampMillis(0)
+                            .setDurationMillis(100)
+                            .setOtherMillis(100)
+                    )
+                    .setRunner("local")
+                    .setIdentifier("foo1")
+                    .build(),
+                executionGraphNodeBuilderForSpawnBuilderSpawn()
+                    .setIndex(1)
+                    .setMetrics(
+                        ExecutionGraph.Metrics.newBuilder()
+                            .setStartTimestampMillis(100)
+                            .setDurationMillis(200)
+                            .setOtherMillis(200)
+                    )
+                    .setRunner("remote")
+                    .setIdentifier("foo2")
+                    .setRetryOf(0)
+                    .build()
+            )
+            .inOrder()
+    }
+
+    internal enum class LocalLockFreeOutput(private val optionValue: Boolean) {
+        LOCAL_LOCK_FREE_OUTPUT_ENABLED( /* optionValue= */true) {
+            override fun assertBugReport(bugReporter: BugReporter?) {
+                Mockito.verify<BugReporter?>(bugReporter, Mockito.never())
+                    .sendNonFatalBugReport(ArgumentMatchers.any<Throwable?>())
+            }
+        },
+        LOCAL_LOCK_FREE_OUTPUT_DISABLED( /* optionValue= */false) {
+            override fun assertBugReport(bugReporter: BugReporter?) {
+                val captor: ArgumentCaptor<java.lang.Exception?> =
+                    ArgumentCaptor.forClass<java.lang.Exception?, java.lang.Exception?>(java.lang.Exception::class.java)
+                Mockito.verify<BugReporter?>(bugReporter).sendNonFatalBugReport(captor.capture())
+                Truth.assertThat(captor.getValue())
+                    .hasMessageThat()
+                    .contains("Multiple spawns produced 'output/foo/out' with overlapping execution time.")
+            }
         };
-    module.setWriter(writer);
-    eventBus.register(module);
-  }
 
-  @Test
-  public void shutDownWithoutStartTolerated() {
-    eventBus.register(module);
-    Instant startTimeInstant = Instant.now();
-    // Doesn't crash.
-    eventBus.post(new BuildCompleteEvent(new BuildResult(startTimeInstant.toEpochMilli() + 1000)));
-  }
-
-  @Test
-  public void testSpawnWithNullOwnerLabel() throws Exception {
-    ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-    Spawn spawn =
-        new SimpleSpawn(
-            new FakeOwnerWithPrimaryOutput(
-                "Mnemonic", "Progress message", "//unused:label", "output/foo/out") {
-              @Override
-              public ActionOwner getOwner() {
-                return ActionOwner.create(
-                    /* label= */ null,
-                    ActionsTestUtil.NULL_ACTION_OWNER.getLocation(),
-                    ActionsTestUtil.NULL_ACTION_OWNER.getTargetKind(),
-                    ActionsTestUtil.NULL_ACTION_OWNER.getBuildConfigurationInfo(),
-                    ActionsTestUtil.NULL_ACTION_OWNER.getExecutionPlatform(),
-                    ActionsTestUtil.NULL_ACTION_OWNER.getAspectDescriptors(),
-                    ActionsTestUtil.NULL_ACTION_OWNER.getExecProperties());
-              }
-            },
-            ImmutableList.of("cmd"),
-            ImmutableMap.of("env", "value"),
-            ImmutableMap.of("exec", "value"),
-            /* inputs= */ NestedSetBuilder.emptySet(Order.STABLE_ORDER),
-            /* outputs= */ ImmutableSet.of(ActionInputHelper.fromPath("output/foo/out")),
-            ResourceSet.ZERO);
-    SpawnResult result =
-        new SpawnResult.Builder()
-            .setRunnerName("local")
-            .setStatus(Status.SUCCESS)
-            .setExitCode(0)
-            .setSpawnMetrics(
-                SpawnMetrics.Builder.forLocalExec()
-                    .setTotalTimeInMs(1234)
-                    .setExecutionWallTimeInMs(2345)
-                    .setProcessOutputsTimeInMs(3456)
-                    .build())
-            .build();
-    startLogging(eventBus, buffer, DependencyInfo.NONE);
-    Instant startTimeInstant = Instant.now();
-    module.spawnExecuted(
-        new SpawnExecutedEvent(
-            spawn,
-            new FakeActionInputFileCache(),
-            null,
-            new TestFileOutErr(),
-            result,
-            startTimeInstant,
-            /* spawnIdentifier= */ "foo"));
-    module.buildComplete(
-        new BuildCompleteEvent(new BuildResult(startTimeInstant.toEpochMilli() + 1000)));
-
-    ImmutableList<ExecutionGraph.Node> nodes = parse(buffer);
-    assertThat(nodes).hasSize(1);
-    assertThat(nodes.get(0).getTargetLabel()).isEmpty();
-  }
-
-  @Test
-  public void spawnAndAction_withSameOutputs() throws Exception {
-    var buffer = new ByteArrayOutputStream();
-    startLogging(eventBus, buffer, DependencyInfo.ALL);
-
-    module.spawnExecuted(
-        new SpawnExecutedEvent(
-            new SpawnBuilder().withOwnerPrimaryOutput(createOutputArtifact("foo/out")).build(),
-            new FakeActionInputFileCache(),
-            null,
-            new TestFileOutErr(),
-            createRemoteSpawnResult(200),
-            Instant.ofEpochMilli(100),
-            /* spawnIdentifier= */ "foo"));
-    module.actionComplete(
-        new ActionCompletionEvent(
-            0,
-            0,
-            new ActionsTestUtil.NullAction(createOutputArtifact("foo/out")),
-            new FakeActionInputFileCache(),
-            mock(OutputMetadataStore.class),
-            mock(ActionLookupData.class)));
-    module.buildComplete(new BuildCompleteEvent(new BuildResult(1000)));
-
-    assertThat(parse(buffer))
-        .containsExactly(
-            executionGraphNodeBuilderForSpawnBuilderSpawn()
-                .setIndex(0)
-                .setMetrics(
-                    ExecutionGraph.Metrics.newBuilder()
-                        .setStartTimestampMillis(100)
-                        .setDurationMillis(200)
-                        .setOtherMillis(200))
-                .setRunner("remote")
-                .setIdentifier("foo")
-                .setRuleClass("dummy-target-kind")
-                .build());
-  }
-
-  @Test
-  public void spawnAndAction_withDifferentOutputs() throws Exception {
-    var buffer = new ByteArrayOutputStream();
-    startLogging(eventBus, buffer, DependencyInfo.ALL);
-    var nanosToMillis = BlazeClock.createNanosToMillisSinceEpochConverter();
-    module.setNanosToMillis(nanosToMillis);
-
-    module.spawnExecuted(
-        new SpawnExecutedEvent(
-            new SpawnBuilder().withOwnerPrimaryOutput(createOutputArtifact("foo/out")).build(),
-            new FakeActionInputFileCache(),
-            null,
-            new TestFileOutErr(),
-            createRemoteSpawnResult(200),
-            Instant.ofEpochMilli(100),
-            /* spawnIdentifier= */ "foo"));
-    var action = new ActionsTestUtil.NullAction(createOutputArtifact("bar/out"));
-    module.actionComplete(
-        new ActionCompletionEvent(
-            0,
-            0,
-            action,
-            new FakeActionInputFileCache(),
-            mock(OutputMetadataStore.class),
-            mock(ActionLookupData.class)));
-    module.buildComplete(new BuildCompleteEvent(new BuildResult(1000)));
-
-    assertThat(parse(buffer))
-        .containsExactly(
-            executionGraphNodeBuilderForSpawnBuilderSpawn()
-                .setIndex(0)
-                .setMetrics(
-                    ExecutionGraph.Metrics.newBuilder()
-                        .setStartTimestampMillis(100)
-                        .setDurationMillis(200)
-                        .setOtherMillis(200))
-                .setRuleClass("dummy-target-kind")
-                .setRunner("remote")
-                .setIdentifier("foo")
-                .build(),
-            executionGraphNodeBuilderForAction(action)
-                .setIndex(1)
-                .setMetrics(
-                    ExecutionGraph.Metrics.newBuilder()
-                        .setStartTimestampMillis(nanosToMillis.toEpochMillis(0)))
-                .setRuleClass("dummy-kind")
-                .build());
-  }
-
-  @Test
-  public void noSpawnAction_hasCorrectDuration() throws Exception {
-    var buffer = new ByteArrayOutputStream();
-    startLogging(eventBus, buffer, DependencyInfo.ALL);
-    var nanosToMillis = BlazeClock.createNanosToMillisSinceEpochConverter();
-    module.setNanosToMillis(nanosToMillis);
-
-    var action = new ActionsTestUtil.NullAction(createOutputArtifact("foo/out"));
-    module.actionComplete(
-        new ActionCompletionEvent(
-            1000000,
-            2000000,
-            action,
-            new FakeActionInputFileCache(),
-            mock(OutputMetadataStore.class),
-            mock(ActionLookupData.class)));
-    module.buildComplete(new BuildCompleteEvent(new BuildResult(1000)));
-
-    assertThat(parse(buffer))
-        .containsExactly(
-            executionGraphNodeBuilderForAction(action)
-                .setMetrics(
-                    ExecutionGraph.Metrics.newBuilder()
-                        .setStartTimestampMillis(nanosToMillis.toEpochMillis(1000000))
-                        .setDurationMillis(1)
-                        .setProcessMillis(1))
-                .setRuleClass("dummy-kind")
-                .build());
-  }
-
-  @Test
-  public void multipleSpawnsWithSameOutput_recordsBothSpawnsWithRetry() throws Exception {
-    var buffer = new ByteArrayOutputStream();
-    startLogging(eventBus, buffer, DependencyInfo.ALL);
-    SpawnResult localResult = createLocalSpawnResult(100);
-    SpawnResult remoteResult = createRemoteSpawnResult(200);
-    Spawn spawn =
-        new SpawnBuilder().withOwnerPrimaryOutput(createOutputArtifact("foo/out")).build();
-
-    module.spawnExecuted(
-        new SpawnExecutedEvent(
-            spawn,
-            new FakeActionInputFileCache(),
-            null,
-            new TestFileOutErr(),
-            localResult,
-            Instant.EPOCH,
-            /* spawnIdentifier= */ "foo1"));
-    module.spawnExecuted(
-        new SpawnExecutedEvent(
-            spawn,
-            new FakeActionInputFileCache(),
-            null,
-            new TestFileOutErr(),
-            remoteResult,
-            Instant.ofEpochMilli(100),
-            /* spawnIdentifier= */ "foo2"));
-    module.buildComplete(new BuildCompleteEvent(new BuildResult(1000)));
-
-    ImmutableList<ExecutionGraph.Node> nodes = parse(buffer);
-    assertThat(nodes)
-        .containsExactly(
-            executionGraphNodeBuilderForSpawnBuilderSpawn()
-                .setIndex(0)
-                .setMetrics(
-                    ExecutionGraph.Metrics.newBuilder()
-                        .setStartTimestampMillis(0)
-                        .setDurationMillis(100)
-                        .setOtherMillis(100))
-                .setRunner("local")
-                .setIdentifier("foo1")
-                .build(),
-            executionGraphNodeBuilderForSpawnBuilderSpawn()
-                .setIndex(1)
-                .setMetrics(
-                    ExecutionGraph.Metrics.newBuilder()
-                        .setStartTimestampMillis(100)
-                        .setDurationMillis(200)
-                        .setOtherMillis(200))
-                .setRunner("remote")
-                .setIdentifier("foo2")
-                .setRetryOf(0)
-                .build())
-        .inOrder();
-  }
-
-  enum LocalLockFreeOutput {
-    LOCAL_LOCK_FREE_OUTPUT_ENABLED(/* optionValue= */ true) {
-      @Override
-      void assertBugReport(BugReporter bugReporter) {
-        verify(bugReporter, never()).sendNonFatalBugReport(any());
-      }
-    },
-    LOCAL_LOCK_FREE_OUTPUT_DISABLED(/* optionValue= */ false) {
-      @Override
-      void assertBugReport(BugReporter bugReporter) {
-        var captor = ArgumentCaptor.forClass(Exception.class);
-        verify(bugReporter).sendNonFatalBugReport(captor.capture());
-        assertThat(captor.getValue())
-            .hasMessageThat()
-            .contains("Multiple spawns produced 'output/foo/out' with overlapping execution time.");
-      }
-    };
-
-    LocalLockFreeOutput(boolean optionValue) {
-      this.optionValue = optionValue;
+        abstract fun assertBugReport(bugReporter: BugReporter?)
     }
 
-    private final boolean optionValue;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun multipleSpawnsWithSameOutput_overlapping_recordsBothSpawnsWithoutRetry(
+        @TestParameter localLockFreeOutput: LocalLockFreeOutput
+    ) {
+        val buffer: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        val bugReporter: BugReporter? = Mockito.mock<BugReporter?>(BugReporter::class.java)
+        startLogging(
+            eventBus,
+            bugReporter,
+            localLockFreeOutput.optionValue,  /* logFileWriteEdges= */
+            false,
+            buffer,
+            DependencyInfo.ALL
+        )
+        val localResult: SpawnResult = createLocalSpawnResult(100)
+        val remoteResult: SpawnResult = createRemoteSpawnResult(200)
+        val spawn: Spawn =
+            SpawnBuilder().withOwnerPrimaryOutput(createOutputArtifact("foo/out")).build()
 
-    abstract void assertBugReport(BugReporter bugReporter);
-  }
+        module.spawnExecuted(
+            SpawnExecutedEvent(
+                spawn,
+                FakeActionInputFileCache(),
+                null,
+                TestFileOutErr(),
+                localResult,
+                Instant.EPOCH,  /* spawnIdentifier= */
+                "foo1"
+            )
+        )
+        module.spawnExecuted(
+            SpawnExecutedEvent(
+                spawn,
+                FakeActionInputFileCache(),
+                null,
+                TestFileOutErr(),
+                remoteResult,
+                Instant.ofEpochMilli(10),  /* spawnIdentifier= */
+                "foo2"
+            )
+        )
+        module.buildComplete(BuildCompleteEvent(BuildResult(1000)))
 
-  @Test
-  public void multipleSpawnsWithSameOutput_overlapping_recordsBothSpawnsWithoutRetry(
-      @TestParameter LocalLockFreeOutput localLockFreeOutput) throws Exception {
-    var buffer = new ByteArrayOutputStream();
-    BugReporter bugReporter = mock(BugReporter.class);
-    startLogging(
-        eventBus,
-        bugReporter,
-        localLockFreeOutput.optionValue,
-        /* logFileWriteEdges= */ false,
-        buffer,
-        DependencyInfo.ALL);
-    SpawnResult localResult = createLocalSpawnResult(100);
-    SpawnResult remoteResult = createRemoteSpawnResult(200);
-    Spawn spawn =
-        new SpawnBuilder().withOwnerPrimaryOutput(createOutputArtifact("foo/out")).build();
-
-    module.spawnExecuted(
-        new SpawnExecutedEvent(
-            spawn,
-            new FakeActionInputFileCache(),
-            null,
-            new TestFileOutErr(),
-            localResult,
-            Instant.EPOCH,
-            /* spawnIdentifier= */ "foo1"));
-    module.spawnExecuted(
-        new SpawnExecutedEvent(
-            spawn,
-            new FakeActionInputFileCache(),
-            null,
-            new TestFileOutErr(),
-            remoteResult,
-            Instant.ofEpochMilli(10),
-            /* spawnIdentifier= */ "foo2"));
-    module.buildComplete(new BuildCompleteEvent(new BuildResult(1000)));
-
-    ImmutableList<ExecutionGraph.Node> nodes = parse(buffer);
-    assertThat(nodes)
-        .containsExactly(
-            executionGraphNodeBuilderForSpawnBuilderSpawn()
-                .setIndex(0)
-                .setMetrics(
-                    ExecutionGraph.Metrics.newBuilder()
-                        .setStartTimestampMillis(0)
-                        .setDurationMillis(100)
-                        .setOtherMillis(100))
-                .setRunner("local")
-                .setIdentifier("foo1")
-                .build(),
-            executionGraphNodeBuilderForSpawnBuilderSpawn()
-                .setIndex(1)
-                .setMetrics(
-                    ExecutionGraph.Metrics.newBuilder()
-                        .setStartTimestampMillis(10)
-                        .setDurationMillis(200)
-                        .setOtherMillis(200))
-                .setRunner("remote")
-                .setIdentifier("foo2")
-                .build())
-        .inOrder();
-    localLockFreeOutput.assertBugReport(bugReporter);
-  }
-
-  @Test
-  public void multipleSpawnsWithSameOutput_overlapping_ignoresSecondSpawnForDependencies()
-      throws Exception {
-    var buffer = new ByteArrayOutputStream();
-    startLogging(
-        eventBus,
-        BugReporter.defaultInstance(),
-        /* localLockFreeOutputEnabled= */ true,
-        /* logFileWriteEdges= */ false,
-        buffer,
-        DependencyInfo.ALL);
-    SpawnResult localResult = createLocalSpawnResult(100);
-    SpawnResult remoteResult = createRemoteSpawnResult(200);
-    Artifact input = createOutputArtifact("foo/input");
-    Spawn spawn = new SpawnBuilder().withOwnerPrimaryOutput(input).build();
-    Spawn dependentSpawn =
-        new SpawnBuilder()
-            .withOwnerPrimaryOutput(createOutputArtifact("foo/output"))
-            .withInput(input)
-            .build();
-    SpawnResult dependentResult = createRemoteSpawnResult(300);
-
-    module.spawnExecuted(
-        new SpawnExecutedEvent(
-            spawn,
-            new FakeActionInputFileCache(),
-            null,
-            new TestFileOutErr(),
-            localResult,
-            Instant.EPOCH,
-            /* spawnIdentifier= */ "foo1"));
-    module.spawnExecuted(
-        new SpawnExecutedEvent(
-            spawn,
-            new FakeActionInputFileCache(),
-            null,
-            new TestFileOutErr(),
-            remoteResult,
-            Instant.ofEpochMilli(10),
-            /* spawnIdentifier= */ "foo2"));
-    module.spawnExecuted(
-        new SpawnExecutedEvent(
-            dependentSpawn,
-            new FakeActionInputFileCache(),
-            null,
-            new TestFileOutErr(),
-            dependentResult,
-            Instant.ofEpochMilli(300),
-            /* spawnIdentifier= */ "foo3"));
-    module.buildComplete(new BuildCompleteEvent(new BuildResult(1000)));
-
-    ImmutableList<ExecutionGraph.Node> nodes = parse(buffer);
-    assertThat(nodes)
-        .containsExactly(
-            executionGraphNodeBuilderForSpawnBuilderSpawn()
-                .setIndex(0)
-                .setMetrics(
-                    ExecutionGraph.Metrics.newBuilder()
-                        .setStartTimestampMillis(0)
-                        .setDurationMillis(100)
-                        .setOtherMillis(100))
-                .setRunner("local")
-                .setIdentifier("foo1")
-                .build(),
-            executionGraphNodeBuilderForSpawnBuilderSpawn()
-                .setIndex(1)
-                .setMetrics(
-                    ExecutionGraph.Metrics.newBuilder()
-                        .setStartTimestampMillis(10)
-                        .setDurationMillis(200)
-                        .setOtherMillis(200))
-                .setRunner("remote")
-                .setIdentifier("foo2")
-                .build(),
-            executionGraphNodeBuilderForSpawnBuilderSpawn()
-                .setIndex(2)
-                .setMetrics(
-                    ExecutionGraph.Metrics.newBuilder()
-                        .setStartTimestampMillis(300)
-                        .setDurationMillis(300)
-                        .setOtherMillis(300))
-                .setRunner("remote")
-                .setIdentifier("foo3")
-                .addDependentIndex(0)
-                .build())
-        .inOrder();
-  }
-
-  private class FakeOwnerWithPrimaryOutput extends FakeOwner {
-
-    private final String primaryOutput;
-
-    public FakeOwnerWithPrimaryOutput(
-        String mnemonic, String progressMessage, String ownerLabel, String primaryOutput) {
-      super(mnemonic, progressMessage, ownerLabel);
-      this.primaryOutput = primaryOutput;
+        val nodes: com.google.common.collect.ImmutableList<ExecutionGraph.Node?> = parse(buffer)
+        Truth.assertThat(nodes)
+            .containsExactly(
+                executionGraphNodeBuilderForSpawnBuilderSpawn()
+                    .setIndex(0)
+                    .setMetrics(
+                        ExecutionGraph.Metrics.newBuilder()
+                            .setStartTimestampMillis(0)
+                            .setDurationMillis(100)
+                            .setOtherMillis(100)
+                    )
+                    .setRunner("local")
+                    .setIdentifier("foo1")
+                    .build(),
+                executionGraphNodeBuilderForSpawnBuilderSpawn()
+                    .setIndex(1)
+                    .setMetrics(
+                        ExecutionGraph.Metrics.newBuilder()
+                            .setStartTimestampMillis(10)
+                            .setDurationMillis(200)
+                            .setOtherMillis(200)
+                    )
+                    .setRunner("remote")
+                    .setIdentifier("foo2")
+                    .build()
+            )
+            .inOrder()
+        localLockFreeOutput.assertBugReport(bugReporter)
     }
 
-    @Override
-    public Artifact getPrimaryOutput() {
-      return ActionsTestUtil.createArtifactWithExecPath(
-          artifactRoot, PathFragment.create(primaryOutput));
-    }
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun multipleSpawnsWithSameOutput_overlapping_ignoresSecondSpawnForDependencies() {
+        val buffer: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        startLogging(
+            eventBus,
+            BugReporter.defaultInstance(),  /* localLockFreeOutputEnabled= */
+            true,  /* logFileWriteEdges= */
+            false,
+            buffer,
+            DependencyInfo.ALL
+        )
+        val localResult: SpawnResult = createLocalSpawnResult(100)
+        val remoteResult: SpawnResult = createRemoteSpawnResult(200)
+        val input: Artifact = createOutputArtifact("foo/input")
+        val spawn: Spawn = SpawnBuilder().withOwnerPrimaryOutput(input).build()
+        val dependentSpawn: Spawn =
+            SpawnBuilder()
+                .withOwnerPrimaryOutput(createOutputArtifact("foo/output"))
+                .withInput(input)
+                .build()
+        val dependentResult: SpawnResult = createRemoteSpawnResult(300)
 
-  private Artifact createOutputArtifact(String rootRelativePath) {
-    var artifact =
-        (DerivedArtifact)
+        module.spawnExecuted(
+            SpawnExecutedEvent(
+                spawn,
+                FakeActionInputFileCache(),
+                null,
+                TestFileOutErr(),
+                localResult,
+                Instant.EPOCH,  /* spawnIdentifier= */
+                "foo1"
+            )
+        )
+        module.spawnExecuted(
+            SpawnExecutedEvent(
+                spawn,
+                FakeActionInputFileCache(),
+                null,
+                TestFileOutErr(),
+                remoteResult,
+                Instant.ofEpochMilli(10),  /* spawnIdentifier= */
+                "foo2"
+            )
+        )
+        module.spawnExecuted(
+            SpawnExecutedEvent(
+                dependentSpawn,
+                FakeActionInputFileCache(),
+                null,
+                TestFileOutErr(),
+                dependentResult,
+                Instant.ofEpochMilli(300),  /* spawnIdentifier= */
+                "foo3"
+            )
+        )
+        module.buildComplete(BuildCompleteEvent(BuildResult(1000)))
+
+        val nodes: com.google.common.collect.ImmutableList<ExecutionGraph.Node?> = parse(buffer)
+        Truth.assertThat(nodes)
+            .containsExactly(
+                executionGraphNodeBuilderForSpawnBuilderSpawn()
+                    .setIndex(0)
+                    .setMetrics(
+                        ExecutionGraph.Metrics.newBuilder()
+                            .setStartTimestampMillis(0)
+                            .setDurationMillis(100)
+                            .setOtherMillis(100)
+                    )
+                    .setRunner("local")
+                    .setIdentifier("foo1")
+                    .build(),
+                executionGraphNodeBuilderForSpawnBuilderSpawn()
+                    .setIndex(1)
+                    .setMetrics(
+                        ExecutionGraph.Metrics.newBuilder()
+                            .setStartTimestampMillis(10)
+                            .setDurationMillis(200)
+                            .setOtherMillis(200)
+                    )
+                    .setRunner("remote")
+                    .setIdentifier("foo2")
+                    .build(),
+                executionGraphNodeBuilderForSpawnBuilderSpawn()
+                    .setIndex(2)
+                    .setMetrics(
+                        ExecutionGraph.Metrics.newBuilder()
+                            .setStartTimestampMillis(300)
+                            .setDurationMillis(300)
+                            .setOtherMillis(300)
+                    )
+                    .setRunner("remote")
+                    .setIdentifier("foo3")
+                    .addDependentIndex(0)
+                    .build()
+            )
+            .inOrder()
+    }
+
+    private open inner class FakeOwnerWithPrimaryOutput(
+        mnemonic: String?,
+        progressMessage: String,
+        ownerLabel: String?,
+        private val primaryOutput: String?
+    ) : FakeOwner(mnemonic, progressMessage, ownerLabel) {
+        override fun getPrimaryOutput(): Artifact {
+            return ActionsTestUtil.createArtifactWithExecPath(
+                artifactRoot, PathFragment.create(primaryOutput)
+            )
+        }
+    }
+
+    private fun createOutputArtifact(rootRelativePath: String?): Artifact {
+        val artifact: DerivedArtifact =
             ActionsTestUtil.createArtifactWithExecPath(
-                artifactRoot, artifactRoot.getExecPath().getRelative(rootRelativePath));
-    artifact.setGeneratingActionKey(ActionsTestUtil.NULL_ACTION_LOOKUP_DATA);
-    return artifact;
-  }
+                artifactRoot, artifactRoot.getExecPath().getRelative(rootRelativePath)
+            ) as DerivedArtifact
+        artifact.setGeneratingActionKey(ActionsTestUtil.NULL_ACTION_LOOKUP_DATA)
+        return artifact
+    }
 
-  private static SpawnResult createLocalSpawnResult(int totalTimeInMs) {
-    return new SpawnResult.Builder()
-        .setRunnerName("local")
-        .setStatus(Status.SUCCESS)
-        .setExitCode(0)
-        .setSpawnMetrics(
-            SpawnMetrics.Builder.forLocalExec().setTotalTimeInMs(totalTimeInMs).build())
-        .build();
-  }
+    companion object {
+        @Throws(IOException::class)
+        private fun parse(buffer: java.io.ByteArrayOutputStream): com.google.common.collect.ImmutableList<ExecutionGraph.Node?> {
+            val data: ByteArray = buffer.toByteArray()
+            ZstdInputStream(ByteArrayInputStream(data)).use { `in` ->
+                val nodeListBuilder: com.google.common.collect.ImmutableList.Builder<ExecutionGraph.Node?> =
+                    com.google.common.collect.ImmutableList.Builder<ExecutionGraph.Node?>()
+                var node: ExecutionGraph.Node?
+                while ((ExecutionGraph.Node.parseDelimitedFrom(`in`).also { node = it }) != null) {
+                    nodeListBuilder.add(node)
+                }
+                return nodeListBuilder.build()
+            }
+        }
 
-  private static SpawnResult createRemoteSpawnResult(int totalTimeInMs) {
-    return new SpawnResult.Builder()
-        .setRunnerName("remote")
-        .setStatus(Status.SUCCESS)
-        .setExitCode(0)
-        .setSpawnMetrics(
-            SpawnMetrics.Builder.forRemoteExec().setTotalTimeInMs(totalTimeInMs).build())
-        .build();
-  }
+        private fun createLocalSpawnResult(totalTimeInMs: Int): SpawnResult {
+            return Builder()
+                .setRunnerName("local")
+                .setStatus(Status.SUCCESS)
+                .setExitCode(0)
+                .setSpawnMetrics(
+                    SpawnMetrics.Builder.forLocalExec().setTotalTimeInMs(totalTimeInMs).build()
+                )
+                .build()
+        }
 
-  /**
-   * Creates a {@link ExecutionGraph.Node.Builder} with pre-populated defaults for spawns created
-   * using {@link SpawnBuilder}.
-   */
-  private static ExecutionGraph.Node.Builder executionGraphNodeBuilderForSpawnBuilderSpawn() {
-    return ExecutionGraph.Node.newBuilder()
-        .setDescription("action 'progress message'")
-        .setTargetLabel("//dummy:label")
-        .setMnemonic("Mnemonic")
-        .setRuleClass("dummy-target-kind")
-        // This comes from SpawnResult.Builder, which defaults to an empty string.
-        .setRunnerSubtype("");
-  }
+        private fun createRemoteSpawnResult(totalTimeInMs: Int): SpawnResult {
+            return Builder()
+                .setRunnerName("remote")
+                .setStatus(Status.SUCCESS)
+                .setExitCode(0)
+                .setSpawnMetrics(
+                    SpawnMetrics.Builder.forRemoteExec().setTotalTimeInMs(totalTimeInMs).build()
+                )
+                .build()
+        }
 
-  /**
-   * Creates a {@link ExecutionGraph.Node.Builder} with pre-populated defaults for action events.
-   */
-  private static ExecutionGraph.Node.Builder executionGraphNodeBuilderForAction(Action action) {
-    return ExecutionGraph.Node.newBuilder()
-        .setDescription(action.prettyPrint())
-        .setTargetLabel(action.getOwner().getLabel().toString())
-        .setMnemonic(action.getMnemonic());
-  }
+        /**
+         * Creates a [ExecutionGraph.Node.Builder] with pre-populated defaults for spawns created
+         * using [SpawnBuilder].
+         */
+        private fun executionGraphNodeBuilderForSpawnBuilderSpawn(): ExecutionGraph.Node.Builder {
+            return ExecutionGraph.Node.newBuilder()
+                .setDescription("action 'progress message'")
+                .setTargetLabel("//dummy:label")
+                .setMnemonic("Mnemonic")
+                .setRuleClass("dummy-target-kind") // This comes from SpawnResult.Builder, which defaults to an empty string.
+                .setRunnerSubtype("")
+        }
+
+        /**
+         * Creates a [ExecutionGraph.Node.Builder] with pre-populated defaults for action events.
+         */
+        private fun executionGraphNodeBuilderForAction(action: Action): ExecutionGraph.Node.Builder {
+            return ExecutionGraph.Node.newBuilder()
+                .setDescription(action.prettyPrint())
+                .setTargetLabel(action.getOwner().getLabel().toString())
+                .setMnemonic(action.getMnemonic())
+        }
+    }
 }

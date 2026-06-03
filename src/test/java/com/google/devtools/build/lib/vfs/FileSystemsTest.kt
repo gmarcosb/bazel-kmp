@@ -11,24 +11,22 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.vfs;
+package com.google.devtools.build.lib.vfs
 
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.devtools.build.lib.vfs.util.FileSystems;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.exec.util.SpawnBuilder.build
+import com.google.devtools.common.options.testing.ConverterTesterMap.Builder.build
+import net.starlark.java.syntax.FileOptions.Builder.build
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
 /**
  * This class handles the tests for the FileSystems class.
  */
-@RunWith(JUnit4.class)
-public class FileSystemsTest {
-
-  @Test
-  public void testFileSystems() {
-    assertThat(FileSystems.getJavaIoFileSystem())
-        .isNotSameInstanceAs(FileSystems.getNativeFileSystem());
-  }
+@RunWith(JUnit4::class)
+class FileSystemsTest {
+    @org.junit.Test
+    fun testFileSystems() {
+        assertThat(com.google.devtools.build.lib.vfs.util.FileSystems.getJavaIoFileSystem())
+            .isNotSameInstanceAs(com.google.devtools.build.lib.vfs.util.FileSystems.getNativeFileSystem())
+    }
 }

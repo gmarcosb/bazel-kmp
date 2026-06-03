@@ -11,111 +11,112 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.concurrent;
+package com.google.devtools.build.lib.concurrent
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
+import com.google.devtools.build.lib.concurrent.AbstractQueueVisitor.ExceptionHandlingMode
+import org.junit.Assert
+import org.junit.Test
+import org.junit.function.ThrowingRunnable
 
-import com.google.devtools.build.lib.concurrent.AbstractQueueVisitor.ExceptionHandlingMode;
-import com.google.devtools.build.lib.concurrent.MultiThreadPoolsQuiescingExecutor.ThreadPoolType;
-import java.util.concurrent.ExecutorService;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [MultiExecutorQueueVisitor].  */
+@RunWith(JUnit4::class)
+class MultiExecutorQueueVisitorTest {
+    @Test
+    fun testGetExecutorServiceByThreadPoolType_regular() {
+        val regular: ExecutorService? = Mockito.mock<ExecutorService?>(ExecutorService::class.java)
+        val cpuHeavy: ExecutorService? = Mockito.mock<ExecutorService?>(ExecutorService::class.java)
 
-/** Tests for {@link MultiExecutorQueueVisitor}. */
-@RunWith(JUnit4.class)
-public class MultiExecutorQueueVisitorTest {
-  @Test
-  public void testGetExecutorServiceByThreadPoolType_regular() {
-    ExecutorService regular = mock(ExecutorService.class);
-    ExecutorService cpuHeavy = mock(ExecutorService.class);
+        val queueVisitor: MultiExecutorQueueVisitor =
+            MultiExecutorQueueVisitor.createWithExecutorServices(
+                regular, cpuHeavy, ExceptionHandlingMode.KEEP_GOING, ErrorClassifier.DEFAULT
+            )
 
-    MultiExecutorQueueVisitor queueVisitor =
-        MultiExecutorQueueVisitor.createWithExecutorServices(
-            regular, cpuHeavy, ExceptionHandlingMode.KEEP_GOING, ErrorClassifier.DEFAULT);
+        assertThat(queueVisitor.getExecutorServiceByThreadPoolType(ThreadPoolType.REGULAR))
+            .isEqualTo(regular)
+    }
 
-    assertThat(queueVisitor.getExecutorServiceByThreadPoolType(ThreadPoolType.REGULAR))
-        .isEqualTo(regular);
-  }
+    @Test
+    fun testGetExecutorServiceByThreadPoolType_cpuHeavy() {
+        val regular: ExecutorService? = Mockito.mock<ExecutorService?>(ExecutorService::class.java)
+        val cpuHeavy: ExecutorService? = Mockito.mock<ExecutorService?>(ExecutorService::class.java)
 
-  @Test
-  public void testGetExecutorServiceByThreadPoolType_cpuHeavy() {
-    ExecutorService regular = mock(ExecutorService.class);
-    ExecutorService cpuHeavy = mock(ExecutorService.class);
+        val queueVisitor: MultiExecutorQueueVisitor =
+            MultiExecutorQueueVisitor.createWithExecutorServices(
+                regular, cpuHeavy, ExceptionHandlingMode.KEEP_GOING, ErrorClassifier.DEFAULT
+            )
 
-    MultiExecutorQueueVisitor queueVisitor =
-        MultiExecutorQueueVisitor.createWithExecutorServices(
-            regular, cpuHeavy, ExceptionHandlingMode.KEEP_GOING, ErrorClassifier.DEFAULT);
+        assertThat(queueVisitor.getExecutorServiceByThreadPoolType(ThreadPoolType.CPU_HEAVY))
+            .isEqualTo(cpuHeavy)
+    }
 
-    assertThat(queueVisitor.getExecutorServiceByThreadPoolType(ThreadPoolType.CPU_HEAVY))
-        .isEqualTo(cpuHeavy);
-  }
+    @Test
+    fun testShutDownExecutorService_noThrowables() {
+        val regular: ExecutorService? = Mockito.mock<ExecutorService?>(ExecutorService::class.java)
+        val cpuHeavy: ExecutorService? = Mockito.mock<ExecutorService?>(ExecutorService::class.java)
 
-  @Test
-  public void testShutDownExecutorService_noThrowables() {
-    ExecutorService regular = mock(ExecutorService.class);
-    ExecutorService cpuHeavy = mock(ExecutorService.class);
+        val queueVisitor: MultiExecutorQueueVisitor =
+            MultiExecutorQueueVisitor.createWithExecutorServices(
+                regular, cpuHeavy, ExceptionHandlingMode.KEEP_GOING, ErrorClassifier.DEFAULT
+            )
+        queueVisitor.shutdownExecutorService( /*catastrophe=*/null)
 
-    MultiExecutorQueueVisitor queueVisitor =
-        MultiExecutorQueueVisitor.createWithExecutorServices(
-            regular, cpuHeavy, ExceptionHandlingMode.KEEP_GOING, ErrorClassifier.DEFAULT);
-    queueVisitor.shutdownExecutorService(/*catastrophe=*/ null);
+        Mockito.verify<ExecutorService?>(regular).shutdown()
+        Mockito.verify<ExecutorService?>(cpuHeavy).shutdown()
+    }
 
-    verify(regular).shutdown();
-    verify(cpuHeavy).shutdown();
-  }
+    @Test
+    fun testShutDownExecutorService_withThrowable() {
+        val regular: ExecutorService? = Mockito.mock<ExecutorService?>(ExecutorService::class.java)
+        val cpuHeavy: ExecutorService? = Mockito.mock<ExecutorService?>(ExecutorService::class.java)
 
-  @Test
-  public void testShutDownExecutorService_withThrowable() {
-    ExecutorService regular = mock(ExecutorService.class);
-    ExecutorService cpuHeavy = mock(ExecutorService.class);
+        val queueVisitor: MultiExecutorQueueVisitor =
+            MultiExecutorQueueVisitor.createWithExecutorServices(
+                regular, cpuHeavy, ExceptionHandlingMode.KEEP_GOING, ErrorClassifier.DEFAULT
+            )
+        val toBeThrown = RuntimeException()
 
-    MultiExecutorQueueVisitor queueVisitor =
-        MultiExecutorQueueVisitor.createWithExecutorServices(
-            regular, cpuHeavy, ExceptionHandlingMode.KEEP_GOING, ErrorClassifier.DEFAULT);
-    RuntimeException toBeThrown = new RuntimeException();
+        val thrown =
+            Assert.assertThrows<Throwable?>(
+                Throwable::class.java,
+                ThrowingRunnable { queueVisitor.shutdownExecutorService( /*catastrophe=*/toBeThrown) })
+        Truth.assertThat(thrown).isEqualTo(toBeThrown)
+    }
 
-    Throwable thrown =
-        assertThrows(
-            Throwable.class,
-            () -> queueVisitor.shutdownExecutorService(/*catastrophe=*/ toBeThrown));
-    assertThat(thrown).isEqualTo(toBeThrown);
-  }
+    @Test
+    fun testGetExecutorServiceByThreadPoolType_executionPhase() {
+        val regular: ExecutorService? = Mockito.mock<ExecutorService?>(ExecutorService::class.java)
+        val cpuHeavy: ExecutorService? = Mockito.mock<ExecutorService?>(ExecutorService::class.java)
+        val executionPhase: ExecutorService? = Mockito.mock<ExecutorService?>(ExecutorService::class.java)
 
-  @Test
-  public void testGetExecutorServiceByThreadPoolType_executionPhase() {
-    ExecutorService regular = mock(ExecutorService.class);
-    ExecutorService cpuHeavy = mock(ExecutorService.class);
-    ExecutorService executionPhase = mock(ExecutorService.class);
+        val queueVisitor: MultiExecutorQueueVisitor =
+            MultiExecutorQueueVisitor.createWithExecutorServices(
+                regular,
+                cpuHeavy,
+                executionPhase,
+                ExceptionHandlingMode.KEEP_GOING,
+                ErrorClassifier.DEFAULT
+            )
 
-    MultiExecutorQueueVisitor queueVisitor =
-        MultiExecutorQueueVisitor.createWithExecutorServices(
-            regular,
-            cpuHeavy,
-            executionPhase,
-            ExceptionHandlingMode.KEEP_GOING,
-            ErrorClassifier.DEFAULT);
+        assertThat(queueVisitor.getExecutorServiceByThreadPoolType(ThreadPoolType.EXECUTION_PHASE))
+            .isEqualTo(executionPhase)
+    }
 
-    assertThat(queueVisitor.getExecutorServiceByThreadPoolType(ThreadPoolType.EXECUTION_PHASE))
-        .isEqualTo(executionPhase);
-  }
+    @Test
+    fun testGetExecutorServiceByThreadPoolType_executionPhaseWithoutExecutor_throwsNPE() {
+        val regular: ExecutorService? = Mockito.mock<ExecutorService?>(ExecutorService::class.java)
+        val cpuHeavy: ExecutorService? = Mockito.mock<ExecutorService?>(ExecutorService::class.java)
 
-  @Test
-  public void testGetExecutorServiceByThreadPoolType_executionPhaseWithoutExecutor_throwsNPE() {
-    ExecutorService regular = mock(ExecutorService.class);
-    ExecutorService cpuHeavy = mock(ExecutorService.class);
+        val queueVisitorWithoutExecutionPhasePool: MultiExecutorQueueVisitor =
+            MultiExecutorQueueVisitor.createWithExecutorServices(
+                regular, cpuHeavy, ExceptionHandlingMode.KEEP_GOING, ErrorClassifier.DEFAULT
+            )
 
-    MultiExecutorQueueVisitor queueVisitorWithoutExecutionPhasePool =
-        MultiExecutorQueueVisitor.createWithExecutorServices(
-            regular, cpuHeavy, ExceptionHandlingMode.KEEP_GOING, ErrorClassifier.DEFAULT);
-
-    assertThrows(
-        NullPointerException.class,
-        () ->
-            queueVisitorWithoutExecutionPhasePool.getExecutorServiceByThreadPoolType(
-                ThreadPoolType.EXECUTION_PHASE));
-  }
+        Assert.assertThrows<NullPointerException?>(
+            NullPointerException::class.java,
+            ThrowingRunnable {
+                queueVisitorWithoutExecutionPhasePool.getExecutorServiceByThreadPoolType(
+                    ThreadPoolType.EXECUTION_PHASE
+                )
+            })
+    }
 }

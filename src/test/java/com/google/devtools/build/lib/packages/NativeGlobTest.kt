@@ -11,150 +11,155 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
+import com.google.devtools.build.lib.cmdline.Label
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+/** Tests for `native.glob` function.  */
+@RunWith(JUnit4::class)
+class NativeGlobTest : BuildViewTestCase() {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun glob_simple() {
+        makeFile("test/starlark/file1.txt")
+        makeFile("test/starlark/file2.txt")
+        makeFile("test/starlark/file3.txt")
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetAndData;
-import com.google.devtools.build.lib.vfs.ModifiedFileSet;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Root;
-import java.io.IOException;
-import java.util.List;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+        makeGlobFilegroup("test/starlark/BUILD", "glob(['*'])")
 
-/** Tests for {@code native.glob} function. */
-@RunWith(JUnit4.class)
-public class NativeGlobTest extends BuildViewTestCase {
-
-  @Test
-  public void glob_simple() throws Exception {
-    makeFile("test/starlark/file1.txt");
-    makeFile("test/starlark/file2.txt");
-    makeFile("test/starlark/file3.txt");
-
-    makeGlobFilegroup("test/starlark/BUILD", "glob(['*'])");
-
-    assertAttrLabelList(
-        "//test/starlark:files",
-        "srcs",
-        ImmutableList.of(
-            "//test/starlark:BUILD",
-            "//test/starlark:file1.txt",
-            "//test/starlark:file2.txt",
-            "//test/starlark:file3.txt"));
-  }
-
-  @Test
-  public void glob_not_empty() throws Exception {
-
-    makeGlobFilegroup("test/starlark/BUILD", "glob(['foo*'], allow_empty=False)");
-
-    AssertionError e =
-        assertThrows(
-            AssertionError.class,
-            () -> assertAttrLabelList("//test/starlark:files", "srcs", ImmutableList.of()));
-    assertThat(e).hasMessageThat().contains("allow_empty");
-  }
-
-  @Test
-  public void glob_simple_subdirs() throws Exception {
-    makeFile("test/starlark/sub/file1.txt");
-    makeFile("test/starlark/sub2/file2.txt");
-    makeFile("test/starlark/sub3/file3.txt");
-
-    makeGlobFilegroup("test/starlark/BUILD", "glob(['**'])");
-
-    assertAttrLabelList(
-        "//test/starlark:files",
-        "srcs",
-        ImmutableList.of(
-            "//test/starlark:BUILD",
-            "//test/starlark:sub/file1.txt",
-            "//test/starlark:sub2/file2.txt",
-            "//test/starlark:sub3/file3.txt"));
-  }
-
-  @Test
-  public void glob_incremental() throws Exception {
-    makeFile("test/starlark/file1.txt");
-    makeGlobFilegroup("test/starlark/BUILD", "glob(['**'])");
-
-    assertAttrLabelList(
-        "//test/starlark:files",
-        "srcs",
-        ImmutableList.of("//test/starlark:BUILD", "//test/starlark:file1.txt"));
-
-    scratch.file("test/starlark/file2.txt");
-    scratch.file("test/starlark/sub/subfile3.txt");
-
-    // Poke SkyFrame to tell it what changed.
-    invalidateSkyFrameFiles(
-        "test/starlark", "test/starlark/file2.txt", "test/starlark/sub/subfile3.txt");
-
-    assertAttrLabelList(
-        "//test/starlark:files",
-        "srcs",
-        ImmutableList.of(
-            "//test/starlark:BUILD",
-            "//test/starlark:file1.txt",
-            "//test/starlark:file2.txt",
-            "//test/starlark:sub/subfile3.txt"));
-  }
-
-  /**
-   * Constructs a BUILD file containing a single rule with uses glob() to list files look for a rule
-   * called :files in it.
-   */
-  private void makeGlobFilegroup(String buildPath, String glob) throws IOException {
-    scratch.file(buildPath, "filegroup(", "   name = 'files',", "   srcs = " + glob, ")");
-  }
-
-  private void assertAttrLabelList(String target, String attrName, List<String> expectedLabels)
-      throws Exception {
-    ConfiguredTargetAndData cfgTarget = getConfiguredTargetAndData(target);
-    assertThat(cfgTarget).isNotNull();
-
-    ImmutableList<Label> labels =
-        expectedLabels.stream().map(this::makeLabel).collect(toImmutableList());
-
-    ConfiguredAttributeMapper configuredAttributeMapper =
-        getMapperFromConfiguredTargetAndTarget(cfgTarget);
-    assertThat(configuredAttributeMapper.get(attrName, BuildType.LABEL_LIST))
-        .containsExactlyElementsIn(labels);
-  }
-
-  private Label makeLabel(String label) {
-    try {
-      return Label.parseCanonical(label);
-    } catch (Exception e) {
-      // Always fails the test.
-      assertThat(e).isNull();
-      return null;
-    }
-  }
-
-  private void invalidateSkyFrameFiles(String... files) throws Exception {
-    ModifiedFileSet.Builder builder = ModifiedFileSet.builder();
-
-    for (String f : files) {
-      builder.modify(PathFragment.create(f));
+        assertAttrLabelList(
+            "//test/starlark:files",
+            "srcs",
+            com.google.common.collect.ImmutableList.of<String?>(
+                "//test/starlark:BUILD",
+                "//test/starlark:file1.txt",
+                "//test/starlark:file2.txt",
+                "//test/starlark:file3.txt"
+            )
+        )
     }
 
-    getSkyframeExecutor()
-        .invalidateFilesUnderPathForTesting(
-            reporter, builder.build(), Root.fromPath(rootDirectory));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun glob_not_empty() {
+        makeGlobFilegroup("test/starlark/BUILD", "glob(['foo*'], allow_empty=False)")
 
-  private void makeFile(String fileName) throws IOException {
-    scratch.file(fileName, "Content: " + fileName);
-  }
+        val e: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable {
+                    assertAttrLabelList(
+                        "//test/starlark:files",
+                        "srcs",
+                        com.google.common.collect.ImmutableList.of<String?>()
+                    )
+                })
+        Truth.assertThat(e).hasMessageThat().contains("allow_empty")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun glob_simple_subdirs() {
+        makeFile("test/starlark/sub/file1.txt")
+        makeFile("test/starlark/sub2/file2.txt")
+        makeFile("test/starlark/sub3/file3.txt")
+
+        makeGlobFilegroup("test/starlark/BUILD", "glob(['**'])")
+
+        assertAttrLabelList(
+            "//test/starlark:files",
+            "srcs",
+            com.google.common.collect.ImmutableList.of<String?>(
+                "//test/starlark:BUILD",
+                "//test/starlark:sub/file1.txt",
+                "//test/starlark:sub2/file2.txt",
+                "//test/starlark:sub3/file3.txt"
+            )
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun glob_incremental() {
+        makeFile("test/starlark/file1.txt")
+        makeGlobFilegroup("test/starlark/BUILD", "glob(['**'])")
+
+        assertAttrLabelList(
+            "//test/starlark:files",
+            "srcs",
+            com.google.common.collect.ImmutableList.of<String?>("//test/starlark:BUILD", "//test/starlark:file1.txt")
+        )
+
+        scratch.file("test/starlark/file2.txt")
+        scratch.file("test/starlark/sub/subfile3.txt")
+
+        // Poke SkyFrame to tell it what changed.
+        invalidateSkyFrameFiles(
+            "test/starlark", "test/starlark/file2.txt", "test/starlark/sub/subfile3.txt"
+        )
+
+        assertAttrLabelList(
+            "//test/starlark:files",
+            "srcs",
+            com.google.common.collect.ImmutableList.of<String?>(
+                "//test/starlark:BUILD",
+                "//test/starlark:file1.txt",
+                "//test/starlark:file2.txt",
+                "//test/starlark:sub/subfile3.txt"
+            )
+        )
+    }
+
+    /**
+     * Constructs a BUILD file containing a single rule with uses glob() to list files look for a rule
+     * called :files in it.
+     */
+    @Throws(IOException::class)
+    private fun makeGlobFilegroup(buildPath: String?, glob: String?) {
+        scratch.file(buildPath, "filegroup(", "   name = 'files',", "   srcs = " + glob, ")")
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun assertAttrLabelList(target: String?, attrName: String?, expectedLabels: MutableList<String?>) {
+        val cfgTarget: ConfiguredTargetAndData = getConfiguredTargetAndData(target)
+        assertThat(cfgTarget).isNotNull()
+
+        val labels: com.google.common.collect.ImmutableList<Label?> =
+            expectedLabels.stream().map<Label?> { label: String? -> this.makeLabel(label) }
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<Label?>())
+
+        val configuredAttributeMapper: ConfiguredAttributeMapper =
+            getMapperFromConfiguredTargetAndTarget(cfgTarget)
+        assertThat(configuredAttributeMapper.get(attrName, BuildType.LABEL_LIST))
+            .containsExactlyElementsIn(labels)
+    }
+
+    private fun makeLabel(label: String?): Label? {
+        try {
+            return Label.parseCanonical(label)
+        } catch (e: java.lang.Exception) {
+            // Always fails the test.
+            Truth.assertThat(e).isNull()
+            return null
+        }
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun invalidateSkyFrameFiles(vararg files: String?) {
+        val builder: ModifiedFileSet.Builder = ModifiedFileSet.builder()
+
+        for (f in files) {
+            builder.modify(PathFragment.create(f))
+        }
+
+        getSkyframeExecutor()
+            .invalidateFilesUnderPathForTesting(
+                reporter, builder.build(), Root.fromPath(rootDirectory)
+            )
+    }
+
+    @Throws(IOException::class)
+    private fun makeFile(fileName: String?) {
+        scratch.file(fileName, "Content: " + fileName)
+    }
 }

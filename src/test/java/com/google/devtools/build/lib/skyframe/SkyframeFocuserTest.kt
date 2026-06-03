@@ -11,304 +11,408 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.actions.util.ActionsTestUtil.createArtifact;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
+import com.google.devtools.build.lib.actions.Action
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Sets;
-import com.google.devtools.build.lib.actions.Action;
-import com.google.devtools.build.lib.actions.ArtifactRoot;
-import com.google.devtools.build.lib.actions.ArtifactRoot.RootType;
-import com.google.devtools.build.lib.actions.BasicActionLookupValue;
-import com.google.devtools.build.lib.actions.cache.ActionCache;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil.NullAction;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.skyframe.SkyframeFocuser.FocusResult;
-import com.google.devtools.build.skyframe.AbstractSkyKey;
-import com.google.devtools.build.skyframe.GraphTester.StringValue;
-import com.google.devtools.build.skyframe.InMemoryGraph;
-import com.google.devtools.build.skyframe.NodeEntry;
-import com.google.devtools.build.skyframe.QueryableGraph.Reason;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.devtools.build.skyframe.Version;
-import java.util.Set;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnit;
-import org.mockito.junit.MockitoRule;
+/** Tests for [SkyframeFocuser].  */
+@RunWith(JUnit4::class)
+class SkyframeFocuserTest : BuildViewTestCase() {
+    @org.junit.Rule
+    val mockito: MockitoRule = MockitoJUnit.rule()
 
-/** Tests for {@link SkyframeFocuser}. */
-@RunWith(JUnit4.class)
-public final class SkyframeFocuserTest extends BuildViewTestCase {
-  @Rule public final MockitoRule mockito = MockitoJUnit.rule();
+    @org.mockito.Mock
+    private val mockActionCache: ActionCache? = null
 
-  @Mock private ActionCache mockActionCache;
+    @org.junit.Test
+    @Throws(java.lang.InterruptedException::class)
+    fun testFocus_emptyInputsReturnsEmptyResult() {
+        val graph: InMemoryGraph? = skyframeExecutor.getEvaluator().getInMemoryGraph()
+        val focusResult: FocusResult =
+            SkyframeFocuser.focus(
+                graph,
+                mockActionCache,
+                com.google.common.collect.Sets.newHashSet<E?>(),
+                com.google.common.collect.Sets.newHashSet<E?>()
+            )
 
-  @Test
-  public void testFocus_emptyInputsReturnsEmptyResult() throws InterruptedException {
-    InMemoryGraph graph = skyframeExecutor.getEvaluator().getInMemoryGraph();
-    FocusResult focusResult =
-        SkyframeFocuser.focus(graph, mockActionCache, Sets.newHashSet(), Sets.newHashSet());
-
-    assertThat(focusResult.deps()).isEmpty();
-    assertThat(focusResult.rdeps()).isEmpty();
-  }
-
-  @Test
-  public void testFocus_keepsLeafs() throws InterruptedException {
-    InMemoryGraph graph = skyframeExecutor.getEvaluator().getInMemoryGraph();
-    SkyKey cat = SkyKeyWithSkyKeyInterner.create("cat");
-    SkyKey dog = SkyKeyWithSkyKeyInterner.create("dog");
-    ImmutableList<SkyKey> keys = ImmutableList.of(cat, dog);
-
-    graph.createIfAbsentBatch(null, Reason.OTHER, keys);
-
-    createEdgesAndMarkDone(graph, cat, ImmutableList.of(), ImmutableList.of());
-    createEdgesAndMarkDone(graph, dog, ImmutableList.of(), ImmutableList.of());
-
-    Set<SkyKey> roots = Sets.newHashSet();
-    Set<SkyKey> leafs = Sets.newHashSet(cat, dog);
-
-    FocusResult focusResult = SkyframeFocuser.focus(graph, mockActionCache, roots, leafs);
-
-    assertThat(focusResult.deps()).isEmpty();
-    assertThat(focusResult.rdeps()).containsExactly(cat, dog);
-    assertThat(graph.values.keySet()).containsExactly(cat, dog);
-  }
-
-  @Test
-  public void testFocus_dropsUnreachableNodesFromLeafs() throws InterruptedException {
-    InMemoryGraph graph = skyframeExecutor.getEvaluator().getInMemoryGraph();
-    SkyKey cat = SkyKeyWithSkyKeyInterner.create("cat");
-    SkyKey dog = SkyKeyWithSkyKeyInterner.create("dog");
-    ImmutableList<SkyKey> keys = ImmutableList.of(cat, dog);
-
-    graph.createIfAbsentBatch(null, Reason.OTHER, keys);
-
-    createEdgesAndMarkDone(graph, cat, ImmutableList.of(), ImmutableList.of());
-    createEdgesAndMarkDone(graph, dog, ImmutableList.of(), ImmutableList.of());
-
-    Set<SkyKey> roots = Sets.newHashSet();
-    Set<SkyKey> leafs = Sets.newHashSet(cat); // dog is unreachable
-
-    FocusResult focusResult = SkyframeFocuser.focus(graph, mockActionCache, roots, leafs);
-
-    assertThat(focusResult.deps()).isEmpty();
-    assertThat(focusResult.rdeps()).containsExactly(cat);
-    assertThat(graph.values.keySet()).containsExactly(cat);
-  }
-
-  @Test
-  public void testFocus_keepsReverseDepOfLeafs() throws InterruptedException {
-    InMemoryGraph graph = skyframeExecutor.getEvaluator().getInMemoryGraph();
-    SkyKey cat = SkyKeyWithSkyKeyInterner.create("cat");
-    SkyKey dog = SkyKeyWithSkyKeyInterner.create("dog");
-    ImmutableList<SkyKey> keys = ImmutableList.of(cat, dog);
-
-    graph.createIfAbsentBatch(null, Reason.OTHER, keys);
-    createEdgesAndMarkDone(graph, cat, ImmutableList.of(), ImmutableList.of(dog));
-    createEdgesAndMarkDone(graph, dog, ImmutableList.of(), ImmutableList.of());
-
-    Set<SkyKey> roots = Sets.newHashSet();
-    Set<SkyKey> leafs = Sets.newHashSet(cat); // dog is cat's rdep
-
-    FocusResult focusResult = SkyframeFocuser.focus(graph, mockActionCache, roots, leafs);
-
-    assertThat(focusResult.deps()).isEmpty();
-    assertThat(focusResult.rdeps()).containsExactly(cat, dog);
-    assertThat(graph.values.keySet()).containsExactly(cat, dog);
-  }
-
-  @Test
-  public void testFocus_keepsRoots() throws InterruptedException {
-    InMemoryGraph graph = skyframeExecutor.getEvaluator().getInMemoryGraph();
-    SkyKey cat = SkyKeyWithSkyKeyInterner.create("cat");
-    SkyKey dog = SkyKeyWithSkyKeyInterner.create("dog");
-    ImmutableList<SkyKey> keys = ImmutableList.of(cat, dog);
-
-    graph.createIfAbsentBatch(null, Reason.OTHER, keys);
-    createEdgesAndMarkDone(graph, cat, ImmutableList.of(), ImmutableList.of());
-    createEdgesAndMarkDone(graph, dog, ImmutableList.of(), ImmutableList.of());
-
-    Set<SkyKey> roots = Sets.newHashSet(cat, dog);
-    Set<SkyKey> leafs = Sets.newHashSet();
-
-    FocusResult focusResult = SkyframeFocuser.focus(graph, mockActionCache, roots, leafs);
-
-    assertThat(focusResult.deps()).containsExactly(cat, dog);
-    assertThat(focusResult.rdeps()).isEmpty();
-    assertThat(graph.values.keySet()).containsExactly(cat, dog);
-  }
-
-  @Test
-  public void testFocus_dropsUnreachableFromRoots() throws InterruptedException {
-    InMemoryGraph graph = skyframeExecutor.getEvaluator().getInMemoryGraph();
-    SkyKey cat = SkyKeyWithSkyKeyInterner.create("cat");
-    SkyKey dog = SkyKeyWithSkyKeyInterner.create("dog");
-    ImmutableList<SkyKey> keys = ImmutableList.of(cat, dog);
-
-    graph.createIfAbsentBatch(null, Reason.OTHER, keys);
-    createEdgesAndMarkDone(graph, cat, ImmutableList.of(), ImmutableList.of());
-    createEdgesAndMarkDone(graph, dog, ImmutableList.of(), ImmutableList.of());
-
-    Set<SkyKey> roots = Sets.newHashSet(cat);
-    Set<SkyKey> leafs = Sets.newHashSet();
-
-    FocusResult focusResult = SkyframeFocuser.focus(graph, mockActionCache, roots, leafs);
-
-    assertThat(focusResult.deps()).containsExactly(cat);
-    assertThat(focusResult.rdeps()).isEmpty();
-    assertThat(graph.values.keySet()).containsExactly(cat);
-  }
-
-  @Test
-  public void testFocus_keepDirectDepsOfRdepTransitiveClosure() throws InterruptedException {
-    InMemoryGraph graph = skyframeExecutor.getEvaluator().getInMemoryGraph();
-    SkyKey cat = SkyKeyWithSkyKeyInterner.create("cat");
-    SkyKey dog = SkyKeyWithSkyKeyInterner.create("dog");
-    SkyKey civet = SkyKeyWithSkyKeyInterner.create("civet");
-    SkyKey hamster = SkyKeyWithSkyKeyInterner.create("hamster");
-    SkyKey fish = SkyKeyWithSkyKeyInterner.create("fish");
-    SkyKey bird = SkyKeyWithSkyKeyInterner.create("bird");
-    SkyKey monkey = SkyKeyWithSkyKeyInterner.create("monkey");
-    ImmutableList<SkyKey> keys = ImmutableList.of(cat, dog, civet, hamster, fish, bird, monkey);
-    graph.createIfAbsentBatch(null, Reason.OTHER, keys);
-
-    // Graph:
-    //
-    // monkey (isolated)
-    //
-    //    /-> fish -> bird
-    // cat -> dog -> civet*
-    //          \-> hamster
-    //
-    // *Only civet in the active directories.
-    createEdgesAndMarkDone(graph, civet, ImmutableList.of(), ImmutableList.of(dog));
-    createEdgesAndMarkDone(graph, hamster, ImmutableList.of(), ImmutableList.of(dog));
-    createEdgesAndMarkDone(graph, dog, ImmutableList.of(civet, hamster), ImmutableList.of(cat));
-    createEdgesAndMarkDone(graph, bird, ImmutableList.of(), ImmutableList.of(fish));
-    createEdgesAndMarkDone(graph, fish, ImmutableList.of(bird), ImmutableList.of(cat));
-    createEdgesAndMarkDone(graph, cat, ImmutableList.of(dog, fish), ImmutableList.of());
-    createEdgesAndMarkDone(graph, monkey, ImmutableList.of(), ImmutableList.of());
-
-    Set<SkyKey> roots = Sets.newHashSet(cat);
-    Set<SkyKey> leafs = Sets.newHashSet(civet);
-
-    FocusResult focusResult = SkyframeFocuser.focus(graph, mockActionCache, roots, leafs);
-
-    assertThat(focusResult.deps()).containsExactly(hamster, fish);
-    assertThat(focusResult.rdeps()).containsExactly(civet, dog, cat);
-
-    // no monkey (isolated) and bird (indirect dep)
-    assertThat(graph.values.keySet()).containsExactly(hamster, fish, civet, dog, cat);
-  }
-
-  @Test
-  public void testFocus_removeActionCacheEntries() throws InterruptedException {
-    InMemoryGraph graph = skyframeExecutor.getEvaluator().getInMemoryGraph();
-    SkyKey cat = SkyKeyWithSkyKeyInterner.create("cat");
-    SkyKey dog = SkyKeyWithSkyKeyInterner.create("dog");
-    SkyKey hamster = SkyKeyWithSkyKeyInterner.create("hamster");
-    ImmutableList<SkyKey> keys = ImmutableList.of(cat, dog, hamster);
-    graph.createIfAbsentBatch(null, Reason.OTHER, keys);
-
-    ArtifactRoot artifactRoot =
-        ArtifactRoot.asDerivedRoot(
-            this.directories.getExecRoot("workspace"), RootType.OUTPUT, "blaze-out");
-
-    Action catAction = new NullAction(createArtifact(artifactRoot, "cat"));
-    Action dogAction = new NullAction(createArtifact(artifactRoot, "dog"));
-    Action hamsterAction = new NullAction(createArtifact(artifactRoot, "hamster"));
-
-    createEdgesAndMarkDone(
-        graph,
-        cat,
-        ImmutableList.of(),
-        ImmutableList.of(),
-        new BasicActionLookupValue(ImmutableList.of(catAction)));
-    createEdgesAndMarkDone(
-        graph,
-        dog,
-        ImmutableList.of(),
-        ImmutableList.of(hamster),
-        new BasicActionLookupValue(ImmutableList.of(dogAction)));
-    createEdgesAndMarkDone(
-        graph,
-        hamster,
-        ImmutableList.of(dog),
-        ImmutableList.of(),
-        new BasicActionLookupValue(ImmutableList.of(hamsterAction)));
-
-    Set<SkyKey> roots = Sets.newHashSet(hamster);
-    Set<SkyKey> leafs = Sets.newHashSet(dog);
-
-    FocusResult unused = SkyframeFocuser.focus(graph, mockActionCache, roots, leafs);
-
-    verify(mockActionCache).remove(catAction.getPrimaryOutput().getExecPathString());
-    verify(mockActionCache, never()).remove(dogAction.getPrimaryOutput().getExecPathString());
-    verify(mockActionCache, never()).remove(hamsterAction.getPrimaryOutput().getExecPathString());
-  }
-
-  private static void createEdgesAndMarkDone(
-      InMemoryGraph graph, SkyKey k, ImmutableList<SkyKey> deps, ImmutableList<SkyKey> rdeps)
-      throws InterruptedException {
-    createEdgesAndMarkDone(graph, k, deps, rdeps, new StringValue("unused"));
-  }
-
-  // Create dep and rdep edges for a node, and ensures that it's marked done.
-  private static void createEdgesAndMarkDone(
-      InMemoryGraph graph,
-      SkyKey k,
-      ImmutableList<SkyKey> deps,
-      ImmutableList<SkyKey> rdeps,
-      SkyValue value)
-      throws InterruptedException {
-    NodeEntry entry = graph.getIfPresent(k);
-    assertThat(entry).isNotNull();
-    if (rdeps.isEmpty()) {
-      entry.addReverseDepAndCheckIfDone(null);
-    } else {
-      for (SkyKey rdep : rdeps) {
-        entry.addReverseDepAndCheckIfDone(rdep);
-      }
-    }
-    entry.markRebuilding();
-    for (SkyKey dep : deps) {
-      entry.addSingletonTemporaryDirectDep(dep);
-      entry.signalDep(Version.constant(), dep);
-    }
-    entry.setValue(value, Version.constant(), null);
-  }
-
-  private static final class SkyKeyWithSkyKeyInterner extends AbstractSkyKey<String> {
-    private static final SkyKeyInterner<SkyframeFocuserTest.SkyKeyWithSkyKeyInterner> interner =
-        SkyKey.newInterner();
-
-    static SkyKeyWithSkyKeyInterner create(String arg) {
-      return interner.intern(new SkyframeFocuserTest.SkyKeyWithSkyKeyInterner(arg));
+        assertThat(focusResult.deps()).isEmpty()
+        assertThat(focusResult.rdeps()).isEmpty()
     }
 
-    private SkyKeyWithSkyKeyInterner(String arg) {
-      super(arg);
+    @org.junit.Test
+    @Throws(java.lang.InterruptedException::class)
+    fun testFocus_keepsLeafs() {
+        val graph: InMemoryGraph = skyframeExecutor.getEvaluator().getInMemoryGraph()
+        val cat: SkyKey =
+            com.google.devtools.build.lib.skyframe.SkyframeFocuserTest.SkyKeyWithSkyKeyInterner.Companion.create("cat")
+        val dog: SkyKey =
+            com.google.devtools.build.lib.skyframe.SkyframeFocuserTest.SkyKeyWithSkyKeyInterner.Companion.create("dog")
+        val keys: com.google.common.collect.ImmutableList<SkyKey?> =
+            com.google.common.collect.ImmutableList.of<SkyKey?>(cat, dog)
+
+        graph.createIfAbsentBatch(null, Reason.OTHER, keys)
+
+        createEdgesAndMarkDone(
+            graph,
+            cat,
+            com.google.common.collect.ImmutableList.of<SkyKey?>(),
+            com.google.common.collect.ImmutableList.of<SkyKey?>()
+        )
+        createEdgesAndMarkDone(
+            graph,
+            dog,
+            com.google.common.collect.ImmutableList.of<SkyKey?>(),
+            com.google.common.collect.ImmutableList.of<SkyKey?>()
+        )
+
+        val roots: MutableSet<SkyKey?> = com.google.common.collect.Sets.newHashSet<SkyKey?>()
+        val leafs: MutableSet<SkyKey?> = com.google.common.collect.Sets.newHashSet<SkyKey?>(cat, dog)
+
+        val focusResult: FocusResult = SkyframeFocuser.focus(graph, mockActionCache, roots, leafs)
+
+        assertThat(focusResult.deps()).isEmpty()
+        assertThat(focusResult.rdeps()).containsExactly(cat, dog)
+        assertThat(graph.values.keySet()).containsExactly(cat, dog)
     }
 
-    @Override
-    public SkyFunctionName functionName() {
-      return SkyFunctionName.FOR_TESTING;
+    @org.junit.Test
+    @Throws(java.lang.InterruptedException::class)
+    fun testFocus_dropsUnreachableNodesFromLeafs() {
+        val graph: InMemoryGraph = skyframeExecutor.getEvaluator().getInMemoryGraph()
+        val cat: SkyKey =
+            com.google.devtools.build.lib.skyframe.SkyframeFocuserTest.SkyKeyWithSkyKeyInterner.Companion.create("cat")
+        val dog: SkyKey =
+            com.google.devtools.build.lib.skyframe.SkyframeFocuserTest.SkyKeyWithSkyKeyInterner.Companion.create("dog")
+        val keys: com.google.common.collect.ImmutableList<SkyKey?> =
+            com.google.common.collect.ImmutableList.of<SkyKey?>(cat, dog)
+
+        graph.createIfAbsentBatch(null, Reason.OTHER, keys)
+
+        createEdgesAndMarkDone(
+            graph,
+            cat,
+            com.google.common.collect.ImmutableList.of<SkyKey?>(),
+            com.google.common.collect.ImmutableList.of<SkyKey?>()
+        )
+        createEdgesAndMarkDone(
+            graph,
+            dog,
+            com.google.common.collect.ImmutableList.of<SkyKey?>(),
+            com.google.common.collect.ImmutableList.of<SkyKey?>()
+        )
+
+        val roots: MutableSet<SkyKey?> = com.google.common.collect.Sets.newHashSet<SkyKey?>()
+        val leafs: MutableSet<SkyKey?> = com.google.common.collect.Sets.newHashSet(cat) // dog is unreachable
+
+        val focusResult: FocusResult = SkyframeFocuser.focus(graph, mockActionCache, roots, leafs)
+
+        assertThat(focusResult.deps()).isEmpty()
+        assertThat(focusResult.rdeps()).containsExactly(cat)
+        assertThat(graph.values.keySet()).containsExactly(cat)
     }
 
-    @Override
-    public SkyKeyInterner<SkyframeFocuserTest.SkyKeyWithSkyKeyInterner> getSkyKeyInterner() {
-      return interner;
+    @org.junit.Test
+    @Throws(java.lang.InterruptedException::class)
+    fun testFocus_keepsReverseDepOfLeafs() {
+        val graph: InMemoryGraph = skyframeExecutor.getEvaluator().getInMemoryGraph()
+        val cat: SkyKey =
+            com.google.devtools.build.lib.skyframe.SkyframeFocuserTest.SkyKeyWithSkyKeyInterner.Companion.create("cat")
+        val dog: SkyKey =
+            com.google.devtools.build.lib.skyframe.SkyframeFocuserTest.SkyKeyWithSkyKeyInterner.Companion.create("dog")
+        val keys: com.google.common.collect.ImmutableList<SkyKey?> =
+            com.google.common.collect.ImmutableList.of<SkyKey?>(cat, dog)
+
+        graph.createIfAbsentBatch(null, Reason.OTHER, keys)
+        createEdgesAndMarkDone(
+            graph,
+            cat,
+            com.google.common.collect.ImmutableList.of<SkyKey?>(),
+            com.google.common.collect.ImmutableList.of<SkyKey?>(dog)
+        )
+        createEdgesAndMarkDone(
+            graph,
+            dog,
+            com.google.common.collect.ImmutableList.of<SkyKey?>(),
+            com.google.common.collect.ImmutableList.of<SkyKey?>()
+        )
+
+        val roots: MutableSet<SkyKey?> = com.google.common.collect.Sets.newHashSet<SkyKey?>()
+        val leafs: MutableSet<SkyKey?> = com.google.common.collect.Sets.newHashSet(cat) // dog is cat's rdep
+
+        val focusResult: FocusResult = SkyframeFocuser.focus(graph, mockActionCache, roots, leafs)
+
+        assertThat(focusResult.deps()).isEmpty()
+        assertThat(focusResult.rdeps()).containsExactly(cat, dog)
+        assertThat(graph.values.keySet()).containsExactly(cat, dog)
     }
-  }
+
+    @org.junit.Test
+    @Throws(java.lang.InterruptedException::class)
+    fun testFocus_keepsRoots() {
+        val graph: InMemoryGraph = skyframeExecutor.getEvaluator().getInMemoryGraph()
+        val cat: SkyKey =
+            com.google.devtools.build.lib.skyframe.SkyframeFocuserTest.SkyKeyWithSkyKeyInterner.Companion.create("cat")
+        val dog: SkyKey =
+            com.google.devtools.build.lib.skyframe.SkyframeFocuserTest.SkyKeyWithSkyKeyInterner.Companion.create("dog")
+        val keys: com.google.common.collect.ImmutableList<SkyKey?> =
+            com.google.common.collect.ImmutableList.of<SkyKey?>(cat, dog)
+
+        graph.createIfAbsentBatch(null, Reason.OTHER, keys)
+        createEdgesAndMarkDone(
+            graph,
+            cat,
+            com.google.common.collect.ImmutableList.of<SkyKey?>(),
+            com.google.common.collect.ImmutableList.of<SkyKey?>()
+        )
+        createEdgesAndMarkDone(
+            graph,
+            dog,
+            com.google.common.collect.ImmutableList.of<SkyKey?>(),
+            com.google.common.collect.ImmutableList.of<SkyKey?>()
+        )
+
+        val roots: MutableSet<SkyKey?> = com.google.common.collect.Sets.newHashSet<SkyKey?>(cat, dog)
+        val leafs: MutableSet<SkyKey?> = com.google.common.collect.Sets.newHashSet<SkyKey?>()
+
+        val focusResult: FocusResult = SkyframeFocuser.focus(graph, mockActionCache, roots, leafs)
+
+        assertThat(focusResult.deps()).containsExactly(cat, dog)
+        assertThat(focusResult.rdeps()).isEmpty()
+        assertThat(graph.values.keySet()).containsExactly(cat, dog)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.InterruptedException::class)
+    fun testFocus_dropsUnreachableFromRoots() {
+        val graph: InMemoryGraph = skyframeExecutor.getEvaluator().getInMemoryGraph()
+        val cat: SkyKey =
+            com.google.devtools.build.lib.skyframe.SkyframeFocuserTest.SkyKeyWithSkyKeyInterner.Companion.create("cat")
+        val dog: SkyKey =
+            com.google.devtools.build.lib.skyframe.SkyframeFocuserTest.SkyKeyWithSkyKeyInterner.Companion.create("dog")
+        val keys: com.google.common.collect.ImmutableList<SkyKey?> =
+            com.google.common.collect.ImmutableList.of<SkyKey?>(cat, dog)
+
+        graph.createIfAbsentBatch(null, Reason.OTHER, keys)
+        createEdgesAndMarkDone(
+            graph,
+            cat,
+            com.google.common.collect.ImmutableList.of<SkyKey?>(),
+            com.google.common.collect.ImmutableList.of<SkyKey?>()
+        )
+        createEdgesAndMarkDone(
+            graph,
+            dog,
+            com.google.common.collect.ImmutableList.of<SkyKey?>(),
+            com.google.common.collect.ImmutableList.of<SkyKey?>()
+        )
+
+        val roots: MutableSet<SkyKey?> = com.google.common.collect.Sets.newHashSet(cat)
+        val leafs: MutableSet<SkyKey?> = com.google.common.collect.Sets.newHashSet<SkyKey?>()
+
+        val focusResult: FocusResult = SkyframeFocuser.focus(graph, mockActionCache, roots, leafs)
+
+        assertThat(focusResult.deps()).containsExactly(cat)
+        assertThat(focusResult.rdeps()).isEmpty()
+        assertThat(graph.values.keySet()).containsExactly(cat)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.InterruptedException::class)
+    fun testFocus_keepDirectDepsOfRdepTransitiveClosure() {
+        val graph: InMemoryGraph = skyframeExecutor.getEvaluator().getInMemoryGraph()
+        val cat: SkyKey =
+            com.google.devtools.build.lib.skyframe.SkyframeFocuserTest.SkyKeyWithSkyKeyInterner.Companion.create("cat")
+        val dog: SkyKey =
+            com.google.devtools.build.lib.skyframe.SkyframeFocuserTest.SkyKeyWithSkyKeyInterner.Companion.create("dog")
+        val civet: SkyKey =
+            com.google.devtools.build.lib.skyframe.SkyframeFocuserTest.SkyKeyWithSkyKeyInterner.Companion.create("civet")
+        val hamster: SkyKey =
+            com.google.devtools.build.lib.skyframe.SkyframeFocuserTest.SkyKeyWithSkyKeyInterner.Companion.create("hamster")
+        val fish: SkyKey =
+            com.google.devtools.build.lib.skyframe.SkyframeFocuserTest.SkyKeyWithSkyKeyInterner.Companion.create("fish")
+        val bird: SkyKey =
+            com.google.devtools.build.lib.skyframe.SkyframeFocuserTest.SkyKeyWithSkyKeyInterner.Companion.create("bird")
+        val monkey: SkyKey =
+            com.google.devtools.build.lib.skyframe.SkyframeFocuserTest.SkyKeyWithSkyKeyInterner.Companion.create("monkey")
+        val keys: com.google.common.collect.ImmutableList<SkyKey?> =
+            com.google.common.collect.ImmutableList.of<SkyKey?>(cat, dog, civet, hamster, fish, bird, monkey)
+        graph.createIfAbsentBatch(null, Reason.OTHER, keys)
+
+        // Graph:
+        //
+        // monkey (isolated)
+        //
+        //    /-> fish -> bird
+        // cat -> dog -> civet*
+        //          \-> hamster
+        //
+        // *Only civet in the active directories.
+        createEdgesAndMarkDone(
+            graph,
+            civet,
+            com.google.common.collect.ImmutableList.of<SkyKey?>(),
+            com.google.common.collect.ImmutableList.of<SkyKey?>(dog)
+        )
+        createEdgesAndMarkDone(
+            graph,
+            hamster,
+            com.google.common.collect.ImmutableList.of<SkyKey?>(),
+            com.google.common.collect.ImmutableList.of<SkyKey?>(dog)
+        )
+        createEdgesAndMarkDone(
+            graph,
+            dog,
+            com.google.common.collect.ImmutableList.of<SkyKey?>(civet, hamster),
+            com.google.common.collect.ImmutableList.of<SkyKey?>(cat)
+        )
+        createEdgesAndMarkDone(
+            graph,
+            bird,
+            com.google.common.collect.ImmutableList.of<SkyKey?>(),
+            com.google.common.collect.ImmutableList.of<SkyKey?>(fish)
+        )
+        createEdgesAndMarkDone(
+            graph,
+            fish,
+            com.google.common.collect.ImmutableList.of<SkyKey?>(bird),
+            com.google.common.collect.ImmutableList.of<SkyKey?>(cat)
+        )
+        createEdgesAndMarkDone(
+            graph,
+            cat,
+            com.google.common.collect.ImmutableList.of<SkyKey?>(dog, fish),
+            com.google.common.collect.ImmutableList.of<SkyKey?>()
+        )
+        createEdgesAndMarkDone(
+            graph,
+            monkey,
+            com.google.common.collect.ImmutableList.of<SkyKey?>(),
+            com.google.common.collect.ImmutableList.of<SkyKey?>()
+        )
+
+        val roots: MutableSet<SkyKey?> = com.google.common.collect.Sets.newHashSet(cat)
+        val leafs: MutableSet<SkyKey?> = com.google.common.collect.Sets.newHashSet(civet)
+
+        val focusResult: FocusResult = SkyframeFocuser.focus(graph, mockActionCache, roots, leafs)
+
+        assertThat(focusResult.deps()).containsExactly(hamster, fish)
+        assertThat(focusResult.rdeps()).containsExactly(civet, dog, cat)
+
+        // no monkey (isolated) and bird (indirect dep)
+        assertThat(graph.values.keySet()).containsExactly(hamster, fish, civet, dog, cat)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.InterruptedException::class)
+    fun testFocus_removeActionCacheEntries() {
+        val graph: InMemoryGraph = skyframeExecutor.getEvaluator().getInMemoryGraph()
+        val cat: SkyKey =
+            com.google.devtools.build.lib.skyframe.SkyframeFocuserTest.SkyKeyWithSkyKeyInterner.Companion.create("cat")
+        val dog: SkyKey =
+            com.google.devtools.build.lib.skyframe.SkyframeFocuserTest.SkyKeyWithSkyKeyInterner.Companion.create("dog")
+        val hamster: SkyKey =
+            com.google.devtools.build.lib.skyframe.SkyframeFocuserTest.SkyKeyWithSkyKeyInterner.Companion.create("hamster")
+        val keys: com.google.common.collect.ImmutableList<SkyKey?> =
+            com.google.common.collect.ImmutableList.of<SkyKey?>(cat, dog, hamster)
+        graph.createIfAbsentBatch(null, Reason.OTHER, keys)
+
+        val artifactRoot: ArtifactRoot? =
+            ArtifactRoot.asDerivedRoot(
+                this.directories.getExecRoot("workspace"), RootType.OUTPUT, "blaze-out"
+            )
+
+        val catAction: Action = NullAction(createArtifact(artifactRoot, "cat"))
+        val dogAction: Action = NullAction(createArtifact(artifactRoot, "dog"))
+        val hamsterAction: Action = NullAction(createArtifact(artifactRoot, "hamster"))
+
+        createEdgesAndMarkDone(
+            graph,
+            cat,
+            com.google.common.collect.ImmutableList.of<SkyKey?>(),
+            com.google.common.collect.ImmutableList.of<SkyKey?>(),
+            BasicActionLookupValue(com.google.common.collect.ImmutableList.of<E?>(catAction))
+        )
+        createEdgesAndMarkDone(
+            graph,
+            dog,
+            com.google.common.collect.ImmutableList.of<SkyKey?>(),
+            com.google.common.collect.ImmutableList.of<SkyKey?>(hamster),
+            BasicActionLookupValue(com.google.common.collect.ImmutableList.of<E?>(dogAction))
+        )
+        createEdgesAndMarkDone(
+            graph,
+            hamster,
+            com.google.common.collect.ImmutableList.of<SkyKey?>(dog),
+            com.google.common.collect.ImmutableList.of<SkyKey?>(),
+            BasicActionLookupValue(com.google.common.collect.ImmutableList.of<E?>(hamsterAction))
+        )
+
+        val roots: MutableSet<SkyKey?> = com.google.common.collect.Sets.newHashSet(hamster)
+        val leafs: MutableSet<SkyKey?> = com.google.common.collect.Sets.newHashSet(dog)
+
+        val unused: FocusResult? = SkyframeFocuser.focus(graph, mockActionCache, roots, leafs)
+
+        Mockito.verify<Any?>(mockActionCache).remove(catAction.getPrimaryOutput().getExecPathString())
+        Mockito.verify<Any?>(mockActionCache, Mockito.never()).remove(dogAction.getPrimaryOutput().getExecPathString())
+        Mockito.verify<Any?>(mockActionCache, Mockito.never())
+            .remove(hamsterAction.getPrimaryOutput().getExecPathString())
+    }
+
+    private class SkyKeyWithSkyKeyInterner(arg: String?) : AbstractSkyKey<String?>(arg) {
+        public override fun functionName(): SkyFunctionName {
+            return SkyFunctionName.FOR_TESTING
+        }
+
+        val skyKeyInterner: SkyKeyInterner<SkyKeyWithSkyKeyInterner?>
+            get() = com.google.devtools.build.lib.skyframe.SkyframeFocuserTest.SkyKeyWithSkyKeyInterner.Companion.interner
+
+        companion object {
+            private val interner: SkyKeyInterner<SkyKeyWithSkyKeyInterner?> = SkyKey.newInterner()
+
+            fun create(arg: String?): SkyKeyWithSkyKeyInterner {
+                return com.google.devtools.build.lib.skyframe.SkyframeFocuserTest.SkyKeyWithSkyKeyInterner.Companion.interner.intern(
+                    com.google.devtools.build.lib.skyframe.SkyframeFocuserTest.SkyKeyWithSkyKeyInterner(arg)
+                )
+            }
+        }
+    }
+
+    companion object {
+        @Throws(java.lang.InterruptedException::class)
+        private fun createEdgesAndMarkDone(
+            graph: InMemoryGraph,
+            k: SkyKey?,
+            deps: com.google.common.collect.ImmutableList<SkyKey?>,
+            rdeps: com.google.common.collect.ImmutableList<SkyKey?>
+        ) {
+            createEdgesAndMarkDone(graph, k, deps, rdeps, GraphTester.StringValue("unused"))
+        }
+
+        // Create dep and rdep edges for a node, and ensures that it's marked done.
+        @Throws(java.lang.InterruptedException::class)
+        private fun createEdgesAndMarkDone(
+            graph: InMemoryGraph,
+            k: SkyKey?,
+            deps: com.google.common.collect.ImmutableList<SkyKey?>,
+            rdeps: com.google.common.collect.ImmutableList<SkyKey?>,
+            value: SkyValue?
+        ) {
+            val entry: NodeEntry = graph.getIfPresent(k)
+            assertThat(entry).isNotNull()
+            if (rdeps.isEmpty()) {
+                entry.addReverseDepAndCheckIfDone(null)
+            } else {
+                for (rdep in rdeps) {
+                    entry.addReverseDepAndCheckIfDone(rdep)
+                }
+            }
+            entry.markRebuilding()
+            for (dep in deps) {
+                entry.addSingletonTemporaryDirectDep(dep)
+                entry.signalDep(Version.constant(), dep)
+            }
+            entry.setValue(value, Version.constant(), null)
+        }
+    }
 }

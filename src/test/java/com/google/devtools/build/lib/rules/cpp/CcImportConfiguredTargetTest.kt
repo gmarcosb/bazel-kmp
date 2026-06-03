@@ -12,15 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 // Copyright 2006 Google Inc. All rights reserved.
+package com.google.devtools.build.lib.rules.cpp
 
-package com.google.devtools.build.lib.rules.cpp;
+import com.google.devtools.build.lib.rules.cpp.CcImportBaseConfiguredTargetTest
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** "White-box" unit test of cc_import rule. */
-@RunWith(JUnit4.class)
-public class CcImportConfiguredTargetTest extends CcImportBaseConfiguredTargetTest {
-  @Override
-  protected void setIsStarlarkImplementation() {}
+/** "White-box" unit test of cc_import rule.  */
+@RunWith(JUnit4::class)
+class CcImportConfiguredTargetTest : CcImportBaseConfiguredTargetTest() {
+    override fun setIsStarlarkImplementation() {}
 }

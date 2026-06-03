@@ -11,99 +11,81 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules
 
-package com.google.devtools.build.lib.rules;
-
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.devtools.build.lib.analysis.AliasProvider;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.config.Fragment;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.Attribute.LabelLateBoundDefault;
-import com.google.devtools.build.lib.packages.AttributeMap;
-import com.google.devtools.build.lib.packages.Rule;
-import com.google.devtools.build.lib.rules.LateBoundAlias.CommonAliasRule;
-import com.google.devtools.build.lib.testutil.TestRuleClassProvider;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.analysis.AliasProvider
 
 /**
  * Tests that LateBoundAlias can resolve null actual reference.
  */
-@RunWith(JUnit4.class)
-public class LateBoundAliasTest extends BuildViewTestCase {
+@RunWith(JUnit4::class)
+class LateBoundAliasTest : BuildViewTestCase() {
+    /** Test fragment.  */
+    class TestFragment(buildOptions: BuildOptions?) : Fragment()
 
-  /** Test fragment. */
-  public static final class TestFragment extends Fragment {
-    public TestFragment(BuildOptions buildOptions) {}
-  }
-
-  private static final class TestLateBoundDefault extends LabelLateBoundDefault<TestFragment> {
-
-    private TestLateBoundDefault() {
-      super(TestFragment.class, (rule) -> null, null);
+    private class TestLateBoundDefault : LabelLateBoundDefault<TestFragment?>(
+        com.google.devtools.build.lib.rules.LateBoundAliasTest.TestFragment::class.java,
+        { rule -> null },
+        null
+    ) {
+        public override fun resolve(rule: Rule?, attributes: AttributeMap?, input: TestFragment?): Label? {
+            return null
+        }
     }
 
-    @Override
-    public Label resolve(Rule rule, AttributeMap attributes, TestFragment input) {
-      return null;
+    private class MyTestRule : CommonAliasRule<TestFragment?>(
+        "test_rule_name",
+        { env -> TestLateBoundDefault() },
+        com.google.devtools.build.lib.rules.LateBoundAliasTest.TestFragment::class.java
+    )
+
+    override fun createRuleClassProvider(): ConfiguredRuleClassProvider {
+        val builder: ConfiguredRuleClassProvider.Builder = Builder()
+        TestRuleClassProvider.addStandardRules(builder)
+        builder.addConfigurationFragment(com.google.devtools.build.lib.rules.LateBoundAliasTest.TestFragment::class.java)
+        builder.addRuleDefinition(MyTestRule())
+        return builder.build()
     }
-  }
 
-  private static final class MyTestRule extends CommonAliasRule<TestFragment> {
-    public MyTestRule() {
-      super("test_rule_name", env -> new TestLateBoundDefault(), TestFragment.class);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testResolveNullTarget() {
+        scratch.file("a/BUILD", "test_rule_name(name='alias')")
+
+        val alias: ConfiguredTarget = getConfiguredTarget("//a:alias")
+
+        assertThat(alias).isNotNull()
     }
-  }
 
-  @Override
-  protected ConfiguredRuleClassProvider createRuleClassProvider() {
-    ConfiguredRuleClassProvider.Builder builder = new ConfiguredRuleClassProvider.Builder();
-    TestRuleClassProvider.addStandardRules(builder);
-    builder.addConfigurationFragment(TestFragment.class);
-    builder.addRuleDefinition(new MyTestRule());
-    return builder.build();
-  }
-
-  @Test
-  public void testResolveNullTarget() throws Exception {
-    scratch.file("a/BUILD", "test_rule_name(name='alias')");
-
-    ConfiguredTarget alias = getConfiguredTarget("//a:alias");
-
-    assertThat(alias).isNotNull();
-  }
-
-  @Test
-  public void testNullTargetCanBeDependant() throws Exception {
-    scratch.file(
-        "a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNullTargetCanBeDependant() {
+        scratch.file(
+            "a/BUILD",
+            """
         test_rule_name(name = "alias")
 
         filegroup(
             name = "my_filegroup",
             srcs = [":alias"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget myFilegroup = getConfiguredTarget("//a:my_filegroup");
+        val myFilegroup: ConfiguredTarget = getConfiguredTarget("//a:my_filegroup")
 
-    assertThat(myFilegroup).isNotNull();
-  }
+        assertThat(myFilegroup).isNotNull()
+    }
 
-  @Test
-  public void testNullTargetHasLateBoundAliasProvider() throws Exception {
-    scratch.file("a/BUILD", "test_rule_name(name='alias')");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNullTargetHasLateBoundAliasProvider() {
+        scratch.file("a/BUILD", "test_rule_name(name='alias')")
 
-    ConfiguredTarget alias = getConfiguredTarget("//a:alias");
+        val alias: ConfiguredTarget = getConfiguredTarget("//a:alias")
 
-    assertThat(alias).isNotNull();
-    assertThat(alias.getProvider(AliasProvider.LateBoundAliasProvider.class)).isNotNull();
-  }
+        assertThat(alias).isNotNull()
+        assertThat(alias.getProvider(AliasProvider.LateBoundAliasProvider::class.java)).isNotNull()
+    }
 }

@@ -11,56 +11,49 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
+import com.google.devtools.build.lib.concurrent.MultiThreadPoolsQuiescingExecutor
 
-import com.github.benmanes.caffeine.cache.Cache;
-import com.google.devtools.build.lib.concurrent.MultiThreadPoolsQuiescingExecutor;
-import com.google.devtools.build.lib.concurrent.MultiThreadPoolsQuiescingExecutor.ThreadPoolType;
-import com.google.devtools.build.skyframe.ParallelEvaluatorContext.RunnableMaker;
-import com.google.devtools.build.skyframe.SkyFunction.Environment.SkyKeyComputeState;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnit;
-import org.mockito.junit.MockitoRule;
+/** Tests for [NodeEntryVisitor].  */
+@RunWith(JUnit4::class)
+class NodeEntryVisitorTest {
+    @org.junit.Rule
+    val mockito: MockitoRule = MockitoJUnit.rule()
 
-/** Tests for {@link NodeEntryVisitor}. */
-@RunWith(JUnit4.class)
-public class NodeEntryVisitorTest {
-  @Rule public final MockitoRule mockito = MockitoJUnit.rule();
+    @org.mockito.Mock
+    private val executor: MultiThreadPoolsQuiescingExecutor? = null
 
-  @Mock private MultiThreadPoolsQuiescingExecutor executor;
-  @Mock private InflightTrackingProgressReceiver receiver;
-  @Mock private RunnableMaker runnableMaker;
-  @Mock private Cache<SkyKey, SkyKeyComputeState> stateCache;
+    @org.mockito.Mock
+    private val receiver: InflightTrackingProgressReceiver? = null
 
-  @Test
-  public void enqueueEvaluation_multiThreadPoolsQuiescingExecutor_nonCPUHeavyKey() {
-    NodeEntryVisitor nodeEntryVisitor =
-        new NodeEntryVisitor(executor, receiver, runnableMaker, stateCache);
-    SkyKey nonCPUHeavyKey = mock(SkyKey.class);
+    @org.mockito.Mock
+    private val runnableMaker: RunnableMaker? = null
 
-    nodeEntryVisitor.enqueueEvaluation(nonCPUHeavyKey, null);
+    @org.mockito.Mock
+    private val stateCache: com.github.benmanes.caffeine.cache.Cache<SkyKey?, SkyKeyComputeState?>? = null
 
-    verify(executor).execute(any(), eq(ThreadPoolType.REGULAR), anyBoolean());
-  }
+    @org.junit.Test
+    fun enqueueEvaluation_multiThreadPoolsQuiescingExecutor_nonCPUHeavyKey() {
+        val nodeEntryVisitor: NodeEntryVisitor =
+            NodeEntryVisitor(executor, receiver, runnableMaker, stateCache)
+        val nonCPUHeavyKey: SkyKey? = Mockito.mock<SkyKey?>(SkyKey::class.java)
 
-  @Test
-  public void enqueueEvaluation_multiThreadPoolsQuiescingExecutor_cpuHeavyKey() {
-    NodeEntryVisitor nodeEntryVisitor =
-        new NodeEntryVisitor(executor, receiver, runnableMaker, stateCache);
-    CPUHeavySkyKey cpuHeavyKey = mock(CPUHeavySkyKey.class);
+        nodeEntryVisitor.enqueueEvaluation(nonCPUHeavyKey, null)
 
-    nodeEntryVisitor.enqueueEvaluation(cpuHeavyKey, null);
+        Mockito.verify<Any?>(executor)
+            .execute(ArgumentMatchers.any<T?>(), < T > eq < T ? > (ThreadPoolType.REGULAR), ArgumentMatchers.anyBoolean())
+    }
 
-    verify(executor).execute(any(), eq(ThreadPoolType.CPU_HEAVY), anyBoolean());
-  }
+    @org.junit.Test
+    fun enqueueEvaluation_multiThreadPoolsQuiescingExecutor_cpuHeavyKey() {
+        val nodeEntryVisitor: NodeEntryVisitor =
+            NodeEntryVisitor(executor, receiver, runnableMaker, stateCache)
+        val cpuHeavyKey: CPUHeavySkyKey? = Mockito.mock<CPUHeavySkyKey?>(CPUHeavySkyKey::class.java)
+
+        nodeEntryVisitor.enqueueEvaluation(cpuHeavyKey, null)
+
+        Mockito.verify<Any?>(executor)
+            .execute(ArgumentMatchers.any<T?>(), < T > eq < T ? > (ThreadPoolType.CPU_HEAVY), ArgumentMatchers.anyBoolean())
+    }
 }

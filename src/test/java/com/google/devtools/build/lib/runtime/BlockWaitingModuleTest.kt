@@ -11,117 +11,112 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
+import com.google.devtools.build.lib.runtime.BlockWaitingModule.Task
 
-import com.google.devtools.build.lib.runtime.BlockWaitingModule.Task;
-import com.google.devtools.build.lib.server.FailureDetails.Crash;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.util.AbruptExitException;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import java.util.concurrent.ExecutionException;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-import org.mockito.Mock;
+/** Tests for [BlockWaitingModule].  */
+@RunWith(JUnit4::class)
+class BlockWaitingModuleTest {
+    @org.mockito.Mock
+    var env: CommandEnvironment? = null
 
-/** Tests for {@link BlockWaitingModule}. */
-@RunWith(JUnit4.class)
-public final class BlockWaitingModuleTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubmitZeroTasks() {
+        // arrange
+        val m: BlockWaitingModule = BlockWaitingModule()
 
-  private static final DetailedExitCode CRASH =
-      DetailedExitCode.of(
-          FailureDetail.newBuilder()
-              .setMessage("crash")
-              .setCrash(Crash.newBuilder().setCode(Crash.Code.CRASH_UNKNOWN))
-              .build());
+        // act
+        m.beforeCommand(env)
+        m.afterCommand()
 
-  @Mock CommandEnvironment env;
+        // nothing to assert
+    }
 
-  @Test
-  public void testSubmitZeroTasks() throws Exception {
-    // arrange
-    BlockWaitingModule m = new BlockWaitingModule();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubmitOneTask() {
+        // arrange
+        val m: BlockWaitingModule = BlockWaitingModule()
+        val t: Task? = Mockito.mock<Task?>(Task::class.java)
 
-    // act
-    m.beforeCommand(env);
-    m.afterCommand();
+        // act
+        m.beforeCommand(env)
+        m.submit(t)
+        m.afterCommand()
 
-    // nothing to assert
-  }
+        // assert
+        Mockito.verify<Any?>(t).call()
+    }
 
-  @Test
-  public void testSubmitOneTask() throws Exception {
-    // arrange
-    BlockWaitingModule m = new BlockWaitingModule();
-    Task t = mock(Task.class);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubmitMultipleTasks() {
+        // arrange
+        val m: BlockWaitingModule = BlockWaitingModule()
+        val t1: Task? = Mockito.mock<Task?>(Task::class.java)
+        val t2: Task? = Mockito.mock<Task?>(Task::class.java)
+        val t3: Task? = Mockito.mock<Task?>(Task::class.java)
 
-    // act
-    m.beforeCommand(env);
-    m.submit(t);
-    m.afterCommand();
+        // act
+        m.beforeCommand(env)
+        m.submit(t1)
+        m.submit(t2)
+        m.submit(t3)
+        m.afterCommand()
 
-    // assert
-    verify(t).call();
-  }
+        // assert
+        Mockito.verify<Any?>(t1).call()
+        Mockito.verify<Any?>(t2).call()
+        Mockito.verify<Any?>(t3).call()
+    }
 
-  @Test
-  public void testSubmitMultipleTasks() throws Exception {
-    // arrange
-    BlockWaitingModule m = new BlockWaitingModule();
-    Task t1 = mock(Task.class);
-    Task t2 = mock(Task.class);
-    Task t3 = mock(Task.class);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTaskThrowsAbruptExitException() {
+        // arrange
+        val m: BlockWaitingModule = BlockWaitingModule()
+        val t: Task? = Mockito.mock<Task?>(Task::class.java)
+        doThrow(AbruptExitException(CRASH)).`when`<Any?>(t).call()
 
-    // act
-    m.beforeCommand(env);
-    m.submit(t1);
-    m.submit(t2);
-    m.submit(t3);
-    m.afterCommand();
+        // act
+        m.beforeCommand(env)
+        m.submit(t)
 
-    // assert
-    verify(t1).call();
-    verify(t2).call();
-    verify(t3).call();
-  }
+        // assert
+        val e: Throwable = org.junit.Assert.assertThrows<T>(AbruptExitException::class.java, m::afterCommand)
+        assertThat((e as AbruptExitException).getDetailedExitCode()).isEqualTo(CRASH)
+    }
 
-  @Test
-  public void testTaskThrowsAbruptExitException() throws Exception {
-    // arrange
-    BlockWaitingModule m = new BlockWaitingModule();
-    Task t = mock(Task.class);
-    doThrow(new AbruptExitException(CRASH)).when(t).call();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTaskThrowsUnrecognizedException() {
+        // arrange
+        val m: BlockWaitingModule = BlockWaitingModule()
+        val t: Task? = Mockito.mock<Task?>(Task::class.java)
+        Mockito.doThrow(java.lang.IllegalStateException("illegal state")).`when`<Any?>(t).call()
 
-    // act
-    m.beforeCommand(env);
-    m.submit(t);
+        // act
+        m.beforeCommand(env)
+        m.submit(t)
 
-    // assert
-    Throwable e = assertThrows(AbruptExitException.class, m::afterCommand);
-    assertThat(((AbruptExitException) e).getDetailedExitCode()).isEqualTo(CRASH);
-  }
+        // assert
+        val e: Throwable? = org.junit.Assert.assertThrows<java.lang.RuntimeException?>(
+            java.lang.RuntimeException::class.java,
+            m::afterCommand
+        )
+        Truth.assertThat(e).hasCauseThat().isInstanceOf(ExecutionException::class.java)
+        Truth.assertThat(e).hasCauseThat().hasCauseThat().isInstanceOf(java.lang.IllegalStateException::class.java)
+        Truth.assertThat(e).hasCauseThat().hasCauseThat().hasMessageThat().contains("illegal state")
+    }
 
-  @Test
-  public void testTaskThrowsUnrecognizedException() throws Exception {
-    // arrange
-    BlockWaitingModule m = new BlockWaitingModule();
-    Task t = mock(Task.class);
-    doThrow(new IllegalStateException("illegal state")).when(t).call();
-
-    // act
-    m.beforeCommand(env);
-    m.submit(t);
-
-    // assert
-    Throwable e = assertThrows(RuntimeException.class, m::afterCommand);
-    assertThat(e).hasCauseThat().isInstanceOf(ExecutionException.class);
-    assertThat(e).hasCauseThat().hasCauseThat().isInstanceOf(IllegalStateException.class);
-    assertThat(e).hasCauseThat().hasCauseThat().hasMessageThat().contains("illegal state");
-  }
+    companion object {
+        private val CRASH: DetailedExitCode? = DetailedExitCode.of(
+            FailureDetail.newBuilder()
+                .setMessage("crash")
+                .setCrash(Crash.newBuilder().setCode(Crash.Code.CRASH_UNKNOWN))
+                .build()
+        )
+    }
 }

@@ -11,49 +11,38 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe
 
-package com.google.devtools.build.lib.skyframe;
-
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.skyframe.AbstractSkyFunctionEnvironmentForTesting;
-import com.google.devtools.build.skyframe.EvaluationResult;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.devtools.build.skyframe.ValueOrUntypedException;
+import com.google.devtools.build.skyframe.EvaluationResult
 
 /**
- * A {@link SkyFunction.Environment} backed by a {@link SkyframeExecutor} that can be used to
- * evaluate arbitrary {@link SkyKey}s for testing.
+ * A [SkyFunction.Environment] backed by a [SkyframeExecutor] that can be used to
+ * evaluate arbitrary [SkyKey]s for testing.
  */
-public final class SkyFunctionEnvironmentForTesting
-    extends AbstractSkyFunctionEnvironmentForTesting {
+class SkyFunctionEnvironmentForTesting
+    (eventHandler: ExtendedEventHandler?, skyframeExecutor: SkyframeExecutor) :
+    AbstractSkyFunctionEnvironmentForTesting() {
+    private val eventHandler: ExtendedEventHandler?
+    private val skyframeExecutor: SkyframeExecutor
 
-  private final ExtendedEventHandler eventHandler;
-  private final SkyframeExecutor skyframeExecutor;
-
-  public SkyFunctionEnvironmentForTesting(
-      ExtendedEventHandler eventHandler, SkyframeExecutor skyframeExecutor) {
-    this.eventHandler = eventHandler;
-    this.skyframeExecutor = skyframeExecutor;
-  }
-
-  @Override
-  protected ImmutableMap<SkyKey, ValueOrUntypedException> getValueOrUntypedExceptions(
-      Iterable<? extends SkyKey> depKeys) {
-    ImmutableMap.Builder<SkyKey, ValueOrUntypedException> resultMap = ImmutableMap.builder();
-    EvaluationResult<SkyValue> evaluationResult =
-        skyframeExecutor.evaluateSkyKeys(eventHandler, depKeys, /* keepGoing= */ true);
-    for (SkyKey depKey : ImmutableSet.copyOf(depKeys)) {
-      resultMap.put(depKey, ValueOrUntypedException.ofValueUntyped(evaluationResult.get(depKey)));
+    init {
+        this.eventHandler = eventHandler
+        this.skyframeExecutor = skyframeExecutor
     }
-    return resultMap.buildOrThrow();
-  }
 
-  @Override
-  public ExtendedEventHandler getListener() {
-    return eventHandler;
-  }
+    override fun getValueOrUntypedExceptions(
+        depKeys: Iterable<out SkyKey?>
+    ): com.google.common.collect.ImmutableMap<SkyKey?, ValueOrUntypedException?> {
+        val resultMap: com.google.common.collect.ImmutableMap.Builder<SkyKey?, ValueOrUntypedException?> =
+            com.google.common.collect.ImmutableMap.builder<SkyKey?, ValueOrUntypedException?>()
+        val evaluationResult: EvaluationResult<SkyValue?> =
+            skyframeExecutor.evaluateSkyKeys(eventHandler, depKeys,  /* keepGoing= */true)
+        for (depKey in com.google.common.collect.ImmutableSet.copyOf(depKeys)) {
+            resultMap.put(depKey, ValueOrUntypedException.ofValueUntyped(evaluationResult.get(depKey)))
+        }
+        return resultMap.buildOrThrow()
+    }
+
+    val listener: ExtendedEventHandler?
+        get() = eventHandler
 }

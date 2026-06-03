@@ -11,120 +11,110 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.Mockito.mock;
+import com.google.devtools.build.lib.cmdline.Label
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [CachedBzlLoadData].  */
+@RunWith(JUnit4::class)
+class CachedBzlLoadDataTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDepsAreNotVisitedMultipleTimesForDiamondDependencies() {
+        // Graph structure of BzlLoadValues:
+        //
+        //     p
+        //   /  \
+        //  c1  c2
+        //   \  /
+        //    gc
 
-/** Tests for {@link CachedBzlLoadData}. */
-@RunWith(JUnit4.class)
-public class CachedBzlLoadDataTest {
-  @Test
-  public void testDepsAreNotVisitedMultipleTimesForDiamondDependencies() throws Exception {
-    // Graph structure of BzlLoadValues:
-    //
-    //     p
-    //   /  \
-    //  c1  c2
-    //   \  /
-    //    gc
+        val dummyValue: BzlLoadValue? = Mockito.mock<BzlLoadValue?>(BzlLoadValue::class.java)
+        val cachedBzlLoadDataBuilderFactory: CachedBzlLoadDataBuilderFactory =
+            CachedBzlLoadDataBuilderFactory()
 
-    BzlLoadValue dummyValue = mock(BzlLoadValue.class);
-    CachedBzlLoadDataBuilderFactory cachedBzlLoadDataBuilderFactory =
-        new CachedBzlLoadDataBuilderFactory();
+        val gcKey: BzlLoadValue.Key = createStarlarkKey("//gc")
+        val gcKey1: SkyKey = createKey("gc key1")
+        val gcKey2: SkyKey = createKey("gc key2")
+        val gcKey3: SkyKey = createKey("gc key3")
+        val gc: CachedBzlLoadData? =
+            cachedBzlLoadDataBuilderFactory
+                .newCachedBzlLoadDataBuilder()
+                .addDep(gcKey1)
+                .addDeps(com.google.common.collect.ImmutableList.of<E?>(gcKey2, gcKey3))
+                .setKey(gcKey)
+                .setValue(dummyValue)
+                .build()
 
-    BzlLoadValue.Key gcKey = createStarlarkKey("//gc");
-    SkyKey gcKey1 = createKey("gc key1");
-    SkyKey gcKey2 = createKey("gc key2");
-    SkyKey gcKey3 = createKey("gc key3");
-    CachedBzlLoadData gc =
-        cachedBzlLoadDataBuilderFactory
-            .newCachedBzlLoadDataBuilder()
-            .addDep(gcKey1)
-            .addDeps(ImmutableList.of(gcKey2, gcKey3))
-            .setKey(gcKey)
-            .setValue(dummyValue)
-            .build();
+        val c1Key: BzlLoadValue.Key = createStarlarkKey("//c1")
+        val c1Key1: SkyKey = createKey("c1 key1")
+        val c1: CachedBzlLoadData? =
+            cachedBzlLoadDataBuilderFactory
+                .newCachedBzlLoadDataBuilder()
+                .addDep(c1Key1)
+                .addTransitiveDeps(gc)
+                .setValue(dummyValue)
+                .setKey(c1Key)
+                .build()
 
-    BzlLoadValue.Key c1Key = createStarlarkKey("//c1");
-    SkyKey c1Key1 = createKey("c1 key1");
-    CachedBzlLoadData c1 =
-        cachedBzlLoadDataBuilderFactory
-            .newCachedBzlLoadDataBuilder()
-            .addDep(c1Key1)
-            .addTransitiveDeps(gc)
-            .setValue(dummyValue)
-            .setKey(c1Key)
-            .build();
+        val c2Key: BzlLoadValue.Key = createStarlarkKey("//c2")
+        val c2Key1: SkyKey = createKey("c2 key1")
+        val c2Key2: SkyKey = createKey("c2 key2")
+        val c2: CachedBzlLoadData? =
+            cachedBzlLoadDataBuilderFactory
+                .newCachedBzlLoadDataBuilder()
+                .addDeps(com.google.common.collect.ImmutableList.of<E?>(c2Key1, c2Key2))
+                .addTransitiveDeps(gc)
+                .setValue(dummyValue)
+                .setKey(c2Key)
+                .build()
 
-    BzlLoadValue.Key c2Key = createStarlarkKey("//c2");
-    SkyKey c2Key1 = createKey("c2 key1");
-    SkyKey c2Key2 = createKey("c2 key2");
-    CachedBzlLoadData c2 =
-        cachedBzlLoadDataBuilderFactory
-            .newCachedBzlLoadDataBuilder()
-            .addDeps(ImmutableList.of(c2Key1, c2Key2))
-            .addTransitiveDeps(gc)
-            .setValue(dummyValue)
-            .setKey(c2Key)
-            .build();
+        val pKey: BzlLoadValue.Key = createStarlarkKey("//p")
+        val pKey1: SkyKey = createKey("p key1")
+        val p: CachedBzlLoadData =
+            cachedBzlLoadDataBuilderFactory
+                .newCachedBzlLoadDataBuilder()
+                .addDep(pKey1)
+                .addTransitiveDeps(c1)
+                .addTransitiveDeps(c2)
+                .setValue(dummyValue)
+                .setKey(pKey)
+                .build()
 
-    BzlLoadValue.Key pKey = createStarlarkKey("//p");
-    SkyKey pKey1 = createKey("p key1");
-    CachedBzlLoadData p =
-        cachedBzlLoadDataBuilderFactory
-            .newCachedBzlLoadDataBuilder()
-            .addDep(pKey1)
-            .addTransitiveDeps(c1)
-            .addTransitiveDeps(c2)
-            .setValue(dummyValue)
-            .setKey(pKey)
-            .build();
+        val registeredDeps: MutableList<Iterable<SkyKey?>?> = java.util.ArrayList<Iterable<SkyKey?>?>()
+        val visitedBzls: MutableMap<BzlLoadValue.Key?, CachedBzlLoadData?> =
+            HashMap<BzlLoadValue.Key?, CachedBzlLoadData?>()
+        p.traverse(registeredDeps::add, visitedBzls)
 
-    List<Iterable<SkyKey>> registeredDeps = new ArrayList<>();
-    Map<BzlLoadValue.Key, CachedBzlLoadData> visitedBzls = new HashMap<>();
-    p.traverse(registeredDeps::add, visitedBzls);
+        Truth.assertThat(registeredDeps)
+            .containsExactly(
+                com.google.common.collect.ImmutableList.of<Any?>(pKey1),
+                com.google.common.collect.ImmutableList.of<Any?>(c1Key1),
+                com.google.common.collect.ImmutableList.of<Any?>(gcKey1),
+                com.google.common.collect.ImmutableList.of<Any?>(gcKey2, gcKey3),
+                com.google.common.collect.ImmutableList.of<Any?>(c2Key1, c2Key2)
+            )
+            .inOrder()
 
-    assertThat(registeredDeps)
-        .containsExactly(
-            ImmutableList.of(pKey1),
-            ImmutableList.of(c1Key1),
-            ImmutableList.of(gcKey1),
-            ImmutableList.of(gcKey2, gcKey3),
-            ImmutableList.of(c2Key1, c2Key2))
-        .inOrder();
+        Truth.assertThat(visitedBzls).containsExactly(pKey, p, c1Key, c1, c2Key, c2, gcKey, gc)
+    }
 
-    assertThat(visitedBzls).containsExactly(pKey, p, c1Key, c1, c2Key, c2, gcKey, gc);
-  }
+    companion object {
+        private fun createKey(name: String): SkyKey {
+            return object : SkyKey() {
+                public override fun functionName(): SkyFunctionName {
+                    return SkyFunctionName.createHermetic(name)
+                }
 
-  private static SkyKey createKey(String name) {
-    return new SkyKey() {
-      @Override
-      public SkyFunctionName functionName() {
-        return SkyFunctionName.createHermetic(name);
-      }
+                // Override toString to assist debugging.
+                public override fun toString(): String {
+                    return name
+                }
+            }
+        }
 
-      // Override toString to assist debugging.
-      @Override
-      public String toString() {
-        return name;
-      }
-    };
-  }
-
-  private static BzlLoadValue.Key createStarlarkKey(String name) {
-    return BzlLoadValue.keyForBuild(Label.parseCanonicalUnchecked(name));
-  }
+        private fun createStarlarkKey(name: String?): BzlLoadValue.Key {
+            return BzlLoadValue.keyForBuild(Label.parseCanonicalUnchecked(name))
+        }
+    }
 }

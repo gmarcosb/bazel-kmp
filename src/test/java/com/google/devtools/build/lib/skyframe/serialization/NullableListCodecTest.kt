@@ -11,29 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester
 
-/** Tests for {@link NullableListCodec}. */
-@RunWith(JUnit4.class)
-public class NullableListCodecTest {
-  @Test
-  public void testCodec() throws Exception {
-    new SerializationTester(
-            new ArrayList<>(),
-            ImmutableList.of("foo"),
-            Arrays.asList("bar", "baz"),
-            Collections.singletonList(null),
-            Arrays.asList("bar", null, "baz"))
-        .makeMemoizing()
-        .runTests();
-  }
+/** Tests for [NullableListCodec].  */
+@RunWith(JUnit4::class)
+class NullableListCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCodec() {
+        SerializationTester(
+            java.util.ArrayList<E?>(),
+            com.google.common.collect.ImmutableList.of<E?>("foo"),
+            java.util.Arrays.asList<T?>("bar", "baz"),
+            Collections.singletonList<T?>(null),
+            java.util.Arrays.asList<T?>("bar", null, "baz")
+        )
+            .makeMemoizing()
+            .runTests()
+    }
 }

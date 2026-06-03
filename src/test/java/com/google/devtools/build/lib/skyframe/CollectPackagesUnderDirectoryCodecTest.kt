@@ -11,49 +11,45 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.skyframe.CollectPackagesUnderDirectoryValue.NoErrorCollectPackagesUnderDirectoryValue
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.skyframe.CollectPackagesUnderDirectoryValue.NoErrorCollectPackagesUnderDirectoryValue;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.FsUtils;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.RoundTripping;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.lib.vfs.RootedPath;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Test for codec for [CollectPackagesUnderDirectoryValue].  */
+@RunWith(JUnit4::class)
+class CollectPackagesUnderDirectoryCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCodec() {
+        val serializationTester: SerializationTester =
+            SerializationTester(
+                NoErrorCollectPackagesUnderDirectoryValue.EMPTY,
+                CollectPackagesUnderDirectoryValue.ofNoError(
+                    true, com.google.common.collect.ImmutableList.of<E?>(rootedPath("/a", "b"))
+                ),
+                CollectPackagesUnderDirectoryValue.ofNoError(
+                    false, com.google.common.collect.ImmutableList.of<E?>(rootedPath("/c", "d"))
+                ),
+                CollectPackagesUnderDirectoryValue.ofError(
+                    "my error message", com.google.common.collect.ImmutableList.of<E?>(rootedPath("/c", "d"))
+                )
+            )
+        FsUtils.addDependencies(serializationTester)
+        serializationTester.runTests()
+    }
 
-/** Test for codec for {@link CollectPackagesUnderDirectoryValue}. */
-@RunWith(JUnit4.class)
-public final class CollectPackagesUnderDirectoryCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEmptyDeserializesToSingletonValue() {
+        assertThat(RoundTripping.roundTrip(NoErrorCollectPackagesUnderDirectoryValue.EMPTY))
+            .isSameInstanceAs(NoErrorCollectPackagesUnderDirectoryValue.EMPTY)
+    }
 
-  @Test
-  public void testCodec() throws Exception {
-    SerializationTester serializationTester =
-        new SerializationTester(
-            NoErrorCollectPackagesUnderDirectoryValue.EMPTY,
-            CollectPackagesUnderDirectoryValue.ofNoError(
-                true, ImmutableList.of(rootedPath("/a", "b"))),
-            CollectPackagesUnderDirectoryValue.ofNoError(
-                false, ImmutableList.of(rootedPath("/c", "d"))),
-            CollectPackagesUnderDirectoryValue.ofError(
-                "my error message", ImmutableList.of(rootedPath("/c", "d"))));
-    FsUtils.addDependencies(serializationTester);
-    serializationTester.runTests();
-  }
-
-  @Test
-  public void testEmptyDeserializesToSingletonValue() throws Exception {
-    assertThat(RoundTripping.roundTrip(NoErrorCollectPackagesUnderDirectoryValue.EMPTY))
-        .isSameInstanceAs(NoErrorCollectPackagesUnderDirectoryValue.EMPTY);
-  }
-
-  private static RootedPath rootedPath(String root, String relativePath) {
-    return RootedPath.toRootedPath(
-        Root.fromPath(FsUtils.TEST_FILESYSTEM.getPath(root)), PathFragment.create(relativePath));
-  }
+    companion object {
+        private fun rootedPath(root: String?, relativePath: String?): RootedPath {
+            return RootedPath.toRootedPath(
+                Root.fromPath(FsUtils.TEST_FILESYSTEM.getPath(root)), PathFragment.create(relativePath)
+            )
+        }
+    }
 }

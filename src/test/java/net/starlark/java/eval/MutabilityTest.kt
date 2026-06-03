@@ -11,120 +11,141 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.eval
 
-package net.starlark.java.eval;
+import net.starlark.java.eval.Mutability.Freezable
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+/** Tests for [Mutability].  */
+@RunWith(JUnit4::class)
+class MutabilityTest {
+    /** A trivial Freezable that can do nothing but freeze.  */
+    private class DummyFreezable(mutability: Mutability?) : Freezable {
+        private val mutability: Mutability?
 
-import net.starlark.java.eval.Mutability.Freezable;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+        init {
+            this.mutability = mutability
+        }
 
-/** Tests for {@link Mutability}. */
-@RunWith(JUnit4.class)
-public final class MutabilityTest {
-
-  /** A trivial Freezable that can do nothing but freeze. */
-  private static class DummyFreezable implements Mutability.Freezable {
-    private final Mutability mutability;
-
-    public DummyFreezable(Mutability mutability) {
-      this.mutability = mutability;
+        public override fun mutability(): Mutability? {
+            return mutability
+        }
     }
 
-    @Override
-    public Mutability mutability() {
-      return mutability;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun freeze() {
+        val mutability: Mutability = Mutability.create("test")
+        val dummy = DummyFreezable(mutability)
+
+        Starlark.checkMutable(dummy)
+        mutability.freeze()
+        assertCheckMutableFailsBecauseFrozen(dummy)
     }
-  }
 
-  private static void assertCheckMutableFailsBecauseFrozen(DummyFreezable x) {
-    EvalException ex = assertThrows(EvalException.class, () -> Starlark.checkMutable(x));
-    assertThat(ex).hasMessageThat().contains("trying to mutate a frozen DummyFreezable value");
-  }
-
-  @Test
-  public void freeze() throws Exception {
-    Mutability mutability = Mutability.create("test");
-    DummyFreezable dummy = new DummyFreezable(mutability);
-
-    Starlark.checkMutable(dummy);
-    mutability.freeze();
-    assertCheckMutableFailsBecauseFrozen(dummy);
-  }
-
-  @Test
-  public void tryWithResources() throws Exception {
-    DummyFreezable dummy;
-    try (Mutability mutability = Mutability.create("test")) {
-      dummy = new DummyFreezable(mutability);
-      Starlark.checkMutable(dummy);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun tryWithResources() {
+        val dummy: DummyFreezable?
+        Mutability.create("test").use { mutability ->
+            dummy = DummyFreezable(mutability)
+            Starlark.checkMutable(dummy)
+        }
+        assertCheckMutableFailsBecauseFrozen(dummy)
     }
-    assertCheckMutableFailsBecauseFrozen(dummy);
-  }
 
-  @Test
-  public void initiallyMutable() throws Exception {
-    Mutability mutability = Mutability.create("test");
-    DummyFreezable dummy = new DummyFreezable(mutability);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun initiallyMutable() {
+        val mutability: Mutability? = Mutability.create("test")
+        val dummy = DummyFreezable(mutability)
 
-    Starlark.checkMutable(dummy);
-  }
+        Starlark.checkMutable(dummy)
+    }
 
-  @Test
-  public void temporarilyImmutableDuringIteration() throws Exception {
-    Mutability mutability = Mutability.create("test");
-    DummyFreezable x = new DummyFreezable(mutability);
-    x.updateIteratorCount(+1);
-    EvalException ex = assertThrows(EvalException.class, () -> Starlark.checkMutable(x));
-    assertThat(ex)
-        .hasMessageThat()
-        .contains("DummyFreezable value is temporarily immutable due to active for-loop iteration");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun temporarilyImmutableDuringIteration() {
+        val mutability: Mutability? = Mutability.create("test")
+        val x = DummyFreezable(mutability)
+        x.updateIteratorCount(+1)
+        var ex: EvalException? = org.junit.Assert.assertThrows<T?>(
+            EvalException::class.java,
+            org.junit.function.ThrowingRunnable { Starlark.checkMutable(x) })
+        assertThat(ex)
+            .hasMessageThat()
+            .contains("DummyFreezable value is temporarily immutable due to active for-loop iteration")
 
-    x.updateIteratorCount(+1);
-    x.updateIteratorCount(-1); // net +1 => still immutable
-    ex = assertThrows(EvalException.class, () -> Starlark.checkMutable(x));
-    assertThat(ex)
-        .hasMessageThat()
-        .contains("DummyFreezable value is temporarily immutable due to active for-loop iteration");
+        x.updateIteratorCount(+1)
+        x.updateIteratorCount(-1) // net +1 => still immutable
+        ex = org.junit.Assert.assertThrows<T?>(
+            EvalException::class.java,
+            org.junit.function.ThrowingRunnable { Starlark.checkMutable(x) })
+        assertThat(ex)
+            .hasMessageThat()
+            .contains("DummyFreezable value is temporarily immutable due to active for-loop iteration")
 
-    x.updateIteratorCount(-1); // net 0 => mutable
-    Starlark.checkMutable(x); // ok
+        x.updateIteratorCount(-1) // net 0 => mutable
+        Starlark.checkMutable(x) // ok
 
-    assertThrows(IllegalStateException.class, () -> x.updateIteratorCount(-1)); // underflow
-  }
+        org.junit.Assert.assertThrows<java.lang.IllegalStateException?>(
+            java.lang.IllegalStateException::class.java,
+            org.junit.function.ThrowingRunnable { x.updateIteratorCount(-1) }) // underflow
+    }
 
-  @Test
-  public void addIteratorAndThenFreeze() throws Exception {
-    Mutability mutability = Mutability.create("test");
-    DummyFreezable dummy = new DummyFreezable(mutability);
-    dummy.updateIteratorCount(+1);
-    mutability.freeze();
-    // Should fail with frozen error, not temporarily immutable error.
-    assertCheckMutableFailsBecauseFrozen(dummy);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun addIteratorAndThenFreeze() {
+        val mutability: Mutability = Mutability.create("test")
+        val dummy = DummyFreezable(mutability)
+        dummy.updateIteratorCount(+1)
+        mutability.freeze()
+        // Should fail with frozen error, not temporarily immutable error.
+        assertCheckMutableFailsBecauseFrozen(dummy)
+    }
 
-  @Test
-  public void checkUnsafeShallowFreezePrecondition_FailsWhenAlreadyFrozen() throws Exception {
-    Mutability mutability = Mutability.create("test").freeze();
-    assertThrows(
-        IllegalArgumentException.class,
-        () -> Freezable.checkUnsafeShallowFreezePrecondition(new DummyFreezable(mutability)));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun checkUnsafeShallowFreezePrecondition_FailsWhenAlreadyFrozen() {
+        val mutability: Mutability? = Mutability.create("test").freeze()
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable {
+                Freezable.checkUnsafeShallowFreezePrecondition(
+                    DummyFreezable(
+                        mutability
+                    )
+                )
+            })
+    }
 
-  @Test
-  public void checkUnsafeShallowFreezePrecondition_FailsWhenDisallowed() throws Exception {
-    Mutability mutability = Mutability.create("test");
-    assertThrows(
-        IllegalArgumentException.class,
-        () -> Freezable.checkUnsafeShallowFreezePrecondition(new DummyFreezable(mutability)));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun checkUnsafeShallowFreezePrecondition_FailsWhenDisallowed() {
+        val mutability: Mutability? = Mutability.create("test")
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable {
+                Freezable.checkUnsafeShallowFreezePrecondition(
+                    DummyFreezable(
+                        mutability
+                    )
+                )
+            })
+    }
 
-  @Test
-  public void checkUnsafeShallowFreezePrecondition_SucceedsWhenAllowed() throws Exception {
-    Mutability mutability = Mutability.createAllowingShallowFreeze("test");
-    Freezable.checkUnsafeShallowFreezePrecondition(new DummyFreezable(mutability));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun checkUnsafeShallowFreezePrecondition_SucceedsWhenAllowed() {
+        val mutability: Mutability? = Mutability.createAllowingShallowFreeze("test")
+        Freezable.checkUnsafeShallowFreezePrecondition(DummyFreezable(mutability))
+    }
+
+    companion object {
+        private fun assertCheckMutableFailsBecauseFrozen(x: DummyFreezable?) {
+            val ex: EvalException? = org.junit.Assert.assertThrows<T?>(
+                EvalException::class.java,
+                org.junit.function.ThrowingRunnable { Starlark.checkMutable(x) })
+            assertThat(ex).hasMessageThat().contains("trying to mutate a frozen DummyFreezable value")
+        }
+    }
 }

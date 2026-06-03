@@ -11,18 +11,16 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package com.google.devtools.build.lib.generatedprojecttest.util;
+package com.google.devtools.build.lib.generatedprojecttest.util
 
 /**
  * Interface to generate the contents of useful files for tests.
  * It should be implemented to generate the contents of BUILD files, and any other
  * required files, for use in generated test projects.
  */
-public interface FileContentsGenerator {
-
-  /**
-   * @return The generated file contents for the implementation.
-   */
-  String getContents();
+interface FileContentsGenerator {
+    /**
+     * @return The generated file contents for the implementation.
+     */
+    val contents: String?
 }

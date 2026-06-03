@@ -11,82 +11,76 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util;
+package com.google.devtools.build.lib.util
 
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.devtools.build.lib.vfs.PathFragment;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.vfs.PathFragment
 
 /**
- * A test for {@link PathFragmentFilter}.
+ * A test for [PathFragmentFilter].
  */
-@RunWith(JUnit4.class)
-public class PathFragmentFilterTest {
-  protected PathFragmentFilter filter = null;
+@RunWith(JUnit4::class)
+class PathFragmentFilterTest {
+    protected var filter: PathFragmentFilter? = null
 
-  protected void createFilter(String filterString) {
-    filter = new PathFragmentFilter.PathFragmentFilterConverter().convert(filterString);
-  }
+    protected fun createFilter(filterString: String?) {
+        filter = PathFragmentFilterConverter().convert(filterString)
+    }
 
-  protected void assertIncluded(String path) {
-    assertThat(filter.isIncluded(PathFragment.create(path))).isTrue();
-  }
+    protected fun assertIncluded(path: String?) {
+        assertThat(filter.isIncluded(PathFragment.create(path))).isTrue()
+    }
 
-  protected void assertExcluded(String path) {
-    assertThat(filter.isIncluded(PathFragment.create(path))).isFalse();
-  }
+    protected fun assertExcluded(path: String?) {
+        assertThat(filter.isIncluded(PathFragment.create(path))).isFalse()
+    }
 
-  @Test
-  public void emptyFilter() {
-    createFilter("");
-    assertIncluded("a/b/c");
-    assertIncluded("d");
-  }
+    @org.junit.Test
+    fun emptyFilter() {
+        createFilter("")
+        assertIncluded("a/b/c")
+        assertIncluded("d")
+    }
 
-  @Test
-  public void inclusions() {
-    createFilter("a/b,c");
-    assertIncluded("a/b");
-    assertIncluded("a/b/c");
-    assertIncluded("c");
-    assertIncluded("c/d");
-    assertExcluded("a");
-    assertExcluded("a/c");
-    assertExcluded("d");
-    assertExcluded("e/f/g");
-  }
+    @org.junit.Test
+    fun inclusions() {
+        createFilter("a/b,c")
+        assertIncluded("a/b")
+        assertIncluded("a/b/c")
+        assertIncluded("c")
+        assertIncluded("c/d")
+        assertExcluded("a")
+        assertExcluded("a/c")
+        assertExcluded("d")
+        assertExcluded("e/f/g")
+    }
 
-  @Test
-  public void exclusions() {
-    createFilter("-a/b,-c");
-    assertExcluded("a/b");
-    assertExcluded("a/b/c");
-    assertExcluded("c");
-    assertExcluded("c/d");
-    assertIncluded("a");
-    assertIncluded("a/c");
-    assertIncluded("d");
-    assertIncluded("e/f/g");
-  }
+    @org.junit.Test
+    fun exclusions() {
+        createFilter("-a/b,-c")
+        assertExcluded("a/b")
+        assertExcluded("a/b/c")
+        assertExcluded("c")
+        assertExcluded("c/d")
+        assertIncluded("a")
+        assertIncluded("a/c")
+        assertIncluded("d")
+        assertIncluded("e/f/g")
+    }
 
-  @Test
-  public void inclusionsAndExclusions() {
-    createFilter("a,-c,,d,a/b/c,-a/b,a/b/d");
-    assertIncluded("a");
-    assertIncluded("a/c");
-    assertExcluded("a/b");
-    assertExcluded("a/b/c"); // Exclusions take precedence over inclusions. Order is not important.
-    assertExcluded("a/b/d"); // Exclusions take precedence over inclusions. Order is not important.
-    assertExcluded("c");
-    assertExcluded("c/d");
-    assertIncluded("d/e");
-    assertExcluded("e");
-    // When converted back to string, inclusion entries will be put first, followed by exclusion
-    // entries.
-    assertThat(filter.toString()).isEqualTo("a,d,a/b/c,a/b/d,-c,-a/b");
-  }
-
+    @org.junit.Test
+    fun inclusionsAndExclusions() {
+        createFilter("a,-c,,d,a/b/c,-a/b,a/b/d")
+        assertIncluded("a")
+        assertIncluded("a/c")
+        assertExcluded("a/b")
+        assertExcluded("a/b/c") // Exclusions take precedence over inclusions. Order is not important.
+        assertExcluded("a/b/d") // Exclusions take precedence over inclusions. Order is not important.
+        assertExcluded("c")
+        assertExcluded("c/d")
+        assertIncluded("d/e")
+        assertExcluded("e")
+        // When converted back to string, inclusion entries will be put first, followed by exclusion
+        // entries.
+        assertThat(filter.toString()).isEqualTo("a,d,a/b/c,a/b/d,-c,-a/b")
+    }
 }

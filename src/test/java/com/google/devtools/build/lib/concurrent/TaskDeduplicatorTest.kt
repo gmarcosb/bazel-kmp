@@ -11,318 +11,327 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.concurrent;
+package com.google.devtools.build.lib.concurrent
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import com.google.common.truth.Truth
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
+import com.google.common.util.concurrent.SettableFuture
+import org.junit.Assert
+import org.junit.Test
+import org.junit.function.ThrowingRunnable
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.util.*
+import java.util.concurrent.*
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
-import com.google.common.util.concurrent.Futures;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.common.util.concurrent.SettableFuture;
-import java.util.Random;
-import java.util.concurrent.CancellationException;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [TaskDeduplicator].  */
+@RunWith(JUnit4::class)
+class TaskDeduplicatorTest {
+    @Test
+    @Throws(Exception::class)
+    fun executeIfNew_taskFinished_completed() {
+        val deduplicator: TaskDeduplicator<String?, String?> = TaskDeduplicator<String?, String?>()
+        val taskFuture = SettableFuture.create<String?>()
 
-/** Tests for {@link TaskDeduplicator}. */
-@RunWith(JUnit4.class)
-public class TaskDeduplicatorTest {
+        val result: ListenableFuture<String?> = deduplicator.executeIfNew("key1", { taskFuture })
 
-  @Test
-  public void executeIfNew_taskFinished_completed() throws Exception {
-    var deduplicator = new TaskDeduplicator<String, String>();
-    var taskFuture = SettableFuture.<String>create();
+        taskFuture.set("value1")
 
-    ListenableFuture<String> result = deduplicator.executeIfNew("key1", () -> taskFuture);
+        Truth.assertThat(result.get()).isEqualTo("value1")
+    }
 
-    taskFuture.set("value1");
+    @Test
+    fun executeIfNew_taskHasError_propagateError() {
+        val deduplicator: TaskDeduplicator<String?, String?> = TaskDeduplicator<String?, String?>()
+        val taskFuture = SettableFuture.create<String?>()
+        val error = IllegalStateException("error")
 
-    assertThat(result.get()).isEqualTo("value1");
-  }
+        val result: ListenableFuture<String?> = deduplicator.executeIfNew("key1", { taskFuture })
 
-  @Test
-  public void executeIfNew_taskHasError_propagateError() {
-    var deduplicator = new TaskDeduplicator<String, String>();
-    var taskFuture = SettableFuture.<String>create();
-    var error = new IllegalStateException("error");
+        taskFuture.setException(error)
 
-    ListenableFuture<String> result = deduplicator.executeIfNew("key1", () -> taskFuture);
+        val exception =
+            Assert.assertThrows<ExecutionException?>(ExecutionException::class.java, ThrowingRunnable { result.get() })
+        Truth.assertThat(exception).hasCauseThat().isSameInstanceAs(error)
+    }
 
-    taskFuture.setException(error);
+    @Test
+    @Throws(Exception::class)
+    fun executeIfNew_taskInProgress_noReExecution() {
+        val deduplicator: TaskDeduplicator<String?, String?> = TaskDeduplicator<String?, String?>()
+        val taskFuture = SettableFuture.create<String?>()
+        val executionTimes = AtomicInteger(0)
 
-    var exception = assertThrows(ExecutionException.class, result::get);
-    assertThat(exception).hasCauseThat().isSameInstanceAs(error);
-  }
+        val result1: ListenableFuture<String?> =
+            deduplicator.executeIfNew(
+                "key1",
+                {
+                    executionTimes.incrementAndGet()
+                    taskFuture
+                })
 
-  @Test
-  public void executeIfNew_taskInProgress_noReExecution() throws Exception {
-    var deduplicator = new TaskDeduplicator<String, String>();
-    var taskFuture = SettableFuture.<String>create();
-    var executionTimes = new AtomicInteger(0);
+        // Second call with the same key should return the same future, not re-execute
+        val result2: ListenableFuture<String?> =
+            deduplicator.executeIfNew(
+                "key1",
+                {
+                    throw IllegalStateException("should not be called")
+                })
 
-    ListenableFuture<String> result1 =
-        deduplicator.executeIfNew(
-            "key1",
-            () -> {
-              executionTimes.incrementAndGet();
-              return taskFuture;
-            });
+        Truth.assertThat(result1.isDone()).isFalse()
+        Truth.assertThat(result2.isDone()).isFalse()
 
-    // Second call with the same key should return the same future, not re-execute
-    ListenableFuture<String> result2 =
-        deduplicator.executeIfNew(
-            "key1",
-            () -> {
-              throw new IllegalStateException("should not be called");
-            });
+        taskFuture.set("value1")
 
-    assertThat(result1.isDone()).isFalse();
-    assertThat(result2.isDone()).isFalse();
+        Truth.assertThat(result1.get()).isEqualTo("value1")
+        Truth.assertThat(result2.get()).isEqualTo("value1")
+        Truth.assertThat(executionTimes.get()).isEqualTo(1)
+    }
 
-    taskFuture.set("value1");
+    @Test
+    @Throws(Exception::class)
+    fun executeIfNew_taskFinished_reExecution() {
+        val deduplicator: TaskDeduplicator<String?, String?> = TaskDeduplicator<String?, String?>()
+        val executionTimes = AtomicInteger(0)
 
-    assertThat(result1.get()).isEqualTo("value1");
-    assertThat(result2.get()).isEqualTo("value1");
-    assertThat(executionTimes.get()).isEqualTo(1);
-  }
+        // First execution
+        val result1: ListenableFuture<String?> =
+            deduplicator.executeIfNew(
+                "key1",
+                {
+                    executionTimes.incrementAndGet()
+                    val future = SettableFuture.create<String?>()
+                    future.set("value1")
+                    future
+                })
 
-  @Test
-  public void executeIfNew_taskFinished_reExecution() throws Exception {
-    var deduplicator = new TaskDeduplicator<String, String>();
-    var executionTimes = new AtomicInteger(0);
+        Truth.assertThat(result1.get()).isEqualTo("value1")
+        Truth.assertThat(executionTimes.get()).isEqualTo(1)
 
-    // First execution
-    ListenableFuture<String> result1 =
-        deduplicator.executeIfNew(
-            "key1",
-            () -> {
-              executionTimes.incrementAndGet();
-              var future = SettableFuture.<String>create();
-              future.set("value1");
-              return future;
-            });
+        // Second execution after first is finished should re-execute
+        val result2: ListenableFuture<String?> =
+            deduplicator.executeIfNew(
+                "key1",
+                {
+                    executionTimes.incrementAndGet()
+                    val future = SettableFuture.create<String?>()
+                    future.set("value2")
+                    future
+                })
 
-    assertThat(result1.get()).isEqualTo("value1");
-    assertThat(executionTimes.get()).isEqualTo(1);
+        Truth.assertThat(result2.get()).isEqualTo("value2")
+        Truth.assertThat(executionTimes.get()).isEqualTo(2)
+    }
 
-    // Second execution after first is finished should re-execute
-    ListenableFuture<String> result2 =
-        deduplicator.executeIfNew(
-            "key1",
-            () -> {
-              executionTimes.incrementAndGet();
-              var future = SettableFuture.<String>create();
-              future.set("value2");
-              return future;
-            });
+    @Test
+    fun executeIfNew_taskCanceled_reExecution() {
+        val deduplicator: TaskDeduplicator<String?, String?> = TaskDeduplicator<String?, String?>()
+        val executionTimes = AtomicInteger(0)
 
-    assertThat(result2.get()).isEqualTo("value2");
-    assertThat(executionTimes.get()).isEqualTo(2);
-  }
+        // First execution
+        val result1: ListenableFuture<String?> =
+            deduplicator.executeIfNew(
+                "key1",
+                {
+                    executionTimes.incrementAndGet()
+                    Futures.immediateCancelledFuture<V?>()
+                })
 
-  @Test
-  public void executeIfNew_taskCanceled_reExecution() {
-    var deduplicator = new TaskDeduplicator<String, String>();
-    var executionTimes = new AtomicInteger(0);
+        Truth.assertThat(result1.isCancelled()).isTrue()
+        Truth.assertThat(executionTimes.get()).isEqualTo(1)
 
-    // First execution
-    ListenableFuture<String> result1 =
-        deduplicator.executeIfNew(
-            "key1",
-            () -> {
-              executionTimes.incrementAndGet();
-              return Futures.immediateCancelledFuture();
-            });
+        // Second execution after first is finished should re-execute
+        val result2: ListenableFuture<String?> =
+            deduplicator.executeIfNew(
+                "key1",
+                {
+                    executionTimes.incrementAndGet()
+                    Futures.immediateCancelledFuture<V?>()
+                })
 
-    assertThat(result1.isCancelled()).isTrue();
-    assertThat(executionTimes.get()).isEqualTo(1);
+        Truth.assertThat(result2.isCancelled()).isTrue()
+        Truth.assertThat(executionTimes.get()).isEqualTo(2)
+    }
 
-    // Second execution after first is finished should re-execute
-    ListenableFuture<String> result2 =
-        deduplicator.executeIfNew(
-            "key1",
-            () -> {
-              executionTimes.incrementAndGet();
-              return Futures.immediateCancelledFuture();
-            });
+    @Test
+    @Throws(Exception::class)
+    fun executeIfNew_cancel_cancelled() {
+        val deduplicator: TaskDeduplicator<String?, String?> = TaskDeduplicator<String?, String?>()
+        val taskFuture = SettableFuture.create<String?>()
 
-    assertThat(result2.isCancelled()).isTrue();
-    assertThat(executionTimes.get()).isEqualTo(2);
-  }
+        val result: ListenableFuture<String?> = deduplicator.executeIfNew("key1", { taskFuture })
 
-  @Test
-  public void executeIfNew_cancel_cancelled() throws Exception {
-    var deduplicator = new TaskDeduplicator<String, String>();
-    var taskFuture = SettableFuture.<String>create();
+        result.cancel(true)
 
-    ListenableFuture<String> result = deduplicator.executeIfNew("key1", () -> taskFuture);
+        Truth.assertThat(result.isCancelled()).isTrue()
+        Assert.assertThrows<CancellationException?>(
+            CancellationException::class.java,
+            ThrowingRunnable { result.get() })
+    }
 
-    result.cancel(true);
+    @Test
+    @Throws(Exception::class)
+    fun executeIfNew_cancelWhenMultipleFutures_notCancelled() {
+        val deduplicator: TaskDeduplicator<String?, String?> = TaskDeduplicator<String?, String?>()
+        val taskFuture = SettableFuture.create<String?>()
 
-    assertThat(result.isCancelled()).isTrue();
-    assertThrows(CancellationException.class, result::get);
-  }
+        val result1: ListenableFuture<String?> = deduplicator.executeIfNew("key1", { taskFuture })
+        val result2: ListenableFuture<String?> = deduplicator.executeIfNew("key1", { taskFuture })
 
-  @Test
-  public void executeIfNew_cancelWhenMultipleFutures_notCancelled() throws Exception {
-    var deduplicator = new TaskDeduplicator<String, String>();
-    var taskFuture = SettableFuture.<String>create();
+        // Cancel one future multiple times
+        result1.cancel(true)
+        result1.cancel(true)
 
-    ListenableFuture<String> result1 = deduplicator.executeIfNew("key1", () -> taskFuture);
-    ListenableFuture<String> result2 = deduplicator.executeIfNew("key1", () -> taskFuture);
+        // The task should still be running for the second future
+        Truth.assertThat(result1.isCancelled()).isTrue()
+        Truth.assertThat(result2.isDone()).isFalse()
 
-    // Cancel one future multiple times
-    result1.cancel(true);
-    result1.cancel(true);
+        taskFuture.set("value1")
 
-    // The task should still be running for the second future
-    assertThat(result1.isCancelled()).isTrue();
-    assertThat(result2.isDone()).isFalse();
+        Truth.assertThat(result2.get()).isEqualTo("value1")
+    }
 
-    taskFuture.set("value1");
+    @Test
+    fun executeIfNew_cancelWhenMultipleFutures_allCancelled() {
+        val deduplicator: TaskDeduplicator<String?, String?> = TaskDeduplicator<String?, String?>()
+        val taskFuture = SettableFuture.create<String?>()
 
-    assertThat(result2.get()).isEqualTo("value1");
-  }
+        val result1: ListenableFuture<String?> = deduplicator.executeIfNew("key1", { taskFuture })
+        val result2: ListenableFuture<String?> = deduplicator.executeIfNew("key1", { taskFuture })
 
-  @Test
-  public void executeIfNew_cancelWhenMultipleFutures_allCancelled() {
-    var deduplicator = new TaskDeduplicator<String, String>();
-    var taskFuture = SettableFuture.<String>create();
+        // Cancel both futures
+        result1.cancel(true)
+        result2.cancel(true)
 
-    ListenableFuture<String> result1 = deduplicator.executeIfNew("key1", () -> taskFuture);
-    ListenableFuture<String> result2 = deduplicator.executeIfNew("key1", () -> taskFuture);
+        Truth.assertThat(result1.isCancelled()).isTrue()
+        Truth.assertThat(result2.isCancelled()).isTrue()
+    }
 
-    // Cancel both futures
-    result1.cancel(true);
-    result2.cancel(true);
+    @Test
+    @Throws(Exception::class)
+    fun executeIfNew_multipleTasks_completeOne() {
+        val deduplicator: TaskDeduplicator<String?, String?> = TaskDeduplicator<String?, String?>()
+        val taskFuture1 = SettableFuture.create<String?>()
+        val taskFuture2 = SettableFuture.create<String?>()
 
-    assertThat(result1.isCancelled()).isTrue();
-    assertThat(result2.isCancelled()).isTrue();
-  }
+        val result1: ListenableFuture<String?> = deduplicator.executeIfNew("key1", { taskFuture1 })
+        val result2: ListenableFuture<String?> = deduplicator.executeIfNew("key2", { taskFuture2 })
 
-  @Test
-  public void executeIfNew_multipleTasks_completeOne() throws Exception {
-    var deduplicator = new TaskDeduplicator<String, String>();
-    var taskFuture1 = SettableFuture.<String>create();
-    var taskFuture2 = SettableFuture.<String>create();
+        taskFuture1.set("value1")
 
-    ListenableFuture<String> result1 = deduplicator.executeIfNew("key1", () -> taskFuture1);
-    ListenableFuture<String> result2 = deduplicator.executeIfNew("key2", () -> taskFuture2);
+        Truth.assertThat(result1.get()).isEqualTo("value1")
+        Truth.assertThat(result2.isDone()).isFalse()
 
-    taskFuture1.set("value1");
+        taskFuture2.set("value2")
 
-    assertThat(result1.get()).isEqualTo("value1");
-    assertThat(result2.isDone()).isFalse();
+        Truth.assertThat(result2.get()).isEqualTo("value2")
+    }
 
-    taskFuture2.set("value2");
+    @Test
+    fun executeIfNeeded_executeAndCancelLoop_noErrors() {
+        val taskCount = 1000
+        val maxKey = 20
+        val random = Random()
+        val deduplicator: TaskDeduplicator<String?, Void?> = TaskDeduplicator<String?, Void?>()
+        val throwables = ConcurrentLinkedQueue<Throwable>()
 
-    assertThat(result2.get()).isEqualTo("value2");
-  }
+        Executors.newFixedThreadPool(50).use { taskExecutorService ->
+            Executors.newVirtualThreadPerTaskExecutor().use { testExecutorService ->
+                for (i in 0..<taskCount) {
+                    testExecutorService.execute(
+                        Runnable {
+                            try {
+                                val future: ListenableFuture<Void?> =
+                                    deduplicator.executeIfNew(
+                                        "key" + random.nextInt(maxKey),
+                                        {
+                                            Futures.submit<O?>(
+                                                Callable {
+                                                    Thread.sleep((Math.random() * 100).toLong())
+                                                    null as Void?
+                                                },
+                                                taskExecutorService
+                                            )
+                                        })
 
-  @Test
-  public void executeIfNeeded_executeAndCancelLoop_noErrors() {
-    int taskCount = 1000;
-    int maxKey = 20;
-    var random = new Random();
-    var deduplicator = new TaskDeduplicator<String, Void>();
-    var throwables = new ConcurrentLinkedQueue<Throwable>();
+                                if (!future.isDone() && random.nextBoolean()) {
+                                    future.cancel(true)
+                                } else {
+                                    future.get()
+                                }
+                            } catch (e: Throwable) {
+                                if (e is InterruptedException) {
+                                    Thread.currentThread().interrupt()
+                                }
+                                throwables.add(e)
+                            }
+                        })
+                }
+            }
+        }
+        if (!throwables.isEmpty()) {
+            val combinedError = AssertionError()
+            for (throwable in throwables) {
+                combinedError.addSuppressed(throwable)
+            }
+            throw combinedError
+        }
+    }
 
-    try (var taskExecutorService = Executors.newFixedThreadPool(50);
-        var testExecutorService = Executors.newVirtualThreadPerTaskExecutor()) {
-      for (int i = 0; i < taskCount; ++i) {
-        testExecutorService.execute(
-            () -> {
-              try {
-                ListenableFuture<Void> future =
+    @Test
+    @Throws(Exception::class)
+    fun executeIfNew_taskCompletedBeforeSecondCall_bothGetSameResult() {
+        val deduplicator: TaskDeduplicator<String?, String?> = TaskDeduplicator<String?, String?>()
+        val taskStarted = AtomicBoolean(false)
+
+        // First call - task completes immediately in-flight
+        val result1: ListenableFuture<String?> =
+            deduplicator.executeIfNew(
+                "key1",
+                {
+                    taskStarted.set(true)
+                    val future = SettableFuture.create<String?>()
+                    future.set("value1")
+                    future
+                })
+
+        Truth.assertThat(result1.get()).isEqualTo("value1")
+        Truth.assertThat(taskStarted.get()).isTrue()
+        taskStarted.set(false)
+
+        // Second call - task should execute again since first is done
+        val result2: ListenableFuture<String?> =
+            deduplicator.executeIfNew(
+                "key1",
+                {
+                    taskStarted.set(true)
+                    val future = SettableFuture.create<String?>()
+                    future.set("value2")
+                    future
+                })
+
+        Truth.assertThat(result2.get()).isEqualTo("value2")
+        Truth.assertThat(taskStarted.get()).isTrue()
+    }
+
+    @Test
+    fun executeIfNew_errorInAsyncCallable_propagated() {
+        val deduplicator: TaskDeduplicator<String?, String?> = TaskDeduplicator<String?, String?>()
+        val expectedException = RuntimeException("task creation failed")
+
+        val actualException =
+            Assert.assertThrows<RuntimeException?>(
+                RuntimeException::class.java,
+                ThrowingRunnable {
                     deduplicator.executeIfNew(
-                        "key" + random.nextInt(maxKey),
-                        () ->
-                            Futures.submit(
-                                () -> {
-                                  Thread.sleep((long) (Math.random() * 100));
-                                  return (Void) null;
-                                },
-                                taskExecutorService));
-
-                if (!future.isDone() && random.nextBoolean()) {
-                  future.cancel(true);
-                } else {
-                  future.get();
-                }
-              } catch (Throwable e) {
-                if (e instanceof InterruptedException) {
-                  Thread.currentThread().interrupt();
-                }
-                throwables.add(e);
-              }
-            });
-      }
+                        "key1",
+                        {
+                            throw expectedException
+                        })
+                })
+        Truth.assertThat(actualException).isSameInstanceAs(expectedException)
     }
-
-    if (!throwables.isEmpty()) {
-      var combinedError = new AssertionError();
-      for (var throwable : throwables) {
-        combinedError.addSuppressed(throwable);
-      }
-      throw combinedError;
-    }
-  }
-
-  @Test
-  public void executeIfNew_taskCompletedBeforeSecondCall_bothGetSameResult() throws Exception {
-    var deduplicator = new TaskDeduplicator<String, String>();
-    var taskStarted = new AtomicBoolean(false);
-
-    // First call - task completes immediately in-flight
-    ListenableFuture<String> result1 =
-        deduplicator.executeIfNew(
-            "key1",
-            () -> {
-              taskStarted.set(true);
-              var future = SettableFuture.<String>create();
-              future.set("value1");
-              return future;
-            });
-
-    assertThat(result1.get()).isEqualTo("value1");
-    assertThat(taskStarted.get()).isTrue();
-    taskStarted.set(false);
-
-    // Second call - task should execute again since first is done
-    ListenableFuture<String> result2 =
-        deduplicator.executeIfNew(
-            "key1",
-            () -> {
-              taskStarted.set(true);
-              var future = SettableFuture.<String>create();
-              future.set("value2");
-              return future;
-            });
-
-    assertThat(result2.get()).isEqualTo("value2");
-    assertThat(taskStarted.get()).isTrue();
-  }
-
-  @Test
-  public void executeIfNew_errorInAsyncCallable_propagated() {
-    var deduplicator = new TaskDeduplicator<String, String>();
-    var expectedException = new RuntimeException("task creation failed");
-
-    var actualException =
-        assertThrows(
-            RuntimeException.class,
-            () ->
-                deduplicator.executeIfNew(
-                    "key1",
-                    () -> {
-                      throw expectedException;
-                    }));
-    assertThat(actualException).isSameInstanceAs(expectedException);
-  }
 }

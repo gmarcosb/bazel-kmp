@@ -11,97 +11,108 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.buildtool;
+package com.google.devtools.build.lib.buildtool
 
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.analysis.ViewCreationFailedException
 
-import com.google.devtools.build.lib.analysis.ViewCreationFailedException;
-import com.google.devtools.build.lib.analysis.util.AnalysisMock;
-import com.google.devtools.build.lib.buildtool.util.BuildIntegrationTestCase;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Integration test for package groups and visibility.  */
+@RunWith(JUnit4::class)
+class PackageGroupIntegrationTest : BuildIntegrationTestCase() {
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun setUpToolsConfigMock() {
+        AnalysisMock.get().pySupport().setup(mockToolsConfig)
+    }
 
-/** Integration test for package groups and visibility. */
-@RunWith(JUnit4.class)
-public class PackageGroupIntegrationTest extends BuildIntegrationTestCase {
-  private static final String LOAD_FOO_LIBRARY =
-      "load('//test_defs:foo_library.bzl', 'foo_library')";
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSimpleDeny() {
+        write("z/BUILD", "package_group(name='bs', packages=['//z/c'])")
+        write("z/a/BUILD", LOAD_FOO_LIBRARY, "foo_library(name='a', visibility=['//z:bs'])")
+        write("z/b/BUILD", LOAD_FOO_LIBRARY, "foo_library(name='b', deps=['//z/a:a'])")
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { buildTarget("//z/b:b") })
+    }
 
-  @Before
-  public final void setUpToolsConfigMock() throws Exception {
-    AnalysisMock.get().pySupport().setup(mockToolsConfig);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSimpleAllow() {
+        write("z/BUILD", "package_group(name='bs', packages=['//z/b'])")
+        write("z/a/BUILD", LOAD_FOO_LIBRARY, "foo_library(name='a', visibility=['//z:bs'])")
+        write("z/b/BUILD", LOAD_FOO_LIBRARY, "foo_library(name='b', deps=['//z/a:a'])")
+        buildTarget("//z/b:b")
+    }
 
-  @Test
-  public void testSimpleDeny() throws Exception {
-    write("z/BUILD", "package_group(name='bs', packages=['//z/c'])");
-    write("z/a/BUILD", LOAD_FOO_LIBRARY, "foo_library(name='a', visibility=['//z:bs'])");
-    write("z/b/BUILD", LOAD_FOO_LIBRARY, "foo_library(name='b', deps=['//z/a:a'])");
-    assertThrows(ViewCreationFailedException.class, () -> buildTarget("//z/b:b"));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNoticesPackageGroupChangedToOk() {
+        write("z/BUILD", "package_group(name='bs', packages=['//z/c'])")
+        write("z/a/BUILD", LOAD_FOO_LIBRARY, "foo_library(name='a', visibility=['//z:bs'])")
+        write("z/b/BUILD", LOAD_FOO_LIBRARY, "foo_library(name='b', deps=['//z/a:a'])")
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { buildTarget("//z/b:b") })
 
-  @Test
-  public void testSimpleAllow() throws Exception {
-    write("z/BUILD", "package_group(name='bs', packages=['//z/b'])");
-    write("z/a/BUILD", LOAD_FOO_LIBRARY, "foo_library(name='a', visibility=['//z:bs'])");
-    write("z/b/BUILD", LOAD_FOO_LIBRARY, "foo_library(name='b', deps=['//z/a:a'])");
-    buildTarget("//z/b:b");
-  }
+        BuildIntegrationTestCase.Companion.waitForTimestampGranularity()
 
-  @Test
-  public void testNoticesPackageGroupChangedToOk() throws Exception {
-    write("z/BUILD", "package_group(name='bs', packages=['//z/c'])");
-    write("z/a/BUILD", LOAD_FOO_LIBRARY, "foo_library(name='a', visibility=['//z:bs'])");
-    write("z/b/BUILD", LOAD_FOO_LIBRARY, "foo_library(name='b', deps=['//z/a:a'])");
-    assertThrows(ViewCreationFailedException.class, () -> buildTarget("//z/b:b"));
+        write("z/BUILD", "package_group(name='bs', packages=['//z/b'])")
+        buildTarget("//z/b:b")
+    }
 
-    waitForTimestampGranularity();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNoticesPackageGroupChangedToBad() {
+        write("z/BUILD", "package_group(name='bs', packages=['//z/b'])")
+        write("z/a/BUILD", LOAD_FOO_LIBRARY, "foo_library(name='a', visibility=['//z:bs'])")
+        write("z/b/BUILD", LOAD_FOO_LIBRARY, "foo_library(name='b', deps=['//z/a:a'])")
+        buildTarget("//z/b:b")
 
-    write("z/BUILD", "package_group(name='bs', packages=['//z/b'])");
-    buildTarget("//z/b:b");
-  }
+        BuildIntegrationTestCase.Companion.waitForTimestampGranularity()
 
-  @Test
-  public void testNoticesPackageGroupChangedToBad() throws Exception {
-    write("z/BUILD", "package_group(name='bs', packages=['//z/b'])");
-    write("z/a/BUILD", LOAD_FOO_LIBRARY, "foo_library(name='a', visibility=['//z:bs'])");
-    write("z/b/BUILD", LOAD_FOO_LIBRARY, "foo_library(name='b', deps=['//z/a:a'])");
-    buildTarget("//z/b:b");
+        write("z/BUILD", "package_group(name='bs', packages=['//z/c'])")
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { buildTarget("//z/b:b") })
+    }
 
-    waitForTimestampGranularity();
-
-    write("z/BUILD", "package_group(name='bs', packages=['//z/c'])");
-    assertThrows(ViewCreationFailedException.class, () -> buildTarget("//z/b:b"));
-  }
-
-  @Test
-  public void testNoticesChangeInDefaultVisibility() throws Exception {
-    write("z/BUILD", "package_group(name='bs', packages=['//z/c'])");
-    write(
-        "z/a/BUILD",
-        String.format(
-            """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNoticesChangeInDefaultVisibility() {
+        write("z/BUILD", "package_group(name='bs', packages=['//z/c'])")
+        write(
+            "z/a/BUILD",
+            String.format(
+                """
             %s
             package(default_visibility = ["//z:bs"])
 
             foo_library(name = "a")
-            """,
-            LOAD_FOO_LIBRARY));
-    write("z/b/BUILD", LOAD_FOO_LIBRARY, "foo_library(name='b', deps=['//z/a:a'])");
-    assertThrows(ViewCreationFailedException.class, () -> buildTarget("//z/b:b"));
+            
+            """.trimIndent(),
+                LOAD_FOO_LIBRARY
+            )
+        )
+        write("z/b/BUILD", LOAD_FOO_LIBRARY, "foo_library(name='b', deps=['//z/a:a'])")
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { buildTarget("//z/b:b") })
 
-    waitForTimestampGranularity();
+        BuildIntegrationTestCase.Companion.waitForTimestampGranularity()
 
-    write("z/BUILD", "package_group(name='bs', packages=['//z/b'])");
-    buildTarget("//z/b:b");
-  }
+        write("z/BUILD", "package_group(name='bs', packages=['//z/b'])")
+        buildTarget("//z/b:b")
+    }
 
-  // Regression test for bug #16303057: Building a package_group directly results in NPE
-  @Test
-  public void testPackageGroupBuildDirectly() throws Exception {
-    write("npe/BUILD", "package_group(name = 'npe', packages = ['//npe'])");
-    buildTarget("//npe");
-  }
+    // Regression test for bug #16303057: Building a package_group directly results in NPE
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testPackageGroupBuildDirectly() {
+        write("npe/BUILD", "package_group(name = 'npe', packages = ['//npe'])")
+        buildTarget("//npe")
+    }
+
+    companion object {
+        private const val LOAD_FOO_LIBRARY = "load('//test_defs:foo_library.bzl', 'foo_library')"
+    }
 }

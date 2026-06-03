@@ -11,99 +11,100 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.unix;
+package com.google.devtools.build.lib.unix
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-
-import com.google.common.testing.EqualsTester;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.vfs.DigestHashFunction
+import org.junit.Assert
+import org.junit.Test
+import org.junit.function.ThrowingRunnable
 
 /**
  * This tests how canonical paths and non-canonical paths are equal with each
  * other, and also how paths from different filesystems behave with each other.
  */
-@RunWith(JUnit4.class)
-public class UnixPathEqualityTest {
+@RunWith(JUnit4::class)
+class UnixPathEqualityTest {
+    private var otherUnixFs: FileSystem? = null
+    private var unixFs: FileSystem? = null
 
-  private FileSystem otherUnixFs;
-  private FileSystem unixFs;
+    @Before
+    fun initializeFileSystem() {
+        unixFs =
+            UnixFileSystem(
+                DigestHashFunction.SHA256,  /* hashAttributeName= */
+                "",
+                NativePosixFilesServiceImpl()
+            )
+        otherUnixFs =
+            UnixFileSystem(
+                DigestHashFunction.SHA256,  /* hashAttributeName= */
+                "",
+                NativePosixFilesServiceImpl()
+            )
+        Truth.assertThat(unixFs !== otherUnixFs).isTrue()
+    }
 
-  @Before
-  public final void initializeFileSystem() {
-    unixFs =
-        new UnixFileSystem(
-            DigestHashFunction.SHA256,
-            /* hashAttributeName= */ "",
-            new NativePosixFilesServiceImpl());
-    otherUnixFs =
-        new UnixFileSystem(
-            DigestHashFunction.SHA256,
-            /* hashAttributeName= */ "",
-            new NativePosixFilesServiceImpl());
-    assertThat(unixFs != otherUnixFs).isTrue();
-  }
+    private fun assertTwoWayEquals(obj1: Any?, obj2: Any?) {
+        Truth.assertThat(obj1).isEqualTo(obj2)
+        EqualsTester().addEqualityGroup(obj1, obj2).testEquals()
+    }
 
-  private void assertTwoWayEquals(Object obj1, Object obj2) {
-    assertThat(obj1).isEqualTo(obj2);
-    new EqualsTester().addEqualityGroup(obj1, obj2).testEquals();
-  }
+    private fun assertTwoWayNotEquals(obj1: Any, obj2: Any) {
+        Truth.assertThat(obj1 == obj2).isFalse()
+        Truth.assertThat(obj2 == obj1).isFalse()
+    }
 
-  private void assertTwoWayNotEquals(Object obj1, Object obj2) {
-    assertThat(obj1.equals(obj2)).isFalse();
-    assertThat(obj2.equals(obj1)).isFalse();
-  }
+    @Test
+    fun testPathsAreEqualEvenIfNotCanonical() {
+        // This path is already canonical, so there's no difference between
+        // the canonical / nonCanonical path, as far as equals is concerned
+        val nonCanonical: Path? = unixFs.getPath("/a/canonical/unix/path")
+        val canonical: Path? = unixFs.getPath("/a/canonical/unix/path")
+        assertTwoWayEquals(nonCanonical, canonical)
+    }
 
-  @Test
-  public void testPathsAreEqualEvenIfNotCanonical() {
-    // This path is already canonical, so there's no difference between
-    // the canonical / nonCanonical path, as far as equals is concerned
-    Path nonCanonical = unixFs.getPath("/a/canonical/unix/path");
-    Path canonical = unixFs.getPath("/a/canonical/unix/path");
-    assertTwoWayEquals(nonCanonical, canonical);
-  }
+    @Test
+    fun testPathsAreNeverEqualWithStrings() {
+        // Make sure that paths aren't equal to plain old strings
+        val nonCanonical: Path = unixFs.getPath("/a/non/../canonical/unix/path")
+        val canonical: Path = unixFs.getPath("/a/non/../canonical/unix/path")
+        assertTwoWayNotEquals(nonCanonical, "/a/non/../canonical/unix/path")
+        assertTwoWayNotEquals(canonical, "/a/non/../canonical/unix/path")
+    }
 
-  @Test
-  public void testPathsAreNeverEqualWithStrings() {
-    // Make sure that paths aren't equal to plain old strings
-    Path nonCanonical = unixFs.getPath("/a/non/../canonical/unix/path");
-    Path canonical = unixFs.getPath("/a/non/../canonical/unix/path");
-    assertTwoWayNotEquals(nonCanonical, "/a/non/../canonical/unix/path");
-    assertTwoWayNotEquals(canonical, "/a/non/../canonical/unix/path");
-  }
+    @Test
+    fun testCanonicalPathsFromDifferentFileSystemsAreNeverEqual() {
+        val canonical: Path = unixFs.getPath("/canonical/path")
+        val otherCanonical: Path = otherUnixFs.getPath("/canonical/path")
+        assertTwoWayNotEquals(canonical, otherCanonical)
+    }
 
-  @Test
-  public void testCanonicalPathsFromDifferentFileSystemsAreNeverEqual() {
-    Path canonical = unixFs.getPath("/canonical/path");
-    Path otherCanonical = otherUnixFs.getPath("/canonical/path");
-    assertTwoWayNotEquals(canonical, otherCanonical);
-  }
+    @Test
+    fun testNonCanonicalPathsFromDifferentFileSystemsAreNeverEqual() {
+        val nonCanonical: Path = unixFs.getPath("/non/canonical/path")
+        val otherNonCanonical: Path = otherUnixFs.getPath("/non/canonical/path")
+        assertTwoWayNotEquals(nonCanonical, otherNonCanonical)
+    }
 
-  @Test
-  public void testNonCanonicalPathsFromDifferentFileSystemsAreNeverEqual() {
-    Path nonCanonical = unixFs.getPath("/non/canonical/path");
-    Path otherNonCanonical = otherUnixFs.getPath("/non/canonical/path");
-    assertTwoWayNotEquals(nonCanonical, otherNonCanonical);
-  }
+    @Test
+    fun testCrossFilesystemStartsWithReturnsFalse() {
+        assertThat(unixFs.getPath("/a").startsWith(otherUnixFs.getPath("/b"))).isFalse()
+    }
 
-  @Test
-  public void testCrossFilesystemStartsWithReturnsFalse() {
-    assertThat(unixFs.getPath("/a").startsWith(otherUnixFs.getPath("/b"))).isFalse();
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testCrossFilesystemOperationsForbidden() {
+        val a: Path = unixFs.getPath("/a")
+        val b: Path? = otherUnixFs.getPath("/b")
 
-  @Test
-  public void testCrossFilesystemOperationsForbidden() throws Exception {
-    Path a = unixFs.getPath("/a");
-    Path b = otherUnixFs.getPath("/b");
-
-    assertThrows(IllegalArgumentException.class, () -> a.renameTo(b));
-    assertThrows(IllegalArgumentException.class, () -> a.relativeTo(b));
-    assertThrows(IllegalArgumentException.class, () -> a.createSymbolicLink(b));
-  }
+        Assert.assertThrows<IllegalArgumentException?>(
+            IllegalArgumentException::class.java,
+            ThrowingRunnable { a.renameTo(b) })
+        Assert.assertThrows<IllegalArgumentException?>(
+            IllegalArgumentException::class.java,
+            ThrowingRunnable { a.relativeTo(b) })
+        Assert.assertThrows<IllegalArgumentException?>(
+            IllegalArgumentException::class.java,
+            ThrowingRunnable { a.createSymbolicLink(b) })
+    }
 }

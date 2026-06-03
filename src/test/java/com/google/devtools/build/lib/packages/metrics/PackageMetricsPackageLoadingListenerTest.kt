@@ -11,613 +11,708 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages.metrics;
+package com.google.devtools.build.lib.packages.metrics
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import com.google.devtools.build.lib.cmdline.Label
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSortedMap;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.packages.Package;
-import com.google.devtools.build.lib.packages.PackageLoadingListener.Metrics;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.pkgcache.PackageOptions.LazyMacroExpansionPackages;
-import com.google.protobuf.util.Durations;
-import java.util.Map;
-import java.util.OptionalLong;
-import net.starlark.java.eval.StarlarkSemantics;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [PackageMetricsPackageLoadingListener].  */
+@RunWith(JUnit4::class)
+class PackageMetricsPackageLoadingListenerTest {
+    private val underTest: PackageMetricsPackageLoadingListener? = PackageMetricsPackageLoadingListener.instance
 
-/** Tests for {@link PackageMetricsPackageLoadingListener}. */
-@RunWith(JUnit4.class)
-public class PackageMetricsPackageLoadingListenerTest {
+    @org.junit.Test
+    fun testRecordsTopSlowestPackagesPerBuild_extrema() {
+        val recorder: PackageMetricsRecorder = ExtremaPackageMetricsRecorder(2)
+        underTest.packageMetricsRecorder = recorder
 
-  private final PackageMetricsPackageLoadingListener underTest =
-          PackageMetricsPackageLoadingListener.instance;
+        recordSlowPackages()
 
-  private static final Metrics PLACEHOLDER_METRICS =
-      new Metrics(/* loadTimeNanos= */ 123, /* globFilesystemOperationCost= */ 456);
+        assertThat(underTest.packageMetricsRecorder.getLoadTimes())
+            .containsExactlyEntriesIn(
+                com.google.common.collect.ImmutableMap.of<K?, V?>(
+                    PackageIdentifier.createInMainRepo("my/pkg3"),
+                    Durations.fromMillis(44),
+                    PackageIdentifier.createInMainRepo("my/pkg2"),
+                    Durations.fromMillis(43)
+                )
+            )
+            .inOrder()
 
-  @Test
-  public void testRecordsTopSlowestPackagesPerBuild_extrema() {
-    PackageMetricsRecorder recorder = new ExtremaPackageMetricsRecorder(2);
-    underTest.packageMetricsRecorder = recorder;
+        recorder.loadingFinished()
+        assertAllMapsEmpty(recorder)
+    }
 
-    recordSlowPackages();
+    @org.junit.Test
+    fun testRecordsTopSlowestPackagesPerBuild_complete() {
+        val recorder: PackageMetricsRecorder = CompletePackageMetricsRecorder()
+        underTest.packageMetricsRecorder = recorder
 
-    assertThat(underTest.packageMetricsRecorder.getLoadTimes())
-        .containsExactlyEntriesIn(
-            ImmutableMap.of(
-                PackageIdentifier.createInMainRepo("my/pkg3"),
-                Durations.fromMillis(44),
+        recordSlowPackages()
+
+        assertThat(underTest.packageMetricsRecorder.getLoadTimes())
+            .containsExactly(
+                PackageIdentifier.createInMainRepo("my/pkg1"),
+                Durations.fromMillis(42),
                 PackageIdentifier.createInMainRepo("my/pkg2"),
-                Durations.fromMillis(43)))
-        .inOrder();
-
-    recorder.loadingFinished();
-    assertAllMapsEmpty(recorder);
-  }
-
-  @Test
-  public void testRecordsTopSlowestPackagesPerBuild_complete() {
-    PackageMetricsRecorder recorder = new CompletePackageMetricsRecorder();
-    underTest.packageMetricsRecorder = recorder;
-
-    recordSlowPackages();
-
-    assertThat(underTest.packageMetricsRecorder.getLoadTimes())
-        .containsExactly(
-            PackageIdentifier.createInMainRepo("my/pkg1"),
-            Durations.fromMillis(42),
-            PackageIdentifier.createInMainRepo("my/pkg2"),
-            Durations.fromMillis(43),
-            PackageIdentifier.createInMainRepo("my/pkg3"),
-            Durations.fromMillis(44));
-    recorder.clear();
-    assertAllMapsEmpty(recorder);
-  }
-
-  private void recordSlowPackages() {
-    underTest.onLoadingCompleteAndSuccessful(
-        mockPackage(
-            "my/pkg1", /* targets= */ ImmutableMap.of(), /* transitivelyLoadedStarlarkFiles= */ 0),
-        StarlarkSemantics.DEFAULT,
-        LazyMacroExpansionPackages.NONE,
-        new Metrics(/* loadTimeNanos= */ 42_000_000, /* globFilesystemOperationCost= */ 0));
-
-    underTest.onLoadingCompleteAndSuccessful(
-        mockPackage(
-            "my/pkg2", /* targets= */ ImmutableMap.of(), /* transitivelyLoadedStarlarkFiles= */ 0),
-        StarlarkSemantics.DEFAULT,
-        LazyMacroExpansionPackages.NONE,
-        new Metrics(/* loadTimeNanos= */ 43_000_000, /* globFilesystemOperationCost= */ 0));
-
-    underTest.onLoadingCompleteAndSuccessful(
-        mockPackage(
-            "my/pkg3", /* targets= */ ImmutableMap.of(), /* transitivelyLoadedStarlarkFiles= */ 0),
-        StarlarkSemantics.DEFAULT,
-        LazyMacroExpansionPackages.NONE,
-        new Metrics(/* loadTimeNanos= */ 44_000_000, /* globFilesystemOperationCost= */ 0));
-  }
-
-  @Test
-  public void testRecordsTopLargestPackagesPerBuild_extrema() {
-    PackageMetricsRecorder recorder = new ExtremaPackageMetricsRecorder(2);
-    underTest.packageMetricsRecorder = recorder;
-
-    recordLargePackages();
-
-    assertThat(underTest.packageMetricsRecorder.getNumTargets())
-        .containsExactlyEntriesIn(
-            ImmutableMap.of(
+                Durations.fromMillis(43),
                 PackageIdentifier.createInMainRepo("my/pkg3"),
-                3L,
-                PackageIdentifier.createInMainRepo("my/pkg2"),
-                2L))
-        .inOrder();
-    recorder.loadingFinished();
+                Durations.fromMillis(44)
+            )
+        recorder.clear()
+        assertAllMapsEmpty(recorder)
+    }
 
-    assertAllMapsEmpty(recorder);
-  }
+    private fun recordSlowPackages() {
+        underTest.onLoadingCompleteAndSuccessful(
+            mockPackage(
+                "my/pkg1",  /* targets= */
+                com.google.common.collect.ImmutableMap.of<String?, Target?>(),  /* transitivelyLoadedStarlarkFiles= */
+                0
+            ),
+            StarlarkSemantics.DEFAULT,
+            LazyMacroExpansionPackages.NONE,
+            Metrics( /* loadTimeNanos= */42000000,  /* globFilesystemOperationCost= */0)
+        )
 
-  @Test
-  public void testRecordsTopLargestPackagesPerBuild_complete() {
-    PackageMetricsRecorder recorder = new CompletePackageMetricsRecorder();
-    underTest.packageMetricsRecorder = recorder;
+        underTest.onLoadingCompleteAndSuccessful(
+            mockPackage(
+                "my/pkg2",  /* targets= */
+                com.google.common.collect.ImmutableMap.of<String?, Target?>(),  /* transitivelyLoadedStarlarkFiles= */
+                0
+            ),
+            StarlarkSemantics.DEFAULT,
+            LazyMacroExpansionPackages.NONE,
+            Metrics( /* loadTimeNanos= */43000000,  /* globFilesystemOperationCost= */0)
+        )
 
-    recordLargePackages();
+        underTest.onLoadingCompleteAndSuccessful(
+            mockPackage(
+                "my/pkg3",  /* targets= */
+                com.google.common.collect.ImmutableMap.of<String?, Target?>(),  /* transitivelyLoadedStarlarkFiles= */
+                0
+            ),
+            StarlarkSemantics.DEFAULT,
+            LazyMacroExpansionPackages.NONE,
+            Metrics( /* loadTimeNanos= */44000000,  /* globFilesystemOperationCost= */0)
+        )
+    }
 
-    assertThat(underTest.packageMetricsRecorder.getNumTargets())
-        .containsExactly(
-            PackageIdentifier.createInMainRepo("my/pkg3"),
-            3L,
-            PackageIdentifier.createInMainRepo("my/pkg2"),
-            2L,
-            PackageIdentifier.createInMainRepo("my/pkg1"),
-            1L);
-  }
+    @org.junit.Test
+    fun testRecordsTopLargestPackagesPerBuild_extrema() {
+        val recorder: PackageMetricsRecorder = ExtremaPackageMetricsRecorder(2)
+        underTest.packageMetricsRecorder = recorder
 
-  private void recordLargePackages() {
-    underTest.onLoadingCompleteAndSuccessful(
-        mockPackage(
-            "my/pkg1",
-            ImmutableMap.of("target1", mock(Target.class)),
-            /* transitivelyLoadedStarlarkFiles= */ 0),
-        StarlarkSemantics.DEFAULT,
-        LazyMacroExpansionPackages.NONE,
-        PLACEHOLDER_METRICS);
+        recordLargePackages()
 
-    underTest.onLoadingCompleteAndSuccessful(
-        mockPackage(
-            "my/pkg2",
-            ImmutableMap.of("target1", mock(Target.class), "target2", mock(Target.class)),
-            /* transitivelyLoadedStarlarkFiles= */ 0),
-        StarlarkSemantics.DEFAULT,
-        LazyMacroExpansionPackages.NONE,
-        PLACEHOLDER_METRICS);
+        assertThat(underTest.packageMetricsRecorder.getNumTargets())
+            .containsExactlyEntriesIn(
+                com.google.common.collect.ImmutableMap.of<K?, V?>(
+                    PackageIdentifier.createInMainRepo("my/pkg3"),
+                    3L,
+                    PackageIdentifier.createInMainRepo("my/pkg2"),
+                    2L
+                )
+            )
+            .inOrder()
+        recorder.loadingFinished()
 
-    underTest.onLoadingCompleteAndSuccessful(
-        mockPackage(
-            "my/pkg3",
-            ImmutableMap.of(
-                "target1",
-                mock(Target.class),
-                "target2",
-                mock(Target.class),
-                "target3",
-                mock(Target.class)),
-            /* transitivelyLoadedStarlarkFiles= */ 0),
-        StarlarkSemantics.DEFAULT,
-        LazyMacroExpansionPackages.NONE,
-        PLACEHOLDER_METRICS);
-  }
+        assertAllMapsEmpty(recorder)
+    }
 
-  @Test
-  public void testRecordsTransitiveLoadsPerBuild_extrema() {
-    PackageMetricsRecorder recorder = new ExtremaPackageMetricsRecorder(2);
-    underTest.packageMetricsRecorder = recorder;
+    @org.junit.Test
+    fun testRecordsTopLargestPackagesPerBuild_complete() {
+        val recorder: PackageMetricsRecorder = CompletePackageMetricsRecorder()
+        underTest.packageMetricsRecorder = recorder
 
-    recordTransitiveLoads();
+        recordLargePackages()
 
-    assertThat(underTest.packageMetricsRecorder.getNumTransitiveLoads())
-        .containsExactlyEntriesIn(
-            ImmutableMap.of(
+        assertThat(underTest.packageMetricsRecorder.getNumTargets())
+            .containsExactly(
                 PackageIdentifier.createInMainRepo("my/pkg3"),
                 3L,
                 PackageIdentifier.createInMainRepo("my/pkg2"),
-                2L))
-        .inOrder();
-    recorder.loadingFinished();
-    assertAllMapsEmpty(recorder);
-  }
+                2L,
+                PackageIdentifier.createInMainRepo("my/pkg1"),
+                1L
+            )
+    }
 
-  @Test
-  public void testRecordsTransitiveLoadsPerBuild_complete() {
-    PackageMetricsRecorder recorder = new CompletePackageMetricsRecorder();
-    underTest.packageMetricsRecorder = recorder;
+    private fun recordLargePackages() {
+        underTest.onLoadingCompleteAndSuccessful(
+            mockPackage(
+                "my/pkg1",
+                com.google.common.collect.ImmutableMap.of<String?, Target?>(
+                    "target1",
+                    Mockito.mock<Target?>(Target::class.java)
+                ),  /* transitivelyLoadedStarlarkFiles= */
+                0
+            ),
+            StarlarkSemantics.DEFAULT,
+            LazyMacroExpansionPackages.NONE,
+            PLACEHOLDER_METRICS
+        )
 
-    recordTransitiveLoads();
+        underTest.onLoadingCompleteAndSuccessful(
+            mockPackage(
+                "my/pkg2",
+                com.google.common.collect.ImmutableMap.of<String?, Target?>(
+                    "target1",
+                    Mockito.mock<Target?>(Target::class.java),
+                    "target2",
+                    Mockito.mock<Target?>(Target::class.java)
+                ),  /* transitivelyLoadedStarlarkFiles= */
+                0
+            ),
+            StarlarkSemantics.DEFAULT,
+            LazyMacroExpansionPackages.NONE,
+            PLACEHOLDER_METRICS
+        )
 
-    assertThat(underTest.packageMetricsRecorder.getNumTransitiveLoads())
-        .containsExactly(
-            PackageIdentifier.createInMainRepo("my/pkg3"),
-            3L,
-            PackageIdentifier.createInMainRepo("my/pkg2"),
-            2L,
-            PackageIdentifier.createInMainRepo("my/pkg1"),
-            1L);
-  }
+        underTest.onLoadingCompleteAndSuccessful(
+            mockPackage(
+                "my/pkg3",
+                com.google.common.collect.ImmutableMap.of<String?, Target?>(
+                    "target1",
+                    Mockito.mock<Target?>(Target::class.java),
+                    "target2",
+                    Mockito.mock<Target?>(Target::class.java),
+                    "target3",
+                    Mockito.mock<Target?>(Target::class.java)
+                ),  /* transitivelyLoadedStarlarkFiles= */
+                0
+            ),
+            StarlarkSemantics.DEFAULT,
+            LazyMacroExpansionPackages.NONE,
+            PLACEHOLDER_METRICS
+        )
+    }
 
-  private void recordTransitiveLoads() {
-    underTest.onLoadingCompleteAndSuccessful(
-        mockPackage(
-            "my/pkg1", /* targets= */ ImmutableMap.of(), /* transitivelyLoadedStarlarkFiles= */ 1),
-        StarlarkSemantics.DEFAULT,
-        LazyMacroExpansionPackages.NONE,
-        PLACEHOLDER_METRICS);
+    @org.junit.Test
+    fun testRecordsTransitiveLoadsPerBuild_extrema() {
+        val recorder: PackageMetricsRecorder = ExtremaPackageMetricsRecorder(2)
+        underTest.packageMetricsRecorder = recorder
 
-    underTest.onLoadingCompleteAndSuccessful(
-        mockPackage(
-            "my/pkg2", /* targets= */ ImmutableMap.of(), /* transitivelyLoadedStarlarkFiles= */ 2),
-        StarlarkSemantics.DEFAULT,
-        LazyMacroExpansionPackages.NONE,
-        PLACEHOLDER_METRICS);
+        recordTransitiveLoads()
 
-    underTest.onLoadingCompleteAndSuccessful(
-        mockPackage(
-            "my/pkg3", /* targets= */ ImmutableMap.of(), /* transitivelyLoadedStarlarkFiles= */ 3),
-        StarlarkSemantics.DEFAULT,
-        LazyMacroExpansionPackages.NONE,
-        PLACEHOLDER_METRICS);
-  }
+        assertThat(underTest.packageMetricsRecorder.getNumTransitiveLoads())
+            .containsExactlyEntriesIn(
+                com.google.common.collect.ImmutableMap.of<K?, V?>(
+                    PackageIdentifier.createInMainRepo("my/pkg3"),
+                    3L,
+                    PackageIdentifier.createInMainRepo("my/pkg2"),
+                    2L
+                )
+            )
+            .inOrder()
+        recorder.loadingFinished()
+        assertAllMapsEmpty(recorder)
+    }
 
-  @Test
-  public void testRecordsMostComputationStepsPerBuild_extrema() {
-    PackageMetricsRecorder recorder = new ExtremaPackageMetricsRecorder(2);
-    underTest.packageMetricsRecorder = recorder;
+    @org.junit.Test
+    fun testRecordsTransitiveLoadsPerBuild_complete() {
+        val recorder: PackageMetricsRecorder = CompletePackageMetricsRecorder()
+        underTest.packageMetricsRecorder = recorder
 
-    recordComputationSteps();
+        recordTransitiveLoads()
 
-    assertThat(underTest.packageMetricsRecorder.getComputationSteps())
-        .containsExactlyEntriesIn(
-            ImmutableMap.of(
+        assertThat(underTest.packageMetricsRecorder.getNumTransitiveLoads())
+            .containsExactly(
+                PackageIdentifier.createInMainRepo("my/pkg3"),
+                3L,
+                PackageIdentifier.createInMainRepo("my/pkg2"),
+                2L,
+                PackageIdentifier.createInMainRepo("my/pkg1"),
+                1L
+            )
+    }
+
+    private fun recordTransitiveLoads() {
+        underTest.onLoadingCompleteAndSuccessful(
+            mockPackage(
+                "my/pkg1",  /* targets= */
+                com.google.common.collect.ImmutableMap.of<String?, Target?>(),  /* transitivelyLoadedStarlarkFiles= */
+                1
+            ),
+            StarlarkSemantics.DEFAULT,
+            LazyMacroExpansionPackages.NONE,
+            PLACEHOLDER_METRICS
+        )
+
+        underTest.onLoadingCompleteAndSuccessful(
+            mockPackage(
+                "my/pkg2",  /* targets= */
+                com.google.common.collect.ImmutableMap.of<String?, Target?>(),  /* transitivelyLoadedStarlarkFiles= */
+                2
+            ),
+            StarlarkSemantics.DEFAULT,
+            LazyMacroExpansionPackages.NONE,
+            PLACEHOLDER_METRICS
+        )
+
+        underTest.onLoadingCompleteAndSuccessful(
+            mockPackage(
+                "my/pkg3",  /* targets= */
+                com.google.common.collect.ImmutableMap.of<String?, Target?>(),  /* transitivelyLoadedStarlarkFiles= */
+                3
+            ),
+            StarlarkSemantics.DEFAULT,
+            LazyMacroExpansionPackages.NONE,
+            PLACEHOLDER_METRICS
+        )
+    }
+
+    @org.junit.Test
+    fun testRecordsMostComputationStepsPerBuild_extrema() {
+        val recorder: PackageMetricsRecorder = ExtremaPackageMetricsRecorder(2)
+        underTest.packageMetricsRecorder = recorder
+
+        recordComputationSteps()
+
+        assertThat(underTest.packageMetricsRecorder.getComputationSteps())
+            .containsExactlyEntriesIn(
+                com.google.common.collect.ImmutableMap.of<K?, V?>(
+                    PackageIdentifier.createInMainRepo("my/pkg1"),
+                    1000L,
+                    PackageIdentifier.createInMainRepo("my/pkg2"),
+                    100L
+                )
+            )
+            .inOrder()
+        recorder.loadingFinished()
+
+        assertAllMapsEmpty(recorder)
+    }
+
+    @org.junit.Test
+    fun testRecordsMostComputationStepsPerBuild_complete() {
+        val recorder: PackageMetricsRecorder = CompletePackageMetricsRecorder()
+        underTest.packageMetricsRecorder = recorder
+
+        recordComputationSteps()
+
+        assertThat(underTest.packageMetricsRecorder.getComputationSteps())
+            .containsExactly(
                 PackageIdentifier.createInMainRepo("my/pkg1"),
                 1000L,
                 PackageIdentifier.createInMainRepo("my/pkg2"),
-                100L))
-        .inOrder();
-    recorder.loadingFinished();
-
-    assertAllMapsEmpty(recorder);
-  }
-
-  @Test
-  public void testRecordsMostComputationStepsPerBuild_complete() {
-    PackageMetricsRecorder recorder = new CompletePackageMetricsRecorder();
-    underTest.packageMetricsRecorder = recorder;
-
-    recordComputationSteps();
-
-    assertThat(underTest.packageMetricsRecorder.getComputationSteps())
-        .containsExactly(
-            PackageIdentifier.createInMainRepo("my/pkg1"),
-            1000L,
-            PackageIdentifier.createInMainRepo("my/pkg2"),
-            100L,
-            PackageIdentifier.createInMainRepo("my/pkg3"),
-            10L);
-    recorder.loadingFinished();
-
-    assertAllMapsEmpty(recorder);
-  }
-
-  private void recordComputationSteps() {
-    Package mockPackage1 =
-        mockPackage(
-            "my/pkg1", /* targets= */ ImmutableMap.of(), /* transitivelyLoadedStarlarkFiles= */ 0);
-    when(mockPackage1.computationSteps).thenReturn(1000L);
-    underTest.onLoadingCompleteAndSuccessful(
-        mockPackage1,
-        StarlarkSemantics.DEFAULT,
-        LazyMacroExpansionPackages.NONE,
-        PLACEHOLDER_METRICS);
-
-    Package mockPackage2 =
-        mockPackage(
-            "my/pkg2", /* targets= */ ImmutableMap.of(), /* transitivelyLoadedStarlarkFiles= */ 0);
-    when(mockPackage2.computationSteps).thenReturn(100L);
-    underTest.onLoadingCompleteAndSuccessful(
-        mockPackage2,
-        StarlarkSemantics.DEFAULT,
-        LazyMacroExpansionPackages.NONE,
-        PLACEHOLDER_METRICS);
-
-    Package mockPackage3 =
-        mockPackage(
-            "my/pkg3", /* targets= */ ImmutableMap.of(), /* transitivelyLoadedStarlarkFiles= */ 0);
-    when(mockPackage3.computationSteps).thenReturn(10L);
-    underTest.onLoadingCompleteAndSuccessful(
-        mockPackage3,
-        StarlarkSemantics.DEFAULT,
-        LazyMacroExpansionPackages.NONE,
-        PLACEHOLDER_METRICS);
-  }
-
-  @Test
-  public void testRecordsMostPackageOverheadPerBuild_complete() {
-    PackageMetricsRecorder recorder = new CompletePackageMetricsRecorder();
-    underTest.packageMetricsRecorder = recorder;
-
-    recordPackageOverhead();
-
-    assertThat(underTest.packageMetricsRecorder.getPackageOverhead())
-        .containsExactly(
-            PackageIdentifier.createInMainRepo("my/pkg1"),
-            100L,
-            PackageIdentifier.createInMainRepo("my/pkg3"),
-            300L);
-    recorder.loadingFinished();
-
-    assertAllMapsEmpty(recorder);
-  }
-
-  @Test
-  public void testRecordsTopPackageOverheadPackagesPerBuild_extrema() {
-    PackageMetricsRecorder recorder = new ExtremaPackageMetricsRecorder(2);
-    underTest.packageMetricsRecorder = recorder;
-
-    recordPackageOverhead();
-
-    assertThat(underTest.packageMetricsRecorder.getPackageOverhead())
-        .containsExactlyEntriesIn(
-            ImmutableMap.of(
+                100L,
                 PackageIdentifier.createInMainRepo("my/pkg3"),
-                300L,
+                10L
+            )
+        recorder.loadingFinished()
+
+        assertAllMapsEmpty(recorder)
+    }
+
+    private fun recordComputationSteps() {
+        val mockPackage1: Package =
+            mockPackage(
+                "my/pkg1",  /* targets= */
+                com.google.common.collect.ImmutableMap.of<String?, Target?>(),  /* transitivelyLoadedStarlarkFiles= */
+                0
+            )
+        Mockito.`when`<Any?>(mockPackage1.computationSteps).thenReturn(1000L)
+        underTest.onLoadingCompleteAndSuccessful(
+            mockPackage1,
+            StarlarkSemantics.DEFAULT,
+            LazyMacroExpansionPackages.NONE,
+            PLACEHOLDER_METRICS
+        )
+
+        val mockPackage2: Package =
+            mockPackage(
+                "my/pkg2",  /* targets= */
+                com.google.common.collect.ImmutableMap.of<String?, Target?>(),  /* transitivelyLoadedStarlarkFiles= */
+                0
+            )
+        Mockito.`when`<Any?>(mockPackage2.computationSteps).thenReturn(100L)
+        underTest.onLoadingCompleteAndSuccessful(
+            mockPackage2,
+            StarlarkSemantics.DEFAULT,
+            LazyMacroExpansionPackages.NONE,
+            PLACEHOLDER_METRICS
+        )
+
+        val mockPackage3: Package =
+            mockPackage(
+                "my/pkg3",  /* targets= */
+                com.google.common.collect.ImmutableMap.of<String?, Target?>(),  /* transitivelyLoadedStarlarkFiles= */
+                0
+            )
+        Mockito.`when`<Any?>(mockPackage3.computationSteps).thenReturn(10L)
+        underTest.onLoadingCompleteAndSuccessful(
+            mockPackage3,
+            StarlarkSemantics.DEFAULT,
+            LazyMacroExpansionPackages.NONE,
+            PLACEHOLDER_METRICS
+        )
+    }
+
+    @org.junit.Test
+    fun testRecordsMostPackageOverheadPerBuild_complete() {
+        val recorder: PackageMetricsRecorder = CompletePackageMetricsRecorder()
+        underTest.packageMetricsRecorder = recorder
+
+        recordPackageOverhead()
+
+        assertThat(underTest.packageMetricsRecorder.getPackageOverhead())
+            .containsExactly(
                 PackageIdentifier.createInMainRepo("my/pkg1"),
-                100L))
-        .inOrder();
-    recorder.loadingFinished();
+                100L,
+                PackageIdentifier.createInMainRepo("my/pkg3"),
+                300L
+            )
+        recorder.loadingFinished()
 
-    assertAllMapsEmpty(recorder);
-  }
+        assertAllMapsEmpty(recorder)
+    }
 
-  private void recordPackageOverhead() {
-    Package mockPackage1 =
-        mockPackage(
-            "my/pkg1", /* targets= */ ImmutableMap.of(), /* transitivelyLoadedStarlarkFiles= */ 0);
-    when(mockPackage1.getPackageOverhead()).thenReturn(OptionalLong.of(100));
-    underTest.onLoadingCompleteAndSuccessful(
-        mockPackage1,
-        StarlarkSemantics.DEFAULT,
-        LazyMacroExpansionPackages.NONE,
-        PLACEHOLDER_METRICS);
+    @org.junit.Test
+    fun testRecordsTopPackageOverheadPackagesPerBuild_extrema() {
+        val recorder: PackageMetricsRecorder = ExtremaPackageMetricsRecorder(2)
+        underTest.packageMetricsRecorder = recorder
 
-    // Record nothing for pkg2, will be missing from metrics.
-    Package mockPackage2 =
-        mockPackage(
-            "my/pkg2", /* targets= */ ImmutableMap.of(), /* transitivelyLoadedStarlarkFiles= */ 0);
-    underTest.onLoadingCompleteAndSuccessful(
-        mockPackage2,
-        StarlarkSemantics.DEFAULT,
-        LazyMacroExpansionPackages.NONE,
-        PLACEHOLDER_METRICS);
+        recordPackageOverhead()
 
-    Package mockPackage3 =
-        mockPackage(
-            "my/pkg3", /* targets= */ ImmutableMap.of(), /* transitivelyLoadedStarlarkFiles= */ 0);
-    when(mockPackage3.computationSteps).thenReturn(10L);
-    when(mockPackage3.getPackageOverhead()).thenReturn(OptionalLong.of(300));
+        assertThat(underTest.packageMetricsRecorder.getPackageOverhead())
+            .containsExactlyEntriesIn(
+                com.google.common.collect.ImmutableMap.of<K?, V?>(
+                    PackageIdentifier.createInMainRepo("my/pkg3"),
+                    300L,
+                    PackageIdentifier.createInMainRepo("my/pkg1"),
+                    100L
+                )
+            )
+            .inOrder()
+        recorder.loadingFinished()
 
-    underTest.onLoadingCompleteAndSuccessful(
-        mockPackage3,
-        StarlarkSemantics.DEFAULT,
-        LazyMacroExpansionPackages.NONE,
-        PLACEHOLDER_METRICS);
-  }
+        assertAllMapsEmpty(recorder)
+    }
 
-  @Test
-  public void metricMap_extrema() {
-    PackageMetricsRecorder recorder = new ExtremaPackageMetricsRecorder(2);
-    underTest.packageMetricsRecorder = recorder;
+    private fun recordPackageOverhead() {
+        val mockPackage1: Package =
+            mockPackage(
+                "my/pkg1",  /* targets= */
+                com.google.common.collect.ImmutableMap.of<String?, Target?>(),  /* transitivelyLoadedStarlarkFiles= */
+                0
+            )
+        Mockito.`when`<T?>(mockPackage1.getPackageOverhead()).thenReturn(OptionalLong.of(100))
+        underTest.onLoadingCompleteAndSuccessful(
+            mockPackage1,
+            StarlarkSemantics.DEFAULT,
+            LazyMacroExpansionPackages.NONE,
+            PLACEHOLDER_METRICS
+        )
 
-    recordEverything();
+        // Record nothing for pkg2, will be missing from metrics.
+        val mockPackage2: Package =
+            mockPackage(
+                "my/pkg2",  /* targets= */
+                com.google.common.collect.ImmutableMap.of<String?, Target?>(),  /* transitivelyLoadedStarlarkFiles= */
+                0
+            )
+        underTest.onLoadingCompleteAndSuccessful(
+            mockPackage2,
+            StarlarkSemantics.DEFAULT,
+            LazyMacroExpansionPackages.NONE,
+            PLACEHOLDER_METRICS
+        )
 
-    PackageLoadMetrics pkg1 =
-        PackageLoadMetrics.newBuilder()
-            .setName("my/pkg1")
-            .setLoadDuration(Durations.fromMillis(42))
-            .setGlobFilesystemOperationCost(100)
-            .setComputationSteps(1000)
-            .setNumTargets(1)
-            .setNumTransitiveLoads(1)
-            .setPackageOverhead(100_000)
-            .build();
+        val mockPackage3: Package =
+            mockPackage(
+                "my/pkg3",  /* targets= */
+                com.google.common.collect.ImmutableMap.of<String?, Target?>(),  /* transitivelyLoadedStarlarkFiles= */
+                0
+            )
+        Mockito.`when`<Any?>(mockPackage3.computationSteps).thenReturn(10L)
+        Mockito.`when`<T?>(mockPackage3.getPackageOverhead()).thenReturn(OptionalLong.of(300))
 
-    PackageLoadMetrics pkg2 =
-        PackageLoadMetrics.newBuilder()
-            .setName("my/pkg2")
-            .setLoadDuration(Durations.fromMillis(43))
-            .setGlobFilesystemOperationCost(200)
-            .setComputationSteps(100)
-            .setNumTargets(2)
-            .setNumTransitiveLoads(2)
-            .setPackageOverhead(200_000)
-            .build();
+        underTest.onLoadingCompleteAndSuccessful(
+            mockPackage3,
+            StarlarkSemantics.DEFAULT,
+            LazyMacroExpansionPackages.NONE,
+            PLACEHOLDER_METRICS
+        )
+    }
 
-    PackageLoadMetrics pkg3 =
-        PackageLoadMetrics.newBuilder()
-            .setName("my/pkg3")
-            .setLoadDuration(Durations.fromMillis(44))
-            .setGlobFilesystemOperationCost(300)
-            .setComputationSteps(10)
-            .setNumTargets(3)
-            .setNumTransitiveLoads(3)
-            .setPackageOverhead(300_000)
-            .build();
+    @org.junit.Test
+    fun metricMap_extrema() {
+        val recorder: PackageMetricsRecorder = ExtremaPackageMetricsRecorder(2)
+        underTest.packageMetricsRecorder = recorder
 
-    assertThat(underTest.packageMetricsRecorder.getPackageLoadMetrics())
-        .containsExactly(pkg1, pkg2, pkg3);
-    recorder.loadingFinished();
-    assertAllMapsEmpty(recorder);
-  }
+        recordEverything()
 
-  @Test
-  public void metricMap_complete() {
-    PackageMetricsRecorder recorder = new CompletePackageMetricsRecorder();
-    underTest.packageMetricsRecorder = recorder;
+        val pkg1: PackageLoadMetrics? =
+            PackageLoadMetrics.newBuilder()
+                .setName("my/pkg1")
+                .setLoadDuration(Durations.fromMillis(42))
+                .setGlobFilesystemOperationCost(100)
+                .setComputationSteps(1000)
+                .setNumTargets(1)
+                .setNumTransitiveLoads(1)
+                .setPackageOverhead(100000)
+                .build()
 
-    recordEverything();
+        val pkg2: PackageLoadMetrics? =
+            PackageLoadMetrics.newBuilder()
+                .setName("my/pkg2")
+                .setLoadDuration(Durations.fromMillis(43))
+                .setGlobFilesystemOperationCost(200)
+                .setComputationSteps(100)
+                .setNumTargets(2)
+                .setNumTransitiveLoads(2)
+                .setPackageOverhead(200000)
+                .build()
 
-    PackageLoadMetrics pkg1 =
-        PackageLoadMetrics.newBuilder()
-            .setName("my/pkg1")
-            .setLoadDuration(Durations.fromMillis(42))
-            .setGlobFilesystemOperationCost(100)
-            .setComputationSteps(1000)
-            .setNumTargets(1)
-            .setNumTransitiveLoads(1)
-            .setPackageOverhead(100_000)
-            .build();
+        val pkg3: PackageLoadMetrics? =
+            PackageLoadMetrics.newBuilder()
+                .setName("my/pkg3")
+                .setLoadDuration(Durations.fromMillis(44))
+                .setGlobFilesystemOperationCost(300)
+                .setComputationSteps(10)
+                .setNumTargets(3)
+                .setNumTransitiveLoads(3)
+                .setPackageOverhead(300000)
+                .build()
 
-    PackageLoadMetrics pkg2 =
-        PackageLoadMetrics.newBuilder()
-            .setName("my/pkg2")
-            .setLoadDuration(Durations.fromMillis(43))
-            .setGlobFilesystemOperationCost(200)
-            .setComputationSteps(100)
-            .setNumTargets(2)
-            .setNumTransitiveLoads(2)
-            .setPackageOverhead(200_000)
-            .build();
+        assertThat(underTest.packageMetricsRecorder.getPackageLoadMetrics())
+            .containsExactly(pkg1, pkg2, pkg3)
+        recorder.loadingFinished()
+        assertAllMapsEmpty(recorder)
+    }
 
-    PackageLoadMetrics pkg3 =
-        PackageLoadMetrics.newBuilder()
-            .setName("my/pkg3")
-            .setLoadDuration(Durations.fromMillis(44))
-            .setGlobFilesystemOperationCost(300)
-            .setComputationSteps(10)
-            .setNumTargets(3)
-            .setNumTransitiveLoads(3)
-            .setPackageOverhead(300_000)
-            .build();
+    @org.junit.Test
+    fun metricMap_complete() {
+        val recorder: PackageMetricsRecorder = CompletePackageMetricsRecorder()
+        underTest.packageMetricsRecorder = recorder
 
-    assertThat(underTest.packageMetricsRecorder.getPackageLoadMetrics())
-        .containsExactly(pkg1, pkg2, pkg3);
-    recorder.loadingFinished();
-    assertAllMapsEmpty(recorder);
-  }
+        recordEverything()
 
-  private void recordEverything() {
-    Package mockPackage1 =
-        mockPackage(
-            "my/pkg1",
-            /* targets= */ ImmutableMap.of("target1", mock(Target.class)),
-            /* transitivelyLoadedStarlarkFiles= */ 1);
-    when(mockPackage1.computationSteps).thenReturn(1000L);
-    when(mockPackage1.getPackageOverhead()).thenReturn(OptionalLong.of(100_000));
+        val pkg1: PackageLoadMetrics? =
+            PackageLoadMetrics.newBuilder()
+                .setName("my/pkg1")
+                .setLoadDuration(Durations.fromMillis(42))
+                .setGlobFilesystemOperationCost(100)
+                .setComputationSteps(1000)
+                .setNumTargets(1)
+                .setNumTransitiveLoads(1)
+                .setPackageOverhead(100000)
+                .build()
 
-    underTest.onLoadingCompleteAndSuccessful(
-        mockPackage1,
-        StarlarkSemantics.DEFAULT,
-        LazyMacroExpansionPackages.NONE,
-        new Metrics(/* loadTimeNanos= */ 42_000_000, /* globFilesystemOperationCost= */ 100));
+        val pkg2: PackageLoadMetrics? =
+            PackageLoadMetrics.newBuilder()
+                .setName("my/pkg2")
+                .setLoadDuration(Durations.fromMillis(43))
+                .setGlobFilesystemOperationCost(200)
+                .setComputationSteps(100)
+                .setNumTargets(2)
+                .setNumTransitiveLoads(2)
+                .setPackageOverhead(200000)
+                .build()
 
-    Package mockPackage2 =
-        mockPackage(
-            "my/pkg2",
-            /* targets= */ ImmutableMap.of(
-                "target1", mock(Target.class), "target2", mock(Target.class)),
-            /* transitivelyLoadedStarlarkFiles= */ 2);
-    when(mockPackage2.computationSteps).thenReturn(100L);
-    when(mockPackage2.getPackageOverhead()).thenReturn(OptionalLong.of(200_000));
-    underTest.onLoadingCompleteAndSuccessful(
-        mockPackage2,
-        StarlarkSemantics.DEFAULT,
-        LazyMacroExpansionPackages.NONE,
-        new Metrics(/* loadTimeNanos= */ 43_000_000, /* globFilesystemOperationCost= */ 200));
+        val pkg3: PackageLoadMetrics? =
+            PackageLoadMetrics.newBuilder()
+                .setName("my/pkg3")
+                .setLoadDuration(Durations.fromMillis(44))
+                .setGlobFilesystemOperationCost(300)
+                .setComputationSteps(10)
+                .setNumTargets(3)
+                .setNumTransitiveLoads(3)
+                .setPackageOverhead(300000)
+                .build()
 
-    Package mockPackage3 =
-        mockPackage(
-            "my/pkg3",
-            /* targets= */ ImmutableMap.of(
-                "target1",
-                mock(Target.class),
-                "target2",
-                mock(Target.class),
-                "target3",
-                mock(Target.class)),
-            /* transitivelyLoadedStarlarkFiles= */ 3);
-    when(mockPackage3.computationSteps).thenReturn(10L);
-    when(mockPackage3.getPackageOverhead()).thenReturn(OptionalLong.of(300_000));
-    underTest.onLoadingCompleteAndSuccessful(
-        mockPackage3,
-        StarlarkSemantics.DEFAULT,
-        LazyMacroExpansionPackages.NONE,
-        new Metrics(/* loadTimeNanos= */ 44_000_000, /* globFilesystemOperationCost= */ 300));
-  }
+        assertThat(underTest.packageMetricsRecorder.getPackageLoadMetrics())
+            .containsExactly(pkg1, pkg2, pkg3)
+        recorder.loadingFinished()
+        assertAllMapsEmpty(recorder)
+    }
 
-  private void recordPackagesWithGlobCost() {
-    underTest.onLoadingCompleteAndSuccessful(
-        mockPackage(
-            "my/pkg1", /* targets= */ ImmutableMap.of(), /* transitivelyLoadedStarlarkFiles= */ 0),
-        StarlarkSemantics.DEFAULT,
-        LazyMacroExpansionPackages.NONE,
-        new Metrics(/* loadTimeNanos= */ 0, /* globFilesystemOperationCost= */ 111));
+    private fun recordEverything() {
+        val mockPackage1: Package =
+            mockPackage(
+                "my/pkg1",  /* targets= */
+                com.google.common.collect.ImmutableMap.of<String?, Target?>(
+                    "target1",
+                    Mockito.mock<Target?>(Target::class.java)
+                ),  /* transitivelyLoadedStarlarkFiles= */
+                1
+            )
+        Mockito.`when`<Any?>(mockPackage1.computationSteps).thenReturn(1000L)
+        Mockito.`when`<T?>(mockPackage1.getPackageOverhead()).thenReturn(OptionalLong.of(100000))
 
-    underTest.onLoadingCompleteAndSuccessful(
-        mockPackage(
-            "my/pkg2", /* targets= */ ImmutableMap.of(), /* transitivelyLoadedStarlarkFiles= */ 0),
-        StarlarkSemantics.DEFAULT,
-        LazyMacroExpansionPackages.NONE,
-        new Metrics(/* loadTimeNanos= */ 0, /* globFilesystemOperationCost= */ 222));
+        underTest.onLoadingCompleteAndSuccessful(
+            mockPackage1,
+            StarlarkSemantics.DEFAULT,
+            LazyMacroExpansionPackages.NONE,
+            Metrics( /* loadTimeNanos= */42000000,  /* globFilesystemOperationCost= */100)
+        )
 
-    underTest.onLoadingCompleteAndSuccessful(
-        mockPackage(
-            "my/pkg3", /* targets= */ ImmutableMap.of(), /* transitivelyLoadedStarlarkFiles= */ 0),
-        StarlarkSemantics.DEFAULT,
-        LazyMacroExpansionPackages.NONE,
-        new Metrics(/* loadTimeNanos= */ 0, /* globFilesystemOperationCost= */ 333));
-  }
+        val mockPackage2: Package =
+            mockPackage(
+                "my/pkg2",  /* targets= */
+                com.google.common.collect.ImmutableMap.of<String?, Target?>(
+                    "target1",
+                    Mockito.mock<Target?>(Target::class.java),
+                    "target2",
+                    Mockito.mock<Target?>(Target::class.java)
+                ),  /* transitivelyLoadedStarlarkFiles= */
+                2
+            )
+        Mockito.`when`<Any?>(mockPackage2.computationSteps).thenReturn(100L)
+        Mockito.`when`<T?>(mockPackage2.getPackageOverhead()).thenReturn(OptionalLong.of(200000))
+        underTest.onLoadingCompleteAndSuccessful(
+            mockPackage2,
+            StarlarkSemantics.DEFAULT,
+            LazyMacroExpansionPackages.NONE,
+            Metrics( /* loadTimeNanos= */43000000,  /* globFilesystemOperationCost= */200)
+        )
 
-  @Test
-  public void testRecordsTopGlobFilesystemOperationCost_extrema() {
-    PackageMetricsRecorder recorder = new ExtremaPackageMetricsRecorder(2);
-    underTest.packageMetricsRecorder = recorder;
+        val mockPackage3: Package =
+            mockPackage(
+                "my/pkg3",  /* targets= */
+                com.google.common.collect.ImmutableMap.of<String?, Target?>(
+                    "target1",
+                    Mockito.mock<Target?>(Target::class.java),
+                    "target2",
+                    Mockito.mock<Target?>(Target::class.java),
+                    "target3",
+                    Mockito.mock<Target?>(Target::class.java)
+                ),  /* transitivelyLoadedStarlarkFiles= */
+                3
+            )
+        Mockito.`when`<Any?>(mockPackage3.computationSteps).thenReturn(10L)
+        Mockito.`when`<T?>(mockPackage3.getPackageOverhead()).thenReturn(OptionalLong.of(300000))
+        underTest.onLoadingCompleteAndSuccessful(
+            mockPackage3,
+            StarlarkSemantics.DEFAULT,
+            LazyMacroExpansionPackages.NONE,
+            Metrics( /* loadTimeNanos= */44000000,  /* globFilesystemOperationCost= */300)
+        )
+    }
 
-    recordPackagesWithGlobCost();
+    private fun recordPackagesWithGlobCost() {
+        underTest.onLoadingCompleteAndSuccessful(
+            mockPackage(
+                "my/pkg1",  /* targets= */
+                com.google.common.collect.ImmutableMap.of<String?, Target?>(),  /* transitivelyLoadedStarlarkFiles= */
+                0
+            ),
+            StarlarkSemantics.DEFAULT,
+            LazyMacroExpansionPackages.NONE,
+            Metrics( /* loadTimeNanos= */0,  /* globFilesystemOperationCost= */111)
+        )
 
-    assertThat(underTest.packageMetricsRecorder.getGlobFilesystemOperationCost())
-        .containsExactlyEntriesIn(
-            ImmutableMap.of(
+        underTest.onLoadingCompleteAndSuccessful(
+            mockPackage(
+                "my/pkg2",  /* targets= */
+                com.google.common.collect.ImmutableMap.of<String?, Target?>(),  /* transitivelyLoadedStarlarkFiles= */
+                0
+            ),
+            StarlarkSemantics.DEFAULT,
+            LazyMacroExpansionPackages.NONE,
+            Metrics( /* loadTimeNanos= */0,  /* globFilesystemOperationCost= */222)
+        )
+
+        underTest.onLoadingCompleteAndSuccessful(
+            mockPackage(
+                "my/pkg3",  /* targets= */
+                com.google.common.collect.ImmutableMap.of<String?, Target?>(),  /* transitivelyLoadedStarlarkFiles= */
+                0
+            ),
+            StarlarkSemantics.DEFAULT,
+            LazyMacroExpansionPackages.NONE,
+            Metrics( /* loadTimeNanos= */0,  /* globFilesystemOperationCost= */333)
+        )
+    }
+
+    @org.junit.Test
+    fun testRecordsTopGlobFilesystemOperationCost_extrema() {
+        val recorder: PackageMetricsRecorder = ExtremaPackageMetricsRecorder(2)
+        underTest.packageMetricsRecorder = recorder
+
+        recordPackagesWithGlobCost()
+
+        assertThat(underTest.packageMetricsRecorder.getGlobFilesystemOperationCost())
+            .containsExactlyEntriesIn(
+                com.google.common.collect.ImmutableMap.of<K?, V?>(
+                    PackageIdentifier.createInMainRepo("my/pkg3"),
+                    333L,
+                    PackageIdentifier.createInMainRepo("my/pkg2"),
+                    222L
+                )
+            )
+            .inOrder()
+        recorder.loadingFinished()
+
+        assertAllMapsEmpty(recorder)
+    }
+
+    @org.junit.Test
+    fun testRecordsTopGlobFilesystemOperationCost_complete() {
+        val recorder: PackageMetricsRecorder = CompletePackageMetricsRecorder()
+        underTest.packageMetricsRecorder = recorder
+
+        recordPackagesWithGlobCost()
+
+        assertThat(underTest.packageMetricsRecorder.getGlobFilesystemOperationCost())
+            .containsExactly(
                 PackageIdentifier.createInMainRepo("my/pkg3"),
                 333L,
                 PackageIdentifier.createInMainRepo("my/pkg2"),
-                222L))
-        .inOrder();
-    recorder.loadingFinished();
-
-    assertAllMapsEmpty(recorder);
-  }
-
-  @Test
-  public void testRecordsTopGlobFilesystemOperationCost_complete() {
-    PackageMetricsRecorder recorder = new CompletePackageMetricsRecorder();
-    underTest.packageMetricsRecorder = recorder;
-
-    recordPackagesWithGlobCost();
-
-    assertThat(underTest.packageMetricsRecorder.getGlobFilesystemOperationCost())
-        .containsExactly(
-            PackageIdentifier.createInMainRepo("my/pkg3"),
-            333L,
-            PackageIdentifier.createInMainRepo("my/pkg2"),
-            222L,
-            PackageIdentifier.createInMainRepo("my/pkg1"),
-            111L);
-  }
-
-  @Test
-  public void testDoesntRecordAnythingWhenNumPackagesToTrackIsZero() {
-    PackageMetricsRecorder recorder = new ExtremaPackageMetricsRecorder(0);
-    underTest.packageMetricsRecorder = recorder;
-
-    underTest.onLoadingCompleteAndSuccessful(
-        mockPackage(
-            "my/pkg1", /* targets= */ ImmutableMap.of(), /* transitivelyLoadedStarlarkFiles= */ 0),
-        StarlarkSemantics.DEFAULT,
-        LazyMacroExpansionPackages.NONE,
-        new Metrics(/* loadTimeNanos= */ 42_000_000, /* globFilesystemOperationCost= */ 0));
-
-    assertAllMapsEmpty(underTest.packageMetricsRecorder);
-  }
-
-  private static void assertAllMapsEmpty(PackageMetricsRecorder recorder) {
-    assertThat(recorder.getLoadTimes()).isEmpty();
-    assertThat(recorder.getGlobFilesystemOperationCost()).isEmpty();
-    assertThat(recorder.getComputationSteps()).isEmpty();
-    assertThat(recorder.getNumTargets()).isEmpty();
-    assertThat(recorder.getNumTransitiveLoads()).isEmpty();
-  }
-
-  private static Package mockPackage(
-      String pkgIdString, Map<String, Target> targets, int transitivelyLoadedStarlarkFiles) {
-    ImmutableList.Builder<Label> fakeLoads = ImmutableList.builder();
-    for (int i = 0; i < transitivelyLoadedStarlarkFiles; i++) {
-      fakeLoads.add(Label.parseCanonicalUnchecked(String.format("//:%d.bzl", i)));
+                222L,
+                PackageIdentifier.createInMainRepo("my/pkg1"),
+                111L
+            )
     }
-    Package.Declarations fakeDeclarations =
-        new Package.Declarations.Builder().setTransitiveLoads(fakeLoads.build()).build();
-    Package mockPackage = mock(Package.class);
-    when(mockPackage.getPackageIdentifier())
-        .thenReturn(PackageIdentifier.createInMainRepo(pkgIdString));
-    when(mockPackage.getTargets()).thenReturn(ImmutableSortedMap.copyOf(targets));
-    when(mockPackage.getDeclarations()).thenReturn(fakeDeclarations);
-    return mockPackage;
-  }
+
+    @org.junit.Test
+    fun testDoesntRecordAnythingWhenNumPackagesToTrackIsZero() {
+        val recorder: PackageMetricsRecorder = ExtremaPackageMetricsRecorder(0)
+        underTest.packageMetricsRecorder = recorder
+
+        underTest.onLoadingCompleteAndSuccessful(
+            mockPackage(
+                "my/pkg1",  /* targets= */
+                com.google.common.collect.ImmutableMap.of<String?, Target?>(),  /* transitivelyLoadedStarlarkFiles= */
+                0
+            ),
+            StarlarkSemantics.DEFAULT,
+            LazyMacroExpansionPackages.NONE,
+            Metrics( /* loadTimeNanos= */42000000,  /* globFilesystemOperationCost= */0)
+        )
+
+        assertAllMapsEmpty(underTest.packageMetricsRecorder)
+    }
+
+    companion object {
+        private val PLACEHOLDER_METRICS: Metrics =
+            Metrics( /* loadTimeNanos= */123,  /* globFilesystemOperationCost= */456)
+
+        private fun assertAllMapsEmpty(recorder: PackageMetricsRecorder) {
+            Truth.assertThat(recorder.getLoadTimes()).isEmpty()
+            Truth.assertThat(recorder.getGlobFilesystemOperationCost()).isEmpty()
+            Truth.assertThat(recorder.getComputationSteps()).isEmpty()
+            Truth.assertThat(recorder.getNumTargets()).isEmpty()
+            Truth.assertThat(recorder.getNumTransitiveLoads()).isEmpty()
+        }
+
+        private fun mockPackage(
+            pkgIdString: String?, targets: MutableMap<String?, Target?>?, transitivelyLoadedStarlarkFiles: Int
+        ): Package {
+            val fakeLoads: com.google.common.collect.ImmutableList.Builder<Label?> =
+                com.google.common.collect.ImmutableList.builder<Label?>()
+            for (i in 0..<transitivelyLoadedStarlarkFiles) {
+                fakeLoads.add(Label.parseCanonicalUnchecked(String.format("//:%d.bzl", i)))
+            }
+            val fakeDeclarations: Package.Declarations? =
+                Builder().setTransitiveLoads(fakeLoads.build()).build()
+            val mockPackage: Package = Mockito.mock<Package>(Package::class.java)
+            Mockito.`when`<T?>(mockPackage.getPackageIdentifier())
+                .thenReturn(PackageIdentifier.createInMainRepo(pkgIdString))
+            Mockito.`when`<T?>(mockPackage.getTargets())
+                .thenReturn(com.google.common.collect.ImmutableSortedMap.< K, V > copyOf<K?, V?>(targets))
+            Mockito.`when`<T?>(mockPackage.getDeclarations()).thenReturn(fakeDeclarations)
+            return mockPackage
+        }
+    }
 }

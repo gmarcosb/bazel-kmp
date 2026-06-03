@@ -11,30 +11,25 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.util
 
-package com.google.devtools.build.lib.util;
+import com.google.devtools.build.lib.server.FailureDetails.FailureDetail
 
-import static com.google.devtools.build.lib.util.subjects.DetailedExitCodeSubjectFactory.assertThatDetailedExitCode;
-
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.server.FailureDetails.Interrupted;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link DetailedExitCode}. */
-@RunWith(JUnit4.class)
-public class DetailedExitCodeTest {
-
-  @Test
-  public void testGetInterruptedExitCode() {
-    assertThatDetailedExitCode(
+/** Tests for [DetailedExitCode].  */
+@RunWith(JUnit4::class)
+class DetailedExitCodeTest {
+    @org.junit.Test
+    fun testGetInterruptedExitCode() {
+        DetailedExitCodeSubjectFactory.Companion.assertThatDetailedExitCode(
             DetailedExitCode.of(
                 FailureDetail.newBuilder()
                     .setMessage("interrupted")
                     .setInterrupted(
-                        Interrupted.newBuilder().setCode(Interrupted.Code.INTERRUPTED_UNKNOWN))
-                    .build()))
-        .hasExitCode(ExitCode.INTERRUPTED);
-  }
+                        Interrupted.newBuilder().setCode(Interrupted.Code.INTERRUPTED_UNKNOWN)
+                    )
+                    .build()
+            )
+        )
+            .hasExitCode(ExitCode.INTERRUPTED)
+    }
 }

@@ -11,44 +11,36 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester
 
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester.VerificationFunction;
-import java.util.HashSet;
-import java.util.LinkedHashSet;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link HashSetCodec}. */
-@RunWith(JUnit4.class)
-public final class HashSetCodecTest {
-  @Test
-  public void smokeTest() throws Exception {
-    LinkedHashSet<String> subjectTwo = new LinkedHashSet<>();
-    subjectTwo.add("one");
-    subjectTwo.add("two");
-    subjectTwo.add("three");
-    LinkedHashSet<String> nullSet = new LinkedHashSet<>();
-    nullSet.add(null);
-    LinkedHashSet<String> mixedSet = new LinkedHashSet<>();
-    mixedSet.add(null);
-    mixedSet.add("memberOne");
-    HashSet<String> plainHashSet = new HashSet<>();
-    plainHashSet.add("maybeFirst");
-    plainHashSet.add("maybeSecond");
-    new SerializationTester(
-            new LinkedHashSet<String>(), subjectTwo, nullSet, mixedSet, plainHashSet)
-        .setVerificationFunction(
-            (VerificationFunction<HashSet<String>>)
-                (deserialized, subject) -> {
-                  assertThat(deserialized).isEqualTo(subject);
-                  assertThat(deserialized.size()).isEqualTo(subject.size());
-                })
-        .runTests();
-  }
+/** Tests for [HashSetCodec].  */
+@RunWith(JUnit4::class)
+class HashSetCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun smokeTest() {
+        val subjectTwo: LinkedHashSet<String?> = LinkedHashSet<String?>()
+        subjectTwo.add("one")
+        subjectTwo.add("two")
+        subjectTwo.add("three")
+        val nullSet: LinkedHashSet<String?> = LinkedHashSet<String?>()
+        nullSet.add(null)
+        val mixedSet: LinkedHashSet<String?> = LinkedHashSet<String?>()
+        mixedSet.add(null)
+        mixedSet.add("memberOne")
+        val plainHashSet: HashSet<String?> = HashSet<String?>()
+        plainHashSet.add("maybeFirst")
+        plainHashSet.add("maybeSecond")
+        SerializationTester(
+            LinkedHashSet<String?>(), subjectTwo, nullSet, mixedSet, plainHashSet
+        )
+            .setVerificationFunction(
+                VerificationFunction { deserialized, subject ->
+                    assertThat(deserialized).isEqualTo(subject)
+                    assertThat(deserialized.size()).isEqualTo(subject.size())
+                } as VerificationFunction<HashSet<String?>?>)
+            .runTests()
+    }
 }

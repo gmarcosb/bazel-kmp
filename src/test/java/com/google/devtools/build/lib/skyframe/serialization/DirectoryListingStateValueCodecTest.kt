@@ -11,29 +11,27 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.skyframe.DirectoryListingStateValue;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import com.google.devtools.build.lib.vfs.Dirent;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.skyframe.DirectoryListingStateValue
 
-/** Tests for codec for {@link DirectoryListingStateValue}. */
-@RunWith(JUnit4.class)
-public class DirectoryListingStateValueCodecTest {
-  @Test
-  public void testCodec() throws Exception {
-    new SerializationTester(
-            DirectoryListingStateValue.create(ImmutableList.<Dirent>of()),
+/** Tests for codec for [DirectoryListingStateValue].  */
+@RunWith(JUnit4::class)
+class DirectoryListingStateValueCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCodec() {
+        SerializationTester(
+            DirectoryListingStateValue.create(com.google.common.collect.ImmutableList.of<Dirent?>()),
             DirectoryListingStateValue.create(
-                ImmutableList.of(
-                    new Dirent("foo", Dirent.Type.DIRECTORY),
-                    new Dirent("bar", Dirent.Type.FILE),
-                    new Dirent("baz", Dirent.Type.SYMLINK),
-                    new Dirent("bazinga", Dirent.Type.UNKNOWN))))
-        .runTests();
-  }
+                com.google.common.collect.ImmutableList.of<E?>(
+                    Dirent("foo", Dirent.Type.DIRECTORY),
+                    Dirent("bar", Dirent.Type.FILE),
+                    Dirent("baz", Dirent.Type.SYMLINK),
+                    Dirent("bazinga", Dirent.Type.UNKNOWN)
+                )
+            )
+        )
+            .runTests()
+    }
 }

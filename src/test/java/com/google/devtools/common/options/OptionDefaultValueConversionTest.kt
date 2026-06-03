@@ -11,86 +11,86 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.common.options
 
-package com.google.devtools.common.options;
-
-import static java.util.Arrays.stream;
-import static java.util.stream.Collectors.toList;
-
-import com.google.common.flogger.GoogleLogger;
-import com.google.devtools.build.lib.util.Classpath;
-import com.google.devtools.build.lib.util.Classpath.ClassPathException;
-import java.util.List;
-import java.util.Set;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.ExpectedException;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
-import org.junit.runners.Parameterized.Parameter;
-import org.junit.runners.Parameterized.Parameters;
+import com.google.devtools.build.lib.util.Classpath
 
 /**
- * Test to make sure all {@link Option}-annotated fields in <i>Prod</i> code have an {@link
- * Option#defaultValue()} that a corresponding {@link Option#converter()} can handle.<br>
- * {@link Option}-annotated field is considered to be in <i>Prod</i> code if its declaring class and
- * all its enclosing classes do not have {@link RunWith} annotation.
- *
- * @see OptionDefinition#getDefaultValue
+ * Test to make sure all [Option]-annotated fields in *Prod* code have an [ ][Option.defaultValue] that a corresponding [Option.converter] can handle.<br></br>
+ * [Option]-annotated field is considered to be in *Prod* code if its declaring class and
+ * all its enclosing classes do not have [RunWith] annotation.
+ * 
+ * @see OptionDefinition.getDefaultValue
  */
-@RunWith(Parameterized.class)
-public class OptionDefaultValueConversionTest {
+@RunWith(org.junit.runners.Parameterized::class)
+class OptionDefaultValueConversionTest {
+    @org.junit.Rule
+    var thrown: org.junit.rules.ExpectedException = org.junit.rules.ExpectedException.none()
 
-  private static final GoogleLogger logger = GoogleLogger.forEnclosingClass();
+    @org.junit.runners.Parameterized.Parameter
+    var optionDefinitionUnderTest: OptionDefinition? = null
 
-  @Rule public ExpectedException thrown = ExpectedException.none();
+    @org.junit.Test
+    fun shouldConvertDefaultValue() {
+        // assert
+        thrown = org.junit.rules.ExpectedException.none()
 
-  @Parameter public OptionDefinition optionDefinitionUnderTest;
-
-  @Test
-  public void shouldConvertDefaultValue() {
-    // assert
-    thrown = ExpectedException.none();
-
-    // act
-    optionDefinitionUnderTest.getDefaultValue(/*conversionContext=*/ null);
-  }
-
-  @Parameters
-  public static List<OptionDefinition> getAllProdOptionDefinitions() {
-    try {
-      Set<Class<?>> allClasses = Classpath.findClasses("com.google.devtools");
-
-      List<OptionDefinition> optionDefinitions =
-          allClasses.stream()
-              // This package contains classes that reference other classes that aren't available
-              // without manual setup.
-              .filter(
-                  c -> !c.getPackageName().equals("com.google.devtools.build.lib.profiler.memory"))
-              .filter(c -> !isTestClass(c))
-              .flatMap(c -> stream(c.getMethods()))
-              .filter(f -> f.isAnnotationPresent(Option.class))
-              .map(MethodOptionDefinition::from)
-              .collect(toList());
-      logger.atFine().log(
-          "Found %d Option-annotated fields in Prod code", optionDefinitions.size());
-
-      return optionDefinitions;
-    } catch (ClassPathException ex) {
-      throw new RuntimeException("Unable to scan classpath", ex);
+        // act
+        optionDefinitionUnderTest.getDefaultValue( /*conversionContext=*/null)
     }
-  }
 
-  private static boolean isTestClass(Class<?> initialClazz) {
-    Class<?> clazz = initialClazz;
-    do {
-      if (clazz.isAnnotationPresent(RunWith.class)) {
-        logger.atFiner().log("Filtered out %s: is a Test class", initialClazz);
-        return true;
-      }
-      clazz = clazz.getEnclosingClass();
-    } while (clazz != null);
+    companion object {
+        private val logger: GoogleLogger = GoogleLogger.forEnclosingClass()
 
-    return false;
-  }
+        @get:org.junit.runners.Parameterized.Parameters
+        val allProdOptionDefinitions: MutableList<OptionDefinition>
+            get() {
+                try {
+                    val allClasses: MutableSet<java.lang.Class<*>?> =
+                        Classpath.findClasses("com.google.devtools")
+
+                    val optionDefinitions: MutableList<OptionDefinition?> =
+                        allClasses.stream() // This package contains classes that reference other classes that aren't available
+                            // without manual setup.
+                            .filter { c: java.lang.Class<*>? -> c.getPackageName() != "com.google.devtools.build.lib.profiler.memory" }
+                            .filter { c: java.lang.Class<*>? ->
+                                !isTestClass(
+                                    c
+                                )
+                            }
+                            .flatMap<java.lang.reflect.Method?> { c: java.lang.Class<*>? ->
+                                java.util.Arrays.stream<java.lang.reflect.Method?>(
+                                    c.getMethods()
+                                )
+                            }
+                            .filter { f: java.lang.reflect.Method? -> f.isAnnotationPresent(com.google.devtools.common.options.Option::class.java) }
+                            .map<MethodOptionDefinition?> { method: java.lang.reflect.Method? ->
+                                MethodOptionDefinition.from(
+                                    method
+                                )
+                            }
+                            .collect(Collectors.toList())
+                    logger.atFine().log(
+                        "Found %d Option-annotated fields in Prod code", optionDefinitions.size
+                    )
+
+                    return optionDefinitions
+                } catch (ex: ClassPathException) {
+                    throw java.lang.RuntimeException("Unable to scan classpath", ex)
+                }
+            }
+
+        private fun isTestClass(initialClazz: java.lang.Class<*>?): Boolean {
+            var clazz: java.lang.Class<*>? = initialClazz
+            do {
+                if (clazz.isAnnotationPresent(RunWith::class.java)) {
+                    logger.atFiner().log("Filtered out %s: is a Test class", initialClazz)
+                    return true
+                }
+                clazz = clazz.getEnclosingClass()
+            } while (clazz != null)
+
+            return false
+        }
+    }
 }

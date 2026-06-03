@@ -11,17 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
+
+import com.google.devtools.build.skyframe.SomeErrorException
 
 /**
- * A {@link SkyFunctionException} wrapping a {@link SomeErrorException}.
+ * A [SkyFunctionException] wrapping a [SomeErrorException].
  */
-public final class GenericFunctionException extends SkyFunctionException {
-  public GenericFunctionException(SomeErrorException e, Transience transience) {
-    super(e, transience);
-  }
-
-  public GenericFunctionException(SomeErrorException e) {
-    this(e, Transience.PERSISTENT);
-  }
-}
+class GenericFunctionException @kotlin.jvm.JvmOverloads constructor(
+    e: SomeErrorException?,
+    transience: Transience? = Transience.PERSISTENT
+) : SkyFunctionException(e, transience)

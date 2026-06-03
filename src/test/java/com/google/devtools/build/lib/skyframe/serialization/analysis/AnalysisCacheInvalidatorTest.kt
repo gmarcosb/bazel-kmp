@@ -11,562 +11,646 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.analysis;
+package com.google.devtools.build.lib.skyframe.serialization.analysis
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.util.concurrent.Futures.immediateFailedFuture;
-import static com.google.common.util.concurrent.Futures.immediateFuture;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.RemoteAnalysisCacheStatistics.InvalidationLookupMetrics
 
-import com.google.common.collect.ImmutableSet;
-import com.google.common.hash.HashCode;
-import com.google.common.util.concurrent.SettableFuture;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.RemoteAnalysisCacheStatistics.InvalidationLookupMetrics;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.skyframe.serialization.FingerprintValueService;
-import com.google.devtools.build.lib.skyframe.serialization.FrontierNodeVersion;
-import com.google.devtools.build.lib.skyframe.serialization.ObjectCodecs;
-import com.google.devtools.build.lib.skyframe.serialization.PackedFingerprint;
-import com.google.devtools.build.lib.skyframe.serialization.VisibleForSerialization;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.ClientId.LongVersionClientId;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.ClientId.SnapshotClientId;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.proto.MissReason;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.skyframe.IntVersion;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.protobuf.ByteString;
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import java.util.Optional;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.mockito.ArgumentMatchers;
-import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnit;
-import org.mockito.junit.MockitoRule;
+/** Unit tests for [AnalysisCacheInvalidator].  */
+@RunWith(TestParameterInjector::class)
+class AnalysisCacheInvalidatorTest {
+    @org.junit.Rule
+    val mocks: MockitoRule = MockitoJUnit.rule()
 
-/** Unit tests for {@link AnalysisCacheInvalidator}. */
-@RunWith(TestParameterInjector.class)
-public final class AnalysisCacheInvalidatorTest {
+    @org.mockito.Mock
+    private val mockAnalysisCacheClient: RemoteAnalysisCacheClient? = null
 
-  @Rule public final MockitoRule mocks = MockitoJUnit.rule();
-  @Mock private RemoteAnalysisCacheClient mockAnalysisCacheClient;
-  @Mock private ExtendedEventHandler mockEventHandler;
-  @Mock private RemoteAnalysisCachingEventListener mockEventListener;
+    @org.mockito.Mock
+    private val mockEventHandler: ExtendedEventHandler? = null
 
-  private final ObjectCodecs objectCodecs = new ObjectCodecs();
-  private final FrontierNodeVersion frontierNodeVersion = FrontierNodeVersion.CONSTANT_FOR_TESTING;
-  private final ClientId baseClientId = new SnapshotClientId("for_testing", 1);
-  private final FingerprintValueService fingerprintService =
-      FingerprintValueService.createForTesting();
+    @org.mockito.Mock
+    private val mockEventListener: RemoteAnalysisCachingEventListener? = null
 
-  @Test
-  public void lookupKeysToInvalidate_emptyInput_returnsEmptySet() throws Exception {
-    AnalysisCacheInvalidator invalidator =
-        new AnalysisCacheInvalidator(
-            mockAnalysisCacheClient,
-            objectCodecs,
-            fingerprintService,
-            /* currentVersion= */ frontierNodeVersion,
-            baseClientId,
-            mockEventHandler,
-            mockEventListener);
+    private val objectCodecs: ObjectCodecs = ObjectCodecs()
+    private val frontierNodeVersion: FrontierNodeVersion? = FrontierNodeVersion.CONSTANT_FOR_TESTING
+    private val baseClientId: ClientId = SnapshotClientId("for_testing", 1)
+    private val fingerprintService: FingerprintValueService? = FingerprintValueService.createForTesting()
 
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun lookupKeysToInvalidate_emptyInput_returnsEmptySet() {
+        val invalidator: AnalysisCacheInvalidator =
+            AnalysisCacheInvalidator(
+                mockAnalysisCacheClient,
+                objectCodecs,
+                fingerprintService,  /* currentVersion= */
+                frontierNodeVersion,
+                baseClientId,
+                mockEventHandler,
+                mockEventListener
+            )
+
+        assertThat(
             invalidator.lookupKeysToInvalidate(
-                ImmutableSet::of,
-                new RemoteAnalysisCachingServerState(
-                    frontierNodeVersion, new SnapshotClientId("for_testing", 2))))
-        .isEmpty();
-  }
-
-  @Test
-  public void lookupKeysToInvalidate_cacheHit_returnsEmptySet() throws Exception {
-    TrivialKey key = new TrivialKey("hit_key");
-    PackedFingerprint fingerprint =
-        FingerprintValueService.computeFingerprint(
-            fingerprintService, objectCodecs, key, frontierNodeVersion);
-
-    // Simulate a cache hit by returning a non-empty response.
-    when(mockAnalysisCacheClient.lookup(ByteString.copyFrom(fingerprint.toBytes())))
-        .thenReturn(
-            immediateFuture(
-                new LookupResult(
-                    ByteString.copyFromUtf8("some_value"), MissReason.MISS_REASON_UNSPECIFIED)));
-
-    AnalysisCacheInvalidator invalidator =
-        new AnalysisCacheInvalidator(
-            mockAnalysisCacheClient,
-            objectCodecs,
-            fingerprintService,
-            /* currentVersion= */ frontierNodeVersion,
-            baseClientId,
-            mockEventHandler,
-            mockEventListener);
-
-    assertThat(
-            invalidator.lookupKeysToInvalidate(
-                () -> ImmutableSet.of(key),
-                new RemoteAnalysisCachingServerState(
-                    frontierNodeVersion, new SnapshotClientId("for_testing", 2))))
-        .isEmpty();
-  }
-
-  @Test
-  public void lookupKeysToInvalidate_cacheMiss_returnsKey() throws Exception {
-    TrivialKey key = new TrivialKey("miss_key");
-    PackedFingerprint fingerprint =
-        FingerprintValueService.computeFingerprint(
-            fingerprintService, objectCodecs, key, frontierNodeVersion);
-
-    // Simulate a cache miss by returning an empty response.
-    when(mockAnalysisCacheClient.lookup(ByteString.copyFrom(fingerprint.toBytes())))
-        .thenReturn(
-            immediateFuture(
-                new LookupResult(ByteString.EMPTY, MissReason.MISS_REASON_UNSPECIFIED)));
-
-    AnalysisCacheInvalidator invalidator =
-        new AnalysisCacheInvalidator(
-            mockAnalysisCacheClient,
-            objectCodecs,
-            fingerprintService,
-            /* currentVersion= */ frontierNodeVersion,
-            baseClientId,
-            mockEventHandler,
-            mockEventListener);
-
-    assertThat(
-            invalidator.lookupKeysToInvalidate(
-                () -> ImmutableSet.of(key),
-                new RemoteAnalysisCachingServerState(
-                    frontierNodeVersion, new SnapshotClientId("for_testing", 2))))
-        .containsExactly(key);
-  }
-
-  @Test
-  public void lookupKeysToInvalidate_mixedHitAndMiss_returnsMissedKey() throws Exception {
-    TrivialKey hitKey = new TrivialKey("hit_key_mixed");
-    TrivialKey missKey = new TrivialKey("miss_key_mixed");
-
-    PackedFingerprint hitFingerprint =
-        FingerprintValueService.computeFingerprint(
-            fingerprintService, objectCodecs, hitKey, frontierNodeVersion);
-    PackedFingerprint missFingerprint =
-        FingerprintValueService.computeFingerprint(
-            fingerprintService, objectCodecs, missKey, frontierNodeVersion);
-
-    // Simulate a cache hit _and_ miss for looking up multiple keys.
-    when(mockAnalysisCacheClient.lookup(ByteString.copyFrom(hitFingerprint.toBytes())))
-        .thenReturn(
-            immediateFuture(
-                new LookupResult(
-                    ByteString.copyFromUtf8("some_value"), MissReason.MISS_REASON_UNSPECIFIED)));
-    when(mockAnalysisCacheClient.lookup(ByteString.copyFrom(missFingerprint.toBytes())))
-        .thenReturn(
-            immediateFuture(
-                new LookupResult(ByteString.EMPTY, MissReason.MISS_REASON_UNSPECIFIED)));
-
-    AnalysisCacheInvalidator invalidator =
-        new AnalysisCacheInvalidator(
-            mockAnalysisCacheClient,
-            objectCodecs,
-            fingerprintService,
-            /* currentVersion= */ frontierNodeVersion,
-            baseClientId,
-            mockEventHandler,
-            mockEventListener);
-
-    assertThat(
-            invalidator.lookupKeysToInvalidate(
-                () -> ImmutableSet.of(hitKey, missKey),
-                new RemoteAnalysisCachingServerState(
-                    frontierNodeVersion, new SnapshotClientId("for_testing", 2))))
-        .containsExactly(missKey);
-  }
-
-  @Test
-  public void lookupKeysToInvalidate_differentVersions_returnsAllKeys() throws Exception {
-    TrivialKey key1 = new TrivialKey("key1");
-    TrivialKey key2 = new TrivialKey("key2");
-
-    var previousVersion =
-        new FrontierNodeVersion(
-            "123",
-            HashCode.fromInt(42),
-            new byte[] {1, 2, 3},
-            IntVersion.of(9000),
-            "distinguisher",
-            /* useFakeStampData= */ true,
-            Optional.of(new SnapshotClientId("for_testing", 123)));
-    var currentVersion =
-        new FrontierNodeVersion(
-            "123",
-            HashCode.fromInt(42),
-            new byte[] {1, 2, 3},
-            IntVersion.of(9001), // changed
-            "distinguisher",
-            /* useFakeStampData= */ true,
-            Optional.of(new SnapshotClientId("for_testing", 123)));
-    AnalysisCacheInvalidator invalidator =
-        new AnalysisCacheInvalidator(
-            mockAnalysisCacheClient,
-            objectCodecs,
-            fingerprintService,
-            currentVersion,
-            baseClientId,
-            mockEventHandler,
-            mockEventListener);
-
-    assertThat(
-            invalidator.lookupKeysToInvalidate(
-                () -> ImmutableSet.of(key1, key2),
-                new RemoteAnalysisCachingServerState(
-                    previousVersion, new SnapshotClientId("for_testing", 2))))
-        .containsExactly(key1, key2);
-
-    // No RPCs should be sent.
-    verify(mockAnalysisCacheClient, never()).lookup(any());
-  }
-
-  @Test
-  public void lookupKeysToInvalidate_differentStarlarkSemantics_returnsAllKeys() throws Exception {
-    TrivialKey key1 = new TrivialKey("key1");
-    TrivialKey key2 = new TrivialKey("key2");
-
-    var previousVersion =
-        new FrontierNodeVersion(
-            "123",
-            HashCode.fromInt(42),
-            new byte[] {1, 2, 3},
-            IntVersion.of(9000),
-            "distinguisher",
-            /* useFakeStampData= */ true,
-            Optional.of(new SnapshotClientId("for_testing", 123)));
-    var currentVersion =
-        new FrontierNodeVersion(
-            "123",
-            HashCode.fromInt(42),
-            new byte[] {4, 5, 6}, // changed starlark semantics
-            IntVersion.of(9000),
-            "distinguisher",
-            /* useFakeStampData= */ true,
-            Optional.of(new SnapshotClientId("for_testing", 123)));
-    AnalysisCacheInvalidator invalidator =
-        new AnalysisCacheInvalidator(
-            mockAnalysisCacheClient,
-            objectCodecs,
-            fingerprintService,
-            currentVersion,
-            baseClientId,
-            mockEventHandler,
-            mockEventListener);
-
-    assertThat(
-            invalidator.lookupKeysToInvalidate(
-                () -> ImmutableSet.of(key1, key2),
-                new RemoteAnalysisCachingServerState(
-                    previousVersion, new SnapshotClientId("for_testing", 2))))
-        .containsExactly(key1, key2);
-
-    // No RPCs should be sent.
-    verify(mockAnalysisCacheClient, never()).lookup(any());
-  }
-
-  private enum ClientIdTestCase {
-    NEWER_CLIENT_ID_CACHE_MISS_INVALIDATES(
-        new SnapshotClientId("for_testing", 2),
-        new SnapshotClientId("for_testing", 1),
-        /* expectedInvalidated= */ true),
-    OLDER_CLIENT_ID_CACHE_MISS_INVALIDATES(
-        new SnapshotClientId("for_testing", 1),
-        new SnapshotClientId("for_testing", 2),
-        /* expectedInvalidated= */ true),
-    SAME_CLIENT_ID_CACHE_MISS_DOES_NOT_INVALIDATE_ANYTHING(
-        new SnapshotClientId("for_testing", 1),
-        new SnapshotClientId("for_testing", 1),
-        /* expectedInvalidated= */ false),
-    SAME_LONG_VERSION_CLIENT_ID_CACHE_MISS_DOES_NOT_INVALIDATE_ANYTHING(
-        new LongVersionClientId(123456789),
-        new LongVersionClientId(123456789),
-        /* expectedInvalidated= */ false),
-    DIFFERENT_LONG_VERSION_CLIENT_ID_CACHE_MISS_INVALIDATES(
-        new LongVersionClientId(123456789),
-        new LongVersionClientId(123456788),
-        /* expectedInvalidated= */ true),
-    DIFFERENT_CLIENT_ID_SUBCLASS_CACHE_MISS_INVALIDATES(
-        new LongVersionClientId(123456789),
-        new SnapshotClientId("for_testing", 1),
-        /* expectedInvalidated= */ true);
-
-    private final ClientId currentClientId;
-    private final ClientId previousClientId;
-    private final boolean expectedInvalidated;
-
-    ClientIdTestCase(
-        ClientId currentClientId, ClientId previousClientId, boolean expectedInvalidated) {
-      this.currentClientId = currentClientId;
-      this.previousClientId = previousClientId;
-      this.expectedInvalidated = expectedInvalidated;
+                com.google.common.collect.ImmutableSet::of,
+                RemoteAnalysisCachingServerState(
+                    frontierNodeVersion, SnapshotClientId("for_testing", 2)
+                )
+            )
+        )
+            .isEmpty()
     }
-  }
 
-  @Test
-  public void lookupKeysToInvalidate_clientIdComparison(@TestParameter ClientIdTestCase testCase)
-      throws Exception {
-    TrivialKey key = new TrivialKey("key");
-    PackedFingerprint packedFingerprint =
-        FingerprintValueService.computeFingerprint(
-            fingerprintService, objectCodecs, key, frontierNodeVersion);
-    when(mockAnalysisCacheClient.lookup(ByteString.copyFrom(packedFingerprint.toBytes())))
-        .thenReturn(
-            immediateFuture(
-                new LookupResult(ByteString.EMPTY, MissReason.MISS_REASON_UNSPECIFIED)));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun lookupKeysToInvalidate_cacheHit_returnsEmptySet() {
+        val key: TrivialKey =
+            com.google.devtools.build.lib.skyframe.serialization.analysis.AnalysisCacheInvalidatorTest.TrivialKey("hit_key")
+        val fingerprint: PackedFingerprint =
+            FingerprintValueService.computeFingerprint(
+                fingerprintService, objectCodecs, key, frontierNodeVersion
+            )
 
-    AnalysisCacheInvalidator invalidator =
-        new AnalysisCacheInvalidator(
-            mockAnalysisCacheClient,
-            objectCodecs,
-            fingerprintService,
-            /* currentVersion= */ frontierNodeVersion,
-            testCase.currentClientId,
-            mockEventHandler,
-            mockEventListener);
+        // Simulate a cache hit by returning a non-empty response.
+        Mockito.`when`<T?>(mockAnalysisCacheClient.lookup(ByteString.copyFrom(fingerprint.toBytes())))
+            .thenReturn(
+                com.google.common.util.concurrent.Futures.immediateFuture<V?>(
+                    LookupResult(
+                        ByteString.copyFromUtf8("some_value"), MissReason.MISS_REASON_UNSPECIFIED
+                    )
+                )
+            )
 
-    ImmutableSet<SkyKey> keysToInvalidate =
-        invalidator.lookupKeysToInvalidate(
-            () -> ImmutableSet.of(key),
-            new RemoteAnalysisCachingServerState(frontierNodeVersion, testCase.previousClientId));
+        val invalidator: AnalysisCacheInvalidator =
+            AnalysisCacheInvalidator(
+                mockAnalysisCacheClient,
+                objectCodecs,
+                fingerprintService,  /* currentVersion= */
+                frontierNodeVersion,
+                baseClientId,
+                mockEventHandler,
+                mockEventListener
+            )
 
-    if (testCase.expectedInvalidated) {
-      assertThat(keysToInvalidate).containsExactly(key);
-    } else {
-      assertThat(keysToInvalidate).isEmpty();
-    }
-  }
-
-  @Test
-  public void lookupKeysToInvalidate_timeout_returnsAllKeysAndRecordsTimeout() throws Exception {
-    TrivialKey key = new TrivialKey("timeout_key");
-    PackedFingerprint fingerprint =
-        FingerprintValueService.computeFingerprint(
-            fingerprintService, objectCodecs, key, frontierNodeVersion);
-
-    SettableFuture<LookupResult> neverCompletes = SettableFuture.create();
-    when(mockAnalysisCacheClient.lookup(ByteString.copyFrom(fingerprint.toBytes())))
-        .thenReturn(neverCompletes);
-
-    AnalysisCacheInvalidator invalidator =
-        new AnalysisCacheInvalidator(
-            mockAnalysisCacheClient,
-            objectCodecs,
-            fingerprintService,
-            /* currentVersion= */ frontierNodeVersion,
-            baseClientId,
-            mockEventHandler,
-            mockEventListener);
-
-    assertThat(
+        assertThat(
             invalidator.lookupKeysToInvalidate(
-                () -> ImmutableSet.of(key),
-                new RemoteAnalysisCachingServerState(
-                    frontierNodeVersion, new SnapshotClientId("for_testing", 2))))
-        .containsExactly(key);
-
-    verify(mockEventListener)
-        .setInvalidationLookupMetrics(
-            ArgumentMatchers.argThat(
-                metrics ->
-                    metrics.getStatus() == InvalidationLookupMetrics.Status.TIMED_OUT
-                        && metrics.getNumKeys() == 1
-                        && metrics.getNumInvalidatedKeys() == 1));
-  }
-
-  @Test
-  public void lookupKeysToInvalidate_allKeysHit_recordsZeroInvalidated() throws Exception {
-    TrivialKey key1 = new TrivialKey("hit_key1");
-    TrivialKey key2 = new TrivialKey("hit_key2");
-    PackedFingerprint fp1 =
-        FingerprintValueService.computeFingerprint(
-            fingerprintService, objectCodecs, key1, frontierNodeVersion);
-    PackedFingerprint fp2 =
-        FingerprintValueService.computeFingerprint(
-            fingerprintService, objectCodecs, key2, frontierNodeVersion);
-
-    when(mockAnalysisCacheClient.lookup(ByteString.copyFrom(fp1.toBytes())))
-        .thenReturn(
-            immediateFuture(
-                new LookupResult(
-                    ByteString.copyFromUtf8("val1"), MissReason.MISS_REASON_UNSPECIFIED)));
-    when(mockAnalysisCacheClient.lookup(ByteString.copyFrom(fp2.toBytes())))
-        .thenReturn(
-            immediateFuture(
-                new LookupResult(
-                    ByteString.copyFromUtf8("val2"), MissReason.MISS_REASON_UNSPECIFIED)));
-
-    AnalysisCacheInvalidator invalidator =
-        new AnalysisCacheInvalidator(
-            mockAnalysisCacheClient,
-            objectCodecs,
-            fingerprintService,
-            frontierNodeVersion,
-            baseClientId,
-            mockEventHandler,
-            mockEventListener);
-
-    var unused =
-        invalidator.lookupKeysToInvalidate(
-            () -> ImmutableSet.of(key1, key2),
-            new RemoteAnalysisCachingServerState(
-                frontierNodeVersion, new SnapshotClientId("for_testing", 2)));
-
-    verify(mockEventListener)
-        .setInvalidationLookupMetrics(
-            ArgumentMatchers.argThat(
-                metrics ->
-                    metrics.getStatus() == InvalidationLookupMetrics.Status.OK
-                        && metrics.getNumKeys() == 2
-                        && metrics.getNumInvalidatedKeys() == 0));
-  }
-
-  @Test
-  public void lookupKeysToInvalidate_mixedHitAndMiss_recordsPartialInvalidated() throws Exception {
-    TrivialKey hitKey = new TrivialKey("hit_key_metrics");
-    TrivialKey missKey = new TrivialKey("miss_key_metrics");
-    PackedFingerprint hitFp =
-        FingerprintValueService.computeFingerprint(
-            fingerprintService, objectCodecs, hitKey, frontierNodeVersion);
-    PackedFingerprint missFp =
-        FingerprintValueService.computeFingerprint(
-            fingerprintService, objectCodecs, missKey, frontierNodeVersion);
-
-    when(mockAnalysisCacheClient.lookup(ByteString.copyFrom(hitFp.toBytes())))
-        .thenReturn(
-            immediateFuture(
-                new LookupResult(
-                    ByteString.copyFromUtf8("val"), MissReason.MISS_REASON_UNSPECIFIED)));
-    when(mockAnalysisCacheClient.lookup(ByteString.copyFrom(missFp.toBytes())))
-        .thenReturn(
-            immediateFuture(
-                new LookupResult(ByteString.EMPTY, MissReason.MISS_REASON_UNSPECIFIED)));
-
-    AnalysisCacheInvalidator invalidator =
-        new AnalysisCacheInvalidator(
-            mockAnalysisCacheClient,
-            objectCodecs,
-            fingerprintService,
-            frontierNodeVersion,
-            baseClientId,
-            mockEventHandler,
-            mockEventListener);
-
-    var unused =
-        invalidator.lookupKeysToInvalidate(
-            () -> ImmutableSet.of(hitKey, missKey),
-            new RemoteAnalysisCachingServerState(
-                frontierNodeVersion, new SnapshotClientId("for_testing", 2)));
-
-    verify(mockEventListener)
-        .setInvalidationLookupMetrics(
-            ArgumentMatchers.argThat(
-                metrics ->
-                    metrics.getStatus() == InvalidationLookupMetrics.Status.OK
-                        && metrics.getNumKeys() == 2
-                        && metrics.getNumInvalidatedKeys() == 1));
-  }
-
-  @Test
-  public void lookupKeysToInvalidate_allKeysMiss_recordsAllInvalidated() throws Exception {
-    TrivialKey key1 = new TrivialKey("miss_key1");
-    TrivialKey key2 = new TrivialKey("miss_key2");
-    PackedFingerprint fp1 =
-        FingerprintValueService.computeFingerprint(
-            fingerprintService, objectCodecs, key1, frontierNodeVersion);
-    PackedFingerprint fp2 =
-        FingerprintValueService.computeFingerprint(
-            fingerprintService, objectCodecs, key2, frontierNodeVersion);
-
-    when(mockAnalysisCacheClient.lookup(ByteString.copyFrom(fp1.toBytes())))
-        .thenReturn(
-            immediateFuture(
-                new LookupResult(ByteString.EMPTY, MissReason.MISS_REASON_UNSPECIFIED)));
-    when(mockAnalysisCacheClient.lookup(ByteString.copyFrom(fp2.toBytes())))
-        .thenReturn(
-            immediateFuture(
-                new LookupResult(ByteString.EMPTY, MissReason.MISS_REASON_UNSPECIFIED)));
-
-    AnalysisCacheInvalidator invalidator =
-        new AnalysisCacheInvalidator(
-            mockAnalysisCacheClient,
-            objectCodecs,
-            fingerprintService,
-            frontierNodeVersion,
-            baseClientId,
-            mockEventHandler,
-            mockEventListener);
-
-    var unused =
-        invalidator.lookupKeysToInvalidate(
-            () -> ImmutableSet.of(key1, key2),
-            new RemoteAnalysisCachingServerState(
-                frontierNodeVersion, new SnapshotClientId("for_testing", 2)));
-
-    verify(mockEventListener)
-        .setInvalidationLookupMetrics(
-            ArgumentMatchers.argThat(
-                metrics ->
-                    metrics.getStatus() == InvalidationLookupMetrics.Status.OK
-                        && metrics.getNumKeys() == 2
-                        && metrics.getNumInvalidatedKeys() == 2));
-  }
-
-  @Test
-  public void lookupKeysToInvalidate_executionException_returnsAllKeysAndRecordsError()
-      throws Exception {
-    TrivialKey key = new TrivialKey("error_key");
-    PackedFingerprint fingerprint =
-        FingerprintValueService.computeFingerprint(
-            fingerprintService, objectCodecs, key, frontierNodeVersion);
-
-    when(mockAnalysisCacheClient.lookup(ByteString.copyFrom(fingerprint.toBytes())))
-        .thenReturn(immediateFailedFuture(new RuntimeException("injected failure")));
-
-    AnalysisCacheInvalidator invalidator =
-        new AnalysisCacheInvalidator(
-            mockAnalysisCacheClient,
-            objectCodecs,
-            fingerprintService,
-            /* currentVersion= */ frontierNodeVersion,
-            baseClientId,
-            mockEventHandler,
-            mockEventListener);
-
-    assertThat(
-            invalidator.lookupKeysToInvalidate(
-                () -> ImmutableSet.of(key),
-                new RemoteAnalysisCachingServerState(
-                    frontierNodeVersion, new SnapshotClientId("for_testing", 2))))
-        .containsExactly(key);
-
-    verify(mockEventListener)
-        .setInvalidationLookupMetrics(
-            ArgumentMatchers.argThat(
-                metrics ->
-                    metrics.getStatus() == InvalidationLookupMetrics.Status.ERROR
-                        && metrics.getNumKeys() == 1
-                        && metrics.getNumInvalidatedKeys() == 1));
-  }
-
-  @AutoCodec
-  @VisibleForSerialization
-  record TrivialKey(String text) implements SkyKey {
-    @Override
-    public SkyFunctionName functionName() {
-      throw new UnsupportedOperationException();
+                { com.google.common.collect.ImmutableSet.of<E?>(key) },
+                RemoteAnalysisCachingServerState(
+                    frontierNodeVersion, SnapshotClientId("for_testing", 2)
+                )
+            )
+        )
+            .isEmpty()
     }
-  }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun lookupKeysToInvalidate_cacheMiss_returnsKey() {
+        val key: TrivialKey =
+            com.google.devtools.build.lib.skyframe.serialization.analysis.AnalysisCacheInvalidatorTest.TrivialKey("miss_key")
+        val fingerprint: PackedFingerprint =
+            FingerprintValueService.computeFingerprint(
+                fingerprintService, objectCodecs, key, frontierNodeVersion
+            )
+
+        // Simulate a cache miss by returning an empty response.
+        Mockito.`when`<T?>(mockAnalysisCacheClient.lookup(ByteString.copyFrom(fingerprint.toBytes())))
+            .thenReturn(
+                com.google.common.util.concurrent.Futures.immediateFuture<V?>(
+                    LookupResult(ByteString.EMPTY, MissReason.MISS_REASON_UNSPECIFIED)
+                )
+            )
+
+        val invalidator: AnalysisCacheInvalidator =
+            AnalysisCacheInvalidator(
+                mockAnalysisCacheClient,
+                objectCodecs,
+                fingerprintService,  /* currentVersion= */
+                frontierNodeVersion,
+                baseClientId,
+                mockEventHandler,
+                mockEventListener
+            )
+
+        assertThat(
+            invalidator.lookupKeysToInvalidate(
+                { com.google.common.collect.ImmutableSet.of<E?>(key) },
+                RemoteAnalysisCachingServerState(
+                    frontierNodeVersion, SnapshotClientId("for_testing", 2)
+                )
+            )
+        )
+            .containsExactly(key)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun lookupKeysToInvalidate_mixedHitAndMiss_returnsMissedKey() {
+        val hitKey: TrivialKey =
+            com.google.devtools.build.lib.skyframe.serialization.analysis.AnalysisCacheInvalidatorTest.TrivialKey("hit_key_mixed")
+        val missKey: TrivialKey =
+            com.google.devtools.build.lib.skyframe.serialization.analysis.AnalysisCacheInvalidatorTest.TrivialKey("miss_key_mixed")
+
+        val hitFingerprint: PackedFingerprint =
+            FingerprintValueService.computeFingerprint(
+                fingerprintService, objectCodecs, hitKey, frontierNodeVersion
+            )
+        val missFingerprint: PackedFingerprint =
+            FingerprintValueService.computeFingerprint(
+                fingerprintService, objectCodecs, missKey, frontierNodeVersion
+            )
+
+        // Simulate a cache hit _and_ miss for looking up multiple keys.
+        Mockito.`when`<T?>(mockAnalysisCacheClient.lookup(ByteString.copyFrom(hitFingerprint.toBytes())))
+            .thenReturn(
+                com.google.common.util.concurrent.Futures.immediateFuture<V?>(
+                    LookupResult(
+                        ByteString.copyFromUtf8("some_value"), MissReason.MISS_REASON_UNSPECIFIED
+                    )
+                )
+            )
+        Mockito.`when`<T?>(mockAnalysisCacheClient.lookup(ByteString.copyFrom(missFingerprint.toBytes())))
+            .thenReturn(
+                com.google.common.util.concurrent.Futures.immediateFuture<V?>(
+                    LookupResult(ByteString.EMPTY, MissReason.MISS_REASON_UNSPECIFIED)
+                )
+            )
+
+        val invalidator: AnalysisCacheInvalidator =
+            AnalysisCacheInvalidator(
+                mockAnalysisCacheClient,
+                objectCodecs,
+                fingerprintService,  /* currentVersion= */
+                frontierNodeVersion,
+                baseClientId,
+                mockEventHandler,
+                mockEventListener
+            )
+
+        assertThat(
+            invalidator.lookupKeysToInvalidate(
+                { com.google.common.collect.ImmutableSet.of<E?>(hitKey, missKey) },
+                RemoteAnalysisCachingServerState(
+                    frontierNodeVersion, SnapshotClientId("for_testing", 2)
+                )
+            )
+        )
+            .containsExactly(missKey)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun lookupKeysToInvalidate_differentVersions_returnsAllKeys() {
+        val key1: TrivialKey =
+            com.google.devtools.build.lib.skyframe.serialization.analysis.AnalysisCacheInvalidatorTest.TrivialKey("key1")
+        val key2: TrivialKey =
+            com.google.devtools.build.lib.skyframe.serialization.analysis.AnalysisCacheInvalidatorTest.TrivialKey("key2")
+
+        val previousVersion: FrontierNodeVersion =
+            FrontierNodeVersion(
+                "123",
+                com.google.common.hash.HashCode.fromInt(42),
+                byteArrayOf(1, 2, 3),
+                IntVersion.of(9000),
+                "distinguisher",  /* useFakeStampData= */
+                true,
+                java.util.Optional.of<T?>(SnapshotClientId("for_testing", 123))
+            )
+        val currentVersion: FrontierNodeVersion =
+            FrontierNodeVersion(
+                "123",
+                com.google.common.hash.HashCode.fromInt(42),
+                byteArrayOf(1, 2, 3),
+                IntVersion.of(9001),  // changed
+                "distinguisher",  /* useFakeStampData= */
+                true,
+                java.util.Optional.of<T?>(SnapshotClientId("for_testing", 123))
+            )
+        val invalidator: AnalysisCacheInvalidator =
+            AnalysisCacheInvalidator(
+                mockAnalysisCacheClient,
+                objectCodecs,
+                fingerprintService,
+                currentVersion,
+                baseClientId,
+                mockEventHandler,
+                mockEventListener
+            )
+
+        assertThat(
+            invalidator.lookupKeysToInvalidate(
+                { com.google.common.collect.ImmutableSet.of<E?>(key1, key2) },
+                RemoteAnalysisCachingServerState(
+                    previousVersion, SnapshotClientId("for_testing", 2)
+                )
+            )
+        )
+            .containsExactly(key1, key2)
+
+        // No RPCs should be sent.
+        Mockito.verify<Any?>(mockAnalysisCacheClient, Mockito.never()).lookup(ArgumentMatchers.any<T?>())
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun lookupKeysToInvalidate_differentStarlarkSemantics_returnsAllKeys() {
+        val key1: TrivialKey =
+            com.google.devtools.build.lib.skyframe.serialization.analysis.AnalysisCacheInvalidatorTest.TrivialKey("key1")
+        val key2: TrivialKey =
+            com.google.devtools.build.lib.skyframe.serialization.analysis.AnalysisCacheInvalidatorTest.TrivialKey("key2")
+
+        val previousVersion: FrontierNodeVersion =
+            FrontierNodeVersion(
+                "123",
+                com.google.common.hash.HashCode.fromInt(42),
+                byteArrayOf(1, 2, 3),
+                IntVersion.of(9000),
+                "distinguisher",  /* useFakeStampData= */
+                true,
+                java.util.Optional.of<T?>(SnapshotClientId("for_testing", 123))
+            )
+        val currentVersion: FrontierNodeVersion =
+            FrontierNodeVersion(
+                "123",
+                com.google.common.hash.HashCode.fromInt(42),
+                byteArrayOf(4, 5, 6),  // changed starlark semantics
+                IntVersion.of(9000),
+                "distinguisher",  /* useFakeStampData= */
+                true,
+                java.util.Optional.of<T?>(SnapshotClientId("for_testing", 123))
+            )
+        val invalidator: AnalysisCacheInvalidator =
+            AnalysisCacheInvalidator(
+                mockAnalysisCacheClient,
+                objectCodecs,
+                fingerprintService,
+                currentVersion,
+                baseClientId,
+                mockEventHandler,
+                mockEventListener
+            )
+
+        assertThat(
+            invalidator.lookupKeysToInvalidate(
+                { com.google.common.collect.ImmutableSet.of<E?>(key1, key2) },
+                RemoteAnalysisCachingServerState(
+                    previousVersion, SnapshotClientId("for_testing", 2)
+                )
+            )
+        )
+            .containsExactly(key1, key2)
+
+        // No RPCs should be sent.
+        Mockito.verify<Any?>(mockAnalysisCacheClient, Mockito.never()).lookup(ArgumentMatchers.any<T?>())
+    }
+
+    private enum class ClientIdTestCase(
+        currentClientId: ClientId,
+        previousClientId: ClientId,
+        expectedInvalidated: Boolean
+    ) {
+        NEWER_CLIENT_ID_CACHE_MISS_INVALIDATES(
+            SnapshotClientId("for_testing", 2),
+            SnapshotClientId("for_testing", 1),  /* expectedInvalidated= */
+            true
+        ),
+        OLDER_CLIENT_ID_CACHE_MISS_INVALIDATES(
+            SnapshotClientId("for_testing", 1),
+            SnapshotClientId("for_testing", 2),  /* expectedInvalidated= */
+            true
+        ),
+        SAME_CLIENT_ID_CACHE_MISS_DOES_NOT_INVALIDATE_ANYTHING(
+            SnapshotClientId("for_testing", 1),
+            SnapshotClientId("for_testing", 1),  /* expectedInvalidated= */
+            false
+        ),
+        SAME_LONG_VERSION_CLIENT_ID_CACHE_MISS_DOES_NOT_INVALIDATE_ANYTHING(
+            LongVersionClientId(123456789),
+            LongVersionClientId(123456789),  /* expectedInvalidated= */
+            false
+        ),
+        DIFFERENT_LONG_VERSION_CLIENT_ID_CACHE_MISS_INVALIDATES(
+            LongVersionClientId(123456789),
+            LongVersionClientId(123456788),  /* expectedInvalidated= */
+            true
+        ),
+        DIFFERENT_CLIENT_ID_SUBCLASS_CACHE_MISS_INVALIDATES(
+            LongVersionClientId(123456789),
+            SnapshotClientId("for_testing", 1),  /* expectedInvalidated= */
+            true
+        );
+
+        private val currentClientId: ClientId?
+        private val previousClientId: ClientId?
+        private val expectedInvalidated: Boolean
+
+        init {
+            this.currentClientId = currentClientId
+            this.previousClientId = previousClientId
+            this.expectedInvalidated = expectedInvalidated
+        }
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun lookupKeysToInvalidate_clientIdComparison(@TestParameter testCase: ClientIdTestCase) {
+        val key: TrivialKey =
+            com.google.devtools.build.lib.skyframe.serialization.analysis.AnalysisCacheInvalidatorTest.TrivialKey("key")
+        val packedFingerprint: PackedFingerprint =
+            FingerprintValueService.computeFingerprint(
+                fingerprintService, objectCodecs, key, frontierNodeVersion
+            )
+        Mockito.`when`<T?>(mockAnalysisCacheClient.lookup(ByteString.copyFrom(packedFingerprint.toBytes())))
+            .thenReturn(
+                com.google.common.util.concurrent.Futures.immediateFuture<V?>(
+                    LookupResult(ByteString.EMPTY, MissReason.MISS_REASON_UNSPECIFIED)
+                )
+            )
+
+        val invalidator: AnalysisCacheInvalidator =
+            AnalysisCacheInvalidator(
+                mockAnalysisCacheClient,
+                objectCodecs,
+                fingerprintService,  /* currentVersion= */
+                frontierNodeVersion,
+                testCase.currentClientId,
+                mockEventHandler,
+                mockEventListener
+            )
+
+        val keysToInvalidate: com.google.common.collect.ImmutableSet<SkyKey?>? =
+            invalidator.lookupKeysToInvalidate(
+                { com.google.common.collect.ImmutableSet.of<E?>(key) },
+                RemoteAnalysisCachingServerState(frontierNodeVersion, testCase.previousClientId)
+            )
+
+        if (testCase.expectedInvalidated) {
+            Truth.assertThat(keysToInvalidate).containsExactly(key)
+        } else {
+            Truth.assertThat(keysToInvalidate).isEmpty()
+        }
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun lookupKeysToInvalidate_timeout_returnsAllKeysAndRecordsTimeout() {
+        val key: TrivialKey =
+            com.google.devtools.build.lib.skyframe.serialization.analysis.AnalysisCacheInvalidatorTest.TrivialKey("timeout_key")
+        val fingerprint: PackedFingerprint =
+            FingerprintValueService.computeFingerprint(
+                fingerprintService, objectCodecs, key, frontierNodeVersion
+            )
+
+        val neverCompletes: com.google.common.util.concurrent.SettableFuture<LookupResult?> =
+            com.google.common.util.concurrent.SettableFuture.create<LookupResult?>()
+        Mockito.`when`<T?>(mockAnalysisCacheClient.lookup(ByteString.copyFrom(fingerprint.toBytes())))
+            .thenReturn(neverCompletes)
+
+        val invalidator: AnalysisCacheInvalidator =
+            AnalysisCacheInvalidator(
+                mockAnalysisCacheClient,
+                objectCodecs,
+                fingerprintService,  /* currentVersion= */
+                frontierNodeVersion,
+                baseClientId,
+                mockEventHandler,
+                mockEventListener
+            )
+
+        assertThat(
+            invalidator.lookupKeysToInvalidate(
+                { com.google.common.collect.ImmutableSet.of<E?>(key) },
+                RemoteAnalysisCachingServerState(
+                    frontierNodeVersion, SnapshotClientId("for_testing", 2)
+                )
+            )
+        )
+            .containsExactly(key)
+
+        Mockito.verify<Any?>(mockEventListener)
+            .setInvalidationLookupMetrics(
+                ArgumentMatchers.argThat<T?>(
+                    ArgumentMatcher { metrics: T? -> metrics.getStatus() === InvalidationLookupMetrics.Status.TIMED_OUT && metrics.getNumKeys() === 1 && metrics.getNumInvalidatedKeys() === 1 })
+            )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun lookupKeysToInvalidate_allKeysHit_recordsZeroInvalidated() {
+        val key1: TrivialKey =
+            com.google.devtools.build.lib.skyframe.serialization.analysis.AnalysisCacheInvalidatorTest.TrivialKey("hit_key1")
+        val key2: TrivialKey =
+            com.google.devtools.build.lib.skyframe.serialization.analysis.AnalysisCacheInvalidatorTest.TrivialKey("hit_key2")
+        val fp1: PackedFingerprint =
+            FingerprintValueService.computeFingerprint(
+                fingerprintService, objectCodecs, key1, frontierNodeVersion
+            )
+        val fp2: PackedFingerprint =
+            FingerprintValueService.computeFingerprint(
+                fingerprintService, objectCodecs, key2, frontierNodeVersion
+            )
+
+        Mockito.`when`<T?>(mockAnalysisCacheClient.lookup(ByteString.copyFrom(fp1.toBytes())))
+            .thenReturn(
+                com.google.common.util.concurrent.Futures.immediateFuture<V?>(
+                    LookupResult(
+                        ByteString.copyFromUtf8("val1"), MissReason.MISS_REASON_UNSPECIFIED
+                    )
+                )
+            )
+        Mockito.`when`<T?>(mockAnalysisCacheClient.lookup(ByteString.copyFrom(fp2.toBytes())))
+            .thenReturn(
+                com.google.common.util.concurrent.Futures.immediateFuture<V?>(
+                    LookupResult(
+                        ByteString.copyFromUtf8("val2"), MissReason.MISS_REASON_UNSPECIFIED
+                    )
+                )
+            )
+
+        val invalidator: AnalysisCacheInvalidator =
+            AnalysisCacheInvalidator(
+                mockAnalysisCacheClient,
+                objectCodecs,
+                fingerprintService,
+                frontierNodeVersion,
+                baseClientId,
+                mockEventHandler,
+                mockEventListener
+            )
+
+        val unused: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            invalidator.lookupKeysToInvalidate(
+                { com.google.common.collect.ImmutableSet.of<E?>(key1, key2) },
+                RemoteAnalysisCachingServerState(
+                    frontierNodeVersion, SnapshotClientId("for_testing", 2)
+                )
+            )
+
+        Mockito.verify<Any?>(mockEventListener)
+            .setInvalidationLookupMetrics(
+                ArgumentMatchers.argThat<T?>(
+                    ArgumentMatcher { metrics: T? -> metrics.getStatus() === InvalidationLookupMetrics.Status.OK && metrics.getNumKeys() === 2 && metrics.getNumInvalidatedKeys() === 0 })
+            )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun lookupKeysToInvalidate_mixedHitAndMiss_recordsPartialInvalidated() {
+        val hitKey: TrivialKey =
+            com.google.devtools.build.lib.skyframe.serialization.analysis.AnalysisCacheInvalidatorTest.TrivialKey("hit_key_metrics")
+        val missKey: TrivialKey =
+            com.google.devtools.build.lib.skyframe.serialization.analysis.AnalysisCacheInvalidatorTest.TrivialKey("miss_key_metrics")
+        val hitFp: PackedFingerprint =
+            FingerprintValueService.computeFingerprint(
+                fingerprintService, objectCodecs, hitKey, frontierNodeVersion
+            )
+        val missFp: PackedFingerprint =
+            FingerprintValueService.computeFingerprint(
+                fingerprintService, objectCodecs, missKey, frontierNodeVersion
+            )
+
+        Mockito.`when`<T?>(mockAnalysisCacheClient.lookup(ByteString.copyFrom(hitFp.toBytes())))
+            .thenReturn(
+                com.google.common.util.concurrent.Futures.immediateFuture<V?>(
+                    LookupResult(
+                        ByteString.copyFromUtf8("val"), MissReason.MISS_REASON_UNSPECIFIED
+                    )
+                )
+            )
+        Mockito.`when`<T?>(mockAnalysisCacheClient.lookup(ByteString.copyFrom(missFp.toBytes())))
+            .thenReturn(
+                com.google.common.util.concurrent.Futures.immediateFuture<V?>(
+                    LookupResult(ByteString.EMPTY, MissReason.MISS_REASON_UNSPECIFIED)
+                )
+            )
+
+        val invalidator: AnalysisCacheInvalidator =
+            AnalysisCacheInvalidator(
+                mockAnalysisCacheClient,
+                objectCodecs,
+                fingerprintService,
+                frontierNodeVersion,
+                baseClientId,
+                mockEventHandler,
+                mockEventListener
+            )
+
+        val unused: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            invalidator.lookupKeysToInvalidate(
+                { com.google.common.collect.ImmutableSet.of<E?>(hitKey, missKey) },
+                RemoteAnalysisCachingServerState(
+                    frontierNodeVersion, SnapshotClientId("for_testing", 2)
+                )
+            )
+
+        Mockito.verify<Any?>(mockEventListener)
+            .setInvalidationLookupMetrics(
+                ArgumentMatchers.argThat<T?>(
+                    ArgumentMatcher { metrics: T? -> metrics.getStatus() === InvalidationLookupMetrics.Status.OK && metrics.getNumKeys() === 2 && metrics.getNumInvalidatedKeys() === 1 })
+            )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun lookupKeysToInvalidate_allKeysMiss_recordsAllInvalidated() {
+        val key1: TrivialKey =
+            com.google.devtools.build.lib.skyframe.serialization.analysis.AnalysisCacheInvalidatorTest.TrivialKey("miss_key1")
+        val key2: TrivialKey =
+            com.google.devtools.build.lib.skyframe.serialization.analysis.AnalysisCacheInvalidatorTest.TrivialKey("miss_key2")
+        val fp1: PackedFingerprint =
+            FingerprintValueService.computeFingerprint(
+                fingerprintService, objectCodecs, key1, frontierNodeVersion
+            )
+        val fp2: PackedFingerprint =
+            FingerprintValueService.computeFingerprint(
+                fingerprintService, objectCodecs, key2, frontierNodeVersion
+            )
+
+        Mockito.`when`<T?>(mockAnalysisCacheClient.lookup(ByteString.copyFrom(fp1.toBytes())))
+            .thenReturn(
+                com.google.common.util.concurrent.Futures.immediateFuture<V?>(
+                    LookupResult(ByteString.EMPTY, MissReason.MISS_REASON_UNSPECIFIED)
+                )
+            )
+        Mockito.`when`<T?>(mockAnalysisCacheClient.lookup(ByteString.copyFrom(fp2.toBytes())))
+            .thenReturn(
+                com.google.common.util.concurrent.Futures.immediateFuture<V?>(
+                    LookupResult(ByteString.EMPTY, MissReason.MISS_REASON_UNSPECIFIED)
+                )
+            )
+
+        val invalidator: AnalysisCacheInvalidator =
+            AnalysisCacheInvalidator(
+                mockAnalysisCacheClient,
+                objectCodecs,
+                fingerprintService,
+                frontierNodeVersion,
+                baseClientId,
+                mockEventHandler,
+                mockEventListener
+            )
+
+        val unused: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            invalidator.lookupKeysToInvalidate(
+                { com.google.common.collect.ImmutableSet.of<E?>(key1, key2) },
+                RemoteAnalysisCachingServerState(
+                    frontierNodeVersion, SnapshotClientId("for_testing", 2)
+                )
+            )
+
+        Mockito.verify<Any?>(mockEventListener)
+            .setInvalidationLookupMetrics(
+                ArgumentMatchers.argThat<T?>(
+                    ArgumentMatcher { metrics: T? -> metrics.getStatus() === InvalidationLookupMetrics.Status.OK && metrics.getNumKeys() === 2 && metrics.getNumInvalidatedKeys() === 2 })
+            )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun lookupKeysToInvalidate_executionException_returnsAllKeysAndRecordsError() {
+        val key: TrivialKey =
+            com.google.devtools.build.lib.skyframe.serialization.analysis.AnalysisCacheInvalidatorTest.TrivialKey("error_key")
+        val fingerprint: PackedFingerprint =
+            FingerprintValueService.computeFingerprint(
+                fingerprintService, objectCodecs, key, frontierNodeVersion
+            )
+
+        Mockito.`when`<T?>(mockAnalysisCacheClient.lookup(ByteString.copyFrom(fingerprint.toBytes())))
+            .thenReturn(com.google.common.util.concurrent.Futures.immediateFailedFuture<V?>(java.lang.RuntimeException("injected failure")))
+
+        val invalidator: AnalysisCacheInvalidator =
+            AnalysisCacheInvalidator(
+                mockAnalysisCacheClient,
+                objectCodecs,
+                fingerprintService,  /* currentVersion= */
+                frontierNodeVersion,
+                baseClientId,
+                mockEventHandler,
+                mockEventListener
+            )
+
+        assertThat(
+            invalidator.lookupKeysToInvalidate(
+                { com.google.common.collect.ImmutableSet.of<E?>(key) },
+                RemoteAnalysisCachingServerState(
+                    frontierNodeVersion, SnapshotClientId("for_testing", 2)
+                )
+            )
+        )
+            .containsExactly(key)
+
+        Mockito.verify<Any?>(mockEventListener)
+            .setInvalidationLookupMetrics(
+                ArgumentMatchers.argThat<T?>(
+                    ArgumentMatcher { metrics: T? -> metrics.getStatus() === InvalidationLookupMetrics.Status.ERROR && metrics.getNumKeys() === 1 && metrics.getNumInvalidatedKeys() === 1 })
+            )
+    }
+
+    @AutoCodec
+    @VisibleForSerialization
+    @kotlin.jvm.JvmRecord
+    internal data class TrivialKey(val text: String?) : SkyKey {
+        public override fun functionName(): SkyFunctionName? {
+            throw java.lang.UnsupportedOperationException()
+        }
+    }
 }

@@ -11,428 +11,499 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.metrics
 
-package com.google.devtools.build.lib.metrics;
+import com.google.devtools.build.lib.analysis.AnalysisPhaseCompleteEvent
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.argThat;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-import static org.mockito.Mockito.withSettings;
+/** Unit tests for [PostGCMemoryUseRecorder].  */
+@RunWith(JUnit4::class)
+class PostGCMemoryUseRecorderTest {
+    private val clock: com.google.devtools.build.lib.testutil.ManualClock =
+        com.google.devtools.build.lib.testutil.ManualClock()
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.eventbus.EventBus;
-import com.google.devtools.build.lib.analysis.AnalysisPhaseCompleteEvent;
-import com.google.devtools.build.lib.bugreport.BugReporter;
-import com.google.devtools.build.lib.metrics.PostGCMemoryUseRecorder.PeakHeap;
-import com.google.devtools.build.lib.skyframe.TopLevelStatusEvents.SomeExecutionStartedEvent;
-import com.google.devtools.build.lib.testutil.ManualClock;
-import com.sun.management.GarbageCollectionNotificationInfo;
-import com.sun.management.GcInfo;
-import java.lang.management.GarbageCollectorMXBean;
-import java.lang.management.MemoryUsage;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import javax.annotation.Nullable;
-import javax.management.Notification;
-import javax.management.NotificationEmitter;
-import javax.management.NotificationFilter;
-import javax.management.NotificationListener;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @org.junit.Test
+    fun listenToSingleNonCopyGC() {
+        val beans: MutableList<java.lang.management.GarbageCollectorMXBean?> =
+            Companion.createGCBeans(arrayOf<String>("FooGC"))
 
-/** Unit tests for {@link PostGCMemoryUseRecorder}. */
-@RunWith(JUnit4.class)
-public final class PostGCMemoryUseRecorderTest {
+        val rec: PostGCMemoryUseRecorder = PostGCMemoryUseRecorder(beans, BugReporter.defaultInstance())
+        Mockito.verify<NotificationEmitter?>(beans.get(0) as NotificationEmitter?, Mockito.times(1))
+            .addNotificationListener(rec, null, null)
+    }
 
-  private final ManualClock clock = new ManualClock();
+    @org.junit.Test
+    fun listenToMultipleNonCopyGCs() {
+        val beans: MutableList<java.lang.management.GarbageCollectorMXBean?> =
+            Companion.createGCBeans(arrayOf<String>("FooGC", "BarGC"))
 
-  @Test
-  public void listenToSingleNonCopyGC() {
-    List<GarbageCollectorMXBean> beans = createGCBeans(new String[] {"FooGC"});
+        val rec: PostGCMemoryUseRecorder = PostGCMemoryUseRecorder(beans, BugReporter.defaultInstance())
+        Mockito.verify<NotificationEmitter?>(beans.get(0) as NotificationEmitter?, Mockito.times(1))
+            .addNotificationListener(rec, null, null)
+        Mockito.verify<NotificationEmitter?>(beans.get(1) as NotificationEmitter?, Mockito.times(1))
+            .addNotificationListener(rec, null, null)
+    }
 
-    PostGCMemoryUseRecorder rec = new PostGCMemoryUseRecorder(beans, BugReporter.defaultInstance());
-    verify((NotificationEmitter) beans.get(0), times(1)).addNotificationListener(rec, null, null);
-  }
+    @org.junit.Test
+    fun dontListenToCopyGC() {
+        val beans: MutableList<java.lang.management.GarbageCollectorMXBean?> =
+            Companion.createGCBeans(arrayOf<String>("FooGC", "Copy"))
 
-  @Test
-  public void listenToMultipleNonCopyGCs() {
-    List<GarbageCollectorMXBean> beans = createGCBeans(new String[] {"FooGC", "BarGC"});
+        val rec: PostGCMemoryUseRecorder = PostGCMemoryUseRecorder(beans, BugReporter.defaultInstance())
+        Mockito.verify<NotificationEmitter?>(beans.get(0) as NotificationEmitter?, Mockito.times(1))
+            .addNotificationListener(rec, null, null)
+        Mockito.verify<NotificationEmitter?>(beans.get(1) as NotificationEmitter?, Mockito.never())
+            .addNotificationListener(
+                ArgumentMatchers.any<NotificationListener?>(NotificationListener::class.java),
+                ArgumentMatchers.any<NotificationFilter?>(NotificationFilter::class.java),
+                ArgumentMatchers.any<Any?>()
+            )
+    }
 
-    PostGCMemoryUseRecorder rec = new PostGCMemoryUseRecorder(beans, BugReporter.defaultInstance());
-    verify((NotificationEmitter) beans.get(0), times(1)).addNotificationListener(rec, null, null);
-    verify((NotificationEmitter) beans.get(1), times(1)).addNotificationListener(rec, null, null);
-  }
+    @org.junit.Test
+    fun peakHeapsStartAbsent() {
+        val rec: PostGCMemoryUseRecorder =
+            PostGCMemoryUseRecorder(java.util.ArrayList<E?>(), BugReporter.defaultInstance())
+        assertThat(rec.getPeakPostGcHeap()).isEmpty()
+        assertThat(rec.getPeakPostGcHeapTenuredSpace()).isEmpty()
+    }
 
-  @Test
-  public void dontListenToCopyGC() {
-    List<GarbageCollectorMXBean> beans = createGCBeans(new String[] {"FooGC", "Copy"});
+    @org.junit.Test
+    fun peakHeapsAbsentAfterReset() {
+        val rec: PostGCMemoryUseRecorder =
+            PostGCMemoryUseRecorder(java.util.ArrayList<E?>(), BugReporter.defaultInstance())
+        rec.handleNotification(
+            createOneTenuredSpaceOneNonTenuredSpaceMajorGCNotifications(1000L), null
+        )
+        rec.reset()
+        assertThat(rec.getPeakPostGcHeap()).isEmpty()
+        assertThat(rec.getPeakPostGcHeapTenuredSpace()).isEmpty()
+    }
 
-    PostGCMemoryUseRecorder rec = new PostGCMemoryUseRecorder(beans, BugReporter.defaultInstance());
-    verify((NotificationEmitter) beans.get(0), times(1)).addNotificationListener(rec, null, null);
-    verify((NotificationEmitter) beans.get(1), never())
-        .addNotificationListener(
-            any(NotificationListener.class), any(NotificationFilter.class), any());
-  }
+    @org.junit.Test
+    fun noGcCauseEventsNotIgnored() {
+        val underTest: PostGCMemoryUseRecorder =
+            PostGCMemoryUseRecorder(com.google.common.collect.ImmutableList.of<E?>(), BugReporter.defaultInstance())
+        val notificationWithNoGcCause: javax.management.Notification =
+            createMockNotification(
+                GarbageCollectionNotificationInfo.GARBAGE_COLLECTION_NOTIFICATION,
+                "end of major GC",  /*cause=*/
+                "No GC",
+                com.google.common.collect.ImmutableMap.of<String?, Long?>("somepool", 100L),  /*memUsedBefore=*/
+                null
+            )
 
-  @Test
-  public void peakHeapsStartAbsent() {
-    PostGCMemoryUseRecorder rec =
-        new PostGCMemoryUseRecorder(new ArrayList<>(), BugReporter.defaultInstance());
-    assertThat(rec.getPeakPostGcHeap()).isEmpty();
-    assertThat(rec.getPeakPostGcHeapTenuredSpace()).isEmpty();
-  }
+        underTest.handleNotification(notificationWithNoGcCause,  /*handback=*/null)
 
-  @Test
-  public void peakHeapsAbsentAfterReset() {
-    PostGCMemoryUseRecorder rec =
-        new PostGCMemoryUseRecorder(new ArrayList<>(), BugReporter.defaultInstance());
-    rec.handleNotification(
-        createOneTenuredSpaceOneNonTenuredSpaceMajorGCNotifications(1000L), null);
-    rec.reset();
-    assertThat(rec.getPeakPostGcHeap()).isEmpty();
-    assertThat(rec.getPeakPostGcHeapTenuredSpace()).isEmpty();
-  }
+        assertThat(underTest.getPeakPostGcHeap())
+            .hasValue(PeakHeap.create(100, clock.currentTimeMillis()))
+        assertThat(underTest.getPeakPostGcHeapTenuredSpace())
+            .hasValue(PeakHeap.create(0, clock.currentTimeMillis()))
+    }
 
-  @Test
-  public void noGcCauseEventsNotIgnored() {
-    PostGCMemoryUseRecorder underTest =
-        new PostGCMemoryUseRecorder(ImmutableList.of(), BugReporter.defaultInstance());
-    Notification notificationWithNoGcCause =
-        createMockNotification(
+    @org.junit.Test
+    fun peakHeapsIncreaseWhenBigger() {
+        val rec: PostGCMemoryUseRecorder =
+            PostGCMemoryUseRecorder(java.util.ArrayList<E?>(), BugReporter.defaultInstance())
+
+        clock.advanceMillis(1)
+        rec.handleNotification(
+            createOneTenuredSpaceOneNonTenuredSpaceMajorGCNotifications(1000L), null
+        )
+        assertThat(rec.getPeakPostGcHeap()).hasValue(PeakHeap.create(2000, clock.currentTimeMillis()))
+        assertThat(rec.getPeakPostGcHeapTenuredSpace())
+            .hasValue(PeakHeap.create(1000, clock.currentTimeMillis()))
+
+        clock.advanceMillis(1)
+        rec.handleNotification(
+            createOneTenuredSpaceOneNonTenuredSpaceMajorGCNotifications(1001L), null
+        )
+        assertThat(rec.getPeakPostGcHeap()).hasValue(PeakHeap.create(2002, clock.currentTimeMillis()))
+        assertThat(rec.getPeakPostGcHeapTenuredSpace())
+            .hasValue(PeakHeap.create(1001, clock.currentTimeMillis()))
+
+        clock.advanceMillis(1)
+        rec.handleNotification(
+            createOneTenuredSpaceOneNonTenuredSpaceMajorGCNotifications(1002L), null
+        )
+        assertThat(rec.getPeakPostGcHeap()).hasValue(PeakHeap.create(2004, clock.currentTimeMillis()))
+        assertThat(rec.getPeakPostGcHeapTenuredSpace())
+            .hasValue(PeakHeap.create(1002, clock.currentTimeMillis()))
+    }
+
+    @org.junit.Test
+    fun peakHeapsDontDecrease() {
+        val rec: PostGCMemoryUseRecorder =
+            PostGCMemoryUseRecorder(java.util.ArrayList<E?>(), BugReporter.defaultInstance())
+
+        clock.advanceMillis(1)
+        rec.handleNotification(createOneTenuredSpaceOneNonTenuredSpaceMajorGCNotifications(1000), null)
+        val expectedTotal: PeakHeap? = PeakHeap.create(2000, clock.currentTimeMillis())
+        val expectedTenuredSpace: PeakHeap? = PeakHeap.create(1000, clock.currentTimeMillis())
+
+        clock.advanceMillis(1)
+        rec.handleNotification(createOneTenuredSpaceOneNonTenuredSpaceMajorGCNotifications(500), null)
+        assertThat(rec.getPeakPostGcHeap()).hasValue(expectedTotal)
+        assertThat(rec.getPeakPostGcHeapTenuredSpace()).hasValue(expectedTenuredSpace)
+
+        clock.advanceMillis(1)
+        rec.handleNotification(createOneTenuredSpaceOneNonTenuredSpaceMajorGCNotifications(999), null)
+        assertThat(rec.getPeakPostGcHeap()).hasValue(expectedTotal)
+        assertThat(rec.getPeakPostGcHeapTenuredSpace()).hasValue(expectedTenuredSpace)
+    }
+
+    @org.junit.Test
+    fun ignoreNonGCNotification() {
+        val rec: PostGCMemoryUseRecorder =
+            PostGCMemoryUseRecorder(java.util.ArrayList<E?>(), BugReporter.defaultInstance())
+        rec.handleNotification(
+            createMockNotification(
+                "some other notification",
+                "end of major GC",
+                com.google.common.collect.ImmutableMap.of<String?, Long?>("Foo", 1000L)
+            ),
+            null
+        )
+        assertThat(rec.getPeakPostGcHeap()).isEmpty()
+        assertThat(rec.getPeakPostGcHeapTenuredSpace()).isEmpty()
+    }
+
+    @org.junit.Test
+    fun ignoreNonMajorGCNotification() {
+        val rec: PostGCMemoryUseRecorder =
+            PostGCMemoryUseRecorder(java.util.ArrayList<E?>(), BugReporter.defaultInstance())
+        rec.handleNotification(
+            createMockNotification(
+                GarbageCollectionNotificationInfo.GARBAGE_COLLECTION_NOTIFICATION,
+                "end of minor GC",
+                com.google.common.collect.ImmutableMap.of<String?, Long?>("Foo", 1000L)
+            ),
+            null
+        )
+        assertThat(rec.getPeakPostGcHeap()).isEmpty()
+        assertThat(rec.getPeakPostGcHeapTenuredSpace()).isEmpty()
+    }
+
+    @org.junit.Test
+    fun sumMemUsageInfo() {
+        val rec: PostGCMemoryUseRecorder =
+            PostGCMemoryUseRecorder(java.util.ArrayList<E?>(), BugReporter.defaultInstance())
+        rec.handleNotification(
+            createMajorGCNotification(
+                com.google.common.collect.ImmutableMap.of<String?, Long?>(
+                    "Foo",
+                    111L,
+                    "Bar",
+                    222L,
+                    "Qux",
+                    333L,
+                    "CMS Old Gen",
+                    111L
+                )
+            ),
+            null
+        )
+        assertThat(rec.getPeakPostGcHeap()).hasValue(PeakHeap.create(777, clock.currentTimeMillis()))
+        assertThat(rec.getPeakPostGcHeapTenuredSpace())
+            .hasValue(PeakHeap.create(111, clock.currentTimeMillis()))
+    }
+
+    @org.junit.Test
+    fun memoryUsageReportedZeroGetsSetAndStaysSet() {
+        val rec: PostGCMemoryUseRecorder =
+            PostGCMemoryUseRecorder(java.util.ArrayList<E?>(), BugReporter.defaultInstance())
+        assertThat(rec.wasMemoryUsageReportedZero()).isFalse()
+        rec.handleNotification(
+            createMajorGCNotification(
+                com.google.common.collect.ImmutableMap.of<String?, Long?>(
+                    "Foo",
+                    0L,
+                    "Bar",
+                    0L,
+                    "Qux",
+                    0L
+                )
+            ), null
+        )
+        assertThat(rec.wasMemoryUsageReportedZero()).isTrue()
+        rec.handleNotification(
+            createMajorGCNotification(
+                com.google.common.collect.ImmutableMap.of<String?, Long?>(
+                    "Foo",
+                    123L,
+                    "Bar",
+                    456L,
+                    "Qux",
+                    789L
+                )
+            ), null
+        )
+        assertThat(rec.wasMemoryUsageReportedZero()).isTrue()
+    }
+
+    @org.junit.Test
+    fun memoryUsageReportedZeroDoesntGetSet() {
+        val rec: PostGCMemoryUseRecorder =
+            PostGCMemoryUseRecorder(java.util.ArrayList<E?>(), BugReporter.defaultInstance())
+        assertThat(rec.wasMemoryUsageReportedZero()).isFalse()
+        rec.handleNotification(
+            createMajorGCNotification(
+                com.google.common.collect.ImmutableMap.of<String?, Long?>(
+                    "Foo",
+                    123L,
+                    "Bar",
+                    456L,
+                    "Qux",
+                    789L
+                )
+            ), null
+        )
+        assertThat(rec.wasMemoryUsageReportedZero()).isFalse()
+    }
+
+    @org.junit.Test
+    fun totalGarbageReported() {
+        val rec: PostGCMemoryUseRecorder =
+            PostGCMemoryUseRecorder(java.util.ArrayList<E?>(), BugReporter.defaultInstance())
+        assertThat(rec.getGarbageStats()).isEmpty()
+
+        rec.handleNotification(
+            createMockNotification(
+                GarbageCollectionNotificationInfo.GARBAGE_COLLECTION_NOTIFICATION,
+                "action",
+                "cause",
+                com.google.common.collect.ImmutableMap.of<String?, Long?>("old", 1000L, "young", 2000L),
+                com.google.common.collect.ImmutableMap.of<String?, Long?>("old", 5000L, "young", 10000L)
+            ),  /* handback= */
+            null
+        )
+        assertThat(rec.getGarbageStats()).containsExactly("old", 4000L, "young", 8000L)
+        rec.handleNotification(
+            createMockNotification(
+                GarbageCollectionNotificationInfo.GARBAGE_COLLECTION_NOTIFICATION,
+                "action",
+                "cause",
+                com.google.common.collect.ImmutableMap.of<String?, Long?>("young", 15000L),
+                com.google.common.collect.ImmutableMap.of<String?, Long?>("young", 20000L)
+            ),  /* handback= */
+            null
+        )
+        assertThat(rec.getGarbageStats()).containsExactly("old", 4000L, "young", 13000L)
+
+        rec.reset()
+        assertThat(rec.getGarbageStats()).isEmpty()
+    }
+
+    @org.junit.Test
+    fun moreThanOneTenuredSpaceEventReportsBug() {
+        val bugReporter: BugReporter? = Mockito.mock<BugReporter?>(BugReporter::class.java)
+        val rec: PostGCMemoryUseRecorder = PostGCMemoryUseRecorder(java.util.ArrayList<E?>(), bugReporter)
+        rec.handleNotification(
+            createMajorGCNotification(
+                com.google.common.collect.ImmutableMap.of<String?, Long?>(
+                    "CMS Old Gen",
+                    111L,
+                    "PS Old Gen",
+                    111L
+                )
+            ), null
+        )
+        Mockito.verify<BugReporter?>(bugReporter)
+            .sendBugReport(
+                ArgumentMatchers.argThat<Throwable?>(
+                    ArgumentMatcher { e: Throwable? ->
+                        e!!.message
+                            .contains(
+                                "More than one tenured space event was recorded during garbage"
+                                        + " collection."
+                            )
+                    })
+            )
+    }
+
+    @org.junit.Test
+    fun peakHeapsDuringExecutionStartAbsent() {
+        val rec: PostGCMemoryUseRecorder =
+            PostGCMemoryUseRecorder(java.util.ArrayList<E?>(), BugReporter.defaultInstance())
+        assertThat(rec.getPeakPostGcHeapDuringExecution()).isEmpty()
+        assertThat(rec.getPeakPostGcHeapTenuredSpaceDuringExecution()).isEmpty()
+    }
+
+    @org.junit.Test
+    fun peakHeapsDuringExecutionAbsentAfterReset() {
+        val rec: PostGCMemoryUseRecorder =
+            PostGCMemoryUseRecorder(java.util.ArrayList<E?>(), BugReporter.defaultInstance())
+
+        val eventBus: com.google.common.eventbus.EventBus = com.google.common.eventbus.EventBus()
+        eventBus.register(rec)
+        eventBus.post(Mockito.mock<AnalysisPhaseCompleteEvent?>(AnalysisPhaseCompleteEvent::class.java))
+        eventBus.post(SomeExecutionStartedEvent.create())
+
+        rec.handleNotification(
+            createOneTenuredSpaceOneNonTenuredSpaceMajorGCNotifications(1000L), null
+        )
+        rec.reset()
+        assertThat(rec.getPeakPostGcHeapDuringExecution()).isEmpty()
+        assertThat(rec.getPeakPostGcHeapTenuredSpaceDuringExecution()).isEmpty()
+    }
+
+    @org.junit.Test
+    fun peakHeapsDuringExecutionNotUpdatedBeforeEvents() {
+        val rec: PostGCMemoryUseRecorder =
+            PostGCMemoryUseRecorder(java.util.ArrayList<E?>(), BugReporter.defaultInstance())
+
+        rec.handleNotification(
+            createOneTenuredSpaceOneNonTenuredSpaceMajorGCNotifications(1000L), null
+        )
+
+        assertThat(rec.getPeakPostGcHeapDuringExecution()).isEmpty()
+        assertThat(rec.getPeakPostGcHeapTenuredSpaceDuringExecution()).isEmpty()
+    }
+
+    @org.junit.Test
+    fun peakHeapsDuringExecutionNotUpdatedWithOnlyAnalysisComplete() {
+        val rec: PostGCMemoryUseRecorder =
+            PostGCMemoryUseRecorder(java.util.ArrayList<E?>(), BugReporter.defaultInstance())
+
+        val eventBus: com.google.common.eventbus.EventBus = com.google.common.eventbus.EventBus()
+        eventBus.register(rec)
+        eventBus.post(Mockito.mock<AnalysisPhaseCompleteEvent?>(AnalysisPhaseCompleteEvent::class.java))
+
+        rec.handleNotification(
+            createOneTenuredSpaceOneNonTenuredSpaceMajorGCNotifications(1000L), null
+        )
+
+        assertThat(rec.getPeakPostGcHeapDuringExecution()).isEmpty()
+        assertThat(rec.getPeakPostGcHeapTenuredSpaceDuringExecution()).isEmpty()
+    }
+
+    @org.junit.Test
+    fun peakHeapsDuringExecutionNotUpdatedWithOnlyExecutionStarted() {
+        val rec: PostGCMemoryUseRecorder =
+            PostGCMemoryUseRecorder(java.util.ArrayList<E?>(), BugReporter.defaultInstance())
+
+        val eventBus: com.google.common.eventbus.EventBus = com.google.common.eventbus.EventBus()
+        eventBus.register(rec)
+        eventBus.post(SomeExecutionStartedEvent.create())
+
+        rec.handleNotification(
+            createOneTenuredSpaceOneNonTenuredSpaceMajorGCNotifications(1000L), null
+        )
+
+        assertThat(rec.getPeakPostGcHeapDuringExecution()).isEmpty()
+        assertThat(rec.getPeakPostGcHeapTenuredSpaceDuringExecution()).isEmpty()
+    }
+
+    @org.junit.Test
+    fun peakHeapsDuringExecutionUpdatedAfterBothEvents() {
+        val rec: PostGCMemoryUseRecorder =
+            PostGCMemoryUseRecorder(java.util.ArrayList<E?>(), BugReporter.defaultInstance())
+
+        val eventBus: com.google.common.eventbus.EventBus = com.google.common.eventbus.EventBus()
+        eventBus.register(rec)
+        eventBus.post(Mockito.mock<AnalysisPhaseCompleteEvent?>(AnalysisPhaseCompleteEvent::class.java))
+        eventBus.post(SomeExecutionStartedEvent.create())
+
+        clock.advanceMillis(1)
+        rec.handleNotification(
+            createOneTenuredSpaceOneNonTenuredSpaceMajorGCNotifications(1000L), null
+        )
+
+        assertThat(rec.getPeakPostGcHeapDuringExecution())
+            .hasValue(PeakHeap.create(2000, clock.currentTimeMillis()))
+        assertThat(rec.getPeakPostGcHeapTenuredSpaceDuringExecution())
+            .hasValue(PeakHeap.create(1000, clock.currentTimeMillis()))
+    }
+
+    private fun createMockNotification(
+        type: String?, action: String, memUsed: MutableMap<String?, Long?>
+    ): javax.management.Notification {
+        return createMockNotification(type, action, "dummycause", memUsed,  /* memUsedBefore= */null)
+    }
+
+    private fun createMockNotification(
+        type: String?,
+        action: String,
+        cause: String,
+        memUsed: MutableMap<String?, Long?>,
+        memUsedBefore: MutableMap<String?, Long?>?
+    ): javax.management.Notification {
+        val gcInfo: GcInfo
+        GcInfo > Mockito.mock<GcInfo?>(GcInfo::class.java)
+        val memoryUsageMap: com.google.common.collect.ImmutableMap<String?, java.lang.management.MemoryUsage?> =
+            createMemoryUsageMap(memUsed)
+        Mockito.`when`<MutableMap<String?, java.lang.management.MemoryUsage?>?>(gcInfo.getMemoryUsageAfterGc())
+            .thenReturn(memoryUsageMap)
+        if (memUsedBefore != null) {
+            val memoryUsageBeforeMap: com.google.common.collect.ImmutableMap<String?, java.lang.management.MemoryUsage?> =
+                createMemoryUsageMap(memUsedBefore)
+            Mockito.`when`<MutableMap<String?, java.lang.management.MemoryUsage?>?>(gcInfo.getMemoryUsageBeforeGc())
+                .thenReturn(memoryUsageBeforeMap)
+        }
+
+        val notInfo: GarbageCollectionNotificationInfo =
+            GarbageCollectionNotificationInfo("DummyGCName", action, cause, gcInfo)
+
+        val n: javax.management.Notification
+        Notification > Mockito.mock<javax.management.Notification?>(javax.management.Notification::class.java)
+        String > Mockito.`when`<String?>(n.getType()).thenReturn(type)
+        Object > Mockito.`when`<Any?>(n.getUserData()).thenReturn(notInfo.toCompositeData(null))
+        Long > Mockito.`when`<Long?>(n.getTimeStamp()).thenReturn(clock.currentTimeMillis())
+        return n
+    }
+
+    private fun createMajorGCNotification(memUsed: MutableMap<String?, Long?>): javax.management.Notification {
+        return createMockNotification(
             GarbageCollectionNotificationInfo.GARBAGE_COLLECTION_NOTIFICATION,
             "end of major GC",
-            /*cause=*/ "No GC",
-            ImmutableMap.of("somepool", 100L),
-            /*memUsedBefore=*/ null);
-
-    underTest.handleNotification(notificationWithNoGcCause, /*handback=*/ null);
-
-    assertThat(underTest.getPeakPostGcHeap())
-        .hasValue(PeakHeap.create(100, clock.currentTimeMillis()));
-    assertThat(underTest.getPeakPostGcHeapTenuredSpace())
-        .hasValue(PeakHeap.create(0, clock.currentTimeMillis()));
-  }
-
-  @Test
-  public void peakHeapsIncreaseWhenBigger() {
-    PostGCMemoryUseRecorder rec =
-        new PostGCMemoryUseRecorder(new ArrayList<>(), BugReporter.defaultInstance());
-
-    clock.advanceMillis(1);
-    rec.handleNotification(
-        createOneTenuredSpaceOneNonTenuredSpaceMajorGCNotifications(1000L), null);
-    assertThat(rec.getPeakPostGcHeap()).hasValue(PeakHeap.create(2000, clock.currentTimeMillis()));
-    assertThat(rec.getPeakPostGcHeapTenuredSpace())
-        .hasValue(PeakHeap.create(1000, clock.currentTimeMillis()));
-
-    clock.advanceMillis(1);
-    rec.handleNotification(
-        createOneTenuredSpaceOneNonTenuredSpaceMajorGCNotifications(1001L), null);
-    assertThat(rec.getPeakPostGcHeap()).hasValue(PeakHeap.create(2002, clock.currentTimeMillis()));
-    assertThat(rec.getPeakPostGcHeapTenuredSpace())
-        .hasValue(PeakHeap.create(1001, clock.currentTimeMillis()));
-
-    clock.advanceMillis(1);
-    rec.handleNotification(
-        createOneTenuredSpaceOneNonTenuredSpaceMajorGCNotifications(1002L), null);
-    assertThat(rec.getPeakPostGcHeap()).hasValue(PeakHeap.create(2004, clock.currentTimeMillis()));
-    assertThat(rec.getPeakPostGcHeapTenuredSpace())
-        .hasValue(PeakHeap.create(1002, clock.currentTimeMillis()));
-  }
-
-  @Test
-  public void peakHeapsDontDecrease() {
-    PostGCMemoryUseRecorder rec =
-        new PostGCMemoryUseRecorder(new ArrayList<>(), BugReporter.defaultInstance());
-
-    clock.advanceMillis(1);
-    rec.handleNotification(createOneTenuredSpaceOneNonTenuredSpaceMajorGCNotifications(1000), null);
-    PeakHeap expectedTotal = PeakHeap.create(2000, clock.currentTimeMillis());
-    PeakHeap expectedTenuredSpace = PeakHeap.create(1000, clock.currentTimeMillis());
-
-    clock.advanceMillis(1);
-    rec.handleNotification(createOneTenuredSpaceOneNonTenuredSpaceMajorGCNotifications(500), null);
-    assertThat(rec.getPeakPostGcHeap()).hasValue(expectedTotal);
-    assertThat(rec.getPeakPostGcHeapTenuredSpace()).hasValue(expectedTenuredSpace);
-
-    clock.advanceMillis(1);
-    rec.handleNotification(createOneTenuredSpaceOneNonTenuredSpaceMajorGCNotifications(999), null);
-    assertThat(rec.getPeakPostGcHeap()).hasValue(expectedTotal);
-    assertThat(rec.getPeakPostGcHeapTenuredSpace()).hasValue(expectedTenuredSpace);
-  }
-
-  @Test
-  public void ignoreNonGCNotification() {
-    PostGCMemoryUseRecorder rec =
-        new PostGCMemoryUseRecorder(new ArrayList<>(), BugReporter.defaultInstance());
-    rec.handleNotification(
-        createMockNotification(
-            "some other notification", "end of major GC", ImmutableMap.of("Foo", 1000L)),
-        null);
-    assertThat(rec.getPeakPostGcHeap()).isEmpty();
-    assertThat(rec.getPeakPostGcHeapTenuredSpace()).isEmpty();
-  }
-
-  @Test
-  public void ignoreNonMajorGCNotification() {
-    PostGCMemoryUseRecorder rec =
-        new PostGCMemoryUseRecorder(new ArrayList<>(), BugReporter.defaultInstance());
-    rec.handleNotification(
-        createMockNotification(
-            GarbageCollectionNotificationInfo.GARBAGE_COLLECTION_NOTIFICATION,
-            "end of minor GC",
-            ImmutableMap.of("Foo", 1000L)),
-        null);
-    assertThat(rec.getPeakPostGcHeap()).isEmpty();
-    assertThat(rec.getPeakPostGcHeapTenuredSpace()).isEmpty();
-  }
-
-  @Test
-  public void sumMemUsageInfo() {
-    PostGCMemoryUseRecorder rec =
-        new PostGCMemoryUseRecorder(new ArrayList<>(), BugReporter.defaultInstance());
-    rec.handleNotification(
-        createMajorGCNotification(
-            ImmutableMap.of("Foo", 111L, "Bar", 222L, "Qux", 333L, "CMS Old Gen", 111L)),
-        null);
-    assertThat(rec.getPeakPostGcHeap()).hasValue(PeakHeap.create(777, clock.currentTimeMillis()));
-    assertThat(rec.getPeakPostGcHeapTenuredSpace())
-        .hasValue(PeakHeap.create(111, clock.currentTimeMillis()));
-  }
-
-  @Test
-  public void memoryUsageReportedZeroGetsSetAndStaysSet() {
-    PostGCMemoryUseRecorder rec =
-        new PostGCMemoryUseRecorder(new ArrayList<>(), BugReporter.defaultInstance());
-    assertThat(rec.wasMemoryUsageReportedZero()).isFalse();
-    rec.handleNotification(
-        createMajorGCNotification(ImmutableMap.of("Foo", 0L, "Bar", 0L, "Qux", 0L)), null);
-    assertThat(rec.wasMemoryUsageReportedZero()).isTrue();
-    rec.handleNotification(
-        createMajorGCNotification(ImmutableMap.of("Foo", 123L, "Bar", 456L, "Qux", 789L)), null);
-    assertThat(rec.wasMemoryUsageReportedZero()).isTrue();
-  }
-
-  @Test
-  public void memoryUsageReportedZeroDoesntGetSet() {
-    PostGCMemoryUseRecorder rec =
-        new PostGCMemoryUseRecorder(new ArrayList<>(), BugReporter.defaultInstance());
-    assertThat(rec.wasMemoryUsageReportedZero()).isFalse();
-    rec.handleNotification(
-        createMajorGCNotification(ImmutableMap.of("Foo", 123L, "Bar", 456L, "Qux", 789L)), null);
-    assertThat(rec.wasMemoryUsageReportedZero()).isFalse();
-  }
-
-  @Test
-  public void totalGarbageReported() {
-    PostGCMemoryUseRecorder rec =
-        new PostGCMemoryUseRecorder(new ArrayList<>(), BugReporter.defaultInstance());
-    assertThat(rec.getGarbageStats()).isEmpty();
-
-    rec.handleNotification(
-        createMockNotification(
-            GarbageCollectionNotificationInfo.GARBAGE_COLLECTION_NOTIFICATION,
-            "action",
-            "cause",
-            ImmutableMap.of("old", 1000L, "young", 2000L),
-            ImmutableMap.of("old", 5000L, "young", 10000L)),
-        /* handback= */ null);
-    assertThat(rec.getGarbageStats()).containsExactly("old", 4000L, "young", 8000L);
-    rec.handleNotification(
-        createMockNotification(
-            GarbageCollectionNotificationInfo.GARBAGE_COLLECTION_NOTIFICATION,
-            "action",
-            "cause",
-            ImmutableMap.of("young", 15000L),
-            ImmutableMap.of("young", 20000L)),
-        /* handback= */ null);
-    assertThat(rec.getGarbageStats()).containsExactly("old", 4000L, "young", 13000L);
-
-    rec.reset();
-    assertThat(rec.getGarbageStats()).isEmpty();
-  }
-
-  @Test
-  public void moreThanOneTenuredSpaceEventReportsBug() {
-    BugReporter bugReporter = mock(BugReporter.class);
-    PostGCMemoryUseRecorder rec = new PostGCMemoryUseRecorder(new ArrayList<>(), bugReporter);
-    rec.handleNotification(
-        createMajorGCNotification(ImmutableMap.of("CMS Old Gen", 111L, "PS Old Gen", 111L)), null);
-    verify(bugReporter)
-        .sendBugReport(
-            argThat(
-                e ->
-                    e.getMessage()
-                        .contains(
-                            "More than one tenured space event was recorded during garbage"
-                                + " collection.")));
-  }
-
-  @Test
-  public void peakHeapsDuringExecutionStartAbsent() {
-    PostGCMemoryUseRecorder rec =
-        new PostGCMemoryUseRecorder(new ArrayList<>(), BugReporter.defaultInstance());
-    assertThat(rec.getPeakPostGcHeapDuringExecution()).isEmpty();
-    assertThat(rec.getPeakPostGcHeapTenuredSpaceDuringExecution()).isEmpty();
-  }
-
-  @Test
-  public void peakHeapsDuringExecutionAbsentAfterReset() {
-    PostGCMemoryUseRecorder rec =
-        new PostGCMemoryUseRecorder(new ArrayList<>(), BugReporter.defaultInstance());
-
-    EventBus eventBus = new EventBus();
-    eventBus.register(rec);
-    eventBus.post(mock(AnalysisPhaseCompleteEvent.class));
-    eventBus.post(SomeExecutionStartedEvent.create());
-
-    rec.handleNotification(
-        createOneTenuredSpaceOneNonTenuredSpaceMajorGCNotifications(1000L), null);
-    rec.reset();
-    assertThat(rec.getPeakPostGcHeapDuringExecution()).isEmpty();
-    assertThat(rec.getPeakPostGcHeapTenuredSpaceDuringExecution()).isEmpty();
-  }
-
-  @Test
-  public void peakHeapsDuringExecutionNotUpdatedBeforeEvents() {
-    PostGCMemoryUseRecorder rec =
-        new PostGCMemoryUseRecorder(new ArrayList<>(), BugReporter.defaultInstance());
-
-    rec.handleNotification(
-        createOneTenuredSpaceOneNonTenuredSpaceMajorGCNotifications(1000L), null);
-
-    assertThat(rec.getPeakPostGcHeapDuringExecution()).isEmpty();
-    assertThat(rec.getPeakPostGcHeapTenuredSpaceDuringExecution()).isEmpty();
-  }
-
-  @Test
-  public void peakHeapsDuringExecutionNotUpdatedWithOnlyAnalysisComplete() {
-    PostGCMemoryUseRecorder rec =
-        new PostGCMemoryUseRecorder(new ArrayList<>(), BugReporter.defaultInstance());
-
-    EventBus eventBus = new EventBus();
-    eventBus.register(rec);
-    eventBus.post(mock(AnalysisPhaseCompleteEvent.class));
-
-    rec.handleNotification(
-        createOneTenuredSpaceOneNonTenuredSpaceMajorGCNotifications(1000L), null);
-
-    assertThat(rec.getPeakPostGcHeapDuringExecution()).isEmpty();
-    assertThat(rec.getPeakPostGcHeapTenuredSpaceDuringExecution()).isEmpty();
-  }
-
-  @Test
-  public void peakHeapsDuringExecutionNotUpdatedWithOnlyExecutionStarted() {
-    PostGCMemoryUseRecorder rec =
-        new PostGCMemoryUseRecorder(new ArrayList<>(), BugReporter.defaultInstance());
-
-    EventBus eventBus = new EventBus();
-    eventBus.register(rec);
-    eventBus.post(SomeExecutionStartedEvent.create());
-
-    rec.handleNotification(
-        createOneTenuredSpaceOneNonTenuredSpaceMajorGCNotifications(1000L), null);
-
-    assertThat(rec.getPeakPostGcHeapDuringExecution()).isEmpty();
-    assertThat(rec.getPeakPostGcHeapTenuredSpaceDuringExecution()).isEmpty();
-  }
-
-  @Test
-  public void peakHeapsDuringExecutionUpdatedAfterBothEvents() {
-    PostGCMemoryUseRecorder rec =
-        new PostGCMemoryUseRecorder(new ArrayList<>(), BugReporter.defaultInstance());
-
-    EventBus eventBus = new EventBus();
-    eventBus.register(rec);
-    eventBus.post(mock(AnalysisPhaseCompleteEvent.class));
-    eventBus.post(SomeExecutionStartedEvent.create());
-
-    clock.advanceMillis(1);
-    rec.handleNotification(
-        createOneTenuredSpaceOneNonTenuredSpaceMajorGCNotifications(1000L), null);
-
-    assertThat(rec.getPeakPostGcHeapDuringExecution())
-        .hasValue(PeakHeap.create(2000, clock.currentTimeMillis()));
-    assertThat(rec.getPeakPostGcHeapTenuredSpaceDuringExecution())
-        .hasValue(PeakHeap.create(1000, clock.currentTimeMillis()));
-  }
-
-  private static GarbageCollectorMXBean createMXBeanWithName(String name) {
-    GarbageCollectorMXBean b =
-        mock(
-            GarbageCollectorMXBean.class,
-            withSettings().extraInterfaces(NotificationEmitter.class));
-    when(b.getName()).thenReturn(name);
-    return b;
-  }
-
-  private static List<GarbageCollectorMXBean> createGCBeans(String[] names) {
-    List<GarbageCollectorMXBean> beans = new ArrayList<>();
-    for (String n : names) {
-      beans.add(createMXBeanWithName(n));
-    }
-    return beans;
-  }
-
-  private static MemoryUsage createMockMemoryUsage(long used) {
-    MemoryUsage mu = mock(MemoryUsage.class);
-    when(mu.getUsed()).thenReturn(used);
-    return mu;
-  }
-
-  private static ImmutableMap<String, MemoryUsage> createMemoryUsageMap(Map<String, Long> memUsed) {
-    ImmutableMap.Builder<String, MemoryUsage> memUsageMap = ImmutableMap.builder();
-    for (Map.Entry<String, Long> e : memUsed.entrySet()) {
-      memUsageMap.put(e.getKey(), createMockMemoryUsage(e.getValue()));
-    }
-    return memUsageMap.buildOrThrow();
-  }
-
-  private Notification createMockNotification(
-      String type, String action, Map<String, Long> memUsed) {
-    return createMockNotification(type, action, "dummycause", memUsed, /* memUsedBefore= */ null);
-  }
-
-  private Notification createMockNotification(
-      String type,
-      String action,
-      String cause,
-      Map<String, Long> memUsed,
-      @Nullable Map<String, Long> memUsedBefore) {
-    GcInfo gcInfo = mock(GcInfo.class);
-    ImmutableMap<String, MemoryUsage> memoryUsageMap = createMemoryUsageMap(memUsed);
-    when(gcInfo.getMemoryUsageAfterGc()).thenReturn(memoryUsageMap);
-    if (memUsedBefore != null) {
-      ImmutableMap<String, MemoryUsage> memoryUsageBeforeMap = createMemoryUsageMap(memUsedBefore);
-      when(gcInfo.getMemoryUsageBeforeGc()).thenReturn(memoryUsageBeforeMap);
+            memUsed
+        )
     }
 
-    GarbageCollectionNotificationInfo notInfo =
-        new GarbageCollectionNotificationInfo("DummyGCName", action, cause, gcInfo);
+    private fun createOneTenuredSpaceOneNonTenuredSpaceMajorGCNotifications(used: Long): javax.management.Notification {
+        return createMajorGCNotification(
+            com.google.common.collect.ImmutableMap.of<String?, Long?>(
+                "Foo",
+                used,
+                "CMS Old Gen",
+                used
+            )
+        )
+    }
 
-    Notification n = mock(Notification.class);
-    when(n.getType()).thenReturn(type);
-    when(n.getUserData()).thenReturn(notInfo.toCompositeData(null));
-    when(n.getTimeStamp()).thenReturn(clock.currentTimeMillis());
-    return n;
-  }
+    companion object {
+        private fun createMXBeanWithName(name: String?): java.lang.management.GarbageCollectorMXBean {
+            val b: java.lang.management.GarbageCollectorMXBean =
+                Mockito.mock<java.lang.management.GarbageCollectorMXBean>(
+                    java.lang.management.GarbageCollectorMXBean::class.java,
+                    Mockito.withSettings().extraInterfaces(NotificationEmitter::class.java)
+                )
+            Mockito.`when`<String?>(b.getName()).thenReturn(name)
+            return b
+        }
 
-  private Notification createMajorGCNotification(Map<String, Long> memUsed) {
-    return createMockNotification(
-        GarbageCollectionNotificationInfo.GARBAGE_COLLECTION_NOTIFICATION,
-        "end of major GC",
-        memUsed);
-  }
+        private fun createGCBeans(names: Array<String?>): MutableList<java.lang.management.GarbageCollectorMXBean?> {
+            val beans: MutableList<java.lang.management.GarbageCollectorMXBean?> =
+                java.util.ArrayList<java.lang.management.GarbageCollectorMXBean?>()
+            for (n in names) {
+                beans.add(createMXBeanWithName(n))
+            }
+            return beans
+        }
 
-  private Notification createOneTenuredSpaceOneNonTenuredSpaceMajorGCNotifications(long used) {
-    return createMajorGCNotification(ImmutableMap.of("Foo", used, "CMS Old Gen", used));
-  }
+        private fun createMockMemoryUsage(used: Long): java.lang.management.MemoryUsage {
+            val mu: java.lang.management.MemoryUsage =
+                Mockito.mock<java.lang.management.MemoryUsage>(java.lang.management.MemoryUsage::class.java)
+            Mockito.`when`<Long?>(mu.getUsed()).thenReturn(used)
+            return mu
+        }
+
+        private fun createMemoryUsageMap(memUsed: MutableMap<String?, Long?>): com.google.common.collect.ImmutableMap<String?, java.lang.management.MemoryUsage?> {
+            val memUsageMap: com.google.common.collect.ImmutableMap.Builder<String?, java.lang.management.MemoryUsage?> =
+                com.google.common.collect.ImmutableMap.builder<String?, java.lang.management.MemoryUsage?>()
+            for (e in memUsed.entries) {
+                memUsageMap.put(e.key, Companion.createMockMemoryUsage(e.value!!))
+            }
+            return memUsageMap.buildOrThrow()
+        }
+    }
 }

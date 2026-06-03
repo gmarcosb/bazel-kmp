@@ -11,67 +11,70 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.vfs;
+package com.google.devtools.build.lib.vfs
 
-import com.google.devtools.build.lib.testutil.TestThread;
-import com.google.devtools.build.lib.testutil.TestUtils;
-import com.google.devtools.build.lib.vfs.util.FileSystems;
-import java.io.File;
-import java.util.concurrent.atomic.AtomicBoolean;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.exec.util.SpawnBuilder.build
+import com.google.devtools.build.lib.testutil.TestThread
+import com.google.devtools.build.lib.testutil.TestThread.TestRunnable
+import com.google.devtools.common.options.testing.ConverterTesterMap.Builder.build
+import net.starlark.java.syntax.FileOptions.Builder.build
+import org.junit.Before
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * (Slow) tests of FileSystem under concurrency.
- *
+ * 
  * These tests are nondeterministic but provide good coverage nonetheless.
  */
-@RunWith(JUnit4.class)
-public class FileSystemConcurrencyTest {
-  Path workingDir;
+@RunWith(JUnit4::class)
+class FileSystemConcurrencyTest {
+    var workingDir: Path? = null
 
-  @Before
-  public final void initializeFileSystem() throws Exception  {
-    FileSystem testFS = FileSystems.getNativeFileSystem();
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun initializeFileSystem() {
+        val testFS: FileSystem = com.google.devtools.build.lib.vfs.util.FileSystems.getNativeFileSystem()
 
-    // Resolve symbolic links in the temp dir:
-    workingDir = testFS.getPath(new File(TestUtils.tmpDir()).getCanonicalPath());
-  }
+        // Resolve symbolic links in the temp dir:
+        workingDir =
+            testFS.getPath(java.io.File(com.google.devtools.build.lib.testutil.TestUtils.tmpDir()).getCanonicalPath())
+    }
 
-  @Test
-  public void testConcurrentSymlinkModifications() throws Exception {
-    Path xFile = workingDir.getRelative("file");
-    FileSystemUtils.createEmptyFile(xFile);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testConcurrentSymlinkModifications() {
+        val xFile: Path? = workingDir.getRelative("file")
+        FileSystemUtils.createEmptyFile(xFile)
 
-    Path xLinkToFile = workingDir.getRelative("link");
+        val xLinkToFile: Path = workingDir.getRelative("link")
 
-    AtomicBoolean run = new AtomicBoolean(true);
-    TestThread createThread =
-        new TestThread(
-            () -> {
-              while (run.get()) {
-                if (!xLinkToFile.exists()) {
-                  xLinkToFile.createSymbolicLink(xFile);
-                }
-              }
-            });
-    TestThread deleteThread =
-        new TestThread(
-            () -> {
-              while (run.get()) {
-                if (xLinkToFile.exists(Symlinks.NOFOLLOW)) {
-                  xLinkToFile.delete();
-                }
-              }
-            });
-    createThread.start();
-    deleteThread.start();
-    Thread.sleep(1000);
-    run.set(false);
-    createThread.joinAndAssertState(TestUtils.WAIT_TIMEOUT_MILLISECONDS);
-    deleteThread.joinAndAssertState(TestUtils.WAIT_TIMEOUT_MILLISECONDS);
-  }
-
+        val run: AtomicBoolean = AtomicBoolean(true)
+        val createThread: TestThread =
+            TestThread(
+                TestRunnable {
+                    while (run.get()) {
+                        if (!xLinkToFile.exists()) {
+                            xLinkToFile.createSymbolicLink(xFile)
+                        }
+                    }
+                })
+        val deleteThread: TestThread =
+            TestThread(
+                TestRunnable {
+                    while (run.get()) {
+                        if (xLinkToFile.exists(Symlinks.NOFOLLOW)) {
+                            xLinkToFile.delete()
+                        }
+                    }
+                })
+        createThread.start()
+        deleteThread.start()
+        java.lang.Thread.sleep(1000)
+        run.set(false)
+        createThread.joinAndAssertState(com.google.devtools.build.lib.testutil.TestUtils.WAIT_TIMEOUT_MILLISECONDS)
+        deleteThread.joinAndAssertState(com.google.devtools.build.lib.testutil.TestUtils.WAIT_TIMEOUT_MILLISECONDS)
+    }
 }

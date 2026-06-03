@@ -11,69 +11,75 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import static com.google.common.truth.Fact.simpleFact;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.truth.FailureMetadata;
-import com.google.common.truth.IterableSubject;
-import com.google.common.truth.MapSubject;
-import com.google.common.truth.Subject;
+import com.google.common.truth.Fact
+import com.google.common.truth.FailureMetadata
+import com.google.common.truth.IterableSubject
+import com.google.common.truth.MapSubject
+import com.google.devtools.build.skyframe.ErrorInfoSubject
+import com.google.devtools.build.skyframe.ErrorInfoSubjectFactory
 
 /**
- * {@link Subject} for {@link EvaluationResult}. Please add to this class if you need more
+ * [Subject] for [EvaluationResult]. Please add to this class if you need more
  * functionality!
  */
-public class EvaluationResultSubject extends Subject {
-  private final EvaluationResult<?> actual;
+class EvaluationResultSubject(failureMetadata: FailureMetadata?, evaluationResult: EvaluationResult<*>) :
+    com.google.common.truth.Subject(failureMetadata, evaluationResult) {
+    private val actual: EvaluationResult<*>
 
-  public EvaluationResultSubject(
-      FailureMetadata failureMetadata, EvaluationResult<?> evaluationResult) {
-    super(failureMetadata, evaluationResult);
-    this.actual = evaluationResult;
-  }
-
-  public void hasError() {
-    if (!actual.hasError()) {
-      failWithActual(simpleFact("expected to have error"));
+    init {
+        this.actual = evaluationResult
     }
-  }
 
-  public void hasNoError() {
-    if (actual.hasError()) {
-      failWithActual(simpleFact("expected to have no error"));
+    fun hasError() {
+        if (!actual.hasError()) {
+            failWithActual(Fact.simpleFact("expected to have error"))
+        }
     }
-  }
 
-  public Subject hasEntryThat(SkyKey key) {
-    return check("get(%s)", key).that(actual.get(key));
-  }
+    fun hasNoError() {
+        if (actual.hasError()) {
+            failWithActual(Fact.simpleFact("expected to have no error"))
+        }
+    }
 
-  public ErrorInfoSubject hasErrorEntryForKeyThat(SkyKey key) {
-    return check("getError(%s)", key)
-        .about(new ErrorInfoSubjectFactory())
-        .that(actual.getError(key));
-  }
+    fun hasEntryThat(key: SkyKey): com.google.common.truth.Subject? {
+        return check("get(%s)", key).that(actual.get(key))
+    }
 
-  public IterableSubject hasDirectDepsInGraphThat(SkyKey parent) throws InterruptedException {
-    return check("directDeps(%s)", parent)
-        .that(actual.getWalkableGraph().getDirectDeps(ImmutableList.of(parent)).get(parent));
-  }
+    fun hasErrorEntryForKeyThat(key: SkyKey): ErrorInfoSubject? {
+        return check("getError(%s)", key)
+            .about<ErrorInfoSubject?, ErrorInfo?>(ErrorInfoSubjectFactory())
+            .that(actual.getError(key))
+    }
 
-  public IterableSubject hasReverseDepsInGraphThat(SkyKey child) throws InterruptedException {
-    return check("reverseDeps(%s)", child)
-        .that(actual.getWalkableGraph().getReverseDeps(ImmutableList.of(child)).get(child));
-  }
+    @Throws(java.lang.InterruptedException::class)
+    fun hasDirectDepsInGraphThat(parent: SkyKey): IterableSubject? {
+        return check("directDeps(%s)", parent)
+            .that(
+                actual.getWalkableGraph().getDirectDeps(com.google.common.collect.ImmutableList.of<E?>(parent))
+                    .get(parent)
+            )
+    }
 
-  public MapSubject hasErrorMapThat() {
-    return check("errorMap()").that(actual.errorMap());
-  }
+    @Throws(java.lang.InterruptedException::class)
+    fun hasReverseDepsInGraphThat(child: SkyKey): IterableSubject? {
+        return check("reverseDeps(%s)", child)
+            .that(
+                actual.getWalkableGraph().getReverseDeps(com.google.common.collect.ImmutableList.of<E?>(child))
+                    .get(child)
+            )
+    }
 
-  public ErrorInfoSubject hasSingletonErrorThat(SkyKey key) {
-    hasError();
-    hasErrorMapThat().hasSize(1);
-    check("keyNames()").that(actual.keyNames()).isEmpty();
-    return hasErrorEntryForKeyThat(key);
-  }
+    fun hasErrorMapThat(): MapSubject? {
+        return check("errorMap()").that(actual.errorMap())
+    }
+
+    fun hasSingletonErrorThat(key: SkyKey): ErrorInfoSubject? {
+        hasError()
+        hasErrorMapThat().hasSize(1)
+        check("keyNames()").that(actual.keyNames()).isEmpty()
+        return hasErrorEntryForKeyThat(key)
+    }
 }

@@ -11,58 +11,49 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.server
 
-package com.google.devtools.build.lib.server;
+import com.google.devtools.build.lib.vfs.DigestHashFunction
+import org.junit.Test
 
-import static com.google.common.truth.Truth.assertThat;
+/** Test for [ShutdownHooks].  */
+@RunWith(JUnit4::class)
+class ShutdownHooksTest {
+    private var fileSystem: FileSystem? = null
 
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import java.io.IOException;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @Before
+    fun setUp() {
+        fileSystem = InMemoryFileSystem(DigestHashFunction.SHA256)
+    }
 
-/** Test for {@link ShutdownHooks}. */
-@RunWith(JUnit4.class)
-public class ShutdownHooksTest {
+    @Test
+    @Throws(IOException::class)
+    fun testDeletesRegisteredPaths() {
+        val toDelete: Path = fileSystem.getPath("/some-path-to-delete")
+        toDelete.createDirectoryAndParents()
 
-  private FileSystem fileSystem;
+        val toKeep: Path = fileSystem.getPath("/some-path-to-keep")
+        toKeep.createDirectoryAndParents()
 
-  @Before
-  public void setUp() {
-    fileSystem = new InMemoryFileSystem(DigestHashFunction.SHA256);
-  }
+        val underTest: ShutdownHooks = ShutdownHooks.createUnregistered()
+        underTest.deleteAtExit(toDelete)
+        underTest.runHooks()
 
-  @Test
-  public void testDeletesRegisteredPaths() throws IOException {
-    Path toDelete = fileSystem.getPath("/some-path-to-delete");
-    toDelete.createDirectoryAndParents();
+        assertThat(toDelete.exists()).isFalse()
+        assertThat(toKeep.exists()).isTrue()
+    }
 
-    Path toKeep = fileSystem.getPath("/some-path-to-keep");
-    toKeep.createDirectoryAndParents();
+    @Test
+    @Throws(IOException::class)
+    fun testSkipHooksIfDisabled() {
+        val toDelete: Path = fileSystem.getPath("/some-path-to-delete")
+        toDelete.createDirectoryAndParents()
 
-    ShutdownHooks underTest = ShutdownHooks.createUnregistered();
-    underTest.deleteAtExit(toDelete);
-    underTest.runHooks();
+        val underTest: ShutdownHooks = ShutdownHooks.createUnregistered()
+        underTest.deleteAtExit(toDelete)
+        underTest.disable()
+        underTest.runHooks()
 
-    assertThat(toDelete.exists()).isFalse();
-    assertThat(toKeep.exists()).isTrue();
-  }
-
-  @Test
-  public void testSkipHooksIfDisabled() throws IOException {
-    Path toDelete = fileSystem.getPath("/some-path-to-delete");
-    toDelete.createDirectoryAndParents();
-
-    ShutdownHooks underTest = ShutdownHooks.createUnregistered();
-    underTest.deleteAtExit(toDelete);
-    underTest.disable();
-    underTest.runHooks();
-
-    assertThat(toDelete.exists()).isTrue();
-  }
+        assertThat(toDelete.exists()).isTrue()
+    }
 }

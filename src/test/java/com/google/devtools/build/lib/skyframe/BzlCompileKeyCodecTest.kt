@@ -11,33 +11,27 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.cmdline.Label
 
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.FsUtils;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import com.google.devtools.build.lib.vfs.Root;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Test for {@link BzlCompileValue.Key} serialization. */
-@RunWith(JUnit4.class)
-public final class BzlCompileKeyCodecTest {
-  @Test
-  public void testCodec() throws Exception {
-    Root root = FsUtils.TEST_ROOTED_PATH.getRoot();
-    SerializationTester serializationTester =
-        new SerializationTester(
-            BzlCompileValue.EMPTY_PRELUDE_KEY,
-            BzlCompileValue.keyForBuildPrelude(root, Label.parseCanonicalUnchecked("//a:a")),
-            BzlCompileValue.key(root, Label.parseCanonicalUnchecked("//a:a")));
-    FsUtils.addDependencies(serializationTester);
-    // Indirectly test that deserialization does interning by verifying that the deserialized
-    // instance is the same as the serialized one.
-    serializationTester.setVerificationFunction((in, out) -> assertThat(out).isSameInstanceAs(in));
-    serializationTester.runTests();
-  }
+/** Test for [BzlCompileValue.Key] serialization.  */
+@RunWith(JUnit4::class)
+class BzlCompileKeyCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCodec() {
+        val root: Root? = FsUtils.TEST_ROOTED_PATH.getRoot()
+        val serializationTester: SerializationTester =
+            SerializationTester(
+                BzlCompileValue.EMPTY_PRELUDE_KEY,
+                BzlCompileValue.keyForBuildPrelude(root, Label.parseCanonicalUnchecked("//a:a")),
+                BzlCompileValue.key(root, Label.parseCanonicalUnchecked("//a:a"))
+            )
+        FsUtils.addDependencies(serializationTester)
+        // Indirectly test that deserialization does interning by verifying that the deserialized
+        // instance is the same as the serialized one.
+        serializationTester.setVerificationFunction({ `in`, out -> assertThat(out).isSameInstanceAs(`in`) })
+        serializationTester.runTests()
+    }
 }

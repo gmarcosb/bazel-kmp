@@ -11,40 +11,31 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License
+package com.google.devtools.build.lib.rules.config
 
-package com.google.devtools.build.lib.rules.config;
+import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider
+import org.junit.Test
 
-import static com.google.common.truth.Truth.assertThat;
+/** Tests for the config_feature_flag rule.  */
+@RunWith(JUnit4::class)
+class ConfigFeatureFlagNamingTest : BuildViewTestCase() {
+    private fun getMnemonic(target: ConfiguredTarget): String {
+        return getConfiguration(target).getMnemonic()
+    }
 
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.testutil.TestRuleClassProvider;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    override fun createRuleClassProvider(): ConfiguredRuleClassProvider {
+        val builder: ConfiguredRuleClassProvider.Builder =
+            Builder().addRuleDefinition(FeatureFlagSetterRule())
+        TestRuleClassProvider.addStandardRules(builder)
+        return builder.build()
+    }
 
-/** Tests for the config_feature_flag rule. */
-@RunWith(JUnit4.class)
-public final class ConfigFeatureFlagNamingTest extends BuildViewTestCase {
-
-  private String getMnemonic(ConfiguredTarget target) {
-    return getConfiguration(target).getMnemonic();
-  }
-
-  @Override
-  protected ConfiguredRuleClassProvider createRuleClassProvider() {
-    ConfiguredRuleClassProvider.Builder builder =
-        new ConfiguredRuleClassProvider.Builder().addRuleDefinition(new FeatureFlagSetterRule());
-    TestRuleClassProvider.addStandardRules(builder);
-    return builder.build();
-  }
-
-  @Test
-  public void featureFlagSetter_sameSettingYieldsSameMnemonic_legacy() throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun featureFlagSetter_sameSettingYieldsSameMnemonic_legacy() {
+        scratch.file(
+            "test/BUILD",
+            """
         feature_flag_setter(
             name = "top_a",
             exports_flag = ":flag",
@@ -72,96 +63,21 @@ public final class ConfigFeatureFlagNamingTest extends BuildViewTestCase {
             ],
             default_value = "default",
         )
-        """);
-    useConfiguration("--enforce_transitive_configs_for_config_feature_flag");
-    String aMnemonic = getMnemonic(getConfiguredTarget("//test:top_a"));
-    String bMnemonic = getMnemonic(getConfiguredTarget("//test:top_b"));
-    assertThat(aMnemonic).isEqualTo(bMnemonic);
-  }
-
-  @Test
-  public void featureFlagSetter_diffSettingYieldsDiffMnemonic_legacy() throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
-        feature_flag_setter(
-            name = "top_a",
-            exports_flag = ":flag",
-            flag_values = {
-                ":flag": "configured",
-            },
-            transitive_configs = [":flag"],
+        
+        """.trimIndent()
         )
+        useConfiguration("--enforce_transitive_configs_for_config_feature_flag")
+        val aMnemonic = getMnemonic(getConfiguredTarget("//test:top_a"))
+        val bMnemonic = getMnemonic(getConfiguredTarget("//test:top_b"))
+        Truth.assertThat(aMnemonic).isEqualTo(bMnemonic)
+    }
 
-        feature_flag_setter(
-            name = "top_b",
-            exports_flag = ":flag",
-            flag_values = {
-                ":flag": "other",
-            },
-            transitive_configs = [":flag"],
-        )
-
-        config_feature_flag(
-            name = "flag",
-            allowed_values = [
-                "default",
-                "configured",
-                "other",
-            ],
-            default_value = "default",
-        )
-        """);
-    useConfiguration("--enforce_transitive_configs_for_config_feature_flag");
-    String aMnemonic = getMnemonic(getConfiguredTarget("//test:top_a"));
-    String bMnemonic = getMnemonic(getConfiguredTarget("//test:top_b"));
-    assertThat(aMnemonic).isNotEqualTo(bMnemonic);
-  }
-
-  @Test
-  public void featureFlagSetter_sameSettingYieldsSameMnemonic_diff() throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
-        feature_flag_setter(
-            name = "top_a",
-            exports_flag = ":flag",
-            flag_values = {
-                ":flag": "configured",
-            },
-            transitive_configs = [":flag"],
-        )
-
-        feature_flag_setter(
-            name = "top_b",
-            exports_flag = ":flag",
-            flag_values = {
-                ":flag": "configured",
-            },
-            transitive_configs = [":flag"],
-        )
-
-        config_feature_flag(
-            name = "flag",
-            allowed_values = [
-                "default",
-                "configured",
-                "other",
-            ],
-            default_value = "default",
-        )
-        """);
-    useConfiguration("--enforce_transitive_configs_for_config_feature_flag");
-    String aMnemonic = getMnemonic(getConfiguredTarget("//test:top_a"));
-    String bMnemonic = getMnemonic(getConfiguredTarget("//test:top_b"));
-    assertThat(aMnemonic).isEqualTo(bMnemonic);
-  }
-
-  @Test
-  public void featureFlagSetter_diffSettingYieldsDiffMnemonic_diff() throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun featureFlagSetter_diffSettingYieldsDiffMnemonic_legacy() {
+        scratch.file(
+            "test/BUILD",
+            """
         feature_flag_setter(
             name = "top_a",
             exports_flag = ":flag",
@@ -189,32 +105,36 @@ public final class ConfigFeatureFlagNamingTest extends BuildViewTestCase {
             ],
             default_value = "default",
         )
-        """);
-    useConfiguration("--enforce_transitive_configs_for_config_feature_flag");
-    String aMnemonic = getMnemonic(getConfiguredTarget("//test:top_a"));
-    String bMnemonic = getMnemonic(getConfiguredTarget("//test:top_b"));
-    assertThat(aMnemonic).isNotEqualTo(bMnemonic);
-  }
+        
+        """.trimIndent()
+        )
+        useConfiguration("--enforce_transitive_configs_for_config_feature_flag")
+        val aMnemonic = getMnemonic(getConfiguredTarget("//test:top_a"))
+        val bMnemonic = getMnemonic(getConfiguredTarget("//test:top_b"))
+        Truth.assertThat(aMnemonic).isNotEqualTo(bMnemonic)
+    }
 
-  @Test
-  public void untrimmedFlag_doesNothing_legacy() throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun featureFlagSetter_sameSettingYieldsSameMnemonic_diff() {
+        scratch.file(
+            "test/BUILD",
+            """
         feature_flag_setter(
-            name = "via_setter",
+            name = "top_a",
             exports_flag = ":flag",
             flag_values = {
                 ":flag": "configured",
             },
             transitive_configs = [":flag"],
-            deps = [":via_consumer"],
         )
 
-        genrule(
-            name = "via_consumer",
-            outs = ["out"],
-            cmd = "touch $@",
+        feature_flag_setter(
+            name = "top_b",
+            exports_flag = ":flag",
+            flag_values = {
+                ":flag": "configured",
+            },
             transitive_configs = [":flag"],
         )
 
@@ -227,18 +147,63 @@ public final class ConfigFeatureFlagNamingTest extends BuildViewTestCase {
             ],
             default_value = "default",
         )
-        """);
-    useConfiguration("--enforce_transitive_configs_for_config_feature_flag");
-    ConfiguredTarget viaSetter = getConfiguredTarget("//test:via_setter");
-    ConfiguredTarget viaConsumer = getDirectPrerequisite(viaSetter, "//test:via_consumer");
-    assertThat(getMnemonic(viaSetter)).isEqualTo(getMnemonic(viaConsumer));
-  }
+        
+        """.trimIndent()
+        )
+        useConfiguration("--enforce_transitive_configs_for_config_feature_flag")
+        val aMnemonic = getMnemonic(getConfiguredTarget("//test:top_a"))
+        val bMnemonic = getMnemonic(getConfiguredTarget("//test:top_b"))
+        Truth.assertThat(aMnemonic).isEqualTo(bMnemonic)
+    }
 
-  @Test
-  public void trimmedFlag_causesDiff_legacy() throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun featureFlagSetter_diffSettingYieldsDiffMnemonic_diff() {
+        scratch.file(
+            "test/BUILD",
+            """
+        feature_flag_setter(
+            name = "top_a",
+            exports_flag = ":flag",
+            flag_values = {
+                ":flag": "configured",
+            },
+            transitive_configs = [":flag"],
+        )
+
+        feature_flag_setter(
+            name = "top_b",
+            exports_flag = ":flag",
+            flag_values = {
+                ":flag": "other",
+            },
+            transitive_configs = [":flag"],
+        )
+
+        config_feature_flag(
+            name = "flag",
+            allowed_values = [
+                "default",
+                "configured",
+                "other",
+            ],
+            default_value = "default",
+        )
+        
+        """.trimIndent()
+        )
+        useConfiguration("--enforce_transitive_configs_for_config_feature_flag")
+        val aMnemonic = getMnemonic(getConfiguredTarget("//test:top_a"))
+        val bMnemonic = getMnemonic(getConfiguredTarget("//test:top_b"))
+        Truth.assertThat(aMnemonic).isNotEqualTo(bMnemonic)
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun untrimmedFlag_doesNothing_legacy() {
+        scratch.file(
+            "test/BUILD",
+            """
         feature_flag_setter(
             name = "via_setter",
             exports_flag = ":flag",
@@ -252,7 +217,48 @@ public final class ConfigFeatureFlagNamingTest extends BuildViewTestCase {
         genrule(
             name = "via_consumer",
             outs = ["out"],
-            cmd = "touch $@",
+            cmd = "touch ${'$'}@",
+            transitive_configs = [":flag"],
+        )
+
+        config_feature_flag(
+            name = "flag",
+            allowed_values = [
+                "default",
+                "configured",
+                "other",
+            ],
+            default_value = "default",
+        )
+        
+        """.trimIndent()
+        )
+        useConfiguration("--enforce_transitive_configs_for_config_feature_flag")
+        val viaSetter: ConfiguredTarget = getConfiguredTarget("//test:via_setter")
+        val viaConsumer: ConfiguredTarget = getDirectPrerequisite(viaSetter, "//test:via_consumer")
+        Truth.assertThat(getMnemonic(viaSetter)).isEqualTo(getMnemonic(viaConsumer))
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun trimmedFlag_causesDiff_legacy() {
+        scratch.file(
+            "test/BUILD",
+            """
+        feature_flag_setter(
+            name = "via_setter",
+            exports_flag = ":flag",
+            flag_values = {
+                ":flag": "configured",
+            },
+            transitive_configs = [":flag"],
+            deps = [":via_consumer"],
+        )
+
+        genrule(
+            name = "via_consumer",
+            outs = ["out"],
+            cmd = "touch ${'$'}@",
             transitive_configs = [],
         )
 
@@ -265,18 +271,21 @@ public final class ConfigFeatureFlagNamingTest extends BuildViewTestCase {
             ],
             default_value = "default",
         )
-        """);
-    useConfiguration("--enforce_transitive_configs_for_config_feature_flag");
-    ConfiguredTarget viaSetter = getConfiguredTarget("//test:via_setter");
-    ConfiguredTarget viaConsumer = getDirectPrerequisite(viaSetter, "//test:via_consumer");
-    assertThat(getMnemonic(viaSetter)).isNotEqualTo(getMnemonic(viaConsumer));
-  }
+        
+        """.trimIndent()
+        )
+        useConfiguration("--enforce_transitive_configs_for_config_feature_flag")
+        val viaSetter: ConfiguredTarget = getConfiguredTarget("//test:via_setter")
+        val viaConsumer: ConfiguredTarget = getDirectPrerequisite(viaSetter, "//test:via_consumer")
+        Truth.assertThat(getMnemonic(viaSetter)).isNotEqualTo(getMnemonic(viaConsumer))
+    }
 
-  @Test
-  public void untrimmedFlag_doesNothing_diff() throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun untrimmedFlag_doesNothing_diff() {
+        scratch.file(
+            "test/BUILD",
+            """
         feature_flag_setter(
             name = "via_setter",
             exports_flag = ":flag",
@@ -290,7 +299,7 @@ public final class ConfigFeatureFlagNamingTest extends BuildViewTestCase {
         genrule(
             name = "via_consumer",
             outs = ["out"],
-            cmd = "touch $@",
+            cmd = "touch ${'$'}@",
             transitive_configs = [":flag"],
         )
 
@@ -303,18 +312,21 @@ public final class ConfigFeatureFlagNamingTest extends BuildViewTestCase {
             ],
             default_value = "default",
         )
-        """);
-    useConfiguration("--enforce_transitive_configs_for_config_feature_flag");
-    ConfiguredTarget viaSetter = getConfiguredTarget("//test:via_setter");
-    ConfiguredTarget viaConsumer = getDirectPrerequisite(viaSetter, "//test:via_consumer");
-    assertThat(getMnemonic(viaSetter)).isEqualTo(getMnemonic(viaConsumer));
-  }
+        
+        """.trimIndent()
+        )
+        useConfiguration("--enforce_transitive_configs_for_config_feature_flag")
+        val viaSetter: ConfiguredTarget = getConfiguredTarget("//test:via_setter")
+        val viaConsumer: ConfiguredTarget = getDirectPrerequisite(viaSetter, "//test:via_consumer")
+        Truth.assertThat(getMnemonic(viaSetter)).isEqualTo(getMnemonic(viaConsumer))
+    }
 
-  @Test
-  public void trimmedFlag_causesDiff_diff() throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun trimmedFlag_causesDiff_diff() {
+        scratch.file(
+            "test/BUILD",
+            """
         feature_flag_setter(
             name = "via_setter",
             exports_flag = ":flag",
@@ -328,7 +340,7 @@ public final class ConfigFeatureFlagNamingTest extends BuildViewTestCase {
         genrule(
             name = "via_consumer",
             outs = ["out"],
-            cmd = "touch $@",
+            cmd = "touch ${'$'}@",
             transitive_configs = [],
         )
 
@@ -341,10 +353,12 @@ public final class ConfigFeatureFlagNamingTest extends BuildViewTestCase {
             ],
             default_value = "default",
         )
-        """);
-    useConfiguration("--enforce_transitive_configs_for_config_feature_flag");
-    ConfiguredTarget viaSetter = getConfiguredTarget("//test:via_setter");
-    ConfiguredTarget viaConsumer = getDirectPrerequisite(viaSetter, "//test:via_consumer");
-    assertThat(getMnemonic(viaSetter)).isNotEqualTo(getMnemonic(viaConsumer));
-  }
+        
+        """.trimIndent()
+        )
+        useConfiguration("--enforce_transitive_configs_for_config_feature_flag")
+        val viaSetter: ConfiguredTarget = getConfiguredTarget("//test:via_setter")
+        val viaConsumer: ConfiguredTarget = getDirectPrerequisite(viaSetter, "//test:via_consumer")
+        Truth.assertThat(getMnemonic(viaSetter)).isNotEqualTo(getMnemonic(viaConsumer))
+    }
 }

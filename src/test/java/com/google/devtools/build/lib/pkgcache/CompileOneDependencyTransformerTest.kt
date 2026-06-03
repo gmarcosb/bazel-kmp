@@ -11,60 +11,34 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.pkgcache;
+package com.google.devtools.build.lib.pkgcache
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.cmdline.Label
 
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.LabelSyntaxException;
-import com.google.devtools.build.lib.cmdline.ResolvedTargets;
-import com.google.devtools.build.lib.cmdline.TargetParsingException;
-import com.google.devtools.build.lib.cmdline.TargetPattern;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.packages.util.MockCcSupport;
-import com.google.devtools.build.lib.packages.util.MockToolsConfig;
-import com.google.devtools.build.lib.testutil.TestUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.io.IOException;
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** A test for [CompileOneDependencyTransformer].  */
+@RunWith(JUnit4::class)
+class CompileOneDependencyTransformerTest : BuildViewTestCase() {
+    private var parser: TargetPatternPreloader? = null
+    private var transformer: CompileOneDependencyTransformer? = null
 
-/** A test for {@link CompileOneDependencyTransformer}. */
-@RunWith(JUnit4.class)
-public class CompileOneDependencyTransformerTest extends BuildViewTestCase {
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun createTransformer() {
+        parser = skyframeExecutor.newTargetPatternPreloader()
+        transformer = CompileOneDependencyTransformer(packageManager)
+    }
 
-  private static Set<Label> targetsToLabels(Iterable<Target> targets) {
-    return AbstractTargetPatternEvaluatorTest.targetsToLabels(targets);
-  }
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun setupLangRules() {
+        MockCcSupport.Companion.get().setup(MockToolsConfig(rootDirectory))
+    }
 
-  private TargetPatternPreloader parser;
-  private CompileOneDependencyTransformer transformer;
-
-  @Before
-  public final void createTransformer() throws Exception {
-    parser = skyframeExecutor.newTargetPatternPreloader();
-    transformer = new CompileOneDependencyTransformer(getPackageManager());
-  }
-
-  @Before
-  public final void setupLangRules() throws Exception {
-    MockCcSupport.get().setup(new MockToolsConfig(rootDirectory));
-  }
-
-  private void writeSimpleExample() throws IOException {
-    scratch.file(
-        "foo/rule.bzl",
-        """
+    @Throws(IOException::class)
+    private fun writeSimpleExample() {
+        scratch.file(
+            "foo/rule.bzl",
+            """
         def _impl(ctx):
             ctx.actions.do_nothing(mnemonic = "Mnemonic")
             return []
@@ -76,11 +50,13 @@ public class CompileOneDependencyTransformerTest extends BuildViewTestCase {
             },
             fragments = ["cpp"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "foo/BUILD",
-        """
+        scratch.file(
+            "foo/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         load(":rule.bzl", "crule_without_srcs")
 
@@ -96,10 +72,12 @@ public class CompileOneDependencyTransformerTest extends BuildViewTestCase {
         )
 
         exports_files(["baz/bang"])
-        """);
-    scratch.file(
-        "foo/bar/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "foo/bar/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_library(
             name = "bar1",
@@ -115,110 +93,124 @@ public class CompileOneDependencyTransformerTest extends BuildViewTestCase {
             "baz/bang",
             "undeclared.h",
         ])
-        """);
-  }
-
-  private static Set<Label> labels(String... labelStrings) throws LabelSyntaxException {
-    Set<Label> labels = new HashSet<>();
-    for (String labelString : labelStrings) {
-      labels.add(Label.parseCanonical(labelString));
+        
+        """.trimIndent()
+        )
     }
-    return labels;
-  }
 
-  private ResolvedTargets<Target> parseCompileOneDep(String... patterns) throws Exception {
-    return parseListCompileOneDepWithOffset(PathFragment.EMPTY_FRAGMENT, patterns);
-  }
-
-  private Set<Label> parseListCompileOneDep(String... patterns) throws Exception {
-    return targetsToLabels(getFailFast(parseCompileOneDep(patterns)));
-  }
-
-  private Set<Label> parseListCompileOneDepRelative(String... patterns)
-      throws TargetParsingException, IOException, InterruptedException {
-    Path foo = scratch.dir("foo");
-    ResolvedTargets<Target> result =
-        parseListCompileOneDepWithOffset(foo.relativeTo(rootDirectory), patterns);
-    return targetsToLabels(getFailFast(result));
-  }
-
-  private ResolvedTargets<Target> parseListCompileOneDepWithOffset(
-      PathFragment offset, String... patterns) throws TargetParsingException, InterruptedException {
-    Map<String, Collection<Target>> resolvedTargetsMap =
-        parser.preloadTargetPatterns(
-            reporter, TargetPattern.mainRepoParser(offset), ImmutableSet.copyOf(patterns), false);
-    ResolvedTargets.Builder<Target> result = ResolvedTargets.builder();
-    for (String pattern : patterns) {
-      result.addAll(resolvedTargetsMap.get(pattern));
+    @Throws(java.lang.Exception::class)
+    private fun parseCompileOneDep(vararg patterns: String?): ResolvedTargets<Target?>? {
+        return parseListCompileOneDepWithOffset(PathFragment.EMPTY_FRAGMENT, patterns)
     }
-    return transformer.transformCompileOneDependency(reporter, result.build());
-  }
 
-  private static Set<Target> getFailFast(ResolvedTargets<Target> result) {
-    assertThat(result.hasError()).isFalse();
-    return result.getTargets();
-  }
+    @Throws(java.lang.Exception::class)
+    private fun parseListCompileOneDep(vararg patterns: String?): MutableSet<Label?> {
+        return targetsToLabels(getFailFast(parseCompileOneDep(*patterns)))
+    }
 
-  @Test
-  public void testCompileOneDep() throws Exception {
-    writeSimpleExample();
-    assertThat(parseListCompileOneDep("foo/foo1.cc"))
-        .containsExactlyElementsIn(labels("@//foo:foo1"));
-    assertThat(parseListCompileOneDep("foo/foo1.h"))
-        .containsExactlyElementsIn(labels("@//foo:foo1"));
-    assertThat(parseListCompileOneDep("foo:foo1.cc"))
-        .containsExactlyElementsIn(labels("@//foo:foo1"));
-    assertThat(parseListCompileOneDep("//foo:foo1.cc"))
-        .containsExactlyElementsIn(labels("@//foo:foo1"));
-    assertThat(parseListCompileOneDepRelative("//foo:foo1.cc"))
-        .containsExactlyElementsIn(labels("@//foo:foo1"));
-    assertThat(parseListCompileOneDepRelative(":foo1.cc"))
-        .containsExactlyElementsIn(labels("@//foo:foo1"));
-    assertThat(parseListCompileOneDepRelative("foo1.cc"))
-        .containsExactlyElementsIn(labels("@//foo:foo1"));
-    assertThat(parseListCompileOneDep("foo/foo2.h"))
-        .containsExactlyElementsIn(labels("@//foo:foo2"));
-  }
+    @Throws(TargetParsingException::class, IOException::class, java.lang.InterruptedException::class)
+    private fun parseListCompileOneDepRelative(vararg patterns: String?): MutableSet<Label?> {
+        val foo: Path = scratch.dir("foo")
+        val result: ResolvedTargets<Target?> =
+            parseListCompileOneDepWithOffset(foo.relativeTo(rootDirectory), patterns)
+        return targetsToLabels(getFailFast(result))
+    }
 
-  /** Regression test for bug: "--compile_one_dependency should report error for missing input". */
-  @Test
-  public void testCompileOneDepOnMissingFile() throws Exception {
-    writeSimpleExample();
-    TargetParsingException e =
-        assertThrows(TargetParsingException.class, () -> parseCompileOneDep("//foo:missing.cc"));
-    assertThat(e)
-        .hasMessageThat()
-        .matches(
-            TestUtils.createMissingTargetAssertionString("missing.cc", "foo", "/workspace", ""));
+    @Throws(TargetParsingException::class, java.lang.InterruptedException::class)
+    private fun parseListCompileOneDepWithOffset(
+        offset: PathFragment?, vararg patterns: String?
+    ): ResolvedTargets<Target?> {
+        val resolvedTargetsMap: MutableMap<String?, MutableCollection<Target?>?> =
+            parser.preloadTargetPatterns(
+                reporter,
+                TargetPattern.mainRepoParser(offset),
+                com.google.common.collect.ImmutableSet.< E > copyOf < E ? > (patterns),
+                false
+            )
+        val result: ResolvedTargets.Builder<Target?> = ResolvedTargets.builder()
+        for (pattern in patterns) {
+            result.addAll(resolvedTargetsMap.get(pattern))
+        }
+        return transformer.transformCompileOneDependency(reporter, result.build())
+    }
 
-    // Also, try a valid input file which has no dependent rules in its package.
-    e = assertThrows(TargetParsingException.class, () -> parseCompileOneDep("//foo:baz/bang"));
-    assertThat(e).hasMessageThat().isEqualTo("Couldn't find dependency on target '//foo:baz/bang'");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCompileOneDep() {
+        writeSimpleExample()
+        Truth.assertThat(parseListCompileOneDep("foo/foo1.cc"))
+            .containsExactlyElementsIn(labels("@//foo:foo1"))
+        Truth.assertThat(parseListCompileOneDep("foo/foo1.h"))
+            .containsExactlyElementsIn(labels("@//foo:foo1"))
+        Truth.assertThat(parseListCompileOneDep("foo:foo1.cc"))
+            .containsExactlyElementsIn(labels("@//foo:foo1"))
+        Truth.assertThat(parseListCompileOneDep("//foo:foo1.cc"))
+            .containsExactlyElementsIn(labels("@//foo:foo1"))
+        Truth.assertThat(parseListCompileOneDepRelative("//foo:foo1.cc"))
+            .containsExactlyElementsIn(labels("@//foo:foo1"))
+        Truth.assertThat(parseListCompileOneDepRelative(":foo1.cc"))
+            .containsExactlyElementsIn(labels("@//foo:foo1"))
+        Truth.assertThat(parseListCompileOneDepRelative("foo1.cc"))
+            .containsExactlyElementsIn(labels("@//foo:foo1"))
+        Truth.assertThat(parseListCompileOneDep("foo/foo2.h"))
+            .containsExactlyElementsIn(labels("@//foo:foo2"))
+    }
 
-    // Try a header that is in a package but where no cc_library explicitly lists it.
-    e =
-        assertThrows(
-            TargetParsingException.class, () -> parseCompileOneDep("//foo/bar:undeclared.h"));
-    assertThat(e)
-        .hasMessageThat()
-        .isEqualTo("Couldn't find dependency on target '//foo/bar:undeclared.h'");
-  }
+    /** Regression test for bug: "--compile_one_dependency should report error for missing input".  */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCompileOneDepOnMissingFile() {
+        writeSimpleExample()
+        var e: TargetParsingException? =
+            org.junit.Assert.assertThrows<T?>(
+                TargetParsingException::class.java,
+                org.junit.function.ThrowingRunnable { parseCompileOneDep("//foo:missing.cc") })
+        assertThat(e)
+            .hasMessageThat()
+            .matches(
+                com.google.devtools.build.lib.testutil.TestUtils.createMissingTargetAssertionString(
+                    "missing.cc",
+                    "foo",
+                    "/workspace",
+                    ""
+                )
+            )
 
-  @Test
-  public void testCompileOneDepOnNonSourceTarget() throws Exception {
-    writeSimpleExample();
-    TargetParsingException e =
-        assertThrows(TargetParsingException.class, () -> parseCompileOneDep("//foo:foo1"));
-    assertThat(e)
-        .hasMessageThat()
-        .isEqualTo("--compile_one_dependency target '//foo:foo1' must be a file");
-  }
+        // Also, try a valid input file which has no dependent rules in its package.
+        e = org.junit.Assert.assertThrows<T?>(
+            TargetParsingException::class.java,
+            org.junit.function.ThrowingRunnable { parseCompileOneDep("//foo:baz/bang") })
+        assertThat(e).hasMessageThat().isEqualTo("Couldn't find dependency on target '//foo:baz/bang'")
 
-  @Test
-  public void testCompileOneDepOnTwoTargets() throws Exception {
-    scratch.file(
-        "recursive/BUILD",
-        """
+        // Try a header that is in a package but where no cc_library explicitly lists it.
+        e =
+            org.junit.Assert.assertThrows<T?>(
+                TargetParsingException::class.java,
+                org.junit.function.ThrowingRunnable { parseCompileOneDep("//foo/bar:undeclared.h") })
+        assertThat(e)
+            .hasMessageThat()
+            .isEqualTo("Couldn't find dependency on target '//foo/bar:undeclared.h'")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCompileOneDepOnNonSourceTarget() {
+        writeSimpleExample()
+        val e: TargetParsingException? =
+            org.junit.Assert.assertThrows<T?>(
+                TargetParsingException::class.java,
+                org.junit.function.ThrowingRunnable { parseCompileOneDep("//foo:foo1") })
+        assertThat(e)
+            .hasMessageThat()
+            .isEqualTo("--compile_one_dependency target '//foo:foo1' must be a file")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCompileOneDepOnTwoTargets() {
+        scratch.file(
+            "recursive/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_library(
             name = "x",
@@ -229,20 +221,23 @@ public class CompileOneDependencyTransformerTest extends BuildViewTestCase {
             name = "y",
             srcs = ["fooy.cc"],
         )
-        """);
-    assertThat(parseListCompileOneDep("//recursive:foox.cc", "//recursive:fooy.cc"))
-        .containsExactlyElementsIn(labels("//recursive:x", "//recursive:y"));
-  }
+        
+        """.trimIndent()
+        )
+        Truth.assertThat(parseListCompileOneDep("//recursive:foox.cc", "//recursive:fooy.cc"))
+            .containsExactlyElementsIn(labels("//recursive:x", "//recursive:y"))
+    }
 
-  /**
-   * Regression test for bug: "--compile_one_dependency should not crash in the presence of mutually
-   * recursive targets"
-   */
-  @Test
-  public void testCompileOneDepOnRecursiveTarget() throws Exception {
-    scratch.file(
-        "recursive/BUILD",
-        """
+    /**
+     * Regression test for bug: "--compile_one_dependency should not crash in the presence of mutually
+     * recursive targets"
+     */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCompileOneDepOnRecursiveTarget() {
+        scratch.file(
+            "recursive/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         filegroup(
             name = "x",
@@ -261,16 +256,19 @@ public class CompileOneDependencyTransformerTest extends BuildViewTestCase {
             name = "foo",
             srcs = [":y"],
         )
-        """);
-    assertThat(parseListCompileOneDep("//recursive:foo.cc"))
-        .containsExactlyElementsIn(labels("//recursive:foo"));
-  }
+        
+        """.trimIndent()
+        )
+        Truth.assertThat(parseListCompileOneDep("//recursive:foo.cc"))
+            .containsExactlyElementsIn(labels("//recursive:foo"))
+    }
 
-  @Test
-  public void testCompileOneDepOnRecursiveNotFoundTarget() throws Exception {
-    scratch.file(
-        "recursive/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCompileOneDepOnRecursiveNotFoundTarget() {
+        scratch.file(
+            "recursive/BUILD",
+            """
         filegroup(
             name = "x",
             srcs = [":y"],
@@ -282,20 +280,25 @@ public class CompileOneDependencyTransformerTest extends BuildViewTestCase {
         )
 
         exports_files(["foo"])
-        """);
+        
+        """.trimIndent()
+        )
 
-    TargetParsingException e =
-        assertThrows(TargetParsingException.class, () -> parseCompileOneDep("//recursive:foo"));
-    assertThat(e)
-        .hasMessageThat()
-        .isEqualTo("Couldn't find dependency on target '//recursive:foo'");
-  }
+        val e: TargetParsingException? =
+            org.junit.Assert.assertThrows<T?>(
+                TargetParsingException::class.java,
+                org.junit.function.ThrowingRunnable { parseCompileOneDep("//recursive:foo") })
+        assertThat(e)
+            .hasMessageThat()
+            .isEqualTo("Couldn't find dependency on target '//recursive:foo'")
+    }
 
-  @Test
-  public void testCompileOneDepOnDeepRecursiveTarget() throws Exception {
-    scratch.file(
-        "recursive/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCompileOneDepOnDeepRecursiveTarget() {
+        scratch.file(
+            "recursive/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         filegroup(
             name = "x",
@@ -325,18 +328,21 @@ public class CompileOneDependencyTransformerTest extends BuildViewTestCase {
             name = "cc",
             srcs = [":x"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    Set<Label> result =
-        parseListCompileOneDep("//recursive:foox.cc", "//recursive:fooy.cc", "//recursive:fooy.cc");
-    assertThat(result).containsExactlyElementsIn(labels("//recursive:cc"));
-  }
+        val result: MutableSet<Label?> =
+            parseListCompileOneDep("//recursive:foox.cc", "//recursive:fooy.cc", "//recursive:fooy.cc")
+        Truth.assertThat(result).containsExactlyElementsIn(labels("//recursive:cc"))
+    }
 
-  @Test
-  public void testCompileOneDepOnCrossPackageRecursiveTarget() throws Exception {
-    scratch.file(
-        "recursive/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCompileOneDepOnCrossPackageRecursiveTarget() {
+        scratch.file(
+            "recursive/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         filegroup(
             name = "x",
@@ -350,11 +356,13 @@ public class CompileOneDependencyTransformerTest extends BuildViewTestCase {
             name = "cc",
             srcs = [":x"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "recursivetoo/BUILD",
-        """
+        scratch.file(
+            "recursivetoo/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         filegroup(
             name = "x",
@@ -368,20 +376,23 @@ public class CompileOneDependencyTransformerTest extends BuildViewTestCase {
             name = "cc",
             srcs = [":x"],
         )
-        """);
-    assertThat(parseListCompileOneDep("//recursive:foo.cc", "//recursivetoo:foo.cc"))
-        .containsExactlyElementsIn(labels("//recursive:cc", "//recursivetoo:cc"));
-  }
+        
+        """.trimIndent()
+        )
+        Truth.assertThat(parseListCompileOneDep("//recursive:foo.cc", "//recursivetoo:foo.cc"))
+            .containsExactlyElementsIn(labels("//recursive:cc", "//recursivetoo:cc"))
+    }
 
-  /**
-   * Tests that when multiple rules match the target, the one that appears first in the BUILD file
-   * is chosen.
-   */
-  @Test
-  public void testRuleChoiceOrdering() throws Exception {
-    scratch.file(
-        "a/BUILD",
-        """
+    /**
+     * Tests that when multiple rules match the target, the one that appears first in the BUILD file
+     * is chosen.
+     */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRuleChoiceOrdering() {
+        scratch.file(
+            "a/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_library(
             name = "foo_lib",
@@ -392,10 +403,12 @@ public class CompileOneDependencyTransformerTest extends BuildViewTestCase {
             name = "bar_lib",
             srcs = ["file.cc"],
         )
-        """);
-    scratch.file(
-        "b/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "b/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_library(
             name = "bar_lib",
@@ -406,35 +419,40 @@ public class CompileOneDependencyTransformerTest extends BuildViewTestCase {
             name = "foo_lib",
             srcs = ["file.cc"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertThat(parseListCompileOneDep("a/file.cc"))
-        .containsExactlyElementsIn(labels("//a:foo_lib"));
-    assertThat(parseListCompileOneDep("b/file.cc"))
-        .containsExactlyElementsIn(labels("//b:bar_lib"));
-  }
+        Truth.assertThat(parseListCompileOneDep("a/file.cc"))
+            .containsExactlyElementsIn(labels("//a:foo_lib"))
+        Truth.assertThat(parseListCompileOneDep("b/file.cc"))
+            .containsExactlyElementsIn(labels("//b:bar_lib"))
+    }
 
-  /** Tests that when multiple rule match a target, language-specific rules take precedence. */
-  @Test
-  public void testRuleChoiceLanguagePreferences() throws Exception {
-    String srcs = "srcs = [ 'a.cc', 'a.c', 'a.h', 'a.py', 'a.txt' ])";
-    scratch.file(
-        "a/BUILD",
-        "load('@rules_cc//cc:cc_binary.bzl','cc_binary')",
-        "genrule(name = 'gen_rule', cmd = '', outs = [ 'out' ], " + srcs,
-        "cc_binary(name = 'cc_rule', " + srcs);
+    /** Tests that when multiple rule match a target, language-specific rules take precedence.  */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRuleChoiceLanguagePreferences() {
+        val srcs = "srcs = [ 'a.cc', 'a.c', 'a.h', 'a.py', 'a.txt' ])"
+        scratch.file(
+            "a/BUILD",
+            "load('@rules_cc//cc:cc_binary.bzl','cc_binary')",
+            "genrule(name = 'gen_rule', cmd = '', outs = [ 'out' ], " + srcs,
+            "cc_binary(name = 'cc_rule', " + srcs
+        )
 
-    assertThat(parseListCompileOneDep("a/a.cc")).containsExactlyElementsIn(labels("//a:cc_rule"));
-    assertThat(parseListCompileOneDep("a/a.c")).containsExactlyElementsIn(labels("//a:cc_rule"));
-    assertThat(parseListCompileOneDep("a/a.h")).containsExactlyElementsIn(labels("//a:cc_rule"));
-    assertThat(parseListCompileOneDep("a/a.txt")).containsExactlyElementsIn(labels("//a:gen_rule"));
-  }
+        Truth.assertThat(parseListCompileOneDep("a/a.cc")).containsExactlyElementsIn(labels("//a:cc_rule"))
+        Truth.assertThat(parseListCompileOneDep("a/a.c")).containsExactlyElementsIn(labels("//a:cc_rule"))
+        Truth.assertThat(parseListCompileOneDep("a/a.h")).containsExactlyElementsIn(labels("//a:cc_rule"))
+        Truth.assertThat(parseListCompileOneDep("a/a.txt")).containsExactlyElementsIn(labels("//a:gen_rule"))
+    }
 
-  @Test
-  public void testGeneratedFile() throws Exception {
-    scratch.file(
-        "a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGeneratedFile() {
+        scratch.file(
+            "a/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         genrule(
             name = "gen_rule",
@@ -446,15 +464,18 @@ public class CompileOneDependencyTransformerTest extends BuildViewTestCase {
             name = "cc",
             srcs = ["out.cc"],
         )
-        """);
-    assertThat(parseListCompileOneDep("a/out.cc")).containsExactlyElementsIn(labels("//a:cc"));
-  }
+        
+        """.trimIndent()
+        )
+        Truth.assertThat(parseListCompileOneDep("a/out.cc")).containsExactlyElementsIn(labels("//a:cc"))
+    }
 
-  @Test
-  public void testGeneratedFileDepOnGenerator() throws Exception {
-    scratch.file(
-        "a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGeneratedFileDepOnGenerator() {
+        scratch.file(
+            "a/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         genrule(
             name = "gen_rule",
@@ -466,15 +487,18 @@ public class CompileOneDependencyTransformerTest extends BuildViewTestCase {
             name = "cc",
             srcs = [":gen_rule"],
         )
-        """);
-    assertThat(parseListCompileOneDep("a/out.cc")).containsExactlyElementsIn(labels("//a:cc"));
-  }
+        
+        """.trimIndent()
+        )
+        Truth.assertThat(parseListCompileOneDep("a/out.cc")).containsExactlyElementsIn(labels("//a:cc"))
+    }
 
-  @Test
-  public void testHdrsFilegroup() throws Exception {
-    scratch.file(
-        "a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testHdrsFilegroup() {
+        scratch.file(
+            "a/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         filegroup(
             name = "headers",
@@ -486,20 +510,23 @@ public class CompileOneDependencyTransformerTest extends BuildViewTestCase {
             srcs = ["a.cc"],
             hdrs = [":headers"],
         )
-        """);
-    assertThat(parseListCompileOneDep("a/a.h")).containsExactlyElementsIn(labels("//a:cc"));
-  }
+        
+        """.trimIndent()
+        )
+        Truth.assertThat(parseListCompileOneDep("a/a.h")).containsExactlyElementsIn(labels("//a:cc"))
+    }
 
-  @Test
-  public void testConfigurableSrcs() throws Exception {
-    // TODO(djasper): We currently flatten the contents of configurable attributes, which might not
-    // always do the right thing. In this situation it is actually good as compiling "foo_select"
-    // at least has the chance to actually be a correct --compile_one_dependency choice for both
-    // "b.cc" and "c.cc". However, if it also contained "a.cc" it might be better to still always
-    // choose "foo_always".
-    scratch.file(
-        "a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testConfigurableSrcs() {
+        // TODO(djasper): We currently flatten the contents of configurable attributes, which might not
+        // always do the right thing. In this situation it is actually good as compiling "foo_select"
+        // at least has the chance to actually be a correct --compile_one_dependency choice for both
+        // "b.cc" and "c.cc". However, if it also contained "a.cc" it might be better to still always
+        // choose "foo_always".
+        scratch.file(
+            "a/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         config_setting(
             name = "a",
@@ -518,21 +545,24 @@ public class CompileOneDependencyTransformerTest extends BuildViewTestCase {
             name = "foo_always",
             srcs = ["a.cc"],
         )
-        """);
-    assertThat(parseListCompileOneDep("a/a.cc"))
-        .containsExactlyElementsIn(labels("//a:foo_always"));
-    assertThat(parseListCompileOneDep("a/b.cc"))
-        .containsExactlyElementsIn(labels("//a:foo_select"));
-    assertThat(parseListCompileOneDep("a/c.cc"))
-        .containsExactlyElementsIn(labels("//a:foo_select"));
-  }
+        
+        """.trimIndent()
+        )
+        Truth.assertThat(parseListCompileOneDep("a/a.cc"))
+            .containsExactlyElementsIn(labels("//a:foo_always"))
+        Truth.assertThat(parseListCompileOneDep("a/b.cc"))
+            .containsExactlyElementsIn(labels("//a:foo_select"))
+        Truth.assertThat(parseListCompileOneDep("a/c.cc"))
+            .containsExactlyElementsIn(labels("//a:foo_select"))
+    }
 
-  @Test
-  public void testConfigurableCopts() throws Exception {
-    // This configurable attribute doesn't preclude accurately knowing the srcs.
-    scratch.file(
-        "a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testConfigurableCopts() {
+        // This configurable attribute doesn't preclude accurately knowing the srcs.
+        scratch.file(
+            "a/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         config_setting(
             name = "a",
@@ -552,70 +582,81 @@ public class CompileOneDependencyTransformerTest extends BuildViewTestCase {
             name = "foo_always",
             srcs = ["a.cc"],
         )
-        """);
-    assertThat(parseListCompileOneDep("a/a.cc"))
-        .containsExactlyElementsIn(labels("//a:foo_select"));
-  }
+        
+        """.trimIndent()
+        )
+        Truth.assertThat(parseListCompileOneDep("a/a.cc"))
+            .containsExactlyElementsIn(labels("//a:foo_select"))
+    }
 
-  @Test
-  public void testHeaderOnlyLibrary() throws Exception {
-    // By default, we assume parse_headers is enabled (via --features + toolchain).
-    scratch.file(
-        "a/BUILD",
-        "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
-        "cc_library(name = 'h', hdrs = ['h.h'])",
-        "cc_library(name = 'l', srcs = ['l.cc'], deps = [':h'])");
-    assertThat(parseListCompileOneDep("a/h.h")).containsExactlyElementsIn(labels("//a:h"));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testHeaderOnlyLibrary() {
+        // By default, we assume parse_headers is enabled (via --features + toolchain).
+        scratch.file(
+            "a/BUILD",
+            "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
+            "cc_library(name = 'h', hdrs = ['h.h'])",
+            "cc_library(name = 'l', srcs = ['l.cc'], deps = [':h'])"
+        )
+        Truth.assertThat(parseListCompileOneDep("a/h.h")).containsExactlyElementsIn(labels("//a:h"))
 
-    // parse_headers explicitly disabled on the header-only target, use its reverse dep.
-    scratch.file(
-        "b/BUILD",
-        "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
-        "cc_library(name = 'h', hdrs = ['h.h'], features = ['-parse_headers'])",
-        "cc_library(name = 'l', srcs = ['l.cc'], deps = [':h'])");
-    assertThat(parseListCompileOneDep("b/h.h")).containsExactlyElementsIn(labels("//b:l"));
+        // parse_headers explicitly disabled on the header-only target, use its reverse dep.
+        scratch.file(
+            "b/BUILD",
+            "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
+            "cc_library(name = 'h', hdrs = ['h.h'], features = ['-parse_headers'])",
+            "cc_library(name = 'l', srcs = ['l.cc'], deps = [':h'])"
+        )
+        Truth.assertThat(parseListCompileOneDep("b/h.h")).containsExactlyElementsIn(labels("//b:l"))
 
-    // ... but if it has sources, the target itself is ok.
-    scratch.file(
-        "c/BUILD",
-        "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
-        "cc_library(name = 'h', hdrs = ['h.h'], srcs = ['h.cc'], features = ['-parse_headers'])",
-        "cc_library(name = 'l', srcs = ['l.cc'], deps = [':h'])");
-    assertThat(parseListCompileOneDep("c/h.h")).containsExactlyElementsIn(labels("//c:h"));
+        // ... but if it has sources, the target itself is ok.
+        scratch.file(
+            "c/BUILD",
+            "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
+            "cc_library(name = 'h', hdrs = ['h.h'], srcs = ['h.cc'], features = ['-parse_headers'])",
+            "cc_library(name = 'l', srcs = ['l.cc'], deps = [':h'])"
+        )
+        Truth.assertThat(parseListCompileOneDep("c/h.h")).containsExactlyElementsIn(labels("//c:h"))
 
-    // parse_headers disabled in the package
-    scratch.file(
-        "d/BUILD",
-        "package(features = ['-parse_headers'])",
-        "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
-        "cc_library(name = 'h', hdrs = ['h.h'])",
-        "cc_library(name = 'l', srcs = ['l.cc'], deps = [':h'])");
-    assertThat(parseListCompileOneDep("d/h.h")).containsExactlyElementsIn(labels("//d:l"));
+        // parse_headers disabled in the package
+        scratch.file(
+            "d/BUILD",
+            "package(features = ['-parse_headers'])",
+            "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
+            "cc_library(name = 'h', hdrs = ['h.h'])",
+            "cc_library(name = 'l', srcs = ['l.cc'], deps = [':h'])"
+        )
+        Truth.assertThat(parseListCompileOneDep("d/h.h")).containsExactlyElementsIn(labels("//d:l"))
 
-    // parse_headers disabled in the package and enabled on the target, so enabled
-    scratch.file(
-        "e/BUILD",
-        "package(features = ['-parse_headers'])",
-        "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
-        "cc_library(name = 'h', hdrs = ['h.h'], features = ['parse_headers'])",
-        "cc_library(name = 'l', srcs = ['l.cc'], deps = [':h'])");
-    assertThat(parseListCompileOneDep("e/h.h")).containsExactlyElementsIn(labels("//e:h"));
-  }
+        // parse_headers disabled in the package and enabled on the target, so enabled
+        scratch.file(
+            "e/BUILD",
+            "package(features = ['-parse_headers'])",
+            "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
+            "cc_library(name = 'h', hdrs = ['h.h'], features = ['parse_headers'])",
+            "cc_library(name = 'l', srcs = ['l.cc'], deps = [':h'])"
+        )
+        Truth.assertThat(parseListCompileOneDep("e/h.h")).containsExactlyElementsIn(labels("//e:h"))
+    }
 
-  @Test
-  public void testFallBackToHeaderOnlyLibrary() throws Exception {
-    scratch.file(
-        "a/BUILD",
-        "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
-        "cc_library(name = 'h', hdrs = ['a.h'], features = ['parse_headers'])");
-    assertThat(parseListCompileOneDep("a/a.h")).containsExactlyElementsIn(labels("//a:h"));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFallBackToHeaderOnlyLibrary() {
+        scratch.file(
+            "a/BUILD",
+            "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
+            "cc_library(name = 'h', hdrs = ['a.h'], features = ['parse_headers'])"
+        )
+        Truth.assertThat(parseListCompileOneDep("a/a.h")).containsExactlyElementsIn(labels("//a:h"))
+    }
 
-  @Test
-  public void doesNotCrashWhenPackageHasRuleWithDubiousSrcs() throws Exception {
-    scratch.file(
-        "a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun doesNotCrashWhenPackageHasRuleWithDubiousSrcs() {
+        scratch.file(
+            "a/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         environment(name = "foo")
 
@@ -644,7 +685,29 @@ public class CompileOneDependencyTransformerTest extends BuildViewTestCase {
             name = "h2",
             hdrs = ["a.h"],
         )
-        """);
-    assertThat(parseListCompileOneDep("a/a.h")).containsExactlyElementsIn(labels("//a:h2"));
-  }
+        
+        """.trimIndent()
+        )
+        Truth.assertThat(parseListCompileOneDep("a/a.h")).containsExactlyElementsIn(labels("//a:h2"))
+    }
+
+    companion object {
+        private fun targetsToLabels(targets: Iterable<Target?>): MutableSet<Label?> {
+            return AbstractTargetPatternEvaluatorTest.Companion.targetsToLabels(targets)
+        }
+
+        @Throws(LabelSyntaxException::class)
+        private fun labels(vararg labelStrings: String?): MutableSet<Label?> {
+            val labels: MutableSet<Label?> = HashSet<Label?>()
+            for (labelString in labelStrings) {
+                labels.add(Label.parseCanonical(labelString))
+            }
+            return labels
+        }
+
+        private fun getFailFast(result: ResolvedTargets<Target?>): MutableSet<Target?> {
+            assertThat(result.hasError()).isFalse()
+            return result.getTargets()
+        }
+    }
 }

@@ -11,29 +11,29 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.collect.compacthashset;
+package com.google.devtools.build.lib.collect.compacthashset
 
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester
+import org.junit.Test
 
-@RunWith(JUnit4.class)
-public final class CompactHashSetCodecTest {
-
-  @Test
-  public void codec_roundTrips() throws Exception {
-    var setWithManyElements = CompactHashSet.<Integer>create();
-    for (int i = 0; i < 1000; i++) {
-      setWithManyElements.add(i);
-    }
-    new SerializationTester(
+@RunWith(JUnit4::class)
+class CompactHashSetCodecTest {
+    @Test
+    @Throws(Exception::class)
+    fun codec_roundTrips() {
+        val setWithManyElements: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            CompactHashSet.< Integer > create < Int ? > ()
+        for (i in 0..999) {
+            setWithManyElements.add(i)
+        }
+        SerializationTester(
             CompactHashSet.create(),
             CompactHashSet.create("hello"),
             CompactHashSet.create("alpha", "beta", "gamma"),
             CompactHashSet.create("one", null, "three"),
             CompactHashSet.create("a", "b", "a"),
-            setWithManyElements)
-        .runTests();
-  }
+            setWithManyElements
+        )
+            .runTests()
+    }
 }

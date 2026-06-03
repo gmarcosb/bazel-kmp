@@ -11,95 +11,95 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.common.options;
+package com.google.devtools.common.options
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.runtime.proto.InvocationPolicyOuterClass.InvocationPolicy
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.runtime.proto.InvocationPolicyOuterClass.InvocationPolicy;
-import com.google.devtools.build.lib.runtime.proto.InvocationPolicyOuterClass.SetValue.Behavior;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Test InvocationPolicies on cases where we expect it to fail gracefully.  */
+@RunWith(JUnit4::class)
+class InvocationPolicyBreakingConditionsTest : InvocationPolicyEnforcerTestBase() {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFlagPolicyDoesNotApply() {
+        val invocationPolicyBuilder: InvocationPolicy.Builder = InvocationPolicy.newBuilder()
+        invocationPolicyBuilder
+            .addFlagPoliciesBuilder()
+            .setFlagName("test_string")
+            .addCommands("build")
+            .getSetValueBuilder()
+            .addFlagValue(TEST_STRING_POLICY_VALUE)
 
-/** Test InvocationPolicies on cases where we expect it to fail gracefully. */
-@RunWith(JUnit4.class)
-public class InvocationPolicyBreakingConditionsTest extends InvocationPolicyEnforcerTestBase {
+        val enforcer: InvocationPolicyEnforcer =
+            InvocationPolicyEnforcerTestBase.Companion.createOptionsPolicyEnforcer(invocationPolicyBuilder)
+        parser.parse("--test_string=" + TEST_STRING_USER_VALUE)
 
-  // Useful constants
-  public static final String TEST_STRING_USER_VALUE = "user value";
-  public static final String TEST_STRING_POLICY_VALUE = "policy value";
-  public static final String TEST_STRING_POLICY_VALUE_2 = "policy value 2";
+        var testOptions: com.google.devtools.common.options.TestOptions = getTestOptions()
+        Truth.assertThat(testOptions.getTestString()).isEqualTo(TEST_STRING_USER_VALUE)
 
-  @Test
-  public void testFlagPolicyDoesNotApply() throws Exception {
-    InvocationPolicy.Builder invocationPolicyBuilder = InvocationPolicy.newBuilder();
-    invocationPolicyBuilder
-        .addFlagPoliciesBuilder()
-        .setFlagName("test_string")
-        .addCommands("build")
-        .getSetValueBuilder()
-        .addFlagValue(TEST_STRING_POLICY_VALUE);
+        enforcer.enforce(parser, "test", com.google.common.collect.ImmutableList.builder<E?>())
 
-    InvocationPolicyEnforcer enforcer = createOptionsPolicyEnforcer(invocationPolicyBuilder);
-    parser.parse("--test_string=" + TEST_STRING_USER_VALUE);
+        // Still user value.
+        testOptions = getTestOptions()
+        Truth.assertThat(testOptions.getTestString()).isEqualTo(TEST_STRING_USER_VALUE)
+    }
 
-    TestOptions testOptions = getTestOptions();
-    assertThat(testOptions.getTestString()).isEqualTo(TEST_STRING_USER_VALUE);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNonExistantFlagFromPolicy() {
+        val invocationPolicyBuilder: InvocationPolicy.Builder = InvocationPolicy.newBuilder()
+        invocationPolicyBuilder
+            .addFlagPoliciesBuilder()
+            .setFlagName("i_do_not_exist")
+            .getSetValueBuilder()
+            .setBehavior(Behavior.FINAL_VALUE_IGNORE_OVERRIDES)
+            .addFlagValue(TEST_STRING_POLICY_VALUE)
+        invocationPolicyBuilder
+            .addFlagPoliciesBuilder()
+            .setFlagName("test_string")
+            .getSetValueBuilder()
+            .setBehavior(Behavior.FINAL_VALUE_IGNORE_OVERRIDES)
+            .addFlagValue(TEST_STRING_POLICY_VALUE_2)
 
-    enforcer.enforce(parser, "test", ImmutableList.builder());
+        val enforcer: InvocationPolicyEnforcer =
+            InvocationPolicyEnforcerTestBase.Companion.createOptionsPolicyEnforcer(invocationPolicyBuilder)
+        parser.parse("--test_string=" + TEST_STRING_USER_VALUE)
 
-    // Still user value.
-    testOptions = getTestOptions();
-    assertThat(testOptions.getTestString()).isEqualTo(TEST_STRING_USER_VALUE);
-  }
+        var testOptions: com.google.devtools.common.options.TestOptions = getTestOptions()
+        Truth.assertThat(testOptions.getTestString()).isEqualTo(TEST_STRING_USER_VALUE)
 
-  @Test
-  public void testNonExistantFlagFromPolicy() throws Exception {
-    InvocationPolicy.Builder invocationPolicyBuilder = InvocationPolicy.newBuilder();
-    invocationPolicyBuilder
-        .addFlagPoliciesBuilder()
-        .setFlagName("i_do_not_exist")
-        .getSetValueBuilder()
-        .setBehavior(Behavior.FINAL_VALUE_IGNORE_OVERRIDES)
-        .addFlagValue(TEST_STRING_POLICY_VALUE);
-    invocationPolicyBuilder
-        .addFlagPoliciesBuilder()
-        .setFlagName("test_string")
-        .getSetValueBuilder()
-        .setBehavior(Behavior.FINAL_VALUE_IGNORE_OVERRIDES)
-        .addFlagValue(TEST_STRING_POLICY_VALUE_2);
+        enforcer.enforce(parser, "test", com.google.common.collect.ImmutableList.builder<E?>())
 
-    InvocationPolicyEnforcer enforcer = createOptionsPolicyEnforcer(invocationPolicyBuilder);
-    parser.parse("--test_string=" + TEST_STRING_USER_VALUE);
+        // Still user value.
+        testOptions = getTestOptions()
+        Truth.assertThat(testOptions.getTestString()).isEqualTo(TEST_STRING_POLICY_VALUE_2)
+    }
 
-    TestOptions testOptions = getTestOptions();
-    assertThat(testOptions.getTestString()).isEqualTo(TEST_STRING_USER_VALUE);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testOperationNotSet() {
+        val invocationPolicyBuilder: InvocationPolicy.Builder = InvocationPolicy.newBuilder()
+        invocationPolicyBuilder.addFlagPoliciesBuilder()
 
-    enforcer.enforce(parser, "test", ImmutableList.builder());
+        // No operations added to the flag policy
+        val enforcer: InvocationPolicyEnforcer =
+            InvocationPolicyEnforcerTestBase.Companion.createOptionsPolicyEnforcer(invocationPolicyBuilder)
+        parser.parse("--test_string=" + TEST_STRING_USER_VALUE)
 
-    // Still user value.
-    testOptions = getTestOptions();
-    assertThat(testOptions.getTestString()).isEqualTo(TEST_STRING_POLICY_VALUE_2);
-  }
+        var testOptions: com.google.devtools.common.options.TestOptions = getTestOptions()
+        Truth.assertThat(testOptions.getTestString()).isEqualTo(TEST_STRING_USER_VALUE)
 
-  @Test
-  public void testOperationNotSet() throws Exception {
-    InvocationPolicy.Builder invocationPolicyBuilder = InvocationPolicy.newBuilder();
-    invocationPolicyBuilder.addFlagPoliciesBuilder();
-    // No operations added to the flag policy
+        // Shouldn't throw.
+        enforcer.enforce(parser, "test", com.google.common.collect.ImmutableList.builder<E?>())
 
-    InvocationPolicyEnforcer enforcer = createOptionsPolicyEnforcer(invocationPolicyBuilder);
-    parser.parse("--test_string=" + TEST_STRING_USER_VALUE);
+        // Still user value.
+        testOptions = getTestOptions()
+        Truth.assertThat(testOptions.getTestString()).isEqualTo(TEST_STRING_USER_VALUE)
+    }
 
-    TestOptions testOptions = getTestOptions();
-    assertThat(testOptions.getTestString()).isEqualTo(TEST_STRING_USER_VALUE);
-
-    // Shouldn't throw.
-    enforcer.enforce(parser, "test", ImmutableList.builder());
-
-    // Still user value.
-    testOptions = getTestOptions();
-    assertThat(testOptions.getTestString()).isEqualTo(TEST_STRING_USER_VALUE);
-  }
+    companion object {
+        // Useful constants
+        const val TEST_STRING_USER_VALUE: String = "user value"
+        const val TEST_STRING_POLICY_VALUE: String = "policy value"
+        const val TEST_STRING_POLICY_VALUE_2: String = "policy value 2"
+    }
 }

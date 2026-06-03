@@ -11,149 +11,146 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.vfs;
+package com.google.devtools.build.lib.vfs
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.vfs.WindowsOsPathPolicy.ShortPathResolver
 
-import com.google.common.testing.EqualsTester;
-import com.google.devtools.build.lib.vfs.WindowsOsPathPolicy.ShortPathResolver;
-import java.util.HashMap;
-import java.util.Map;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests windows-specific parts of [Path]  */
+@RunWith(JUnit4::class)
+class WindowsPathTest : PathAbstractTest() {
+    private class MockShortPathResolver : ShortPathResolver {
+        // Full path to resolved child mapping.
+        private val resolutions: MutableMap<String?, String?> = HashMap<String?, String?>()
 
-/** Tests windows-specific parts of {@link Path} */
-@RunWith(JUnit4.class)
-public class WindowsPathTest extends PathAbstractTest {
-
-  private static final class MockShortPathResolver implements ShortPathResolver {
-    // Full path to resolved child mapping.
-    private Map<String, String> resolutions = new HashMap<>();
-
-    @Override
-    public String resolveShortPath(String path) {
-      String[] segments = path.split("[\\\\/]+");
-      String result = "";
-      for (int i = 0; i < segments.length; ) {
-        String segment = segments[i];
-        String queryString = (result + segment).toLowerCase();
-        segment = resolutions.getOrDefault(queryString, segment);
-        result = result + segment;
-        ++i;
-        if (i != segments.length) {
-          result += "/";
+        public override fun resolveShortPath(path: String): String {
+            val segments: Array<String?> =
+                path.split("[\\\\/]+".toRegex()).dropLastWhile { it.isEmpty() }.toTypedArray()
+            var result = ""
+            var i = 0
+            while (i < segments.size) {
+                var segment = segments[i]
+                val queryString: String? = (result + segment).lowercase(Locale.getDefault())
+                segment = resolutions.getOrDefault(queryString, segment)
+                result = result + segment
+                ++i
+                if (i != segments.size) {
+                    result += "/"
+                }
+            }
+            return result
         }
-      }
-      return result;
     }
-  }
 
-  @Test
-  public void testEqualsAndHashcodeWindows() {
-    new EqualsTester()
-        .addEqualityGroup(create("/a/b"))
-        .addEqualityGroup(create("c:/a/b"))
-        .addEqualityGroup(create("C:/something/else"))
-        .testEquals();
-  }
+    @org.junit.Test
+    fun testEqualsAndHashcodeWindows() {
+        EqualsTester()
+            .addEqualityGroup(create("/a/b"))
+            .addEqualityGroup(create("c:/a/b"))
+            .addEqualityGroup(create("C:/something/else"))
+            .testEquals()
+    }
 
-  @Test
-  public void testCaseIsPreserved() {
-    assertThat(create("C:/a/B").getPathString()).isEqualTo("C:/a/B");
-  }
+    @org.junit.Test
+    fun testCaseIsPreserved() {
+        assertThat(create("C:/a/B").getPathString()).isEqualTo("C:/a/B")
+    }
 
-  @Test
-  public void testNormalizeWindows() {
-    assertThat(create("C:/")).isEqualTo(create("C:/"));
-    assertThat(create("c:/")).isEqualTo(create("C:/"));
-    assertThat(create("c:\\")).isEqualTo(create("C:/"));
-    assertThat(create("c:\\foo\\..\\bar\\")).isEqualTo(create("C:/bar"));
-  }
+    @org.junit.Test
+    fun testNormalizeWindows() {
+        assertThat(create("C:/")).isEqualTo(create("C:/"))
+        assertThat(create("c:/")).isEqualTo(create("C:/"))
+        assertThat(create("c:\\")).isEqualTo(create("C:/"))
+        assertThat(create("c:\\foo\\..\\bar\\")).isEqualTo(create("C:/bar"))
+    }
 
-  @Test
-  public void testStartsWithWindows() {
-    assertThat(create("C:/").startsWith(create("C:/"))).isTrue();
-    assertThat(create("C:/foo").startsWith(create("C:/"))).isTrue();
-    assertThat(create("C:/foo").startsWith(create("D:/"))).isFalse();
-  }
+    @org.junit.Test
+    fun testStartsWithWindows() {
+        assertThat(create("C:/").startsWith(create("C:/"))).isTrue()
+        assertThat(create("C:/foo").startsWith(create("C:/"))).isTrue()
+        assertThat(create("C:/foo").startsWith(create("D:/"))).isFalse()
+    }
 
-  @Test
-  public void testStartsWithIgnoringCaseWindows() {
-    assertThat(create("C:/").startsWithIgnoringCase(create("C:/"))).isTrue();
-    assertThat(create("C:/").startsWithIgnoringCase(create("c:/"))).isTrue();
-    assertThat(create("c:/").startsWithIgnoringCase(create("C:/"))).isTrue();
-    assertThat(create("c:/").startsWithIgnoringCase(create("c:/"))).isTrue();
+    @org.junit.Test
+    fun testStartsWithIgnoringCaseWindows() {
+        assertThat(create("C:/").startsWithIgnoringCase(create("C:/"))).isTrue()
+        assertThat(create("C:/").startsWithIgnoringCase(create("c:/"))).isTrue()
+        assertThat(create("c:/").startsWithIgnoringCase(create("C:/"))).isTrue()
+        assertThat(create("c:/").startsWithIgnoringCase(create("c:/"))).isTrue()
 
-    assertThat(create("C:/foo").startsWithIgnoringCase(create("C:/"))).isTrue();
-    assertThat(create("C:/foo").startsWithIgnoringCase(create("c:/"))).isTrue();
-    assertThat(create("c:/foo").startsWithIgnoringCase(create("C:/"))).isTrue();
-    assertThat(create("c:/foo").startsWithIgnoringCase(create("c:/"))).isTrue();
+        assertThat(create("C:/foo").startsWithIgnoringCase(create("C:/"))).isTrue()
+        assertThat(create("C:/foo").startsWithIgnoringCase(create("c:/"))).isTrue()
+        assertThat(create("c:/foo").startsWithIgnoringCase(create("C:/"))).isTrue()
+        assertThat(create("c:/foo").startsWithIgnoringCase(create("c:/"))).isTrue()
 
-    assertThat(create("C:/foo").startsWithIgnoringCase(create("D:/"))).isFalse();
-    assertThat(create("C:/foo").startsWithIgnoringCase(create("d:/"))).isFalse();
-    assertThat(create("c:/foo").startsWithIgnoringCase(create("D:/"))).isFalse();
-    assertThat(create("c:/foo").startsWithIgnoringCase(create("d:/"))).isFalse();
-  }
+        assertThat(create("C:/foo").startsWithIgnoringCase(create("D:/"))).isFalse()
+        assertThat(create("C:/foo").startsWithIgnoringCase(create("d:/"))).isFalse()
+        assertThat(create("c:/foo").startsWithIgnoringCase(create("D:/"))).isFalse()
+        assertThat(create("c:/foo").startsWithIgnoringCase(create("d:/"))).isFalse()
+    }
 
-  @Test
-  public void testGetParentDirectoryWindows() {
-    assertThat(create("C:/foo").getParentDirectory()).isEqualTo(create("C:/"));
-    assertThat(create("C:/").getParentDirectory()).isNull();
-    assertThat(create("/").getParentDirectory()).isNull();
-  }
+    @org.junit.Test
+    fun testGetParentDirectoryWindows() {
+        assertThat(create("C:/foo").getParentDirectory()).isEqualTo(create("C:/"))
+        assertThat(create("C:/").getParentDirectory()).isNull()
+        assertThat(create("/").getParentDirectory()).isNull()
+    }
 
-  @Test
-  public void testParentOfRootIsRootWindows() {
-    assertThat(create("C:/..")).isEqualTo(create("C:/"));
-    assertThat(create("C:/../../../../../..")).isEqualTo(create("C:/"));
-    assertThat(create("C:/../../../foo")).isEqualTo(create("C:/foo"));
-  }
+    @org.junit.Test
+    fun testParentOfRootIsRootWindows() {
+        assertThat(create("C:/..")).isEqualTo(create("C:/"))
+        assertThat(create("C:/../../../../../..")).isEqualTo(create("C:/"))
+        assertThat(create("C:/../../../foo")).isEqualTo(create("C:/foo"))
+    }
 
-  @Test
-  public void testRelativeToWindows() {
-    assertThat(create("C:/foo").relativeTo(create("C:/")).getPathString()).isEqualTo("foo");
-    assertThrows(IllegalArgumentException.class, () -> create("D:/foo").relativeTo(create("C:/")));
-  }
+    @org.junit.Test
+    fun testRelativeToWindows() {
+        assertThat(create("C:/foo").relativeTo(create("C:/")).getPathString()).isEqualTo("foo")
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable { create("D:/foo").relativeTo(create("C:/")) })
+    }
 
-  @Test
-  public void testResolvesShortenedPaths() {
-    MockShortPathResolver shortPathResolver = new MockShortPathResolver();
-    WindowsOsPathPolicy osPathPolicy = new WindowsOsPathPolicy(shortPathResolver);
-    shortPathResolver.resolutions.put("d:/progra~1", "program files");
-    shortPathResolver.resolutions.put("d:/program files/micros~1", "microsoft something");
-    shortPathResolver.resolutions.put(
-        "d:/program files/microsoft something/foo/~bar~1", "~bar_hello");
+    @org.junit.Test
+    fun testResolvesShortenedPaths() {
+        val shortPathResolver = MockShortPathResolver()
+        val osPathPolicy: WindowsOsPathPolicy = WindowsOsPathPolicy(shortPathResolver)
+        shortPathResolver.resolutions.put("d:/progra~1", "program files")
+        shortPathResolver.resolutions.put("d:/program files/micros~1", "microsoft something")
+        shortPathResolver.resolutions.put(
+            "d:/program files/microsoft something/foo/~bar~1", "~bar_hello"
+        )
 
-    // Assert normal shortpath resolution.
-    assertThat(normalize(osPathPolicy, "d:/progra~1/micros~1/foo/~bar~1/baz"))
-        .isEqualTo("D:/program files/microsoft something/foo/~bar_hello/baz");
-    assertThat(normalize(osPathPolicy, "d:/progra~1/micros~1/foo/will~1.exi/bar"))
-        .isEqualTo("D:/program files/microsoft something/foo/will~1.exi/bar");
+        // Assert normal shortpath resolution.
+        Truth.assertThat(normalize(osPathPolicy, "d:/progra~1/micros~1/foo/~bar~1/baz"))
+            .isEqualTo("D:/program files/microsoft something/foo/~bar_hello/baz")
+        Truth.assertThat(normalize(osPathPolicy, "d:/progra~1/micros~1/foo/will~1.exi/bar"))
+            .isEqualTo("D:/program files/microsoft something/foo/will~1.exi/bar")
 
-    assertThat(normalize(osPathPolicy, "d:/progra~1/micros~1"))
-        .isEqualTo("D:/program files/microsoft something");
+        Truth.assertThat(normalize(osPathPolicy, "d:/progra~1/micros~1"))
+            .isEqualTo("D:/program files/microsoft something")
 
-    // Pretend that a path we already failed to resolve once came into existence.
-    shortPathResolver.resolutions.put(
-        "d:/program files/microsoft something/foo/will~1.exi", "will.exist");
+        // Pretend that a path we already failed to resolve once came into existence.
+        shortPathResolver.resolutions.put(
+            "d:/program files/microsoft something/foo/will~1.exi", "will.exist"
+        )
 
-    // Assert that this time we can resolve the previously non-existent path.
-    // The path string has an upper-case drive letter because that's how path printing works.
-    assertThat(normalize(osPathPolicy, "d:/progra~1/micros~1/foo/will~1.exi/bar"))
-        .isEqualTo("D:/program files/microsoft something/foo/will.exist/bar");
+        // Assert that this time we can resolve the previously non-existent path.
+        // The path string has an upper-case drive letter because that's how path printing works.
+        Truth.assertThat(normalize(osPathPolicy, "d:/progra~1/micros~1/foo/will~1.exi/bar"))
+            .isEqualTo("D:/program files/microsoft something/foo/will.exist/bar")
 
-    // Check needsToNormalized
-    assertThat(osPathPolicy.needsToNormalize("d:/progra~1/micros~1/foo/will~1.exi/bar"))
-        .isEqualTo(WindowsOsPathPolicy.NEEDS_SHORT_PATH_NORMALIZATION);
-    assertThat(osPathPolicy.needsToNormalize("will~1.exi"))
-        .isEqualTo(WindowsOsPathPolicy.NEEDS_SHORT_PATH_NORMALIZATION);
-    assertThat(osPathPolicy.needsToNormalize("d:/no-normalization"))
-        .isEqualTo(WindowsOsPathPolicy.NORMALIZED);
-  }
+        // Check needsToNormalized
+        assertThat(osPathPolicy.needsToNormalize("d:/progra~1/micros~1/foo/will~1.exi/bar"))
+            .isEqualTo(WindowsOsPathPolicy.NEEDS_SHORT_PATH_NORMALIZATION)
+        assertThat(osPathPolicy.needsToNormalize("will~1.exi"))
+            .isEqualTo(WindowsOsPathPolicy.NEEDS_SHORT_PATH_NORMALIZATION)
+        assertThat(osPathPolicy.needsToNormalize("d:/no-normalization"))
+            .isEqualTo(WindowsOsPathPolicy.NORMALIZED)
+    }
 
-  private static String normalize(OsPathPolicy osPathPolicy, String str) {
-    return osPathPolicy.normalize(str, osPathPolicy.needsToNormalize(str));
-  }
+    companion object {
+        private fun normalize(osPathPolicy: OsPathPolicy, str: String?): String {
+            return osPathPolicy.normalize(str, osPathPolicy.needsToNormalize(str))
+        }
+    }
 }

@@ -11,588 +11,686 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.collect.nestedset;
+package com.google.devtools.build.lib.collect.nestedset
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.util.concurrent.Futures.immediateCancelledFuture;
-import static com.google.common.util.concurrent.Futures.immediateFailedFuture;
-import static com.google.common.util.concurrent.Futures.immediateFuture;
-import static com.google.devtools.build.lib.collect.nestedset.Order.LINK_ORDER;
-import static com.google.devtools.build.lib.skyframe.serialization.PackedFingerprint.getFingerprintForTesting;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.collect.nestedset.Order.LINK_ORDER
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
-import com.google.common.testing.EqualsTester;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.common.util.concurrent.SettableFuture;
-import com.google.devtools.build.lib.skyframe.serialization.FingerprintValueStore.MissingFingerprintValueException;
-import com.google.devtools.build.lib.testutil.TestThread;
-import com.google.devtools.build.lib.testutil.TestUtils;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeoutException;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [NestedSet].  */
+@RunWith(JUnit4::class)
+class NestedSetTest {
+    @org.junit.Test
+    fun simple() {
+        val set: NestedSet<String?> = nestedSetBuilder("a").build()
 
-/** Tests for {@link NestedSet}. */
-@RunWith(JUnit4.class)
-public final class NestedSetTest {
-
-  private static NestedSetBuilder<String> nestedSetBuilder(String... directMembers) {
-    NestedSetBuilder<String> builder = NestedSetBuilder.stableOrder();
-    builder.addAll(Lists.newArrayList(directMembers));
-    return builder;
-  }
-
-  @Test
-  public void simple() {
-    NestedSet<String> set = nestedSetBuilder("a").build();
-
-    assertThat(set.toList()).containsExactly("a");
-    assertThat(set.isEmpty()).isFalse();
-  }
-
-  @Test
-  public void flatToString() {
-    assertThat(nestedSetBuilder().build().toString()).isEqualTo("[]");
-    assertThat(nestedSetBuilder("a").build().toString()).isEqualTo("[a]");
-    assertThat(nestedSetBuilder("a", "b").build().toString()).isEqualTo("[a, b]");
-  }
-
-  @Test
-  public void nestedToString() {
-    NestedSet<String> b = nestedSetBuilder("b1", "b2").build();
-    NestedSet<String> c = nestedSetBuilder("c1", "c2").build();
-
-    assertThat(nestedSetBuilder("a").addTransitive(b).build().toString()).isEqualTo("[b1, b2, a]");
-    assertThat(nestedSetBuilder("a").addTransitive(b).addTransitive(c).build().toString())
-        .isEqualTo("[b1, b2, c1, c2, a]");
-    NestedSet<String> linkOrderSet =
-        NestedSetBuilder.<String>linkOrder().add("a").addTransitive(b).addTransitive(c).build();
-    assertThat(linkOrderSet.toString()).isEqualTo("[a, b2, b1, c2, c1]");
-
-    assertThat(nestedSetBuilder().addTransitive(b).build().toString()).isEqualTo("[b1, b2]");
-  }
-
-  @Test
-  public void tooLongToString() {
-    NestedSetBuilder<Integer> builder = NestedSetBuilder.stableOrder();
-    for (int i = 0; i < NestedSet.MAX_ELEMENTS_TO_STRING + 3; i++) {
-      builder.add(i);
-    }
-    String stringRep = builder.build().toString();
-    assertThat(stringRep).contains("[0, 1, 2, 3");
-    assertThat(stringRep)
-        .containsMatch(
-            "\\[0, 1, 2, 3, .*"
-                + (NestedSet.MAX_ELEMENTS_TO_STRING - 2)
-                + ", "
-                + (NestedSet.MAX_ELEMENTS_TO_STRING - 1)
-                + "] \\(truncated, full size "
-                + (NestedSet.MAX_ELEMENTS_TO_STRING + 3)
-                + "\\)");
-  }
-
-  @Test
-  public void isEmpty() {
-    NestedSet<String> triviallyEmpty = nestedSetBuilder().build();
-    assertThat(triviallyEmpty.isEmpty()).isTrue();
-
-    NestedSet<String> emptyLevel1 = nestedSetBuilder().addTransitive(triviallyEmpty).build();
-    assertThat(emptyLevel1.isEmpty()).isTrue();
-
-    NestedSet<String> emptyLevel2 = nestedSetBuilder().addTransitive(emptyLevel1).build();
-    assertThat(emptyLevel2.isEmpty()).isTrue();
-
-    NestedSet<String> triviallyNonEmpty = nestedSetBuilder("mango").build();
-    assertThat(triviallyNonEmpty.isEmpty()).isFalse();
-
-    NestedSet<String> nonEmptyLevel1 = nestedSetBuilder().addTransitive(triviallyNonEmpty).build();
-    assertThat(nonEmptyLevel1.isEmpty()).isFalse();
-
-    NestedSet<String> nonEmptyLevel2 = nestedSetBuilder().addTransitive(nonEmptyLevel1).build();
-    assertThat(nonEmptyLevel2.isEmpty()).isFalse();
-  }
-
-  @Test
-  public void canIncludeAnyOrderInStableOrderAndViceVersa() {
-    NestedSetBuilder.stableOrder()
-        .addTransitive(
-            NestedSetBuilder.compileOrder()
-                .addTransitive(NestedSetBuilder.stableOrder().build())
-                .build())
-        .addTransitive(
-            NestedSetBuilder.linkOrder()
-                .addTransitive(NestedSetBuilder.stableOrder().build())
-                .build())
-        .addTransitive(
-            NestedSetBuilder.naiveLinkOrder()
-                .addTransitive(NestedSetBuilder.stableOrder().build())
-                .build())
-        .build();
-    assertThrows(
-        "Shouldn't be able to include a non-stable order inside a different non-stable order!",
-        IllegalArgumentException.class,
-        () ->
-            NestedSetBuilder.compileOrder()
-                .addTransitive(NestedSetBuilder.linkOrder().build())
-                .build());
-  }
-
-  @Test
-  public void reusesSingleTransitiveSet_noDirectMembers() {
-    NestedSet<String> set = NestedSetBuilder.create(Order.STABLE_ORDER, "a", "b", "c");
-    NestedSet<String> built = NestedSetBuilder.<String>stableOrder().addTransitive(set).build();
-    assertThat(built).isSameInstanceAs(set);
-  }
-
-  @Test
-  public void reusesSingleTransitiveSet_singletonEqualsDirects() {
-    NestedSet<String> set = NestedSetBuilder.create(Order.STABLE_ORDER, "a");
-    NestedSet<String> built =
-        NestedSetBuilder.<String>stableOrder().add("a").addTransitive(set).build();
-    assertThat(built).isSameInstanceAs(set);
-  }
-
-  @Test
-  public void noReuseOfSingleTransitiveSet_orderWouldDiffer() {
-    NestedSet<String> set = NestedSetBuilder.create(Order.NAIVE_LINK_ORDER, "b", "a");
-    NestedSet<String> built =
-        NestedSetBuilder.<String>naiveLinkOrder().add("a").add("b").addTransitive(set).build();
-    assertThat(built).isNotSameInstanceAs(set);
-    assertThat(set.toList()).containsExactly("b", "a").inOrder();
-    assertThat(built.toList()).containsExactly("a", "b").inOrder();
-  }
-
-  /**
-   * A handy wrapper that allows us to use EqualsTester to test shallowEquals and shallowHashCode.
-   */
-  private static final class SetWrapper<E> {
-    NestedSet<E> set;
-
-    SetWrapper(NestedSet<E> wrapped) {
-      set = wrapped;
+        assertThat(set.toList()).containsExactly("a")
+        assertThat(set.isEmpty()).isFalse()
     }
 
-    @Override
-    public int hashCode() {
-      return set.shallowHashCode();
+    @org.junit.Test
+    fun flatToString() {
+        assertThat(nestedSetBuilder().build().toString()).isEqualTo("[]")
+        assertThat(nestedSetBuilder("a").build().toString()).isEqualTo("[a]")
+        assertThat(nestedSetBuilder("a", "b").build().toString()).isEqualTo("[a, b]")
     }
 
-    @Override
-    public boolean equals(Object o) {
-      if (this == o) {
-        return true;
-      }
-      if (!(o instanceof SetWrapper)) {
-        return false;
-      }
-      try {
-        @SuppressWarnings("unchecked")
-        SetWrapper<E> other = (SetWrapper<E>) o;
-        return set.shallowEquals(other.set);
-      } catch (ClassCastException e) {
-        return false;
-      }
+    @org.junit.Test
+    fun nestedToString() {
+        val b: NestedSet<String?>? = nestedSetBuilder("b1", "b2").build()
+        val c: NestedSet<String?>? = nestedSetBuilder("c1", "c2").build()
+
+        assertThat(nestedSetBuilder("a").addTransitive(b).build().toString()).isEqualTo("[b1, b2, a]")
+        assertThat(nestedSetBuilder("a").addTransitive(b).addTransitive(c).build().toString())
+            .isEqualTo("[b1, b2, c1, c2, a]")
+        val linkOrderSet: NestedSet<String?> =
+            NestedSetBuilder.< String > linkOrder < kotlin . String ? > ().add("a").addTransitive(b).addTransitive(c)
+                .build()
+        assertThat(linkOrderSet.toString()).isEqualTo("[a, b2, b1, c2, c1]")
+
+        assertThat(nestedSetBuilder().addTransitive(b).build().toString()).isEqualTo("[b1, b2]")
     }
-  }
 
-  @SafeVarargs
-  private static <E> SetWrapper<E> flat(E... directMembers) {
-    NestedSetBuilder<E> builder = NestedSetBuilder.stableOrder();
-    builder.addAll(Lists.newArrayList(directMembers));
-    return new SetWrapper<>(builder.build());
-  }
-
-  @SafeVarargs
-  private static <E> SetWrapper<E> nest(SetWrapper<E>... nested) {
-    NestedSetBuilder<E> builder = NestedSetBuilder.stableOrder();
-    for (SetWrapper<E> wrap : nested) {
-      builder.addTransitive(wrap.set);
+    @org.junit.Test
+    fun tooLongToString() {
+        val builder: NestedSetBuilder<Int?> = NestedSetBuilder.stableOrder()
+        for (i in 0..<NestedSet.MAX_ELEMENTS_TO_STRING + 3) {
+            builder.add(i)
+        }
+        val stringRep: String? = builder.build().toString()
+        Truth.assertThat(stringRep).contains("[0, 1, 2, 3")
+        Truth.assertThat(stringRep)
+            .containsMatch(
+                ("\\[0, 1, 2, 3, .*"
+                        + (NestedSet.MAX_ELEMENTS_TO_STRING - 2)
+                        + ", "
+                        + (NestedSet.MAX_ELEMENTS_TO_STRING - 1)
+                        + "] \\(truncated, full size "
+                        + (NestedSet.MAX_ELEMENTS_TO_STRING + 3)
+                        + "\\)")
+            )
     }
-    return new SetWrapper<>(builder.build());
-  }
 
-  @SafeVarargs
-  // Restricted to <Integer> to avoid ambiguity with the other nest() function.
-  private static SetWrapper<Integer> nest(Integer elem, SetWrapper<Integer>... nested) {
-    NestedSetBuilder<Integer> builder = NestedSetBuilder.stableOrder();
-    builder.add(elem);
-    for (SetWrapper<Integer> wrap : nested) {
-      builder.addTransitive(wrap.set);
+    @get:org.junit.Test
+    val isEmpty: Unit
+        get() {
+            val triviallyEmpty: NestedSet<String?> = nestedSetBuilder().build()
+            assertThat(triviallyEmpty.isEmpty()).isTrue()
+
+            val emptyLevel1: NestedSet<String?> =
+                nestedSetBuilder().addTransitive(triviallyEmpty).build()
+            assertThat(emptyLevel1.isEmpty()).isTrue()
+
+            val emptyLevel2: NestedSet<String?> =
+                nestedSetBuilder().addTransitive(emptyLevel1).build()
+            assertThat(emptyLevel2.isEmpty()).isTrue()
+
+            val triviallyNonEmpty: NestedSet<String?> =
+                nestedSetBuilder("mango").build()
+            assertThat(triviallyNonEmpty.isEmpty()).isFalse()
+
+            val nonEmptyLevel1: NestedSet<String?> =
+                nestedSetBuilder().addTransitive(triviallyNonEmpty).build()
+            assertThat(nonEmptyLevel1.isEmpty()).isFalse()
+
+            val nonEmptyLevel2: NestedSet<String?> =
+                nestedSetBuilder().addTransitive(nonEmptyLevel1).build()
+            assertThat(nonEmptyLevel2.isEmpty()).isFalse()
+        }
+
+    @org.junit.Test
+    fun canIncludeAnyOrderInStableOrderAndViceVersa() {
+        NestedSetBuilder.stableOrder()
+            .addTransitive(
+                NestedSetBuilder.compileOrder()
+                    .addTransitive(NestedSetBuilder.stableOrder().build())
+                    .build()
+            )
+            .addTransitive(
+                NestedSetBuilder.linkOrder()
+                    .addTransitive(NestedSetBuilder.stableOrder().build())
+                    .build()
+            )
+            .addTransitive(
+                NestedSetBuilder.naiveLinkOrder()
+                    .addTransitive(NestedSetBuilder.stableOrder().build())
+                    .build()
+            )
+            .build()
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            "Shouldn't be able to include a non-stable order inside a different non-stable order!",
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable {
+                NestedSetBuilder.compileOrder()
+                    .addTransitive(NestedSetBuilder.linkOrder().build())
+                    .build()
+            })
     }
-    return new SetWrapper<>(builder.build());
-  }
 
-  private static final int UNKNOWN_DEPTH = 7;
+    @org.junit.Test
+    fun reusesSingleTransitiveSet_noDirectMembers() {
+        val set: NestedSet<String?>? = NestedSetBuilder.create(Order.STABLE_ORDER, "a", "b", "c")
+        val built: NestedSet<String?>? =
+            NestedSetBuilder.< String > stableOrder < kotlin . String ? > ().addTransitive(set).build()
+        assertThat(built).isSameInstanceAs(set)
+    }
 
-  @Test
-  public void shallowEquality() {
-    // Used below to check that inner nested sets can be compared by reference equality.
-    SetWrapper<Integer> myRef = nest(nest(flat(7, 8)), flat(9));
-    // Used to check equality for deserializing nested sets
-    ListenableFuture<Object[]> contents = immediateFuture(new Object[] {"a", "b"});
-    NestedSet<String> referenceNestedSet =
-        NestedSet.withFuture(Order.STABLE_ORDER, UNKNOWN_DEPTH, contents);
-    NestedSet<String> otherReferenceNestedSet =
-        NestedSet.withFuture(Order.STABLE_ORDER, UNKNOWN_DEPTH, contents);
+    @org.junit.Test
+    fun reusesSingleTransitiveSet_singletonEqualsDirects() {
+        val set: NestedSet<String?>? = NestedSetBuilder.create(Order.STABLE_ORDER, "a")
+        val built: NestedSet<String?>? =
+            NestedSetBuilder.< String > stableOrder < kotlin . String ? > ().add("a").addTransitive(set).build()
+        assertThat(built).isSameInstanceAs(set)
+    }
 
-    // Each "equality group" contains elements that are equal to one another
-    // (according to equals() and hashCode()), yet distinct from all elements
-    // of all other equality groups.
-    new EqualsTester()
-        .addEqualityGroup(flat(), flat(), nest(flat())) // Empty set elision.
-        .addEqualityGroup(NestedSetBuilder.<Integer>linkOrder().build())
-        .addEqualityGroup(flat(3), flat(3), flat(3, 3)) // Element de-duplication.
-        .addEqualityGroup(flat(4), nest(flat(4))) // Automatic elision of one-element nested sets.
-        .addEqualityGroup(NestedSetBuilder.<Integer>linkOrder().add(4).build())
-        .addEqualityGroup(nestedSetBuilder("4").build()) // Like flat("4").
-        .addEqualityGroup(flat(3, 4), flat(3, 4))
-        // Make a couple sets deep enough that shallowEquals() fails.
-        // If this test case fails because you improve the representation, just delete it.
-        .addEqualityGroup(nest(nest(flat(3, 4), flat(5)), nest(flat(6, 7), flat(8))))
-        .addEqualityGroup(nest(nest(flat(3, 4), flat(5)), nest(flat(6, 7), flat(8))))
-        .addEqualityGroup(nest(myRef), nest(myRef), nest(myRef, myRef)) // Set de-duplication.
-        .addEqualityGroup(nest(3, myRef))
-        .addEqualityGroup(nest(4, myRef))
-        .addEqualityGroup(
-            new SetWrapper<>(referenceNestedSet), new SetWrapper<>(otherReferenceNestedSet))
-        .testEquals();
+    @org.junit.Test
+    fun noReuseOfSingleTransitiveSet_orderWouldDiffer() {
+        val set: NestedSet<String?> = NestedSetBuilder.create(Order.NAIVE_LINK_ORDER, "b", "a")
+        val built: NestedSet<String?> =
+            NestedSetBuilder.< String > naiveLinkOrder < kotlin . String ? > ().add("a").add("b").addTransitive(set)
+                .build()
+        assertThat(built).isNotSameInstanceAs(set)
+        assertThat(set.toList()).containsExactly("b", "a").inOrder()
+        assertThat(built.toList()).containsExactly("a", "b").inOrder()
+    }
 
-    // Some things that are not tested by the above:
-    //  - ordering among direct members
-    //  - ordering among transitive sets
-  }
+    /**
+     * A handy wrapper that allows us to use EqualsTester to test shallowEquals and shallowHashCode.
+     */
+    private class SetWrapper<E>(wrapped: NestedSet<E?>) {
+        var set: NestedSet<E?>
 
-  @Test
-  public void shallowInequality() {
-    assertThat(nestedSetBuilder("a").build().shallowEquals(null)).isFalse();
-    Object[] contents = {"a", "b"};
-    assertThat(
-            NestedSet.withFuture(Order.STABLE_ORDER, UNKNOWN_DEPTH, immediateFuture(contents))
-                .shallowEquals(null))
-        .isFalse();
+        init {
+            set = wrapped
+        }
 
-    // shallowEquals() should require reference equality for underlying futures
-    assertThat(
-            NestedSet.withFuture(Order.STABLE_ORDER, UNKNOWN_DEPTH, immediateFuture(contents))
+        override fun hashCode(): Int {
+            return set.shallowHashCode()
+        }
+
+        override fun equals(o: Any?): Boolean {
+            if (this === o) {
+                return true
+            }
+            if (o !is SetWrapper<*>) {
+                return false
+            }
+            try {
+                val other = o as SetWrapper<E?>
+                return set.shallowEquals(other.set)
+            } catch (e: java.lang.ClassCastException) {
+                return false
+            }
+        }
+    }
+
+    @org.junit.Test
+    fun shallowEquality() {
+        // Used below to check that inner nested sets can be compared by reference equality.
+        val myRef = nest<Int?>(nest<Int?>(flat<Int?>(7, 8)), flat<Int?>(9))
+        // Used to check equality for deserializing nested sets
+        val contents: com.google.common.util.concurrent.ListenableFuture<Array<Any?>?> =
+            com.google.common.util.concurrent.Futures.immediateFuture<Array<Any?>?>(
+                arrayOf<Any>("a", "b")
+            )
+        val referenceNestedSet: NestedSet<String?> =
+            NestedSet.withFuture(Order.STABLE_ORDER, UNKNOWN_DEPTH, contents)
+        val otherReferenceNestedSet: NestedSet<String?> =
+            NestedSet.withFuture(Order.STABLE_ORDER, UNKNOWN_DEPTH, contents)
+
+        // Each "equality group" contains elements that are equal to one another
+        // (according to equals() and hashCode()), yet distinct from all elements
+        // of all other equality groups.
+        EqualsTester()
+            .addEqualityGroup(flat<Any?>(), flat<Any?>(), nest<Any?>(flat<Any?>())) // Empty set elision.
+            .addEqualityGroup(NestedSetBuilder.< Integer > linkOrder < Int ? > ().build())
+            .addEqualityGroup(flat<Int?>(3), flat<Int?>(3), flat<Int?>(3, 3)) // Element de-duplication.
+            .addEqualityGroup(flat<Int?>(4), nest<Int?>(flat<Int?>(4))) // Automatic elision of one-element nested sets.
+            .addEqualityGroup(NestedSetBuilder.< Integer > linkOrder < Int ? > ().add(4).build())
+            .addEqualityGroup(nestedSetBuilder("4").build()) // Like flat("4").
+            .addEqualityGroup(
+                flat<Int?>(3, 4),
+                flat<Int?>(3, 4)
+            ) // Make a couple sets deep enough that shallowEquals() fails.
+            // If this test case fails because you improve the representation, just delete it.
+            .addEqualityGroup(
+                nest<Int?>(
+                    nest<Int?>(flat<Int?>(3, 4), flat<Int?>(5)),
+                    nest<Int?>(flat<Int?>(6, 7), flat<Int?>(8))
+                )
+            )
+            .addEqualityGroup(
+                nest<Int?>(
+                    nest<Int?>(flat<Int?>(3, 4), flat<Int?>(5)),
+                    nest<Int?>(flat<Int?>(6, 7), flat<Int?>(8))
+                )
+            )
+            .addEqualityGroup(nest<Int?>(myRef), nest<Int?>(myRef), nest<Int?>(myRef, myRef)) // Set de-duplication.
+            .addEqualityGroup(nest(3, myRef))
+            .addEqualityGroup(nest(4, myRef))
+            .addEqualityGroup(
+                SetWrapper<Any?>(referenceNestedSet), SetWrapper<Any?>(otherReferenceNestedSet)
+            )
+            .testEquals()
+
+        // Some things that are not tested by the above:
+        //  - ordering among direct members
+        //  - ordering among transitive sets
+    }
+
+    @org.junit.Test
+    fun shallowInequality() {
+        assertThat(nestedSetBuilder("a").build().shallowEquals(null)).isFalse()
+        val contents = arrayOf<Any?>("a", "b")
+        assertThat(
+            NestedSet.withFuture(
+                Order.STABLE_ORDER,
+                UNKNOWN_DEPTH,
+                com.google.common.util.concurrent.Futures.immediateFuture<V?>(contents)
+            )
+                .shallowEquals(null)
+        )
+            .isFalse()
+
+        // shallowEquals() should require reference equality for underlying futures
+        assertThat(
+            NestedSet.withFuture(
+                Order.STABLE_ORDER,
+                UNKNOWN_DEPTH,
+                com.google.common.util.concurrent.Futures.immediateFuture<V?>(contents)
+            )
                 .shallowEquals(
                     NestedSet.withFuture(
-                        Order.STABLE_ORDER, UNKNOWN_DEPTH, immediateFuture(contents))))
-        .isFalse();
-  }
+                        Order.STABLE_ORDER,
+                        UNKNOWN_DEPTH,
+                        com.google.common.util.concurrent.Futures.immediateFuture<V?>(contents)
+                    )
+                )
+        )
+            .isFalse()
+    }
 
-  /** Checks that the builder always return a nested set with the correct order. */
-  @Test
-  public void correctOrder() {
-    for (Order order : Order.values()) {
-      for (int numDirects = 0; numDirects < 3; numDirects++) {
-        for (int numTransitives = 0; numTransitives < 3; numTransitives++) {
-          assertThat(createNestedSet(order, numDirects, numTransitives, order).getOrder())
-              .isEqualTo(order);
-          // We allow mixing orders if one of them is stable. This tests that the top level order is
-          // the correct one.
-          assertThat(
-                  createNestedSet(order, numDirects, numTransitives, Order.STABLE_ORDER).getOrder())
-              .isEqualTo(order);
+    /** Checks that the builder always return a nested set with the correct order.  */
+    @org.junit.Test
+    fun correctOrder() {
+        for (order in Order.values()) {
+            for (numDirects in 0..2) {
+                for (numTransitives in 0..2) {
+                    assertThat(createNestedSet(order, numDirects, numTransitives, order).getOrder())
+                        .isEqualTo(order)
+                    // We allow mixing orders if one of them is stable. This tests that the top level order is
+                    // the correct one.
+                    assertThat(
+                        createNestedSet(order, numDirects, numTransitives, Order.STABLE_ORDER).getOrder()
+                    )
+                        .isEqualTo(order)
+                }
+            }
         }
-      }
     }
-  }
 
-  private static NestedSet<Integer> createNestedSet(
-      Order order, int numDirects, int numTransitives, Order transitiveOrder) {
-    NestedSetBuilder<Integer> builder = NestedSetBuilder.newBuilder(order);
+    @org.junit.Test
+    fun memoizedFlattenAndGetSize() {
+        val empty: NestedSet<String?> = NestedSetBuilder.< String > stableOrder < kotlin . String ? > ().build()
+        checkSize(empty, 0) // {}
 
-    for (int direct = 0; direct < numDirects; direct++) {
-      builder.add(direct);
+        val singleton: NestedSet<String?> =
+            NestedSetBuilder.< String > stableOrder < kotlin . String ? > ().add("a").build()
+        checkSize(singleton, 1) // {a}
+
+        val deuce: NestedSet<String?> =
+            NestedSetBuilder.< String > stableOrder < kotlin . String ? > ().add("a").add("b").build()
+        checkSize(deuce, 2) // {a, b}
+
+        checkSize(
+            NestedSetBuilder.< String > stableOrder < kotlin . String ? > ()
+                .add("a")
+                .addTransitive(deuce)
+                .addTransitive(singleton)
+                .addTransitive(empty)
+                .build(),
+            2
+        ) // {a, b}
+        checkSize(
+            NestedSetBuilder.< String > stableOrder < kotlin . String ? > ()
+                .add("c")
+                .addTransitive(deuce)
+                .addTransitive(singleton)
+                .addTransitive(empty)
+                .build(),
+            3
+        ) // {a, b, c}
+
+        // 25000 has a 3-digit base128 encoding.
+        val largeShallow: NestedSetBuilder<Int?> = NestedSetBuilder.stableOrder()
+        for (i in 0..24999) {
+            largeShallow.add(i)
+        }
+        checkSize(largeShallow.build(), 25000) // {0, 1, ..., 24999}
+
+        // a deep and narrow graph
+        var deep: NestedSet<String?> = deuce
+        for (i in 0..199) {
+            deep = NestedSetBuilder.< String > stableOrder < kotlin . String ? > ().addTransitive(deep).add("c").build()
+        }
+        checkSize(deep, 3) // {a, b, c}
     }
-    for (int transitive = 0; transitive < numTransitives; transitive++) {
-      builder.addTransitive(NestedSet.<Integer>builder(transitiveOrder).add(transitive).build());
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun concurrentMemoizedFlattenAndGetSize() {
+        var deep: NestedSet<String?> =
+            NestedSetBuilder.< String > stableOrder < kotlin . String ? > ().add("a").add("b").build()
+        for (i in 0..199) {
+            deep = NestedSetBuilder.< String > stableOrder < kotlin . String ? > ().addTransitive(deep).add("c").build()
+        }
+        val underTest: NestedSet<String?> = deep
+        val threads: MutableList<TestThread> = java.util.ArrayList<TestThread>(20)
+        for (i in 0..19) {
+            threads.add(TestThread(underTest::memoizedFlattenAndGetSize))
+        }
+        for (thread in threads) {
+            thread.start()
+        }
+        for (thread in threads) {
+            thread.joinAndAssertState(com.google.devtools.build.lib.testutil.TestUtils.WAIT_TIMEOUT_MILLISECONDS)
+        }
     }
-    return builder.build();
-  }
 
-  @Test
-  public void memoizedFlattenAndGetSize() {
-    NestedSet<String> empty = NestedSetBuilder.<String>stableOrder().build();
-    checkSize(empty, 0); // {}
-
-    NestedSet<String> singleton = NestedSetBuilder.<String>stableOrder().add("a").build();
-    checkSize(singleton, 1); // {a}
-
-    NestedSet<String> deuce = NestedSetBuilder.<String>stableOrder().add("a").add("b").build();
-    checkSize(deuce, 2); // {a, b}
-
-    checkSize(
-        NestedSetBuilder.<String>stableOrder()
-            .add("a")
-            .addTransitive(deuce)
-            .addTransitive(singleton)
-            .addTransitive(empty)
-            .build(),
-        2); // {a, b}
-    checkSize(
-        NestedSetBuilder.<String>stableOrder()
-            .add("c")
-            .addTransitive(deuce)
-            .addTransitive(singleton)
-            .addTransitive(empty)
-            .build(),
-        3); // {a, b, c}
-
-    // 25000 has a 3-digit base128 encoding.
-    NestedSetBuilder<Integer> largeShallow = NestedSetBuilder.stableOrder();
-    for (int i = 0; i < 25000; ++i) {
-      largeShallow.add(i);
-    }
-    checkSize(largeShallow.build(), 25000); // {0, 1, ..., 24999}
-
-    // a deep and narrow graph
-    NestedSet<String> deep = deuce;
-    for (int i = 0; i < 200; ++i) {
-      deep = NestedSetBuilder.<String>stableOrder().addTransitive(deep).add("c").build();
-    }
-    checkSize(deep, 3); // {a, b, c}
-  }
-
-  private static void checkSize(NestedSet<?> set, int size) {
-    assertThat(set.memoizedFlattenAndGetSize()).isEqualTo(size); // first call: flattens
-    assertThat(set.memoizedFlattenAndGetSize()).isEqualTo(size); // second call: memoized
-  }
-
-  @Test
-  public void concurrentMemoizedFlattenAndGetSize() throws Exception {
-    NestedSet<String> deep = NestedSetBuilder.<String>stableOrder().add("a").add("b").build();
-    for (int i = 0; i < 200; ++i) {
-      deep = NestedSetBuilder.<String>stableOrder().addTransitive(deep).add("c").build();
-    }
-    NestedSet<String> underTest = deep;
-    List<TestThread> threads = new ArrayList<>(20);
-    for (int i = 0; i < 20; i++) {
-      threads.add(new TestThread(underTest::memoizedFlattenAndGetSize));
-    }
-    for (TestThread thread : threads) {
-      thread.start();
-    }
-    for (TestThread thread : threads) {
-      thread.joinAndAssertState(TestUtils.WAIT_TIMEOUT_MILLISECONDS);
-    }
-  }
-
-  @Test
-  public void hoistingKeepsSetSmall() {
-    NestedSet<String> first = NestedSetBuilder.<String>stableOrder().add("a").build();
-    NestedSet<String> second = NestedSetBuilder.<String>stableOrder().add("a").build();
-    NestedSet<String> singleton =
-        NestedSetBuilder.<String>stableOrder().addTransitive(first).addTransitive(second).build();
-    assertThat(singleton.toList()).containsExactly("a");
-    assertThat(singleton.isSingleton()).isTrue();
-  }
-
-  @Test
-  public void buildInterruptibly_propagatesInterrupt() {
-    NestedSet<String> deserializingNestedSet =
-        NestedSet.withFuture(Order.STABLE_ORDER, UNKNOWN_DEPTH, SettableFuture.create());
-    NestedSetBuilder<String> builder =
-        NestedSetBuilder.<String>stableOrder().addTransitive(deserializingNestedSet).add("a");
-    Thread.currentThread().interrupt();
-    assertThrows(InterruptedException.class, builder::buildInterruptibly);
-  }
-
-  @Test
-  public void getChildrenInterruptibly_propagatesInterrupt() {
-    NestedSet<String> deserializingNestedSet =
-        NestedSet.withFuture(Order.STABLE_ORDER, UNKNOWN_DEPTH, SettableFuture.create());
-    Thread.currentThread().interrupt();
-    assertThrows(InterruptedException.class, deserializingNestedSet::getChildrenInterruptibly);
-  }
-
-  @Test
-  public void toListInterruptibly_propagatesInterrupt() {
-    NestedSet<String> deserializingNestedSet =
-        NestedSet.withFuture(Order.STABLE_ORDER, UNKNOWN_DEPTH, SettableFuture.create());
-    Thread.currentThread().interrupt();
-    assertThrows(InterruptedException.class, deserializingNestedSet::toListInterruptibly);
-  }
-
-  @Test
-  public void toListInterruptibly_propagatesMissingFingerprintValueException() {
-    NestedSet<String> deserializingNestedSet =
-        NestedSet.withFuture(
-            Order.STABLE_ORDER,
-            UNKNOWN_DEPTH,
-            immediateFailedFuture(
-                new MissingFingerprintValueException(getFingerprintForTesting("fingerprint"))));
-    assertThrows(
-        MissingFingerprintValueException.class, deserializingNestedSet::toListInterruptibly);
-  }
-
-  @Test
-  public void toListWithTimeout_propagatesInterrupt() {
-    NestedSet<String> deserializingNestedSet =
-        NestedSet.withFuture(Order.STABLE_ORDER, UNKNOWN_DEPTH, SettableFuture.create());
-    Thread.currentThread().interrupt();
-    assertThrows(
-        InterruptedException.class,
-        () -> deserializingNestedSet.toListWithTimeout(Duration.ofDays(1)));
-  }
-
-  @Test
-  public void toListWithTimeout_propagatesMissingFingerprintValueException() {
-    NestedSet<String> deserializingNestedSet =
-        NestedSet.withFuture(
-            Order.STABLE_ORDER,
-            UNKNOWN_DEPTH,
-            immediateFailedFuture(
-                new MissingFingerprintValueException(getFingerprintForTesting("fingerprint"))));
-    assertThrows(
-        MissingFingerprintValueException.class,
-        () -> deserializingNestedSet.toListWithTimeout(Duration.ofNanos(1)));
-  }
-
-  @Test
-  public void toListWithTimeout_timesOut() {
-    NestedSet<String> deserializingNestedSet =
-        NestedSet.withFuture(Order.STABLE_ORDER, UNKNOWN_DEPTH, SettableFuture.create());
-    assertThrows(
-        TimeoutException.class,
-        () -> deserializingNestedSet.toListWithTimeout(Duration.ofNanos(1)));
-  }
-
-  @Test
-  public void toListWithTimeout_waits() throws Exception {
-    SettableFuture<Object[]> future = SettableFuture.create();
-    NestedSet<String> deserializingNestedSet =
-        NestedSet.withFuture(Order.STABLE_ORDER, UNKNOWN_DEPTH, future);
-    Future<ImmutableList<String>> result =
-        Executors.newSingleThreadExecutor()
-            .submit(() -> deserializingNestedSet.toListWithTimeout(Duration.ofMinutes(1)));
-    Thread.sleep(100);
-    assertThat(result.isDone()).isFalse();
-    future.set(new Object[] {"a", "b"});
-    assertThat(result.get()).containsExactly("a", "b");
-  }
-
-  @Test
-  public void isFromStorage_true() {
-    NestedSet<?> deserializingNestedSet =
-        NestedSet.withFuture(Order.STABLE_ORDER, UNKNOWN_DEPTH, SettableFuture.create());
-    assertThat(deserializingNestedSet.isFromStorage()).isTrue();
-  }
-
-  @Test
-  public void isFromStorage_false() {
-    NestedSet<?> inMemoryNestedSet = NestedSetBuilder.create(Order.STABLE_ORDER, "a", "b");
-    assertThat(inMemoryNestedSet.isFromStorage()).isFalse();
-  }
-
-  @Test
-  public void isReady_inMemory() {
-    NestedSet<?> inMemoryNestedSet = NestedSetBuilder.create(Order.STABLE_ORDER, "a", "b");
-    assertThat(inMemoryNestedSet.isReady()).isTrue();
-  }
-
-  @Test
-  public void isReady_fromStorage() {
-    SettableFuture<Object[]> future = SettableFuture.create();
-    NestedSet<?> deserializingNestedSet =
-        NestedSet.withFuture(Order.STABLE_ORDER, UNKNOWN_DEPTH, future);
-    assertThat(deserializingNestedSet.isReady()).isFalse();
-    future.set(new Object[] {"a", "b"});
-    assertThat(deserializingNestedSet.isReady()).isTrue();
-  }
-
-  @Test
-  public void isReady_fromStorage_cancelled() {
-    NestedSet<?> deserializingNestedSet =
-        NestedSet.withFuture(Order.STABLE_ORDER, UNKNOWN_DEPTH, immediateCancelledFuture());
-    assertThat(deserializingNestedSet.isReady()).isFalse();
-  }
-
-  @Test
-  public void isReady_fromStorage_failed() {
-    NestedSet<?> deserializingNestedSet =
-        NestedSet.withFuture(
-            Order.STABLE_ORDER,
-            UNKNOWN_DEPTH,
-            immediateFailedFuture(
-                new MissingFingerprintValueException(getFingerprintForTesting("fingerprint"))));
-    assertThat(deserializingNestedSet.isReady()).isFalse();
-  }
-
-  @Test
-  public void getApproxDepth() {
-    NestedSet<String> empty = nestedSetBuilder().build();
-    NestedSet<String> justA = nestedSetBuilder("a").build();
-    NestedSet<String> justB = nestedSetBuilder("b").build();
-    NestedSet<String> ab = nestedSetBuilder().addTransitive(justA).addTransitive(justB).build();
-
-    assertThat(empty.getApproxDepth()).isEqualTo(0);
-    assertThat(
-            nestedSetBuilder().addTransitive(empty).addTransitive(empty).build().getApproxDepth())
-        .isEqualTo(0);
-    assertThat(justA.getApproxDepth()).isEqualTo(1);
-    assertThat(justB.getApproxDepth()).isEqualTo(1);
-    assertThat(
-            nestedSetBuilder().addTransitive(empty).addTransitive(empty).build().getApproxDepth())
-        .isEqualTo(0);
-    assertThat(
-            nestedSetBuilder().addTransitive(empty).addTransitive(justA).build().getApproxDepth())
-        .isEqualTo(1);
-    assertThat(
-            nestedSetBuilder().addTransitive(justA).addTransitive(empty).build().getApproxDepth())
-        .isEqualTo(1);
-    assertThat(
-            nestedSetBuilder().addTransitive(justA).addTransitive(justA).build().getApproxDepth())
-        .isEqualTo(1);
-    assertThat(
-            nestedSetBuilder().addTransitive(justA).addTransitive(justB).build().getApproxDepth())
-        .isEqualTo(2);
-    assertThat(
-            nestedSetBuilder("a", "b", "c")
-                .addTransitive(justA)
-                .addTransitive(justB)
-                .addTransitive(ab)
+    @org.junit.Test
+    fun hoistingKeepsSetSmall() {
+        val first: NestedSet<String?>? =
+            NestedSetBuilder.< String > stableOrder < kotlin . String ? > ().add("a").build()
+        val second: NestedSet<String?>? =
+            NestedSetBuilder.< String > stableOrder < kotlin . String ? > ().add("a").build()
+        val singleton: NestedSet<String?> =
+            NestedSetBuilder.< String > stableOrder < kotlin . String ? > ().addTransitive(first).addTransitive(second)
                 .build()
-                .getApproxDepth())
-        .isEqualTo(3);
-  }
+        assertThat(singleton.toList()).containsExactly("a")
+        assertThat(singleton.isSingleton()).isTrue()
+    }
 
-  @Test
-  public void linkOrder_toList_withTransitiveInputAliases_areConsistent() {
-    NestedSet<String> inputA = NestedSetBuilder.create(LINK_ORDER, "A");
-    NestedSet<String> inputB = NestedSetBuilder.create(LINK_ORDER, "B");
-    NestedSet<String> inputC = NestedSetBuilder.create(LINK_ORDER, "C");
-    NestedSet<String> inputB2 = NestedSetBuilder.create(LINK_ORDER, "B");
+    @org.junit.Test
+    fun buildInterruptibly_propagatesInterrupt() {
+        val deserializingNestedSet: NestedSet<String?>? =
+            NestedSet.withFuture(
+                Order.STABLE_ORDER,
+                UNKNOWN_DEPTH,
+                com.google.common.util.concurrent.SettableFuture.create<V?>()
+            )
+        val builder: NestedSetBuilder<String?> =
+            NestedSetBuilder.< String > stableOrder < kotlin . String ? > ().addTransitive(deserializingNestedSet)
+                .add("a")
+        java.lang.Thread.currentThread().interrupt()
+        org.junit.Assert.assertThrows<java.lang.InterruptedException?>(
+            java.lang.InterruptedException::class.java,
+            builder::buildInterruptibly
+        )
+    }
 
-    NestedSet<String> withDuplicates =
-        NestedSet.<String>builder(LINK_ORDER)
-            .addTransitive(inputA)
-            .addTransitive(inputB)
-            .addTransitive(inputC)
-            .addTransitive(inputB)
-            .build();
+    @get:org.junit.Test
+    val childrenInterruptibly_propagatesInterrupt: Unit
+        get() {
+            val deserializingNestedSet: NestedSet<String?> =
+                NestedSet.withFuture(
+                    Order.STABLE_ORDER,
+                    UNKNOWN_DEPTH,
+                    com.google.common.util.concurrent.SettableFuture.create<V?>()
+                )
+            java.lang.Thread.currentThread().interrupt()
+            org.junit.Assert.assertThrows<java.lang.InterruptedException?>(
+                java.lang.InterruptedException::class.java,
+                deserializingNestedSet::getChildrenInterruptibly
+            )
+        }
 
-    NestedSet<String> withAlias =
-        NestedSet.<String>builder(LINK_ORDER)
-            .addTransitive(inputA)
-            .addTransitive(inputB)
-            .addTransitive(inputC)
-            .addTransitive(inputB2)
-            .build();
+    @org.junit.Test
+    fun toListInterruptibly_propagatesInterrupt() {
+        val deserializingNestedSet: NestedSet<String?> =
+            NestedSet.withFuture(
+                Order.STABLE_ORDER,
+                UNKNOWN_DEPTH,
+                com.google.common.util.concurrent.SettableFuture.create<V?>()
+            )
+        java.lang.Thread.currentThread().interrupt()
+        org.junit.Assert.assertThrows<java.lang.InterruptedException?>(
+            java.lang.InterruptedException::class.java,
+            deserializingNestedSet::toListInterruptibly
+        )
+    }
 
-    assertThat(withAlias.toList()).isEqualTo(withDuplicates.toList());
-  }
+    @org.junit.Test
+    fun toListInterruptibly_propagatesMissingFingerprintValueException() {
+        val deserializingNestedSet: NestedSet<String?> =
+            NestedSet.withFuture(
+                Order.STABLE_ORDER,
+                UNKNOWN_DEPTH,
+                com.google.common.util.concurrent.Futures.immediateFailedFuture<V?>(
+                    MissingFingerprintValueException(getFingerprintForTesting("fingerprint"))
+                )
+            )
+        org.junit.Assert.assertThrows<T?>(
+            MissingFingerprintValueException::class.java, deserializingNestedSet::toListInterruptibly
+        )
+    }
 
-  @Test
-  public void linkOrder_toList_withDuplicateDirectInputs_keepsFirst() {
-    NestedSet<String> duplicateInputs = NestedSetBuilder.create(LINK_ORDER, "A", "B", "C", "A");
-    assertThat(duplicateInputs.toList()).containsExactly("A", "B", "C").inOrder();
-  }
+    @org.junit.Test
+    fun toListWithTimeout_propagatesInterrupt() {
+        val deserializingNestedSet: NestedSet<String?> =
+            NestedSet.withFuture(
+                Order.STABLE_ORDER,
+                UNKNOWN_DEPTH,
+                com.google.common.util.concurrent.SettableFuture.create<V?>()
+            )
+        java.lang.Thread.currentThread().interrupt()
+        org.junit.Assert.assertThrows<java.lang.InterruptedException?>(
+            java.lang.InterruptedException::class.java,
+            org.junit.function.ThrowingRunnable { deserializingNestedSet.toListWithTimeout(java.time.Duration.ofDays(1)) })
+    }
+
+    @org.junit.Test
+    fun toListWithTimeout_propagatesMissingFingerprintValueException() {
+        val deserializingNestedSet: NestedSet<String?> =
+            NestedSet.withFuture(
+                Order.STABLE_ORDER,
+                UNKNOWN_DEPTH,
+                com.google.common.util.concurrent.Futures.immediateFailedFuture<V?>(
+                    MissingFingerprintValueException(getFingerprintForTesting("fingerprint"))
+                )
+            )
+        org.junit.Assert.assertThrows<T?>(
+            MissingFingerprintValueException::class.java,
+            org.junit.function.ThrowingRunnable { deserializingNestedSet.toListWithTimeout(java.time.Duration.ofNanos(1)) })
+    }
+
+    @org.junit.Test
+    fun toListWithTimeout_timesOut() {
+        val deserializingNestedSet: NestedSet<String?> =
+            NestedSet.withFuture(
+                Order.STABLE_ORDER,
+                UNKNOWN_DEPTH,
+                com.google.common.util.concurrent.SettableFuture.create<V?>()
+            )
+        org.junit.Assert.assertThrows<java.util.concurrent.TimeoutException?>(
+            java.util.concurrent.TimeoutException::class.java,
+            org.junit.function.ThrowingRunnable { deserializingNestedSet.toListWithTimeout(java.time.Duration.ofNanos(1)) })
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun toListWithTimeout_waits() {
+        val future: com.google.common.util.concurrent.SettableFuture<Array<Any?>?> =
+            com.google.common.util.concurrent.SettableFuture.create<Array<Any?>?>()
+        val deserializingNestedSet: NestedSet<String?> =
+            NestedSet.withFuture(Order.STABLE_ORDER, UNKNOWN_DEPTH, future)
+        val result: java.util.concurrent.Future<com.google.common.collect.ImmutableList<String?>?> =
+            Executors.newSingleThreadExecutor()
+                .submit(java.lang.Runnable { deserializingNestedSet.toListWithTimeout(java.time.Duration.ofMinutes(1)) })
+        java.lang.Thread.sleep(100)
+        Truth.assertThat(result.isDone()).isFalse()
+        future.set(arrayOf<Any>("a", "b"))
+        Truth.assertThat(result.get()).containsExactly("a", "b")
+    }
+
+    @get:org.junit.Test
+    val isFromStorage_true: Unit
+        get() {
+            val deserializingNestedSet: NestedSet<*> =
+                NestedSet.withFuture(
+                    Order.STABLE_ORDER,
+                    UNKNOWN_DEPTH,
+                    com.google.common.util.concurrent.SettableFuture.create<V?>()
+                )
+            assertThat(deserializingNestedSet.isFromStorage()).isTrue()
+        }
+
+    @get:org.junit.Test
+    val isFromStorage_false: Unit
+        get() {
+            val inMemoryNestedSet: NestedSet<*> = NestedSetBuilder.create(Order.STABLE_ORDER, "a", "b")
+            assertThat(inMemoryNestedSet.isFromStorage()).isFalse()
+        }
+
+    @get:org.junit.Test
+    val isReady_inMemory: Unit
+        get() {
+            val inMemoryNestedSet: NestedSet<*> = NestedSetBuilder.create(Order.STABLE_ORDER, "a", "b")
+            assertThat(inMemoryNestedSet.isReady()).isTrue()
+        }
+
+    @get:org.junit.Test
+    val isReady_fromStorage: Unit
+        get() {
+            val future: com.google.common.util.concurrent.SettableFuture<Array<Any?>?> =
+                com.google.common.util.concurrent.SettableFuture.create<Array<Any?>?>()
+            val deserializingNestedSet: NestedSet<*> =
+                NestedSet.withFuture(Order.STABLE_ORDER, UNKNOWN_DEPTH, future)
+            assertThat(deserializingNestedSet.isReady()).isFalse()
+            future.set(arrayOf<Any>("a", "b"))
+            assertThat(deserializingNestedSet.isReady()).isTrue()
+        }
+
+    @get:org.junit.Test
+    val isReady_fromStorage_cancelled: Unit
+        get() {
+            val deserializingNestedSet: NestedSet<*> =
+                NestedSet.withFuture(
+                    Order.STABLE_ORDER,
+                    UNKNOWN_DEPTH,
+                    com.google.common.util.concurrent.Futures.immediateCancelledFuture<V?>()
+                )
+            assertThat(deserializingNestedSet.isReady()).isFalse()
+        }
+
+    @get:org.junit.Test
+    val isReady_fromStorage_failed: Unit
+        get() {
+            val deserializingNestedSet: NestedSet<*> =
+                NestedSet.withFuture(
+                    Order.STABLE_ORDER,
+                    UNKNOWN_DEPTH,
+                    com.google.common.util.concurrent.Futures.immediateFailedFuture<V?>(
+                        MissingFingerprintValueException(getFingerprintForTesting("fingerprint"))
+                    )
+                )
+            assertThat(deserializingNestedSet.isReady()).isFalse()
+        }
+
+    @get:org.junit.Test
+    val approxDepth: Unit
+        get() {
+            val empty: NestedSet<String?> = nestedSetBuilder().build()
+            val justA: NestedSet<String?> = nestedSetBuilder("a").build()
+            val justB: NestedSet<String?> = nestedSetBuilder("b").build()
+            val ab: NestedSet<String?>? =
+                nestedSetBuilder().addTransitive(justA).addTransitive(justB).build()
+
+            assertThat(empty.getApproxDepth()).isEqualTo(0)
+            assertThat(
+                nestedSetBuilder().addTransitive(empty).addTransitive(empty).build()
+                    .getApproxDepth()
+            )
+                .isEqualTo(0)
+            assertThat(justA.getApproxDepth()).isEqualTo(1)
+            assertThat(justB.getApproxDepth()).isEqualTo(1)
+            assertThat(
+                nestedSetBuilder().addTransitive(empty).addTransitive(empty).build()
+                    .getApproxDepth()
+            )
+                .isEqualTo(0)
+            assertThat(
+                nestedSetBuilder().addTransitive(empty).addTransitive(justA).build()
+                    .getApproxDepth()
+            )
+                .isEqualTo(1)
+            assertThat(
+                nestedSetBuilder().addTransitive(justA).addTransitive(empty).build()
+                    .getApproxDepth()
+            )
+                .isEqualTo(1)
+            assertThat(
+                nestedSetBuilder().addTransitive(justA).addTransitive(justA).build()
+                    .getApproxDepth()
+            )
+                .isEqualTo(1)
+            assertThat(
+                nestedSetBuilder().addTransitive(justA).addTransitive(justB).build()
+                    .getApproxDepth()
+            )
+                .isEqualTo(2)
+            assertThat(
+                nestedSetBuilder("a", "b", "c")
+                    .addTransitive(justA)
+                    .addTransitive(justB)
+                    .addTransitive(ab)
+                    .build()
+                    .getApproxDepth()
+            )
+                .isEqualTo(3)
+        }
+
+    @org.junit.Test
+    fun linkOrder_toList_withTransitiveInputAliases_areConsistent() {
+        val inputA: NestedSet<String?>? = NestedSetBuilder.create(LINK_ORDER, "A")
+        val inputB: NestedSet<String?>? = NestedSetBuilder.create(LINK_ORDER, "B")
+        val inputC: NestedSet<String?>? = NestedSetBuilder.create(LINK_ORDER, "C")
+        val inputB2: NestedSet<String?>? = NestedSetBuilder.create(LINK_ORDER, "B")
+
+        val withDuplicates: NestedSet<String?> =
+            NestedSet.< String > builder < kotlin . String ? > (LINK_ORDER)
+                .addTransitive(inputA)
+                .addTransitive(inputB)
+                .addTransitive(inputC)
+                .addTransitive(inputB)
+                .build()
+
+        val withAlias: NestedSet<String?> =
+            NestedSet.< String > builder < kotlin . String ? > (LINK_ORDER)
+                .addTransitive(inputA)
+                .addTransitive(inputB)
+                .addTransitive(inputC)
+                .addTransitive(inputB2)
+                .build()
+
+        assertThat(withAlias.toList()).isEqualTo(withDuplicates.toList())
+    }
+
+    @org.junit.Test
+    fun linkOrder_toList_withDuplicateDirectInputs_keepsFirst() {
+        val duplicateInputs: NestedSet<String?> = NestedSetBuilder.create(LINK_ORDER, "A", "B", "C", "A")
+        assertThat(duplicateInputs.toList()).containsExactly("A", "B", "C").inOrder()
+    }
+
+    companion object {
+        private fun nestedSetBuilder(vararg directMembers: String?): NestedSetBuilder<String?> {
+            val builder: NestedSetBuilder<String?> = NestedSetBuilder.stableOrder()
+            builder.addAll(com.google.common.collect.Lists.< E > newArrayList < E ? > (directMembers))
+            return builder
+        }
+
+        @java.lang.SafeVarargs
+        private fun <E> flat(vararg directMembers: E?): SetWrapper<E?> {
+            val builder: NestedSetBuilder<E?> = NestedSetBuilder.stableOrder()
+            builder.addAll(com.google.common.collect.Lists.newArrayList<E?>(*directMembers))
+            return SetWrapper<E?>(builder.build())
+        }
+
+        @java.lang.SafeVarargs
+        private fun <E> nest(vararg nested: SetWrapper<E?>): SetWrapper<E?> {
+            val builder: NestedSetBuilder<E?> = NestedSetBuilder.stableOrder()
+            for (wrap in nested) {
+                builder.addTransitive(wrap.set)
+            }
+            return SetWrapper<E?>(builder.build())
+        }
+
+        @java.lang.SafeVarargs // Restricted to <Integer> to avoid ambiguity with the other nest() function.
+        private fun nest(elem: Int?, vararg nested: SetWrapper<Int?>): SetWrapper<Int?> {
+            val builder: NestedSetBuilder<Int?> = NestedSetBuilder.stableOrder()
+            builder.add(elem)
+            for (wrap in nested) {
+                builder.addTransitive(wrap.set)
+            }
+            return SetWrapper<E?>(builder.build())
+        }
+
+        private const val UNKNOWN_DEPTH = 7
+
+        private fun createNestedSet(
+            order: Order?, numDirects: Int, numTransitives: Int, transitiveOrder: Order?
+        ): NestedSet<Int?> {
+            val builder: NestedSetBuilder<Int?> = NestedSetBuilder.newBuilder(order)
+
+            for (direct in 0..<numDirects) {
+                builder.add(direct)
+            }
+            for (transitive in 0..<numTransitives) {
+                builder.addTransitive(NestedSet.< Integer > builder < Int ? > (transitiveOrder).add(transitive).build())
+            }
+            return builder.build()
+        }
+
+        private fun checkSize(set: NestedSet<*>, size: Int) {
+            assertThat(set.memoizedFlattenAndGetSize()).isEqualTo(size) // first call: flattens
+            assertThat(set.memoizedFlattenAndGetSize()).isEqualTo(size) // second call: memoized
+        }
+    }
 }

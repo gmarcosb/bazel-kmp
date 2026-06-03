@@ -11,325 +11,418 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime
 
-package com.google.devtools.build.lib.runtime;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.analysis.util.BuildViewTestCase.ActionExecutionContextBuilder.build
+import com.google.devtools.build.lib.exec.util.SpawnBuilder.build
+import com.google.devtools.build.lib.exec.util.TestExecutorBuilder.build
+import com.google.devtools.build.lib.packages.util.Crosstool.CcToolchainConfig.Builder.build
+import com.sun.management.GarbageCollectionNotificationInfo
+import com.sun.management.GcInfo
+import org.junit.Before
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import org.mockito.ArgumentMatchers
+import org.mockito.Mockito
+import javax.management.NotificationEmitter
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.util.concurrent.MoreExecutors.directExecutor;
-import static org.junit.Assert.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+/** Tests for [MemoryPressureListener].  */
+@RunWith(JUnit4::class)
+class MemoryPressureListenerTest {
+    private interface NotificationBean : java.lang.management.GarbageCollectorMXBean, NotificationEmitter
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.eventbus.EventBus;
-import com.google.common.eventbus.Subscribe;
-import com.sun.management.GarbageCollectionNotificationInfo;
-import com.sun.management.GcInfo;
-import java.lang.management.GarbageCollectorMXBean;
-import java.lang.management.MemoryUsage;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
-import javax.management.Notification;
-import javax.management.NotificationEmitter;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    private val mockBean: NotificationBean? = null
+    fun <NotificationBean> mock()
+    private val mockUselessBean: NotificationBean? = null
+    fun <NotificationBean> mock()
+    private val eventBus: com.google.common.eventbus.EventBus = com.google.common.eventbus.EventBus()
+    private val events: MutableList<MemoryPressureEvent?> = java.util.ArrayList<MemoryPressureEvent?>()
 
-/** Tests for {@link MemoryPressureListener}. */
-@RunWith(JUnit4.class)
-public final class MemoryPressureListenerTest {
-  private interface NotificationBean extends GarbageCollectorMXBean, NotificationEmitter {}
+    @Before
+    fun initMocks() {
+        Mockito.`when`<Array<String?>?>(mockBean.getMemoryPoolNames())
+            .thenReturn(arrayOf<String>("not tenured", TENURED_SPACE_NAME))
+        Mockito.`when`<Array<String?>?>(mockUselessBean.getMemoryPoolNames())
+            .thenReturn(arrayOf<String>("assistant", "adjunct"))
+    }
 
-  private static final String TENURED_SPACE_NAME = "CMS Old Gen";
-  private final NotificationBean mockBean = mock(NotificationBean.class);
-  private final NotificationBean mockUselessBean = mock(NotificationBean.class);
-  private final EventBus eventBus = new EventBus();
-  private final List<MemoryPressureEvent> events = new ArrayList<>();
+    @Before
+    fun registerSubscriber() {
+        eventBus.register(
+            object : Any() {
+                @com.google.common.eventbus.Subscribe
+                fun handle(event: MemoryPressureEvent?) {
+                    events.add(event)
+                }
+            })
+    }
 
-  @Before
-  public void initMocks() {
-    when(mockBean.getMemoryPoolNames())
-        .thenReturn(new String[] {"not tenured", TENURED_SPACE_NAME});
-    when(mockUselessBean.getMemoryPoolNames()).thenReturn(new String[] {"assistant", "adjunct"});
-  }
-
-  @Before
-  public void registerSubscriber() {
-    eventBus.register(
-        new Object() {
-          @Subscribe
-          public void handle(MemoryPressureEvent event) {
-            events.add(event);
-          }
-        });
-  }
-
-  @Test
-  public void findBeans() {
-    assertThat(
+    @org.junit.Test
+    fun findBeans() {
+        assertThat(
             MemoryPressureListener.findTenuredCollectorBeans(
-                ImmutableList.of(mockUselessBean, mockBean)))
-        .containsExactly(mockBean);
-  }
+                com.google.common.collect.ImmutableList.of<E?>(mockUselessBean, mockBean)
+            )
+        )
+            .containsExactly(mockBean)
+    }
 
-  @Test
-  public void createFromBeans_throwsIfNoTenuredSpaceBean() {
-    assertThrows(
-        IllegalStateException.class,
-        () ->
+    @org.junit.Test
+    fun createFromBeans_throwsIfNoTenuredSpaceBean() {
+        org.junit.Assert.assertThrows<java.lang.IllegalStateException?>(
+            java.lang.IllegalStateException::class.java,
+            org.junit.function.ThrowingRunnable {
+                MemoryPressureListener.createFromBeans(
+                    com.google.common.collect.ImmutableList.of<E?>(mockUselessBean),
+                    com.google.common.util.concurrent.MoreExecutors.directExecutor()
+                )
+            })
+    }
+
+    @org.junit.Test
+    fun simple() {
+        val underTest: MemoryPressureListener =
             MemoryPressureListener.createFromBeans(
-                ImmutableList.of(mockUselessBean), directExecutor()));
-  }
+                com.google.common.collect.ImmutableList.of<E?>(mockUselessBean, mockBean),
+                com.google.common.util.concurrent.MoreExecutors.directExecutor()
+            )
+        underTest.initForInvocation(
+            eventBus, TODO("Cannot convert element")
+        )<T> Mockito . mock < GcThrashingDetector ? > (GcThrashingDetector::class.java)
+        T > Mockito.mock<GcChurningDetector?>(GcChurningDetector::class.java)
 
-  @Test
-  public void simple() {
-    MemoryPressureListener underTest =
-        MemoryPressureListener.createFromBeans(
-            ImmutableList.of(mockUselessBean, mockBean), directExecutor());
-    underTest.initForInvocation(
-        eventBus, mock(GcThrashingDetector.class), mock(GcChurningDetector.class));
-    verify(mockBean).addNotificationListener(underTest, null, null);
-    verify(mockUselessBean, never()).addNotificationListener(any(), any(), any());
+        NotificationBean > Mockito.verify<NotificationBean?>(mockBean).addNotificationListener(underTest, null, null)
+        NotificationBean > Mockito.verify<NotificationBean?>(mockUselessBean, Mockito.never())
+            .addNotificationListener(TODO("Cannot convert element"))<javax.management.NotificationListener> ArgumentMatchers . any < kotlin . Any ? > ()
+        javax.management.NotificationFilter > ArgumentMatchers.any<Any?>()
+        Object > ArgumentMatchers.any<Any?>()
 
-    GcInfo mockGcInfo = mock(GcInfo.class);
-    String nonTenuredSpaceName = "nope";
-    MemoryUsage mockMemoryUsageForNonTenuredSpace = mock(MemoryUsage.class);
-    MemoryUsage mockMemoryUsageForTenuredSpace = mock(MemoryUsage.class);
-    when(mockMemoryUsageForTenuredSpace.getUsed()).thenReturn(42L);
-    when(mockMemoryUsageForTenuredSpace.getMax()).thenReturn(100L);
-    when(mockGcInfo.getMemoryUsageAfterGc())
-        .thenReturn(
-            ImmutableMap.of(
-                nonTenuredSpaceName,
-                mockMemoryUsageForNonTenuredSpace,
-                TENURED_SPACE_NAME,
-                mockMemoryUsageForTenuredSpace));
-    when(mockGcInfo.getDuration()).thenReturn(42_000L);
 
-    Notification notification =
-        new Notification(
-            GarbageCollectionNotificationInfo.GARBAGE_COLLECTION_NOTIFICATION, "test", 123);
-    notification.setUserData(
-        new GarbageCollectionNotificationInfo("gcName", "gcAction", "non-manual", mockGcInfo)
-            .toCompositeData(null));
-    underTest.handleNotification(notification, null);
+        val mockGcInfo: GcInfo
+        GcInfo > Mockito.mock<GcInfo?>(GcInfo::class.java)
+        val nonTenuredSpaceName = "nope"
+        val mockMemoryUsageForNonTenuredSpace: java.lang.management.MemoryUsage
+        MemoryUsage > Mockito.mock<java.lang.management.MemoryUsage?>(java.lang.management.MemoryUsage::class.java)
+        val mockMemoryUsageForTenuredSpace: java.lang.management.MemoryUsage
+        MemoryUsage > Mockito.mock<java.lang.management.MemoryUsage?>(java.lang.management.MemoryUsage::class.java)
+        Long > Mockito.`when`<Long?>(mockMemoryUsageForTenuredSpace.getUsed()).thenReturn(42L)
+        Long > Mockito.`when`<Long?>(mockMemoryUsageForTenuredSpace.getMax()).thenReturn(100L)
+        Mockito.`when`<MutableMap<String?, java.lang.management.MemoryUsage?>?>(mockGcInfo.getMemoryUsageAfterGc())
+            .thenReturn(
+                com.google.common.collect.ImmutableMap.of<String?, java.lang.management.MemoryUsage?>(
+                    nonTenuredSpaceName,
+                    mockMemoryUsageForNonTenuredSpace,
+                    TENURED_SPACE_NAME,
+                    mockMemoryUsageForTenuredSpace
+                )
+            )
+        Long > Mockito.`when`<Long?>(mockGcInfo.getDuration()).thenReturn(42000L)
 
-    assertThat(events)
-        .containsExactly(
+        val notification: javax.management.Notification =
+            javax.management.Notification(
+                GarbageCollectionNotificationInfo.GARBAGE_COLLECTION_NOTIFICATION, "test", 123
+            )
+        notification.setUserData(
+            GarbageCollectionNotificationInfo("gcName", "gcAction", "non-manual", mockGcInfo)
+                .toCompositeData(null)
+        )
+        underTest.handleNotification(notification, null)
+
+        Truth.assertThat(events)
+            .containsExactly(
+                MemoryPressureEvent.newBuilder()
+                    .setWasManualGc(false)
+                    .setTenuredSpaceUsedBytes(42L)
+                    .setTenuredSpaceMaxBytes(100L)
+                    .setDuration(java.time.Duration.ofSeconds(42))
+                    .build()
+            )
+    }
+
+    @org.junit.Test
+    fun nullEventBus_doNotPublishEvent() {
+        val underTest: MemoryPressureListener =
+            MemoryPressureListener.createFromBeans(
+                com.google.common.collect.ImmutableList.of<E?>(mockUselessBean, mockBean),
+                com.google.common.util.concurrent.MoreExecutors.directExecutor()
+            )
+        NotificationBean > Mockito.verify<NotificationBean?>(mockBean).addNotificationListener(underTest, null, null)
+        NotificationBean > Mockito.verify<NotificationBean?>(mockUselessBean, Mockito.never())
+            .addNotificationListener(TODO("Cannot convert element"))<javax.management.NotificationListener> ArgumentMatchers . any < kotlin . Any ? > ()
+        javax.management.NotificationFilter > ArgumentMatchers.any<Any?>()
+        Object > ArgumentMatchers.any<Any?>()
+
+
+        val mockGcInfo: GcInfo
+        GcInfo > Mockito.mock<GcInfo?>(GcInfo::class.java)
+        val nonTenuredSpaceName = "nope"
+        val mockMemoryUsageForNonTenuredSpace: java.lang.management.MemoryUsage
+        MemoryUsage > Mockito.mock<java.lang.management.MemoryUsage?>(java.lang.management.MemoryUsage::class.java)
+        val mockMemoryUsageForTenuredSpace: java.lang.management.MemoryUsage
+        MemoryUsage > Mockito.mock<java.lang.management.MemoryUsage?>(java.lang.management.MemoryUsage::class.java)
+        Long > Mockito.`when`<Long?>(mockMemoryUsageForTenuredSpace.getUsed()).thenReturn(42L)
+        Long > Mockito.`when`<Long?>(mockMemoryUsageForTenuredSpace.getMax()).thenReturn(100L)
+        Mockito.`when`<MutableMap<String?, java.lang.management.MemoryUsage?>?>(mockGcInfo.getMemoryUsageAfterGc())
+            .thenReturn(
+                com.google.common.collect.ImmutableMap.of<String?, java.lang.management.MemoryUsage?>(
+                    nonTenuredSpaceName,
+                    mockMemoryUsageForNonTenuredSpace,
+                    TENURED_SPACE_NAME,
+                    mockMemoryUsageForTenuredSpace
+                )
+            )
+
+        val notification: javax.management.Notification =
+            javax.management.Notification(
+                GarbageCollectionNotificationInfo.GARBAGE_COLLECTION_NOTIFICATION, "test", 123
+            )
+        notification.setUserData(
+            GarbageCollectionNotificationInfo("gcName", "gcAction", "non-manual", mockGcInfo)
+                .toCompositeData(null)
+        )
+        underTest.handleNotification(notification, null)
+
+        Truth.assertThat(events).isEmpty()
+    }
+
+    @org.junit.Test
+    fun manualGc() {
+        val underTest: MemoryPressureListener =
+            MemoryPressureListener.createFromBeans(
+                com.google.common.collect.ImmutableList.of<E?>(mockBean),
+                com.google.common.util.concurrent.MoreExecutors.directExecutor()
+            )
+        underTest.initForInvocation(
+            eventBus, TODO("Cannot convert element")
+        )<T> Mockito . mock < GcThrashingDetector ? > (GcThrashingDetector::class.java)
+        T > Mockito.mock<GcChurningDetector?>(GcChurningDetector::class.java)
+
+        NotificationBean > Mockito.verify<NotificationBean?>(mockBean).addNotificationListener(underTest, null, null)
+
+        val mockGcInfo: GcInfo
+        GcInfo > Mockito.mock<GcInfo?>(GcInfo::class.java)
+        val mockMemoryUsageForTenuredSpace: java.lang.management.MemoryUsage
+        MemoryUsage > Mockito.mock<java.lang.management.MemoryUsage?>(java.lang.management.MemoryUsage::class.java)
+        Long > Mockito.`when`<Long?>(mockMemoryUsageForTenuredSpace.getUsed()).thenReturn(42L)
+        Long > Mockito.`when`<Long?>(mockMemoryUsageForTenuredSpace.getMax()).thenReturn(100L)
+        Mockito.`when`<MutableMap<String?, java.lang.management.MemoryUsage?>?>(mockGcInfo.getMemoryUsageAfterGc())
+            .thenReturn(
+                com.google.common.collect.ImmutableMap.of<String?, java.lang.management.MemoryUsage?>(
+                    TENURED_SPACE_NAME, mockMemoryUsageForTenuredSpace
+                )
+            )
+        Long > Mockito.`when`<Long?>(mockGcInfo.getDuration()).thenReturn(42000L)
+
+        val notification: javax.management.Notification =
+            javax.management.Notification(
+                GarbageCollectionNotificationInfo.GARBAGE_COLLECTION_NOTIFICATION, "test", 123
+            )
+        notification.setUserData(
+            GarbageCollectionNotificationInfo("gcName", "gcAction", "System.gc()", mockGcInfo)
+                .toCompositeData(null)
+        )
+        underTest.handleNotification(notification, null)
+
+        Truth.assertThat(events)
+            .containsExactly(
+                MemoryPressureEvent.newBuilder()
+                    .setWasManualGc(true)
+                    .setTenuredSpaceUsedBytes(42L)
+                    .setTenuredSpaceMaxBytes(100L)
+                    .setDuration(java.time.Duration.ofSeconds(42))
+                    .build()
+            )
+    }
+
+    @org.junit.Test
+    fun doesntInvokeHandlerWhenTenuredSpaceMaxSizeIsZero() {
+        val underTest: MemoryPressureListener =
+            MemoryPressureListener.createFromBeans(
+                com.google.common.collect.ImmutableList.of<E?>(mockBean),
+                com.google.common.util.concurrent.MoreExecutors.directExecutor()
+            )
+        underTest.initForInvocation(
+            eventBus, TODO("Cannot convert element")
+        )<T> Mockito . mock < GcThrashingDetector ? > (GcThrashingDetector::class.java)
+        T > Mockito.mock<GcChurningDetector?>(GcChurningDetector::class.java)
+
+        NotificationBean > Mockito.verify<NotificationBean?>(mockBean).addNotificationListener(underTest, null, null)
+
+        val mockGcInfo: GcInfo
+        GcInfo > Mockito.mock<GcInfo?>(GcInfo::class.java)
+        val mockMemoryUsageForTenuredSpace: java.lang.management.MemoryUsage
+        MemoryUsage > Mockito.mock<java.lang.management.MemoryUsage?>(java.lang.management.MemoryUsage::class.java)
+        Long > Mockito.`when`<Long?>(mockMemoryUsageForTenuredSpace.getUsed()).thenReturn(42L)
+        Long > Mockito.`when`<Long?>(mockMemoryUsageForTenuredSpace.getMax()).thenReturn(0L)
+        Mockito.`when`<MutableMap<String?, java.lang.management.MemoryUsage?>?>(mockGcInfo.getMemoryUsageAfterGc())
+            .thenReturn(
+                com.google.common.collect.ImmutableMap.of<String?, java.lang.management.MemoryUsage?>(
+                    TENURED_SPACE_NAME, mockMemoryUsageForTenuredSpace
+                )
+            )
+
+        val notification: javax.management.Notification =
+            javax.management.Notification(
+                GarbageCollectionNotificationInfo.GARBAGE_COLLECTION_NOTIFICATION, "test", 123
+            )
+        notification.setUserData(
+            GarbageCollectionNotificationInfo("gcName", "gcAction", "non-manual", mockGcInfo)
+                .toCompositeData(null)
+        )
+        underTest.handleNotification(notification, null)
+
+        Truth.assertThat(events).isEmpty()
+    }
+
+    @org.junit.Test
+    fun findsTenuredSpaceWithNonZeroMaxSize() {
+        val anotherMockBean: NotificationBean
+        NotificationBean > Mockito.mock<NotificationBean?>(NotificationBean::class.java)
+        val anotherTenuredSpaceName = "G1 Old Gen"
+        String
+        Mockito.`when`<Array<String?>?>(anotherMockBean.getMemoryPoolNames())
+            .thenReturn(arrayOf<String>(anotherTenuredSpaceName))
+
+        val underTest: MemoryPressureListener =
+            MemoryPressureListener.createFromBeans(
+                com.google.common.collect.ImmutableList.of<E?>(mockBean, anotherMockBean),
+                com.google.common.util.concurrent.MoreExecutors.directExecutor()
+            )
+        underTest.initForInvocation(
+            eventBus, TODO("Cannot convert element")
+        )<T> Mockito . mock < GcThrashingDetector ? > (GcThrashingDetector::class.java)
+        T > Mockito.mock<GcChurningDetector?>(GcChurningDetector::class.java)
+
+        NotificationBean > Mockito.verify<NotificationBean?>(mockBean).addNotificationListener(underTest, null, null)
+        NotificationBean > Mockito.verify<NotificationBean?>(anotherMockBean)
+            .addNotificationListener(underTest, null, null)
+
+        val mockGcInfo: GcInfo
+        GcInfo > Mockito.mock<GcInfo?>(GcInfo::class.java)
+        val mockMemoryUsageForTenuredSpace: java.lang.management.MemoryUsage
+        MemoryUsage > Mockito.mock<java.lang.management.MemoryUsage?>(java.lang.management.MemoryUsage::class.java)
+        Long > Mockito.`when`<Long?>(mockMemoryUsageForTenuredSpace.getUsed()).thenReturn(1L)
+        Long > Mockito.`when`<Long?>(mockMemoryUsageForTenuredSpace.getMax()).thenReturn(0L)
+        val mockMemoryUsageForAnotherTenuredSpace: java.lang.management.MemoryUsage
+        MemoryUsage > Mockito.mock<java.lang.management.MemoryUsage?>(java.lang.management.MemoryUsage::class.java)
+        Long > Mockito.`when`<Long?>(mockMemoryUsageForAnotherTenuredSpace.getUsed()).thenReturn(2L)
+        Long > Mockito.`when`<Long?>(mockMemoryUsageForAnotherTenuredSpace.getMax()).thenReturn(3L)
+        Mockito.`when`<MutableMap<String?, java.lang.management.MemoryUsage?>?>(mockGcInfo.getMemoryUsageAfterGc())
+            .thenReturn(
+                com.google.common.collect.ImmutableMap.of<String?, java.lang.management.MemoryUsage?>(
+                    TENURED_SPACE_NAME,
+                    mockMemoryUsageForTenuredSpace,
+                    anotherTenuredSpaceName,
+                    mockMemoryUsageForAnotherTenuredSpace
+                )
+            )
+        Long > Mockito.`when`<Long?>(mockGcInfo.getDuration()).thenReturn(42000L)
+
+        val notification: javax.management.Notification =
+            javax.management.Notification(
+                GarbageCollectionNotificationInfo.GARBAGE_COLLECTION_NOTIFICATION, "test", 123
+            )
+        notification.setUserData(
+            GarbageCollectionNotificationInfo("gcName", "gcAction", "non-manual", mockGcInfo)
+                .toCompositeData(null)
+        )
+        underTest.handleNotification(notification, null)
+
+        Truth.assertThat(events)
+            .containsExactly(
+                MemoryPressureEvent.newBuilder()
+                    .setWasManualGc(false)
+                    .setTenuredSpaceUsedBytes(2L)
+                    .setTenuredSpaceMaxBytes(3L)
+                    .setDuration(java.time.Duration.ofSeconds(42))
+                    .build()
+            )
+    }
+
+    @org.junit.Test
+    fun directlyInvokesGcThrashingDetectorAndGcChurnDetector() {
+        val underTest: MemoryPressureListener =
+            MemoryPressureListener.createFromBeans(
+                com.google.common.collect.ImmutableList.of<E?>(mockUselessBean, mockBean),
+                com.google.common.util.concurrent.MoreExecutors.directExecutor()
+            )
+        NotificationBean > Mockito.verify<NotificationBean?>(mockBean).addNotificationListener(underTest, null, null)
+        NotificationBean > Mockito.verify<NotificationBean?>(mockUselessBean, Mockito.never())
+            .addNotificationListener(TODO("Cannot convert element"))<javax.management.NotificationListener> ArgumentMatchers . any < kotlin . Any ? > ()
+        javax.management.NotificationFilter > ArgumentMatchers.any<Any?>()
+        Object > ArgumentMatchers.any<Any?>()
+
+
+        val mockGcThrashingDetector: GcThrashingDetector?
+        GcThrashingDetector > Mockito.mock<GcThrashingDetector?>(GcThrashingDetector::class.java)
+        val mockGcChurningDetector: GcChurningDetector?
+        GcChurningDetector > Mockito.mock<GcChurningDetector?>(GcChurningDetector::class.java)
+        underTest.initForInvocation(eventBus, mockGcThrashingDetector, mockGcChurningDetector)
+
+        val mockGcInfo: GcInfo
+        GcInfo > Mockito.mock<GcInfo?>(GcInfo::class.java)
+        val nonTenuredSpaceName = "nope"
+        val mockMemoryUsageForNonTenuredSpace: java.lang.management.MemoryUsage
+        MemoryUsage > Mockito.mock<java.lang.management.MemoryUsage?>(java.lang.management.MemoryUsage::class.java)
+        val mockMemoryUsageForTenuredSpace: java.lang.management.MemoryUsage
+        MemoryUsage > Mockito.mock<java.lang.management.MemoryUsage?>(java.lang.management.MemoryUsage::class.java)
+        Long > Mockito.`when`<Long?>(mockMemoryUsageForTenuredSpace.getUsed()).thenReturn(99L)
+        Long > Mockito.`when`<Long?>(mockMemoryUsageForTenuredSpace.getMax()).thenReturn(100L)
+        Mockito.`when`<MutableMap<String?, java.lang.management.MemoryUsage?>?>(mockGcInfo.getMemoryUsageAfterGc())
+            .thenReturn(
+                com.google.common.collect.ImmutableMap.of<String?, java.lang.management.MemoryUsage?>(
+                    nonTenuredSpaceName,
+                    mockMemoryUsageForNonTenuredSpace,
+                    TENURED_SPACE_NAME,
+                    mockMemoryUsageForTenuredSpace
+                )
+            )
+        Long > Mockito.`when`<Long?>(mockGcInfo.getDuration()).thenReturn(42000L)
+
+        val notification: javax.management.Notification =
+            javax.management.Notification(
+                GarbageCollectionNotificationInfo.GARBAGE_COLLECTION_NOTIFICATION, "test", 123
+            )
+        notification.setUserData(
+            GarbageCollectionNotificationInfo("gcName", "end of major GC", "non-manual", mockGcInfo)
+                .toCompositeData(null)
+        )
+        underTest.handleNotification(notification, null)
+
+        val event: MemoryPressureEvent? =
             MemoryPressureEvent.newBuilder()
                 .setWasManualGc(false)
-                .setTenuredSpaceUsedBytes(42L)
-                .setTenuredSpaceMaxBytes(100L)
-                .setDuration(Duration.ofSeconds(42))
-                .build());
-  }
+                .setWasFullGc(true)
+                .setTenuredSpaceUsedBytes(99)
+                .setTenuredSpaceMaxBytes(100)
+                .setDuration(java.time.Duration.ofSeconds(42))
+                .build()
+        Truth.assertThat(events).containsExactly(event)
+        Object > Mockito.verify<Any?>(mockGcThrashingDetector)
+            .handle(TODO("Cannot convert element"))<T> ArgumentMatchers . eq < kotlin . Any ? > (event)
 
-  @Test
-  public void nullEventBus_doNotPublishEvent() {
-    MemoryPressureListener underTest =
-        MemoryPressureListener.createFromBeans(
-            ImmutableList.of(mockUselessBean, mockBean), directExecutor());
-    verify(mockBean).addNotificationListener(underTest, null, null);
-    verify(mockUselessBean, never()).addNotificationListener(any(), any(), any());
+        Object > Mockito.verify<Any?>(mockGcChurningDetector)
+            .handle(TODO("Cannot convert element"))<T> ArgumentMatchers . eq < kotlin . Any ? > (event)
+    }
 
-    GcInfo mockGcInfo = mock(GcInfo.class);
-    String nonTenuredSpaceName = "nope";
-    MemoryUsage mockMemoryUsageForNonTenuredSpace = mock(MemoryUsage.class);
-    MemoryUsage mockMemoryUsageForTenuredSpace = mock(MemoryUsage.class);
-    when(mockMemoryUsageForTenuredSpace.getUsed()).thenReturn(42L);
-    when(mockMemoryUsageForTenuredSpace.getMax()).thenReturn(100L);
-    when(mockGcInfo.getMemoryUsageAfterGc())
-        .thenReturn(
-            ImmutableMap.of(
-                nonTenuredSpaceName,
-                mockMemoryUsageForNonTenuredSpace,
-                TENURED_SPACE_NAME,
-                mockMemoryUsageForTenuredSpace));
+    @org.junit.Test
+    fun forwardsTargetParsingComplete() {
+        val underTest: MemoryPressureListener =
+            MemoryPressureListener.createFromBeans(
+                com.google.common.collect.ImmutableList.of<E?>(mockUselessBean, mockBean),
+                com.google.common.util.concurrent.MoreExecutors.directExecutor()
+            )
 
-    Notification notification =
-        new Notification(
-            GarbageCollectionNotificationInfo.GARBAGE_COLLECTION_NOTIFICATION, "test", 123);
-    notification.setUserData(
-        new GarbageCollectionNotificationInfo("gcName", "gcAction", "non-manual", mockGcInfo)
-            .toCompositeData(null));
-    underTest.handleNotification(notification, null);
+        val mockGcChurningDetector: GcChurningDetector? =
+            Mockito.mock<GcChurningDetector?>(GcChurningDetector::class.java)
+        underTest.initForInvocation(eventBus, < T > mock < T ? > (GcThrashingDetector::class.java), mockGcChurningDetector)
+        underTest.targetParsingComplete(42)
 
-    assertThat(events).isEmpty();
-  }
+        Mockito.verify<Any?>(mockGcChurningDetector).targetParsingComplete(ArgumentMatchers.eq(42))
+    }
 
-  @Test
-  public void manualGc() {
-    MemoryPressureListener underTest =
-        MemoryPressureListener.createFromBeans(ImmutableList.of(mockBean), directExecutor());
-    underTest.initForInvocation(
-        eventBus, mock(GcThrashingDetector.class), mock(GcChurningDetector.class));
-    verify(mockBean).addNotificationListener(underTest, null, null);
-
-    GcInfo mockGcInfo = mock(GcInfo.class);
-    MemoryUsage mockMemoryUsageForTenuredSpace = mock(MemoryUsage.class);
-    when(mockMemoryUsageForTenuredSpace.getUsed()).thenReturn(42L);
-    when(mockMemoryUsageForTenuredSpace.getMax()).thenReturn(100L);
-    when(mockGcInfo.getMemoryUsageAfterGc())
-        .thenReturn(ImmutableMap.of(TENURED_SPACE_NAME, mockMemoryUsageForTenuredSpace));
-    when(mockGcInfo.getDuration()).thenReturn(42_000L);
-
-    Notification notification =
-        new Notification(
-            GarbageCollectionNotificationInfo.GARBAGE_COLLECTION_NOTIFICATION, "test", 123);
-    notification.setUserData(
-        new GarbageCollectionNotificationInfo("gcName", "gcAction", "System.gc()", mockGcInfo)
-            .toCompositeData(null));
-    underTest.handleNotification(notification, null);
-
-    assertThat(events)
-        .containsExactly(
-            MemoryPressureEvent.newBuilder()
-                .setWasManualGc(true)
-                .setTenuredSpaceUsedBytes(42L)
-                .setTenuredSpaceMaxBytes(100L)
-                .setDuration(Duration.ofSeconds(42))
-                .build());
-  }
-
-  @Test
-  public void doesntInvokeHandlerWhenTenuredSpaceMaxSizeIsZero() {
-    MemoryPressureListener underTest =
-        MemoryPressureListener.createFromBeans(ImmutableList.of(mockBean), directExecutor());
-    underTest.initForInvocation(
-        eventBus, mock(GcThrashingDetector.class), mock(GcChurningDetector.class));
-    verify(mockBean).addNotificationListener(underTest, null, null);
-
-    GcInfo mockGcInfo = mock(GcInfo.class);
-    MemoryUsage mockMemoryUsageForTenuredSpace = mock(MemoryUsage.class);
-    when(mockMemoryUsageForTenuredSpace.getUsed()).thenReturn(42L);
-    when(mockMemoryUsageForTenuredSpace.getMax()).thenReturn(0L);
-    when(mockGcInfo.getMemoryUsageAfterGc())
-        .thenReturn(ImmutableMap.of(TENURED_SPACE_NAME, mockMemoryUsageForTenuredSpace));
-
-    Notification notification =
-        new Notification(
-            GarbageCollectionNotificationInfo.GARBAGE_COLLECTION_NOTIFICATION, "test", 123);
-    notification.setUserData(
-        new GarbageCollectionNotificationInfo("gcName", "gcAction", "non-manual", mockGcInfo)
-            .toCompositeData(null));
-    underTest.handleNotification(notification, null);
-
-    assertThat(events).isEmpty();
-  }
-
-  @Test
-  public void findsTenuredSpaceWithNonZeroMaxSize() {
-    NotificationBean anotherMockBean = mock(NotificationBean.class);
-    String anotherTenuredSpaceName = "G1 Old Gen";
-    when(anotherMockBean.getMemoryPoolNames()).thenReturn(new String[] {anotherTenuredSpaceName});
-
-    MemoryPressureListener underTest =
-        MemoryPressureListener.createFromBeans(
-            ImmutableList.of(mockBean, anotherMockBean), directExecutor());
-    underTest.initForInvocation(
-        eventBus, mock(GcThrashingDetector.class), mock(GcChurningDetector.class));
-    verify(mockBean).addNotificationListener(underTest, null, null);
-    verify(anotherMockBean).addNotificationListener(underTest, null, null);
-
-    GcInfo mockGcInfo = mock(GcInfo.class);
-    MemoryUsage mockMemoryUsageForTenuredSpace = mock(MemoryUsage.class);
-    when(mockMemoryUsageForTenuredSpace.getUsed()).thenReturn(1L);
-    when(mockMemoryUsageForTenuredSpace.getMax()).thenReturn(0L);
-    MemoryUsage mockMemoryUsageForAnotherTenuredSpace = mock(MemoryUsage.class);
-    when(mockMemoryUsageForAnotherTenuredSpace.getUsed()).thenReturn(2L);
-    when(mockMemoryUsageForAnotherTenuredSpace.getMax()).thenReturn(3L);
-    when(mockGcInfo.getMemoryUsageAfterGc())
-        .thenReturn(
-            ImmutableMap.of(
-                TENURED_SPACE_NAME,
-                mockMemoryUsageForTenuredSpace,
-                anotherTenuredSpaceName,
-                mockMemoryUsageForAnotherTenuredSpace));
-    when(mockGcInfo.getDuration()).thenReturn(42_000L);
-
-    Notification notification =
-        new Notification(
-            GarbageCollectionNotificationInfo.GARBAGE_COLLECTION_NOTIFICATION, "test", 123);
-    notification.setUserData(
-        new GarbageCollectionNotificationInfo("gcName", "gcAction", "non-manual", mockGcInfo)
-            .toCompositeData(null));
-    underTest.handleNotification(notification, null);
-
-    assertThat(events)
-        .containsExactly(
-            MemoryPressureEvent.newBuilder()
-                .setWasManualGc(false)
-                .setTenuredSpaceUsedBytes(2L)
-                .setTenuredSpaceMaxBytes(3L)
-                .setDuration(Duration.ofSeconds(42))
-                .build());
-  }
-
-  @Test
-  public void directlyInvokesGcThrashingDetectorAndGcChurnDetector() {
-    MemoryPressureListener underTest =
-        MemoryPressureListener.createFromBeans(
-            ImmutableList.of(mockUselessBean, mockBean), directExecutor());
-    verify(mockBean).addNotificationListener(underTest, null, null);
-    verify(mockUselessBean, never()).addNotificationListener(any(), any(), any());
-
-    GcThrashingDetector mockGcThrashingDetector = mock(GcThrashingDetector.class);
-    GcChurningDetector mockGcChurningDetector = mock(GcChurningDetector.class);
-    underTest.initForInvocation(eventBus, mockGcThrashingDetector, mockGcChurningDetector);
-
-    GcInfo mockGcInfo = mock(GcInfo.class);
-    String nonTenuredSpaceName = "nope";
-    MemoryUsage mockMemoryUsageForNonTenuredSpace = mock(MemoryUsage.class);
-    MemoryUsage mockMemoryUsageForTenuredSpace = mock(MemoryUsage.class);
-    when(mockMemoryUsageForTenuredSpace.getUsed()).thenReturn(99L);
-    when(mockMemoryUsageForTenuredSpace.getMax()).thenReturn(100L);
-    when(mockGcInfo.getMemoryUsageAfterGc())
-        .thenReturn(
-            ImmutableMap.of(
-                nonTenuredSpaceName,
-                mockMemoryUsageForNonTenuredSpace,
-                TENURED_SPACE_NAME,
-                mockMemoryUsageForTenuredSpace));
-    when(mockGcInfo.getDuration()).thenReturn(42_000L);
-
-    Notification notification =
-        new Notification(
-            GarbageCollectionNotificationInfo.GARBAGE_COLLECTION_NOTIFICATION, "test", 123);
-    notification.setUserData(
-        new GarbageCollectionNotificationInfo("gcName", "end of major GC", "non-manual", mockGcInfo)
-            .toCompositeData(null));
-    underTest.handleNotification(notification, null);
-
-    MemoryPressureEvent event =
-        MemoryPressureEvent.newBuilder()
-            .setWasManualGc(false)
-            .setWasFullGc(true)
-            .setTenuredSpaceUsedBytes(99)
-            .setTenuredSpaceMaxBytes(100)
-            .setDuration(Duration.ofSeconds(42))
-            .build();
-    assertThat(events).containsExactly(event);
-    verify(mockGcThrashingDetector).handle(eq(event));
-    verify(mockGcChurningDetector).handle(eq(event));
-  }
-
-  @Test
-  public void forwardsTargetParsingComplete() {
-    MemoryPressureListener underTest =
-        MemoryPressureListener.createFromBeans(
-            ImmutableList.of(mockUselessBean, mockBean), directExecutor());
-
-    GcChurningDetector mockGcChurningDetector = mock(GcChurningDetector.class);
-    underTest.initForInvocation(eventBus, mock(GcThrashingDetector.class), mockGcChurningDetector);
-    underTest.targetParsingComplete(42);
-
-    verify(mockGcChurningDetector).targetParsingComplete(eq(42));
-  }
+    companion object {
+        private const val TENURED_SPACE_NAME = "CMS Old Gen"
+    }
 }

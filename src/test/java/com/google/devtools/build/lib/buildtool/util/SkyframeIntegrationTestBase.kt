@@ -11,69 +11,70 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.buildtool.util
 
-package com.google.devtools.build.lib.buildtool.util;
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.Iterables
+import com.google.devtools.build.lib.skyframe.SkyframeExecutor
+import java.lang.ref.WeakReference
+import java.nio.charset.StandardCharsets
+import java.util.*
 
-import static com.google.common.truth.Truth.assertThat;
-import static java.nio.charset.StandardCharsets.UTF_8;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
-import com.google.common.testing.GcFinalization;
-import com.google.devtools.build.lib.skyframe.SkyframeExecutor;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import java.lang.ref.WeakReference;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-
-/** Infrastructure to support Skyframe integration tests. */
-public abstract class SkyframeIntegrationTestBase extends BuildIntegrationTestCase {
-
-  protected SkyframeExecutor skyframeExecutor() {
-    return runtimeWrapper.getSkyframeExecutor();
-  }
-
-  protected static List<WeakReference<?>> weakRefs(Object... strongRefs) throws Exception {
-    List<WeakReference<?>> result = new ArrayList<>();
-    for (Object ref : strongRefs) {
-      result.add(new WeakReference<>(ref));
+/** Infrastructure to support Skyframe integration tests.  */
+abstract class SkyframeIntegrationTestBase : BuildIntegrationTestCase() {
+    protected fun skyframeExecutor(): SkyframeExecutor? {
+        return runtimeWrapper.getSkyframeExecutor()
     }
-    return result;
-  }
 
-  protected static void assertAllReleased(Iterable<WeakReference<?>> refs) {
-    for (WeakReference<?> ref : refs) {
-      GcFinalization.awaitClear(ref);
+    private fun makeGenruleContents(value: String?): String? {
+        return String.format(
+            "genrule(name='target', outs=['out'], cmd='/bin/echo %s > $(location out)')", value
+        )
     }
-  }
 
-  private String makeGenruleContents(String value) {
-    return String.format(
-        "genrule(name='target', outs=['out'], cmd='/bin/echo %s > $(location out)')", value);
-  }
+    @Throws(Exception::class)
+    protected fun writeGenrule(filename: String?, value: String?) {
+        write(filename, makeGenruleContents(value))
+    }
 
-  protected void writeGenrule(String filename, String value) throws Exception {
-    write(filename, makeGenruleContents(value));
-  }
+    @Throws(Exception::class)
+    protected fun writeGenruleAbsolute(file: Path, value: String?) {
+        writeAbsolute(file, makeGenruleContents(value))
+    }
 
-  protected void writeGenruleAbsolute(Path file, String value) throws Exception {
-    writeAbsolute(file, makeGenruleContents(value));
-  }
+    @Throws(Exception::class)
+    protected fun assertCharContentsIgnoringOrderAndWhitespace(
+        expectedCharContents: String, target: String?
+    ) {
+        val path: Path? = Iterables.getOnlyElement<Artifact?>(getArtifacts(target)).getPath()
+        val actualChars: CharArray = FileSystemUtils.readContentAsLatin1(path)
+        val expectedChars: CharArray = expectedCharContents.toCharArray()
+        Arrays.sort(actualChars)
+        Arrays.sort(expectedChars)
+        Truth.assertThat(String(actualChars).trim { it <= ' ' }).isEqualTo(String(expectedChars).trim { it <= ' ' })
+    }
 
-  protected void assertCharContentsIgnoringOrderAndWhitespace(
-      String expectedCharContents, String target) throws Exception {
-    Path path = Iterables.getOnlyElement(getArtifacts(target)).getPath();
-    char[] actualChars = FileSystemUtils.readContentAsLatin1(path);
-    char[] expectedChars = expectedCharContents.toCharArray();
-    Arrays.sort(actualChars);
-    Arrays.sort(expectedChars);
-    assertThat(new String(actualChars).trim()).isEqualTo(new String(expectedChars).trim());
-  }
+    @Throws(Exception::class)
+    protected fun getOnlyOutputContentAsLines(target: String?): ImmutableList<String?> {
+        return FileSystemUtils.readLines(
+            Iterables.getOnlyElement<Artifact?>(getArtifacts(target)).getPath(), StandardCharsets.UTF_8
+        )
+    }
 
-  protected ImmutableList<String> getOnlyOutputContentAsLines(String target) throws Exception {
-    return FileSystemUtils.readLines(
-        Iterables.getOnlyElement(getArtifacts(target)).getPath(), UTF_8);
-  }
+    companion object {
+        @Throws(Exception::class)
+        protected fun weakRefs(vararg strongRefs: Any?): MutableList<WeakReference<*>?> {
+            val result: MutableList<WeakReference<*>?> = ArrayList<WeakReference<*>?>()
+            for (ref in strongRefs) {
+                result.add(WeakReference<Any?>(ref))
+            }
+            return result
+        }
+
+        protected fun assertAllReleased(refs: Iterable<WeakReference<*>>) {
+            for (ref in refs) {
+                GcFinalization.awaitClear(ref)
+            }
+        }
+    }
 }

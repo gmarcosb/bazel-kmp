@@ -11,65 +11,54 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.skyframe.BzlLoadValue.keyForBuild;
-import static com.google.devtools.build.lib.skyframe.serialization.ModuleCodec.moduleCodec;
+import com.google.devtools.build.lib.skyframe.BzlLoadValue.keyForBuild
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.packages.NoSuchPackageException;
-import com.google.devtools.build.lib.packages.Package;
-import com.google.devtools.build.lib.skyframe.BzlLoadValue;
-import com.google.devtools.build.lib.skyframe.SkyframeExecutor;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.RoundTripping;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.TestUtils;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.Module;
-import net.starlark.java.eval.StarlarkSemantics;
-import net.starlark.java.syntax.Types;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [ModuleCodec].  */
+@RunWith(JUnit4::class)
+class ModuleCodecTest : BuildViewTestCase() {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDynamicCodec() {
+        val subject1: net.starlark.java.eval.Module? = net.starlark.java.eval.Module.create()
 
-/** Tests for {@link ModuleCodec}. */
-@RunWith(JUnit4.class)
-public class ModuleCodecTest extends BuildViewTestCase {
-  @Test
-  public void testDynamicCodec() throws Exception {
-    Module subject1 = Module.create();
+        val subject2: net.starlark.java.eval.Module =
+            net.starlark.java.eval.Module.withPredeclaredAndData(
+                StarlarkSemantics.DEFAULT,
+                com.google.common.collect.ImmutableMap.of<String?, Any?>(),
+                Label.parseCanonical("//foo:bar")
+            )
+        subject2.setGlobal("x", 1)
+        subject2.setGlobal("y", 2)
 
-    Module subject2 =
-        Module.withPredeclaredAndData(
-            StarlarkSemantics.DEFAULT, ImmutableMap.of(), Label.parseCanonical("//foo:bar"));
-    subject2.setGlobal("x", 1);
-    subject2.setGlobal("y", 2);
+        val subject3: net.starlark.java.eval.Module =
+            net.starlark.java.eval.Module.withPredeclaredAndData(
+                StarlarkSemantics.DEFAULT,
+                com.google.common.collect.ImmutableMap.of<String?, Any?>(),
+                Label.parseCanonical("//foo:bar")
+            )
+        subject3.setGlobal("x", 1, net.starlark.java.syntax.Types.INT)
+        subject3.setGlobal("y", 2, net.starlark.java.syntax.Types.ANY)
 
-    Module subject3 =
-        Module.withPredeclaredAndData(
-            StarlarkSemantics.DEFAULT, ImmutableMap.of(), Label.parseCanonical("//foo:bar"));
-    subject3.setGlobal("x", 1, Types.INT);
-    subject3.setGlobal("y", 2, Types.ANY);
+        SerializationTester(subject1, subject2, subject3)
+            .makeMemoizing()
+            .setVerificationFunction({ subject: net.starlark.java.eval.Module?, deserialized: net.starlark.java.eval.Module? ->
+                verifyDeserialization(
+                    subject,
+                    deserialized
+                )
+            })
+            .runTestsWithoutStableSerializationCheck()
+    }
 
-    new SerializationTester(subject1, subject2, subject3)
-        .makeMemoizing()
-        .setVerificationFunction(ModuleCodecTest::verifyDeserialization)
-        .runTestsWithoutStableSerializationCheck();
-  }
-
-  @Test
-  public void testCodec() throws Exception {
-    scratch.file("lib/BUILD");
-    scratch.file(
-        "pkg/foo.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCodec() {
+        scratch.file("lib/BUILD")
+        scratch.file(
+            "pkg/foo.bzl",
+            """
         def _impl(ctx):
             print("xyz is %s" % ctx.attr.xyz)
         my_rule = rule(
@@ -78,54 +67,64 @@ public class ModuleCodecTest extends BuildViewTestCase {
               "xyz": attr.string(),
             },
         )
-        """);
-    scratch.file(
-        "pkg/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "pkg/BUILD",
+            """
         load(":foo.bzl", "my_rule")
         my_rule(
             name = "abc",
             xyz = "value",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    // Evaluates pkg to populate pkg/foo.bzl in Skyframe.
-    assertThat(getPackage("pkg")).isNotNull();
+        // Evaluates pkg to populate pkg/foo.bzl in Skyframe.
+        assertThat(getPackage("pkg")).isNotNull()
 
-    // Pulls the module value out of Skyframe from its BzlLoadValue.
-    BzlLoadValue.Key bzlLoadKey = keyForBuild(Label.parseCanonical("//pkg:foo.bzl"));
-    var fooBzl = (BzlLoadValue) getDoneValue(bzlLoadKey);
-    Module module = fooBzl.getModule();
+        // Pulls the module value out of Skyframe from its BzlLoadValue.
+        val bzlLoadKey: BzlLoadValue.Key? = keyForBuild(Label.parseCanonical("//pkg:foo.bzl"))
+        val fooBzl: BzlLoadValue = getDoneValue(bzlLoadKey) as BzlLoadValue
+        val module: net.starlark.java.eval.Module? = fooBzl.getModule()
 
-    var deserialized =
-        RoundTripping.roundTripWithSkyframe(
-            new ObjectCodecs().withCodecOverridesForTesting(ImmutableList.of(moduleCodec())),
-            FingerprintValueService.createForTesting(),
-            this::getDoneValue,
-            module);
+        val deserialized: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            RoundTripping.roundTripWithSkyframe(
+                ObjectCodecs().withCodecOverridesForTesting(com.google.common.collect.ImmutableList.of<E?>(moduleCodec())),
+                FingerprintValueService.createForTesting(),
+                { key: SkyKey? -> this.getDoneValue(key) },
+                module
+            )
 
-    assertThat(deserialized).isSameInstanceAs(module);
-  }
-
-  @Nullable
-  private Package getPackage(String pkgName) throws InterruptedException {
-    try {
-      return getPackageManager().getPackage(reporter, PackageIdentifier.createInMainRepo(pkgName));
-    } catch (NoSuchPackageException unused) {
-      return null;
+        assertThat(deserialized).isSameInstanceAs(module)
     }
-  }
 
-  private SkyValue getDoneValue(SkyKey key) {
-    try {
-      return skyframeExecutor.getDoneSkyValueForIntrospection(key);
-    } catch (SkyframeExecutor.FailureToRetrieveIntrospectedValueException e) {
-      throw new AssertionError(e);
+    @Throws(java.lang.InterruptedException::class)
+    private fun getPackage(pkgName: String?): Package? {
+        try {
+            return packageManager.getPackage(reporter, PackageIdentifier.createInMainRepo(pkgName))
+        } catch (unused: NoSuchPackageException) {
+            return null
+        }
     }
-  }
 
-  private static void verifyDeserialization(Module subject, Module deserialized) {
-    // Module doesn't implement proper equality.
-    TestUtils.assertModulesEqual(subject, deserialized);
-  }
+    private fun getDoneValue(key: SkyKey?): SkyValue {
+        try {
+            return skyframeExecutor.getDoneSkyValueForIntrospection(key)
+        } catch (e: SkyframeExecutor.FailureToRetrieveIntrospectedValueException) {
+            throw java.lang.AssertionError(e)
+        }
+    }
+
+    companion object {
+        private fun verifyDeserialization(
+            subject: net.starlark.java.eval.Module?,
+            deserialized: net.starlark.java.eval.Module?
+        ) {
+            // Module doesn't implement proper equality.
+            TestUtils.assertModulesEqual(subject, deserialized)
+        }
+    }
 }

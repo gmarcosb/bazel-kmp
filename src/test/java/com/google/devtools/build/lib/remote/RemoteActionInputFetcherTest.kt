@@ -11,176 +11,174 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote;
+package com.google.devtools.build.lib.remote
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import build.bazel.remote.execution.v2.Digest
 
-import build.bazel.remote.execution.v2.Digest;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Maps;
-import com.google.common.hash.HashCode;
-import com.google.devtools.build.lib.actions.ActionInput;
-import com.google.devtools.build.lib.actions.ActionInputPrefetcher.Priority;
-import com.google.devtools.build.lib.actions.ActionInputPrefetcher.Reason;
-import com.google.devtools.build.lib.actions.ActionOutputDirectoryHelper;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.FileArtifactValue;
-import com.google.devtools.build.lib.actions.VirtualActionInput;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
-import com.google.devtools.build.lib.events.EventBusEventHandler;
-import com.google.devtools.build.lib.events.Reporter;
-import com.google.devtools.build.lib.remote.common.BulkTransferException;
-import com.google.devtools.build.lib.remote.options.RemoteOutputsMode;
-import com.google.devtools.build.lib.remote.util.DigestUtil;
-import com.google.devtools.build.lib.remote.util.InMemoryCacheClient;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.OutputPermissions;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.Map;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [RemoteActionInputFetcher].  */
+@RunWith(JUnit4::class)
+class RemoteActionInputFetcherTest : ActionInputPrefetcherTestBase() {
+    private var digestUtil: DigestUtil? = null
 
-/** Tests for {@link RemoteActionInputFetcher}. */
-@RunWith(JUnit4.class)
-public class RemoteActionInputFetcherTest extends ActionInputPrefetcherTestBase {
-  private static final RemoteOutputChecker DUMMY_REMOTE_OUTPUT_CHECKER =
-      new RemoteOutputChecker("build", RemoteOutputsMode.MINIMAL, ImmutableList.of());
-
-  private DigestUtil digestUtil;
-
-  @Override
-  public void setUp() throws IOException {
-    super.setUp();
-    Path dev = fs.getPath("/dev");
-    dev.createDirectory();
-    dev.setWritable(false);
-    digestUtil = new DigestUtil(SyscallCache.NO_CACHE, HASH_FUNCTION);
-  }
-
-  @Override
-  protected AbstractActionInputPrefetcher createPrefetcher(Map<HashCode, byte[]> cas) {
-    CombinedCache combinedCache = newCombinedCache(digestUtil, cas);
-    return new RemoteActionInputFetcher(
-        new Reporter(new EventBusEventHandler(eventBus)),
-        "none",
-        "none",
-        combinedCache,
-        execRoot,
-        tempPathGenerator,
-        DUMMY_REMOTE_OUTPUT_CHECKER,
-        ActionOutputDirectoryHelper.createForTesting(),
-        OutputPermissions.READONLY);
-  }
-
-  @Test
-  public void testStagingVirtualActionInput() throws Exception {
-    // arrange
-    CombinedCache combinedCache = newCombinedCache(digestUtil, new HashMap<>());
-    RemoteActionInputFetcher actionInputFetcher =
-        new RemoteActionInputFetcher(
-            new Reporter(EventBusEventHandler.createWithNewEventBus()),
-            "none",
-            "none",
-            combinedCache,
-            execRoot,
-            tempPathGenerator,
-            DUMMY_REMOTE_OUTPUT_CHECKER,
-            ActionOutputDirectoryHelper.createForTesting(),
-            OutputPermissions.READONLY);
-    VirtualActionInput a = ActionsTestUtil.createVirtualActionInput("file1", "hello world");
-
-    // act
-    wait(
-        actionInputFetcher.prefetchFilesInterruptibly(
-            action,
-            ImmutableList.of(a),
-            (ActionInput unused) -> null,
-            Priority.MEDIUM,
-            Reason.INPUTS));
-
-    // assert
-    Path p = execRoot.getRelative(a.getExecPath());
-    assertThat(FileSystemUtils.readContent(p, StandardCharsets.UTF_8)).isEqualTo("hello world");
-    assertThat(p.isExecutable()).isTrue();
-    assertThat(actionInputFetcher.downloadedFiles()).isEmpty();
-    assertThat(actionInputFetcher.downloadsInProgress()).isEmpty();
-  }
-
-  @Test
-  public void testStagingEmptyVirtualActionInput() throws Exception {
-    // arrange
-    CombinedCache combinedCache = newCombinedCache(digestUtil, new HashMap<>());
-    RemoteActionInputFetcher actionInputFetcher =
-        new RemoteActionInputFetcher(
-            new Reporter(EventBusEventHandler.createWithNewEventBus()),
-            "none",
-            "none",
-            combinedCache,
-            execRoot,
-            tempPathGenerator,
-            DUMMY_REMOTE_OUTPUT_CHECKER,
-            ActionOutputDirectoryHelper.createForTesting(),
-            OutputPermissions.READONLY);
-
-    // act
-    wait(
-        actionInputFetcher.prefetchFilesInterruptibly(
-            action,
-            ImmutableList.of(VirtualActionInput.EMPTY_MARKER),
-            (ActionInput unused) -> null,
-            Priority.MEDIUM,
-            Reason.INPUTS));
-
-    // assert that nothing happened
-    assertThat(actionInputFetcher.downloadedFiles()).isEmpty();
-    assertThat(actionInputFetcher.downloadsInProgress()).isEmpty();
-  }
-
-  @Test
-  public void prefetchFiles_missingFiles_failsWithSpecificMessage() throws Exception {
-    Map<ActionInput, FileArtifactValue> metadata = new HashMap<>();
-    Artifact a = createRemoteArtifact("file1", "hello world", metadata, /* cas= */ new HashMap<>());
-    AbstractActionInputPrefetcher prefetcher = createPrefetcher(new HashMap<>());
-
-    var error =
-        assertThrows(
-            BulkTransferException.class,
-            () ->
-                wait(
-                    prefetcher.prefetchFilesInterruptibly(
-                        action,
-                        ImmutableList.of(a),
-                        metadata::get,
-                        Priority.MEDIUM,
-                        Reason.INPUTS)));
-
-    assertThat(prefetcher.downloadedFiles()).isEmpty();
-    assertThat(prefetcher.downloadsInProgress()).isEmpty();
-    var m = metadata.get(a);
-    var digest = DigestUtil.buildDigest(m.getDigest(), m.getSize());
-    assertThat(error)
-        .hasMessageThat()
-        .contains(String.format("%s/%s", digest.getHash(), digest.getSizeBytes()));
-  }
-
-  private CombinedCache newCombinedCache(DigestUtil digestUtil, Map<HashCode, byte[]> cas) {
-    Map<Digest, byte[]> cacheEntries = Maps.newHashMapWithExpectedSize(cas.size());
-    for (Map.Entry<HashCode, byte[]> entry : cas.entrySet()) {
-      cacheEntries.put(
-          DigestUtil.buildDigest(entry.getKey().asBytes(), entry.getValue().length),
-          entry.getValue());
+    @Throws(IOException::class)
+    override fun setUp() {
+        super.setUp()
+        val dev: Path = fs.getPath("/dev")
+        dev.createDirectory()
+        dev.setWritable(false)
+        digestUtil = DigestUtil(SyscallCache.NO_CACHE, ActionInputPrefetcherTestBase.Companion.HASH_FUNCTION)
     }
-    return new CombinedCache(
-        new InMemoryCacheClient(cacheEntries),
-        /* diskCacheClient= */ null,
-        /* symlinkTemplate= */ null,
-        digestUtil,
-        /* chunkingEnabled= */ false);
-  }
+
+    override fun createPrefetcher(cas: MutableMap<com.google.common.hash.HashCode?, ByteArray?>): AbstractActionInputPrefetcher {
+        val combinedCache: CombinedCache = newCombinedCache(digestUtil, cas)
+        return RemoteActionInputFetcher(
+            com.google.devtools.build.lib.events.Reporter(EventBusEventHandler(eventBus)),
+            "none",
+            "none",
+            combinedCache,
+            execRoot,
+            tempPathGenerator,
+            DUMMY_REMOTE_OUTPUT_CHECKER,
+            ActionOutputDirectoryHelper.createForTesting(),
+            OutputPermissions.READONLY
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStagingVirtualActionInput() {
+        // arrange
+        val combinedCache: CombinedCache =
+            newCombinedCache(digestUtil, HashMap<com.google.common.hash.HashCode?, ByteArray?>())
+        val actionInputFetcher: RemoteActionInputFetcher =
+            RemoteActionInputFetcher(
+                com.google.devtools.build.lib.events.Reporter(EventBusEventHandler.createWithNewEventBus()),
+                "none",
+                "none",
+                combinedCache,
+                execRoot,
+                tempPathGenerator,
+                DUMMY_REMOTE_OUTPUT_CHECKER,
+                ActionOutputDirectoryHelper.createForTesting(),
+                OutputPermissions.READONLY
+            )
+        val a: VirtualActionInput = ActionsTestUtil.createVirtualActionInput("file1", "hello world")
+
+        // act
+        wait(
+            actionInputFetcher.prefetchFilesInterruptibly(
+                action,
+                com.google.common.collect.ImmutableList.of<E?>(a),
+                { unused: ActionInput? -> null },
+                Priority.MEDIUM,
+                Reason.INPUTS
+            )
+        )
+
+        // assert
+        val p: Path = execRoot.getRelative(a.getExecPath())
+        assertThat(FileSystemUtils.readContent(p, java.nio.charset.StandardCharsets.UTF_8)).isEqualTo("hello world")
+        assertThat(p.isExecutable()).isTrue()
+        assertThat(actionInputFetcher.downloadedFiles()).isEmpty()
+        assertThat(actionInputFetcher.downloadsInProgress()).isEmpty()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStagingEmptyVirtualActionInput() {
+        // arrange
+        val combinedCache: CombinedCache =
+            newCombinedCache(digestUtil, HashMap<com.google.common.hash.HashCode?, ByteArray?>())
+        val actionInputFetcher: RemoteActionInputFetcher =
+            RemoteActionInputFetcher(
+                com.google.devtools.build.lib.events.Reporter(EventBusEventHandler.createWithNewEventBus()),
+                "none",
+                "none",
+                combinedCache,
+                execRoot,
+                tempPathGenerator,
+                DUMMY_REMOTE_OUTPUT_CHECKER,
+                ActionOutputDirectoryHelper.createForTesting(),
+                OutputPermissions.READONLY
+            )
+
+        // act
+        wait(
+            actionInputFetcher.prefetchFilesInterruptibly(
+                action,
+                com.google.common.collect.ImmutableList.of<E?>(VirtualActionInput.EMPTY_MARKER),
+                { unused: ActionInput? -> null },
+                Priority.MEDIUM,
+                Reason.INPUTS
+            )
+        )
+
+        // assert that nothing happened
+        assertThat(actionInputFetcher.downloadedFiles()).isEmpty()
+        assertThat(actionInputFetcher.downloadsInProgress()).isEmpty()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun prefetchFiles_missingFiles_failsWithSpecificMessage() {
+        val metadata: MutableMap<ActionInput?, FileArtifactValue> = HashMap<ActionInput?, FileArtifactValue>()
+        val a: Artifact = createRemoteArtifact(
+            "file1",
+            "hello world",
+            metadata,  /* cas= */
+            HashMap<com.google.common.hash.HashCode?, ByteArray?>()
+        )
+        val prefetcher: AbstractActionInputPrefetcher =
+            createPrefetcher(HashMap<com.google.common.hash.HashCode?, ByteArray?>())
+
+        val error: T? =
+            org.junit.Assert.assertThrows<T?>(
+                BulkTransferException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    wait(
+                        prefetcher.prefetchFilesInterruptibly(
+                            action,
+                            com.google.common.collect.ImmutableList.of<E?>(a),
+                            { key: Any? -> metadata.get(key) },
+                            Priority.MEDIUM,
+                            Reason.INPUTS
+                        )
+                    )
+                })
+
+        assertThat(prefetcher.downloadedFiles()).isEmpty()
+        assertThat(prefetcher.downloadsInProgress()).isEmpty()
+        val m: FileArtifactValue = metadata.get(a)
+        val digest: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            DigestUtil.buildDigest(m.getDigest(), m.getSize())
+        assertThat(error)
+            .hasMessageThat()
+            .contains(java.lang.String.format("%s/%s", digest.getHash(), digest.getSizeBytes()))
+    }
+
+    private fun newCombinedCache(
+        digestUtil: DigestUtil?,
+        cas: MutableMap<com.google.common.hash.HashCode?, ByteArray?>
+    ): CombinedCache {
+        val cacheEntries: MutableMap<Digest?, ByteArray?> =
+            com.google.common.collect.Maps.newHashMapWithExpectedSize<Digest?, ByteArray?>(cas.size)
+        for (entry in cas.entries) {
+            cacheEntries.put(
+                DigestUtil.buildDigest(entry.key.asBytes(), entry.value!!.size),
+                entry.value
+            )
+        }
+        return CombinedCache(
+            InMemoryCacheClient(cacheEntries),  /* diskCacheClient= */
+            null,  /* symlinkTemplate= */
+            null,
+            digestUtil,  /* chunkingEnabled= */
+            false
+        )
+    }
+
+    companion object {
+        private val DUMMY_REMOTE_OUTPUT_CHECKER: RemoteOutputChecker =
+            RemoteOutputChecker("build", RemoteOutputsMode.MINIMAL, com.google.common.collect.ImmutableList.of<E?>())
+    }
 }

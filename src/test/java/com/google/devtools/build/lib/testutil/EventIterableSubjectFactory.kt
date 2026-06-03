@@ -11,27 +11,27 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.testutil;
+package com.google.devtools.build.lib.testutil
 
-import com.google.common.truth.FailureMetadata;
-import com.google.common.truth.IterableSubject;
-import com.google.common.truth.Subject;
-import com.google.common.truth.Truth;
-import com.google.devtools.build.lib.events.Event;
+import com.google.devtools.build.lib.events.Event
 
 /**
- * {@link Subject.Factory} for {@code Iterable<Event>} objects, providing {@link IterableSubject}s
- * of {@link String} objects for easy asserting.
+ * [Subject.Factory] for `Iterable<Event>` objects, providing [IterableSubject]s
+ * of [String] objects for easy asserting.
  */
-public class EventIterableSubjectFactory
-    implements Subject.Factory<EventIterableSubject, Iterable<Event>> {
-  public static IterableSubject assertThatEvents(Iterable<Event> events) {
-    return Truth.assertAbout(new EventIterableSubjectFactory()).that(events).hasEventsThat();
-  }
+class EventIterableSubjectFactory
 
-  @Override
-  public EventIterableSubject createSubject(
-      FailureMetadata failureMetadata, Iterable<Event> eventCollector) {
-    return new EventIterableSubject(failureMetadata, eventCollector);
-  }
+    : com.google.common.truth.Subject.Factory<EventIterableSubject?, Iterable<Event?>?> {
+    override fun createSubject(
+        failureMetadata: FailureMetadata?, eventCollector: Iterable<Event?>?
+    ): EventIterableSubject {
+        return EventIterableSubject(failureMetadata, eventCollector)
+    }
+
+    companion object {
+        fun assertThatEvents(events: Iterable<Event?>?): IterableSubject? {
+            return Truth.assertAbout<EventIterableSubject?, Iterable<Event?>?>(EventIterableSubjectFactory())
+                .that(events).hasEventsThat()
+        }
+    }
 }

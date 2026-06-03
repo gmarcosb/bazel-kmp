@@ -11,59 +11,47 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.collect.nestedset;
+package com.google.devtools.build.lib.collect.nestedset
 
-import com.google.common.collect.ImmutableList;
-
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-import java.util.List;
+import com.google.devtools.build.lib.collect.nestedset.ExpanderTestBase
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
 /**
- * Tests for {@link LinkOrderExpander}.
+ * Tests for [LinkOrderExpander].
  */
-@RunWith(JUnit4.class)
-public class LinkOrderExpanderTest extends ExpanderTestBase {
+@RunWith(JUnit4::class)
+class LinkOrderExpanderTest : ExpanderTestBase() {
+    override fun expanderOrder(): Order {
+        return Order.LINK_ORDER
+    }
 
-  @Override
-  protected Order expanderOrder() {
-    return Order.LINK_ORDER;
-  }
+    override fun nestedResult(): MutableList<String?> {
+        return com.google.common.collect.ImmutableList.of<String?>("b", "d", "c", "a", "e")
+    }
 
-  @Override
-  protected List<String> nestedResult() {
-    return ImmutableList.of("b", "d", "c", "a", "e");
-  }
+    override fun nestedDuplicatesResult(): MutableList<String?> {
+        return com.google.common.collect.ImmutableList.of<String?>("b", "d", "c", "a", "e")
+    }
 
-  @Override
-  protected List<String> nestedDuplicatesResult() {
-    return ImmutableList.of("b", "d", "c", "a", "e");
-  }
+    override fun chainResult(): MutableList<String?> {
+        return com.google.common.collect.ImmutableList.of<String?>("a", "b", "c")
+    }
 
-  @Override
-  protected List<String> chainResult() {
-    return ImmutableList.of("a", "b", "c");
-  }
+    override fun diamondResult(): MutableList<String?> {
+        return com.google.common.collect.ImmutableList.of<String?>("a", "b", "c", "d")
+    }
 
-  @Override
-  protected List<String> diamondResult() {
-    return ImmutableList.of("a", "b", "c", "d");
-  }
+    override fun orderConflictResult(): MutableList<String?> {
+        // Rightmost branch determines the order.
+        return com.google.common.collect.ImmutableList.of<String?>("b", "a")
+    }
 
-  @Override
-  protected List<String> orderConflictResult() {
-    // Rightmost branch determines the order.
-    return ImmutableList.of("b", "a");
-  }
+    override fun extendedDiamondResult(): MutableList<String?> {
+        return com.google.common.collect.ImmutableList.of<String?>("a", "b", "c", "e", "d")
+    }
 
-  @Override
-  protected List<String> extendedDiamondResult() {
-    return ImmutableList.of("a", "b", "c", "e", "d");
-  }
-
-  @Override
-  protected List<String> extendedDiamondRightArmResult() {
-    return ImmutableList.of("a", "b", "c", "c2", "e", "d");
-  }
+    override fun extendedDiamondRightArmResult(): MutableList<String?> {
+        return com.google.common.collect.ImmutableList.of<String?>("a", "b", "c", "c2", "e", "d")
+    }
 }

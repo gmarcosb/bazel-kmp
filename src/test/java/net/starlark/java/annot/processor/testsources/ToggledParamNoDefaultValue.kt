@@ -11,30 +11,34 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.annot.processor.testsources
 
-package net.starlark.java.annot.processor.testsources;
-
-import net.starlark.java.annot.Param;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.StarlarkInt;
-import net.starlark.java.eval.StarlarkValue;
+import net.starlark.java.eval.StarlarkInt
 
 /**
  * Test case for a StarlarkMethod method which has a parameter which may be disabled with a semantic
  * flag but has no default value.
  */
-public class ToggledParamNoDefaultValue implements StarlarkValue {
+class ToggledParamNoDefaultValue : StarlarkValue {
+    @StarlarkMethod(
+        name = "no_default_value_method",
+        documented = false,
+        parameters = [net.starlark.java.annot.Param(
+            name = "one",
+            named = true,
+            positional = true
+        ), net.starlark.java.annot.Param(
+            name = "two",
+            named = true,
+            enableOnlyWithFlag = net.starlark.java.annot.processor.testsources.ToggledParamNoDefaultValue.Companion.FOO,
+            positional = true
+        )]
+    )
+    fun noDisabledValueMethod(one: StarlarkInt?, two: StarlarkInt?): Int {
+        return 42
+    }
 
-  private static final String FOO = "-foo";
-
-  @StarlarkMethod(
-      name = "no_default_value_method",
-      documented = false,
-      parameters = {
-        @Param(name = "one", named = true, positional = true),
-        @Param(name = "two", named = true, enableOnlyWithFlag = FOO, positional = true)
-      })
-  public Integer noDisabledValueMethod(StarlarkInt one, StarlarkInt two) {
-    return 42;
-  }
+    companion object {
+        private const val FOO = "-foo"
+    }
 }

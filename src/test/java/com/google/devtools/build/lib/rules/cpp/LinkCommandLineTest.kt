@@ -11,94 +11,47 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.cpp
 
-package com.google.devtools.build.lib.rules.cpp;
-
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.common.base.Joiner;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.Artifact.SpecialArtifact;
-import com.google.devtools.build.lib.actions.Artifact.TreeFileArtifact;
-import com.google.devtools.build.lib.actions.ArtifactRoot;
-import com.google.devtools.build.lib.actions.ArtifactRoot.RootType;
-import com.google.devtools.build.lib.actions.FileArtifactValue;
-import com.google.devtools.build.lib.actions.ParameterFile.ParameterFileType;
-import com.google.devtools.build.lib.actions.PathMapper;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.exec.util.FakeActionInputFileCache;
-import com.google.devtools.build.lib.packages.StarlarkInfo;
-import com.google.devtools.build.lib.packages.StructProvider;
-import com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.FeatureConfiguration;
-import com.google.devtools.build.lib.rules.cpp.Link.LinkTargetType;
-import com.google.devtools.build.lib.skyframe.TreeArtifactValue;
-import com.google.devtools.build.lib.testutil.TestUtils;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.util.List;
-import net.starlark.java.eval.StarlarkList;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.actions.Artifact
 
 /**
- * Tests for {@link LinkCommandLine}. In particular, tests command line emitted subject to the
+ * Tests for [LinkCommandLine]. In particular, tests command line emitted subject to the
  * presence of certain build variables.
  */
-@RunWith(JUnit4.class)
-public final class LinkCommandLineTest extends LinkBuildVariablesTestCase {
+@RunWith(JUnit4::class)
+class LinkCommandLineTest : LinkBuildVariablesTestCase() {
+    @Throws(java.lang.Exception::class)
+    private fun buildMockFeatures(): CcToolchainFeatures? {
+        scratch.overwriteFile(
+            "crosstool.bzl",
+            "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
+            "def _impl(ctx):",
+            "    return cc_common.create_cc_toolchain_config_info(",
+            "        ctx = ctx,",
+            "        toolchain_identifier = 'toolchain',",
+            "        host_system_name = 'host',",
+            "        target_system_name = 'target',",
+            "        target_cpu = 'cpu',",
+            "        target_libc = 'libc',",
+            "        compiler = 'compiler',",
+            "    )",
+            "",
+            "cc_toolchain_config_rule = rule(implementation = _impl)"
+        )
 
-  private static CcToolchainVariables.Builder getMockBuildVariables() {
-    return getMockBuildVariables(ImmutableList.of());
-  }
+        scratch.overwriteFile(
+            "BUILD",
+            "load(':crosstool.bzl', 'cc_toolchain_config_rule')",
+            "load('//bazel_internal/test_rules/cc:ctf_rule.bzl', 'cc_toolchain_features')",
+            "cc_toolchain_features(name = 'f', config = ':r')",
+            "cc_toolchain_config_rule(name = 'r')"
+        )
 
-  private static CcToolchainVariables.Builder getMockBuildVariables(
-      ImmutableList<String> linkstampOutputs) {
-    CcToolchainVariables.Builder result = CcToolchainVariables.builder();
-
-    result.addVariable(LinkBuildVariables.GENERATE_INTERFACE_LIBRARY.getVariableName(), "no");
-    result.addVariable(LinkBuildVariables.INTERFACE_LIBRARY_INPUT.getVariableName(), "ignored");
-    result.addVariable(LinkBuildVariables.INTERFACE_LIBRARY_OUTPUT.getVariableName(), "ignored");
-    result.addVariable(LinkBuildVariables.INTERFACE_LIBRARY_BUILDER.getVariableName(), "ignored");
-    result.addStringSequenceVariable(
-        LinkBuildVariables.LINKSTAMP_PATHS.getVariableName(), linkstampOutputs);
-
-    return result;
-  }
-
-  private CcToolchainFeatures buildMockFeatures() throws Exception {
-    scratch.overwriteFile(
-        "crosstool.bzl",
-        "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
-        "def _impl(ctx):",
-        "    return cc_common.create_cc_toolchain_config_info(",
-        "        ctx = ctx,",
-        "        toolchain_identifier = 'toolchain',",
-        "        host_system_name = 'host',",
-        "        target_system_name = 'target',",
-        "        target_cpu = 'cpu',",
-        "        target_libc = 'libc',",
-        "        compiler = 'compiler',",
-        "    )",
-        "",
-        "cc_toolchain_config_rule = rule(implementation = _impl)");
-
-    scratch.overwriteFile(
-        "BUILD",
-        "load(':crosstool.bzl', 'cc_toolchain_config_rule')",
-        "load('//bazel_internal/test_rules/cc:ctf_rule.bzl', 'cc_toolchain_features')",
-        "cc_toolchain_features(name = 'f', config = ':r')",
-        "cc_toolchain_config_rule(name = 'r')");
-
-    scratch.overwriteFile("bazel_internal/test_rules/cc/BUILD");
-    scratch.overwriteFile(
-        "bazel_internal/test_rules/cc/ctf_rule.bzl",
-        """
+        scratch.overwriteFile("bazel_internal/test_rules/cc/BUILD")
+        scratch.overwriteFile(
+            "bazel_internal/test_rules/cc/ctf_rule.bzl",
+            """
         load('@rules_cc//cc/toolchains:cc_toolchain_config_info.bzl', 'CcToolchainConfigInfo')
         load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')
         MyInfo = provider()
@@ -108,354 +61,448 @@ public final class LinkCommandLineTest extends LinkBuildVariablesTestCase {
                     tools_directory = "",
                   ))]
         cc_toolchain_features = rule(_impl, attrs = {"config":attr.label()})
-        """);
-    ConfiguredTarget target = getConfiguredTarget("//:f");
-    assertThat(target).isNotNull();
-    return (CcToolchainFeatures) getStarlarkProvider(target, "MyInfo").getValue("f");
-  }
+        
+        """.trimIndent()
+        )
+        val target: ConfiguredTarget = getConfiguredTarget("//:f")
+        assertThat(target).isNotNull()
+        return getStarlarkProvider(target, "MyInfo").getValue("f") as CcToolchainFeatures?
+    }
 
-  private FeatureConfiguration getMockFeatureConfiguration() throws Exception {
-    return buildMockFeatures()
-        .getFeatureConfiguration(
-            ImmutableSet.of(
+    @get:Throws(java.lang.Exception::class)
+    private val mockFeatureConfiguration: FeatureConfiguration
+        get() = buildMockFeatures()
+            .getFeatureConfiguration(
+                com.google.common.collect.ImmutableSet.of<E?>(
                     Link.LinkTargetType.EXECUTABLE.actionName,
                     Link.LinkTargetType.NODEPS_DYNAMIC_LIBRARY.actionName,
                     Link.LinkTargetType.STATIC_LIBRARY.actionName,
-                CppActionNames.CPP_COMPILE,
-                CppActionNames.LINKSTAMP_COMPILE,
-                CppRuleClasses.INCLUDES,
-                CppRuleClasses.PREPROCESSOR_DEFINES,
-                CppRuleClasses.INCLUDE_PATHS,
-                CppRuleClasses.PIC));
-  }
+                    CppActionNames.CPP_COMPILE,
+                    CppActionNames.LINKSTAMP_COMPILE,
+                    CppRuleClasses.INCLUDES,
+                    CppRuleClasses.PREPROCESSOR_DEFINES,
+                    CppRuleClasses.INCLUDE_PATHS,
+                    CppRuleClasses.PIC
+                )
+            )
 
-  private LinkCommandLine.Builder minimalConfiguration(CcToolchainVariables.Builder variables)
-      throws Exception {
-    return new LinkCommandLine.Builder()
-        .setBuildVariables(variables.build())
-        .setFeatureConfiguration(getMockFeatureConfiguration());
-  }
-
-  private LinkCommandLine.Builder minimalConfiguration() throws Exception {
-    return minimalConfiguration(getMockBuildVariables());
-  }
-
-  /**
-   * Tests that when linking without linkstamps, the exec command is the same as the link command.
-   */
-  @Test
-  public void testLinkCommandIsExecCommandWhenNoLinkstamps() throws Exception {
-    LinkCommandLine linkConfig =
-        minimalConfiguration()
-            .setActionName(LinkTargetType.EXECUTABLE.actionName)
-            .build();
-    List<String> rawLinkArgv = linkConfig.arguments();
-    assertThat(linkConfig.arguments()).isEqualTo(rawLinkArgv);
-  }
-
-  /** Tests that symbol count output does not appear in argv when it should not. */
-  @Test
-  public void testSymbolCountsDisabled() throws Exception {
-    LinkCommandLine linkConfig =
-        minimalConfiguration()
-            .forceToolPath("foo/bar/gcc")
-            .build();
-    List<String> argv = linkConfig.arguments();
-    for (String arg : argv) {
-      assertThat(arg).doesNotContain("print-symbol-counts");
+    @Throws(java.lang.Exception::class)
+    private fun minimalConfiguration(variables: CcToolchainVariables.Builder): LinkCommandLine.Builder {
+        return Builder()
+            .setBuildVariables(variables.build())
+            .setFeatureConfiguration(this.mockFeatureConfiguration)
     }
-  }
 
-  @Test
-  public void testLibrariesToLink() throws Exception {
-    CcToolchainVariables.Builder variables =
-        getMockBuildVariables()
-            .addVariable(
-                LinkBuildVariables.LIBRARIES_TO_LINK.getVariableName(),
-                ImmutableList.of(forStaticLibrary("foo", false), forStaticLibrary("bar", true)));
+    @Throws(java.lang.Exception::class)
+    private fun minimalConfiguration(): LinkCommandLine.Builder {
+        return minimalConfiguration(mockBuildVariables)
+    }
 
-    LinkCommandLine linkConfig =
-        minimalConfiguration(variables)
-            .forceToolPath("foo/bar/gcc")
-            .setActionName(LinkTargetType.NODEPS_DYNAMIC_LIBRARY.actionName)
-            .build();
-    String commandLine = Joiner.on(" ").join(linkConfig.arguments());
-    assertThat(commandLine).matches(".*foo -Wl,-whole-archive bar -Wl,-no-whole-archive.*");
-  }
+    /**
+     * Tests that when linking without linkstamps, the exec command is the same as the link command.
+     */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLinkCommandIsExecCommandWhenNoLinkstamps() {
+        val linkConfig: LinkCommandLine =
+            minimalConfiguration()
+                .setActionName(LinkTargetType.EXECUTABLE.actionName)
+                .build()
+        val rawLinkArgv: MutableList<String?>? = linkConfig.arguments()
+        assertThat(linkConfig.arguments()).isEqualTo(rawLinkArgv)
+    }
 
-  @Test
-  public void testLibrarySearchDirectories() throws Exception {
-    CcToolchainVariables.Builder variables =
-        getMockBuildVariables()
-            .addStringSequenceVariable(
-                LinkBuildVariables.LIBRARY_SEARCH_DIRECTORIES.getVariableName(),
-                ImmutableList.of("foo", "bar"));
+    /** Tests that symbol count output does not appear in argv when it should not.  */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSymbolCountsDisabled() {
+        val linkConfig: LinkCommandLine =
+            minimalConfiguration()
+                .forceToolPath("foo/bar/gcc")
+                .build()
+        val argv: MutableList<String?> = linkConfig.arguments()
+        for (arg in argv) {
+            Truth.assertThat(arg).doesNotContain("print-symbol-counts")
+        }
+    }
 
-    LinkCommandLine linkConfig =
-        minimalConfiguration(variables)
-            .setActionName(LinkTargetType.NODEPS_DYNAMIC_LIBRARY.actionName)
-            .build();
-    assertThat(linkConfig.arguments()).containsAtLeast("-Lfoo", "-Lbar").inOrder();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLibrariesToLink() {
+        val variables: CcToolchainVariables.Builder =
+            mockBuildVariables
+                .addVariable(
+                    LinkBuildVariables.LIBRARIES_TO_LINK.getVariableName(),
+                    com.google.common.collect.ImmutableList.of<E?>(
+                        forStaticLibrary("foo", false),
+                        forStaticLibrary("bar", true)
+                    )
+                )
 
-  @Test
-  public void testLinkerParamFileForStaticLibrary() throws Exception {
-    CcToolchainVariables.Builder variables =
-        getMockBuildVariables()
-            .addVariable(
-                LinkBuildVariables.LINKER_PARAM_FILE.getVariableName(),
-                "LINKER_PARAM_FILE_PLACEHOLDER");
+        val linkConfig: LinkCommandLine =
+            minimalConfiguration(variables)
+                .forceToolPath("foo/bar/gcc")
+                .setActionName(LinkTargetType.NODEPS_DYNAMIC_LIBRARY.actionName)
+                .build()
+        val commandLine: String = com.google.common.base.Joiner.on(" ").join(linkConfig.arguments())
+        Truth.assertThat(commandLine).matches(".*foo -Wl,-whole-archive bar -Wl,-no-whole-archive.*")
+    }
 
-    LinkCommandLine linkConfig =
-        minimalConfiguration(variables)
-            .setActionName(LinkTargetType.STATIC_LIBRARY.actionName)
-            .setSplitCommandLine(true)
-            .build();
-    assertThat(linkConfig.getCommandLines().unpack().get(1).paramFileInfo.always()).isTrue();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLibrarySearchDirectories() {
+        val variables: CcToolchainVariables.Builder =
+            mockBuildVariables
+                .addStringSequenceVariable(
+                    LinkBuildVariables.LIBRARY_SEARCH_DIRECTORIES.getVariableName(),
+                    com.google.common.collect.ImmutableList.of<E?>("foo", "bar")
+                )
 
-  @Test
-  public void testLinkerParamFileForDynamicLibrary() throws Exception {
-    CcToolchainVariables.Builder variables =
-        getMockBuildVariables()
-            .addVariable(
-                LinkBuildVariables.LINKER_PARAM_FILE.getVariableName(),
-                "LINKER_PARAM_FILE_PLACEHOLDER");
+        val linkConfig: LinkCommandLine =
+            minimalConfiguration(variables)
+                .setActionName(LinkTargetType.NODEPS_DYNAMIC_LIBRARY.actionName)
+                .build()
+        assertThat(linkConfig.arguments()).containsAtLeast("-Lfoo", "-Lbar").inOrder()
+    }
 
-    LinkCommandLine linkConfig =
-        minimalConfiguration(variables)
-            .setActionName(LinkTargetType.NODEPS_DYNAMIC_LIBRARY.actionName)
-            .setSplitCommandLine(true)
-            .build();
-    assertThat(linkConfig.getCommandLines().unpack().get(1).paramFileInfo.always()).isTrue();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLinkerParamFileForStaticLibrary() {
+        val variables: CcToolchainVariables.Builder =
+            mockBuildVariables
+                .addVariable(
+                    LinkBuildVariables.LINKER_PARAM_FILE.getVariableName(),
+                    "LINKER_PARAM_FILE_PLACEHOLDER"
+                )
 
-  private List<String> basicArgv(LinkTargetType targetType) throws Exception {
-    return basicArgv(targetType, getMockBuildVariables());
-  }
+        val linkConfig: LinkCommandLine =
+            minimalConfiguration(variables)
+                .setActionName(LinkTargetType.STATIC_LIBRARY.actionName)
+                .setSplitCommandLine(true)
+                .build()
+        assertThat(linkConfig.getCommandLines().unpack().get(1).paramFileInfo.always()).isTrue()
+    }
 
-  private List<String> basicArgv(LinkTargetType targetType, CcToolchainVariables.Builder variables)
-      throws Exception {
-    LinkCommandLine linkConfig =
-        minimalConfiguration(variables)
-            .setActionName(targetType.actionName)
-            .build();
-    return linkConfig.arguments();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLinkerParamFileForDynamicLibrary() {
+        val variables: CcToolchainVariables.Builder =
+            mockBuildVariables
+                .addVariable(
+                    LinkBuildVariables.LINKER_PARAM_FILE.getVariableName(),
+                    "LINKER_PARAM_FILE_PLACEHOLDER"
+                )
 
-  /** Tests that a "--force_pic" configuration applies "-pie" to executable links. */
-  @Test
-  public void testPicMode() throws Exception {
-    String pieArg = "-pie";
+        val linkConfig: LinkCommandLine =
+            minimalConfiguration(variables)
+                .setActionName(LinkTargetType.NODEPS_DYNAMIC_LIBRARY.actionName)
+                .setSplitCommandLine(true)
+                .build()
+        assertThat(linkConfig.getCommandLines().unpack().get(1).paramFileInfo.always()).isTrue()
+    }
 
-    // Disabled:
-    assertThat(basicArgv(LinkTargetType.EXECUTABLE)).doesNotContain(pieArg);
-    assertThat(basicArgv(LinkTargetType.NODEPS_DYNAMIC_LIBRARY)).doesNotContain(pieArg);
-    assertThat(basicArgv(LinkTargetType.STATIC_LIBRARY)).doesNotContain(pieArg);
-    assertThat(basicArgv(LinkTargetType.PIC_STATIC_LIBRARY)).doesNotContain(pieArg);
-    assertThat(basicArgv(LinkTargetType.ALWAYS_LINK_STATIC_LIBRARY)).doesNotContain(pieArg);
-    assertThat(basicArgv(LinkTargetType.ALWAYS_LINK_PIC_STATIC_LIBRARY)).doesNotContain(pieArg);
+    @Throws(java.lang.Exception::class)
+    private fun basicArgv(targetType: LinkTargetType): MutableList<String?> {
+        return basicArgv(targetType, mockBuildVariables)
+    }
 
-    CcToolchainVariables.Builder picVariables =
-        getMockBuildVariables().addVariable(LinkBuildVariables.FORCE_PIC.getVariableName(), "");
-    // Enabled:
-    useConfiguration("--force_pic");
-    assertThat(basicArgv(LinkTargetType.EXECUTABLE, picVariables)).contains(pieArg);
-    assertThat(basicArgv(LinkTargetType.NODEPS_DYNAMIC_LIBRARY, picVariables))
-        .doesNotContain(pieArg);
-    assertThat(basicArgv(LinkTargetType.STATIC_LIBRARY, picVariables)).doesNotContain(pieArg);
-    assertThat(basicArgv(LinkTargetType.PIC_STATIC_LIBRARY, picVariables)).doesNotContain(pieArg);
-    assertThat(basicArgv(LinkTargetType.ALWAYS_LINK_STATIC_LIBRARY, picVariables))
-        .doesNotContain(pieArg);
-    assertThat(basicArgv(LinkTargetType.ALWAYS_LINK_PIC_STATIC_LIBRARY, picVariables))
-        .doesNotContain(pieArg);
-  }
+    @Throws(java.lang.Exception::class)
+    private fun basicArgv(targetType: LinkTargetType, variables: CcToolchainVariables.Builder): MutableList<String?> {
+        val linkConfig: LinkCommandLine =
+            minimalConfiguration(variables)
+                .setActionName(targetType.actionName)
+                .build()
+        return linkConfig.arguments()
+    }
 
-  @Test
-  public void testSplitStaticLinkCommand() throws Exception {
-    useConfiguration("--nostart_end_lib");
-    LinkCommandLine linkConfig =
-        minimalConfiguration(
-                getMockBuildVariables()
+    /** Tests that a "--force_pic" configuration applies "-pie" to executable links.  */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testPicMode() {
+        val pieArg = "-pie"
+
+        // Disabled:
+        Truth.assertThat(basicArgv(LinkTargetType.EXECUTABLE)).doesNotContain(pieArg)
+        Truth.assertThat(basicArgv(LinkTargetType.NODEPS_DYNAMIC_LIBRARY)).doesNotContain(pieArg)
+        Truth.assertThat(basicArgv(LinkTargetType.STATIC_LIBRARY)).doesNotContain(pieArg)
+        Truth.assertThat(basicArgv(LinkTargetType.PIC_STATIC_LIBRARY)).doesNotContain(pieArg)
+        Truth.assertThat(basicArgv(LinkTargetType.ALWAYS_LINK_STATIC_LIBRARY)).doesNotContain(pieArg)
+        Truth.assertThat(basicArgv(LinkTargetType.ALWAYS_LINK_PIC_STATIC_LIBRARY)).doesNotContain(pieArg)
+
+        val picVariables: CcToolchainVariables.Builder =
+            mockBuildVariables.addVariable(LinkBuildVariables.FORCE_PIC.getVariableName(), "")
+        // Enabled:
+        useConfiguration("--force_pic")
+        Truth.assertThat(basicArgv(LinkTargetType.EXECUTABLE, picVariables)).contains(pieArg)
+        Truth.assertThat(basicArgv(LinkTargetType.NODEPS_DYNAMIC_LIBRARY, picVariables))
+            .doesNotContain(pieArg)
+        Truth.assertThat(basicArgv(LinkTargetType.STATIC_LIBRARY, picVariables)).doesNotContain(pieArg)
+        Truth.assertThat(basicArgv(LinkTargetType.PIC_STATIC_LIBRARY, picVariables)).doesNotContain(pieArg)
+        Truth.assertThat(basicArgv(LinkTargetType.ALWAYS_LINK_STATIC_LIBRARY, picVariables))
+            .doesNotContain(pieArg)
+        Truth.assertThat(basicArgv(LinkTargetType.ALWAYS_LINK_PIC_STATIC_LIBRARY, picVariables))
+            .doesNotContain(pieArg)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSplitStaticLinkCommand() {
+        useConfiguration("--nostart_end_lib")
+        val linkConfig: LinkCommandLine =
+            minimalConfiguration(
+                mockBuildVariables
                     .addVariable(
-                        LinkBuildVariables.OUTPUT_EXECPATH.getVariableName(), "a/FakeOutput")
+                        LinkBuildVariables.OUTPUT_EXECPATH.getVariableName(), "a/FakeOutput"
+                    )
                     .addVariable(
                         LinkBuildVariables.LINKER_PARAM_FILE.getVariableName(),
-                        "LINKER_PARAM_FILE_PLACEHOLDER"))
-            .setActionName(LinkTargetType.STATIC_LIBRARY.actionName)
-            .forceToolPath("foo/bar/ar")
-            .setSplitCommandLine(true)
-            .setParameterFileType(ParameterFileType.UNQUOTED)
-            .build();
-    assertThat(linkConfig.getCommandLines().unpack().get(0).commandLine.arguments())
-        .containsExactly("foo/bar/ar");
-    assertThat(linkConfig.getCommandLines().unpack().get(1).paramFileInfo.always()).isTrue();
-    assertThat(linkConfig.getParamCommandLine(null, PathMapper.NOOP))
-        .containsExactly("rcsD", "a/FakeOutput")
-        .inOrder();
-  }
+                        "LINKER_PARAM_FILE_PLACEHOLDER"
+                    )
+            )
+                .setActionName(LinkTargetType.STATIC_LIBRARY.actionName)
+                .forceToolPath("foo/bar/ar")
+                .setSplitCommandLine(true)
+                .setParameterFileType(ParameterFileType.UNQUOTED)
+                .build()
+        assertThat(linkConfig.getCommandLines().unpack().get(0).commandLine.arguments())
+            .containsExactly("foo/bar/ar")
+        assertThat(linkConfig.getCommandLines().unpack().get(1).paramFileInfo.always()).isTrue()
+        assertThat(linkConfig.getParamCommandLine(null, PathMapper.NOOP))
+            .containsExactly("rcsD", "a/FakeOutput")
+            .inOrder()
+    }
 
-  @Test
-  public void testSplitDynamicLinkCommand() throws Exception {
-    useConfiguration("--nostart_end_lib");
-    LinkCommandLine linkConfig =
-        minimalConfiguration(
-                getMockBuildVariables()
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSplitDynamicLinkCommand() {
+        useConfiguration("--nostart_end_lib")
+        val linkConfig: LinkCommandLine =
+            minimalConfiguration(
+                mockBuildVariables
                     .addVariable(
-                        LinkBuildVariables.OUTPUT_EXECPATH.getVariableName(), "a/FakeOutput")
+                        LinkBuildVariables.OUTPUT_EXECPATH.getVariableName(), "a/FakeOutput"
+                    )
                     .addVariable(
-                        LinkBuildVariables.LINKER_PARAM_FILE.getVariableName(), "some/file.params")
+                        LinkBuildVariables.LINKER_PARAM_FILE.getVariableName(), "some/file.params"
+                    )
                     .addStringSequenceVariable(
-                        LinkBuildVariables.USER_LINK_FLAGS.getVariableName(), ImmutableList.of("")))
-            .setActionName(LinkTargetType.DYNAMIC_LIBRARY.actionName)
-            .forceToolPath("foo/bar/linker")
-            .setSplitCommandLine(true)
-            .build();
-    assertThat(linkConfig.getCommandLines().unpack().get(0).commandLine.arguments())
-        .containsExactly("foo/bar/linker");
-    assertThat(linkConfig.getParamCommandLine(null, PathMapper.NOOP))
-        .containsExactly("-shared", "-o", "a/FakeOutput", "")
-        .inOrder();
-  }
+                        LinkBuildVariables.USER_LINK_FLAGS.getVariableName(),
+                        com.google.common.collect.ImmutableList.of<E?>("")
+                    )
+            )
+                .setActionName(LinkTargetType.DYNAMIC_LIBRARY.actionName)
+                .forceToolPath("foo/bar/linker")
+                .setSplitCommandLine(true)
+                .build()
+        assertThat(linkConfig.getCommandLines().unpack().get(0).commandLine.arguments())
+            .containsExactly("foo/bar/linker")
+        assertThat(linkConfig.getParamCommandLine(null, PathMapper.NOOP))
+            .containsExactly("-shared", "-o", "a/FakeOutput", "")
+            .inOrder()
+    }
 
-  @Test
-  public void testStaticLinkCommand() throws Exception {
-    useConfiguration("--nostart_end_lib");
-    LinkCommandLine linkConfig =
-        minimalConfiguration(
-                getMockBuildVariables()
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStaticLinkCommand() {
+        useConfiguration("--nostart_end_lib")
+        val linkConfig: LinkCommandLine =
+            minimalConfiguration(
+                mockBuildVariables
                     .addVariable(
-                        LinkBuildVariables.OUTPUT_EXECPATH.getVariableName(), "a/FakeOutput"))
-            .forceToolPath("foo/bar/ar")
-            .setActionName(LinkTargetType.STATIC_LIBRARY.actionName)
-            .build();
-    List<String> result = linkConfig.arguments();
-    assertThat(result).containsExactly("rcsD", "a/FakeOutput").inOrder();
-    assertThat(linkConfig.getLinkerPathString()).isEqualTo("foo/bar/ar");
-  }
+                        LinkBuildVariables.OUTPUT_EXECPATH.getVariableName(), "a/FakeOutput"
+                    )
+            )
+                .forceToolPath("foo/bar/ar")
+                .setActionName(LinkTargetType.STATIC_LIBRARY.actionName)
+                .build()
+        val result: MutableList<String?>? = linkConfig.arguments()
+        Truth.assertThat(result).containsExactly("rcsD", "a/FakeOutput").inOrder()
+        assertThat(linkConfig.getLinkerPathString()).isEqualTo("foo/bar/ar")
+    }
 
-  @Test
-  public void testSplitAlwaysLinkLinkCommand() throws Exception {
-    CcToolchainVariables.Builder variables =
-        CcToolchainVariables.builder()
-            .addVariable(SYSROOT_VARIABLE_NAME, "/usr/grte/v1")
-            .addVariable(LinkBuildVariables.OUTPUT_EXECPATH.getVariableName(), "a/FakeOutput")
-            .addVariable(LinkBuildVariables.LINKER_PARAM_FILE.getVariableName(), "some/file.params")
-            .addVariable(
-                LinkBuildVariables.LIBRARIES_TO_LINK.getVariableName(),
-                ImmutableList.of(forObjectFile("foo.o", false), forObjectFile("bar.o", false)));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSplitAlwaysLinkLinkCommand() {
+        val variables: CcToolchainVariables.Builder =
+            CcToolchainVariables.builder()
+                .addVariable(LinkBuildVariablesTestCase.Companion.SYSROOT_VARIABLE_NAME, "/usr/grte/v1")
+                .addVariable(LinkBuildVariables.OUTPUT_EXECPATH.getVariableName(), "a/FakeOutput")
+                .addVariable(LinkBuildVariables.LINKER_PARAM_FILE.getVariableName(), "some/file.params")
+                .addVariable(
+                    LinkBuildVariables.LIBRARIES_TO_LINK.getVariableName(),
+                    com.google.common.collect.ImmutableList.of<E?>(
+                        forObjectFile("foo.o", false),
+                        forObjectFile("bar.o", false)
+                    )
+                )
 
-    LinkCommandLine linkConfig =
-        minimalConfiguration(variables)
-            .setActionName(LinkTargetType.ALWAYS_LINK_STATIC_LIBRARY.actionName)
-            .forceToolPath("foo/bar/ar")
-            .setSplitCommandLine(true)
-            .build();
+        val linkConfig: LinkCommandLine =
+            minimalConfiguration(variables)
+                .setActionName(LinkTargetType.ALWAYS_LINK_STATIC_LIBRARY.actionName)
+                .forceToolPath("foo/bar/ar")
+                .setSplitCommandLine(true)
+                .build()
 
-    assertThat(linkConfig.getCommandLines().unpack().get(0).commandLine.arguments())
-        .containsExactly("foo/bar/ar");
-    assertThat(linkConfig.getParamCommandLine(null, PathMapper.NOOP))
-        .containsExactly("rcsD", "a/FakeOutput", "foo.o", "bar.o")
-        .inOrder();
-  }
+        assertThat(linkConfig.getCommandLines().unpack().get(0).commandLine.arguments())
+            .containsExactly("foo/bar/ar")
+        assertThat(linkConfig.getParamCommandLine(null, PathMapper.NOOP))
+            .containsExactly("rcsD", "a/FakeOutput", "foo.o", "bar.o")
+            .inOrder()
+    }
 
-  private SpecialArtifact createTreeArtifact(String name) {
-    FileSystem fs = scratch.getFileSystem();
-    Path execRoot = fs.getPath(TestUtils.tmpDir());
-    PathFragment execPath = PathFragment.create("out").getRelative(name);
-    return ActionsTestUtil.createTreeArtifactWithGeneratingAction(
-        ArtifactRoot.asDerivedRoot(execRoot, RootType.OUTPUT, "out"), execPath);
-  }
+    private fun createTreeArtifact(name: String?): SpecialArtifact {
+        val fs: FileSystem = scratch.getFileSystem()
+        val execRoot: Path? = fs.getPath(com.google.devtools.build.lib.testutil.TestUtils.tmpDir())
+        val execPath: PathFragment? = PathFragment.create("out").getRelative(name)
+        return ActionsTestUtil.createTreeArtifactWithGeneratingAction(
+            ArtifactRoot.asDerivedRoot(execRoot, RootType.OUTPUT, "out"), execPath
+        )
+    }
 
-  private static void verifyArguments(
-      Iterable<String> arguments,
-      Iterable<String> allowedArguments,
-      Iterable<String> disallowedArguments) {
-    assertThat(arguments).containsAtLeastElementsIn(allowedArguments);
-    assertThat(arguments).containsNoneIn(disallowedArguments);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTreeArtifactLink() {
+        val testTreeArtifact: SpecialArtifact = createTreeArtifact("library_directory")
 
-  @Test
-  public void testTreeArtifactLink() throws Exception {
-    SpecialArtifact testTreeArtifact = createTreeArtifact("library_directory");
+        val library0: TreeFileArtifact = TreeFileArtifact.createTreeOutput(testTreeArtifact, "library0.o")
+        val library1: TreeFileArtifact = TreeFileArtifact.createTreeOutput(testTreeArtifact, "library1.o")
 
-    TreeFileArtifact library0 = TreeFileArtifact.createTreeOutput(testTreeArtifact, "library0.o");
-    TreeFileArtifact library1 = TreeFileArtifact.createTreeOutput(testTreeArtifact, "library1.o");
+        // We don't read the tree artifact or its contents, so MISSING_FILE_MARKER is OK
+        val treeArtifactValue: TreeArtifactValue =
+            TreeArtifactValue.newBuilder(testTreeArtifact)
+                .putChild(library0, FileArtifactValue.MISSING_FILE_MARKER)
+                .putChild(library1, FileArtifactValue.MISSING_FILE_MARKER)
+                .build()
 
-    // We don't read the tree artifact or its contents, so MISSING_FILE_MARKER is OK
-    TreeArtifactValue treeArtifactValue =
-        TreeArtifactValue.newBuilder(testTreeArtifact)
-            .putChild(library0, FileArtifactValue.MISSING_FILE_MARKER)
-            .putChild(library1, FileArtifactValue.MISSING_FILE_MARKER)
-            .build();
+        val fakeActionInputFileCache: FakeActionInputFileCache = FakeActionInputFileCache()
+        fakeActionInputFileCache.putTreeArtifact(testTreeArtifact, treeArtifactValue)
 
-    FakeActionInputFileCache fakeActionInputFileCache = new FakeActionInputFileCache();
-    fakeActionInputFileCache.putTreeArtifact(testTreeArtifact, treeArtifactValue);
+        val treeArtifactsPaths: Iterable<String?> =
+            com.google.common.collect.ImmutableList.of<E?>(testTreeArtifact.getExecPathString())
+        val treeFileArtifactsPaths: Iterable<String?> =
+            com.google.common.collect.ImmutableList.of<E?>(library0.getExecPathString(), library1.getExecPathString())
 
-    Iterable<String> treeArtifactsPaths = ImmutableList.of(testTreeArtifact.getExecPathString());
-    Iterable<String> treeFileArtifactsPaths =
-        ImmutableList.of(library0.getExecPathString(), library1.getExecPathString());
-
-    LinkCommandLine linkConfig =
-        minimalConfiguration(
-                getMockBuildVariables()
+        val linkConfig: LinkCommandLine =
+            minimalConfiguration(
+                mockBuildVariables
                     .addVariable(
-                        LinkBuildVariables.LINKER_PARAM_FILE.getVariableName(), "some/file.params")
+                        LinkBuildVariables.LINKER_PARAM_FILE.getVariableName(), "some/file.params"
+                    )
                     .addVariable(
                         LinkBuildVariables.LIBRARIES_TO_LINK.getVariableName(),
-                        ImmutableList.of(
-                            forObjectFileGroup(ImmutableList.of(testTreeArtifact), false))))
-            .forceToolPath("foo/bar/gcc")
-            .setActionName(LinkTargetType.STATIC_LIBRARY.actionName)
-            .setSplitCommandLine(true)
-            .build();
+                        com.google.common.collect.ImmutableList.of<E?>(
+                            forObjectFileGroup(
+                                com.google.common.collect.ImmutableList.of<Artifact?>(testTreeArtifact),
+                                false
+                            )
+                        )
+                    )
+            )
+                .forceToolPath("foo/bar/gcc")
+                .setActionName(LinkTargetType.STATIC_LIBRARY.actionName)
+                .setSplitCommandLine(true)
+                .build()
 
-    // Should only reference the tree artifact.
-    verifyArguments(
-        linkConfig.arguments(null, PathMapper.NOOP), treeArtifactsPaths, treeFileArtifactsPaths);
-    verifyArguments(linkConfig.arguments(), treeArtifactsPaths, treeFileArtifactsPaths);
-    verifyArguments(
-        linkConfig.getParamCommandLine(null, PathMapper.NOOP),
-        treeArtifactsPaths,
-        treeFileArtifactsPaths);
+        // Should only reference the tree artifact.
+        verifyArguments(
+            linkConfig.arguments(null, PathMapper.NOOP), treeArtifactsPaths, treeFileArtifactsPaths
+        )
+        verifyArguments(linkConfig.arguments(), treeArtifactsPaths, treeFileArtifactsPaths)
+        verifyArguments(
+            linkConfig.getParamCommandLine(null, PathMapper.NOOP),
+            treeArtifactsPaths,
+            treeFileArtifactsPaths
+        )
 
-    // Should only reference tree file artifacts.
-    verifyArguments(
-        linkConfig.arguments(fakeActionInputFileCache, PathMapper.NOOP),
-        treeFileArtifactsPaths,
-        treeArtifactsPaths);
-    verifyArguments(
-        linkConfig.arguments(fakeActionInputFileCache, PathMapper.NOOP),
-        treeFileArtifactsPaths,
-        treeArtifactsPaths);
-    verifyArguments(
-        linkConfig.getParamCommandLine(fakeActionInputFileCache, PathMapper.NOOP),
-        treeFileArtifactsPaths,
-        treeArtifactsPaths);
-  }
+        // Should only reference tree file artifacts.
+        verifyArguments(
+            linkConfig.arguments(fakeActionInputFileCache, PathMapper.NOOP),
+            treeFileArtifactsPaths,
+            treeArtifactsPaths
+        )
+        verifyArguments(
+            linkConfig.arguments(fakeActionInputFileCache, PathMapper.NOOP),
+            treeFileArtifactsPaths,
+            treeArtifactsPaths
+        )
+        verifyArguments(
+            linkConfig.getParamCommandLine(fakeActionInputFileCache, PathMapper.NOOP),
+            treeFileArtifactsPaths,
+            treeArtifactsPaths
+        )
+    }
 
-  private StarlarkInfo forStaticLibrary(String name, boolean isWholeArchive) {
-    return StructProvider.STRUCT.create(
-        ImmutableMap.of("type", "static_library", "name", name, "is_whole_archive", isWholeArchive),
-        "");
-  }
+    private fun forStaticLibrary(name: String, isWholeArchive: Boolean): StarlarkInfo {
+        return StructProvider.STRUCT.create(
+            com.google.common.collect.ImmutableMap.of<K?, V?>(
+                "type",
+                "static_library",
+                "name",
+                name,
+                "is_whole_archive",
+                isWholeArchive
+            ),
+            ""
+        )
+    }
 
-  private StarlarkInfo forObjectFile(String path, boolean isWholeArchive) {
-    return StructProvider.STRUCT.create(
-        ImmutableMap.of("type", "object_file", "name", path, "is_whole_archive", isWholeArchive),
-        "");
-  }
+    private fun forObjectFile(path: String, isWholeArchive: Boolean): StarlarkInfo {
+        return StructProvider.STRUCT.create(
+            com.google.common.collect.ImmutableMap.of<K?, V?>(
+                "type",
+                "object_file",
+                "name",
+                path,
+                "is_whole_archive",
+                isWholeArchive
+            ),
+            ""
+        )
+    }
 
-  private StarlarkInfo forObjectFileGroup(
-      ImmutableList<Artifact> objectFiles, boolean isWholeArchive) {
-    return StructProvider.STRUCT.create(
-        ImmutableMap.of(
-            "type",
-            "object_file_group",
-            "object_files",
-            StarlarkList.immutableCopyOf(objectFiles),
-            "is_whole_archive",
-            isWholeArchive),
-        "");
-  }
+    private fun forObjectFileGroup(
+        objectFiles: com.google.common.collect.ImmutableList<Artifact?>?, isWholeArchive: Boolean
+    ): StarlarkInfo {
+        return StructProvider.STRUCT.create(
+            com.google.common.collect.ImmutableMap.of<K?, V?>(
+                "type",
+                "object_file_group",
+                "object_files",
+                StarlarkList.immutableCopyOf<T?>(objectFiles),
+                "is_whole_archive",
+                isWholeArchive
+            ),
+            ""
+        )
+    }
+
+    companion object {
+        private val mockBuildVariables: CcToolchainVariables.Builder
+            get() = getMockBuildVariables(com.google.common.collect.ImmutableList.of<String?>())
+
+        private fun getMockBuildVariables(
+            linkstampOutputs: com.google.common.collect.ImmutableList<String?>?
+        ): CcToolchainVariables.Builder {
+            val result: CcToolchainVariables.Builder = CcToolchainVariables.builder()
+
+            result.addVariable(LinkBuildVariables.GENERATE_INTERFACE_LIBRARY.getVariableName(), "no")
+            result.addVariable(LinkBuildVariables.INTERFACE_LIBRARY_INPUT.getVariableName(), "ignored")
+            result.addVariable(LinkBuildVariables.INTERFACE_LIBRARY_OUTPUT.getVariableName(), "ignored")
+            result.addVariable(LinkBuildVariables.INTERFACE_LIBRARY_BUILDER.getVariableName(), "ignored")
+            result.addStringSequenceVariable(
+                LinkBuildVariables.LINKSTAMP_PATHS.getVariableName(), linkstampOutputs
+            )
+
+            return result
+        }
+
+        private fun verifyArguments(
+            arguments: Iterable<String?>?,
+            allowedArguments: Iterable<String?>,
+            disallowedArguments: Iterable<String?>
+        ) {
+            Truth.assertThat(arguments).containsAtLeastElementsIn(allowedArguments)
+            Truth.assertThat(arguments).containsNoneIn(disallowedArguments)
+        }
+    }
 }

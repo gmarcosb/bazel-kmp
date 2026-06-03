@@ -11,468 +11,534 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote;
+package com.google.devtools.build.lib.remote
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.util.concurrent.Futures.immediateFuture;
-import static com.google.common.util.concurrent.Futures.immediateVoidFuture;
-import static org.junit.Assert.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import build.bazel.remote.execution.v2.Digest
 
-import build.bazel.remote.execution.v2.Digest;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.util.concurrent.SettableFuture;
-import com.google.devtools.build.lib.clock.JavaClock;
-import com.google.devtools.build.lib.remote.chunking.ChunkingConfig;
-import com.google.devtools.build.lib.remote.chunking.FastCdcChunker;
-import com.google.devtools.build.lib.remote.common.RemoteActionExecutionContext;
-import com.google.devtools.build.lib.remote.common.RemoteCacheClient.Blob;
-import com.google.devtools.build.lib.remote.util.DigestUtil;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import com.google.protobuf.ByteString;
-import java.io.ByteArrayInputStream;
-import java.io.EOFException;
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Random;
-import java.util.Set;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnit;
-import org.mockito.junit.MockitoRule;
+/** Tests for [ChunkedBlobUploader].  */
+@RunWith(JUnit4::class)
+class ChunkedBlobUploaderTest {
+    @org.junit.Rule
+    val mockito: MockitoRule = MockitoJUnit.rule()
 
-/** Tests for {@link ChunkedBlobUploader}. */
-@RunWith(JUnit4.class)
-public class ChunkedBlobUploaderTest {
-  private static final DigestUtil DIGEST_UTIL =
-      new DigestUtil(SyscallCache.NO_CACHE, DigestHashFunction.SHA256);
-  private static final int MAX_IN_FLIGHT_CHUNK_UPLOADS = 16;
+    @org.mockito.Mock
+    private val grpcCacheClient: GrpcCacheClient? = null
 
-  @Rule public final MockitoRule mockito = MockitoJUnit.rule();
+    @org.mockito.Mock
+    private val combinedCache: CombinedCache? = null
 
-  @Mock private GrpcCacheClient grpcCacheClient;
-  @Mock private CombinedCache combinedCache;
-  @Mock private RemoteActionExecutionContext context;
+    @org.mockito.Mock
+    private val context: RemoteActionExecutionContext? = null
 
-  private FileSystem fs;
-  private Path execRoot;
-  private ChunkedBlobUploader uploader;
+    private var fs: FileSystem? = null
+    private var execRoot: Path? = null
+    private var uploader: ChunkedBlobUploader? = null
 
-  @Before
-  public void setUp() throws Exception {
-    fs = new InMemoryFileSystem(new JavaClock(), DigestHashFunction.SHA256);
-    execRoot = fs.getPath("/execroot");
-    execRoot.createDirectoryAndParents();
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun setUp() {
+        fs = InMemoryFileSystem(com.google.devtools.build.lib.clock.JavaClock(), DigestHashFunction.SHA256)
+        execRoot = fs.getPath("/execroot")
+        execRoot.createDirectoryAndParents()
 
-    ChunkingConfig config = new ChunkingConfig(1024, 2, 0);
-    uploader = new ChunkedBlobUploader(grpcCacheClient, combinedCache, config, DIGEST_UTIL);
-  }
-
-  @Test
-  public void getChunkingThreshold_returnsConfiguredValue() {
-    ChunkingConfig config = new ChunkingConfig(512, 2, 0);
-    ChunkedBlobUploader uploader =
-        new ChunkedBlobUploader(grpcCacheClient, combinedCache, config, DIGEST_UTIL);
-
-    assertThat(uploader.getChunkingThreshold()).isEqualTo(512 * 4);
-  }
-
-  @Test
-  @SuppressWarnings("unchecked")
-  public void uploadChunked_allChunksMissing_uploadsAllChunks() throws Exception {
-    Path file = execRoot.getRelative("test.txt");
-    byte[] data = new byte[8192];
-    new Random(42).nextBytes(data);
-    writeFile(file, data);
-    Digest blobDigest = DIGEST_UTIL.compute(data);
-
-    ArgumentCaptor<List<Digest>> digestsCaptor = ArgumentCaptor.forClass(List.class);
-    when(grpcCacheClient.findMissingDigests(any(), digestsCaptor.capture()))
-        .thenAnswer(
-            invocation -> {
-              List<Digest> digests = invocation.getArgument(1);
-              return immediateFuture(ImmutableSet.copyOf(digests));
-            });
-    when(combinedCache.uploadBlob(any(), any(Digest.class), any(Blob.class)))
-        .thenReturn(immediateVoidFuture());
-    when(grpcCacheClient.spliceBlob(any(), any(), any())).thenReturn(immediateVoidFuture());
-
-    uploader.uploadChunked(context, blobDigest, file);
-
-    List<Digest> chunkDigests = digestsCaptor.getValue();
-    assertThat(chunkDigests.size()).isGreaterThan(1);
-    long totalSize = chunkDigests.stream().mapToLong(Digest::getSizeBytes).sum();
-    assertThat(totalSize).isEqualTo(data.length);
-  }
-
-  @Test
-  @SuppressWarnings("unchecked")
-  public void uploadChunked_noChunksMissing_skipsChunkUpload() throws Exception {
-    Path file = execRoot.getRelative("test.txt");
-    byte[] data = new byte[8192];
-    new Random(42).nextBytes(data);
-    writeFile(file, data);
-    Digest blobDigest = DIGEST_UTIL.compute(data);
-
-    when(grpcCacheClient.findMissingDigests(any(), any()))
-        .thenReturn(immediateFuture(ImmutableSet.of()));
-    when(grpcCacheClient.spliceBlob(any(), any(), any())).thenReturn(immediateVoidFuture());
-
-    uploader.uploadChunked(context, blobDigest, file);
-
-    verify(combinedCache, never()).uploadBlob(any(), any(Digest.class), any(Blob.class));
-    verify(grpcCacheClient).spliceBlob(any(), eq(blobDigest), any());
-  }
-
-  @Test
-  @SuppressWarnings("unchecked")
-  public void uploadChunked_someChunksMissing_uploadsOnlyMissingWithCorrectData() throws Exception {
-    Path file = execRoot.getRelative("test_partial.txt");
-    byte[] fileData = new byte[16384];
-    new Random(42).nextBytes(fileData);
-    writeFile(file, fileData);
-    Digest blobDigest = DIGEST_UTIL.compute(fileData);
-
-    ChunkingConfig config = new ChunkingConfig(1024, 2, 0);
-    FastCdcChunker testChunker = new FastCdcChunker(config, DIGEST_UTIL);
-    List<Digest> allChunkDigests;
-    try (InputStream input = file.getInputStream()) {
-      allChunkDigests = testChunker.chunkToDigests(input);
-    }
-    assertThat(allChunkDigests.size()).isAtLeast(5);
-
-    Set<Digest> digestsToReportMissing = new LinkedHashSet<>();
-    for (int i = 0; i < allChunkDigests.size(); i++) {
-      boolean isFirst = i == 0;
-      boolean isLast = i == allChunkDigests.size() - 1;
-      boolean isOdd = i % 2 == 1;
-      if (isFirst || isLast || isOdd) {
-        digestsToReportMissing.add(allChunkDigests.get(i));
-      }
+        val config: ChunkingConfig = ChunkingConfig(1024, 2, 0)
+        uploader = ChunkedBlobUploader(grpcCacheClient, combinedCache, config, DIGEST_UTIL)
     }
 
-    Map<Digest, ByteString> expectedChunkData = new LinkedHashMap<>();
-    try (InputStream input = file.getInputStream()) {
-      for (Digest digest : allChunkDigests) {
-        byte[] chunkBytes = input.readNBytes((int) digest.getSizeBytes());
-        if (digestsToReportMissing.contains(digest)) {
-          expectedChunkData.put(digest, ByteString.copyFrom(chunkBytes));
+    @get:org.junit.Test
+    val chunkingThreshold_returnsConfiguredValue: Unit
+        get() {
+            val config: ChunkingConfig = ChunkingConfig(512, 2, 0)
+            val uploader: ChunkedBlobUploader =
+                ChunkedBlobUploader(
+                    grpcCacheClient,
+                    combinedCache,
+                    config,
+                    DIGEST_UTIL
+                )
+
+            assertThat(uploader.getChunkingThreshold()).isEqualTo(512 * 4)
         }
-      }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun uploadChunked_allChunksMissing_uploadsAllChunks() {
+        val file: Path = execRoot.getRelative("test.txt")
+        val data = ByteArray(8192)
+        Random(42).nextBytes(data)
+        writeFile(file, data)
+        val blobDigest: Digest? = DIGEST_UTIL.compute(data)
+
+        val digestsCaptor: ArgumentCaptor<MutableList<Digest?>> =
+            ArgumentCaptor.forClass<MutableList<Digest?>?, MutableList<*>?>(
+                MutableList::class.java
+            )
+        T > Mockito.`when`<Boolean?>(
+            grpcCacheClient.findMissingDigests(TODO("Cannot convert element"))<T> ArgumentMatchers . any < kotlin . Any ? > (),
+            digestsCaptor.capture()
+        )
+        thenAnswer(
+            { invocation ->
+                val digests: MutableList<Digest?> = invocation.< List < Digest > > getArgument<MutableList<Digest?>?>(1)
+                return@thenAnswer
+                com.google.common.util.concurrent.Futures.immediateFuture<com.google.common.collect.ImmutableSet<Digest?>?>(
+                    com.google.common.collect.ImmutableSet.copyOf<Digest?>(digests)
+                )
+            })
+        T > Mockito.`when`<Boolean?>(
+            combinedCache.uploadBlob(TODO("Cannot convert element"))<T> ArgumentMatchers . any < kotlin . Any ? > (),
+            TODO("Cannot convert element")
+        )<T> ArgumentMatchers . any < Digest ? > (Digest::class.java)
+        T > ArgumentMatchers.any<Blob?>(Blob::class.java)
+        thenReturn(com.google.common.util.concurrent.Futures.immediateVoidFuture())
+        T > Mockito.`when`<Boolean?>(
+            grpcCacheClient.spliceBlob(TODO("Cannot convert element"))<T> ArgumentMatchers . any < kotlin . Any ? > (),
+            TODO("Cannot convert element")
+        )<T> ArgumentMatchers . any < kotlin . Any ? > ()
+        T > ArgumentMatchers.any<Any?>()
+        thenReturn(com.google.common.util.concurrent.Futures.immediateVoidFuture())
+
+        uploader.uploadChunked(context, blobDigest, file)
+
+        val chunkDigests: MutableList<Digest?> = digestsCaptor.getValue()
+        Truth.assertThat(chunkDigests.size).isGreaterThan(1)
+        val totalSize: Long = chunkDigests.stream().mapToLong(Digest::getSizeBytes).sum()
+        Truth.assertThat(totalSize).isEqualTo(data.size)
     }
 
-    when(grpcCacheClient.findMissingDigests(any(), any()))
-        .thenReturn(immediateFuture(ImmutableSet.copyOf(digestsToReportMissing)));
-    Map<Digest, ByteString> actualUploads = new HashMap<>();
-    when(combinedCache.uploadBlob(any(), any(Digest.class), any(Blob.class)))
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun uploadChunked_noChunksMissing_skipsChunkUpload() {
+        val file: Path = execRoot.getRelative("test.txt")
+        val data = ByteArray(8192)
+        Random(42).nextBytes(data)
+        writeFile(file, data)
+        val blobDigest: Digest? = DIGEST_UTIL.compute(data)
+
+        Mockito.`when`<T?>(grpcCacheClient.findMissingDigests(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>()))
+            .thenReturn(com.google.common.util.concurrent.Futures.immediateFuture<V?>(com.google.common.collect.ImmutableSet.of<E?>()))
+        Mockito.`when`<T?>(
+            grpcCacheClient.spliceBlob(
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>()
+            )
+        ).thenReturn(com.google.common.util.concurrent.Futures.immediateVoidFuture())
+
+        uploader.uploadChunked(context, blobDigest, file)
+
+        Mockito.verify<Any?>(combinedCache, Mockito.never()).uploadBlob(
+            ArgumentMatchers.any<T?>(),
+            ArgumentMatchers.any<T?>(Digest::class.java),
+            ArgumentMatchers.any<T?>(Blob::class.java)
+        )
+        Mockito.verify<Any?>(grpcCacheClient)
+            .spliceBlob(ArgumentMatchers.any<T?>(), < T > eq < T ? > (blobDigest), ArgumentMatchers.any<T?>())
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun uploadChunked_someChunksMissing_uploadsOnlyMissingWithCorrectData() {
+        val file: Path = execRoot.getRelative("test_partial.txt")
+        val fileData = ByteArray(16384)
+        Random(42).nextBytes(fileData)
+        writeFile(file, fileData)
+        val blobDigest: Digest? = DIGEST_UTIL.compute(fileData)
+
+        val config: ChunkingConfig = ChunkingConfig(1024, 2, 0)
+        val testChunker: FastCdcChunker = FastCdcChunker(config, DIGEST_UTIL)
+        val allChunkDigests: MutableList<Digest>?
+        file.getInputStream().use { input ->
+            allChunkDigests = testChunker.chunkToDigests(input)
+        }
+        Truth.assertThat(allChunkDigests!!.size).isAtLeast(5)
+
+        val digestsToReportMissing: MutableSet<Digest?> = LinkedHashSet<Digest?>()
+        for (i in allChunkDigests.indices) {
+            val isFirst = i == 0
+            val isLast = i == allChunkDigests.size - 1
+            val isOdd = i % 2 == 1
+            if (isFirst || isLast || isOdd) {
+                digestsToReportMissing.add(allChunkDigests.get(i))
+            }
+        }
+
+        val expectedChunkData: MutableMap<Digest?, ByteString?> = LinkedHashMap<Digest?, ByteString?>()
+        file.getInputStream().use { input ->
+            for (digest in allChunkDigests) {
+                val chunkBytes: ByteArray = input.readNBytes(digest.getSizeBytes() as Int)
+                if (digestsToReportMissing.contains(digest)) {
+                    expectedChunkData.put(digest, ByteString.copyFrom(chunkBytes))
+                }
+            }
+        }
+        Mockito.`when`<T?>(grpcCacheClient.findMissingDigests(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>()))
+            .thenReturn(com.google.common.util.concurrent.Futures.immediateFuture<V?>(com.google.common.collect.ImmutableSet.< E > copyOf < E ? > (digestsToReportMissing)))
+        val actualUploads: MutableMap<Digest?, ByteString?> = HashMap<Digest?, ByteString?>()
+        Mockito.`when`<T?>(
+            combinedCache.uploadBlob(
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>(Digest::class.java),
+                ArgumentMatchers.any<T?>(Blob::class.java)
+            )
+        )
+            .thenAnswer(
+                Answer { invocation: InvocationOnMock? ->
+                    val d: Digest? = invocation.getArgument<Digest?>(1)
+                    val blob: Blob = invocation.getArgument<Blob>(2)
+                    blob.get().use { `in` ->
+                        actualUploads.put(d, ByteString.readFrom(`in`))
+                    }
+                    com.google.common.util.concurrent.Futures.immediateVoidFuture()
+                })
+        Mockito.`when`<T?>(
+            grpcCacheClient.spliceBlob(
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>()
+            )
+        ).thenReturn(com.google.common.util.concurrent.Futures.immediateVoidFuture())
+
+        uploader.uploadChunked(context, blobDigest, file)
+
+        Truth.assertThat(actualUploads.keys).isEqualTo(expectedChunkData.keys)
+        for (entry in expectedChunkData.entries) {
+            Truth.assertThat(actualUploads.get(entry.key)).isEqualTo(entry.value)
+        }
+        Mockito.verify<Any?>(grpcCacheClient)
+            .spliceBlob(ArgumentMatchers.any<T?>(), < T > eq < T ? > (blobDigest), <T>eq<T?>(allChunkDigests))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun uploadChunked_windowRefillsAfterOneChunkCompletes() {
+        val file: Path = execRoot.getRelative("test_window.txt")
+        val data = ByteArray(262144)
+        Random(42).nextBytes(data)
+        writeFile(file, data)
+        val blobDigest: Digest? = DIGEST_UTIL.compute(data)
+
+        val testChunker: FastCdcChunker = FastCdcChunker(ChunkingConfig(1024, 2, 0), DIGEST_UTIL)
+        val chunkDigests: MutableList<Digest>?
+        file.getInputStream().use { input ->
+            chunkDigests = testChunker.chunkToDigests(input)
+        }
+        val uniqueChunkDigests: MutableList<Digest?> = java.util.ArrayList<Digest?>()
+        val seen: MutableSet<Digest?> = HashSet<Digest?>()
+        for (chunkDigest in chunkDigests!!) {
+            if (seen.add(chunkDigest)) {
+                uniqueChunkDigests.add(chunkDigest)
+            }
+            if (uniqueChunkDigests.size == MAX_IN_FLIGHT_CHUNK_UPLOADS + 1) {
+                break
+            }
+        }
+        Truth.assertThat(uniqueChunkDigests).hasSize(MAX_IN_FLIGHT_CHUNK_UPLOADS + 1)
+
+        Mockito.`when`<T?>(grpcCacheClient.findMissingDigests(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>()))
+            .thenReturn(com.google.common.util.concurrent.Futures.immediateFuture<V?>(com.google.common.collect.ImmutableSet.< E > copyOf < E ? > (uniqueChunkDigests)))
+        Mockito.`when`<T?>(
+            grpcCacheClient.spliceBlob(
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>()
+            )
+        ).thenReturn(com.google.common.util.concurrent.Futures.immediateVoidFuture())
+
+        val uploads: MutableList<com.google.common.util.concurrent.SettableFuture<java.lang.Void?>> =
+            java.util.ArrayList<com.google.common.util.concurrent.SettableFuture<java.lang.Void?>>(uniqueChunkDigests.size)
+        for (i in uniqueChunkDigests.indices) {
+            uploads.add(com.google.common.util.concurrent.SettableFuture.create<java.lang.Void?>())
+        }
+        val firstWindowRequested: CountDownLatch = CountDownLatch(MAX_IN_FLIGHT_CHUNK_UPLOADS)
+        val overflowUploadRequested: CountDownLatch = CountDownLatch(1)
+
+        Mockito.`when`<T?>(
+            combinedCache.uploadBlob(
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>(Digest::class.java),
+                ArgumentMatchers.any<T?>(Blob::class.java)
+            )
+        )
+            .thenAnswer(
+                Answer { invocation: InvocationOnMock? ->
+                    val digest: Digest? = invocation.getArgument<Digest?>(1)
+                    val chunkIndex = uniqueChunkDigests.indexOf(digest)
+                    if (chunkIndex < MAX_IN_FLIGHT_CHUNK_UPLOADS) {
+                        firstWindowRequested.countDown()
+                    } else if (chunkIndex == MAX_IN_FLIGHT_CHUNK_UPLOADS) {
+                        overflowUploadRequested.countDown()
+                    }
+                    uploads.get(chunkIndex)
+                })
+
+        val uploadThread: java.lang.Thread =
+            java.lang.Thread.ofVirtual()
+                .unstarted(
+                    java.lang.Runnable {
+                        try {
+                            uploader.uploadChunked(context, blobDigest, file)
+                        } catch (e: IOException) {
+                            throw java.lang.RuntimeException(e)
+                        } catch (e: java.lang.InterruptedException) {
+                            throw java.lang.RuntimeException(e)
+                        }
+                    })
+        uploadThread.start()
+
+        Truth.assertThat(firstWindowRequested.await(1, TimeUnit.SECONDS)).isTrue()
+        Truth.assertThat(overflowUploadRequested.await(100, TimeUnit.MILLISECONDS)).isFalse()
+
+        uploads.get(1).set(null)
+        Truth.assertThat(overflowUploadRequested.await(1, TimeUnit.SECONDS)).isTrue()
+
+        for (upload in uploads) {
+            if (!upload.isDone()) {
+                upload.set(null)
+            }
+        }
+        uploadThread.join(TimeUnit.SECONDS.toMillis(1))
+
+        Truth.assertThat(uploadThread.isAlive()).isFalse()
+        Mockito.verify<Any?>(grpcCacheClient)
+            .spliceBlob(ArgumentMatchers.any<T?>(), < T > eq < T ? > (blobDigest), <T>eq<T?>(chunkDigests))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun uploadChunked_chunkFails_cancelsOtherInFlightUploads() {
+        val file: Path = execRoot.getRelative("test_failure.txt")
+        val data = ByteArray(16384)
+        Random(42).nextBytes(data)
+        writeFile(file, data)
+        val blobDigest: Digest? = DIGEST_UTIL.compute(data)
+
+        val testChunker: FastCdcChunker = FastCdcChunker(ChunkingConfig(1024, 2, 0), DIGEST_UTIL)
+        val chunkDigests: MutableList<Digest>?
+        file.getInputStream().use { input ->
+            chunkDigests = testChunker.chunkToDigests(input)
+        }
+        val uniqueChunkDigests: MutableList<Digest?> = java.util.ArrayList<Digest?>()
+        val seen: MutableSet<Digest?> = HashSet<Digest?>()
+        for (chunkDigest in chunkDigests!!) {
+            if (seen.add(chunkDigest)) {
+                uniqueChunkDigests.add(chunkDigest)
+            }
+            if (uniqueChunkDigests.size == 2) {
+                break
+            }
+        }
+        Truth.assertThat(uniqueChunkDigests).hasSize(2)
+
+        Mockito.`when`<T?>(grpcCacheClient.findMissingDigests(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>()))
+            .thenReturn(com.google.common.util.concurrent.Futures.immediateFuture<V?>(com.google.common.collect.ImmutableSet.< E > copyOf < E ? > (uniqueChunkDigests)))
+
+        val failedUpload: com.google.common.util.concurrent.SettableFuture<java.lang.Void?> =
+            com.google.common.util.concurrent.SettableFuture.create<java.lang.Void?>()
+        val cancelledUpload: com.google.common.util.concurrent.SettableFuture<java.lang.Void?> =
+            com.google.common.util.concurrent.SettableFuture.create<java.lang.Void?>()
+        val uploadsStarted: CountDownLatch = CountDownLatch(2)
+        Mockito.`when`<T?>(
+            combinedCache.uploadBlob(
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>(Digest::class.java),
+                ArgumentMatchers.any<T?>(Blob::class.java)
+            )
+        )
+            .thenAnswer(
+                Answer { invocation: InvocationOnMock? ->
+                    val digest: Digest = invocation.getArgument<Digest>(1)
+                    uploadsStarted.countDown()
+                    if (digest.equals(uniqueChunkDigests.get(0))) {
+                        return@thenAnswer failedUpload
+                    }
+                    if (digest.equals(uniqueChunkDigests.get(1))) {
+                        return@thenAnswer cancelledUpload
+                    }
+                    com.google.common.util.concurrent.Futures.immediateVoidFuture()
+                })
+
+        val uploadThread: java.lang.Thread =
+            java.lang.Thread.ofVirtual()
+                .unstarted(
+                    java.lang.Runnable {
+                        try {
+                            uploader.uploadChunked(context, blobDigest, file)
+                        } catch (e: IOException) {
+                            throw java.lang.RuntimeException(e)
+                        } catch (e: java.lang.InterruptedException) {
+                            throw java.lang.RuntimeException(e)
+                        }
+                    })
+        uploadThread.start()
+
+        Truth.assertThat(uploadsStarted.await(1, TimeUnit.SECONDS)).isTrue()
+        failedUpload.setException(IOException("upload failed"))
+
+        uploadThread.join(TimeUnit.SECONDS.toMillis(1))
+
+        Truth.assertThat(uploadThread.isAlive()).isFalse()
+        Truth.assertThat(cancelledUpload.isCancelled()).isTrue()
+        Mockito.verify<Any?>(grpcCacheClient, Mockito.never())
+            .spliceBlob(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>())
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun uploadChunked_cancelledUpload_throwsInterruptedException() {
+        val file: Path = execRoot.getRelative("test_cancelled.txt")
+        val data = ByteArray(8192)
+        Random(42).nextBytes(data)
+        writeFile(file, data)
+        val blobDigest: Digest? = DIGEST_UTIL.compute(data)
+
+        val testChunker: FastCdcChunker = FastCdcChunker(ChunkingConfig(1024, 2, 0), DIGEST_UTIL)
+        val chunkDigests: MutableList<Digest>?
+        file.getInputStream().use { input ->
+            chunkDigests = testChunker.chunkToDigests(input)
+        }
+        val firstChunkDigest: Digest = chunkDigests!!.get(0)
+
+        Mockito.`when`<T?>(grpcCacheClient.findMissingDigests(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>()))
+            .thenReturn(
+                com.google.common.util.concurrent.Futures.immediateFuture<V?>(
+                    com.google.common.collect.ImmutableSet.of<E?>(
+                        firstChunkDigest
+                    )
+                )
+            )
+
+        val cancelledUpload: com.google.common.util.concurrent.SettableFuture<java.lang.Void?> =
+            com.google.common.util.concurrent.SettableFuture.create<java.lang.Void?>()
+        cancelledUpload.cancel( /* mayInterruptIfRunning= */true)
+        Mockito.`when`<T?>(
+            combinedCache.uploadBlob(ArgumentMatchers.any<T?>(), < T > eq < T ? > (firstChunkDigest),
+            ArgumentMatchers.any<T?>(Blob::class.java)
+        ))
+        .thenReturn(cancelledUpload)
+
+        org.junit.Assert.assertThrows<java.lang.InterruptedException?>(
+            java.lang.InterruptedException::class.java,
+            org.junit.function.ThrowingRunnable { uploader.uploadChunked(context, blobDigest, file) })
+        Mockito.verify<Any?>(grpcCacheClient, Mockito.never())
+            .spliceBlob(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>())
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun uploadChunked_failedUploadDuringPendingChunks_surfacesBeforeOpeningChunkStream() {
+        val data = ByteArray(16384)
+        Random(42).nextBytes(data)
+        val blobDigest: Digest? = DIGEST_UTIL.compute(data)
+
+        val testChunker: FastCdcChunker = FastCdcChunker(ChunkingConfig(1024, 2, 0), DIGEST_UTIL)
+        val chunkDigests: MutableList<Digest>?
+        ByteArrayInputStream(data).use { input ->
+            chunkDigests = testChunker.chunkToDigests(input)
+        }
+        Truth.assertThat(chunkDigests!!.size).isAtLeast(2)
+
+        val file: Path = Mockito.mock<Path>(Path::class.java)
+        Mockito.`when`<T?>(file.getInputStream()).thenReturn(ByteArrayInputStream(data))
+
+        Mockito.`when`<T?>(grpcCacheClient.findMissingDigests(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>()))
+            .thenReturn(
+                com.google.common.util.concurrent.Futures.immediateFuture<V?>(
+                    com.google.common.collect.ImmutableSet.of<E?>(
+                        chunkDigests.get(0)
+                    )
+                )
+            )
+
+        val failedUpload: com.google.common.util.concurrent.SettableFuture<java.lang.Void?> =
+            com.google.common.util.concurrent.SettableFuture.create<java.lang.Void?>()
+        failedUpload.setException(IOException("upload failed"))
+        Mockito.`when`<T?>(
+            combinedCache.uploadBlob(ArgumentMatchers.any<T?>(), < T > eq < T ? > (chunkDigests.get(0)),
+            ArgumentMatchers.any<T?>(Blob::class.java)
+        ))
+        .thenReturn(failedUpload)
+
+        val uploadThread: java.lang.Thread =
+            java.lang.Thread.ofVirtual()
+                .unstarted(
+                    java.lang.Runnable {
+                        try {
+                            uploader.uploadChunked(context, blobDigest, file)
+                        } catch (e: IOException) {
+                            throw java.lang.RuntimeException(e)
+                        } catch (e: java.lang.InterruptedException) {
+                            throw java.lang.RuntimeException(e)
+                        }
+                    })
+        uploadThread.start()
+
+        uploadThread.join(TimeUnit.SECONDS.toMillis(1))
+        Truth.assertThat(uploadThread.isAlive()).isFalse()
+        Mockito.verify<Any?>(file, Mockito.times(1)).getInputStream()
+        Mockito.verify<Any?>(grpcCacheClient, Mockito.never())
+            .spliceBlob(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>())
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun uploadChunked_fileTruncatedBeforeChunkUpload_reportsConcurrentModification() {
+        val data = ByteArray(8192)
+        Random(42).nextBytes(data)
+        val blobDigest: Digest? = DIGEST_UTIL.compute(data)
+
+        val testChunker: FastCdcChunker = FastCdcChunker(ChunkingConfig(1024, 2, 0), DIGEST_UTIL)
+        val chunkDigests: MutableList<Digest>?
+        ByteArrayInputStream(data).use { input ->
+            chunkDigests = testChunker.chunkToDigests(input)
+        }
+        Truth.assertThat(chunkDigests!!.size).isAtLeast(2)
+
+        val secondChunkDigest: Digest = chunkDigests.get(1)
+        val file: Path = Mockito.mock<Path>(Path::class.java)
+        Mockito.`when`<T?>(file.getInputStream())
+            .thenReturn(ByteArrayInputStream(data), ByteArrayInputStream(ByteArray(0)))
+        Mockito.`when`<T?>(grpcCacheClient.findMissingDigests(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>()))
+            .thenReturn(
+                com.google.common.util.concurrent.Futures.immediateFuture<V?>(
+                    com.google.common.collect.ImmutableSet.of<E?>(
+                        secondChunkDigest
+                    )
+                )
+            )
+        Mockito.`when`<T?>(
+            combinedCache.uploadBlob(ArgumentMatchers.any<T?>(), < T > eq < T ? > (secondChunkDigest),
+            ArgumentMatchers.any<T?>(Blob::class.java)
+        ))
         .thenAnswer(
-            invocation -> {
-              Digest d = invocation.getArgument(1);
-              Blob blob = invocation.getArgument(2);
-              try (InputStream in = blob.get()) {
-                actualUploads.put(d, ByteString.readFrom(in));
-              }
-              return immediateVoidFuture();
-            });
-    when(grpcCacheClient.spliceBlob(any(), any(), any())).thenReturn(immediateVoidFuture());
+            Answer { invocation: InvocationOnMock? ->
+                val blob: Blob = invocation.getArgument<Blob>(2)
+                blob.get().use { `in` ->
+                    val unused: ByteString? = ByteString.readFrom(`in`)
+                }
+                com.google.common.util.concurrent.Futures.immediateVoidFuture()
+            })
 
-    uploader.uploadChunked(context, blobDigest, file);
+        val e: IOException? =
+            org.junit.Assert.assertThrows<IOException?>(
+                IOException::class.java,
+                org.junit.function.ThrowingRunnable { uploader.uploadChunked(context, blobDigest, file) })
 
-    assertThat(actualUploads.keySet()).isEqualTo(expectedChunkData.keySet());
-    for (Map.Entry<Digest, ByteString> entry : expectedChunkData.entrySet()) {
-      assertThat(actualUploads.get(entry.getKey())).isEqualTo(entry.getValue());
-    }
-    verify(grpcCacheClient).spliceBlob(any(), eq(blobDigest), eq(allChunkDigests));
-  }
-
-  @Test
-  @SuppressWarnings("unchecked")
-  public void uploadChunked_windowRefillsAfterOneChunkCompletes() throws Exception {
-    Path file = execRoot.getRelative("test_window.txt");
-    byte[] data = new byte[262144];
-    new Random(42).nextBytes(data);
-    writeFile(file, data);
-    Digest blobDigest = DIGEST_UTIL.compute(data);
-
-    FastCdcChunker testChunker = new FastCdcChunker(new ChunkingConfig(1024, 2, 0), DIGEST_UTIL);
-    List<Digest> chunkDigests;
-    try (InputStream input = file.getInputStream()) {
-      chunkDigests = testChunker.chunkToDigests(input);
+        Truth.assertThat(e).hasMessageThat().contains("file was concurrently modified during upload")
+        Truth.assertThat(e).hasCauseThat().isInstanceOf(EOFException::class.java)
+        Mockito.verify<Any?>(grpcCacheClient, Mockito.never())
+            .spliceBlob(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>())
     }
 
-    List<Digest> uniqueChunkDigests = new ArrayList<>();
-    Set<Digest> seen = new HashSet<>();
-    for (Digest chunkDigest : chunkDigests) {
-      if (seen.add(chunkDigest)) {
-        uniqueChunkDigests.add(chunkDigest);
-      }
-      if (uniqueChunkDigests.size() == MAX_IN_FLIGHT_CHUNK_UPLOADS + 1) {
-        break;
-      }
-    }
-    assertThat(uniqueChunkDigests).hasSize(MAX_IN_FLIGHT_CHUNK_UPLOADS + 1);
-
-    when(grpcCacheClient.findMissingDigests(any(), any()))
-        .thenReturn(immediateFuture(ImmutableSet.copyOf(uniqueChunkDigests)));
-    when(grpcCacheClient.spliceBlob(any(), any(), any())).thenReturn(immediateVoidFuture());
-
-    List<SettableFuture<Void>> uploads = new ArrayList<>(uniqueChunkDigests.size());
-    for (int i = 0; i < uniqueChunkDigests.size(); i++) {
-      uploads.add(SettableFuture.create());
-    }
-    CountDownLatch firstWindowRequested = new CountDownLatch(MAX_IN_FLIGHT_CHUNK_UPLOADS);
-    CountDownLatch overflowUploadRequested = new CountDownLatch(1);
-
-    when(combinedCache.uploadBlob(any(), any(Digest.class), any(Blob.class)))
-        .thenAnswer(
-            invocation -> {
-              Digest digest = invocation.getArgument(1);
-              int chunkIndex = uniqueChunkDigests.indexOf(digest);
-              if (chunkIndex < MAX_IN_FLIGHT_CHUNK_UPLOADS) {
-                firstWindowRequested.countDown();
-              } else if (chunkIndex == MAX_IN_FLIGHT_CHUNK_UPLOADS) {
-                overflowUploadRequested.countDown();
-              }
-              return uploads.get(chunkIndex);
-            });
-
-    Thread uploadThread =
-        Thread.ofVirtual()
-            .unstarted(
-                () -> {
-                  try {
-                    uploader.uploadChunked(context, blobDigest, file);
-                  } catch (IOException | InterruptedException e) {
-                    throw new RuntimeException(e);
-                  }
-                });
-    uploadThread.start();
-
-    assertThat(firstWindowRequested.await(1, TimeUnit.SECONDS)).isTrue();
-    assertThat(overflowUploadRequested.await(100, TimeUnit.MILLISECONDS)).isFalse();
-
-    uploads.get(1).set(null);
-    assertThat(overflowUploadRequested.await(1, TimeUnit.SECONDS)).isTrue();
-
-    for (SettableFuture<Void> upload : uploads) {
-      if (!upload.isDone()) {
-        upload.set(null);
-      }
-    }
-    uploadThread.join(TimeUnit.SECONDS.toMillis(1));
-
-    assertThat(uploadThread.isAlive()).isFalse();
-    verify(grpcCacheClient).spliceBlob(any(), eq(blobDigest), eq(chunkDigests));
-  }
-
-  @Test
-  @SuppressWarnings("unchecked")
-  public void uploadChunked_chunkFails_cancelsOtherInFlightUploads() throws Exception {
-    Path file = execRoot.getRelative("test_failure.txt");
-    byte[] data = new byte[16384];
-    new Random(42).nextBytes(data);
-    writeFile(file, data);
-    Digest blobDigest = DIGEST_UTIL.compute(data);
-
-    FastCdcChunker testChunker = new FastCdcChunker(new ChunkingConfig(1024, 2, 0), DIGEST_UTIL);
-    List<Digest> chunkDigests;
-    try (InputStream input = file.getInputStream()) {
-      chunkDigests = testChunker.chunkToDigests(input);
+    @Throws(IOException::class)
+    private fun writeFile(path: Path, data: ByteArray?) {
+        path.getOutputStream().use { out ->
+            out.write(data)
+        }
     }
 
-    List<Digest> uniqueChunkDigests = new ArrayList<>();
-    Set<Digest> seen = new HashSet<>();
-    for (Digest chunkDigest : chunkDigests) {
-      if (seen.add(chunkDigest)) {
-        uniqueChunkDigests.add(chunkDigest);
-      }
-      if (uniqueChunkDigests.size() == 2) {
-        break;
-      }
+    companion object {
+        private val DIGEST_UTIL: DigestUtil = DigestUtil(SyscallCache.NO_CACHE, DigestHashFunction.SHA256)
+        private const val MAX_IN_FLIGHT_CHUNK_UPLOADS = 16
     }
-    assertThat(uniqueChunkDigests).hasSize(2);
-
-    when(grpcCacheClient.findMissingDigests(any(), any()))
-        .thenReturn(immediateFuture(ImmutableSet.copyOf(uniqueChunkDigests)));
-
-    SettableFuture<Void> failedUpload = SettableFuture.create();
-    SettableFuture<Void> cancelledUpload = SettableFuture.create();
-    CountDownLatch uploadsStarted = new CountDownLatch(2);
-    when(combinedCache.uploadBlob(any(), any(Digest.class), any(Blob.class)))
-        .thenAnswer(
-            invocation -> {
-              Digest digest = invocation.getArgument(1);
-              uploadsStarted.countDown();
-              if (digest.equals(uniqueChunkDigests.get(0))) {
-                return failedUpload;
-              }
-              if (digest.equals(uniqueChunkDigests.get(1))) {
-                return cancelledUpload;
-              }
-              return immediateVoidFuture();
-            });
-
-    Thread uploadThread =
-        Thread.ofVirtual()
-            .unstarted(
-                () -> {
-                  try {
-                    uploader.uploadChunked(context, blobDigest, file);
-                  } catch (IOException | InterruptedException e) {
-                    throw new RuntimeException(e);
-                  }
-                });
-    uploadThread.start();
-
-    assertThat(uploadsStarted.await(1, TimeUnit.SECONDS)).isTrue();
-    failedUpload.setException(new IOException("upload failed"));
-
-    uploadThread.join(TimeUnit.SECONDS.toMillis(1));
-
-    assertThat(uploadThread.isAlive()).isFalse();
-    assertThat(cancelledUpload.isCancelled()).isTrue();
-    verify(grpcCacheClient, never()).spliceBlob(any(), any(), any());
-  }
-
-  @Test
-  @SuppressWarnings("unchecked")
-  public void uploadChunked_cancelledUpload_throwsInterruptedException() throws Exception {
-    Path file = execRoot.getRelative("test_cancelled.txt");
-    byte[] data = new byte[8192];
-    new Random(42).nextBytes(data);
-    writeFile(file, data);
-    Digest blobDigest = DIGEST_UTIL.compute(data);
-
-    FastCdcChunker testChunker = new FastCdcChunker(new ChunkingConfig(1024, 2, 0), DIGEST_UTIL);
-    List<Digest> chunkDigests;
-    try (InputStream input = file.getInputStream()) {
-      chunkDigests = testChunker.chunkToDigests(input);
-    }
-    Digest firstChunkDigest = chunkDigests.get(0);
-
-    when(grpcCacheClient.findMissingDigests(any(), any()))
-        .thenReturn(immediateFuture(ImmutableSet.of(firstChunkDigest)));
-
-    SettableFuture<Void> cancelledUpload = SettableFuture.create();
-    cancelledUpload.cancel(/* mayInterruptIfRunning= */ true);
-    when(combinedCache.uploadBlob(any(), eq(firstChunkDigest), any(Blob.class)))
-        .thenReturn(cancelledUpload);
-
-    assertThrows(
-        InterruptedException.class, () -> uploader.uploadChunked(context, blobDigest, file));
-    verify(grpcCacheClient, never()).spliceBlob(any(), any(), any());
-  }
-
-  @Test
-  @SuppressWarnings("unchecked")
-  public void uploadChunked_failedUploadDuringPendingChunks_surfacesBeforeOpeningChunkStream()
-      throws Exception {
-    byte[] data = new byte[16384];
-    new Random(42).nextBytes(data);
-    Digest blobDigest = DIGEST_UTIL.compute(data);
-
-    FastCdcChunker testChunker = new FastCdcChunker(new ChunkingConfig(1024, 2, 0), DIGEST_UTIL);
-    List<Digest> chunkDigests;
-    try (InputStream input = new ByteArrayInputStream(data)) {
-      chunkDigests = testChunker.chunkToDigests(input);
-    }
-    assertThat(chunkDigests.size()).isAtLeast(2);
-
-    Path file = mock(Path.class);
-    when(file.getInputStream()).thenReturn(new ByteArrayInputStream(data));
-
-    when(grpcCacheClient.findMissingDigests(any(), any()))
-        .thenReturn(immediateFuture(ImmutableSet.of(chunkDigests.get(0))));
-
-    SettableFuture<Void> failedUpload = SettableFuture.create();
-    failedUpload.setException(new IOException("upload failed"));
-    when(combinedCache.uploadBlob(any(), eq(chunkDigests.get(0)), any(Blob.class)))
-        .thenReturn(failedUpload);
-
-    Thread uploadThread =
-        Thread.ofVirtual()
-            .unstarted(
-                () -> {
-                  try {
-                    uploader.uploadChunked(context, blobDigest, file);
-                  } catch (IOException | InterruptedException e) {
-                    throw new RuntimeException(e);
-                  }
-                });
-    uploadThread.start();
-
-    uploadThread.join(TimeUnit.SECONDS.toMillis(1));
-    assertThat(uploadThread.isAlive()).isFalse();
-    verify(file, times(1)).getInputStream();
-    verify(grpcCacheClient, never()).spliceBlob(any(), any(), any());
-  }
-
-  @Test
-  @SuppressWarnings("unchecked")
-  public void uploadChunked_fileTruncatedBeforeChunkUpload_reportsConcurrentModification()
-      throws Exception {
-    byte[] data = new byte[8192];
-    new Random(42).nextBytes(data);
-    Digest blobDigest = DIGEST_UTIL.compute(data);
-
-    FastCdcChunker testChunker = new FastCdcChunker(new ChunkingConfig(1024, 2, 0), DIGEST_UTIL);
-    List<Digest> chunkDigests;
-    try (InputStream input = new ByteArrayInputStream(data)) {
-      chunkDigests = testChunker.chunkToDigests(input);
-    }
-    assertThat(chunkDigests.size()).isAtLeast(2);
-
-    Digest secondChunkDigest = chunkDigests.get(1);
-    Path file = mock(Path.class);
-    when(file.getInputStream())
-        .thenReturn(new ByteArrayInputStream(data), new ByteArrayInputStream(new byte[0]));
-    when(grpcCacheClient.findMissingDigests(any(), any()))
-        .thenReturn(immediateFuture(ImmutableSet.of(secondChunkDigest)));
-    when(combinedCache.uploadBlob(any(), eq(secondChunkDigest), any(Blob.class)))
-        .thenAnswer(
-            invocation -> {
-              Blob blob = invocation.getArgument(2);
-              try (InputStream in = blob.get()) {
-                ByteString unused = ByteString.readFrom(in);
-              }
-              return immediateVoidFuture();
-            });
-
-    IOException e =
-        assertThrows(IOException.class, () -> uploader.uploadChunked(context, blobDigest, file));
-
-    assertThat(e).hasMessageThat().contains("file was concurrently modified during upload");
-    assertThat(e).hasCauseThat().isInstanceOf(EOFException.class);
-    verify(grpcCacheClient, never()).spliceBlob(any(), any(), any());
-  }
-
-  private void writeFile(Path path, byte[] data) throws IOException {
-    try (var out = path.getOutputStream()) {
-      out.write(data);
-    }
-  }
 }

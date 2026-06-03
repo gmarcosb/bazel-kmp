@@ -11,95 +11,72 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.java.proto
 
-package com.google.devtools.build.lib.rules.java.proto;
+import com.google.common.base.Function
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.Iterables
+import com.google.common.eventbus.EventBus
+import com.google.devtools.build.lib.skyframe.BzlLoadValue.keyForBuild
+import org.junit.Test
 
-import static com.google.common.collect.Iterables.transform;
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.actions.util.ActionsTestUtil.prettyArtifactNames;
-import static com.google.devtools.build.lib.rules.java.JavaCompileActionTestHelper.getDirectJars;
-import static com.google.devtools.build.lib.rules.java.JavaCompileActionTestHelper.getJavacArguments;
-import static com.google.devtools.build.lib.skyframe.BzlLoadValue.keyForBuild;
+/** Tests for the Starlark version of java_lite_proto_library rule.  */
+@RunWith(JUnit4::class)
+class StarlarkJavaLiteProtoLibraryTest : BuildViewTestCase() {
+    private var actionsTestUtil: ActionsTestUtil? = null
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.eventbus.EventBus;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.Artifact.DerivedArtifact;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.ExtraActionArtifactsProvider;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.collect.nestedset.Depset;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.packages.Provider;
-import com.google.devtools.build.lib.packages.StarlarkInfo;
-import com.google.devtools.build.lib.packages.StarlarkProvider;
-import com.google.devtools.build.lib.packages.StructImpl;
-import com.google.devtools.build.lib.packages.util.MockProtoSupport;
-import com.google.devtools.build.lib.rules.java.JavaCompilationArgsProvider;
-import com.google.devtools.build.lib.rules.java.JavaCompileAction;
-import com.google.devtools.build.lib.rules.java.JavaInfo;
-import com.google.devtools.build.lib.rules.java.JavaSourceJarsProvider;
-import com.google.devtools.build.lib.testutil.MoreAsserts;
-import java.io.IOException;
-import java.util.List;
-import org.junit.Before;
-import org.junit.Ignore;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @Before
+    @Throws(Exception::class)
+    fun setUpMocks() {
+        setBuildLanguageOptions("--incompatible_enable_proto_toolchain_resolution=false")
+        useConfiguration(
+            "--proto_compiler=//proto:compiler",
+            "--proto_toolchain_for_javalite=//tools/proto/toolchains:javalite"
+        )
+        MockProtoSupport.setup(mockToolsConfig)
 
-/** Tests for the Starlark version of java_lite_proto_library rule. */
-@RunWith(JUnit4.class)
-public class StarlarkJavaLiteProtoLibraryTest extends BuildViewTestCase {
-  private ActionsTestUtil actionsTestUtil;
-
-  @Before
-  public final void setUpMocks() throws Exception {
-    setBuildLanguageOptions("--incompatible_enable_proto_toolchain_resolution=false");
-    useConfiguration(
-        "--proto_compiler=//proto:compiler",
-        "--proto_toolchain_for_javalite=//tools/proto/toolchains:javalite");
-    MockProtoSupport.setup(mockToolsConfig);
-
-    scratch.file(
-        "proto/BUILD",
-        """
+        scratch.file(
+            "proto/BUILD",
+            """
         licenses(["notice"])
 
         exports_files(["compiler"])
-        """);
+        
+        """.trimIndent()
+        )
 
-    mockToolchains();
-    invalidatePackages();
+        mockToolchains()
+        invalidatePackages()
 
-    actionsTestUtil = actionsTestUtil();
-  }
+        actionsTestUtil = actionsTestUtil()
+    }
 
-  private void mockToolchains() throws IOException {
-    mockRuntimes();
+    @Throws(IOException::class)
+    private fun mockToolchains() {
+        mockRuntimes()
 
-    scratch.appendFile(
-        "tools/proto/toolchains/BUILD",
-"""
+        scratch.appendFile(
+            "tools/proto/toolchains/BUILD",
+            """
 load('@com_google_protobuf//bazel/toolchains:proto_lang_toolchain.bzl', 'proto_lang_toolchain')
 package(default_visibility = ["//visibility:public"])
 
 proto_lang_toolchain(
     name = "javalite",
-    command_line = "--java_out=lite,immutable:$(OUT)",
+    command_line = "--java_out=lite,immutable:${'$'}(OUT)",
     progress_message = "Generating JavaLite proto_library %{label}",
     runtime = "//protobuf:javalite_runtime",
 )
-""");
-  }
 
-  private void mockRuntimes() throws IOException {
-    mockToolsConfig.overwrite(
-        "protobuf/BUILD",
-        """
+""".trimIndent()
+        )
+    }
+
+    @Throws(IOException::class)
+    private fun mockRuntimes() {
+        mockToolsConfig.overwrite(
+            "protobuf/BUILD",
+            """
         load("@rules_java//java:defs.bzl", "java_library")
         package(default_visibility = ["//visibility:public"])
 
@@ -107,15 +84,18 @@ proto_lang_toolchain(
             name = "javalite_runtime",
             srcs = ["javalite_runtime.java"],
         )
-        """);
-  }
+        
+        """.trimIndent()
+        )
+    }
 
-  /** Tests that java_binaries which depend on proto_libraries depend on the right set of files. */
-  @Test
-  public void testBinaryDeps() throws Exception {
-    scratch.file(
-        "x/BUILD",
-        """
+    /** Tests that java_binaries which depend on proto_libraries depend on the right set of files.  */
+    @Test
+    @Throws(Exception::class)
+    fun testBinaryDeps() {
+        scratch.file(
+            "x/BUILD",
+            """
         load('@com_google_protobuf//bazel:proto_library.bzl', 'proto_library')
         load('@com_google_protobuf//bazel:java_lite_proto_library.bzl', 'java_lite_proto_library')
         java_lite_proto_library(
@@ -136,34 +116,37 @@ proto_lang_toolchain(
             name = "baz",
             srcs = ["baz.proto"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget target = getConfiguredTarget("//x:lite_pb2");
-    NestedSet<Artifact> filesToBuild = getFilesToBuild(target);
-    Iterable<String> deps = prettyArtifactNames(actionsTestUtil.artifactClosureOf(filesToBuild));
+        val target: ConfiguredTarget = getConfiguredTarget("//x:lite_pb2")
+        val filesToBuild: NestedSet<Artifact?> = getFilesToBuild(target)
+        val deps: Iterable<String?>? = prettyArtifactNames(actionsTestUtil.artifactClosureOf(filesToBuild))
 
-    // Should depend on compiler and Java proto1 API.
-    assertThat(deps).contains("proto/compiler");
+        // Should depend on compiler and Java proto1 API.
+        Truth.assertThat(deps).contains("proto/compiler")
 
-    // Also should not depend on RPC APIs.
-    assertThat(deps).doesNotContain("apps/xplat/rpc/codegen/protoc-gen-rpc");
+        // Also should not depend on RPC APIs.
+        Truth.assertThat(deps).doesNotContain("apps/xplat/rpc/codegen/protoc-gen-rpc")
 
-    // Should depend on Java outputs.
-    assertThat(deps).contains("x/foo-lite-src.jar");
-    assertThat(deps).contains("x/baz-lite-src.jar");
+        // Should depend on Java outputs.
+        Truth.assertThat(deps).contains("x/foo-lite-src.jar")
+        Truth.assertThat(deps).contains("x/baz-lite-src.jar")
 
-    // Should depend on Java libraries.
-    assertThat(deps).contains("x/libfoo-lite.jar");
-    assertThat(deps).contains("x/libbaz-lite.jar");
-    assertThat(deps).contains("protobuf/libjavalite_runtime-hjar.jar");
-  }
+        // Should depend on Java libraries.
+        Truth.assertThat(deps).contains("x/libfoo-lite.jar")
+        Truth.assertThat(deps).contains("x/libbaz-lite.jar")
+        Truth.assertThat(deps).contains("protobuf/libjavalite_runtime-hjar.jar")
+    }
 
-  /** Tests that we pass the correct arguments to the protocol compiler. */
-  @Test
-  public void testJavaProto2CompilerArgs() throws Exception {
-    scratch.file(
-        "x/BUILD",
-        """
+    /** Tests that we pass the correct arguments to the protocol compiler.  */
+    @Test
+    @Throws(Exception::class)
+    fun testJavaProto2CompilerArgs() {
+        scratch.file(
+            "x/BUILD",
+            """
         load('@com_google_protobuf//bazel:proto_library.bzl', 'proto_library')
         load('@com_google_protobuf//bazel:java_lite_proto_library.bzl', 'java_lite_proto_library')
         java_lite_proto_library(
@@ -175,46 +158,53 @@ proto_lang_toolchain(
             name = "protolib",
             srcs = ["file.proto"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    String genfilesDir = targetConfig.getGenfilesFragment(RepositoryName.MAIN).getPathString();
+        val genfilesDir: String? = targetConfig.getGenfilesFragment(RepositoryName.MAIN).getPathString()
 
-    List<String> args =
-        getGeneratingSpawnAction(getConfiguredTarget("//x:lite_pb2"), "x/protolib-lite-src.jar")
-            .getRemainingArguments();
+        val args: MutableList<String?>? =
+            getGeneratingSpawnAction(getConfiguredTarget("//x:lite_pb2"), "x/protolib-lite-src.jar")
+                .getRemainingArguments()
 
-    assertThat(args)
-        .containsAtLeast(
-            "--java_out=lite,immutable:" + genfilesDir + "/x/protolib-lite-src.jar",
-            "-I.",
-            "x/file.proto")
-        .inOrder();
-  }
+        Truth.assertThat(args)
+            .containsAtLeast(
+                "--java_out=lite,immutable:" + genfilesDir + "/x/protolib-lite-src.jar",
+                "-I.",
+                "x/file.proto"
+            )
+            .inOrder()
+    }
 
-  @Test
-  public void testProtoLibraryBuildsCompiledJar() throws Exception {
-    ConfiguredTarget target =
-        scratchConfiguredTarget(
-            "java",
-            "lite_pb2",
-            "load('@com_google_protobuf//bazel:proto_library.bzl', 'proto_library')",
-            "load('@com_google_protobuf//bazel:java_lite_proto_library.bzl',"
-                + " 'java_lite_proto_library')",
-            "java_lite_proto_library(name = 'lite_pb2', deps = [':compiled'])",
-            "proto_library(name = 'compiled',",
-            "              srcs = [ 'ok.proto' ])");
+    @Test
+    @Throws(Exception::class)
+    fun testProtoLibraryBuildsCompiledJar() {
+        val target: ConfiguredTarget =
+            scratchConfiguredTarget(
+                "java",
+                "lite_pb2",
+                "load('@com_google_protobuf//bazel:proto_library.bzl', 'proto_library')",
+                "load('@com_google_protobuf//bazel:java_lite_proto_library.bzl',"
+                        + " 'java_lite_proto_library')",
+                "java_lite_proto_library(name = 'lite_pb2', deps = [':compiled'])",
+                "proto_library(name = 'compiled',",
+                "              srcs = [ 'ok.proto' ])"
+            )
 
-    Artifact compiledJar =
-        ActionsTestUtil.getFirstArtifactEndingWith(
-            getFilesToBuild(target), "/libcompiled-lite.jar");
-    assertThat(compiledJar).isNotNull();
-  }
+        val compiledJar: Artifact? =
+            ActionsTestUtil.getFirstArtifactEndingWith(
+                getFilesToBuild(target), "/libcompiled-lite.jar"
+            )
+        assertThat(compiledJar).isNotNull()
+    }
 
-  @Test
-  public void testCommandLineContainsTargetLabel() throws Exception {
-    scratch.file(
-        "java/lib/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testCommandLineContainsTargetLabel() {
+        scratch.file(
+            "java/lib/BUILD",
+            """
         load('@com_google_protobuf//bazel:proto_library.bzl', 'proto_library')
         load('@com_google_protobuf//bazel:java_lite_proto_library.bzl', 'java_lite_proto_library')
         java_lite_proto_library(
@@ -226,44 +216,49 @@ proto_lang_toolchain(
             name = "proto",
             srcs = ["dummy.proto"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    JavaCompileAction javacAction =
-        (JavaCompileAction)
+        val javacAction: JavaCompileAction =
             getGeneratingAction(
-                getConfiguredTarget("//java/lib:lite_pb2"), "java/lib/libproto-lite.jar");
+                getConfiguredTarget("//java/lib:lite_pb2"), "java/lib/libproto-lite.jar"
+            ) as JavaCompileAction
 
-    List<String> commandLine =
-        ImmutableList.copyOf((Iterable<String>) getJavacArguments(javacAction));
-    MoreAsserts.assertContainsSublist(commandLine, "--target_label", "//java/lib:proto");
-  }
+        val commandLine: MutableList<String?> =
+            ImmutableList.copyOf<String?>(JavaCompileActionTestHelper.getJavacArguments(javacAction) as Iterable<String?>?)
+        MoreAsserts.assertContainsSublist<String?>(commandLine, "--target_label", "//java/lib:proto")
+    }
 
-  @Test
-  public void testEmptySrcsForJavaApi() throws Exception {
-    ConfiguredTarget target =
-        scratchConfiguredTarget(
-            "notbad",
-            "lite_pb2",
-            "load('@com_google_protobuf//bazel:proto_library.bzl', 'proto_library')",
-            "load('@com_google_protobuf//bazel:java_lite_proto_library.bzl',"
-                + " 'java_lite_proto_library')",
-            "java_lite_proto_library(name = 'lite_pb2', deps = [':null_lib'])",
-            "proto_library(name = 'null_lib')");
-    JavaCompilationArgsProvider compilationArgsProvider =
-        JavaInfo.getProvider(JavaCompilationArgsProvider.class, target);
-    assertThat(compilationArgsProvider).isNotNull();
-    assertThat(compilationArgsProvider.directCompileTimeJars()).isNotNull();
-    JavaSourceJarsProvider sourceJarsProvider =
-        JavaInfo.getProvider(JavaSourceJarsProvider.class, target);
-    assertThat(sourceJarsProvider).isNotNull();
-    assertThat(sourceJarsProvider.sourceJars()).isNotNull();
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testEmptySrcsForJavaApi() {
+        val target: ConfiguredTarget =
+            scratchConfiguredTarget(
+                "notbad",
+                "lite_pb2",
+                "load('@com_google_protobuf//bazel:proto_library.bzl', 'proto_library')",
+                "load('@com_google_protobuf//bazel:java_lite_proto_library.bzl',"
+                        + " 'java_lite_proto_library')",
+                "java_lite_proto_library(name = 'lite_pb2', deps = [':null_lib'])",
+                "proto_library(name = 'null_lib')"
+            )
+        val compilationArgsProvider: JavaCompilationArgsProvider? =
+            JavaInfo.Companion.getProvider<T?>(JavaCompilationArgsProvider::class.java, target)
+        Truth.assertThat(compilationArgsProvider).isNotNull()
+        assertThat(compilationArgsProvider.directCompileTimeJars).isNotNull()
+        val sourceJarsProvider: JavaSourceJarsProvider? =
+            JavaInfo.Companion.getProvider<T?>(JavaSourceJarsProvider::class.java, target)
+        Truth.assertThat(sourceJarsProvider).isNotNull()
+        Truth.assertThat(sourceJarsProvider.sourceJars).isNotNull()
+    }
 
-  @Test
-  public void testSameVersionCompilerArguments() throws Exception {
-    scratch.file(
-        "cross/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testSameVersionCompilerArguments() {
+        scratch.file(
+            "cross/BUILD",
+            """
         load('@com_google_protobuf//bazel:proto_library.bzl', 'proto_library')
         load('@com_google_protobuf//bazel:java_lite_proto_library.bzl', 'java_lite_proto_library')
         java_lite_proto_library(
@@ -278,42 +273,47 @@ proto_lang_toolchain(
         )
 
         proto_library(name = "alpha")
-        """);
+        
+        """.trimIndent()
+        )
 
-    String genfilesDir = targetConfig.getGenfilesFragment(RepositoryName.MAIN).getPathString();
+        val genfilesDir: String? = targetConfig.getGenfilesFragment(RepositoryName.MAIN).getPathString()
 
-    ConfiguredTarget litepb2 = getConfiguredTarget("//cross:lite_pb2");
+        val litepb2: ConfiguredTarget = getConfiguredTarget("//cross:lite_pb2")
 
-    List<String> args =
-        getGeneratingSpawnAction(litepb2, "cross/bravo-lite-src.jar").getRemainingArguments();
-    assertThat(args)
-        .containsAtLeast(
-            "--java_out=lite,immutable:" + genfilesDir + "/cross/bravo-lite-src.jar",
-            "-I.",
-            "cross/bravo.proto")
-        .inOrder();
+        val args: MutableList<String?>? =
+            getGeneratingSpawnAction(litepb2, "cross/bravo-lite-src.jar").getRemainingArguments()
+        Truth.assertThat(args)
+            .containsAtLeast(
+                "--java_out=lite,immutable:" + genfilesDir + "/cross/bravo-lite-src.jar",
+                "-I.",
+                "cross/bravo.proto"
+            )
+            .inOrder()
 
-    List<String> directJars =
-        prettyArtifactNames(
-            JavaInfo.getProvider(JavaCompilationArgsProvider.class, litepb2).runtimeJars());
-    assertThat(directJars)
-        .containsExactly("cross/libbravo-lite.jar", "protobuf/libjavalite_runtime.jar");
-  }
+        val directJars: MutableList<String?>? =
+            prettyArtifactNames(
+                JavaInfo.Companion.getProvider<T?>(JavaCompilationArgsProvider::class.java, litepb2).runtimeJars()
+            )
+        Truth.assertThat(directJars)
+            .containsExactly("cross/libbravo-lite.jar", "protobuf/libjavalite_runtime.jar")
+    }
 
-  @Test
-  @Ignore
-  // TODO(elenairina): Enable this test when proguard specs are supported in the Starlark version of
-  // java_lite_proto_library OR delete this if Proguard support will be removed from Java rules.
-  public void testExportsProguardSpecsForSupportLibraries() throws Exception {
-    scratch.overwriteFile(
-        "protobuf/BUILD",
-        "package(default_visibility=['//visibility:public'])",
-        "java_library(name = 'javalite_runtime', srcs = ['javalite_runtime.java'], "
-            + "proguard_specs = ['javalite_runtime.pro'])");
+    @Test
+    @Ignore // TODO(elenairina): Enable this test when proguard specs are supported in the Starlark version of
+    // java_lite_proto_library OR delete this if Proguard support will be removed from Java rules.
+    @Throws(Exception::class)
+    fun testExportsProguardSpecsForSupportLibraries() {
+        scratch.overwriteFile(
+            "protobuf/BUILD",
+            "package(default_visibility=['//visibility:public'])",
+            "java_library(name = 'javalite_runtime', srcs = ['javalite_runtime.java'], "
+                    + "proguard_specs = ['javalite_runtime.pro'])"
+        )
 
-    scratch.file(
-        "x/BUILD",
-        """
+        scratch.file(
+            "x/BUILD",
+            """
         java_lite_proto_library(
             name = "lite_pb2",
             deps = [":foo"],
@@ -325,26 +325,32 @@ proto_lang_toolchain(
         )
 
         proto_library(name = "bar")
-        """);
-    StarlarkProvider.Key key =
-        new StarlarkProvider.Key(
-            keyForBuild(
-                Label.parseCanonicalUnchecked(
-                    "@rules_java//java/common:proguard_spec_info.bzl")),
-            "ProguardSpecInfo");
-    StarlarkInfo proguardSpecInfo = (StarlarkInfo) getConfiguredTarget("//x:lite_pb2").get(key);
-    NestedSet<Artifact> providedSpecs =
-        proguardSpecInfo.getValue("specs", Depset.class).getSet(Artifact.class);
+        
+        """.trimIndent()
+        )
+        val key: StarlarkProvider.Key =
+            Key(
+                keyForBuild(
+                    Label.parseCanonicalUnchecked(
+                        "@rules_java//java/common:proguard_spec_info.bzl"
+                    )
+                ),
+                "ProguardSpecInfo"
+            )
+        val proguardSpecInfo: StarlarkInfo = getConfiguredTarget("//x:lite_pb2").get(key) as StarlarkInfo
+        val providedSpecs: NestedSet<Artifact?>? =
+            proguardSpecInfo.getValue("specs", Depset::class.java).getSet(Artifact::class.java)
 
-    assertThat(ActionsTestUtil.baseArtifactNames(providedSpecs))
-        .containsExactly("javalite_runtime.pro_valid");
-  }
+        assertThat(ActionsTestUtil.baseArtifactNames(providedSpecs))
+            .containsExactly("javalite_runtime.pro_valid")
+    }
 
-  @Test
-  public void testExperimentalProtoExtraActions() throws Exception {
-    scratch.file(
-        "x/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testExperimentalProtoExtraActions() {
+        scratch.file(
+            "x/BUILD",
+            """
         load('@com_google_protobuf//bazel:proto_library.bzl', 'proto_library')
         load('@com_google_protobuf//bazel:java_lite_proto_library.bzl', 'java_lite_proto_library')
         java_lite_proto_library(
@@ -356,14 +362,16 @@ proto_lang_toolchain(
             name = "foo",
             srcs = ["foo.proto"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "xa/BUILD",
-        """
+        scratch.file(
+            "xa/BUILD",
+            """
         extra_action(
             name = "xa",
-            cmd = "echo $(EXTRA_ACTION_FILE)",
+            cmd = "echo ${'$'}(EXTRA_ACTION_FILE)",
         )
 
         action_listener(
@@ -371,33 +379,37 @@ proto_lang_toolchain(
             extra_actions = [":xa"],
             mnemonics = ["Javac"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration(
-        "--experimental_action_listener=//xa:al",
-        "--proto_compiler=//proto:compiler",
-        "--proto_toolchain_for_javalite=//tools/proto/toolchains:javalite");
-    ConfiguredTarget ct = getConfiguredTarget("//x:lite_pb2");
-    NestedSet<DerivedArtifact> artifacts =
-        ct.getProvider(ExtraActionArtifactsProvider.class).getTransitiveExtraActionArtifacts();
+        useConfiguration(
+            "--experimental_action_listener=//xa:al",
+            "--proto_compiler=//proto:compiler",
+            "--proto_toolchain_for_javalite=//tools/proto/toolchains:javalite"
+        )
+        val ct: ConfiguredTarget = getConfiguredTarget("//x:lite_pb2")
+        val artifacts: NestedSet<DerivedArtifact?> =
+            ct.getProvider(ExtraActionArtifactsProvider::class.java).getTransitiveExtraActionArtifacts()
 
-    Iterable<String> extraActionOwnerLabels =
-        transform(
-            artifacts.toList(),
-            (artifact) -> artifact == null ? null : artifact.getOwnerLabel().toString());
+        val extraActionOwnerLabels: Iterable<String?> =
+            Iterables.transform<F?, T?>(
+                artifacts.toList(),
+                Function { artifact: F? -> if (artifact == null) null else artifact.getOwnerLabel().toString() })
 
-    assertThat(extraActionOwnerLabels).contains("//x:foo");
-  }
+        Truth.assertThat(extraActionOwnerLabels).contains("//x:foo")
+    }
 
-  /**
-   * Verify that a java_lite_proto_library exposes Starlark providers for the Java code it
-   * generates.
-   */
-  @Test
-  public void testJavaProtosExposeStarlarkProviders() throws Exception {
-    scratch.file(
-        "proto/extensions.bzl",
-        """
+    /**
+     * Verify that a java_lite_proto_library exposes Starlark providers for the Java code it
+     * generates.
+     */
+    @Test
+    @Throws(Exception::class)
+    fun testJavaProtosExposeStarlarkProviders() {
+        scratch.file(
+            "proto/extensions.bzl",
+            """
         load("@rules_java//java/common:java_info.bzl", "JavaInfo")
         def _impl(ctx):
             print(ctx.attr.dep[JavaInfo])
@@ -408,10 +420,12 @@ proto_lang_toolchain(
                 "dep": attr.label(),
             },
         )
-        """);
-    scratch.file(
-        "protolib/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "protolib/BUILD",
+            """
         load('@com_google_protobuf//bazel:proto_library.bzl', 'proto_library')
         load('@com_google_protobuf//bazel:java_lite_proto_library.bzl', 'java_lite_proto_library')
         load("//proto:extensions.bzl", "custom_rule")
@@ -430,22 +444,26 @@ proto_lang_toolchain(
             name = "custom",
             dep = ":lite_pb2",
         )
-        """);
-    update(
-        ImmutableList.of("//protolib:custom"),
-        /* keepGoing= */ false,
-        /* loadingPhaseThreads= */ 1,
-        /* doAnalysis= */ true,
-        new EventBus());
-    // Implicitly check that `update()` above didn't throw an exception. This implicitly checks that
-    // ctx.attr.dep.java.{transitive_compile_time_jars, outputs}, above, is defined.
-  }
+        
+        """.trimIndent()
+        )
+        update(
+            ImmutableList.of<String?>("//protolib:custom"),  /* keepGoing= */
+            false,  /* loadingPhaseThreads= */
+            1,  /* doAnalysis= */
+            true,
+            EventBus()
+        )
+        // Implicitly check that `update()` above didn't throw an exception. This implicitly checks that
+        // ctx.attr.dep.java.{transitive_compile_time_jars, outputs}, above, is defined.
+    }
 
-  @Test
-  public void testProtoLibraryInterop() throws Exception {
-    scratch.file(
-        "protolib/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testProtoLibraryInterop() {
+        scratch.file(
+            "protolib/BUILD",
+            """
         load('@com_google_protobuf//bazel:proto_library.bzl', 'proto_library')
         load('@com_google_protobuf//bazel:java_lite_proto_library.bzl', 'java_lite_proto_library')
         proto_library(
@@ -457,29 +475,34 @@ proto_lang_toolchain(
             name = "lite_pb2",
             deps = [":proto"],
         )
-        """);
-    update(
-        ImmutableList.of("//protolib:lite_pb2"),
-        /* keepGoing= */ false,
-        /* loadingPhaseThreads= */ 1,
-        /* doAnalysis= */ true,
-        new EventBus());
-  }
+        
+        """.trimIndent()
+        )
+        update(
+            ImmutableList.of<String?>("//protolib:lite_pb2"),  /* keepGoing= */
+            false,  /* loadingPhaseThreads= */
+            1,  /* doAnalysis= */
+            true,
+            EventBus()
+        )
+    }
 
-  /**
-   * Tests that a java_proto_library only provides direct jars corresponding on the proto_library
-   * rules it directly depends on, excluding anything that the proto_library rules depends on
-   * themselves. This does not concern strict-deps in the compilation of the generated Java code
-   * itself, only compilation of regular code in java_library/java_binary and similar rules.
-   *
-   * <p>Here, a java_lite_proto_library dependes on an alias proto. We make sure that the system
-   * behaves as if we depend directly on the aliased proto_library.
-   */
-  @Test
-  public void jplCorrectlyDefinesDirectJars_strictDepsEnabled_aliasProto() throws Exception {
-    scratch.file(
-        "x/BUILD",
-        """
+    /**
+     * Tests that a java_proto_library only provides direct jars corresponding on the proto_library
+     * rules it directly depends on, excluding anything that the proto_library rules depends on
+     * themselves. This does not concern strict-deps in the compilation of the generated Java code
+     * itself, only compilation of regular code in java_library/java_binary and similar rules.
+     * 
+     * 
+     * Here, a java_lite_proto_library dependes on an alias proto. We make sure that the system
+     * behaves as if we depend directly on the aliased proto_library.
+     */
+    @Test
+    @Throws(Exception::class)
+    fun jplCorrectlyDefinesDirectJars_strictDepsEnabled_aliasProto() {
+        scratch.file(
+            "x/BUILD",
+            """
         load('@com_google_protobuf//bazel:proto_library.bzl', 'proto_library')
         load('@com_google_protobuf//bazel:java_lite_proto_library.bzl', 'java_lite_proto_library')
         java_lite_proto_library(
@@ -496,30 +519,34 @@ proto_lang_toolchain(
             name = "bar_proto",
             srcs = ["bar.proto"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    JavaCompilationArgsProvider compilationArgsProvider =
-        JavaInfo.getProvider(
-            JavaCompilationArgsProvider.class, getConfiguredTarget("//x:foo_java_proto_lite"));
+        val compilationArgsProvider: JavaCompilationArgsProvider? =
+            JavaInfo.Companion.getProvider<T?>(
+                JavaCompilationArgsProvider::class.java, getConfiguredTarget("//x:foo_java_proto_lite")
+            )
 
-    Iterable<String> directJars =
-        prettyArtifactNames(compilationArgsProvider.directCompileTimeJars());
+        val directJars: Iterable<String?>? =
+            prettyArtifactNames(compilationArgsProvider.directCompileTimeJars)
 
-    assertThat(directJars).containsExactly("x/libbar_proto-lite-hjar.jar");
-  }
+        Truth.assertThat(directJars).containsExactly("x/libbar_proto-lite-hjar.jar")
+    }
 
-  /**
-   * Tests that when strict-deps is disabled, java_lite_proto_library provides (in its "direct"
-   * jars) all transitive classes, not only direct ones. This does not concern strict-deps in the
-   * compilation of the generated Java code itself, only compilation of regular code in
-   * java_library/java_binary and similar rules.
-   */
-  @Test
-  @Ignore("TODO(b/216484418): Systematize this test with its new version.")
-  public void jplCorrectlyDefinesDirectJars_strictDepsDisabled() throws Exception {
-    scratch.file(
-        "x/BUILD",
-        """
+    /**
+     * Tests that when strict-deps is disabled, java_lite_proto_library provides (in its "direct"
+     * jars) all transitive classes, not only direct ones. This does not concern strict-deps in the
+     * compilation of the generated Java code itself, only compilation of regular code in
+     * java_library/java_binary and similar rules.
+     */
+    @Test
+    @Ignore("TODO(b/216484418): Systematize this test with its new version.")
+    @Throws(Exception::class)
+    fun jplCorrectlyDefinesDirectJars_strictDepsDisabled() {
+        scratch.file(
+            "x/BUILD",
+            """
         java_lite_proto_library(
             name = "foo_lite_pb",
             deps = [":foo"],
@@ -546,32 +573,46 @@ proto_lang_toolchain(
             name = "baz",
             srcs = ["baz.proto"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    {
-      JavaCompileAction action =
-          (JavaCompileAction)
-              getGeneratingAction(getConfiguredTarget("//x:foo_lite_pb"), "x/libfoo-lite.jar");
-      assertThat(prettyArtifactNames(getInputs(action, getDirectJars(action)))).isEmpty();
+        run {
+            val action: JavaCompileAction =
+                getGeneratingAction(getConfiguredTarget("//x:foo_lite_pb"), "x/libfoo-lite.jar") as JavaCompileAction
+            assertThat(
+                prettyArtifactNames(
+                    getInputs(
+                        action,
+                        JavaCompileActionTestHelper.getDirectJars(action)
+                    )
+                )
+            ).isEmpty()
+        }
+
+        run {
+            val action: JavaCompileAction =
+                getGeneratingAction(getConfiguredTarget("//x:bar_lite_pb"), "x/libbar-lite.jar") as JavaCompileAction
+            assertThat(
+                prettyArtifactNames(
+                    getInputs(
+                        action,
+                        JavaCompileActionTestHelper.getDirectJars(action)
+                    )
+                )
+            ).isEmpty()
+        }
     }
 
-    {
-      JavaCompileAction action =
-          (JavaCompileAction)
-              getGeneratingAction(getConfiguredTarget("//x:bar_lite_pb"), "x/libbar-lite.jar");
-      assertThat(prettyArtifactNames(getInputs(action, getDirectJars(action)))).isEmpty();
-    }
-  }
-
-  /** Tests that java_lite_proto_library's aspect exposes a Starlark provider named 'proto_java'. */
-  @Test
-  @Ignore
-  // TODO(elenairina): Enable this test when proto_java is returned from the aspect in Starlark
-  // version of java_lite_proto_library.
-  public void testJavaLiteProtoLibraryAspectProviders() throws Exception {
-    scratch.file(
-        "x/aspect.bzl",
-        """
+    /** Tests that java_lite_proto_library's aspect exposes a Starlark provider named 'proto_java'.  */
+    @Test
+    @Ignore // TODO(elenairina): Enable this test when proto_java is returned from the aspect in Starlark
+    // version of java_lite_proto_library.
+    @Throws(Exception::class)
+    fun testJavaLiteProtoLibraryAspectProviders() {
+        scratch.file(
+            "x/aspect.bzl",
+            """
         MyInfo = provider()
 
         def _foo_aspect_impl(target, ctx):
@@ -587,10 +628,12 @@ proto_lang_toolchain(
             return MyInfo(result = ctx.attr.dep.proto_found)
 
         foo_rule = rule(_foo_rule_impl, attrs = {"dep": attr.label(aspects = [foo_aspect])})
-        """);
-    scratch.file(
-        "x/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "x/BUILD",
+            """
         load(":aspect.bzl", "foo_rule")
 
         java_lite_proto_library(
@@ -608,15 +651,16 @@ proto_lang_toolchain(
             name = "foo_rule",
             dep = "foo_java_proto",
         )
-        """);
-    ConfiguredTarget target = getConfiguredTarget("//x:foo_rule");
-    Provider.Key key =
-        new StarlarkProvider.Key(keyForBuild(Label.parseCanonical("//x:aspect.bzl")), "MyInfo");
-    StructImpl myInfo = (StructImpl) target.get(key);
-    Boolean result = (Boolean) myInfo.getValue("result");
+        
+        """.trimIndent()
+        )
+        val target: ConfiguredTarget = getConfiguredTarget("//x:foo_rule")
+        val key: Provider.Key =
+            Key(keyForBuild(Label.parseCanonical("//x:aspect.bzl")), "MyInfo")
+        val myInfo: StructImpl = target.get(key) as StructImpl
+        val result = myInfo.getValue("result") as Boolean?
 
-    // "yes" means that "proto_java" was found on the proto_library + java_proto_library aspect.
-    assertThat(result).isTrue();
-  }
-
+        // "yes" means that "proto_java" was found on the proto_library + java_proto_library aspect.
+        Truth.assertThat(result).isTrue()
+    }
 }

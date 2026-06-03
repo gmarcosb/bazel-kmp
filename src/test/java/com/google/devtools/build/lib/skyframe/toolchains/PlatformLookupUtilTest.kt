@@ -11,206 +11,195 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.toolchains
 
-package com.google.devtools.build.lib.skyframe.toolchains;
+import com.google.devtools.build.lib.analysis.BlazeDirectories
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.skyframe.EvaluationResultSubjectFactory.assertThatEvaluationResult;
-import static java.util.Objects.requireNonNull;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.analysis.platform.PlatformInfo;
-import com.google.devtools.build.lib.analysis.util.AnalysisMock;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.rules.platform.ToolchainTestCase;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetKey;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.lib.skyframe.toolchains.PlatformLookupUtil.InvalidPlatformException;
-import com.google.devtools.build.lib.skyframe.util.SkyframeExecutorTestUtils;
-import com.google.devtools.build.skyframe.EvaluationResult;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionException;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.util.Map;
-import javax.annotation.Nullable;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link PlatformLookupUtil}. */
-@RunWith(JUnit4.class)
-public class PlatformLookupUtilTest extends ToolchainTestCase {
-
-  /**
-   * An {@link AnalysisMock} that injects {@link GetPlatformInfoFunction} into the Skyframe
-   * executor.
-   */
-  private static final class AnalysisMockWithGetPlatformInfoFunction extends AnalysisMock.Delegate {
-    AnalysisMockWithGetPlatformInfoFunction() {
-      super(AnalysisMock.get());
-    }
-
-    @Override
-    public ImmutableMap<SkyFunctionName, SkyFunction> getSkyFunctions(
-        BlazeDirectories directories) {
-      return ImmutableMap.<SkyFunctionName, SkyFunction>builder()
-          .putAll(super.getSkyFunctions(directories))
-          .put(GET_PLATFORM_INFO_FUNCTION, new GetPlatformInfoFunction())
-          .buildOrThrow();
-    }
-  }
-
-  @Override
-  protected AnalysisMock getAnalysisMock() {
-    return new AnalysisMockWithGetPlatformInfoFunction();
-  }
-
-  @Test
-  public void testPlatformLookup() throws Exception {
-    ConfiguredTargetKey linuxKey =
-        ConfiguredTargetKey.builder()
-            .setLabel(Label.parseCanonicalUnchecked("//platforms:linux"))
-            .setConfigurationKey(targetConfigKey)
-            .build();
-    ConfiguredTargetKey macKey =
-        ConfiguredTargetKey.builder()
-            .setLabel(Label.parseCanonicalUnchecked("//platforms:mac"))
-            .setConfigurationKey(targetConfigKey)
-            .build();
-    GetPlatformInfoKey key = GetPlatformInfoKey.create(ImmutableList.of(linuxKey, macKey));
-
-    EvaluationResult<GetPlatformInfoValue> result = getPlatformInfo(key);
-
-    assertThatEvaluationResult(result).hasNoError();
-    assertThatEvaluationResult(result).hasEntryThat(key).isNotNull();
-
-    Map<ConfiguredTargetKey, PlatformInfo> platforms = result.get(key).platforms();
-    assertThat(platforms).containsKey(linuxKey);
-    assertThat(platforms.get(linuxKey).label()).isEqualTo(linuxPlatform.label());
-    assertThat(platforms).containsKey(macKey);
-    assertThat(platforms.get(macKey).label()).isEqualTo(macPlatform.label());
-    assertThat(platforms).hasSize(2);
-  }
-
-  @Test
-  public void testPlatformLookup_targetNotPlatform() throws Exception {
-    scratch.file("invalid/BUILD", "filegroup(name = 'not_a_platform')");
-
-    ConfiguredTargetKey targetKey =
-        ConfiguredTargetKey.builder()
-            .setLabel(Label.parseCanonicalUnchecked("//invalid:not_a_platform"))
-            .setConfigurationKey(targetConfigKey)
-            .build();
-    GetPlatformInfoKey key = GetPlatformInfoKey.create(ImmutableList.of(targetKey));
-
-    EvaluationResult<GetPlatformInfoValue> result = getPlatformInfo(key);
-
-    assertThatEvaluationResult(result).hasError();
-    assertThatEvaluationResult(result)
-        .hasErrorEntryForKeyThat(key)
-        .hasExceptionThat()
-        .isInstanceOf(InvalidPlatformException.class);
-    assertThatEvaluationResult(result)
-        .hasErrorEntryForKeyThat(key)
-        .hasExceptionThat()
-        .hasMessageThat()
-        .contains("//invalid:not_a_platform");
-  }
-
-  @Test
-  public void testPlatformLookup_targetDoesNotExist() throws Exception {
-    ConfiguredTargetKey targetKey =
-        ConfiguredTargetKey.builder()
-            .setLabel(Label.parseCanonicalUnchecked("//fake:missing"))
-            .setConfigurationKey(targetConfigKey)
-            .build();
-    GetPlatformInfoKey key = GetPlatformInfoKey.create(ImmutableList.of(targetKey));
-
-    EvaluationResult<GetPlatformInfoValue> result = getPlatformInfo(key);
-
-    assertThatEvaluationResult(result).hasError();
-    assertThatEvaluationResult(result)
-        .hasErrorEntryForKeyThat(key)
-        .hasExceptionThat()
-        .isInstanceOf(InvalidPlatformException.class);
-    assertThatEvaluationResult(result)
-        .hasErrorEntryForKeyThat(key)
-        .hasExceptionThat()
-        .hasMessageThat()
-        .contains("no such package 'fake': BUILD file not found");
-  }
-
-  // Calls PlatformLookupUtil.getPlatformInfo.
-  private static final SkyFunctionName GET_PLATFORM_INFO_FUNCTION =
-      SkyFunctionName.createHermetic("GET_PLATFORM_INFO_FUNCTION");
-
-  @AutoCodec
-  record GetPlatformInfoKey(ImmutableList<ConfiguredTargetKey> platformKeys) implements SkyKey {
-    GetPlatformInfoKey {
-      requireNonNull(platformKeys, "platformKeys");
-    }
-
-    @Override
-    public SkyFunctionName functionName() {
-      return GET_PLATFORM_INFO_FUNCTION;
-    }
-
-    public static GetPlatformInfoKey create(ImmutableList<ConfiguredTargetKey> platformKeys) {
-      return new GetPlatformInfoKey(platformKeys);
-    }
-  }
-
-  private EvaluationResult<GetPlatformInfoValue> getPlatformInfo(GetPlatformInfoKey key)
-      throws InterruptedException {
-    try {
-      // Must re-enable analysis for Skyframe functions that create configured targets.
-      skyframeExecutor.getSkyframeBuildView().enableAnalysis(true);
-      return SkyframeExecutorTestUtils.evaluate(
-          skyframeExecutor, key, /*keepGoing=*/ false, reporter);
-    } finally {
-      skyframeExecutor.getSkyframeBuildView().enableAnalysis(false);
-    }
-  }
-
-  @AutoCodec
-  record GetPlatformInfoValue(Map<ConfiguredTargetKey, PlatformInfo> platforms)
-      implements SkyValue {
-    GetPlatformInfoValue {
-      requireNonNull(platforms, "platforms");
-    }
-
-    static GetPlatformInfoValue create(Map<ConfiguredTargetKey, PlatformInfo> platforms) {
-      return new GetPlatformInfoValue(platforms);
-    }
-  }
-
-  private static final class GetPlatformInfoFunction implements SkyFunction {
-
-    @Nullable
-    @Override
-    public SkyValue compute(SkyKey skyKey, Environment env)
-        throws SkyFunctionException, InterruptedException {
-      GetPlatformInfoKey key = (GetPlatformInfoKey) skyKey;
-      try {
-        Map<ConfiguredTargetKey, PlatformInfo> platforms =
-            PlatformLookupUtil.getPlatformInfo(key.platformKeys(), env);
-        if (env.valuesMissing()) {
-          return null;
+/** Tests for [PlatformLookupUtil].  */
+@RunWith(JUnit4::class)
+class PlatformLookupUtilTest : ToolchainTestCase() {
+    /**
+     * An [AnalysisMock] that injects [GetPlatformInfoFunction] into the Skyframe
+     * executor.
+     */
+    private class AnalysisMockWithGetPlatformInfoFunction :
+        com.google.devtools.build.lib.analysis.util.AnalysisMock.Delegate(AnalysisMock.get()) {
+        public override fun getSkyFunctions(
+            directories: BlazeDirectories
+        ): com.google.common.collect.ImmutableMap<SkyFunctionName?, SkyFunction?> {
+            return com.google.common.collect.ImmutableMap.builder<SkyFunctionName?, SkyFunction?>()
+                .putAll(super.getSkyFunctions(directories))
+                .put(GET_PLATFORM_INFO_FUNCTION, GetPlatformInfoFunction())
+                .buildOrThrow()
         }
-        return GetPlatformInfoValue.create(platforms);
-      } catch (InvalidPlatformException e) {
-        throw new GetPlatformInfoFunctionException(e);
-      }
     }
-  }
 
-  private static final class GetPlatformInfoFunctionException extends SkyFunctionException {
-    GetPlatformInfoFunctionException(InvalidPlatformException e) {
-      super(e, Transience.PERSISTENT);
+    protected val analysisMock: AnalysisMock
+        get() = com.google.devtools.build.lib.skyframe.toolchains.PlatformLookupUtilTest.AnalysisMockWithGetPlatformInfoFunction()
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testPlatformLookup() {
+        val linuxKey: ConfiguredTargetKey? =
+            ConfiguredTargetKey.builder()
+                .setLabel(Label.parseCanonicalUnchecked("//platforms:linux"))
+                .setConfigurationKey(targetConfigKey)
+                .build()
+        val macKey: ConfiguredTargetKey? =
+            ConfiguredTargetKey.builder()
+                .setLabel(Label.parseCanonicalUnchecked("//platforms:mac"))
+                .setConfigurationKey(targetConfigKey)
+                .build()
+        val key = GetPlatformInfoKey.Companion.create(
+            com.google.common.collect.ImmutableList.of<ConfiguredTargetKey?>(
+                linuxKey,
+                macKey
+            )
+        )
+
+        val result: EvaluationResult<GetPlatformInfoValue?> = getPlatformInfo(key)
+
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasNoError()
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasEntryThat(key).isNotNull()
+
+        val platforms: MutableMap<ConfiguredTargetKey?, PlatformInfo?> = result.get(key).platforms()
+        Truth.assertThat(platforms).containsKey(linuxKey)
+        assertThat(platforms.get(linuxKey).label()).isEqualTo(linuxPlatform.label())
+        Truth.assertThat(platforms).containsKey(macKey)
+        assertThat(platforms.get(macKey).label()).isEqualTo(macPlatform.label())
+        Truth.assertThat(platforms).hasSize(2)
     }
-  }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testPlatformLookup_targetNotPlatform() {
+        scratch.file("invalid/BUILD", "filegroup(name = 'not_a_platform')")
+
+        val targetKey: ConfiguredTargetKey =
+            ConfiguredTargetKey.builder()
+                .setLabel(Label.parseCanonicalUnchecked("//invalid:not_a_platform"))
+                .setConfigurationKey(targetConfigKey)
+                .build()
+        val key = GetPlatformInfoKey.Companion.create(
+            com.google.common.collect.ImmutableList.of<ConfiguredTargetKey?>(targetKey)
+        )
+
+        val result: EvaluationResult<GetPlatformInfoValue?> = getPlatformInfo(key)
+
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasError()
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result)
+            .hasErrorEntryForKeyThat(key)
+            .hasExceptionThat()
+            .isInstanceOf(InvalidPlatformException::class.java)
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result)
+            .hasErrorEntryForKeyThat(key)
+            .hasExceptionThat()
+            .hasMessageThat()
+            .contains("//invalid:not_a_platform")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testPlatformLookup_targetDoesNotExist() {
+        val targetKey: ConfiguredTargetKey =
+            ConfiguredTargetKey.builder()
+                .setLabel(Label.parseCanonicalUnchecked("//fake:missing"))
+                .setConfigurationKey(targetConfigKey)
+                .build()
+        val key = GetPlatformInfoKey.Companion.create(
+            com.google.common.collect.ImmutableList.of<ConfiguredTargetKey?>(targetKey)
+        )
+
+        val result: EvaluationResult<GetPlatformInfoValue?> = getPlatformInfo(key)
+
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasError()
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result)
+            .hasErrorEntryForKeyThat(key)
+            .hasExceptionThat()
+            .isInstanceOf(InvalidPlatformException::class.java)
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result)
+            .hasErrorEntryForKeyThat(key)
+            .hasExceptionThat()
+            .hasMessageThat()
+            .contains("no such package 'fake': BUILD file not found")
+    }
+
+    @AutoCodec
+    internal class GetPlatformInfoKey(platformKeys: com.google.common.collect.ImmutableList<ConfiguredTargetKey?>?) :
+        SkyKey {
+        public override fun functionName(): SkyFunctionName? {
+            return GET_PLATFORM_INFO_FUNCTION
+        }
+
+        val platformKeys: com.google.common.collect.ImmutableList<ConfiguredTargetKey?>?
+
+        init {
+            this.platformKeys = platformKeys
+            java.util.Objects.requireNonNull<com.google.common.collect.ImmutableList<ConfiguredTargetKey?>?>(
+                platformKeys,
+                "platformKeys"
+            )
+        }
+
+        companion object {
+            fun create(platformKeys: com.google.common.collect.ImmutableList<ConfiguredTargetKey?>?): GetPlatformInfoKey {
+                return GetPlatformInfoKey(platformKeys)
+            }
+        }
+    }
+
+    @Throws(java.lang.InterruptedException::class)
+    private fun getPlatformInfo(key: GetPlatformInfoKey?): EvaluationResult<GetPlatformInfoValue?> {
+        try {
+            // Must re-enable analysis for Skyframe functions that create configured targets.
+            skyframeExecutor.getSkyframeBuildView().enableAnalysis(true)
+            return SkyframeExecutorTestUtils.evaluate<T?>(
+                skyframeExecutor, key,  /*keepGoing=*/false, reporter
+            )
+        } finally {
+            skyframeExecutor.getSkyframeBuildView().enableAnalysis(false)
+        }
+    }
+
+    @AutoCodec
+    internal class GetPlatformInfoValue(platforms: MutableMap<ConfiguredTargetKey?, PlatformInfo?>?) : SkyValue {
+        val platforms: MutableMap<ConfiguredTargetKey?, PlatformInfo?>?
+
+        init {
+            this.platforms = platforms
+            java.util.Objects.requireNonNull<MutableMap<ConfiguredTargetKey?, PlatformInfo?>?>(platforms, "platforms")
+        }
+
+        companion object {
+            fun create(platforms: MutableMap<ConfiguredTargetKey?, PlatformInfo?>?): GetPlatformInfoValue {
+                return GetPlatformInfoValue(platforms)
+            }
+        }
+    }
+
+    private class GetPlatformInfoFunction : SkyFunction {
+        @Throws(SkyFunctionException::class, java.lang.InterruptedException::class)
+        public override fun compute(skyKey: SkyKey?, env: Environment): SkyValue? {
+            val key = skyKey as GetPlatformInfoKey
+            try {
+                val platforms: MutableMap<ConfiguredTargetKey?, PlatformInfo?>? =
+                    PlatformLookupUtil.getPlatformInfo(key.platformKeys, env)
+                if (env.valuesMissing()) {
+                    return null
+                }
+                return GetPlatformInfoValue.Companion.create(platforms)
+            } catch (e: InvalidPlatformException) {
+                throw GetPlatformInfoFunctionException(e)
+            }
+        }
+    }
+
+    private class GetPlatformInfoFunctionException(e: InvalidPlatformException?) :
+        SkyFunctionException(e, Transience.PERSISTENT)
+
+    companion object {
+        // Calls PlatformLookupUtil.getPlatformInfo.
+        private val GET_PLATFORM_INFO_FUNCTION: SkyFunctionName? =
+            SkyFunctionName.createHermetic("GET_PLATFORM_INFO_FUNCTION")
+    }
 }

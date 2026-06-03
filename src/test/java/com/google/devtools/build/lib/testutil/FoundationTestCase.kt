@@ -11,147 +11,141 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.testutil;
+package com.google.devtools.build.lib.testutil
 
-import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.junit.Assert.fail;
+import com.google.devtools.build.lib.events.EventBusEventHandler
 
-import com.google.common.base.Splitter;
-import com.google.common.collect.ImmutableClassToInstanceMap;
-import com.google.common.collect.Iterables;
-import com.google.common.eventbus.EventBus;
-import com.google.devtools.build.lib.clock.BlazeClock;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.EventBusEventHandler;
-import com.google.devtools.build.lib.events.EventCollector;
-import com.google.devtools.build.lib.events.EventHandler;
-import com.google.devtools.build.lib.events.EventKind;
-import com.google.devtools.build.lib.events.Reporter;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import java.util.Set;
-import java.util.regex.Pattern;
-import net.starlark.java.eval.EvalException;
-import org.junit.After;
-import org.junit.Before;
+/** A helper class for implementing tests of the "foundation" library.  */
+abstract class FoundationTestCase {
+    protected var rootDirectory: Path? = null
+    protected var outputBase: Path? = null
 
-/** A helper class for implementing tests of the "foundation" library. */
-public abstract class FoundationTestCase {
-  protected Path rootDirectory;
-  protected Path outputBase;
+    // May be overridden by subclasses:
+    protected var reporter: com.google.devtools.build.lib.events.Reporter? = null
 
-  // May be overridden by subclasses:
-  protected Reporter reporter;
-  // The event bus of the reporter
-  protected EventBus eventBus;
-  protected EventCollector eventCollector;
-  protected FileSystem fileSystem;
-  protected Scratch scratch;
-  protected Root root;
+    // The event bus of the reporter
+    protected var eventBus: com.google.common.eventbus.EventBus? = null
+    protected var eventCollector: EventCollector? = null
+    protected var fileSystem: FileSystem? = null
+    protected var scratch: Scratch? = null
+    protected var root: Root? = null
 
-  /** Returns the Scratch instance for this test case. */
-  public Scratch getScratch() {
-    return scratch;
-  }
+    /** Returns the Scratch instance for this test case.  */
+    fun getScratch(): Scratch {
+        return scratch
+    }
 
-  // Individual tests can opt-out of this handler if they expect an error, by
-  // calling reporter.removeHandler(failFastHandler).
-  public static final EventHandler failFastHandler =
-      new EventHandler() {
-        @Override
-        public void handle(Event event) {
-          if (EventKind.ERRORS.contains(event.getKind())) {
-            fail(event.toString());
-          }
-        }
-      };
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun initializeFileSystemAndDirectories() {
+        fileSystem = createFileSystem()
+        scratch = Scratch(fileSystem, "/workspace")
+        outputBase = scratch.dir("/usr/local/google/_blaze_jrluser/FAKEMD5/")
+        rootDirectory = scratch.dir("/workspace")
+        scratch.file(rootDirectory.getRelative("MODULE.bazel").getPathString())
+        root = Root.fromPath(rootDirectory)
 
-  protected static final EventHandler printHandler =
-      new EventHandler() {
-        @Override
-        public void handle(Event event) {}
-      };
+        // Let the Starlark interpreter know how to read source files.
+        net.starlark.java.eval.EvalException.setSourceReaderSupplier(
+            java.util.function.Supplier {
+                SourceReader { loc: net.starlark.java.syntax.Location? ->
+                    try {
+                        val content: String = FileSystemUtils.readContent(
+                            fileSystem.getPath(loc.file()),
+                            java.nio.charset.StandardCharsets.UTF_8
+                        )
+                        return@SourceReader com.google.common.collect.Iterables.get<String?>(
+                            com.google.common.base.Splitter.on(
+                                "\n"
+                            ).split(content), loc.line() - 1, null
+                        )
+                    } catch (ignored: java.lang.Exception) {
+                        // ignore any exceptions reading the file -- this is just for extra info
+                        return@SourceReader null
+                    }
+                }
+            })
+    }
 
-  @Before
-  public final void initializeFileSystemAndDirectories() throws Exception {
-    fileSystem = createFileSystem();
-    scratch = new Scratch(fileSystem, "/workspace");
-    outputBase = scratch.dir("/usr/local/google/_blaze_jrluser/FAKEMD5/");
-    rootDirectory = scratch.dir("/workspace");
-    scratch.file(rootDirectory.getRelative("MODULE.bazel").getPathString());
-    root = Root.fromPath(rootDirectory);
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun initializeLogging() {
+        eventCollector = EventCollector(com.google.devtools.build.lib.events.EventKind.ERRORS_WARNINGS_AND_INFO)
+        eventBus = com.google.common.eventbus.EventBus()
+        reporter = com.google.devtools.build.lib.events.Reporter(
+            EventBusEventHandler(eventBus),
+            eventCollector,
+            failFastHandler
+        )
+    }
 
-    // Let the Starlark interpreter know how to read source files.
-    EvalException.setSourceReaderSupplier(
-        () ->
-            loc -> {
-              try {
-                String content = FileSystemUtils.readContent(fileSystem.getPath(loc.file()), UTF_8);
-                return Iterables.get(Splitter.on("\n").split(content), loc.line() - 1, null);
-              } catch (Exception ignored) {
-                // ignore any exceptions reading the file -- this is just for extra info
-                return null;
-              }
-            });
-  }
+    @org.junit.After
+    @Throws(java.lang.Exception::class)
+    fun clearInterrupts() {
+        java.lang.Thread.interrupted() // Clear any interrupt pending against this thread,
+        // so that we don't cause later tests to fail.
+    }
 
-  @Before
-  public void initializeLogging() throws Exception {
-    eventCollector = new EventCollector(EventKind.ERRORS_WARNINGS_AND_INFO);
-    eventBus = new EventBus();
-    reporter = new Reporter(new EventBusEventHandler(eventBus), eventCollector, failFastHandler);
-  }
+    /** Creates the file system; override to inject FS behavior.  */
+    protected fun createFileSystem(): FileSystem {
+        return InMemoryFileSystem(com.google.devtools.build.lib.clock.BlazeClock.instance(), DigestHashFunction.SHA256)
+    }
 
-  @After
-  public final void clearInterrupts() throws Exception {
-    Thread.interrupted(); // Clear any interrupt pending against this thread,
-    // so that we don't cause later tests to fail.
-  }
+    // Mix-in assertions:
+    protected fun assertNoEvents() {
+        MoreAsserts.assertNoEvents(eventCollector)
+    }
 
-  /** Creates the file system; override to inject FS behavior. */
-  protected FileSystem createFileSystem() {
-    return new InMemoryFileSystem(BlazeClock.instance(), DigestHashFunction.SHA256);
-  }
+    protected fun assertContainsEvent(expectedMessage: String?): com.google.devtools.build.lib.events.Event {
+        return MoreAsserts.assertContainsEvent(eventCollector, expectedMessage)
+    }
 
-  // Mix-in assertions:
+    protected fun assertContainsEvent(expectedMessagePattern: java.util.regex.Pattern?): com.google.devtools.build.lib.events.Event {
+        return MoreAsserts.assertContainsEvent(eventCollector, expectedMessagePattern)
+    }
 
-  protected void assertNoEvents() {
-    MoreAsserts.assertNoEvents(eventCollector);
-  }
+    protected fun assertContainsEvent(
+        expectedMessage: String?,
+        kinds: MutableSet<com.google.devtools.build.lib.events.EventKind?>?
+    ): com.google.devtools.build.lib.events.Event {
+        return MoreAsserts.assertContainsEvent(eventCollector, expectedMessage, kinds)
+    }
 
-  protected Event assertContainsEvent(String expectedMessage) {
-    return MoreAsserts.assertContainsEvent(eventCollector, expectedMessage);
-  }
+    protected fun assertContainsEventWithFrequency(expectedMessage: String?, expectedFrequency: Int) {
+        MoreAsserts.assertContainsEventWithFrequency(
+            eventCollector, expectedMessage, expectedFrequency
+        )
+    }
 
-  protected Event assertContainsEvent(Pattern expectedMessagePattern) {
-    return MoreAsserts.assertContainsEvent(eventCollector, expectedMessagePattern);
-  }
+    protected fun assertDoesNotContainEvent(expectedMessage: String?) {
+        MoreAsserts.assertDoesNotContainEvent(eventCollector, expectedMessage)
+    }
 
-  protected Event assertContainsEvent(String expectedMessage, Set<EventKind> kinds) {
-    return MoreAsserts.assertContainsEvent(eventCollector, expectedMessage, kinds);
-  }
+    protected fun assertContainsEventsInOrder(vararg expectedMessages: String?) {
+        MoreAsserts.assertContainsEventsInOrder(eventCollector, expectedMessages)
+    }
 
-  protected void assertContainsEventWithFrequency(String expectedMessage, int expectedFrequency) {
-    MoreAsserts.assertContainsEventWithFrequency(
-        eventCollector, expectedMessage, expectedFrequency);
-  }
+    protected val commonSerializationDependencies: com.google.common.collect.ImmutableClassToInstanceMap<Any?>
+        get() = com.google.common.collect.ImmutableClassToInstanceMap.builder<Any?>()
+            .put<FileSystem?>(FileSystem::class.java, fileSystem)
+            .put<Root.RootCodecDependencies?>(Root.RootCodecDependencies::class.java, RootCodecDependencies(root))
+            .build()
 
-  protected void assertDoesNotContainEvent(String expectedMessage) {
-    MoreAsserts.assertDoesNotContainEvent(eventCollector, expectedMessage);
-  }
+    companion object {
+        // Individual tests can opt-out of this handler if they expect an error, by
+        // calling reporter.removeHandler(failFastHandler).
+        val failFastHandler: com.google.devtools.build.lib.events.EventHandler =
+            object : com.google.devtools.build.lib.events.EventHandler() {
+                override fun handle(event: com.google.devtools.build.lib.events.Event) {
+                    if (com.google.devtools.build.lib.events.EventKind.ERRORS.contains(event.getKind())) {
+                        org.junit.Assert.fail(event.toString())
+                    }
+                }
+            }
 
-  protected void assertContainsEventsInOrder(String... expectedMessages) {
-    MoreAsserts.assertContainsEventsInOrder(eventCollector, expectedMessages);
-  }
-
-  protected ImmutableClassToInstanceMap<Object> getCommonSerializationDependencies() {
-    return ImmutableClassToInstanceMap.builder()
-        .put(FileSystem.class, fileSystem)
-        .put(Root.RootCodecDependencies.class, new Root.RootCodecDependencies(root))
-        .build();
-  }
+        protected val printHandler: com.google.devtools.build.lib.events.EventHandler =
+            object : com.google.devtools.build.lib.events.EventHandler() {
+                override fun handle(event: com.google.devtools.build.lib.events.Event?) {}
+            }
+    }
 }

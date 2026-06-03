@@ -11,56 +11,57 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package net.starlark.java.syntax;
+package net.starlark.java.syntax
 
-import static com.google.common.truth.Truth.assertThat;
-import static java.nio.charset.StandardCharsets.ISO_8859_1;
+import com.google.common.truth.Truth
+import net.starlark.java.syntax.ParserInput.getFile
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.io.IOException
 
-import java.io.IOException;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** A test case for [ParserInput].  */
+@RunWith(JUnit4::class)
+class ParserInputTest {
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun testFromLatin1() {
+        val content = "éclair"
+        val bytes: ByteArray? = content.toByteArray(java.nio.charset.StandardCharsets.ISO_8859_1)
+        val input: net.starlark.java.syntax.ParserInput =
+            net.starlark.java.syntax.ParserInput.fromLatin1(bytes, "foo.txt")
+        Truth.assertThat(String(input.getContent())).isEqualTo(content)
+        Truth.assertThat(input.getFile()).isEqualTo("foo.txt")
+    }
 
-/** A test case for {@link ParserInput}. */
-@RunWith(JUnit4.class)
-public class ParserInputTest {
+    @org.junit.Test
+    fun testFromString() {
+        val content = "Content provided as a string."
+        val pathName = "/the/name/of/the/content.txt"
+        val input: net.starlark.java.syntax.ParserInput =
+            net.starlark.java.syntax.ParserInput.fromString(content, pathName)
+        Truth.assertThat(String(input.getContent())).isEqualTo(content)
+        Truth.assertThat(input.getFile()).isEqualTo(pathName)
+    }
 
-  @Test
-  public void testFromLatin1() throws IOException {
-    String content = "éclair";
-    byte[] bytes = content.getBytes(ISO_8859_1);
-    ParserInput input = ParserInput.fromLatin1(bytes, "foo.txt");
-    assertThat(new String(input.getContent())).isEqualTo(content);
-    assertThat(input.getFile()).isEqualTo("foo.txt");
-  }
+    @org.junit.Test
+    fun testFromCharArray() {
+        val content = "Content provided as a string."
+        val pathName = "/the/name/of/the/content.txt"
+        val contentChars: CharArray = content.toCharArray()
+        val input: net.starlark.java.syntax.ParserInput =
+            net.starlark.java.syntax.ParserInput.fromCharArray(contentChars, pathName)
+        Truth.assertThat(String(input.getContent())).isEqualTo(content)
+        Truth.assertThat(input.getFile()).isEqualTo(pathName)
+    }
 
-  @Test
-  public void testFromString() {
-    String content = "Content provided as a string.";
-    String pathName = "/the/name/of/the/content.txt";
-    ParserInput input = ParserInput.fromString(content, pathName);
-    assertThat(new String(input.getContent())).isEqualTo(content);
-    assertThat(input.getFile()).isEqualTo(pathName);
-  }
+    @org.junit.Test
+    fun testWillNotTryToReadInputFileIfContentProvidedAsString() {
+        net.starlark.java.syntax.ParserInput.fromString("Content provided as string.", "/will/not/try/to/read")
+    }
 
-  @Test
-  public void testFromCharArray() {
-    String content = "Content provided as a string.";
-    String pathName = "/the/name/of/the/content.txt";
-    char[] contentChars = content.toCharArray();
-    ParserInput input = ParserInput.fromCharArray(contentChars, pathName);
-    assertThat(new String(input.getContent())).isEqualTo(content);
-    assertThat(input.getFile()).isEqualTo(pathName);
-  }
-
-  @Test
-  public void testWillNotTryToReadInputFileIfContentProvidedAsString() {
-    ParserInput.fromString("Content provided as string.", "/will/not/try/to/read");
-  }
-
-  @Test
-  public void testWillNotTryToReadInputFileIfContentProvidedAsChars() {
-    char[] content = "Content provided as char array.".toCharArray();
-    ParserInput.fromCharArray(content, "/will/not/try/to/read");
-  }
+    @org.junit.Test
+    fun testWillNotTryToReadInputFileIfContentProvidedAsChars() {
+        val content: CharArray = "Content provided as char array.".toCharArray()
+        net.starlark.java.syntax.ParserInput.fromCharArray(content, "/will/not/try/to/read")
+    }
 }

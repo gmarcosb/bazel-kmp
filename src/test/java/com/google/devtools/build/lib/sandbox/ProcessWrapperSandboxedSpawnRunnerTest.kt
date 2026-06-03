@@ -11,130 +11,118 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.sandbox;
+package com.google.devtools.build.lib.sandbox
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assume.assumeTrue;
+import com.google.devtools.build.lib.actions.LocalHostCapacity
 
-import com.google.devtools.build.lib.actions.LocalHostCapacity;
-import com.google.devtools.build.lib.actions.Spawn;
-import com.google.devtools.build.lib.actions.SpawnResult;
-import com.google.devtools.build.lib.exec.TreeDeleter;
-import com.google.devtools.build.lib.exec.util.SpawnBuilder;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.sandbox.SpawnRunnerTestUtil.SpawnExecutionContextForTesting;
-import com.google.devtools.build.lib.util.OS;
-import com.google.devtools.build.lib.util.io.FileOutErr;
-import com.google.devtools.build.lib.vfs.Path;
-import java.time.Duration;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [ProcessWrapperSandboxSpawnRunner].  */
+@RunWith(JUnit4::class)
+class ProcessWrapperSandboxedSpawnRunnerTest : SandboxedSpawnRunnerTestCase() {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun processWrapperSandboxedSpawnRunner_canRunEcho() {
+        // TODO(b/62588075) Currently no process-wrapper support in windows.
+        Assume.assumeTrue(com.google.devtools.build.lib.util.OS.getCurrent() != com.google.devtools.build.lib.util.OS.WINDOWS)
 
-/** Tests for {@link ProcessWrapperSandboxSpawnRunner}. */
-@RunWith(JUnit4.class)
-public final class ProcessWrapperSandboxedSpawnRunnerTest extends SandboxedSpawnRunnerTestCase {
+        val commandEnvironment: CommandEnvironment = runtimeWrapper.newCommand()
+        commandEnvironment
+            .getLocalResourceManager()
+            .setAvailableResources(LocalHostCapacity.getLocalHostCapacity())
 
-  /** Tree deleter to use by default for all tests. */
-  private static final TreeDeleter treeDeleter = new SynchronousTreeDeleter();
+        val execRoot: Path = commandEnvironment.getExecRoot()
+        execRoot.createDirectory()
 
-  @Test
-  public void processWrapperSandboxedSpawnRunner_canRunEcho() throws Exception {
-    // TODO(b/62588075) Currently no process-wrapper support in windows.
-    assumeTrue(OS.getCurrent() != OS.WINDOWS);
+        SpawnRunnerTestUtil.copyProcessWrapperIntoPath(execRoot)
 
-    CommandEnvironment commandEnvironment = runtimeWrapper.newCommand();
-    commandEnvironment
-        .getLocalResourceManager()
-        .setAvailableResources(LocalHostCapacity.getLocalHostCapacity());
+        val sandboxBase: Path = execRoot.getRelative("sandbox")
+        sandboxBase.createDirectory()
 
-    Path execRoot = commandEnvironment.getExecRoot();
-    execRoot.createDirectory();
+        val policyTimeout: java.time.Duration? = java.time.Duration.ofSeconds(60)
 
-    SpawnRunnerTestUtil.copyProcessWrapperIntoPath(execRoot);
+        val runner: ProcessWrapperSandboxedSpawnRunner =
+            ProcessWrapperSandboxedSpawnRunner(commandEnvironment, sandboxBase, treeDeleter)
 
-    Path sandboxBase = execRoot.getRelative("sandbox");
-    sandboxBase.createDirectory();
+        val spawn: Spawn = SpawnBuilder("echo", "cooee").build()
 
-    Duration policyTimeout = Duration.ofSeconds(60);
+        val fileOutErr: FileOutErr =
+            FileOutErr(testRoot.getChild("stdout"), testRoot.getChild("stderr"))
+        val policy: SpawnExecutionContextForTesting =
+            SpawnExecutionContextForTesting(spawn, fileOutErr, policyTimeout)
 
-    ProcessWrapperSandboxedSpawnRunner runner =
-        new ProcessWrapperSandboxedSpawnRunner(commandEnvironment, sandboxBase, treeDeleter);
+        val spawnResult: SpawnResult = runner.exec(spawn, policy)
 
-    Spawn spawn = new SpawnBuilder("echo", "cooee").build();
+        assertThat(spawnResult.status()).isEqualTo(SpawnResult.Status.SUCCESS)
+        assertThat(spawnResult.exitCode()).isEqualTo(0)
+        assertThat(spawnResult.setupSuccess()).isTrue()
+    }
 
-    FileOutErr fileOutErr =
-        new FileOutErr(testRoot.getChild("stdout"), testRoot.getChild("stderr"));
-    SpawnExecutionContextForTesting policy =
-        new SpawnExecutionContextForTesting(spawn, fileOutErr, policyTimeout);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun hasExecutionStatistics_whenOptionIsEnabled() {
+        // TODO(b/62588075) Currently no process-wrapper or execution statistics support in Windows.
+        Assume.assumeTrue(com.google.devtools.build.lib.util.OS.getCurrent() != com.google.devtools.build.lib.util.OS.WINDOWS)
 
-    SpawnResult spawnResult = runner.exec(spawn, policy);
+        val minimumWallTimeToSpend = 10 * 1000
+        // Because of e.g. interference, wall time taken may be much larger than CPU time used.
+        val maximumWallTimeToSpend = 40 * 1000
 
-    assertThat(spawnResult.status()).isEqualTo(SpawnResult.Status.SUCCESS);
-    assertThat(spawnResult.exitCode()).isEqualTo(0);
-    assertThat(spawnResult.setupSuccess()).isTrue();
-  }
+        val minimumUserTimeToSpend = minimumWallTimeToSpend
+        val maximumUserTimeToSpend = minimumUserTimeToSpend + 2 * 1000
 
-  @Test
-  public void hasExecutionStatistics_whenOptionIsEnabled() throws Exception {
-    // TODO(b/62588075) Currently no process-wrapper or execution statistics support in Windows.
-    assumeTrue(OS.getCurrent() != OS.WINDOWS);
+        val minimumSystemTimeToSpend = 0
+        val maximumSystemTimeToSpend = minimumSystemTimeToSpend + 2 * 1000
 
-    int minimumWallTimeToSpend = 10 * 1000;
-    // Because of e.g. interference, wall time taken may be much larger than CPU time used.
-    int maximumWallTimeToSpend = 40 * 1000;
+        val commandEnvironment: CommandEnvironment = runtimeWrapper.newCommand()
+        commandEnvironment
+            .getLocalResourceManager()
+            .setAvailableResources(LocalHostCapacity.getLocalHostCapacity())
+        val execRoot: Path = commandEnvironment.getExecRoot()
+        execRoot.createDirectory()
 
-    int minimumUserTimeToSpend = minimumWallTimeToSpend;
-    int maximumUserTimeToSpend = minimumUserTimeToSpend + 2 * 1000;
+        SpawnRunnerTestUtil.copyProcessWrapperIntoPath(execRoot)
 
-    int minimumSystemTimeToSpend = 0;
-    int maximumSystemTimeToSpend = minimumSystemTimeToSpend + 2 * 1000;
+        val sandboxBase: Path = execRoot.getRelative("sandbox")
+        sandboxBase.createDirectory()
 
-    CommandEnvironment commandEnvironment = runtimeWrapper.newCommand();
-    commandEnvironment
-        .getLocalResourceManager()
-        .setAvailableResources(LocalHostCapacity.getLocalHostCapacity());
-    Path execRoot = commandEnvironment.getExecRoot();
-    execRoot.createDirectory();
+        val cpuTimeSpenderPath: Path = SpawnRunnerTestUtil.copyCpuTimeSpenderIntoPath(execRoot)
 
-    SpawnRunnerTestUtil.copyProcessWrapperIntoPath(execRoot);
+        val policyTimeout: java.time.Duration? = java.time.Duration.ofSeconds(60)
 
-    Path sandboxBase = execRoot.getRelative("sandbox");
-    sandboxBase.createDirectory();
+        val runner: ProcessWrapperSandboxedSpawnRunner =
+            ProcessWrapperSandboxedSpawnRunner(commandEnvironment, sandboxBase, treeDeleter)
 
-    Path cpuTimeSpenderPath = SpawnRunnerTestUtil.copyCpuTimeSpenderIntoPath(execRoot);
-
-    Duration policyTimeout = Duration.ofSeconds(60);
-
-    ProcessWrapperSandboxedSpawnRunner runner =
-        new ProcessWrapperSandboxedSpawnRunner(commandEnvironment, sandboxBase, treeDeleter);
-
-    Spawn spawn =
-        new SpawnBuilder(
+        val spawn: Spawn =
+            SpawnBuilder(
                 cpuTimeSpenderPath.getPathString(),
-                String.valueOf(minimumUserTimeToSpend / 1000),
-                String.valueOf(minimumSystemTimeToSpend / 1000))
-            .build();
+                (minimumUserTimeToSpend / 1000).toString(),
+                (minimumSystemTimeToSpend / 1000).toString()
+            )
+                .build()
 
-    FileOutErr fileOutErr =
-        new FileOutErr(testRoot.getChild("stdout"), testRoot.getChild("stderr"));
-    SpawnExecutionContextForTesting policy =
-        new SpawnExecutionContextForTesting(spawn, fileOutErr, policyTimeout);
+        val fileOutErr: FileOutErr =
+            FileOutErr(testRoot.getChild("stdout"), testRoot.getChild("stderr"))
+        val policy: SpawnExecutionContextForTesting =
+            SpawnExecutionContextForTesting(spawn, fileOutErr, policyTimeout)
 
-    SpawnResult spawnResult = runner.exec(spawn, policy);
+        val spawnResult: SpawnResult = runner.exec(spawn, policy)
 
-    assertThat(spawnResult.status()).isEqualTo(SpawnResult.Status.SUCCESS);
-    assertThat(spawnResult.exitCode()).isEqualTo(0);
-    assertThat(spawnResult.setupSuccess()).isTrue();
+        assertThat(spawnResult.status()).isEqualTo(SpawnResult.Status.SUCCESS)
+        assertThat(spawnResult.exitCode()).isEqualTo(0)
+        assertThat(spawnResult.setupSuccess()).isTrue()
 
-    assertThat(spawnResult.getWallTimeInMs()).isAtLeast(minimumWallTimeToSpend);
-    assertThat(spawnResult.getWallTimeInMs()).isAtMost(maximumWallTimeToSpend);
-    assertThat(spawnResult.getUserTimeInMs()).isAtLeast(minimumUserTimeToSpend);
-    assertThat(spawnResult.getUserTimeInMs()).isAtMost(maximumUserTimeToSpend);
-    assertThat(spawnResult.getSystemTimeInMs()).isAtLeast(minimumSystemTimeToSpend);
-    assertThat(spawnResult.getSystemTimeInMs()).isAtMost(maximumSystemTimeToSpend);
-    assertThat(spawnResult.getNumBlockOutputOperations()).isAtLeast(0L);
-    assertThat(spawnResult.getNumBlockInputOperations()).isAtLeast(0L);
-    assertThat(spawnResult.getNumInvoluntaryContextSwitches()).isAtLeast(0L);
-  }
+        assertThat(spawnResult.getWallTimeInMs()).isAtLeast(minimumWallTimeToSpend)
+        assertThat(spawnResult.getWallTimeInMs()).isAtMost(maximumWallTimeToSpend)
+        assertThat(spawnResult.getUserTimeInMs()).isAtLeast(minimumUserTimeToSpend)
+        assertThat(spawnResult.getUserTimeInMs()).isAtMost(maximumUserTimeToSpend)
+        assertThat(spawnResult.getSystemTimeInMs()).isAtLeast(minimumSystemTimeToSpend)
+        assertThat(spawnResult.getSystemTimeInMs()).isAtMost(maximumSystemTimeToSpend)
+        assertThat(spawnResult.getNumBlockOutputOperations()).isAtLeast(0L)
+        assertThat(spawnResult.getNumBlockInputOperations()).isAtLeast(0L)
+        assertThat(spawnResult.getNumInvoluntaryContextSwitches()).isAtLeast(0L)
+    }
+
+    companion object {
+        /** Tree deleter to use by default for all tests.  */
+        private val treeDeleter: TreeDeleter = SynchronousTreeDeleter()
+    }
 }

@@ -11,91 +11,59 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.buildtool;
+package com.google.devtools.build.lib.buildtool
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.truth.TruthJUnit.assume;
-import static com.google.devtools.build.lib.testutil.MoreAsserts.assertNoEvents;
-import static org.junit.Assert.assertThrows;
-import static org.junit.Assert.fail;
+import com.google.devtools.build.lib.actions.ActionConflictException
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.Iterables;
-import com.google.common.eventbus.Subscribe;
-import com.google.devtools.build.lib.actions.ActionConflictException;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.BuildFailedException;
-import com.google.devtools.build.lib.analysis.AnalysisFailureEvent;
-import com.google.devtools.build.lib.analysis.ViewCreationFailedException;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId.TargetCompletedId;
-import com.google.devtools.build.lib.buildtool.util.BuildIntegrationTestCase;
-import com.google.devtools.build.lib.runtime.BlazeModule;
-import com.google.devtools.build.lib.runtime.BlazeRuntime;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.server.FailureDetails;
-import com.google.devtools.build.lib.server.FailureDetails.Analysis.Code;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+/** Tests for action conflicts.  */
+@RunWith(TestParameterInjector::class)
+class OutputArtifactConflictTest : BuildIntegrationTestCase() {
+    @TestParameter
+    var skymeld: Boolean = false
 
-/** Tests for action conflicts. */
-@RunWith(TestParameterInjector.class)
-public class OutputArtifactConflictTest extends BuildIntegrationTestCase {
+    @TestParameter
+    var minimizeMemory: Boolean = false
 
-  @TestParameter boolean skymeld;
-  @TestParameter boolean minimizeMemory;
+    internal class AnalysisFailureEventListener : BlazeModule() {
+        private val eventIds: MutableList<TargetCompletedId?> = java.util.ArrayList<TargetCompletedId?>()
+        private val analysisFailures: MutableList<String?> = java.util.ArrayList<String?>()
 
-  static class AnalysisFailureEventListener extends BlazeModule {
+        public override fun beforeCommand(env: CommandEnvironment) {
+            env.getEventBus().register(this)
+        }
 
-    private final List<TargetCompletedId> eventIds = new ArrayList<>();
-    private final List<String> analysisFailures = new ArrayList<>();
-
-    @Override
-    public void beforeCommand(CommandEnvironment env) {
-      env.getEventBus().register(this);
+        @com.google.common.eventbus.Subscribe
+        fun onAnalysisFailure(event: AnalysisFailureEvent) {
+            eventIds.add(event.getEventId().getTargetCompleted())
+            analysisFailures.add(event.getFailedTarget().getLabel().toString())
+        }
     }
 
-    @Subscribe
-    public void onAnalysisFailure(AnalysisFailureEvent event) {
-      eventIds.add(event.getEventId().getTargetCompleted());
-      analysisFailures.add(event.getFailedTarget().getLabel().toString());
+    private val eventListener = AnalysisFailureEventListener()
+
+    @get:Throws(java.lang.Exception::class)
+    val runtimeBuilder: BlazeRuntime.Builder
+        get() = super.getRuntimeBuilder().addBlazeModule(eventListener)
+
+    @Before
+    fun setup() {
+        addOptions("--experimental_merged_skyframe_analysis_execution=" + skymeld)
+        if (minimizeMemory) {
+            addOptions(
+                "--notrack_incremental_state",
+                "--discard_analysis_cache",
+                "--nokeep_state_after_build",
+                "--heuristically_drop_nodes",
+                "--nouse_action_cache"
+            )
+        }
     }
-  }
 
-  private final AnalysisFailureEventListener eventListener = new AnalysisFailureEventListener();
-
-  @Override
-  protected BlazeRuntime.Builder getRuntimeBuilder() throws Exception {
-    return super.getRuntimeBuilder().addBlazeModule(eventListener);
-  }
-
-  @Before
-  public void setup() {
-    addOptions("--experimental_merged_skyframe_analysis_execution=" + skymeld);
-    if (minimizeMemory) {
-      addOptions(
-          "--notrack_incremental_state",
-          "--discard_analysis_cache",
-          "--nokeep_state_after_build",
-          "--heuristically_drop_nodes",
-          "--nouse_action_cache");
-    }
-  }
-
-  private void writeConflictBzl() throws IOException {
-    write(
-        "foo/conflict.bzl",
-        """
+    @Throws(IOException::class)
+    private fun writeConflictBzl() {
+        write(
+            "foo/conflict.bzl",
+            """
         def _conflict_impl(ctx):
             inputs = depset(
                 ctx.files.srcs,
@@ -117,71 +85,82 @@ public class OutputArtifactConflictTest extends BuildIntegrationTestCase {
                 "deps": attr.label_list(providers = [DefaultInfo]),
             },
         )
-        """);
-  }
-
-  /**
-   * Builds the provided targets and asserts expected exceptions.
-   *
-   * @return the exit code extracted from the failure detail.
-   */
-  private Code assertThrowsExceptionWhenBuildingTargets(boolean keepGoing, String... targets) {
-    FailureDetail failureDetail =
-        keepGoing
-            ? assertThrows(BuildFailedException.class, () -> buildTarget(targets))
-                .getDetailedExitCode()
-                .getFailureDetail()
-            : assertThrows(ViewCreationFailedException.class, () -> buildTarget(targets))
-                .getFailureDetail();
-    return Preconditions.checkNotNull(failureDetail).getAnalysis().getCode();
-  }
-
-  @Test
-  public void testArtifactPrefix(
-      @TestParameter boolean keepGoing, @TestParameter boolean modifyBuildFile) throws Exception {
-    write("x/y/BUILD", "genrule(name = 'y', outs = ['whatever'], cmd = 'touch $@')");
-    if (modifyBuildFile) {
-      write("x/BUILD", "genrule(name = 'y', outs = ['not_y'], cmd = 'touch $@')");
-      buildTarget("//x:y", "//x/y:y");
-      write("x/BUILD", "genrule(name = 'y', outs = ['y'], cmd = 'touch $@')");
-    } else {
-      write("x/BUILD", "genrule(name = 'y', outs = ['y'], cmd = 'touch $@')");
-      buildTarget("//x/y:y");
+        
+        """.trimIndent()
+        )
     }
 
-    assertNoEvents(events.errors());
-    assertThat(eventListener.analysisFailures).isEmpty();
-
-    addOptions("--keep_going=" + keepGoing);
-    Code errorCode = assertThrowsExceptionWhenBuildingTargets(keepGoing, "//x/y:y", "//x:y");
-    assertThat(errorCode)
-        .isEqualTo(keepGoing ? Code.NOT_ALL_TARGETS_ANALYZED : Code.ARTIFACT_PREFIX_CONFLICT);
-
-    if (keepGoing) {
-      assertThat(eventListener.analysisFailures).containsExactly("//x:y", "//x/y:y");
-    } else {
-      assertThat(eventListener.analysisFailures).containsAnyOf("//x:y", "//x/y:y");
+    /**
+     * Builds the provided targets and asserts expected exceptions.
+     * 
+     * @return the exit code extracted from the failure detail.
+     */
+    private fun assertThrowsExceptionWhenBuildingTargets(keepGoing: Boolean, vararg targets: String?): Code {
+        val failureDetail: FailureDetail? =
+            if (keepGoing)
+                org.junit.Assert.assertThrows<T?>(
+                    BuildFailedException::class.java,
+                    org.junit.function.ThrowingRunnable { buildTarget(*targets) })
+                    .getDetailedExitCode()
+                    .getFailureDetail()
+            else
+                org.junit.Assert.assertThrows<T?>(
+                    ViewCreationFailedException::class.java,
+                    org.junit.function.ThrowingRunnable { buildTarget(*targets) })
+                    .getFailureDetail()
+        return com.google.common.base.Preconditions.checkNotNull<Any?>(failureDetail).getAnalysis().getCode()
     }
 
-    events.assertContainsError("One of the output paths '" + TestConstants.PRODUCT_NAME + "-out/");
-    events.assertContainsError("/bin/x/y/whatever' (belonging to //x/y:y)");
-    events.assertContainsError("/bin/x/y' (belonging to //x:y)");
-    events.assertContainsError("is a prefix of the other");
-    assertThat(events.errors()).hasSize(1);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testArtifactPrefix(
+        @TestParameter keepGoing: Boolean, @TestParameter modifyBuildFile: Boolean
+    ) {
+        write("x/y/BUILD", "genrule(name = 'y', outs = ['whatever'], cmd = 'touch $@')")
+        if (modifyBuildFile) {
+            write("x/BUILD", "genrule(name = 'y', outs = ['not_y'], cmd = 'touch $@')")
+            buildTarget("//x:y", "//x/y:y")
+            write("x/BUILD", "genrule(name = 'y', outs = ['y'], cmd = 'touch $@')")
+        } else {
+            write("x/BUILD", "genrule(name = 'y', outs = ['y'], cmd = 'touch $@')")
+            buildTarget("//x/y:y")
+        }
 
-  @Test
-  public void testAspectArtifactSharesPrefixWithTargetArtifact(
-      @TestParameter boolean keepGoing, @TestParameter boolean modifyBuildFile) throws Exception {
-    if (modifyBuildFile) {
-      write("x/BUILD", "genrule(name = 'y', outs = ['y.out'], cmd = 'touch $@')");
-    } else {
-      write("x/BUILD", "genrule(name = 'y', outs = ['y.bad'], cmd = 'touch $@')");
+        MoreAsserts.assertNoEvents(events.errors())
+        Truth.assertThat(eventListener.analysisFailures).isEmpty()
+
+        addOptions("--keep_going=" + keepGoing)
+        val errorCode: Code = assertThrowsExceptionWhenBuildingTargets(keepGoing, "//x/y:y", "//x:y")
+        assertThat(errorCode)
+            .isEqualTo(if (keepGoing) Code.NOT_ALL_TARGETS_ANALYZED else Code.ARTIFACT_PREFIX_CONFLICT)
+
+        if (keepGoing) {
+            Truth.assertThat(eventListener.analysisFailures).containsExactly("//x:y", "//x/y:y")
+        } else {
+            Truth.assertThat(eventListener.analysisFailures).containsAnyOf("//x:y", "//x/y:y")
+        }
+
+        events.assertContainsError("One of the output paths '" + TestConstants.PRODUCT_NAME + "-out/")
+        events.assertContainsError("/bin/x/y/whatever' (belonging to //x/y:y)")
+        events.assertContainsError("/bin/x/y' (belonging to //x:y)")
+        events.assertContainsError("is a prefix of the other")
+        Truth.assertThat(events.errors()).hasSize(1)
     }
-    write("x/y/BUILD", "genrule(name = 'y', outs = ['whatever'], cmd = 'touch $@')");
-    write(
-        "x/aspect.bzl",
-        """
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAspectArtifactSharesPrefixWithTargetArtifact(
+        @TestParameter keepGoing: Boolean, @TestParameter modifyBuildFile: Boolean
+    ) {
+        if (modifyBuildFile) {
+            write("x/BUILD", "genrule(name = 'y', outs = ['y.out'], cmd = 'touch $@')")
+        } else {
+            write("x/BUILD", "genrule(name = 'y', outs = ['y.bad'], cmd = 'touch $@')")
+        }
+        write("x/y/BUILD", "genrule(name = 'y', outs = ['whatever'], cmd = 'touch $@')")
+        write(
+            "x/aspect.bzl",
+            """
         def _aspect_impl(target, ctx):
             if not getattr(ctx.rule.attr, "outs", None):
                 return  [OutputGroupInfo()]
@@ -200,76 +179,84 @@ public class OutputArtifactConflictTest extends BuildIntegrationTestCase {
             )]
 
         my_aspect = aspect(implementation = _aspect_impl)
-        """);
+        
+        """.trimIndent()
+        )
 
-    if (modifyBuildFile) {
-      buildTarget("//x/y", "//x:y");
-      write("x/BUILD", "genrule(name = 'y', outs = ['y.bad'], cmd = 'touch $@')");
-    } else {
-      buildTarget("//x/y");
+        if (modifyBuildFile) {
+            buildTarget("//x/y", "//x:y")
+            write("x/BUILD", "genrule(name = 'y', outs = ['y.bad'], cmd = 'touch $@')")
+        } else {
+            buildTarget("//x/y")
+        }
+        MoreAsserts.assertNoEvents(events.errors())
+        Truth.assertThat(eventListener.analysisFailures).isEmpty()
+
+        addOptions("--aspects=//x:aspect.bzl%my_aspect", "--output_groups=files")
+        addOptions("--keep_going=" + keepGoing)
+        val errorCode: Code = assertThrowsExceptionWhenBuildingTargets(keepGoing, "//x/y", "//x:y")
+        assertThat(errorCode)
+            .isEqualTo(if (keepGoing) Code.NOT_ALL_TARGETS_ANALYZED else Code.ARTIFACT_PREFIX_CONFLICT)
+        events.assertContainsError("One of the output paths '" + TestConstants.PRODUCT_NAME + "-out/")
+        events.assertContainsError("/bin/x/y/whatever' (belonging to //x/y:y)")
+        events.assertContainsError("/bin/x/y' (belonging to //x:y)")
+        events.assertContainsError("is a prefix of the other")
+        Truth.assertThat(events.errors()).hasSize(1)
+        Truth.assertThat(eventListener.analysisFailures).containsAnyOf("//x:y", "//x/y:y")
+
+        // We can't be sure if aspect(//x:y) or //x/y:y would trigger the conflict.
+        skipTheRestIfSkymeldAndMinimizeMemory()
+        // As we have --output_groups=file, the CTs won't actually be built. Only the
+        // AnalysisFailureEvent from Aspect(//x:y) is expected even though there are 2 conflicting
+        // actions.
+        assertThat(eventListener.eventIds.get(0).getAspect()).isEqualTo("//x:aspect.bzl%my_aspect")
     }
-    assertNoEvents(events.errors());
-    assertThat(eventListener.analysisFailures).isEmpty();
 
-    addOptions("--aspects=//x:aspect.bzl%my_aspect", "--output_groups=files");
-    addOptions("--keep_going=" + keepGoing);
-    Code errorCode = assertThrowsExceptionWhenBuildingTargets(keepGoing, "//x/y", "//x:y");
-    assertThat(errorCode)
-        .isEqualTo(keepGoing ? Code.NOT_ALL_TARGETS_ANALYZED : Code.ARTIFACT_PREFIX_CONFLICT);
-    events.assertContainsError("One of the output paths '" + TestConstants.PRODUCT_NAME + "-out/");
-    events.assertContainsError("/bin/x/y/whatever' (belonging to //x/y:y)");
-    events.assertContainsError("/bin/x/y' (belonging to //x:y)");
-    events.assertContainsError("is a prefix of the other");
-    assertThat(events.errors()).hasSize(1);
-    assertThat(eventListener.analysisFailures).containsAnyOf("//x:y", "//x/y:y");
-
-    // We can't be sure if aspect(//x:y) or //x/y:y would trigger the conflict.
-    skipTheRestIfSkymeldAndMinimizeMemory();
-    // As we have --output_groups=file, the CTs won't actually be built. Only the
-    // AnalysisFailureEvent from Aspect(//x:y) is expected even though there are 2 conflicting
-    // actions.
-    assertThat(eventListener.eventIds.get(0).getAspect()).isEqualTo("//x:aspect.bzl%my_aspect");
-  }
-
-  @Test
-  public void testAspectArtifactPrefix(
-      @TestParameter boolean keepGoing, @TestParameter boolean modifyBuildFile) throws Exception {
-    if (modifyBuildFile) {
-      write(
-          "x/BUILD",
-          """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAspectArtifactPrefix(
+        @TestParameter keepGoing: Boolean, @TestParameter modifyBuildFile: Boolean
+    ) {
+        if (modifyBuildFile) {
+            write(
+                "x/BUILD",
+                """
           genrule(
               name = "y",
               outs = ["y.out"],
-              cmd = "touch $@",
+              cmd = "touch ${'$'}@",
           )
 
           genrule(
               name = "ydir",
               outs = ["y.dir"],
-              cmd = "touch $@",
+              cmd = "touch ${'$'}@",
           )
-          """);
-    } else {
-      write(
-          "x/BUILD",
-          """
+          
+          """.trimIndent()
+            )
+        } else {
+            write(
+                "x/BUILD",
+                """
           genrule(
               name = "y",
               outs = ["y.bad"],
-              cmd = "touch $@",
+              cmd = "touch ${'$'}@",
           )
 
           genrule(
               name = "ydir",
               outs = ["y.dir"],
-              cmd = "touch $@",
+              cmd = "touch ${'$'}@",
           )
-          """);
-    }
-    write(
-        "x/aspect.bzl",
-        """
+          
+          """.trimIndent()
+            )
+        }
+        write(
+            "x/aspect.bzl",
+            """
         def _aspect_impl(target, ctx):
             if not getattr(ctx.rule.attr, "outs", None):
                 return [OutputGroupInfo()]
@@ -297,146 +284,165 @@ public class OutputArtifactConflictTest extends BuildIntegrationTestCase {
             )]
 
         my_aspect = aspect(implementation = _aspect_impl)
-        """);
+        
+        """.trimIndent()
+        )
 
-    if (modifyBuildFile) {
-      buildTarget("//x:y", "//x:ydir");
-      write(
-          "x/BUILD",
-          """
+        if (modifyBuildFile) {
+            buildTarget("//x:y", "//x:ydir")
+            write(
+                "x/BUILD",
+                """
           genrule(
               name = "y",
               outs = ["y.bad"],
-              cmd = "touch $@",
+              cmd = "touch ${'$'}@",
           )
 
           genrule(
               name = "ydir",
               outs = ["y.dir"],
-              cmd = "touch $@",
+              cmd = "touch ${'$'}@",
           )
-          """);
-    } else {
-      buildTarget("//x:y");
+          
+          """.trimIndent()
+            )
+        } else {
+            buildTarget("//x:y")
+        }
+        MoreAsserts.assertNoEvents(events.errors())
+        Truth.assertThat(eventListener.analysisFailures).isEmpty()
+
+        addOptions("--aspects=//x:aspect.bzl%my_aspect", "--output_groups=files")
+        addOptions("--keep_going=" + keepGoing)
+        val errorCode: Code = assertThrowsExceptionWhenBuildingTargets(keepGoing, "//x:ydir", "//x:y")
+        assertThat(errorCode)
+            .isEqualTo(if (keepGoing) Code.NOT_ALL_TARGETS_ANALYZED else Code.ARTIFACT_PREFIX_CONFLICT)
+        events.assertContainsError("One of the output paths '" + TestConstants.PRODUCT_NAME + "-out/")
+        events.assertContainsError("bin/x/y' (belonging to //x:y)")
+        events.assertContainsError("bin/x/y/y.dir' (belonging to //x:ydir)")
+        events.assertContainsError("is a prefix of the other")
+        Truth.assertThat(events.errors()).hasSize(1)
+        assertThat(eventListener.eventIds.get(0).getAspect()).isEqualTo("//x:aspect.bzl%my_aspect")
+        if (keepGoing) {
+            Truth.assertThat(eventListener.analysisFailures).containsExactly("//x:y", "//x:ydir")
+        } else {
+            Truth.assertThat(eventListener.analysisFailures).containsAnyOf("//x:y", "//x:ydir")
+        }
     }
-    assertNoEvents(events.errors());
-    assertThat(eventListener.analysisFailures).isEmpty();
 
-    addOptions("--aspects=//x:aspect.bzl%my_aspect", "--output_groups=files");
-    addOptions("--keep_going=" + keepGoing);
-    Code errorCode = assertThrowsExceptionWhenBuildingTargets(keepGoing, "//x:ydir", "//x:y");
-    assertThat(errorCode)
-        .isEqualTo(keepGoing ? Code.NOT_ALL_TARGETS_ANALYZED : Code.ARTIFACT_PREFIX_CONFLICT);
-    events.assertContainsError("One of the output paths '" + TestConstants.PRODUCT_NAME + "-out/");
-    events.assertContainsError("bin/x/y' (belonging to //x:y)");
-    events.assertContainsError("bin/x/y/y.dir' (belonging to //x:ydir)");
-    events.assertContainsError("is a prefix of the other");
-    assertThat(events.errors()).hasSize(1);
-    assertThat(eventListener.eventIds.get(0).getAspect()).isEqualTo("//x:aspect.bzl%my_aspect");
-    if (keepGoing) {
-      assertThat(eventListener.analysisFailures).containsExactly("//x:y", "//x:ydir");
-    } else {
-      assertThat(eventListener.analysisFailures).containsAnyOf("//x:y", "//x:ydir");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testInvalidatedConflict() {
+        writeConflictBzl()
+        write(
+            "foo/BUILD",
+            """
+        load("//foo:conflict.bzl", "my_rule")
+
+        my_rule(name = "first")
+
+        my_rule(name = "second")
+        
+        """.trimIndent()
+        )
+
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { buildTarget("//foo:first", "//foo:second") })
+        Truth.assertThat(eventListener.analysisFailures).containsAnyOf("//foo:first", "//foo:second")
+
+        write(
+            "foo/BUILD",
+            """
+        load("//foo:conflict.bzl", "my_rule")
+
+        my_rule(name = "first")
+        
+        """.trimIndent()
+        )
+        buildTarget("//foo:first")
+
+        events.assertNoWarningsOrErrors()
     }
-  }
 
-  @Test
-  public void testInvalidatedConflict() throws Exception {
-    writeConflictBzl();
-    write(
-        "foo/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNewTargetConflict(@TestParameter keepGoing: Boolean) {
+        addOptions("--keep_going=" + keepGoing)
+        writeConflictBzl()
+        write(
+            "foo/BUILD",
+            """
         load("//foo:conflict.bzl", "my_rule")
 
         my_rule(name = "first")
 
         my_rule(name = "second")
-        """);
+        
+        """.trimIndent()
+        )
+        buildTarget("//foo:first")
+        events.assertNoWarningsOrErrors()
 
-    assertThrows(
-        ViewCreationFailedException.class, () -> buildTarget("//foo:first", "//foo:second"));
-    assertThat(eventListener.analysisFailures).containsAnyOf("//foo:first", "//foo:second");
+        val errorCode: Code =
+            assertThrowsExceptionWhenBuildingTargets(keepGoing, "//foo:first", "//foo:second")
+        assertThat(errorCode)
+            .isEqualTo(if (keepGoing) Code.NOT_ALL_TARGETS_ANALYZED else Code.ACTION_CONFLICT)
+        events.assertContainsError(
+            "file 'foo/conflict_output' is generated by these conflicting actions:"
+        )
+        Truth.assertThat(eventListener.analysisFailures).hasSize(1)
+        Truth.assertThat(eventListener.analysisFailures).containsAnyOf("//foo:first", "//foo:second")
+    }
 
-    write(
-        "foo/BUILD",
-        """
-        load("//foo:conflict.bzl", "my_rule")
-
-        my_rule(name = "first")
-        """);
-    buildTarget("//foo:first");
-
-    events.assertNoWarningsOrErrors();
-  }
-
-  @Test
-  public void testNewTargetConflict(@TestParameter boolean keepGoing) throws Exception {
-    addOptions("--keep_going=" + keepGoing);
-    writeConflictBzl();
-    write(
-        "foo/BUILD",
-        """
-        load("//foo:conflict.bzl", "my_rule")
-
-        my_rule(name = "first")
-
-        my_rule(name = "second")
-        """);
-    buildTarget("//foo:first");
-    events.assertNoWarningsOrErrors();
-
-    Code errorCode =
-        assertThrowsExceptionWhenBuildingTargets(keepGoing, "//foo:first", "//foo:second");
-    assertThat(errorCode)
-        .isEqualTo(keepGoing ? Code.NOT_ALL_TARGETS_ANALYZED : Code.ACTION_CONFLICT);
-    events.assertContainsError(
-        "file 'foo/conflict_output' is generated by these conflicting actions:");
-    assertThat(eventListener.analysisFailures).hasSize(1);
-    assertThat(eventListener.analysisFailures).containsAnyOf("//foo:first", "//foo:second");
-  }
-
-  @Test
-  public void testTwoOverlappingBuildsHasNoConflict(@TestParameter boolean keepGoing)
-      throws Exception {
-    addOptions("--keep_going=" + keepGoing);
-    writeConflictBzl();
-    write(
-        "foo/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTwoOverlappingBuildsHasNoConflict(@TestParameter keepGoing: Boolean) {
+        addOptions("--keep_going=" + keepGoing)
+        writeConflictBzl()
+        write(
+            "foo/BUILD",
+            """
         load("//foo:conflict.bzl", "my_rule")
 
         my_rule(name = "first")
 
         my_rule(name = "second")
-        """);
+        
+        """.trimIndent()
+        )
 
-    // Verify that together they fail, even though no new targets have been analyzed
-    Code errorCode =
-        assertThrowsExceptionWhenBuildingTargets(keepGoing, "//foo:first", "//foo:second");
-    assertThat(errorCode)
-        .isEqualTo(keepGoing ? Code.NOT_ALL_TARGETS_ANALYZED : Code.ACTION_CONFLICT);
+        // Verify that together they fail, even though no new targets have been analyzed
+        val errorCode: Code =
+            assertThrowsExceptionWhenBuildingTargets(keepGoing, "//foo:first", "//foo:second")
+        assertThat(errorCode)
+            .isEqualTo(if (keepGoing) Code.NOT_ALL_TARGETS_ANALYZED else Code.ACTION_CONFLICT)
 
-    // Verify that they still don't fail individually, so no state remains
-    buildTarget("//foo:first");
-    events.assertNoWarningsOrErrors();
-    buildTarget("//foo:second");
-    events.assertNoWarningsOrErrors();
-  }
+        // Verify that they still don't fail individually, so no state remains
+        buildTarget("//foo:first")
+        events.assertNoWarningsOrErrors()
+        buildTarget("//foo:second")
+        events.assertNoWarningsOrErrors()
+    }
 
-  @Test
-  public void testFailingTargetsDoNotCauseActionConflicts() throws Exception {
-    addOptions("--keep_going");
-    write(
-        "x/bad_rule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFailingTargetsDoNotCauseActionConflicts() {
+        addOptions("--keep_going")
+        write(
+            "x/bad_rule.bzl",
+            """
         def _impl(ctx):
             return list().this_method_does_not_exist()
 
         bad_rule = rule(_impl, attrs = {"deps": attr.label_list()})
-        """);
-    write(
-        "x/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        write(
+            "x/BUILD",
+            """
         load("//x:bad_rule.bzl", "bad_rule")
 
         cc_binary(
@@ -449,63 +455,74 @@ public class OutputArtifactConflictTest extends BuildIntegrationTestCase {
             name = "bad",
             deps = [":y"],
         )
-        """);
-    write("x/y/y.cc", "");
-    write("x/y/BUILD", "cc_library(name = 'y', srcs=['y.cc'])");
-    write("x/y.cc", "int main() { return 0; }");
+        
+        """.trimIndent()
+        )
+        write("x/y/y.cc", "")
+        write("x/y/BUILD", "cc_library(name = 'y', srcs=['y.cc'])")
+        write("x/y.cc", "int main() { return 0; }")
 
-    try {
-      buildTarget("//x:y", "//x/y");
-      fail();
-    } catch (ViewCreationFailedException e) {
-      fail("Unexpected artifact prefix conflict: " + e);
-    } catch (BuildFailedException e) {
-      // Expected.
+        try {
+            buildTarget("//x:y", "//x/y")
+            org.junit.Assert.fail()
+        } catch (e: ViewCreationFailedException) {
+            org.junit.Assert.fail("Unexpected artifact prefix conflict: " + e)
+        } catch (e: BuildFailedException) {
+            // Expected.
+        }
     }
-  }
 
-  // Regression test for b/184944522.
-  @Test
-  public void testConflictErrorAndAnalysisError() throws Exception {
-    addOptions("--keep_going");
-    writeConflictBzl();
-    write(
-        "foo/BUILD",
-        """
+    // Regression test for b/184944522.
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testConflictErrorAndAnalysisError() {
+        addOptions("--keep_going")
+        writeConflictBzl()
+        write(
+            "foo/BUILD",
+            """
         load("//foo:conflict.bzl", "my_rule")
 
         my_rule(name = "first")
 
         my_rule(name = "second")
-        """);
-    write(
-        "x/BUILD",
-        "load('//test_defs:foo_library.bzl', 'foo_library')",
-        "foo_library(name = 'x', deps = ['//y:y'])");
-    write(
-        "y/BUILD",
-        "load('//test_defs:foo_library.bzl', 'foo_library')",
-        "foo_library(name = 'y', visibility = ['//visibility:private'])");
+        
+        """.trimIndent()
+        )
+        write(
+            "x/BUILD",
+            "load('//test_defs:foo_library.bzl', 'foo_library')",
+            "foo_library(name = 'x', deps = ['//y:y'])"
+        )
+        write(
+            "y/BUILD",
+            "load('//test_defs:foo_library.bzl', 'foo_library')",
+            "foo_library(name = 'y', visibility = ['//visibility:private'])"
+        )
 
-    assertThrows(
-        BuildFailedException.class, () -> buildTarget("//x:x", "//foo:first", "//foo:second"));
-    events.assertContainsError(
-        "file 'foo/conflict_output' is generated by these conflicting actions:");
-    // When targets have conflicting artifacts, one of them "wins" and is successfully built. All
-    // of the other targets with conflicting artifacts fail.
-    assertThat(eventListener.analysisFailures).contains("//x:x");
-    assertThat(eventListener.analysisFailures).hasSize(2);
-    assertThat(eventListener.analysisFailures).containsAnyOf("//foo:first", "//foo:second");
-  }
+        org.junit.Assert.assertThrows<T?>(
+            BuildFailedException::class.java,
+            org.junit.function.ThrowingRunnable { buildTarget("//x:x", "//foo:first", "//foo:second") })
+        events.assertContainsError(
+            "file 'foo/conflict_output' is generated by these conflicting actions:"
+        )
+        // When targets have conflicting artifacts, one of them "wins" and is successfully built. All
+        // of the other targets with conflicting artifacts fail.
+        Truth.assertThat(eventListener.analysisFailures).contains("//x:x")
+        Truth.assertThat(eventListener.analysisFailures).hasSize(2)
+        Truth.assertThat(eventListener.analysisFailures).containsAnyOf("//foo:first", "//foo:second")
+    }
 
-  // Verify that an aspect whose analysis is unfinished doesn't fail the conflict reporting process.
-  @Test
-  public void testConflictErrorAndUnfinishedAspectAnalysis_mergedAnalysisExecution(
-      @TestParameter boolean keepGoing) throws Exception {
-    addOptions("--keep_going=" + keepGoing);
-    write(
-        "x/aspect.bzl",
-        """
+    // Verify that an aspect whose analysis is unfinished doesn't fail the conflict reporting process.
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testConflictErrorAndUnfinishedAspectAnalysis_mergedAnalysisExecution(
+        @TestParameter keepGoing: Boolean
+    ) {
+        addOptions("--keep_going=" + keepGoing)
+        write(
+            "x/aspect.bzl",
+            """
         def _aspect_impl(target, ctx):
             if not getattr(ctx.rule.attr, "outs", None):
                 return [OutputGroupInfo()]
@@ -524,106 +541,115 @@ public class OutputArtifactConflictTest extends BuildIntegrationTestCase {
             )]
 
         my_aspect = aspect(implementation = _aspect_impl)
-        """);
+        
+        """.trimIndent()
+        )
 
-    write(
-        "x/BUILD",
-        """
+        write(
+            "x/BUILD",
+            """
         load('//test_defs:foo_library.bzl', 'foo_library')
         genrule(
             name = "y",
             outs = ["y.bad"],
-            cmd = "touch $@",
+            cmd = "touch ${'$'}@",
         )
 
         foo_library(
             name = "fail_analysis",
             deps = ["//private:y"],
         )
-        """);
-    write("x/y/BUILD", "genrule(name = 'y', outs = ['whatever'], cmd = 'touch $@')");
-    write(
-        "private/BUILD",
-        "load('//test_defs:foo_library.bzl', 'foo_library')",
-        "foo_library(name = 'y', visibility = ['//visibility:private'])");
-    addOptions("--aspects=//x:aspect.bzl%my_aspect", "--output_groups=files");
+        
+        """.trimIndent()
+        )
+        write("x/y/BUILD", "genrule(name = 'y', outs = ['whatever'], cmd = 'touch $@')")
+        write(
+            "private/BUILD",
+            "load('//test_defs:foo_library.bzl', 'foo_library')",
+            "foo_library(name = 'y', visibility = ['//visibility:private'])"
+        )
+        addOptions("--aspects=//x:aspect.bzl%my_aspect", "--output_groups=files")
 
-    Code errorCode =
-        assertThrowsExceptionWhenBuildingTargets(
-            keepGoing, "//x/y:y", "//x:y", "//x:fail_analysis");
-    if (keepGoing) {
-      assertThat(errorCode).isEqualTo(Code.NOT_ALL_TARGETS_ANALYZED);
-      events.assertContainsError(
-          "One of the output paths '" + TestConstants.PRODUCT_NAME + "-out/");
-      events.assertContainsError("/bin/x/y/whatever' (belonging to //x/y:y)");
-      events.assertContainsError("/bin/x/y' (belonging to //x:y)");
-      events.assertContainsError("is a prefix of the other");
-      events.assertContainsError("Analysis of target '//x:fail_analysis' (config: ");
-      events.assertContainsError(") failed");
+        val errorCode: Code =
+            assertThrowsExceptionWhenBuildingTargets(
+                keepGoing, "//x/y:y", "//x:y", "//x:fail_analysis"
+            )
+        if (keepGoing) {
+            assertThat(errorCode).isEqualTo(Code.NOT_ALL_TARGETS_ANALYZED)
+            events.assertContainsError(
+                "One of the output paths '" + TestConstants.PRODUCT_NAME + "-out/"
+            )
+            events.assertContainsError("/bin/x/y/whatever' (belonging to //x/y:y)")
+            events.assertContainsError("/bin/x/y' (belonging to //x:y)")
+            events.assertContainsError("is a prefix of the other")
+            events.assertContainsError("Analysis of target '//x:fail_analysis' (config: ")
+            events.assertContainsError(") failed")
 
-      assertThat(eventListener.analysisFailures).containsAtLeast("//x:y", "//x:fail_analysis");
-    } else if (minimizeMemory) {
-      assertThat(errorCode)
-          .isAnyOf(Code.ARTIFACT_PREFIX_CONFLICT, Code.CONFIGURED_VALUE_CREATION_FAILED);
-      // When in minimize-memory mode, the action conflicts are counted as failed analysis, since
-      // conflict checking happens during the analysis of each target.
-      assertThat(eventListener.analysisFailures)
-          .containsAnyOf("//x:y", "//x/y:y", "//x:fail_analysis");
-    } else {
-      assertThat(errorCode)
-          .isAnyOf(Code.ARTIFACT_PREFIX_CONFLICT, Code.CONFIGURED_VALUE_CREATION_FAILED);
+            Truth.assertThat(eventListener.analysisFailures).containsAtLeast("//x:y", "//x:fail_analysis")
+        } else if (minimizeMemory) {
+            assertThat(errorCode)
+                .isAnyOf(Code.ARTIFACT_PREFIX_CONFLICT, Code.CONFIGURED_VALUE_CREATION_FAILED)
+            // When in minimize-memory mode, the action conflicts are counted as failed analysis, since
+            // conflict checking happens during the analysis of each target.
+            Truth.assertThat(eventListener.analysisFailures)
+                .containsAnyOf("//x:y", "//x/y:y", "//x:fail_analysis")
+        } else {
+            assertThat(errorCode)
+                .isAnyOf(Code.ARTIFACT_PREFIX_CONFLICT, Code.CONFIGURED_VALUE_CREATION_FAILED)
+        }
     }
-  }
 
-  // This test is documenting current behavior more than enforcing a contract: it might be ok for
-  // Bazel to suppress the error message about an action conflict, since the relevant actions are
-  // not run in this build. However, that might cause problems for users who aren't immediately
-  // alerted when they introduce an action conflict. We already skip exhaustive checks for action
-  // conflicts in the name of performance and that has prompted complaints, so suppressing actual
-  // conflicts seems like a bad idea.
-  //
-  // While this test is written with aspects, any actions that generate conflicting outputs but
-  // aren't run would exhibit this behavior.
-  @Test
-  public void unusedActionsStillConflict() throws Exception {
-    // TODO(b/245923465) Limitation with Skymeld.
-    assume().that(skymeld).isFalse();
-    write(
-        "foo/aspect.bzl",
-        "def _aspect1_impl(target, ctx):",
-        "  outfile = ctx.actions.declare_file('aspect.out')",
-        "  ctx.actions.run_shell(",
-        "    outputs = [outfile],",
-        "    progress_message = 'Action for aspect 1',",
-        "    command = 'echo \"1\" > ' + outfile.path,",
-        "  )",
-        "  return [OutputGroupInfo(files1 = [outfile])]",
-        "",
-        "def _aspect2_impl(target, ctx):",
-        "  outfile = ctx.actions.declare_file('aspect.out')",
-        "  ctx.actions.run_shell(",
-        "    outputs = [outfile],",
-        "    progress_message = 'Action for aspect 2',",
-        "    command = 'echo \"2\" > ' + outfile.path,",
-        "  )",
-        "  return [OutputGroupInfo(files2 = [outfile])]",
-        "",
-        "def _rule_impl(ctx):",
-        "  outfile = ctx.actions.declare_file('file.out')",
-        "  ctx.actions.run_shell(",
-        "    outputs = [outfile],",
-        "    progress_message = 'Action for target',",
-        "    command = 'touch ' + outfile.path,",
-        "  )",
-        "  return [DefaultInfo(files = depset([outfile]))]",
-        "aspect1 = aspect(implementation = _aspect1_impl)",
-        "aspect2 = aspect(implementation = _aspect2_impl)",
-        "",
-        "bad_rule = rule(implementation = _rule_impl, attrs = {'deps' : attr.label_list(aspects ="
-            + " [aspect1, aspect2])})");
-    write(
-        "foo/BUILD",
-        """
+    // This test is documenting current behavior more than enforcing a contract: it might be ok for
+    // Bazel to suppress the error message about an action conflict, since the relevant actions are
+    // not run in this build. However, that might cause problems for users who aren't immediately
+    // alerted when they introduce an action conflict. We already skip exhaustive checks for action
+    // conflicts in the name of performance and that has prompted complaints, so suppressing actual
+    // conflicts seems like a bad idea.
+    //
+    // While this test is written with aspects, any actions that generate conflicting outputs but
+    // aren't run would exhibit this behavior.
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun unusedActionsStillConflict() {
+        // TODO(b/245923465) Limitation with Skymeld.
+        TruthJUnit.assume().that(skymeld).isFalse()
+        write(
+            "foo/aspect.bzl",
+            "def _aspect1_impl(target, ctx):",
+            "  outfile = ctx.actions.declare_file('aspect.out')",
+            "  ctx.actions.run_shell(",
+            "    outputs = [outfile],",
+            "    progress_message = 'Action for aspect 1',",
+            "    command = 'echo \"1\" > ' + outfile.path,",
+            "  )",
+            "  return [OutputGroupInfo(files1 = [outfile])]",
+            "",
+            "def _aspect2_impl(target, ctx):",
+            "  outfile = ctx.actions.declare_file('aspect.out')",
+            "  ctx.actions.run_shell(",
+            "    outputs = [outfile],",
+            "    progress_message = 'Action for aspect 2',",
+            "    command = 'echo \"2\" > ' + outfile.path,",
+            "  )",
+            "  return [OutputGroupInfo(files2 = [outfile])]",
+            "",
+            "def _rule_impl(ctx):",
+            "  outfile = ctx.actions.declare_file('file.out')",
+            "  ctx.actions.run_shell(",
+            "    outputs = [outfile],",
+            "    progress_message = 'Action for target',",
+            "    command = 'touch ' + outfile.path,",
+            "  )",
+            "  return [DefaultInfo(files = depset([outfile]))]",
+            "aspect1 = aspect(implementation = _aspect1_impl)",
+            "aspect2 = aspect(implementation = _aspect2_impl)",
+            "",
+            "bad_rule = rule(implementation = _rule_impl, attrs = {'deps' : attr.label_list(aspects ="
+                    + " [aspect1, aspect2])})"
+        )
+        write(
+            "foo/BUILD",
+            """
         load("//foo:aspect.bzl", "bad_rule")
         load('//test_defs:foo_library.bzl', 'foo_library')
 
@@ -636,94 +662,111 @@ public class OutputArtifactConflictTest extends BuildIntegrationTestCase {
             name = "foo",
             deps = [":dep"],
         )
-        """);
-    addOptions("--keep_going");
-    // If Bazel decides to permit this scenario, the build should succeed instead of throwing here.
-    BuildFailedException buildFailedException =
-        assertThrows(BuildFailedException.class, () -> buildTarget("//foo:foo"));
-    assertThat(buildFailedException)
-        .hasMessageThat()
-        .contains("command succeeded, but not all targets were analyzed");
-    // We successfully built the output file despite the supposed failure.
-    Iterable<Artifact> artifacts = getArtifacts("//foo:foo");
-    assertThat(artifacts).hasSize(1);
-    assertThat(Iterables.getOnlyElement(artifacts).getPath().exists()).isTrue();
-    assertThat(
-            buildFailedException.getDetailedExitCode().getFailureDetail().getAnalysis().getCode())
-        .isEqualTo(FailureDetails.Analysis.Code.NOT_ALL_TARGETS_ANALYZED);
-    events.assertContainsError("file 'foo/aspect.out' is generated by these conflicting actions:");
-    events.assertContainsError(
-        Pattern.compile(
-            "Aspects: \\[//foo:aspect.bzl%aspect[12]], \\[//foo:aspect.bzl%aspect[12]]"));
-  }
+        
+        """.trimIndent()
+        )
+        addOptions("--keep_going")
+        // If Bazel decides to permit this scenario, the build should succeed instead of throwing here.
+        val buildFailedException: BuildFailedException =
+            org.junit.Assert.assertThrows<T>(
+                BuildFailedException::class.java,
+                org.junit.function.ThrowingRunnable { buildTarget("//foo:foo") })
+        assertThat(buildFailedException)
+            .hasMessageThat()
+            .contains("command succeeded, but not all targets were analyzed")
+        // We successfully built the output file despite the supposed failure.
+        val artifacts: Iterable<Artifact?>? = getArtifacts("//foo:foo")
+        Truth.assertThat(artifacts).hasSize(1)
+        assertThat(com.google.common.collect.Iterables.getOnlyElement<Artifact?>(artifacts).getPath().exists()).isTrue()
+        assertThat(
+            buildFailedException.getDetailedExitCode().getFailureDetail().getAnalysis().getCode()
+        )
+            .isEqualTo(FailureDetails.Analysis.Code.NOT_ALL_TARGETS_ANALYZED)
+        events.assertContainsError("file 'foo/aspect.out' is generated by these conflicting actions:")
+        events.assertContainsError(
+            java.util.regex.Pattern.compile(
+                "Aspects: \\[//foo:aspect.bzl%aspect[12]], \\[//foo:aspect.bzl%aspect[12]]"
+            )
+        )
+    }
 
-  @Test
-  public void testMultipleConflictErrors() throws Exception {
-    writeConflictBzl();
-    write(
-        "foo/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMultipleConflictErrors() {
+        writeConflictBzl()
+        write(
+            "foo/BUILD",
+            """
         load("//foo:conflict.bzl", "my_rule")
 
         my_rule(name = "first")
 
         my_rule(name = "second")
-        """);
-    write("x/BUILD", "genrule(name = 'y', outs = ['y'], cmd = 'touch $@')");
-    write("x/y/BUILD", "genrule(name = 'y', outs = ['whatever'], cmd = 'touch $@')");
+        
+        """.trimIndent()
+        )
+        write("x/BUILD", "genrule(name = 'y', outs = ['y'], cmd = 'touch $@')")
+        write("x/y/BUILD", "genrule(name = 'y', outs = ['whatever'], cmd = 'touch $@')")
 
-    addOptions("--keep_going");
+        addOptions("--keep_going")
 
-    assertThrows(
-        BuildFailedException.class,
-        () -> buildTarget("//x/y", "//x:y", "//foo:first", "//foo:second"));
-    events.assertContainsError(
-        "file 'foo/conflict_output' is generated by these conflicting actions:");
-    events.assertContainsError("One of the output paths '" + TestConstants.PRODUCT_NAME + "-out/");
-    events.assertContainsError("bin/x/y' (belonging to //x:y)");
-    events.assertContainsError("is a prefix of the other");
-    // When targets have conflicting artifacts, one of them "wins" and is successfully built. All
-    // of the other targets with conflicting artifacts fail.
-    assertThat(eventListener.analysisFailures).containsAtLeast("//x:y", "//x/y:y");
-    assertThat(eventListener.analysisFailures).hasSize(3);
-    assertThat(eventListener.analysisFailures).containsAnyOf("//foo:first", "//foo:second");
-  }
+        org.junit.Assert.assertThrows<T?>(
+            BuildFailedException::class.java,
+            org.junit.function.ThrowingRunnable { buildTarget("//x/y", "//x:y", "//foo:first", "//foo:second") })
+        events.assertContainsError(
+            "file 'foo/conflict_output' is generated by these conflicting actions:"
+        )
+        events.assertContainsError("One of the output paths '" + TestConstants.PRODUCT_NAME + "-out/")
+        events.assertContainsError("bin/x/y' (belonging to //x:y)")
+        events.assertContainsError("is a prefix of the other")
+        // When targets have conflicting artifacts, one of them "wins" and is successfully built. All
+        // of the other targets with conflicting artifacts fail.
+        Truth.assertThat(eventListener.analysisFailures).containsAtLeast("//x:y", "//x/y:y")
+        Truth.assertThat(eventListener.analysisFailures).hasSize(3)
+        Truth.assertThat(eventListener.analysisFailures).containsAnyOf("//foo:first", "//foo:second")
+    }
 
-  @Test
-  public void repeatedConflictBuild() throws Exception {
-    writeConflictBzl();
-    write(
-        "foo/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun repeatedConflictBuild() {
+        writeConflictBzl()
+        write(
+            "foo/BUILD",
+            """
         load("//foo:conflict.bzl", "my_rule")
 
         my_rule(name = "first")
 
         my_rule(name = "second")
-        """);
-    ViewCreationFailedException e =
-        assertThrows(
-            ViewCreationFailedException.class, () -> buildTarget("//foo:first", "//foo:second"));
-    assertThat(e).hasCauseThat().isInstanceOf(ActionConflictException.class);
-    assertThat(eventListener.analysisFailures).containsAnyOf("//foo:first", "//foo:second");
-    eventListener.analysisFailures.clear();
+        
+        """.trimIndent()
+        )
+        var e: ViewCreationFailedException? =
+            org.junit.Assert.assertThrows<T?>(
+                ViewCreationFailedException::class.java,
+                org.junit.function.ThrowingRunnable { buildTarget("//foo:first", "//foo:second") })
+        assertThat(e).hasCauseThat().isInstanceOf(ActionConflictException::class.java)
+        Truth.assertThat(eventListener.analysisFailures).containsAnyOf("//foo:first", "//foo:second")
+        eventListener.analysisFailures.clear()
 
-    e =
-        assertThrows(
-            ViewCreationFailedException.class, () -> buildTarget("//foo:first", "//foo:second"));
-    assertThat(e).hasCauseThat().isInstanceOf(ActionConflictException.class);
-    assertThat(eventListener.analysisFailures).containsAnyOf("//foo:first", "//foo:second");
-  }
+        e =
+            org.junit.Assert.assertThrows<T?>(
+                ViewCreationFailedException::class.java,
+                org.junit.function.ThrowingRunnable { buildTarget("//foo:first", "//foo:second") })
+        assertThat(e).hasCauseThat().isInstanceOf(ActionConflictException::class.java)
+        Truth.assertThat(eventListener.analysisFailures).containsAnyOf("//foo:first", "//foo:second")
+    }
 
-  @Test
-  public void testConflictAfterNullBuild(@TestParameter boolean keepGoing) throws Exception {
-    addOptions("--aspects=//x:aspect.bzl%my_aspect", "--output_groups=files");
-    addOptions("--keep_going=" + keepGoing);
-    write("x/BUILD", "genrule(name = 'y', outs = ['y.out'], cmd = 'touch $@')");
-    write("x/y/BUILD", "genrule(name = 'y', outs = ['whatever'], cmd = 'touch $@')");
-    write(
-        "x/aspect.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testConflictAfterNullBuild(@TestParameter keepGoing: Boolean) {
+        addOptions("--aspects=//x:aspect.bzl%my_aspect", "--output_groups=files")
+        addOptions("--keep_going=" + keepGoing)
+        write("x/BUILD", "genrule(name = 'y', outs = ['y.out'], cmd = 'touch $@')")
+        write("x/y/BUILD", "genrule(name = 'y', outs = ['whatever'], cmd = 'touch $@')")
+        write(
+            "x/aspect.bzl",
+            """
         def _aspect_impl(target, ctx):
             if not getattr(ctx.rule.attr, "outs", None):
                 return [OutputGroupInfo()]
@@ -742,72 +785,78 @@ public class OutputArtifactConflictTest extends BuildIntegrationTestCase {
             )]
 
         my_aspect = aspect(implementation = _aspect_impl)
-        """);
-    // First build: no conflict expected.
-    buildTarget("//x/y", "//x:y");
-    // Null build
-    buildTarget("//x/y", "//x:y");
-    assertNoEvents(events.errors());
-    assertThat(eventListener.analysisFailures).isEmpty();
+        
+        """.trimIndent()
+        )
+        // First build: no conflict expected.
+        buildTarget("//x/y", "//x:y")
+        // Null build
+        buildTarget("//x/y", "//x:y")
+        MoreAsserts.assertNoEvents(events.errors())
+        Truth.assertThat(eventListener.analysisFailures).isEmpty()
 
-    // Modify BUILD file to introduce a conflict.
-    write("x/BUILD", "genrule(name = 'y', outs = ['y.bad'], cmd = 'touch $@')");
+        // Modify BUILD file to introduce a conflict.
+        write("x/BUILD", "genrule(name = 'y', outs = ['y.bad'], cmd = 'touch $@')")
 
-    Code errorCode = assertThrowsExceptionWhenBuildingTargets(keepGoing, "//x/y", "//x:y");
-    assertThat(errorCode)
-        .isEqualTo(keepGoing ? Code.NOT_ALL_TARGETS_ANALYZED : Code.ARTIFACT_PREFIX_CONFLICT);
-    events.assertContainsError("One of the output paths '" + TestConstants.PRODUCT_NAME + "-out/");
-    events.assertContainsError("/bin/x/y/whatever' (belonging to //x/y:y)");
-    events.assertContainsError("/bin/x/y' (belonging to //x:y)");
-    events.assertContainsError("is a prefix of the other");
-    assertThat(events.errors()).hasSize(1);
-    assertThat(eventListener.analysisFailures).containsAnyOf("//x:y", "//x/y:y");
-    // We don't know if the conflict is triggered by the aspect(//x:y) or //x/y:y
-    skipTheRestIfSkymeldAndMinimizeMemory();
-    assertThat(eventListener.eventIds.get(0).getAspect()).isEqualTo("//x:aspect.bzl%my_aspect");
-  }
-
-  // There exists a discrepancy between skymeld and noskymeld modes in case of --keep_going.
-  // noskymeld: bazel would stop at the end of the analysis phase and build nothing.
-  // skymeld: we either finish building one of the 2 conflicting artifacts, or none at all.
-  //
-  // The overall build would still fail in both cases.
-  @Test
-  public void testTwoConflictingTargets_keepGoing_behaviorDifferences() throws Exception {
-    addOptions("--keep_going");
-    write("x/BUILD", "genrule(name = 'y', outs = ['y'], cmd = 'touch $@')");
-    write("x/y/BUILD", "genrule(name = 'y', outs = ['whatever'], cmd = 'touch $@')");
-
-    Code errorCode =
-        assertThrowsExceptionWhenBuildingTargets(/*keepGoing=*/ true, "//x:y", "//x/y:y");
-
-    assertThat(errorCode).isEqualTo(Code.NOT_ALL_TARGETS_ANALYZED);
-
-    if (minimizeMemory) {
-      // The states might have been dropped, so we can't check further here.
-      return;
+        val errorCode: Code = assertThrowsExceptionWhenBuildingTargets(keepGoing, "//x/y", "//x:y")
+        assertThat(errorCode)
+            .isEqualTo(if (keepGoing) Code.NOT_ALL_TARGETS_ANALYZED else Code.ARTIFACT_PREFIX_CONFLICT)
+        events.assertContainsError("One of the output paths '" + TestConstants.PRODUCT_NAME + "-out/")
+        events.assertContainsError("/bin/x/y/whatever' (belonging to //x/y:y)")
+        events.assertContainsError("/bin/x/y' (belonging to //x:y)")
+        events.assertContainsError("is a prefix of the other")
+        Truth.assertThat(events.errors()).hasSize(1)
+        Truth.assertThat(eventListener.analysisFailures).containsAnyOf("//x:y", "//x/y:y")
+        // We don't know if the conflict is triggered by the aspect(//x:y) or //x/y:y
+        skipTheRestIfSkymeldAndMinimizeMemory()
+        assertThat(eventListener.eventIds.get(0).getAspect()).isEqualTo("//x:aspect.bzl%my_aspect")
     }
 
-    Path outputXY = Iterables.getOnlyElement(getArtifacts("//x:y")).getPath();
-    Path outputXYY = Iterables.getOnlyElement(getArtifacts("//x/y:y")).getPath();
+    // There exists a discrepancy between skymeld and noskymeld modes in case of --keep_going.
+    // noskymeld: bazel would stop at the end of the analysis phase and build nothing.
+    // skymeld: we either finish building one of the 2 conflicting artifacts, or none at all.
+    //
+    // The overall build would still fail in both cases.
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTwoConflictingTargets_keepGoing_behaviorDifferences() {
+        addOptions("--keep_going")
+        write("x/BUILD", "genrule(name = 'y', outs = ['y'], cmd = 'touch $@')")
+        write("x/y/BUILD", "genrule(name = 'y', outs = ['whatever'], cmd = 'touch $@')")
 
-    if (skymeld) {
-      // Verify that these 2 conflicting artifacts can't both exist.
-      assertThat(outputXYY.isFile() && outputXY.isFile()).isFalse();
-    } else {
-      // Verify that none of the output artifacts were built.
-      assertThat(outputXY.exists()).isFalse();
-      assertThat(outputXYY.exists()).isFalse();
+        val errorCode: Code =
+            assertThrowsExceptionWhenBuildingTargets( /*keepGoing=*/true, "//x:y", "//x/y:y")
+
+        assertThat(errorCode).isEqualTo(Code.NOT_ALL_TARGETS_ANALYZED)
+
+        if (minimizeMemory) {
+            // The states might have been dropped, so we can't check further here.
+            return
+        }
+
+        val outputXY: Path =
+            com.google.common.collect.Iterables.getOnlyElement<Artifact?>(getArtifacts("//x:y")).getPath()
+        val outputXYY: Path =
+            com.google.common.collect.Iterables.getOnlyElement<Artifact?>(getArtifacts("//x/y:y")).getPath()
+
+        if (skymeld) {
+            // Verify that these 2 conflicting artifacts can't both exist.
+            Truth.assertThat(outputXYY.isFile() && outputXY.isFile()).isFalse()
+        } else {
+            // Verify that none of the output artifacts were built.
+            assertThat(outputXY.exists()).isFalse()
+            assertThat(outputXYY.exists()).isFalse()
+        }
     }
-  }
 
-  @Test
-  public void dependencyHasConflict_keepGoing_bothTopLevelTargetsFail() throws Exception {
-    addOptions("--keep_going");
-    writeConflictBzl();
-    write(
-        "foo/dummy.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun dependencyHasConflict_keepGoing_bothTopLevelTargetsFail() {
+        addOptions("--keep_going")
+        writeConflictBzl()
+        write(
+            "foo/dummy.bzl",
+            """
         def _path(file):
             return file.path
 
@@ -817,7 +866,7 @@ public class OutputArtifactConflictTest extends BuildIntegrationTestCase {
                 transitive = [dep[DefaultInfo].files for dep in ctx.attr.deps],
             )
             output = ctx.actions.declare_file(ctx.attr.name + ".out")
-            command = "echo $@ > %s" % (output.path)
+            command = "echo ${'$'}@ > %s" % (output.path)
             args = ctx.actions.args()
             args.add_all(inputs, map_each = _path)
             ctx.actions.run_shell(
@@ -835,10 +884,12 @@ public class OutputArtifactConflictTest extends BuildIntegrationTestCase {
                 "deps": attr.label_list(providers = [DefaultInfo]),
             },
         )
-        """);
-    write(
-        "foo/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        write(
+            "foo/BUILD",
+            """
         load("//foo:conflict.bzl", "my_rule")
         load("//foo:dummy.bzl", "dummy")
 
@@ -858,132 +909,157 @@ public class OutputArtifactConflictTest extends BuildIntegrationTestCase {
             name = "top_level_b",
             deps = [":conflict_second"],
         )
-        """);
-    assertThrows(
-        BuildFailedException.class, () -> buildTarget("//foo:top_level_a", "//foo:top_level_b"));
-    events.assertContainsError(
-        "file 'foo/conflict_output' is generated by these conflicting actions:");
-    assertThat(eventListener.analysisFailures)
-        .containsExactly("//foo:top_level_a", "//foo:top_level_b");
-  }
+        
+        """.trimIndent()
+        )
+        org.junit.Assert.assertThrows<T?>(
+            BuildFailedException::class.java,
+            org.junit.function.ThrowingRunnable { buildTarget("//foo:top_level_a", "//foo:top_level_b") })
+        events.assertContainsError(
+            "file 'foo/conflict_output' is generated by these conflicting actions:"
+        )
+        Truth.assertThat(eventListener.analysisFailures)
+            .containsExactly("//foo:top_level_a", "//foo:top_level_b")
+    }
 
-  @Test
-  public void conflict_noTrackIncrementalState_detected() throws Exception {
-    assume().that(minimizeMemory).isTrue();
-    writeConflictBzl();
-    write(
-        "foo/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun conflict_noTrackIncrementalState_detected() {
+        TruthJUnit.assume().that(minimizeMemory).isTrue()
+        writeConflictBzl()
+        write(
+            "foo/BUILD",
+            """
         load("//foo:conflict.bzl", "my_rule")
 
         my_rule(name = "first")
 
         my_rule(name = "second")
-        """);
+        
+        """.trimIndent()
+        )
 
-    buildTarget("//foo:first");
-    String outputDirName = getTargetConfigurationFromLastBuildResult().getOutputDirectoryName();
+        buildTarget("//foo:first")
+        val outputDirName: String? = getTargetConfigurationFromLastBuildResult().getOutputDirectoryName()
 
-    ViewCreationFailedException e =
-        assertThrows(
-            ViewCreationFailedException.class, () -> buildTarget("//foo:first", "//foo:second"));
-    assertThat(e).hasCauseThat().isInstanceOf(ActionConflictException.class);
-    String msg = e.getCause().getMessage();
+        val e: ViewCreationFailedException =
+            org.junit.Assert.assertThrows<T>(
+                ViewCreationFailedException::class.java,
+                org.junit.function.ThrowingRunnable { buildTarget("//foo:first", "//foo:second") })
+        assertThat(e).hasCauseThat().isInstanceOf(ActionConflictException::class.java)
+        val msg: String = e.getCause().getMessage()
 
-    // Assert that the two action hashes are different.
-    Matcher m = Pattern.compile("Action key: ([0-9a-f]{64}), ([0-9a-f]{64})").matcher(msg);
-    assertThat(m.find()).isTrue();
-    assertThat(m.group(1)).isNotEqualTo(m.group(2));
+        // Assert that the two action hashes are different.
+        val m: java.util.regex.Matcher =
+            java.util.regex.Pattern.compile("Action key: ([0-9a-f]{64}), ([0-9a-f]{64})").matcher(msg)
+        Truth.assertThat(m.find()).isTrue()
+        Truth.assertThat(m.group(1)).isNotEqualTo(m.group(2))
 
-    // Infer the evaluation order by checking which target label appears first in the message.
-    int firstIdx = msg.indexOf("//foo:first");
-    int secondIdx = msg.indexOf("//foo:second");
-    assertThat(firstIdx).isNotEqualTo(-1);
-    assertThat(secondIdx).isNotEqualTo(-1);
+        // Infer the evaluation order by checking which target label appears first in the message.
+        val firstIdx: Int = msg.indexOf("//foo:first")
+        val secondIdx: Int = msg.indexOf("//foo:second")
+        Truth.assertThat(firstIdx).isNotEqualTo(-1)
+        Truth.assertThat(secondIdx).isNotEqualTo(-1)
 
-    String attemptedAction;
-    String previousAction;
-    if (firstIdx < secondIdx) {
-      attemptedAction = "first";
-      previousAction = "second";
-    } else {
-      attemptedAction = "second";
-      previousAction = "first";
+        val attemptedAction: String?
+        val previousAction: String?
+        if (firstIdx < secondIdx) {
+            attemptedAction = "first"
+            previousAction = "second"
+        } else {
+            attemptedAction = "second"
+            previousAction = "first"
+        }
+
+        // Ensure that we are printing the differences in the describeKey()
+        val expected: String? =
+            """
+        Action describeKey: are different:
+          Action A:   Argument: 'touch %1${'$'}s-out/%2${'$'}s/bin/foo/conflict_output %1${'$'}s-out/%2${'$'}s/bin/foo/other%3${'$'}s'
+          Action B:   Argument: 'touch %1${'$'}s-out/%2${'$'}s/bin/foo/conflict_output %1${'$'}s-out/%2${'$'}s/bin/foo/other%4${'$'}s'
+        
+        """
+                .trimIndent()
+                .formatted(TestConstants.PRODUCT_NAME, outputDirName, attemptedAction, previousAction)
+
+        Truth.assertThat(msg).contains(expected)
     }
 
-    // Ensure that we are printing the differences in the describeKey()
-    String expected =
-        """
-        Action describeKey: are different:
-          Action A:   Argument: 'touch %1$s-out/%2$s/bin/foo/conflict_output %1$s-out/%2$s/bin/foo/other%3$s'
-          Action B:   Argument: 'touch %1$s-out/%2$s/bin/foo/conflict_output %1$s-out/%2$s/bin/foo/other%4$s'
-        """
-            .formatted(TestConstants.PRODUCT_NAME, outputDirName, attemptedAction, previousAction);
-
-    assertThat(msg).contains(expected);
-  }
-
-  @Test
-  public void directoryWithNestedFile() throws Exception {
-    write(
-        "foo/conflict.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun directoryWithNestedFile() {
+        write(
+            "foo/conflict.bzl",
+            """
         def _impl(ctx):
             dir = ctx.actions.declare_directory(ctx.label.name + ".dir")
             file = ctx.actions.declare_file(ctx.label.name + ".dir/file.txt")
             ctx.actions.run_shell(
                 outputs = [dir, file],
-                command = "mkdir -p $1 && touch $2",
+                command = "mkdir -p ${'$'}1 && touch ${'$'}2",
                 arguments = [dir.path, file.path],
             )
             return [DefaultInfo(files = depset([dir, file]))]
 
         my_rule = rule(implementation = _impl)
-        """);
-    write(
-        "foo/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        write(
+            "foo/BUILD",
+            """
         load(":conflict.bzl", "my_rule")
 
         my_rule(name = "bar")
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertThrows(ViewCreationFailedException.class, () -> buildTarget("//foo:bar"));
-    events.assertContainsError("One of the output paths");
-    events.assertContainsError("is a prefix of the other");
-  }
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { buildTarget("//foo:bar") })
+        events.assertContainsError("One of the output paths")
+        events.assertContainsError("is a prefix of the other")
+    }
 
-  @Test
-  public void directoryWithNestedDirectory() throws Exception {
-    write(
-        "foo/conflict.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun directoryWithNestedDirectory() {
+        write(
+            "foo/conflict.bzl",
+            """
         def _impl(ctx):
             dir = ctx.actions.declare_directory(ctx.label.name + ".dir")
             subdir = ctx.actions.declare_directory(ctx.label.name + ".dir/subdir")
             ctx.actions.run_shell(
                 outputs = [dir, subdir],
-                command = "mkdir -p $1 && mkdir -p $2",
+                command = "mkdir -p ${'$'}1 && mkdir -p ${'$'}2",
                 arguments = [dir.path, subdir.path],
             )
             return [DefaultInfo(files = depset([dir, subdir]))]
 
         my_rule = rule(implementation = _impl)
-        """);
-    write(
-        "foo/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        write(
+            "foo/BUILD",
+            """
         load(":conflict.bzl", "my_rule")
 
         my_rule(name = "bar")
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertThrows(ViewCreationFailedException.class, () -> buildTarget("//foo:bar"));
-    events.assertContainsError("One of the output paths");
-    events.assertContainsError("is a prefix of the other");
-  }
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable { buildTarget("//foo:bar") })
+        events.assertContainsError("One of the output paths")
+        events.assertContainsError("is a prefix of the other")
+    }
 
-  private void skipTheRestIfSkymeldAndMinimizeMemory() {
-    assume().that(skymeld && minimizeMemory).isFalse();
-  }
+    private fun skipTheRestIfSkymeldAndMinimizeMemory() {
+        TruthJUnit.assume().that(skymeld && minimizeMemory).isFalse()
+    }
 }

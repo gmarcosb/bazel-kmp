@@ -11,52 +11,40 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.skyframe.BzlLoadValue.keyForBuild;
+import com.google.devtools.build.lib.skyframe.BzlLoadValue.keyForBuild
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.StarlarkAspectClass;
-import com.google.devtools.build.skyframe.CycleInfo;
-import com.google.devtools.build.skyframe.SkyKey;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link TargetCycleReporter}. */
-@RunWith(JUnit4.class)
-public final class TargetCycleReporterTest extends BuildViewTestCase {
-
-  /**
-   * Regression test for b/142966884 : Blaze crashes when building with --aspects and --keep_going
-   * on a target where the transitive deps have a genquery which finds a cycle over //foo:c that
-   * doesn't happen when actually building //foo:c because of a select() on its deps that skips the
-   * path that happens to make the cycle.
-   *
-   * <p>That results in top-level keys that aren't {@link ConfiguredTargetKey} in {@link
-   * TargetCycleReporter#getAdditionalMessageAboutCycle}.
-   */
-  @Test
-  public void loadingPhaseCycleWithDifferentTopLevelKeyTypes() throws Exception {
-    scratch.file(
-        "foo/BUILD",
-        """
+/** Tests for [TargetCycleReporter].  */
+@RunWith(JUnit4::class)
+class TargetCycleReporterTest : BuildViewTestCase() {
+    /**
+     * Regression test for b/142966884 : Blaze crashes when building with --aspects and --keep_going
+     * on a target where the transitive deps have a genquery which finds a cycle over //foo:c that
+     * doesn't happen when actually building //foo:c because of a select() on its deps that skips the
+     * path that happens to make the cycle.
+     * 
+     * 
+     * That results in top-level keys that aren't [ConfiguredTargetKey] in [ ][TargetCycleReporter.getAdditionalMessageAboutCycle].
+     */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun loadingPhaseCycleWithDifferentTopLevelKeyTypes() {
+        scratch.file(
+            "foo/BUILD",
+            """
         genrule(
             name = "a",
             srcs = [],
             outs = ["a.o"],
-            cmd = "echo uh > $@",
+            cmd = "echo uh > ${'$'}@",
         )
 
         genrule(
             name = "b",
             srcs = [],
             outs = ["b.o"],
-            cmd = "echo hi > $@",
+            cmd = "echo hi > ${'$'}@",
             visibility = [":c"],
         )
 
@@ -64,43 +52,50 @@ public final class TargetCycleReporterTest extends BuildViewTestCase {
             name = "c",
             srcs = [],
             outs = ["c.o"],
-            cmd = "echo hi > $@",
+            cmd = "echo hi > ${'$'}@",
         )
-        """);
-    TargetCycleReporter cycleReporter = new TargetCycleReporter(getPackageManager());
-    CycleInfo cycle =
-        CycleInfo.createCycleInfo(
-            ImmutableList.of(
-                TransitiveTargetKey.of(Label.parseCanonicalUnchecked("//foo:b")),
-                TransitiveTargetKey.of(Label.parseCanonicalUnchecked("//foo:c"))));
+        
+        """.trimIndent()
+        )
+        val cycleReporter: TargetCycleReporter = TargetCycleReporter(packageManager)
+        val cycle: CycleInfo? =
+            CycleInfo.createCycleInfo(
+                com.google.common.collect.ImmutableList.of<E?>(
+                    TransitiveTargetKey.of(Label.parseCanonicalUnchecked("//foo:b")),
+                    TransitiveTargetKey.of(Label.parseCanonicalUnchecked("//foo:c"))
+                )
+            )
 
-    ConfiguredTargetKey ctKey =
-        ConfiguredTargetKey.builder()
-            .setLabel(Label.parseCanonicalUnchecked("//foo:a"))
-            .setConfiguration(targetConfig)
-            .build();
-    assertThat(cycleReporter.getAdditionalMessageAboutCycle(reporter, ctKey, cycle))
-        .contains(
+        val ctKey: ConfiguredTargetKey? =
+            ConfiguredTargetKey.builder()
+                .setLabel(Label.parseCanonicalUnchecked("//foo:a"))
+                .setConfiguration(targetConfig)
+                .build()
+        com.google.common.truth.Subject.contains(
             "The cycle is caused by a visibility edge from //foo:b to the non-package_group "
-                + "target //foo:c");
+                    + "target //foo:c"
+        )
 
-    SkyKey aspectKey = AspectKeyCreator.createAspectKey(null, ctKey);
-    assertThat(cycleReporter.getAdditionalMessageAboutCycle(reporter, aspectKey, cycle))
-        .contains(
+        val aspectKey: SkyKey? = AspectKeyCreator.createAspectKey(null, ctKey)
+        com.google.common.truth.Subject.contains(
             "The cycle is caused by a visibility edge from //foo:b to the non-package_group "
-                + "target //foo:c");
+                    + "target //foo:c"
+        )
 
-    SkyKey starlarkAspectKey =
-        AspectKeyCreator.createTopLevelAspectsKey(
-            ImmutableList.of(
-                new StarlarkAspectClass(
-                    keyForBuild(Label.parseCanonicalUnchecked("//foo:b")), "my Starlark key")),
-            Label.parseCanonicalUnchecked("//foo:a"),
-            targetConfig,
-            /* topLevelAspectsParameters= */ ImmutableMap.of());
-    assertThat(cycleReporter.getAdditionalMessageAboutCycle(reporter, starlarkAspectKey, cycle))
-        .contains(
+        val starlarkAspectKey: SkyKey? =
+            AspectKeyCreator.createTopLevelAspectsKey(
+                com.google.common.collect.ImmutableList.of<E?>(
+                    StarlarkAspectClass(
+                        keyForBuild(Label.parseCanonicalUnchecked("//foo:b")), "my Starlark key"
+                    )
+                ),
+                Label.parseCanonicalUnchecked("//foo:a"),
+                targetConfig,  /* topLevelAspectsParameters= */
+                com.google.common.collect.ImmutableMap.of<K?, V?>()
+            )
+        com.google.common.truth.Subject.contains(
             "The cycle is caused by a visibility edge from //foo:b to the non-package_group "
-                + "target //foo:c");
-  }
+                    + "target //foo:c"
+        )
+    }
 }

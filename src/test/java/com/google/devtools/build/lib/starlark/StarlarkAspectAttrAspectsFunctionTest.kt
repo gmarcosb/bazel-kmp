@@ -11,53 +11,26 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.starlark;
+package com.google.devtools.build.lib.starlark
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.packages.Attribute.attr;
-import static com.google.devtools.build.lib.packages.BuildType.LABEL;
-import static java.util.stream.Collectors.joining;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.packages.Attribute.attr
 
-import com.google.common.base.Splitter;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.ConfiguredAspect;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
-import com.google.devtools.build.lib.analysis.RuleDefinition;
-import com.google.devtools.build.lib.analysis.ViewCreationFailedException;
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.config.Fragment;
-import com.google.devtools.build.lib.analysis.config.FragmentOptions;
-import com.google.devtools.build.lib.analysis.config.RequiresOptions;
-import com.google.devtools.build.lib.analysis.util.AnalysisTestCase;
-import com.google.devtools.build.lib.analysis.util.DummyTestFragment;
-import com.google.devtools.build.lib.analysis.util.DummyTestFragment.DummyTestOptions;
-import com.google.devtools.build.lib.analysis.util.MockRule;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.AspectClass;
-import com.google.devtools.build.lib.packages.Attribute.LabelLateBoundDefault;
-import com.google.devtools.build.lib.packages.StarlarkAspectClass;
-import com.google.devtools.build.lib.skyframe.AspectKeyCreator.AspectKey;
-import com.google.devtools.build.lib.testutil.TestRuleClassProvider;
-import com.google.devtools.common.options.OptionsClass;
-import java.util.Map;
-import net.starlark.java.eval.Sequence;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for Starlark aspects {@code attr_aspects} function. */
-@RunWith(JUnit4.class)
-public final class StarlarkAspectAttrAspectsFunctionTest extends AnalysisTestCase {
-
-  private void createTestDefs(String propagationAttrsFunction, String propagationPredicateFunction)
-      throws Exception {
-    scratch.file("test/BUILD");
-    scratch.file(
-        "test/defs.bzl",
-        String.format(
-            """
+/** Tests for Starlark aspects `attr_aspects` function.  */
+@RunWith(JUnit4::class)
+class StarlarkAspectAttrAspectsFunctionTest : AnalysisTestCase() {
+    @Throws(java.lang.Exception::class)
+    private fun createTestDefs(
+        propagationAttrsFunction: String?, propagationPredicateFunction: String? = """
+        def _propagation_predicate(ctx):
+          return True
+        
+        """.trimIndent()
+    ) {
+        scratch.file("test/BUILD")
+        scratch.file(
+            "test/defs.bzl",
+            String.format(
+                """
             AspectInfo = provider()
 
             def _rule_impl(ctx):
@@ -96,26 +69,22 @@ public final class StarlarkAspectAttrAspectsFunctionTest extends AnalysisTestCas
               attr_aspects = _propagation_attrs,
               propagation_predicate = _propagation_predicate,
             )
-            """,
-            propagationAttrsFunction, propagationPredicateFunction));
-  }
+            
+            """.trimIndent(),
+                propagationAttrsFunction, propagationPredicateFunction
+            )
+        )
+    }
 
-  private void createTestDefs(String propagationAttrsFunction) throws Exception {
-    createTestDefs(
-        propagationAttrsFunction,
-        """
-        def _propagation_predicate(ctx):
-          return True
-        """);
-  }
+    @Throws(java.lang.Exception::class)
+    private fun createTestPackages() {
+        scratch.file(
+            "config_setting/BUILD", "config_setting(name='defines', values={'define': 'foo=1'})"
+        )
 
-  private void createTestPackages() throws Exception {
-    scratch.file(
-        "config_setting/BUILD", "config_setting(name='defines', values={'define': 'foo=1'})");
-
-    scratch.file(
-        "pkg1/BUILD",
-        """
+        scratch.file(
+            "pkg1/BUILD",
+            """
         load('//test:defs.bzl', 'simple_rule', 'tool_rule')
         simple_rule(name = 't1', deps_1 = [':d1'], deps_2 = [':d2'])
         simple_rule(name = 'd1', deps_1 = [':d11'], deps_2 = [':d12'])
@@ -134,13 +103,16 @@ public final class StarlarkAspectAttrAspectsFunctionTest extends AnalysisTestCas
         )
 
         simple_rule(name = 't2', deps_1 = [':d1', ':d11'], deps_2 = [':d2'])
-        """);
-  }
+        
+        """.trimIndent()
+        )
+    }
 
-  @Test
-  public void selectedAttrsReturned_aspectPropagatesAlongReturnedAttrs() throws Exception {
-    createTestDefs(
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun selectedAttrsReturned_aspectPropagatesAlongReturnedAttrs() {
+        createTestDefs(
+            """
         def _propagation_attrs(ctx):
           if ctx.rule.label == Label('//pkg1:t1'):
             attr_aspects = []
@@ -155,90 +127,119 @@ public final class StarlarkAspectAttrAspectsFunctionTest extends AnalysisTestCas
 
           else:
             return []
-        """);
-    createTestPackages();
+        
+        """.trimIndent()
+        )
+        createTestPackages()
 
-    var analysisResult = update(ImmutableList.of("//test:defs.bzl%cmdline_aspect"), "//pkg1:t1");
+        val analysisResult: @NotNull AnalysisResult =
+            update(com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%cmdline_aspect"), "//pkg1:t1")
 
-    assertThat(getFormattedAspectKeys("cmdline_aspect"))
-        .containsExactly(
-            "cmdline_aspect on //pkg1:t1",
-            "cmdline_aspect on //pkg1:d1",
-            "cmdline_aspect on //pkg1:d2",
-            "cmdline_aspect on //pkg1:rule_tool");
+        Truth.assertThat(getFormattedAspectKeys("cmdline_aspect"))
+            .containsExactly(
+                "cmdline_aspect on //pkg1:t1",
+                "cmdline_aspect on //pkg1:d1",
+                "cmdline_aspect on //pkg1:d2",
+                "cmdline_aspect on //pkg1:rule_tool"
+            )
 
-    var aspectResult = getAspectResult(analysisResult.getAspectsMap(), "cmdline_aspect");
-    assertThat(aspectResult)
-        .containsExactly(
-            "cmdline_aspect on @@//pkg1:t1",
-            "cmdline_aspect on @@//pkg1:d1",
-            "cmdline_aspect on @@//pkg1:d2",
-            "cmdline_aspect on @@//pkg1:rule_tool");
-  }
+        val aspectResult: net.starlark.java.eval.Sequence<*> =
+            getAspectResult(analysisResult.getAspectsMap(), "cmdline_aspect")
+        Truth.assertThat(aspectResult)
+            .containsExactly(
+                "cmdline_aspect on @@//pkg1:t1",
+                "cmdline_aspect on @@//pkg1:d1",
+                "cmdline_aspect on @@//pkg1:d2",
+                "cmdline_aspect on @@//pkg1:rule_tool"
+            )
+    }
 
-  @Test
-  public void wildCardAttrReturned_buildFails() throws Exception {
-    createTestDefs(
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun wildCardAttrReturned_buildFails() {
+        createTestDefs(
+            """
         def _propagation_attrs(ctx):
             return ['*']
-        """);
-    createTestPackages();
+        
+        """.trimIndent()
+        )
+        createTestPackages()
 
-    reporter.removeHandler(failFastHandler);
-    assertThrows(
-        ViewCreationFailedException.class,
-        () -> update(ImmutableList.of("//test:defs.bzl%cmdline_aspect"), "//pkg1:t1"));
-    assertContainsEvent("'*' is not allowed in 'attr_aspects' list");
-  }
+        reporter.removeHandler(failFastHandler)
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable {
+                update(
+                    com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%cmdline_aspect"),
+                    "//pkg1:t1"
+                )
+            })
+        assertContainsEvent("'*' is not allowed in 'attr_aspects' list")
+    }
 
-  @Test
-  public void invalidReturnValue_buildFails() throws Exception {
-    createTestDefs(
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun invalidReturnValue_buildFails() {
+        createTestDefs(
+            """
         def _propagation_attrs(ctx):
             return [44, 'foo']
-        """);
-    createTestPackages();
+        
+        """.trimIndent()
+        )
+        createTestPackages()
 
-    reporter.removeHandler(failFastHandler);
-    assertThrows(
-        ViewCreationFailedException.class,
-        () -> update(ImmutableList.of("//test:defs.bzl%cmdline_aspect"), "//pkg1:t1"));
-    assertContainsEvent("at index 0 of attr_aspects, got element of type int, want string");
-  }
+        reporter.removeHandler(failFastHandler)
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable {
+                update(
+                    com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%cmdline_aspect"),
+                    "//pkg1:t1"
+                )
+            })
+        assertContainsEvent("at index 0 of attr_aspects, got element of type int, want string")
+    }
 
-  @Test
-  public void withPropagationPredicate_aspectPropagatedToSatisfyingTargets() throws Exception {
-    createTestDefs(
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun withPropagationPredicate_aspectPropagatedToSatisfyingTargets() {
+        createTestDefs(
+            """
         def _propagation_attrs(ctx):
           return ['deps_1']
-        """,
-        """
+        
+        """.trimIndent(),
+            """
         def _propagation_predicate(ctx):
           if ctx.rule.label == Label('//pkg1:d1'):
             return False
           return True
-        """);
-    createTestPackages();
+        
+        """.trimIndent()
+        )
+        createTestPackages()
 
-    var analysisResult = update(ImmutableList.of("//test:defs.bzl%cmdline_aspect"), "//pkg1:t2");
+        val analysisResult: @NotNull AnalysisResult =
+            update(com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%cmdline_aspect"), "//pkg1:t2")
 
-    assertThat(getFormattedAspectKeys("cmdline_aspect"))
-        .containsExactly("cmdline_aspect on //pkg1:t2", "cmdline_aspect on //pkg1:d11");
+        Truth.assertThat(getFormattedAspectKeys("cmdline_aspect"))
+            .containsExactly("cmdline_aspect on //pkg1:t2", "cmdline_aspect on //pkg1:d11")
 
-    var aspectAResult = getAspectResult(analysisResult.getAspectsMap(), "cmdline_aspect");
-    assertThat(aspectAResult)
-        .containsExactly("cmdline_aspect on @@//pkg1:t2", "cmdline_aspect on @@//pkg1:d11");
-  }
+        val aspectAResult: net.starlark.java.eval.Sequence<*> =
+            getAspectResult(analysisResult.getAspectsMap(), "cmdline_aspect")
+        Truth.assertThat(aspectAResult)
+            .containsExactly("cmdline_aspect on @@//pkg1:t2", "cmdline_aspect on @@//pkg1:d11")
+    }
 
-  @Test
-  public void aspectApplyToGeneratingRule_attrAspectsFuncRunOnGeneratingRule() throws Exception {
-    scratch.file("test/BUILD");
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun aspectApplyToGeneratingRule_attrAspectsFuncRunOnGeneratingRule() {
+        scratch.file("test/BUILD")
+        scratch.file(
+            "test/defs.bzl",
+            """
         AspectInfo = provider()
 
         def _propagation_attrs(ctx):
@@ -270,62 +271,81 @@ public final class StarlarkAspectAttrAspectsFunctionTest extends AnalysisTestCas
           implementation = _out_rule_impl,
           attrs = {'deps': attr.label_list(), 'out': attr.output()},
         )
-        """);
-    scratch.file(
-        "pkg1/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "pkg1/BUILD",
+            """
         load('//test:defs.bzl', 'out_rule')
         out_rule(name = 'target_with_output', out = 'my_out.txt', deps = [':d1'])
         out_rule(name = 'd1')
-        """);
+        
+        """.trimIndent()
+        )
 
-    var analysisResult =
-        update(ImmutableList.of("//test:defs.bzl%generating_rule_aspect"), "//pkg1:my_out.txt");
+        val analysisResult: @NotNull AnalysisResult =
+            update(
+                com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%generating_rule_aspect"),
+                "//pkg1:my_out.txt"
+            )
 
-    assertThat(getFormattedAspectKeys("generating_rule_aspect"))
-        .containsExactly(
-            "generating_rule_aspect on //pkg1:my_out.txt",
-            "generating_rule_aspect on //pkg1:target_with_output",
-            "generating_rule_aspect on //pkg1:d1");
+        Truth.assertThat(getFormattedAspectKeys("generating_rule_aspect"))
+            .containsExactly(
+                "generating_rule_aspect on //pkg1:my_out.txt",
+                "generating_rule_aspect on //pkg1:target_with_output",
+                "generating_rule_aspect on //pkg1:d1"
+            )
 
-    var aspectResult = getAspectResult(analysisResult.getAspectsMap(), "generating_rule_aspect");
-    assertThat(aspectResult)
-        .containsExactly(
-            "generating_rule_aspect on @@//pkg1:target_with_output",
-            "generating_rule_aspect on @@//pkg1:d1");
-  }
+        val aspectResult: net.starlark.java.eval.Sequence<*> =
+            getAspectResult(analysisResult.getAspectsMap(), "generating_rule_aspect")
+        Truth.assertThat(aspectResult)
+            .containsExactly(
+                "generating_rule_aspect on @@//pkg1:target_with_output",
+                "generating_rule_aspect on @@//pkg1:d1"
+            )
+    }
 
-  @Test
-  public void attrWithSelect_availableToAttrAspectsFunc() throws Exception {
-    createTestDefs(
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun attrWithSelect_availableToAttrAspectsFunc() {
+        createTestDefs(
+            """
         def _propagation_attrs(ctx):
           deps_1 = ctx.rule.attr.deps_1.value
           if len(deps_1) == 1 and deps_1[0] == Label('//pkg1:d1'):
             return ['deps_1']
           return []
-        """);
-    createTestPackages();
-    useConfiguration("--define=foo=1");
+        
+        """.trimIndent()
+        )
+        createTestPackages()
+        useConfiguration("--define=foo=1")
 
-    var analysisResult =
-        update(ImmutableList.of("//test:defs.bzl%cmdline_aspect"), "//pkg1:with_selects");
+        val analysisResult: @NotNull AnalysisResult =
+            update(
+                com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%cmdline_aspect"),
+                "//pkg1:with_selects"
+            )
 
-    assertThat(getFormattedAspectKeys("cmdline_aspect"))
-        .containsExactly("cmdline_aspect on //pkg1:with_selects", "cmdline_aspect on //pkg1:d1");
+        Truth.assertThat(getFormattedAspectKeys("cmdline_aspect"))
+            .containsExactly("cmdline_aspect on //pkg1:with_selects", "cmdline_aspect on //pkg1:d1")
 
-    var aspectResult = getAspectResult(analysisResult.getAspectsMap(), "cmdline_aspect");
-    assertThat(aspectResult)
-        .containsExactly(
-            "cmdline_aspect on @@//pkg1:with_selects", "cmdline_aspect on @@//pkg1:d1");
-  }
+        val aspectResult: net.starlark.java.eval.Sequence<*> =
+            getAspectResult(analysisResult.getAspectsMap(), "cmdline_aspect")
+        Truth.assertThat(aspectResult)
+            .containsExactly(
+                "cmdline_aspect on @@//pkg1:with_selects", "cmdline_aspect on @@//pkg1:d1"
+            )
+    }
 
-  @Test
-  public void computedDefaultAttr_availableToAttrAspectsFunc() throws Exception {
-    scratch.file("test/BUILD");
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun computedDefaultAttr_availableToAttrAspectsFunc() {
+        scratch.file("test/BUILD")
+        scratch.file(
+            "test/defs.bzl",
+            """
         AspectInfo = provider()
 
         def _propagation_attrs(ctx):
@@ -370,85 +390,97 @@ public final class StarlarkAspectAttrAspectsFunctionTest extends AnalysisTestCas
         simple_rule = rule(
           implementation = _rule_impl,
         )
-        """);
-    scratch.file(
-        "pkg1/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "pkg1/BUILD",
+            """
         load('//test:defs.bzl', 'computed_default_rule', 'simple_rule')
         computed_default_rule(name = 'computed_default_target', prefix = 'my_prefix')
         simple_rule(name = 'my_prefix01')
         simple_rule(name = 'my_prefix02')
-        """);
+        
+        """.trimIndent()
+        )
 
-    var analysisResult =
-        update(
-            ImmutableList.of("//test:defs.bzl%cmdline_aspect"), "//pkg1:computed_default_target");
+        val analysisResult: @NotNull AnalysisResult =
+            update(
+                com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%cmdline_aspect"),
+                "//pkg1:computed_default_target"
+            )
 
-    assertThat(getFormattedAspectKeys("cmdline_aspect"))
-        .containsExactly(
-            "cmdline_aspect on //pkg1:computed_default_target",
-            "cmdline_aspect on //pkg1:my_prefix01",
-            "cmdline_aspect on //pkg1:my_prefix02");
+        Truth.assertThat(getFormattedAspectKeys("cmdline_aspect"))
+            .containsExactly(
+                "cmdline_aspect on //pkg1:computed_default_target",
+                "cmdline_aspect on //pkg1:my_prefix01",
+                "cmdline_aspect on //pkg1:my_prefix02"
+            )
 
-    var aspectResult = getAspectResult(analysisResult.getAspectsMap(), "cmdline_aspect");
-    assertThat(aspectResult)
-        .containsExactly(
-            "cmdline_aspect on @@//pkg1:computed_default_target",
-            "cmdline_aspect on @@//pkg1:my_prefix01",
-            "cmdline_aspect on @@//pkg1:my_prefix02");
-  }
-
-  /** A custom {@link FragmentOptions} for the latebound attribute test. */
-  @OptionsClass
-  public abstract static class TestOptions extends FragmentOptions {}
-
-  /** The {@link Fragment} that contains the options. */
-  @RequiresOptions(options = {TestOptions.class})
-  public static final class TestFragment extends Fragment {
-    private final BuildOptions buildOptions;
-
-    public TestFragment(BuildOptions buildOptions) {
-      this.buildOptions = buildOptions;
+        val aspectResult: net.starlark.java.eval.Sequence<*> =
+            getAspectResult(analysisResult.getAspectsMap(), "cmdline_aspect")
+        Truth.assertThat(aspectResult)
+            .containsExactly(
+                "cmdline_aspect on @@//pkg1:computed_default_target",
+                "cmdline_aspect on @@//pkg1:my_prefix01",
+                "cmdline_aspect on @@//pkg1:my_prefix02"
+            )
     }
 
-    // Getter required to satisfy AutoCodec.
-    public BuildOptions getBuildOptions() {
-      return buildOptions;
+    /** A custom [FragmentOptions] for the latebound attribute test.  */
+    @OptionsClass
+    abstract class TestOptions : FragmentOptions()
+
+    /** The [Fragment] that contains the options.  */
+    @RequiresOptions(options = [com.google.devtools.build.lib.starlark.StarlarkAspectAttrAspectsFunctionTest.TestOptions::class])
+    class TestFragment(buildOptions: BuildOptions?) : Fragment() {
+        private val buildOptions: BuildOptions?
+
+        init {
+            this.buildOptions = buildOptions
+        }
+
+        // Getter required to satisfy AutoCodec.
+        fun getBuildOptions(): BuildOptions? {
+            return buildOptions
+        }
+
+        val dep: Label
+            get() = Label.parseCanonicalUnchecked("//pkg1:latebound_dep")
     }
 
-    public Label getDep() {
-      return Label.parseCanonicalUnchecked("//pkg1:latebound_dep");
-    }
-  }
-
-  @Test
-  public void lateBoundAttributes_availableToAttrAspectsFunc() throws Exception {
-    RuleDefinition lateBoundDepRule =
-        (MockRule)
-            () ->
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun lateBoundAttributes_availableToAttrAspectsFunc() {
+        val lateBoundDepRule: RuleDefinition =
+            MockRule {
                 MockRule.define(
                     "rule_with_latebound_attr",
-                    (builder, env) ->
+                    { builder, env ->
                         builder
                             .add(
                                 attr(":latebound_attr", LABEL)
                                     .value(
                                         LabelLateBoundDefault.fromTargetConfiguration(
-                                            TestFragment.class,
+                                            TestFragment::class.java,
                                             null,
-                                            (rule, attributes, testConfig) -> testConfig.getDep())))
-                            .requiresConfigurationFragments(TestFragment.class));
+                                            { rule, attributes, testConfig -> testConfig.getDep() })
+                                    )
+                            )
+                            .requiresConfigurationFragments(TestFragment::class.java)
+                    })
+            } as MockRule
 
-    ConfiguredRuleClassProvider.Builder builder = new ConfiguredRuleClassProvider.Builder();
-    TestRuleClassProvider.addStandardRules(builder);
-    builder.addRuleDefinition(lateBoundDepRule);
-    builder.addConfigurationFragment(TestFragment.class);
-    useRuleClassProvider(builder.build());
+        val builder: ConfiguredRuleClassProvider.Builder = Builder()
+        TestRuleClassProvider.addStandardRules(builder)
+        builder.addRuleDefinition(lateBoundDepRule)
+        builder.addConfigurationFragment(TestFragment::class.java)
+        useRuleClassProvider(builder.build())
 
-    scratch.file("test/BUILD");
-    scratch.file(
-        "test/defs.bzl",
-        """
+        scratch.file("test/BUILD")
+        scratch.file(
+            "test/defs.bzl",
+            """
         AspectInfo = provider()
 
         def _propagation_attrs(ctx):
@@ -478,35 +510,46 @@ public final class StarlarkAspectAttrAspectsFunctionTest extends AnalysisTestCas
         simple_rule = rule(
           implementation = _rule_impl,
         )
-        """);
-    scratch.file(
-        "pkg1/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "pkg1/BUILD",
+            """
         load('//test:defs.bzl', 'simple_rule')
         rule_with_latebound_attr(name = 'latebound_target')
         simple_rule(name = 'latebound_dep')
-        """);
+        
+        """.trimIndent()
+        )
 
-    var analysisResult =
-        update(ImmutableList.of("//test:defs.bzl%cmdline_aspect"), "//pkg1:latebound_target");
+        val analysisResult: @NotNull AnalysisResult =
+            update(
+                com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%cmdline_aspect"),
+                "//pkg1:latebound_target"
+            )
 
-    assertThat(getFormattedAspectKeys("cmdline_aspect"))
-        .containsExactly(
-            "cmdline_aspect on //pkg1:latebound_target", "cmdline_aspect on //pkg1:latebound_dep");
+        Truth.assertThat(getFormattedAspectKeys("cmdline_aspect"))
+            .containsExactly(
+                "cmdline_aspect on //pkg1:latebound_target", "cmdline_aspect on //pkg1:latebound_dep"
+            )
 
-    var aspectResult = getAspectResult(analysisResult.getAspectsMap(), "cmdline_aspect");
-    assertThat(aspectResult)
-        .containsExactly(
-            "cmdline_aspect on @@//pkg1:latebound_target",
-            "cmdline_aspect on @@//pkg1:latebound_dep");
-  }
+        val aspectResult: net.starlark.java.eval.Sequence<*> =
+            getAspectResult(analysisResult.getAspectsMap(), "cmdline_aspect")
+        Truth.assertThat(aspectResult)
+            .containsExactly(
+                "cmdline_aspect on @@//pkg1:latebound_target",
+                "cmdline_aspect on @@//pkg1:latebound_dep"
+            )
+    }
 
-  @Test
-  public void toolAttr_correctlyIdentified() throws Exception {
-    scratch.file("test/BUILD");
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun toolAttr_correctlyIdentified() {
+        scratch.file("test/BUILD")
+        scratch.file(
+            "test/defs.bzl",
+            """
         AspectInfo = provider()
 
         def _propagation_attrs(ctx):
@@ -553,40 +596,51 @@ public final class StarlarkAspectAttrAspectsFunctionTest extends AnalysisTestCas
         simple_rule = rule(
           implementation = _rule_impl,
         )
-        """);
-    scratch.file(
-        "pkg1/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "pkg1/BUILD",
+            """
         load('//test:defs.bzl', 'rule_with_tool', 'simple_rule')
         rule_with_tool(name = 'main_target')
         simple_rule(name = 'tool_1')
         simple_rule(name = 'tool_2')
         simple_rule(name = 'non_tool')
-        """);
+        
+        """.trimIndent()
+        )
 
-    var analysisResult =
-        update(ImmutableList.of("//test:defs.bzl%cmdline_aspect"), "//pkg1:main_target");
+        val analysisResult: @NotNull AnalysisResult =
+            update(
+                com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%cmdline_aspect"),
+                "//pkg1:main_target"
+            )
 
-    assertThat(getFormattedAspectKeys("cmdline_aspect"))
-        .containsExactly(
-            "cmdline_aspect on //pkg1:main_target",
-            "cmdline_aspect on //pkg1:tool_1",
-            "cmdline_aspect on //pkg1:tool_2");
+        Truth.assertThat(getFormattedAspectKeys("cmdline_aspect"))
+            .containsExactly(
+                "cmdline_aspect on //pkg1:main_target",
+                "cmdline_aspect on //pkg1:tool_1",
+                "cmdline_aspect on //pkg1:tool_2"
+            )
 
-    var aspectResult = getAspectResult(analysisResult.getAspectsMap(), "cmdline_aspect");
-    assertThat(aspectResult)
-        .containsExactly(
-            "cmdline_aspect on @@//pkg1:main_target",
-            "cmdline_aspect on @@//pkg1:tool_1",
-            "cmdline_aspect on @@//pkg1:tool_2");
-  }
+        val aspectResult: net.starlark.java.eval.Sequence<*> =
+            getAspectResult(analysisResult.getAspectsMap(), "cmdline_aspect")
+        Truth.assertThat(aspectResult)
+            .containsExactly(
+                "cmdline_aspect on @@//pkg1:main_target",
+                "cmdline_aspect on @@//pkg1:tool_1",
+                "cmdline_aspect on @@//pkg1:tool_2"
+            )
+    }
 
-  @Test
-  public void attrInitializer_availableToAttrAspectsFunc() throws Exception {
-    scratch.file("test/BUILD");
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun attrInitializer_availableToAttrAspectsFunc() {
+        scratch.file("test/BUILD")
+        scratch.file(
+            "test/defs.bzl",
+            """
         AspectInfo = provider()
 
         def _propagation_attrs(ctx):
@@ -627,40 +681,51 @@ public final class StarlarkAspectAttrAspectsFunctionTest extends AnalysisTestCas
         simple_rule = rule(
           implementation = _rule_impl,
         )
-        """);
-    scratch.file(
-        "pkg1/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "pkg1/BUILD",
+            """
         load('//test:defs.bzl', 'rule_with_initializer', 'simple_rule')
         rule_with_initializer(name = 'main_target', deps = [":initial"])
         simple_rule(name = 'initial')
         simple_rule(name = 'added')
-        """);
-    useConfiguration("--experimental_rule_extension_api");
+        
+        """.trimIndent()
+        )
+        useConfiguration("--experimental_rule_extension_api")
 
-    var analysisResult =
-        update(ImmutableList.of("//test:defs.bzl%cmdline_aspect"), "//pkg1:main_target");
+        val analysisResult: @NotNull AnalysisResult =
+            update(
+                com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%cmdline_aspect"),
+                "//pkg1:main_target"
+            )
 
-    assertThat(getFormattedAspectKeys("cmdline_aspect"))
-        .containsExactly(
-            "cmdline_aspect on //pkg1:main_target",
-            "cmdline_aspect on //pkg1:added",
-            "cmdline_aspect on //pkg1:initial");
+        Truth.assertThat(getFormattedAspectKeys("cmdline_aspect"))
+            .containsExactly(
+                "cmdline_aspect on //pkg1:main_target",
+                "cmdline_aspect on //pkg1:added",
+                "cmdline_aspect on //pkg1:initial"
+            )
 
-    var aspectResult = getAspectResult(analysisResult.getAspectsMap(), "cmdline_aspect");
-    assertThat(aspectResult)
-        .containsExactly(
-            "cmdline_aspect on @@//pkg1:main_target",
-            "cmdline_aspect on @@//pkg1:added",
-            "cmdline_aspect on @@//pkg1:initial");
-  }
+        val aspectResult: net.starlark.java.eval.Sequence<*> =
+            getAspectResult(analysisResult.getAspectsMap(), "cmdline_aspect")
+        Truth.assertThat(aspectResult)
+            .containsExactly(
+                "cmdline_aspect on @@//pkg1:main_target",
+                "cmdline_aspect on @@//pkg1:added",
+                "cmdline_aspect on @@//pkg1:initial"
+            )
+    }
 
-  @Test
-  public void aspectOnAspect_eachAspectPropagatesSeparately() throws Exception {
-    scratch.file("test/BUILD");
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun aspectOnAspect_eachAspectPropagatesSeparately() {
+        scratch.file("test/BUILD")
+        scratch.file(
+            "test/defs.bzl",
+            """
         AProv = provider()
         BProv = provider()
         CProv = provider()
@@ -725,49 +790,58 @@ public final class StarlarkAspectAttrAspectsFunctionTest extends AnalysisTestCas
               "dep_2": attr.label(),
           },
         )
-        """);
-    scratch.file(
-        "pkg1/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "pkg1/BUILD",
+            """
         load('//test:defs.bzl', 'my_rule')
         my_rule(name = 'main_target', dep_1 = ':dep_1', dep_2 = ':dep_2')
         my_rule(name = 'dep_1')
         my_rule(name = 'dep_2')
-        """);
+        
+        """.trimIndent()
+        )
 
-    var analysisResult =
-        update(
-            ImmutableList.of(
-                "//test:defs.bzl%aspect_c", "//test:defs.bzl%aspect_b", "//test:defs.bzl%aspect_a"),
-            "//pkg1:main_target");
+        val analysisResult: @NotNull AnalysisResult =
+            update(
+                com.google.common.collect.ImmutableList.of<String?>(
+                    "//test:defs.bzl%aspect_c", "//test:defs.bzl%aspect_b", "//test:defs.bzl%aspect_a"
+                ),
+                "//pkg1:main_target"
+            )
 
-    assertThat(getFormattedAspectKeys("aspect_a"))
-        .containsExactly(
-            "aspect_a on //pkg1:main_target with base aspects: aspect_b,aspect_c",
-            "aspect_a on //pkg1:dep_1 with base aspects: aspect_b",
-            "aspect_a on //pkg1:dep_2 with base aspects: aspect_c");
+        Truth.assertThat(getFormattedAspectKeys("aspect_a"))
+            .containsExactly(
+                "aspect_a on //pkg1:main_target with base aspects: aspect_b,aspect_c",
+                "aspect_a on //pkg1:dep_1 with base aspects: aspect_b",
+                "aspect_a on //pkg1:dep_2 with base aspects: aspect_c"
+            )
 
-    assertThat(getFormattedAspectKeys("aspect_b"))
-        .containsExactly("aspect_b on //pkg1:main_target", "aspect_b on //pkg1:dep_1");
+        Truth.assertThat(getFormattedAspectKeys("aspect_b"))
+            .containsExactly("aspect_b on //pkg1:main_target", "aspect_b on //pkg1:dep_1")
 
-    assertThat(getFormattedAspectKeys("aspect_c"))
-        .containsExactly("aspect_c on //pkg1:main_target", "aspect_c on //pkg1:dep_2");
+        Truth.assertThat(getFormattedAspectKeys("aspect_c"))
+            .containsExactly("aspect_c on //pkg1:main_target", "aspect_c on //pkg1:dep_2")
 
-    var aspectAResult =
-        getAspectResult(analysisResult.getAspectsMap(), "aspect_a", "//pkg1:main_target", "AProv");
-    assertThat(aspectAResult)
-        .containsExactly(
-            "aspect_a on @@//pkg1:main_target with BProv with CProv",
-            "aspect_a on @@//pkg1:dep_1 with BProv",
-            "aspect_a on @@//pkg1:dep_2 with CProv");
-  }
+        val aspectAResult: net.starlark.java.eval.Sequence<*> =
+            getAspectResult(analysisResult.getAspectsMap(), "aspect_a", "//pkg1:main_target", "AProv")
+        Truth.assertThat(aspectAResult)
+            .containsExactly(
+                "aspect_a on @@//pkg1:main_target with BProv with CProv",
+                "aspect_a on @@//pkg1:dep_1 with BProv",
+                "aspect_a on @@//pkg1:dep_2 with CProv"
+            )
+    }
 
-  @Test
-  public void requiredAspect_propagatesWithMainAspect() throws Exception {
-    scratch.file("test/BUILD");
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun requiredAspect_propagatesWithMainAspect() {
+        scratch.file("test/BUILD")
+        scratch.file(
+            "test/defs.bzl",
+            """
         AProv = provider()
         BProv = provider()
 
@@ -814,45 +888,56 @@ public final class StarlarkAspectAttrAspectsFunctionTest extends AnalysisTestCas
               "dep_2": attr.label(),
           },
         )
-        """);
-    scratch.file(
-        "pkg1/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "pkg1/BUILD",
+            """
         load('//test:defs.bzl', 'my_rule')
         my_rule(name = 'main_target', dep_1 = ':dep_1', dep_2 = ':dep_2')
         my_rule(name = 'dep_1')
         my_rule(name = 'dep_2')
-        """);
+        
+        """.trimIndent()
+        )
 
-    var analysisResult = update(ImmutableList.of("//test:defs.bzl%aspect_a"), "//pkg1:main_target");
+        val analysisResult: @NotNull AnalysisResult = update(
+            com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%aspect_a"),
+            "//pkg1:main_target"
+        )
 
-    assertThat(getFormattedAspectKeys("aspect_a"))
-        .containsExactly(
-            "aspect_a on //pkg1:main_target with base aspects: aspect_b",
-            "aspect_a on //pkg1:dep_1 with base aspects: aspect_b",
-            "aspect_a on //pkg1:dep_2 with base aspects: aspect_b");
+        Truth.assertThat(getFormattedAspectKeys("aspect_a"))
+            .containsExactly(
+                "aspect_a on //pkg1:main_target with base aspects: aspect_b",
+                "aspect_a on //pkg1:dep_1 with base aspects: aspect_b",
+                "aspect_a on //pkg1:dep_2 with base aspects: aspect_b"
+            )
 
-    assertThat(getFormattedAspectKeys("aspect_b"))
-        .containsExactly(
-            "aspect_b on //pkg1:main_target",
-            "aspect_b on //pkg1:dep_1",
-            "aspect_b on //pkg1:dep_2");
+        Truth.assertThat(getFormattedAspectKeys("aspect_b"))
+            .containsExactly(
+                "aspect_b on //pkg1:main_target",
+                "aspect_b on //pkg1:dep_1",
+                "aspect_b on //pkg1:dep_2"
+            )
 
-    var aspectAResult =
-        getAspectResult(analysisResult.getAspectsMap(), "aspect_a", "//pkg1:main_target", "AProv");
-    assertThat(aspectAResult)
-        .containsExactly(
-            "aspect_a on @@//pkg1:main_target with BProv",
-            "aspect_a on @@//pkg1:dep_1 with BProv",
-            "aspect_a on @@//pkg1:dep_2 with BProv");
-  }
+        val aspectAResult: net.starlark.java.eval.Sequence<*> =
+            getAspectResult(analysisResult.getAspectsMap(), "aspect_a", "//pkg1:main_target", "AProv")
+        Truth.assertThat(aspectAResult)
+            .containsExactly(
+                "aspect_a on @@//pkg1:main_target with BProv",
+                "aspect_a on @@//pkg1:dep_1 with BProv",
+                "aspect_a on @@//pkg1:dep_2 with BProv"
+            )
+    }
 
-  private void createDormantDepsTest(String aspectDef) throws Exception {
-    scratch.file("test/BUILD");
-    scratch.file(
-        "test/defs.bzl",
-        String.format(
-"""
+    @Throws(java.lang.Exception::class)
+    private fun createDormantDepsTest(aspectDef: String?) {
+        scratch.file("test/BUILD")
+        scratch.file(
+            "test/defs.bzl",
+            String.format(
+                """
 ComponentInfo = provider(fields = ["components"])
 
 def _component_impl(ctx):
@@ -896,12 +981,15 @@ simple_rule = rule(
 )
 
 %s
-""",
-            aspectDef));
 
-    scratch.file(
-        "pkg1/BUILD",
-"""
+""".trimIndent(),
+                aspectDef
+            )
+        )
+
+        scratch.file(
+            "pkg1/BUILD",
+            """
 load("//test:defs.bzl", "component", "binary", "simple_rule")
 
 component(name="a_yes", impl=":a_impl")
@@ -913,13 +1001,16 @@ binary(name="bin", components=[":a_yes", ":b_no"], regular_deps = [":dep_1"])
 [filegroup(name=x + "_impl", srcs=[x]) for x in ["a", "b", "c", "d"]]
 
 simple_rule(name = 'dep_1')
-""");
-  }
 
-  @Test
-  public void aspectOnMaterializingTarget_attrAspectsFuncUsed() throws Exception {
-    createDormantDepsTest(
-"""
+""".trimIndent()
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun aspectOnMaterializingTarget_attrAspectsFuncUsed() {
+        createDormantDepsTest(
+            """
 AspectInfo = provider()
 
 def _propagation_attrs(ctx):
@@ -959,37 +1050,44 @@ cmdline_aspect = aspect(
     implementation = _aspect_impl,
     attr_aspects = _propagation_attrs,
 )
-""");
 
-    useConfiguration("--experimental_dormant_deps");
-    var analysisResult = update(ImmutableList.of("//test:defs.bzl%cmdline_aspect"), "//pkg1:bin");
+""".trimIndent()
+        )
 
-    assertThat(getFormattedAspectKeys("cmdline_aspect"))
-        .containsExactly(
-            "cmdline_aspect on //pkg1:bin",
-            "cmdline_aspect on //pkg1:dep_1",
-            "cmdline_aspect on //pkg1:a_yes",
-            "cmdline_aspect on //pkg1:b_no",
-            "cmdline_aspect on //pkg1:a_impl",
-            "cmdline_aspect on //pkg1:c_impl");
+        useConfiguration("--experimental_dormant_deps")
+        val analysisResult: @NotNull AnalysisResult =
+            update(com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%cmdline_aspect"), "//pkg1:bin")
 
-    var aspectAResult =
-        getAspectResult(
-            analysisResult.getAspectsMap(), "cmdline_aspect", "//pkg1:bin", "AspectInfo");
-    assertThat(aspectAResult)
-        .containsExactly(
-            "cmdline_aspect on @@//pkg1:bin",
-            "cmdline_aspect on @@//pkg1:dep_1",
-            "cmdline_aspect on @@//pkg1:a_yes",
-            "cmdline_aspect on @@//pkg1:b_no",
-            "cmdline_aspect on @@//pkg1:a_impl",
-            "cmdline_aspect on @@//pkg1:c_impl");
-  }
+        Truth.assertThat(getFormattedAspectKeys("cmdline_aspect"))
+            .containsExactly(
+                "cmdline_aspect on //pkg1:bin",
+                "cmdline_aspect on //pkg1:dep_1",
+                "cmdline_aspect on //pkg1:a_yes",
+                "cmdline_aspect on //pkg1:b_no",
+                "cmdline_aspect on //pkg1:a_impl",
+                "cmdline_aspect on //pkg1:c_impl"
+            )
 
-  @Test
-  public void aspectOnDependencyResolutionTargets_attrAspectsFuncUsed() throws Exception {
-    createDormantDepsTest(
-"""
+        val aspectAResult: net.starlark.java.eval.Sequence<*> =
+            getAspectResult(
+                analysisResult.getAspectsMap(), "cmdline_aspect", "//pkg1:bin", "AspectInfo"
+            )
+        Truth.assertThat(aspectAResult)
+            .containsExactly(
+                "cmdline_aspect on @@//pkg1:bin",
+                "cmdline_aspect on @@//pkg1:dep_1",
+                "cmdline_aspect on @@//pkg1:a_yes",
+                "cmdline_aspect on @@//pkg1:b_no",
+                "cmdline_aspect on @@//pkg1:a_impl",
+                "cmdline_aspect on @@//pkg1:c_impl"
+            )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun aspectOnDependencyResolutionTargets_attrAspectsFuncUsed() {
+        createDormantDepsTest(
+            """
 AspectInfo = provider()
 
 def _propagation_attrs(ctx):
@@ -1032,37 +1130,44 @@ cmdline_aspect = aspect(
     implementation = _aspect_impl,
     attr_aspects = _propagation_attrs,
 )
-""");
 
-    useConfiguration("--experimental_dormant_deps");
-    var analysisResult = update(ImmutableList.of("//test:defs.bzl%cmdline_aspect"), "//pkg1:bin");
+""".trimIndent()
+        )
 
-    assertThat(getFormattedAspectKeys("cmdline_aspect"))
-        .containsExactly(
-            "cmdline_aspect on //pkg1:bin",
-            "cmdline_aspect on //pkg1:a_yes",
-            "cmdline_aspect on //pkg1:b_no",
-            "cmdline_aspect on //pkg1:c_yes",
-            "cmdline_aspect on //pkg1:d_no");
+        useConfiguration("--experimental_dormant_deps")
+        val analysisResult: @NotNull AnalysisResult =
+            update(com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%cmdline_aspect"), "//pkg1:bin")
 
-    var aspectResult =
-        getAspectResult(
-            analysisResult.getAspectsMap(), "cmdline_aspect", "//pkg1:bin", "AspectInfo");
-    assertThat(aspectResult)
-        .containsExactly(
-            "cmdline_aspect on @@//pkg1:bin",
-            "cmdline_aspect on @@//pkg1:a_yes",
-            "cmdline_aspect on @@//pkg1:b_no",
-            "cmdline_aspect on @@//pkg1:c_yes",
-            "cmdline_aspect on @@//pkg1:d_no");
-  }
+        Truth.assertThat(getFormattedAspectKeys("cmdline_aspect"))
+            .containsExactly(
+                "cmdline_aspect on //pkg1:bin",
+                "cmdline_aspect on //pkg1:a_yes",
+                "cmdline_aspect on //pkg1:b_no",
+                "cmdline_aspect on //pkg1:c_yes",
+                "cmdline_aspect on //pkg1:d_no"
+            )
 
-  @Test
-  public void allRuleAttributesAreAvailableInAttrAspectsFunc() throws Exception {
-    scratch.file("test/BUILD");
-    scratch.file(
-        "test/defs.bzl",
-"""
+        val aspectResult: net.starlark.java.eval.Sequence<*> =
+            getAspectResult(
+                analysisResult.getAspectsMap(), "cmdline_aspect", "//pkg1:bin", "AspectInfo"
+            )
+        Truth.assertThat(aspectResult)
+            .containsExactly(
+                "cmdline_aspect on @@//pkg1:bin",
+                "cmdline_aspect on @@//pkg1:a_yes",
+                "cmdline_aspect on @@//pkg1:b_no",
+                "cmdline_aspect on @@//pkg1:c_yes",
+                "cmdline_aspect on @@//pkg1:d_no"
+            )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun allRuleAttributesAreAvailableInAttrAspectsFunc() {
+        scratch.file("test/BUILD")
+        scratch.file(
+            "test/defs.bzl",
+            """
 attr_map = {
   'bool': True,
   'int': 100,
@@ -1123,10 +1228,12 @@ my_rule = rule(
     "string_list_dict": attr.string_list_dict(),
     "label_list_dict": attr.label_list_dict(),
     })
-""");
-    scratch.file(
-        "pkg1/BUILD",
-"""
+
+""".trimIndent()
+        )
+        scratch.file(
+            "pkg1/BUILD",
+            """
 load("//test:defs.bzl", "my_rule")
 my_rule(
     name = 'main_target',
@@ -1148,19 +1255,25 @@ my_rule(
 
 my_rule(name = 'dep_1')
 my_rule(name = 'dep_2')
-""");
-    var unused = update(ImmutableList.of("//test:defs.bzl%cmdline_aspect"), "//pkg1:main_target");
 
-    assertThat(getFormattedAspectKeys("cmdline_aspect"))
-        .containsExactly("cmdline_aspect on //pkg1:main_target");
-  }
+""".trimIndent()
+        )
+        val unused: @NotNull AnalysisResult = update(
+            com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%cmdline_aspect"),
+            "//pkg1:main_target"
+        )
 
-  @Test
-  public void attributeWithTransition_availableInAttrAspectsFunc() throws Exception {
-    scratch.file("test/BUILD");
-    scratch.file(
-        "test/defs.bzl",
-"""
+        Truth.assertThat(getFormattedAspectKeys("cmdline_aspect"))
+            .containsExactly("cmdline_aspect on //pkg1:main_target")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun attributeWithTransition_availableInAttrAspectsFunc() {
+        scratch.file("test/BUILD")
+        scratch.file(
+            "test/defs.bzl",
+            """
 def _propagation_attrs(ctx):
   if ctx.rule.label.name != 'main_target':
     return []
@@ -1199,106 +1312,120 @@ my_rule = rule(
         "dep": attr.label(cfg = simple_transition),
     },
 )
-""");
 
-    scratch.file(
-        "pkg1/BUILD",
-"""
+""".trimIndent()
+        )
+
+        scratch.file(
+            "pkg1/BUILD",
+            """
 load("//test:defs.bzl", "my_rule")
 my_rule(name = 'main_target', dep = ':dep_1')
 my_rule(name = 'dep_1')
-""");
-    ConfiguredRuleClassProvider.Builder builder = new ConfiguredRuleClassProvider.Builder();
-    TestRuleClassProvider.addStandardRules(builder);
-    builder.addConfigurationFragment(DummyTestFragment.class);
-    useRuleClassProvider(builder.build());
 
-    useConfiguration("--foo=default");
-    var unused = update(ImmutableList.of("//test:defs.bzl%cmdline_aspect"), "//pkg1:main_target");
+""".trimIndent()
+        )
+        val builder: ConfiguredRuleClassProvider.Builder = Builder()
+        TestRuleClassProvider.addStandardRules(builder)
+        builder.addConfigurationFragment(DummyTestFragment::class.java)
+        useRuleClassProvider(builder.build())
 
-    var aspectKeys =
-        getAspectKeys("cmdline_aspect").stream()
-            .map(
-                k ->
-                    k.getLabel()
-                        + " with foo = "
-                        + k.getConfigurationKey()
-                            .getOptions()
-                            .get(DummyTestOptions.class)
-                            .getFoo());
-    assertThat(aspectKeys)
-        .containsExactly(
-            "//pkg1:main_target with foo = default",
-            "//pkg1:dep_1 with foo = v1",
-            "//pkg1:dep_1 with foo = v2");
-  }
+        useConfiguration("--foo=default")
+        val unused: @NotNull AnalysisResult = update(
+            com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%cmdline_aspect"),
+            "//pkg1:main_target"
+        )
 
-  private ImmutableList<AspectKey> getAspectKeys(String aspectName) {
-    return skyframeExecutor.getEvaluator().getDoneValues().entrySet().stream()
-        .filter(
-            entry ->
-                entry.getKey() instanceof AspectKey
-                    && ((AspectKey) entry.getKey())
-                        .getAspectClass()
-                        .toString()
-                        .equals("//test:defs.bzl%" + aspectName))
-        .map(e -> (AspectKey) e.getKey())
-        .collect(toImmutableList());
-  }
-
-  private String formatAspectKey(AspectKey aspectKey) {
-    if (aspectKey.baseKeys.isEmpty()) {
-      return Splitter.on("%").splitToList(aspectKey.getAspectClass().toString()).get(1)
-          + " on "
-          + aspectKey.getLabel();
+        val aspectKeys: java.util.stream.Stream<String?>? =
+            getAspectKeys("cmdline_aspect").stream()
+                .map<String?> { k: AspectKey? ->
+                    (k.getLabel()
+                            + " with foo = "
+                            + k.getConfigurationKey()
+                        .getOptions()
+                        .get(com.google.devtools.build.lib.analysis.util.DummyTestFragment.DummyTestOptions::class.java)
+                        .getFoo())
+                }
+        Truth.assertThat(aspectKeys)
+            .containsExactly(
+                "//pkg1:main_target with foo = default",
+                "//pkg1:dep_1 with foo = v1",
+                "//pkg1:dep_1 with foo = v2"
+            )
     }
 
-    String baseAspects =
-        aspectKey.baseKeys.stream()
-            .map(k -> Splitter.on("%").splitToList(k.getAspectClass().toString()).get(1))
-            .collect(joining(","));
-    return Splitter.on("%").splitToList(aspectKey.getAspectClass().toString()).get(1)
-        + " on "
-        + aspectKey.getLabel()
-        + " with base aspects: "
-        + baseAspects;
-  }
-
-  private ImmutableList<String> getFormattedAspectKeys(String aspectName) {
-    return skyframeExecutor.getEvaluator().getDoneValues().entrySet().stream()
-        .filter(
-            entry ->
-                entry.getKey() instanceof AspectKey
-                    && ((AspectKey) entry.getKey())
+    private fun getAspectKeys(aspectName: String?): com.google.common.collect.ImmutableList<AspectKey?> {
+        return skyframeExecutor.getEvaluator().getDoneValues().entrySet().stream()
+            .filter(
+                { entry ->
+                    entry.getKey() is AspectKey
+                            && (entry.getKey() as AspectKey)
                         .getAspectClass()
                         .toString()
-                        .equals("//test:defs.bzl%" + aspectName))
-        .map(e -> formatAspectKey((AspectKey) e.getKey()))
-        .collect(toImmutableList());
-  }
+                        .equals("//test:defs.bzl%" + aspectName)
+                })
+            .map({ e -> e.getKey() as AspectKey? })
+            .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
+    }
 
-  private Sequence<?> getAspectResult(
-      Map<AspectKey, ConfiguredAspect> aspectsMap, String aspectName) throws Exception {
-    return getAspectResult(aspectsMap, aspectName, null, "AspectInfo");
-  }
-
-  private Sequence<?> getAspectResult(
-      Map<AspectKey, ConfiguredAspect> aspectsMap,
-      String aspectName,
-      String targetLabel,
-      String providerName)
-      throws Exception {
-    for (Map.Entry<AspectKey, ConfiguredAspect> entry : aspectsMap.entrySet()) {
-      AspectClass aspectClass = entry.getKey().getAspectClass();
-      if (aspectClass instanceof StarlarkAspectClass starlarkAspectClass) {
-        String aspectExportedName = starlarkAspectClass.exportedName;
-        if (aspectExportedName.equals(aspectName)
-            && (targetLabel == null || entry.getKey().getLabel().toString().equals(targetLabel))) {
-          return getStarlarkProvider(entry.getValue(), "//test:defs.bzl", providerName)
-              .getValue("res", Sequence.class);
+    private fun formatAspectKey(aspectKey: AspectKey): String {
+        if (aspectKey.baseKeys.isEmpty()) {
+            return (com.google.common.base.Splitter.on("%").splitToList(aspectKey.getAspectClass().toString()).get(1)
+                    + " on "
+                    + aspectKey.getLabel())
         }
-      }
+
+        val baseAspects: String? =
+            aspectKey.baseKeys.stream()
+                .map({ k -> com.google.common.base.Splitter.on("%").splitToList(k.getAspectClass().toString()).get(1) })
+                .collect(Collectors.joining(","))
+        return (com.google.common.base.Splitter.on("%").splitToList(aspectKey.getAspectClass().toString()).get(1)
+                + " on "
+                + aspectKey.getLabel()
+                + " with base aspects: "
+                + baseAspects)
     }
-    throw new AssertionError("Aspect result not found for aspect: " + aspectName);
-  }
+
+    private fun getFormattedAspectKeys(aspectName: String?): com.google.common.collect.ImmutableList<String?> {
+        return skyframeExecutor.getEvaluator().getDoneValues().entrySet().stream()
+            .filter(
+                { entry ->
+                    entry.getKey() is AspectKey
+                            && (entry.getKey() as AspectKey)
+                        .getAspectClass()
+                        .toString()
+                        .equals("//test:defs.bzl%" + aspectName)
+                })
+            .map({ e -> formatAspectKey(e.getKey() as AspectKey?) })
+            .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun getAspectResult(
+        aspectsMap: MutableMap<AspectKey?, ConfiguredAspect?>, aspectName: String?
+    ): net.starlark.java.eval.Sequence<*> {
+        return getAspectResult(aspectsMap, aspectName, null, "AspectInfo")
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun getAspectResult(
+        aspectsMap: MutableMap<AspectKey?, ConfiguredAspect?>,
+        aspectName: String?,
+        targetLabel: String?,
+        providerName: String?
+    ): net.starlark.java.eval.Sequence<*> {
+        for (entry in aspectsMap.entries) {
+            val aspectClass: AspectClass? = entry.key.getAspectClass()
+            if (aspectClass is StarlarkAspectClass) {
+                val aspectExportedName: String = aspectClass.exportedName
+                if (aspectExportedName == aspectName
+                    && (targetLabel == null || entry.key.getLabel().toString().equals(targetLabel))
+                ) {
+                    return getStarlarkProvider(entry.value, "//test:defs.bzl", providerName)
+                        .getValue("res", net.starlark.java.eval.Sequence::class.java)
+                }
+            }
+        }
+        throw java.lang.AssertionError("Aspect result not found for aspect: " + aspectName)
+    }
 }

@@ -11,24 +11,25 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package net.starlark.java.syntax;
+package net.starlark.java.syntax
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.common.truth.Truth
+import net.starlark.java.syntax.Location.column
+import net.starlark.java.syntax.Location.file
+import net.starlark.java.syntax.Location.line
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-@RunWith(JUnit4.class)
-public final class LocationTest {
-
-  @Test
-  public void fromFile() throws Exception {
-    String file = "this is a filename";
-    Location location = Location.fromFile(file);
-    assertThat(location.file()).isEqualTo(file);
-    assertThat(location.line()).isEqualTo(0);
-    assertThat(location.column()).isEqualTo(0);
-    assertThat(location.toString()).isEqualTo(file);
-  }
+@RunWith(JUnit4::class)
+class LocationTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun fromFile() {
+        val file = "this is a filename"
+        val location: net.starlark.java.syntax.Location = net.starlark.java.syntax.Location.fromFile(file)
+        Truth.assertThat(location.file()).isEqualTo(file)
+        Truth.assertThat(location.line()).isEqualTo(0)
+        Truth.assertThat(location.column()).isEqualTo(0)
+        Truth.assertThat(location.toString()).isEqualTo(file)
+    }
 }

@@ -11,102 +11,98 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.vfs;
+package com.google.devtools.build.lib.vfs
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.io.IOException
+import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicInteger
 
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import java.io.IOException;
-import java.util.concurrent.atomic.AtomicInteger;
-import org.junit.After;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [DigestUtils].  */
+@RunWith(JUnit4::class)
+class DigestUtilsTest {
+    @org.junit.After
+    fun tearDown() {
+        DigestUtils.configureCache( /*maximumSize=*/0)
+    }
 
-/** Tests for {@link DigestUtils}. */
-@RunWith(JUnit4.class)
-public final class DigestUtilsTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCache() {
+        val getFastDigestCounter: AtomicInteger = AtomicInteger(0)
+        val getDigestCounter: AtomicInteger = AtomicInteger(0)
 
-  @After
-  public void tearDown() {
-    DigestUtils.configureCache(/*maximumSize=*/ 0);
-  }
+        val tracingFileSystem: FileSystem =
+            object : InMemoryFileSystem(DigestHashFunction.SHA256) {
+                public override fun getFastDigest(path: PathFragment?): ByteArray? {
+                    getFastDigestCounter.incrementAndGet()
+                    return null
+                }
 
-  @Test
-  public void testCache() throws Exception {
-    AtomicInteger getFastDigestCounter = new AtomicInteger(0);
-    AtomicInteger getDigestCounter = new AtomicInteger(0);
+                @Throws(IOException::class)
+                public override fun getDigest(path: PathFragment?): ByteArray {
+                    getDigestCounter.incrementAndGet()
+                    return super.getDigest(path)
+                }
+            }
 
-    FileSystem tracingFileSystem =
-        new InMemoryFileSystem(DigestHashFunction.SHA256) {
-          @Override
-          public byte[] getFastDigest(PathFragment path) {
-            getFastDigestCounter.incrementAndGet();
-            return null;
-          }
+        DigestUtils.configureCache( /*maximumSize=*/100)
 
-          @Override
-          public byte[] getDigest(PathFragment path) throws IOException {
-            getDigestCounter.incrementAndGet();
-            return super.getDigest(path);
-          }
-        };
+        val file: Path? = tracingFileSystem.getPath("/file.txt")
+        FileSystemUtils.writeContentAsLatin1(file, "some contents")
 
-    DigestUtils.configureCache(/*maximumSize=*/ 100);
+        val digest: ByteArray? = DigestUtils.getDigestWithManualFallback(file, SyscallCache.NO_CACHE)
+        Truth.assertThat(getFastDigestCounter.get()).isEqualTo(1)
+        Truth.assertThat(getDigestCounter.get()).isEqualTo(1)
 
-    Path file = tracingFileSystem.getPath("/file.txt");
-    FileSystemUtils.writeContentAsLatin1(file, "some contents");
+        assertThat(DigestUtils.getDigestWithManualFallback(file, SyscallCache.NO_CACHE))
+            .isEqualTo(digest)
+        Truth.assertThat(getFastDigestCounter.get()).isEqualTo(2)
+        Truth.assertThat(getDigestCounter.get()).isEqualTo(1) // Cached.
 
-    byte[] digest = DigestUtils.getDigestWithManualFallback(file, SyscallCache.NO_CACHE);
-    assertThat(getFastDigestCounter.get()).isEqualTo(1);
-    assertThat(getDigestCounter.get()).isEqualTo(1);
+        DigestUtils.clearCache()
 
-    assertThat(DigestUtils.getDigestWithManualFallback(file, SyscallCache.NO_CACHE))
-        .isEqualTo(digest);
-    assertThat(getFastDigestCounter.get()).isEqualTo(2);
-    assertThat(getDigestCounter.get()).isEqualTo(1); // Cached.
+        assertThat(DigestUtils.getDigestWithManualFallback(file, SyscallCache.NO_CACHE))
+            .isEqualTo(digest)
+        Truth.assertThat(getFastDigestCounter.get()).isEqualTo(3)
+        Truth.assertThat(getDigestCounter.get()).isEqualTo(2) // Not cached.
+    }
 
-    DigestUtils.clearCache();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun manuallyComputeDigest() {
+        val digest = byteArrayOf(1, 2, 3)
+        val noDigestFileSystem: FileSystem =
+            object : InMemoryFileSystem(DigestHashFunction.SHA256) {
+                public override fun getFastDigest(path: PathFragment?): ByteArray? {
+                    throw java.lang.AssertionError("Unexpected call to getFastDigest")
+                }
 
-    assertThat(DigestUtils.getDigestWithManualFallback(file, SyscallCache.NO_CACHE))
-        .isEqualTo(digest);
-    assertThat(getFastDigestCounter.get()).isEqualTo(3);
-    assertThat(getDigestCounter.get()).isEqualTo(2); // Not cached.
-  }
+                public override fun getDigest(path: PathFragment?): ByteArray {
+                    return digest
+                }
+            }
+        val file: Path? = noDigestFileSystem.getPath("/f.txt")
+        FileSystemUtils.writeContentAsLatin1(file, "contents")
 
-  @Test
-  public void manuallyComputeDigest() throws Exception {
-    byte[] digest = {1, 2, 3};
-    FileSystem noDigestFileSystem =
-        new InMemoryFileSystem(DigestHashFunction.SHA256) {
-          @Override
-          public byte[] getFastDigest(PathFragment path) {
-            throw new AssertionError("Unexpected call to getFastDigest");
-          }
+        assertThat(DigestUtils.manuallyComputeDigest(file)).isEqualTo(digest)
+    }
 
-          @Override
-          public byte[] getDigest(PathFragment path) {
-            return digest;
-          }
-        };
-    Path file = noDigestFileSystem.getPath("/f.txt");
-    FileSystemUtils.writeContentAsLatin1(file, "contents");
+    @org.junit.Test
+    fun combineUnordered_commutative() {
+        val a = byteArrayOf(1, 2, 3)
+        val b = byteArrayOf(4, 5, 6)
+        assertThat(DigestUtils.combineUnordered(a.clone(), b.clone()))
+            .isEqualTo(DigestUtils.combineUnordered(b.clone(), a.clone()))
+    }
 
-    assertThat(DigestUtils.manuallyComputeDigest(file)).isEqualTo(digest);
-  }
-
-  @Test
-  public void combineUnordered_commutative() {
-    byte[] a = {1, 2, 3};
-    byte[] b = {4, 5, 6};
-    assertThat(DigestUtils.combineUnordered(a.clone(), b.clone()))
-        .isEqualTo(DigestUtils.combineUnordered(b.clone(), a.clone()));
-  }
-
-  @Test
-  public void combineUnordered_noCancellation() {
-    byte[] a = {1, 2, 3};
-    assertThat(DigestUtils.combineUnordered(a.clone(), a.clone()))
-        .isNotEqualTo(new byte[] {0, 0, 0});
-  }
+    @org.junit.Test
+    fun combineUnordered_noCancellation() {
+        val a = byteArrayOf(1, 2, 3)
+        assertThat(DigestUtils.combineUnordered(a.clone(), a.clone()))
+            .isNotEqualTo(byteArrayOf(0, 0, 0))
+    }
 }

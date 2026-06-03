@@ -11,123 +11,124 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkbuildapi.core
 
-package com.google.devtools.build.lib.starlarkbuildapi.core;
+import com.google.common.collect.ImmutableSet
+import com.google.devtools.build.lib.cmdline.BazelCompileContext
+import org.junit.Test
+import java.util.*
 
-import static com.google.common.collect.ImmutableSet.toImmutableSet;
-import static com.google.common.truth.Truth.assertThat;
-import static java.util.Arrays.stream;
+@RunWith(JUnit4::class)
+class ContextGuardedValueTest {
+    /**
+     * We want to make sure the empty string doesn't result in "allow everything". That would be bad.
+     * Most allowlists have an entry like ("", "tools/build_defs/lang") for usage within Google.
+     */
+    @Test
+    @Throws(Exception::class)
+    fun emptyRepoAllowed_doesntMatchNonAllowed() {
+        assertNotAllowed("@mylang//bar:baz", "@//tools/lang")
+    }
 
-import com.google.devtools.build.lib.cmdline.BazelCompileContext;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.LabelSyntaxException;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import net.starlark.java.eval.GuardedValue;
-import net.starlark.java.eval.StarlarkSemantics;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @Test
+    @Throws(Exception::class)
+    fun emptyRepoAllowed_matchesAllowed() {
+        assertAllowed("@//tools/lang", "@//tools/lang")
+    }
 
-@RunWith(JUnit4.class)
-public final class ContextGuardedValueTest {
+    @Test
+    @Throws(Exception::class)
+    fun workspaceRepo_matchesAllowedRepo() {
+        assertAllowed("@rules_foo//tools/lang", "@rules_foo//")
+    }
 
-  /**
-   * We want to make sure the empty string doesn't result in "allow everything". That would be bad.
-   * Most allowlists have an entry like ("", "tools/build_defs/lang") for usage within Google.
-   */
-  @Test
-  public void emptyRepoAllowed_doesntMatchNonAllowed() throws Exception {
-    assertNotAllowed("@mylang//bar:baz", "@//tools/lang");
-  }
+    @Test
+    @Throws(Exception::class)
+    fun workspaceRepo_doesntMatchCommonSubstr() {
+        assertNotAllowed("@my_rules_foo_helper//tools/lang", "@rules_foo//")
+    }
 
-  @Test
-  public void emptyRepoAllowed_matchesAllowed() throws Exception {
-    assertAllowed("@//tools/lang", "@//tools/lang");
-  }
+    @Test
+    @Throws(Exception::class)
+    fun bzlmodRepo_matchesStart() {
+        assertAllowed("@rules_foo+override//tools/lang", "@rules_foo//")
+        assertAllowed("@rules_foo+1.2.3//tools/lang", "@rules_foo//")
+    }
 
-  @Test
-  public void workspaceRepo_matchesAllowedRepo() throws Exception {
-    assertAllowed("@rules_foo//tools/lang", "@rules_foo//");
-  }
+    @Test
+    @Throws(Exception::class)
+    fun bzlmodRepo_matchesWithin() {
+        assertAllowed("@rules_lang+override+ext+foo_helper//tools/lang", "@foo_helper//")
+    }
 
-  @Test
-  public void workspaceRepo_doesntMatchCommonSubstr() throws Exception {
-    assertNotAllowed("@my_rules_foo_helper//tools/lang", "@rules_foo//");
-  }
+    @Test
+    @Throws(Exception::class)
+    fun bzlmodRepo_doesntMatchCommonSubstr() {
+        assertNotAllowed("@rules_lang+override+ext+my_foo_helper_lib//tools/lang", "@foo_helper//")
+    }
 
-  @Test
-  public void bzlmodRepo_matchesStart() throws Exception {
-    assertAllowed("@rules_foo+override//tools/lang", "@rules_foo//");
-    assertAllowed("@rules_foo+1.2.3//tools/lang", "@rules_foo//");
-  }
+    @Test
+    @Throws(Exception::class)
+    fun reposWithDotsDontMatch() {
+        assertNotAllowed("@my.lang//foo", "@my_lang//")
+    }
 
-  @Test
-  public void bzlmodRepo_matchesWithin() throws Exception {
-    assertAllowed("@rules_lang+override+ext+foo_helper//tools/lang", "@foo_helper//");
-  }
+    @Test
+    @Throws(Exception::class)
+    fun verifySomeRealisticCases() {
+        // Python with workspace
+        assertAllowed("@//tools/build_defs/python/private", "@//tools/build_defs/python")
+        assertAllowed("@rules_python//python/private", "@rules_python//")
 
-  @Test
-  public void bzlmodRepo_doesntMatchCommonSubstr() throws Exception {
-    assertNotAllowed("@rules_lang+override+ext+my_foo_helper_lib//tools/lang", "@foo_helper//");
-  }
+        // Python with bzlmod
+        assertAllowed(
+            "@rules_python+override+internal_deps+rules_python_internal//private", "@rules_python//"
+        )
 
-  @Test
-  public void reposWithDotsDontMatch() throws Exception {
-    assertNotAllowed("@my.lang//foo", "@my_lang//");
-  }
+        // CC with workspace
+        assertAllowed("@//tools/build_defs/cc", "@//tools/build_defs/cc")
+        assertNotAllowed("@rules_cc_helper//tools/build_defs/cc", "@rules_cc//")
 
-  @Test
-  public void verifySomeRealisticCases() throws Exception {
-    // Python with workspace
-    assertAllowed("@//tools/build_defs/python/private", "@//tools/build_defs/python");
-    assertAllowed("@rules_python//python/private", "@rules_python//");
+        // CC with Bzlmod
+        assertAllowed("@rules_cc+1.2.3+ext_name+local_cc_config//foo", "@local_cc_config//")
+    }
 
-    // Python with bzlmod
-    assertAllowed(
-        "@rules_python+override+internal_deps+rules_python_internal//private", "@rules_python//");
+    private fun createClientData(callerLabelStr: String?): Any {
+        return BazelCompileContext.create(
+            Label.parseCanonicalUnchecked(callerLabelStr), "unused_caller.bzl"
+        )
+    }
 
-    // CC with workspace
-    assertAllowed("@//tools/build_defs/cc", "@//tools/build_defs/cc");
-    assertNotAllowed("@rules_cc_helper//tools/build_defs/cc", "@rules_cc//");
+    @Throws(Exception::class)
+    private fun createGuard(clientData: Any, vararg allowedLabelStrs: String?): GuardedValue {
+        val allowed =
+            Arrays.stream<String?>(allowedLabelStrs)
+                .map<Any?> { labelStr: String? ->
+                    try {
+                        return@map PackageIdentifier.parse(labelStr)
+                    } catch (e: LabelSyntaxException) {
+                        // We have to manually catch and re-throw this, otherwise Java is unhappy.
+                        throw RuntimeException(e)
+                    }
+                }
+                .collect(ImmutableSet.toImmutableSet<Any?>())
 
-    // CC with Bzlmod
-    assertAllowed("@rules_cc+1.2.3+ext_name+local_cc_config//foo", "@local_cc_config//");
-  }
+        return ContextGuardedValue.onlyInAllowedRepos(clientData, allowed)
+    }
 
-  private Object createClientData(String callerLabelStr) {
-    return BazelCompileContext.create(
-        Label.parseCanonicalUnchecked(callerLabelStr), "unused_caller.bzl");
-  }
+    @Throws(Exception::class)
+    private fun assertAllowed(callerLabelStr: String?, vararg allowedLabelStrs: String?) {
+        val clientData = createClientData(callerLabelStr)
+        val guard: GuardedValue = createGuard(clientData, *allowedLabelStrs)
+        assertThat(guard.isObjectAccessibleUsingSemantics(StarlarkSemantics.DEFAULT, clientData))
+            .isTrue()
+    }
 
-  private GuardedValue createGuard(Object clientData, String... allowedLabelStrs) throws Exception {
-    var allowed =
-        stream(allowedLabelStrs)
-            .map(
-                labelStr -> {
-                  try {
-                    return PackageIdentifier.parse(labelStr);
-                  } catch (LabelSyntaxException e) {
-                    // We have to manually catch and re-throw this, otherwise Java is unhappy.
-                    throw new RuntimeException(e);
-                  }
-                })
-            .collect(toImmutableSet());
-
-    return ContextGuardedValue.onlyInAllowedRepos(clientData, allowed);
-  }
-
-  private void assertAllowed(String callerLabelStr, String... allowedLabelStrs) throws Exception {
-    var clientData = createClientData(callerLabelStr);
-    var guard = createGuard(clientData, allowedLabelStrs);
-    assertThat(guard.isObjectAccessibleUsingSemantics(StarlarkSemantics.DEFAULT, clientData))
-        .isTrue();
-  }
-
-  private void assertNotAllowed(String callerLabelStr, String... allowedLabelStrs)
-      throws Exception {
-    var clientData = createClientData(callerLabelStr);
-    var guard = createGuard(clientData, allowedLabelStrs);
-    assertThat(guard.isObjectAccessibleUsingSemantics(StarlarkSemantics.DEFAULT, clientData))
-        .isFalse();
-  }
+    @Throws(Exception::class)
+    private fun assertNotAllowed(callerLabelStr: String?, vararg allowedLabelStrs: String?) {
+        val clientData = createClientData(callerLabelStr)
+        val guard: GuardedValue = createGuard(clientData, *allowedLabelStrs)
+        assertThat(guard.isObjectAccessibleUsingSemantics(StarlarkSemantics.DEFAULT, clientData))
+            .isFalse()
+    }
 }

@@ -11,35 +11,36 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.cmdline.IgnoredSubdirectories;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.pkgcache.FilteringPolicies;
-import com.google.devtools.build.lib.skyframe.PrepareDepsOfTargetsUnderDirectoryValue.PrepareDepsOfTargetsUnderDirectoryKey;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.FsUtils;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.cmdline.IgnoredSubdirectories
 
-/** Tests for {@link PrepareDepsOfTargetsUnderDirectoryKey}'s codec. */
-@RunWith(JUnit4.class)
-public final class PrepareDepsOfTargetsUnderDirectoryKeyCodecTest {
-
-  @Test
-  public void testCodec() throws Exception {
-    SerializationTester serializationTester =
-        new SerializationTester(
-            PrepareDepsOfTargetsUnderDirectoryKey.create(
-                new RecursivePkgKey(
-                    RepositoryName.MAIN,
-                    FsUtils.TEST_ROOTED_PATH,
-                    IgnoredSubdirectories.of(ImmutableSet.of(FsUtils.rootPathRelative("here")))),
-                FilteringPolicies.and(
-                    FilteringPolicies.NO_FILTER, FilteringPolicies.FILTER_TESTS)));
-    FsUtils.addDependencies(serializationTester);
-    serializationTester.runTests();
-  }
+/** Tests for [PrepareDepsOfTargetsUnderDirectoryKey]'s codec.  */
+@RunWith(JUnit4::class)
+class PrepareDepsOfTargetsUnderDirectoryKeyCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCodec() {
+        val serializationTester: SerializationTester =
+            SerializationTester(
+                PrepareDepsOfTargetsUnderDirectoryKey.create(
+                    RecursivePkgKey(
+                        RepositoryName.MAIN,
+                        FsUtils.TEST_ROOTED_PATH,
+                        IgnoredSubdirectories.of(
+                            com.google.common.collect.ImmutableSet.of<E?>(
+                                FsUtils.rootPathRelative(
+                                    "here"
+                                )
+                            )
+                        )
+                    ),
+                    FilteringPolicies.and(
+                        FilteringPolicies.NO_FILTER, FilteringPolicies.FILTER_TESTS
+                    )
+                )
+            )
+        FsUtils.addDependencies(serializationTester)
+        serializationTester.runTests()
+    }
 }

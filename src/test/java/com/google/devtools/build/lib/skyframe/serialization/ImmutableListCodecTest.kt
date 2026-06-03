@@ -11,22 +11,21 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link ImmutableListCodec}. */
-@RunWith(JUnit4.class)
-public class ImmutableListCodecTest {
-  @Test
-  public void smoke() throws Exception {
-    new SerializationTester(
-            ImmutableList.of(), ImmutableList.of("foo"), ImmutableList.of("bar", "baz"))
-        .runTests();
-  }
+/** Tests for [ImmutableListCodec].  */
+@RunWith(JUnit4::class)
+class ImmutableListCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun smoke() {
+        SerializationTester(
+            com.google.common.collect.ImmutableList.of<E?>(),
+            com.google.common.collect.ImmutableList.of<E?>("foo"),
+            com.google.common.collect.ImmutableList.of<E?>("bar", "baz")
+        )
+            .runTests()
+    }
 }

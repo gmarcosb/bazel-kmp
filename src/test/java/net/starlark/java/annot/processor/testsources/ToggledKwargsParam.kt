@@ -11,37 +11,36 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.annot.processor.testsources
 
-package net.starlark.java.annot.processor.testsources;
-
-import net.starlark.java.annot.Param;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.Dict;
-import net.starlark.java.eval.Sequence;
-import net.starlark.java.eval.StarlarkInt;
-import net.starlark.java.eval.StarlarkThread;
-import net.starlark.java.eval.StarlarkValue;
+import net.starlark.java.eval.Dict
 
 /**
  * Test case for a StarlarkMethod which has a "extraKeywords" parameter which has enableOnlyWithFlag
  * set. (This is unsupported.)
  */
-public class ToggledKwargsParam implements StarlarkValue {
+class ToggledKwargsParam : StarlarkValue {
+    @StarlarkMethod(
+        name = "toggled_kwargs_method",
+        documented = false,
+        parameters = [net.starlark.java.annot.Param(
+            name = "one",
+            named = true
+        ), net.starlark.java.annot.Param(name = "two", named = true)],
+        extraPositionals = net.starlark.java.annot.Param(name = "args"),
+        extraKeywords = net.starlark.java.annot.Param(
+            name = "kwargs",
+            enableOnlyWithFlag = net.starlark.java.annot.processor.testsources.ToggledKwargsParam.Companion.FOO
+        ),
+        useStarlarkThread = true
+    )
+    fun toggledKwargsMethod(
+        one: String?, two: StarlarkInt?, args: Sequence<*>?, kwargs: Dict<*, *>?, thread: StarlarkThread?
+    ): String {
+        return "cat"
+    }
 
-  private static final String FOO = "-foo";
-
-  @StarlarkMethod(
-      name = "toggled_kwargs_method",
-      documented = false,
-      parameters = {
-        @Param(name = "one", named = true),
-        @Param(name = "two", named = true),
-      },
-      extraPositionals = @Param(name = "args"),
-      extraKeywords = @Param(name = "kwargs", enableOnlyWithFlag = FOO),
-      useStarlarkThread = true)
-  public String toggledKwargsMethod(
-      String one, StarlarkInt two, Sequence<?> args, Dict<?, ?> kwargs, StarlarkThread thread) {
-    return "cat";
-  }
+    companion object {
+        private const val FOO = "-foo"
+    }
 }

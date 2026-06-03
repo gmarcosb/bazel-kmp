@@ -11,70 +11,64 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.vfs.bazel
 
-package com.google.devtools.build.lib.vfs.bazel;
+import com.google.devtools.build.lib.vfs.bazel.BazelHashFunctions
+import com.google.devtools.build.lib.vfs.bazel.BazelHashFunctions.ensureRegistered
+import com.google.devtools.build.lib.vfs.bazel.Blake3HashFunction
+import com.google.devtools.build.lib.vfs.bazel.Blake3Hasher.hash
+import org.openjdk.jmh.annotations.BenchmarkMode
+import org.openjdk.jmh.annotations.Setup
 
-import com.google.common.hash.HashCode;
-import com.google.common.hash.HashFunction;
-import com.google.common.hash.Hashing;
-import java.security.SecureRandom;
-import org.openjdk.jmh.annotations.Benchmark;
-import org.openjdk.jmh.annotations.BenchmarkMode;
-import org.openjdk.jmh.annotations.Level;
-import org.openjdk.jmh.annotations.Mode;
-import org.openjdk.jmh.annotations.Param;
-import org.openjdk.jmh.annotations.Scope;
-import org.openjdk.jmh.annotations.Setup;
-import org.openjdk.jmh.annotations.State;
+@BenchmarkMode(org.openjdk.jmh.annotations.Mode.Throughput)
+@org.openjdk.jmh.annotations.State(org.openjdk.jmh.annotations.Scope.Benchmark)
+class BazelHashFunctionsBenchmark {
+    enum class HashFunctionType(hashFunction: com.google.common.hash.HashFunction) {
+        BLAKE3(Blake3HashFunction()),
+        SHA2_256(com.google.common.hash.Hashing.sha256());
 
-@BenchmarkMode(Mode.Throughput)
-@State(Scope.Benchmark)
-public class BazelHashFunctionsBenchmark {
+        val hashFunction: com.google.common.hash.HashFunction
 
-  static {
-    BazelHashFunctions.ensureRegistered();
-  }
-
-  public enum HashFunctionType {
-    BLAKE3(new Blake3HashFunction()),
-    SHA2_256(Hashing.sha256());
-
-    final HashFunction hashFunction;
-
-    HashFunctionType(HashFunction hashFunction) {
-      this.hashFunction = hashFunction;
+        init {
+            this.hashFunction = hashFunction
+        }
     }
-  }
 
-  public enum Size {
-    B,
-    KB,
-    MB,
-    GB;
+    enum class Size {
+        B,
+        KB,
+        MB,
+        GB;
 
-    final int bytes;
+        val bytes: Int
 
-    Size() {
-      bytes = 1 << (ordinal() * 10);
+        init {
+            bytes = 1 shl (ordinal * 10)
+        }
     }
-  }
 
-  @Param({"BLAKE3", "SHA2_256"})
-  public HashFunctionType type;
+    @org.openjdk.jmh.annotations.Param("BLAKE3", "SHA2_256")
+    var type: HashFunctionType? = null
 
-  @Param({"B", "KB", "MB", "GB"})
-  public Size size;
+    @org.openjdk.jmh.annotations.Param("B", "KB", "MB", "GB")
+    var size: Size? = null
 
-  private byte[] data;
+    private var data: ByteArray
 
-  @Setup(Level.Iteration)
-  public void setup() {
-    data = new byte[size.bytes];
-    new SecureRandom().nextBytes(data);
-  }
+    @Setup(org.openjdk.jmh.annotations.Level.Iteration)
+    fun setup() {
+        data = ByteArray(size!!.bytes)
+        java.security.SecureRandom().nextBytes(data)
+    }
 
-  @Benchmark
-  public HashCode hashBytesOneShot() {
-    return type.hashFunction.hashBytes(data);
-  }
+    @org.openjdk.jmh.annotations.Benchmark
+    fun hashBytesOneShot(): com.google.common.hash.HashCode {
+        return type!!.hashFunction.hashBytes(data)
+    }
+
+    companion object {
+        init {
+            BazelHashFunctions.ensureRegistered()
+        }
+    }
 }

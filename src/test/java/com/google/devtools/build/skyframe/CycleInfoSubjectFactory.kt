@@ -11,20 +11,21 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import com.google.common.truth.FailureMetadata;
-import com.google.common.truth.Subject;
-import com.google.common.truth.Truth;
+import com.google.common.truth.FailureMetadata
+import com.google.common.truth.Truth
+import com.google.devtools.build.skyframe.CycleInfoSubject
 
-/** {@link Subject.Factory} for {@link CycleInfo}, providing {@link CycleInfoSubject}. */
-public class CycleInfoSubjectFactory implements Subject.Factory<CycleInfoSubject, CycleInfo> {
-  public static CycleInfoSubject assertThat(CycleInfo cycleInfo) {
-    return Truth.assertAbout(new CycleInfoSubjectFactory()).that(cycleInfo);
-  }
+/** [Subject.Factory] for [CycleInfo], providing [CycleInfoSubject].  */
+class CycleInfoSubjectFactory : com.google.common.truth.Subject.Factory<CycleInfoSubject?, CycleInfo?> {
+    override fun createSubject(failureMetadata: FailureMetadata?, cycleInfo: CycleInfo?): CycleInfoSubject {
+        return CycleInfoSubject(failureMetadata, cycleInfo)
+    }
 
-  @Override
-  public CycleInfoSubject createSubject(FailureMetadata failureMetadata, CycleInfo cycleInfo) {
-    return new CycleInfoSubject(failureMetadata, cycleInfo);
-  }
+    companion object {
+        fun assertThat(cycleInfo: CycleInfo?): CycleInfoSubject? {
+            return Truth.assertAbout<CycleInfoSubject?, CycleInfo?>(CycleInfoSubjectFactory()).that(cycleInfo)
+        }
+    }
 }

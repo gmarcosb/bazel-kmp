@@ -11,164 +11,160 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.truth.extensions.proto.ProtoTruth.assertThat;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
+import com.google.devtools.build.lib.runtime.MemoryPressure.MemoryPressureStats
 
-import com.google.devtools.build.lib.runtime.MemoryPressure.MemoryPressureStats;
-import com.google.devtools.build.lib.runtime.MemoryPressureEvent;
-import com.google.devtools.build.lib.runtime.MemoryPressureOptions;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import com.google.devtools.common.options.Options;
-import java.time.Duration;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnit;
-import org.mockito.junit.MockitoRule;
+@RunWith(JUnit4::class)
+class HighWaterMarkLimiterTest {
+    @org.junit.Rule
+    val mockito: MockitoRule = MockitoJUnit.rule()
 
-@RunWith(JUnit4.class)
-public final class HighWaterMarkLimiterTest {
+    @org.mockito.Mock
+    private val skyframeExecutor: SkyframeExecutor? = null
 
-  private static final MemoryPressureEvent MINOR =
-      MemoryPressureEvent.newBuilder()
-          .setWasManualGc(false)
-          .setWasFullGc(false)
-          .setTenuredSpaceMaxBytes(100L)
-          .setTenuredSpaceUsedBytes(91L)
-          .setDuration(Duration.ofMillis(42L))
-          .build();
-  private static final MemoryPressureEvent FULL =
-      MemoryPressureEvent.newBuilder()
-          .setWasManualGc(false)
-          .setWasFullGc(true)
-          .setTenuredSpaceMaxBytes(100L)
-          .setTenuredSpaceUsedBytes(91L)
-          .setDuration(Duration.ofSeconds(42L))
-          .build();
-  @Rule public final MockitoRule mockito = MockitoJUnit.rule();
+    @org.mockito.Mock
+    private val syscallCache: SyscallCache? = null
 
-  @Mock private SkyframeExecutor skyframeExecutor;
-  @Mock private SyscallCache syscallCache;
+    @org.junit.Test
+    fun testHandle_belowThreshold() {
+        val underTest: HighWaterMarkLimiter =
+            HighWaterMarkLimiter(
+                skyframeExecutor,
+                syscallCache,
+                createOptions( /* threshold= */
+                    90,  /* minorGcDropLimit= */
+                    Int.Companion.MAX_VALUE,  /* fullGcDropLimit= */
+                    Int.Companion.MAX_VALUE
+                )
+            )
 
-  @Test
-  public void testHandle_belowThreshold() {
-    HighWaterMarkLimiter underTest =
-        new HighWaterMarkLimiter(
-            skyframeExecutor,
-            syscallCache,
-            createOptions(
-                /* threshold= */ 90,
-                /* minorGcDropLimit= */ Integer.MAX_VALUE,
-                /* fullGcDropLimit= */ Integer.MAX_VALUE));
+        val belowThreshold: MemoryPressureEvent? =
+            MemoryPressureEvent.newBuilder()
+                .setWasManualGc(false)
+                .setWasFullGc(false)
+                .setTenuredSpaceMaxBytes(100L)
+                .setTenuredSpaceUsedBytes(89L)
+                .setDuration(java.time.Duration.ofMillis(42L))
+                .build()
+        underTest.handle(belowThreshold)
 
-    MemoryPressureEvent belowThreshold =
-        MemoryPressureEvent.newBuilder()
+        Mockito.verify<Any?>(skyframeExecutor, Mockito.never()).dropUnnecessaryTemporarySkyframeState()
+        Mockito.verify<Any?>(syscallCache, Mockito.never()).clear()
+        assertStats(underTest, MemoryPressureStats.newBuilder().setMinorGcDrops(0).setFullGcDrops(0))
+    }
+
+    @org.junit.Test
+    fun testHandle_minorLimitFullUnlimited() {
+        val underTest: HighWaterMarkLimiter =
+            HighWaterMarkLimiter(
+                skyframeExecutor,
+                syscallCache,
+                createOptions( /* threshold= */
+                    90,  /* minorGcDropLimit= */
+                    1,  /* fullGcDropLimit= */
+                    Int.Companion.MAX_VALUE
+                )
+            )
+
+        Mockito.verify<Any?>(skyframeExecutor, Mockito.never()).dropUnnecessaryTemporarySkyframeState()
+        Mockito.verify<Any?>(syscallCache, Mockito.never()).clear()
+
+        underTest.handle(MINOR)
+
+        Mockito.verify<Any?>(skyframeExecutor, Mockito.times(1)).dropUnnecessaryTemporarySkyframeState()
+        Mockito.verify<Any?>(syscallCache, Mockito.times(1)).clear()
+
+        underTest.handle(MINOR)
+
+        Mockito.verify<Any?>(skyframeExecutor, Mockito.times(1)).dropUnnecessaryTemporarySkyframeState()
+        Mockito.verify<Any?>(syscallCache, Mockito.times(1)).clear()
+
+        underTest.handle(FULL)
+
+        Mockito.verify<Any?>(skyframeExecutor, Mockito.times(2)).dropUnnecessaryTemporarySkyframeState()
+        Mockito.verify<Any?>(syscallCache, Mockito.times(2)).clear()
+
+        underTest.handle(FULL)
+
+        Mockito.verify<Any?>(skyframeExecutor, Mockito.times(3)).dropUnnecessaryTemporarySkyframeState()
+        Mockito.verify<Any?>(syscallCache, Mockito.times(3)).clear()
+
+        assertStats(underTest, MemoryPressureStats.newBuilder().setMinorGcDrops(1).setFullGcDrops(2))
+    }
+
+    @org.junit.Test
+    fun testHandle_minorUnlimitedFullLimit() {
+        val underTest: HighWaterMarkLimiter =
+            HighWaterMarkLimiter(
+                skyframeExecutor,
+                syscallCache,
+                createOptions( /* threshold= */
+                    90,  /* minorGcDropLimit= */
+                    Int.Companion.MAX_VALUE,  /* fullGcDropLimit= */
+                    1
+                )
+            )
+
+        Mockito.verify<Any?>(skyframeExecutor, Mockito.never()).dropUnnecessaryTemporarySkyframeState()
+        Mockito.verify<Any?>(syscallCache, Mockito.never()).clear()
+
+        underTest.handle(MINOR)
+
+        Mockito.verify<Any?>(skyframeExecutor, Mockito.times(1)).dropUnnecessaryTemporarySkyframeState()
+        Mockito.verify<Any?>(syscallCache, Mockito.times(1)).clear()
+
+        underTest.handle(MINOR)
+
+        Mockito.verify<Any?>(skyframeExecutor, Mockito.times(2)).dropUnnecessaryTemporarySkyframeState()
+        Mockito.verify<Any?>(syscallCache, Mockito.times(2)).clear()
+
+        underTest.handle(FULL)
+
+        Mockito.verify<Any?>(skyframeExecutor, Mockito.times(3)).dropUnnecessaryTemporarySkyframeState()
+        Mockito.verify<Any?>(syscallCache, Mockito.times(3)).clear()
+
+        underTest.handle(FULL)
+
+        Mockito.verify<Any?>(skyframeExecutor, Mockito.times(3)).dropUnnecessaryTemporarySkyframeState()
+        Mockito.verify<Any?>(syscallCache, Mockito.times(3)).clear()
+
+        assertStats(underTest, MemoryPressureStats.newBuilder().setMinorGcDrops(2).setFullGcDrops(1))
+    }
+
+    companion object {
+        private val MINOR: MemoryPressureEvent? = MemoryPressureEvent.newBuilder()
             .setWasManualGc(false)
             .setWasFullGc(false)
             .setTenuredSpaceMaxBytes(100L)
-            .setTenuredSpaceUsedBytes(89L)
-            .setDuration(Duration.ofMillis(42L))
-            .build();
-    underTest.handle(belowThreshold);
+            .setTenuredSpaceUsedBytes(91L)
+            .setDuration(java.time.Duration.ofMillis(42L))
+            .build()
+        private val FULL: MemoryPressureEvent? = MemoryPressureEvent.newBuilder()
+            .setWasManualGc(false)
+            .setWasFullGc(true)
+            .setTenuredSpaceMaxBytes(100L)
+            .setTenuredSpaceUsedBytes(91L)
+            .setDuration(java.time.Duration.ofSeconds(42L))
+            .build()
 
-    verify(skyframeExecutor, never()).dropUnnecessaryTemporarySkyframeState();
-    verify(syscallCache, never()).clear();
-    assertStats(underTest, MemoryPressureStats.newBuilder().setMinorGcDrops(0).setFullGcDrops(0));
-  }
+        private fun createOptions(
+            threshold: Int, minorGcDropLimit: Int, fullGcDropLimit: Int
+        ): MemoryPressureOptions {
+            val options: MemoryPressureOptions =
+                com.google.devtools.common.options.Options.getDefaults<O>(MemoryPressureOptions::class.java)
+            options.setSkyframeHighWaterMarkMemoryThreshold(threshold)
+            options.setSkyframeHighWaterMarkMinorGcDropsPerInvocation(minorGcDropLimit)
+            options.setSkyframeHighWaterMarkFullGcDropsPerInvocation(fullGcDropLimit)
+            return options
+        }
 
-  @Test
-  public void testHandle_minorLimitFullUnlimited() {
-    HighWaterMarkLimiter underTest =
-        new HighWaterMarkLimiter(
-            skyframeExecutor,
-            syscallCache,
-            createOptions(
-                /* threshold= */ 90,
-                /* minorGcDropLimit= */ 1,
-                /* fullGcDropLimit= */ Integer.MAX_VALUE));
-
-    verify(skyframeExecutor, never()).dropUnnecessaryTemporarySkyframeState();
-    verify(syscallCache, never()).clear();
-
-    underTest.handle(MINOR);
-
-    verify(skyframeExecutor, times(1)).dropUnnecessaryTemporarySkyframeState();
-    verify(syscallCache, times(1)).clear();
-
-    underTest.handle(MINOR);
-
-    verify(skyframeExecutor, times(1)).dropUnnecessaryTemporarySkyframeState();
-    verify(syscallCache, times(1)).clear();
-
-    underTest.handle(FULL);
-
-    verify(skyframeExecutor, times(2)).dropUnnecessaryTemporarySkyframeState();
-    verify(syscallCache, times(2)).clear();
-
-    underTest.handle(FULL);
-
-    verify(skyframeExecutor, times(3)).dropUnnecessaryTemporarySkyframeState();
-    verify(syscallCache, times(3)).clear();
-
-    assertStats(underTest, MemoryPressureStats.newBuilder().setMinorGcDrops(1).setFullGcDrops(2));
-  }
-
-  @Test
-  public void testHandle_minorUnlimitedFullLimit() {
-    HighWaterMarkLimiter underTest =
-        new HighWaterMarkLimiter(
-            skyframeExecutor,
-            syscallCache,
-            createOptions(
-                /* threshold= */ 90,
-                /* minorGcDropLimit= */ Integer.MAX_VALUE,
-                /* fullGcDropLimit= */ 1));
-
-    verify(skyframeExecutor, never()).dropUnnecessaryTemporarySkyframeState();
-    verify(syscallCache, never()).clear();
-
-    underTest.handle(MINOR);
-
-    verify(skyframeExecutor, times(1)).dropUnnecessaryTemporarySkyframeState();
-    verify(syscallCache, times(1)).clear();
-
-    underTest.handle(MINOR);
-
-    verify(skyframeExecutor, times(2)).dropUnnecessaryTemporarySkyframeState();
-    verify(syscallCache, times(2)).clear();
-
-    underTest.handle(FULL);
-
-    verify(skyframeExecutor, times(3)).dropUnnecessaryTemporarySkyframeState();
-    verify(syscallCache, times(3)).clear();
-
-    underTest.handle(FULL);
-
-    verify(skyframeExecutor, times(3)).dropUnnecessaryTemporarySkyframeState();
-    verify(syscallCache, times(3)).clear();
-
-    assertStats(underTest, MemoryPressureStats.newBuilder().setMinorGcDrops(2).setFullGcDrops(1));
-  }
-
-  private static MemoryPressureOptions createOptions(
-      int threshold, int minorGcDropLimit, int fullGcDropLimit) {
-    MemoryPressureOptions options = Options.getDefaults(MemoryPressureOptions.class);
-    options.setSkyframeHighWaterMarkMemoryThreshold(threshold);
-    options.setSkyframeHighWaterMarkMinorGcDropsPerInvocation(minorGcDropLimit);
-    options.setSkyframeHighWaterMarkFullGcDropsPerInvocation(fullGcDropLimit);
-    return options;
-  }
-
-  private static void assertStats(
-      HighWaterMarkLimiter underTest, MemoryPressureStats.Builder expectedBuilder) {
-    MemoryPressureStats.Builder actualBuilder = MemoryPressureStats.newBuilder();
-    underTest.populateStats(actualBuilder);
-    assertThat(actualBuilder.build()).isEqualTo(expectedBuilder.build());
-  }
+        private fun assertStats(
+            underTest: HighWaterMarkLimiter, expectedBuilder: MemoryPressureStats.Builder
+        ) {
+            val actualBuilder: MemoryPressureStats.Builder = MemoryPressureStats.newBuilder()
+            underTest.populateStats(actualBuilder)
+            assertThat(actualBuilder.build()).isEqualTo(expectedBuilder.build())
+        }
+    }
 }

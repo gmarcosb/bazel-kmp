@@ -11,28 +11,26 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.annot.processor.testsources
 
-package net.starlark.java.annot.processor.testsources;
-
-import net.starlark.java.annot.Param;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.StarlarkInt;
-import net.starlark.java.eval.StarlarkValue;
+import net.starlark.java.eval.StarlarkInt
 
 /**
  * Test case for a StarlarkMethod method which has a positional parameter with no default value
  * specified after a positional parameter with a default value.
  */
-public class NonDefaultParamAfterDefault implements StarlarkValue {
-
-  @StarlarkMethod(
-      name = "non_default_after_default",
-      documented = false,
-      parameters = {
-        @Param(name = "one", named = true, defaultValue = "1", positional = true),
-        @Param(name = "two", named = true, positional = true)
-      })
-  public Integer nonDefaultAfterDefault(StarlarkInt one, StarlarkInt two) {
-    return 42;
-  }
+class NonDefaultParamAfterDefault : StarlarkValue {
+    @StarlarkMethod(
+        name = "non_default_after_default",
+        documented = false,
+        parameters = [net.starlark.java.annot.Param(
+            name = "one",
+            named = true,
+            defaultValue = "1",
+            positional = true
+        ), net.starlark.java.annot.Param(name = "two", named = true, positional = true)]
+    )
+    fun nonDefaultAfterDefault(one: StarlarkInt?, two: StarlarkInt?): Int {
+        return 42
+    }
 }

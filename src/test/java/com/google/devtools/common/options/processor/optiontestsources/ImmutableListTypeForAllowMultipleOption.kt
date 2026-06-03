@@ -11,25 +11,25 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.common.options.processor.optiontestsources;
+package com.google.devtools.common.options.processor.optiontestsources
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
+import OptionFilters.OptionEffectTag
+import com.google.devtools.common.options.OptionDocumentationCategory
+import com.google.devtools.common.options.OptionEffectTag
+import com.google.devtools.common.options.OptionsBase
+import com.google.devtools.common.options.OptionsClass
 
-/** This example options class should compile. */
+/** This example options class should compile.  */
 @OptionsClass
-public abstract class ImmutableListTypeForAllowMultipleOption extends OptionsBase {
-  @Option(
-      name = "option",
-      defaultValue = "null",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
-      allowMultiple = true)
-  public abstract ImmutableList<String> getBadOption();
+abstract class ImmutableListTypeForAllowMultipleOption : OptionsBase() {
+    @get:com.google.devtools.common.options.Option(
+        name = "option",
+        defaultValue = "null",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.AFFECTS_OUTPUTS],
+        allowMultiple = true
+    )
+    abstract val badOption: com.google.common.collect.ImmutableList<String?>?
 
-  public abstract void setBadOption(ImmutableList<String> value);
+    abstract fun setBadOption(value: com.google.common.collect.ImmutableList<String?>?)
 }

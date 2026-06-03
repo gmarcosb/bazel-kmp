@@ -11,424 +11,364 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.remote.worker
 
-package com.google.devtools.build.remote.worker;
-
-import static com.google.devtools.build.lib.util.StringEncoding.internalToPlatform;
-import static java.nio.charset.StandardCharsets.UTF_8;
-import static java.util.logging.Level.FINE;
-
-import build.bazel.remote.asset.v1.FetchGrpc.FetchImplBase;
-import build.bazel.remote.execution.v2.ActionCacheGrpc.ActionCacheImplBase;
-import build.bazel.remote.execution.v2.ActionResult;
-import build.bazel.remote.execution.v2.CapabilitiesGrpc.CapabilitiesImplBase;
-import build.bazel.remote.execution.v2.ContentAddressableStorageGrpc.ContentAddressableStorageImplBase;
-import build.bazel.remote.execution.v2.ExecutionGrpc.ExecutionImplBase;
-import com.google.bytestream.ByteStreamGrpc.ByteStreamImplBase;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.flogger.GoogleLogger;
-import com.google.common.io.ByteStreams;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.common.util.concurrent.ListeningScheduledExecutorService;
-import com.google.common.util.concurrent.MoreExecutors;
-import com.google.devtools.build.lib.remote.util.DigestUtil;
-import com.google.devtools.build.lib.remote.util.TracingMetadataUtils;
-import com.google.devtools.build.lib.sandbox.LinuxSandboxCommandLineBuilder;
-import com.google.devtools.build.lib.shell.Command;
-import com.google.devtools.build.lib.shell.CommandException;
-import com.google.devtools.build.lib.shell.CommandResult;
-import com.google.devtools.build.lib.shell.WindowsSubprocessFactory;
-import com.google.devtools.build.lib.unix.NativePosixFilesServiceImpl;
-import com.google.devtools.build.lib.unix.UnixFileSystem;
-import com.google.devtools.build.lib.util.OS;
-import com.google.devtools.build.lib.util.SingleLineFormatter;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.DigestHashFunction.DigestFunctionConverter;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import com.google.devtools.build.lib.windows.WindowsFileSystem;
-import com.google.devtools.build.remote.worker.http.HttpCacheServerInitializer;
-import com.google.devtools.common.options.OptionsParser;
-import com.google.devtools.common.options.OptionsParsingException;
-import io.grpc.Context;
-import io.grpc.Contexts;
-import io.grpc.Metadata;
-import io.grpc.Server;
-import io.grpc.ServerCall;
-import io.grpc.ServerCall.Listener;
-import io.grpc.ServerCallHandler;
-import io.grpc.ServerInterceptor;
-import io.grpc.ServerInterceptors;
-import io.grpc.Status;
-import io.grpc.netty.GrpcSslContexts;
-import io.grpc.netty.NettyServerBuilder;
-import io.netty.bootstrap.ServerBootstrap;
-import io.netty.channel.Channel;
-import io.netty.channel.EventLoopGroup;
-import io.netty.channel.nio.NioEventLoopGroup;
-import io.netty.channel.socket.nio.NioServerSocketChannel;
-import io.netty.handler.logging.LogLevel;
-import io.netty.handler.logging.LoggingHandler;
-import io.netty.handler.ssl.ClientAuth;
-import io.netty.handler.ssl.SslContextBuilder;
-import io.netty.handler.ssl.SslProvider;
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStreamWriter;
-import java.io.Writer;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import com.google.devtools.build.lib.util.StringEncoding.internalToPlatform
 
 /**
  * Implements a remote worker that accepts work items as protobufs. The server implementation is
  * based on gRPC.
  */
-public final class RemoteWorker {
+class RemoteWorker(
+    fs: FileSystem,
+    workerOptions: RemoteWorkerOptions,
+    cache: OnDiskBlobStoreCache?,
+    sandboxPath: Path?,
+    digestUtil: DigestUtil?
+) {
+    private val workerOptions: RemoteWorkerOptions
+    private val actionCacheServer: ActionCacheImplBase
+    private val bsServer: ByteStreamImplBase
+    private val casServer: ContentAddressableStorageImplBase
+    private val execServer: ExecutionImplBase?
+    private val capabilitiesServer: CapabilitiesImplBase
+    private val fetchServer: FetchImplBase
 
-  // We need to keep references to the root and netty loggers to prevent them from being garbage
-  // collected, which would cause us to loose their configuration.
-  private static final Logger rootLogger = Logger.getLogger("");
-  private static final Logger nettyLogger = Logger.getLogger("io.grpc.netty");
-  private static final GoogleLogger logger = GoogleLogger.forEnclosingClass();
+    /** A [ServerInterceptor] that rejects requests unless an authorization token is present.  */
+    private class AuthorizationTokenInterceptor(private val expectedToken: String) : ServerInterceptor {
+        fun getTokenFromMetadata(headers: io.grpc.Metadata): java.util.Optional<String?> {
+            val `val`: String? = headers.get<String?>(AUTHORIZATION_HEADER_KEY)
+            if (`val` != null && `val`.startsWith(BEARER_PREFIX)) {
+                return java.util.Optional.of<String?>(`val`.substring(BEARER_PREFIX.length))
+            }
+            return java.util.Optional.empty<String?>()
+        }
 
-  private final RemoteWorkerOptions workerOptions;
-  private final ActionCacheImplBase actionCacheServer;
-  private final ByteStreamImplBase bsServer;
-  private final ContentAddressableStorageImplBase casServer;
-  private final ExecutionImplBase execServer;
-  private final CapabilitiesImplBase capabilitiesServer;
-  private final FetchImplBase fetchServer;
+        override fun <ReqT, RespT> interceptCall(
+            call: ServerCall<ReqT?, RespT?>, headers: io.grpc.Metadata, next: ServerCallHandler<ReqT?, RespT?>
+        ): io.grpc.ServerCall.Listener<ReqT?> {
+            val actualToken: java.util.Optional<String?> = getTokenFromMetadata(headers)
+            if (expectedToken != actualToken.get()) {
+                call.close(io.grpc.Status.PERMISSION_DENIED, io.grpc.Metadata())
+                return object : io.grpc.ServerCall.Listener<ReqT?>() {}
+            }
+            return Contexts.interceptCall<ReqT?, RespT?>(io.grpc.Context.current(), call, headers, next)
+        }
 
-  static FileSystem getFileSystem() {
-    final DigestHashFunction hashFunction;
-    String value = null;
-    try {
-      value = System.getProperty("bazel.DigestFunction", "SHA256");
-      hashFunction = new DigestFunctionConverter().convert(value);
-    } catch (OptionsParsingException e) {
-      throw new IllegalStateException(
-          "The specified hash function '" + value + "' is not supported.", e);
-    }
-    return OS.getCurrent() == OS.WINDOWS
-        ? new WindowsFileSystem(hashFunction, /* createSymbolicLinks= */ true)
-        : new UnixFileSystem(
-            hashFunction, /* hashAttributeName= */ "", new NativePosixFilesServiceImpl());
-  }
+        companion object {
+            private val AUTHORIZATION_HEADER_KEY: io.grpc.Metadata.Key<String?>? =
+                io.grpc.Metadata.Key.of<String?>("Authorization", io.grpc.Metadata.ASCII_STRING_MARSHALLER)
 
-  /** A {@link ServerInterceptor} that rejects requests unless an authorization token is present. */
-  private static class AuthorizationTokenInterceptor implements ServerInterceptor {
-    private static final Metadata.Key<String> AUTHORIZATION_HEADER_KEY =
-        Metadata.Key.of("Authorization", Metadata.ASCII_STRING_MARSHALLER);
-
-    private static final String BEARER_PREFIX = "Bearer ";
-
-    private final String expectedToken;
-
-    AuthorizationTokenInterceptor(String expectedToken) {
-      this.expectedToken = expectedToken;
-    }
-
-    private Optional<String> getTokenFromMetadata(Metadata headers) {
-      String val = headers.get(AUTHORIZATION_HEADER_KEY);
-      if (val != null && val.startsWith(BEARER_PREFIX)) {
-        return Optional.of(val.substring(BEARER_PREFIX.length()));
-      }
-      return Optional.empty();
+            private const val BEARER_PREFIX = "Bearer "
+        }
     }
 
-    @Override
-    public <ReqT, RespT> Listener<ReqT> interceptCall(
-        ServerCall<ReqT, RespT> call, Metadata headers, ServerCallHandler<ReqT, RespT> next) {
-      Optional<String> actualToken = getTokenFromMetadata(headers);
-      if (!expectedToken.equals(actualToken.get())) {
-        call.close(Status.PERMISSION_DENIED, new Metadata());
-        return new ServerCall.Listener<ReqT>() {};
-      }
-      return Contexts.interceptCall(Context.current(), call, headers, next);
-    }
-  }
-
-  private static class UnavailableInterceptor implements ServerInterceptor {
-
-    @Override
-    public <ReqT, RespT> Listener<ReqT> interceptCall(
-        ServerCall<ReqT, RespT> call, Metadata headers, ServerCallHandler<ReqT, RespT> next) {
-      if (!call.getMethodDescriptor().getServiceName().contains("Capabilities")) {
-        call.close(Status.UNAVAILABLE, new Metadata());
-        return new ServerCall.Listener<ReqT>() {};
-      }
-      return Contexts.interceptCall(Context.current(), call, headers, next);
-    }
-  }
-
-  public RemoteWorker(
-      FileSystem fs,
-      RemoteWorkerOptions workerOptions,
-      OnDiskBlobStoreCache cache,
-      Path sandboxPath,
-      DigestUtil digestUtil)
-      throws IOException {
-    this.workerOptions = workerOptions;
-    this.actionCacheServer = new ActionCacheServer(cache, digestUtil);
-    Path workPath;
-    if (workerOptions.getWorkPath() != null) {
-      workPath = fs.getPath(workerOptions.getWorkPath());
-    } else {
-      // TODO(ulfjack): The plan is to make the on-disk storage the default, so we always need to
-      // provide a path to the remote worker, and we can then also use that as the work path. E.g.:
-      // /given/path/cas/
-      // /given/path/upload/
-      // /given/path/work/
-      // We could technically use a different path for temporary files and execution, but we want
-      // the cas/ directory to be on the same file system as the upload/ and work/ directories so
-      // that we can atomically move files between them, and / or use hard-links for the exec
-      // directories.
-      // For now, we use a temporary path if no work path was provided.
-      workPath = fs.getPath("/tmp/remote-worker");
-    }
-    this.bsServer = new ByteStreamServer(cache, workPath, digestUtil);
-    this.casServer = new CasServer(cache);
-
-    if (workerOptions.getWorkPath() != null) {
-      ConcurrentHashMap<String, ListenableFuture<ActionResult>> operationsCache =
-          new ConcurrentHashMap<>();
-      workPath.createDirectoryAndParents();
-      execServer =
-          new ExecutionServer(
-              workPath, sandboxPath, workerOptions, cache, operationsCache, digestUtil);
-    } else {
-      execServer = null;
-    }
-    this.capabilitiesServer = new CapabilitiesServer(digestUtil, execServer != null, workerOptions);
-    this.fetchServer = new FetchServer(cache, digestUtil, workPath.getRelative("fetch-temp"));
-  }
-
-  public Server startServer() throws IOException {
-    List<ServerInterceptor> interceptors = new ArrayList<>();
-    if (workerOptions.getUnavailable()) {
-      interceptors.add(new UnavailableInterceptor());
-    }
-    interceptors.add(new TracingMetadataUtils.ServerHeadersInterceptor());
-    if (workerOptions.getExpectedAuthorizationToken() != null) {
-      interceptors.add(
-          new AuthorizationTokenInterceptor(workerOptions.getExpectedAuthorizationToken()));
+    private class UnavailableInterceptor : ServerInterceptor {
+        override fun <ReqT, RespT> interceptCall(
+            call: ServerCall<ReqT?, RespT?>, headers: io.grpc.Metadata?, next: ServerCallHandler<ReqT?, RespT?>
+        ): io.grpc.ServerCall.Listener<ReqT?> {
+            if (!call.getMethodDescriptor().getServiceName().contains("Capabilities")) {
+                call.close(io.grpc.Status.UNAVAILABLE, io.grpc.Metadata())
+                return object : io.grpc.ServerCall.Listener<ReqT?>() {}
+            }
+            return Contexts.interceptCall<ReqT?, RespT?>(io.grpc.Context.current(), call, headers, next)
+        }
     }
 
-    NettyServerBuilder b =
-        NettyServerBuilder.forPort(workerOptions.getListenPort())
-            .addService(ServerInterceptors.intercept(actionCacheServer, interceptors))
-            .addService(ServerInterceptors.intercept(bsServer, interceptors))
-            .addService(ServerInterceptors.intercept(casServer, interceptors))
-            .addService(ServerInterceptors.intercept(capabilitiesServer, interceptors))
-            .addService(ServerInterceptors.intercept(fetchServer, interceptors));
+    init {
+        this.workerOptions = workerOptions
+        this.actionCacheServer = ActionCacheServer(cache, digestUtil)
+        val workPath: Path
+        if (workerOptions.getWorkPath() != null) {
+            workPath = fs.getPath(workerOptions.getWorkPath())
+        } else {
+            // TODO(ulfjack): The plan is to make the on-disk storage the default, so we always need to
+            // provide a path to the remote worker, and we can then also use that as the work path. E.g.:
+            // /given/path/cas/
+            // /given/path/upload/
+            // /given/path/work/
+            // We could technically use a different path for temporary files and execution, but we want
+            // the cas/ directory to be on the same file system as the upload/ and work/ directories so
+            // that we can atomically move files between them, and / or use hard-links for the exec
+            // directories.
+            // For now, we use a temporary path if no work path was provided.
+            workPath = fs.getPath("/tmp/remote-worker")
+        }
+        this.bsServer = ByteStreamServer(cache, workPath, digestUtil)
+        this.casServer = CasServer(cache)
 
-    if (workerOptions.getTlsCertificate() != null) {
-      b.sslContext(getSslContextBuilder(workerOptions).build());
+        if (workerOptions.getWorkPath() != null) {
+            val operationsCache: ConcurrentHashMap<String?, com.google.common.util.concurrent.ListenableFuture<ActionResult?>?> =
+                ConcurrentHashMap<String?, com.google.common.util.concurrent.ListenableFuture<ActionResult?>?>()
+            workPath.createDirectoryAndParents()
+            execServer =
+                ExecutionServer(
+                    workPath, sandboxPath, workerOptions, cache, operationsCache, digestUtil
+                )
+        } else {
+            execServer = null
+        }
+        this.capabilitiesServer = CapabilitiesServer(digestUtil, execServer != null, workerOptions)
+        this.fetchServer = FetchServer(cache, digestUtil, workPath.getRelative("fetch-temp"))
     }
 
-    if (execServer != null) {
-      b.addService(ServerInterceptors.intercept(execServer, interceptors));
-    } else {
-      logger.atInfo().log("Execution disabled, only serving cache requests");
+    @Throws(IOException::class)
+    fun startServer(): io.grpc.Server {
+        val interceptors: MutableList<ServerInterceptor?> = java.util.ArrayList<ServerInterceptor?>()
+        if (workerOptions.getUnavailable()) {
+            interceptors.add(UnavailableInterceptor())
+        }
+        interceptors.add(ServerHeadersInterceptor())
+        if (workerOptions.getExpectedAuthorizationToken() != null) {
+            interceptors.add(
+                AuthorizationTokenInterceptor(workerOptions.getExpectedAuthorizationToken())
+            )
+        }
+
+        val b: NettyServerBuilder =
+            NettyServerBuilder.forPort(workerOptions.getListenPort())
+                .addService(ServerInterceptors.intercept(actionCacheServer, interceptors))
+                .addService(ServerInterceptors.intercept(bsServer, interceptors))
+                .addService(ServerInterceptors.intercept(casServer, interceptors))
+                .addService(ServerInterceptors.intercept(capabilitiesServer, interceptors))
+                .addService(ServerInterceptors.intercept(fetchServer, interceptors))
+
+        if (workerOptions.getTlsCertificate() != null) {
+            b.sslContext(getSslContextBuilder(workerOptions).build())
+        }
+
+        if (execServer != null) {
+            b.addService(ServerInterceptors.intercept(execServer, interceptors))
+        } else {
+            logger.atInfo().log("Execution disabled, only serving cache requests")
+        }
+
+        val server: io.grpc.Server = b.build()
+        logger.atInfo().log("Starting gRPC server on port %d", workerOptions.getListenPort())
+        server.start()
+
+        return server
     }
 
-    Server server = b.build();
-    logger.atInfo().log("Starting gRPC server on port %d", workerOptions.getListenPort());
-    server.start();
-
-    return server;
-  }
-
-  private SslContextBuilder getSslContextBuilder(RemoteWorkerOptions workerOptions) {
-    SslContextBuilder sslContextBuilder =
-        SslContextBuilder.forServer(
-            new File(internalToPlatform(workerOptions.getTlsCertificate().getPathString())),
-            new File(internalToPlatform(workerOptions.getTlsPrivateKey().getPathString())));
-    if (workerOptions.getTlsCaCertificate() != null) {
-      sslContextBuilder.clientAuth(ClientAuth.REQUIRE);
-      sslContextBuilder.trustManager(
-          new File(internalToPlatform(workerOptions.getTlsCaCertificate().getPathString())));
-    }
-    return GrpcSslContexts.configure(sslContextBuilder, SslProvider.OPENSSL);
-  }
-
-  private void createPidFile() throws IOException {
-    if (workerOptions.getPidFile() == null) {
-      return;
+    private fun getSslContextBuilder(workerOptions: RemoteWorkerOptions): io.netty.handler.ssl.SslContextBuilder {
+        val sslContextBuilder: io.netty.handler.ssl.SslContextBuilder =
+            io.netty.handler.ssl.SslContextBuilder.forServer(
+                java.io.File(internalToPlatform(workerOptions.getTlsCertificate().getPathString())),
+                java.io.File(internalToPlatform(workerOptions.getTlsPrivateKey().getPathString()))
+            )
+        if (workerOptions.getTlsCaCertificate() != null) {
+            sslContextBuilder.clientAuth(io.netty.handler.ssl.ClientAuth.REQUIRE)
+            sslContextBuilder.trustManager(
+                java.io.File(internalToPlatform(workerOptions.getTlsCaCertificate().getPathString()))
+            )
+        }
+        return GrpcSslContexts.configure(sslContextBuilder, io.netty.handler.ssl.SslProvider.OPENSSL)
     }
 
-    Path pidFile = getFileSystem().getPath(workerOptions.getPidFile());
-    try (Writer writer =
-        new OutputStreamWriter(pidFile.getOutputStream(), StandardCharsets.UTF_8)) {
-      writer.write(Long.toString(ProcessHandle.current().pid()));
-      writer.write("\n");
+    @Throws(IOException::class)
+    private fun createPidFile() {
+        if (workerOptions.getPidFile() == null) {
+            return
+        }
+
+        val pidFile: Path = fileSystem.getPath(workerOptions.getPidFile())
+        OutputStreamWriter(pidFile.getOutputStream(), java.nio.charset.StandardCharsets.UTF_8).use { writer ->
+            writer.write(java.lang.ProcessHandle.current().pid().toString())
+            writer.write("\n")
+        }
+        java.lang.Runtime.getRuntime()
+            .addShutdownHook(
+                object : java.lang.Thread() {
+                    override fun run() {
+                        try {
+                            pidFile.delete()
+                        } catch (e: IOException) {
+                            java.lang.System.err.println("Cannot remove pid file: " + pidFile)
+                        }
+                    }
+                })
     }
 
-    Runtime.getRuntime()
-        .addShutdownHook(
-            new Thread() {
-              @Override
-              public void run() {
+    companion object {
+        // We need to keep references to the root and netty loggers to prevent them from being garbage
+        // collected, which would cause us to loose their configuration.
+        private val rootLogger: java.util.logging.Logger = java.util.logging.Logger.getLogger("")
+        private val nettyLogger: java.util.logging.Logger = java.util.logging.Logger.getLogger("io.grpc.netty")
+        private val logger: GoogleLogger = GoogleLogger.forEnclosingClass()
+
+        val fileSystem: FileSystem
+            get() {
+                val hashFunction: DigestHashFunction?
+                var value: String? = null
                 try {
-                  pidFile.delete();
-                } catch (IOException e) {
-                  System.err.println("Cannot remove pid file: " + pidFile);
+                    value = java.lang.System.getProperty("bazel.DigestFunction", "SHA256")
+                    hashFunction = DigestFunctionConverter().convert(value)
+                } catch (e: OptionsParsingException) {
+                    throw java.lang.IllegalStateException(
+                        "The specified hash function '" + value + "' is not supported.", e
+                    )
                 }
-              }
-            });
-  }
+                return if (com.google.devtools.build.lib.util.OS.getCurrent() == com.google.devtools.build.lib.util.OS.WINDOWS)
+                    WindowsFileSystem(hashFunction,  /* createSymbolicLinks= */true)
+                else
+                    UnixFileSystem(
+                        hashFunction,  /* hashAttributeName= */"", NativePosixFilesServiceImpl()
+                    )
+            }
 
-  @SuppressWarnings("FutureReturnValueIgnored")
-  public static void main(String[] args) throws Exception {
-    OptionsParser parser =
-        OptionsParser.builder().optionsClasses(RemoteWorkerOptions.class).build();
-    parser.parseAndExitUponError(args);
-    RemoteWorkerOptions remoteWorkerOptions = parser.getOptions(RemoteWorkerOptions.class);
+        @Throws(java.lang.Exception::class)
+        @kotlin.jvm.JvmStatic
+        fun main(args: Array<String>) {
+            val parser: OptionsParser =
+                OptionsParser.builder().optionsClasses(RemoteWorkerOptions::class.java).build()
+            parser.parseAndExitUponError(args)
+            val remoteWorkerOptions: RemoteWorkerOptions? =
+                parser.getOptions<RemoteWorkerOptions?>(RemoteWorkerOptions::class.java)
 
-    rootLogger.getHandlers()[0].setFormatter(new SingleLineFormatter());
-    if (remoteWorkerOptions.getDebug()) {
-      rootLogger.getHandlers()[0].setLevel(FINE);
+            rootLogger.getHandlers()[0].setFormatter(SingleLineFormatter())
+            if (remoteWorkerOptions.getDebug()) {
+                rootLogger.getHandlers()[0].setLevel(java.util.logging.Level.FINE)
+            }
+
+            // Only log severe log messages from Netty. Otherwise it logs warnings that look like this:
+            //
+            // 170714 08:16:28.552:WT 18 [io.grpc.netty.NettyServerHandler.onStreamError] Stream Error
+            // io.netty.handler.codec.http2.Http2Exception$StreamException: Received DATA frame for an
+            // unknown stream 11369
+            //
+            // As far as we can tell, these do not indicate any problem with the connection. We believe they
+            // happen when the local side closes a stream, but the remote side hasn't received that
+            // notification yet, so there may still be packets for that stream en-route to the local
+            // machine. The wording 'unknown stream' is misleading - the stream was previously known, but
+            // was recently closed. I'm told upstream discussed this, but didn't want to keep information
+            // about closed streams around.
+            nettyLogger.setLevel(java.util.logging.Level.SEVERE)
+
+            // Set the default subprocess factory to the Windows-specific implementation if the host OS is
+            // Windows. See Bazel.java for more details.
+            WindowsSubprocessFactory.maybeInstallWindowsSubprocessFactory()
+
+            val fs: FileSystem = fileSystem
+            var sandboxPath: Path? = null
+            if (remoteWorkerOptions.getSandboxing()) {
+                sandboxPath = prepareSandboxRunner(fs, remoteWorkerOptions)
+            }
+
+            if (remoteWorkerOptions.getCasPath() == null
+                || !remoteWorkerOptions.getCasPath().isAbsolute()
+            ) {
+                logger.atSevere().log("--cas_path must be set to an absolute path")
+                java.lang.System.exit(1)
+                return
+            }
+
+            val casPath: Path = fs.getPath(remoteWorkerOptions.getCasPath())
+            casPath.createDirectoryAndParents()
+
+            val digestUtil: DigestUtil = DigestUtil(SyscallCache.NO_CACHE, fs.getDigestFunction())
+            val cache: OnDiskBlobStoreCache = OnDiskBlobStoreCache(casPath, digestUtil, remoteWorkerOptions)
+            val retryService: com.google.common.util.concurrent.ListeningScheduledExecutorService =
+                com.google.common.util.concurrent.MoreExecutors.listeningDecorator(Executors.newScheduledThreadPool(1))
+            val worker = RemoteWorker(fs, remoteWorkerOptions, cache, sandboxPath, digestUtil)
+
+            val server: io.grpc.Server = worker.startServer()
+
+            var bossGroup: io.netty.channel.EventLoopGroup? = null
+            var workerGroup: io.netty.channel.EventLoopGroup? = null
+            var ch: io.netty.channel.Channel? = null
+            if (remoteWorkerOptions.getHttpListenPort() != 0) {
+                // Configure the server.
+                bossGroup = io.netty.channel.nio.NioEventLoopGroup(1)
+                workerGroup = io.netty.channel.nio.NioEventLoopGroup()
+                val b: io.netty.bootstrap.ServerBootstrap = io.netty.bootstrap.ServerBootstrap()
+                b.group(bossGroup, workerGroup)
+                    .channel(io.netty.channel.socket.nio.NioServerSocketChannel::class.java)
+                    .handler(io.netty.handler.logging.LoggingHandler(io.netty.handler.logging.LogLevel.INFO))
+                    .childHandler(HttpCacheServerInitializer(OnDiskHttpCacheServerHandler(cache)))
+                ch = b.bind(remoteWorkerOptions.getHttpListenPort()).sync().channel()
+                logger.atInfo().log(
+                    "Started HTTP cache server on port %d", remoteWorkerOptions.getHttpListenPort()
+                )
+            } else {
+                logger.atInfo().log("Not starting HTTP cache server")
+            }
+
+            worker.createPidFile()
+
+            server.awaitTermination()
+            if (ch != null) {
+                ch.closeFuture().sync().get()
+            }
+
+            retryService.shutdownNow()
+            if (bossGroup != null) {
+                bossGroup.shutdownGracefully()
+            }
+            if (workerGroup != null) {
+                workerGroup.shutdownGracefully()
+            }
+        }
+
+        @Throws(java.lang.InterruptedException::class)
+        private fun prepareSandboxRunner(fs: FileSystem, remoteWorkerOptions: RemoteWorkerOptions): Path {
+            if (com.google.devtools.build.lib.util.OS.getCurrent() != com.google.devtools.build.lib.util.OS.LINUX) {
+                logger.atSevere().log("Sandboxing requested, but it is currently only available on Linux")
+                java.lang.System.exit(1)
+            }
+
+            if (remoteWorkerOptions.getWorkPath() == null
+                || !remoteWorkerOptions.getWorkPath().isAbsolute()
+            ) {
+                logger.atSevere().log(
+                    "Sandboxing requested, but --work_path was not set to an absolute path"
+                )
+                java.lang.System.exit(1)
+            }
+
+            val sandbox: java.io.InputStream? =
+                RemoteWorker::class.java.getResourceAsStream("/main/tools/linux-sandbox")
+            if (sandbox == null) {
+                logger.atSevere().log(
+                    "Sandboxing requested, but could not find bundled linux-sandbox binary. "
+                            + "Please rebuild a worker_deploy.jar on Linux to make this work"
+                )
+                java.lang.System.exit(1)
+            }
+
+            var sandboxPath: Path? = null
+            try {
+                sandboxPath = fs.getPath(remoteWorkerOptions.getWorkPath()).getChild("linux-sandbox")
+                FileOutputStream(sandboxPath.getPathString()).use { fos ->
+                    com.google.common.io.ByteStreams.copy(sandbox, fos)
+                }
+                sandboxPath.setExecutable(true)
+            } catch (e: IOException) {
+                logger.atSevere().withCause(e).log(
+                    "Could not extract the bundled linux-sandbox binary to %s", sandboxPath
+                )
+                java.lang.System.exit(1)
+            }
+
+            var cmdResult: CommandResult? = null
+            val cmd: Command =
+                Command(
+                    LinuxSandboxCommandLineBuilder.commandLineBuilder(sandboxPath)
+                        .buildForCommand(com.google.common.collect.ImmutableList.of<E?>("true")),
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(),
+                    sandboxPath.getParentDirectory().getPathFile(),
+                    java.lang.System.getenv()
+                )
+            try {
+                cmdResult = cmd.execute()
+            } catch (e: CommandException) {
+                logger.atSevere().withCause(e).log(
+                    "Sandboxing requested, but it failed to execute 'true' as a self-check: %s",
+                    String(cmdResult.getStderr(), java.nio.charset.StandardCharsets.UTF_8)
+                )
+                java.lang.System.exit(1)
+            }
+
+            return sandboxPath
+        }
     }
-
-    // Only log severe log messages from Netty. Otherwise it logs warnings that look like this:
-    //
-    // 170714 08:16:28.552:WT 18 [io.grpc.netty.NettyServerHandler.onStreamError] Stream Error
-    // io.netty.handler.codec.http2.Http2Exception$StreamException: Received DATA frame for an
-    // unknown stream 11369
-    //
-    // As far as we can tell, these do not indicate any problem with the connection. We believe they
-    // happen when the local side closes a stream, but the remote side hasn't received that
-    // notification yet, so there may still be packets for that stream en-route to the local
-    // machine. The wording 'unknown stream' is misleading - the stream was previously known, but
-    // was recently closed. I'm told upstream discussed this, but didn't want to keep information
-    // about closed streams around.
-    nettyLogger.setLevel(Level.SEVERE);
-
-    // Set the default subprocess factory to the Windows-specific implementation if the host OS is
-    // Windows. See Bazel.java for more details.
-    WindowsSubprocessFactory.maybeInstallWindowsSubprocessFactory();
-
-    FileSystem fs = getFileSystem();
-    Path sandboxPath = null;
-    if (remoteWorkerOptions.getSandboxing()) {
-      sandboxPath = prepareSandboxRunner(fs, remoteWorkerOptions);
-    }
-
-    if (remoteWorkerOptions.getCasPath() == null
-        || !remoteWorkerOptions.getCasPath().isAbsolute()) {
-      logger.atSevere().log("--cas_path must be set to an absolute path");
-      System.exit(1);
-      return;
-    }
-
-    Path casPath = fs.getPath(remoteWorkerOptions.getCasPath());
-    casPath.createDirectoryAndParents();
-
-    DigestUtil digestUtil = new DigestUtil(SyscallCache.NO_CACHE, fs.getDigestFunction());
-    OnDiskBlobStoreCache cache = new OnDiskBlobStoreCache(casPath, digestUtil, remoteWorkerOptions);
-    ListeningScheduledExecutorService retryService =
-        MoreExecutors.listeningDecorator(Executors.newScheduledThreadPool(1));
-    RemoteWorker worker = new RemoteWorker(fs, remoteWorkerOptions, cache, sandboxPath, digestUtil);
-
-    final Server server = worker.startServer();
-
-    EventLoopGroup bossGroup = null;
-    EventLoopGroup workerGroup = null;
-    Channel ch = null;
-    if (remoteWorkerOptions.getHttpListenPort() != 0) {
-      // Configure the server.
-      bossGroup = new NioEventLoopGroup(1);
-      workerGroup = new NioEventLoopGroup();
-      ServerBootstrap b = new ServerBootstrap();
-      b.group(bossGroup, workerGroup)
-          .channel(NioServerSocketChannel.class)
-          .handler(new LoggingHandler(LogLevel.INFO))
-          .childHandler(new HttpCacheServerInitializer(new OnDiskHttpCacheServerHandler(cache)));
-      ch = b.bind(remoteWorkerOptions.getHttpListenPort()).sync().channel();
-      logger.atInfo().log(
-          "Started HTTP cache server on port %d", remoteWorkerOptions.getHttpListenPort());
-    } else {
-      logger.atInfo().log("Not starting HTTP cache server");
-    }
-
-    worker.createPidFile();
-
-    server.awaitTermination();
-    if (ch != null) {
-      ch.closeFuture().sync().get();
-    }
-
-    retryService.shutdownNow();
-    if (bossGroup != null) {
-      bossGroup.shutdownGracefully();
-    }
-    if (workerGroup != null) {
-      workerGroup.shutdownGracefully();
-    }
-  }
-
-  private static Path prepareSandboxRunner(FileSystem fs, RemoteWorkerOptions remoteWorkerOptions)
-      throws InterruptedException {
-    if (OS.getCurrent() != OS.LINUX) {
-      logger.atSevere().log("Sandboxing requested, but it is currently only available on Linux");
-      System.exit(1);
-    }
-
-    if (remoteWorkerOptions.getWorkPath() == null
-        || !remoteWorkerOptions.getWorkPath().isAbsolute()) {
-      logger.atSevere().log(
-          "Sandboxing requested, but --work_path was not set to an absolute path");
-      System.exit(1);
-    }
-
-    InputStream sandbox = RemoteWorker.class.getResourceAsStream("/main/tools/linux-sandbox");
-    if (sandbox == null) {
-      logger.atSevere().log(
-          "Sandboxing requested, but could not find bundled linux-sandbox binary. "
-              + "Please rebuild a worker_deploy.jar on Linux to make this work");
-      System.exit(1);
-    }
-
-    Path sandboxPath = null;
-    try {
-      sandboxPath = fs.getPath(remoteWorkerOptions.getWorkPath()).getChild("linux-sandbox");
-      try (FileOutputStream fos = new FileOutputStream(sandboxPath.getPathString())) {
-        ByteStreams.copy(sandbox, fos);
-      }
-      sandboxPath.setExecutable(true);
-    } catch (IOException e) {
-      logger.atSevere().withCause(e).log(
-          "Could not extract the bundled linux-sandbox binary to %s", sandboxPath);
-      System.exit(1);
-    }
-
-    CommandResult cmdResult = null;
-    Command cmd =
-        new Command(
-            LinuxSandboxCommandLineBuilder.commandLineBuilder(sandboxPath)
-                .buildForCommand(ImmutableList.of("true")),
-            ImmutableMap.of(),
-            sandboxPath.getParentDirectory().getPathFile(),
-            System.getenv());
-    try {
-      cmdResult = cmd.execute();
-    } catch (CommandException e) {
-      logger.atSevere().withCause(e).log(
-          "Sandboxing requested, but it failed to execute 'true' as a self-check: %s",
-          new String(cmdResult.getStderr(), UTF_8));
-      System.exit(1);
-    }
-
-    return sandboxPath;
-  }
 }

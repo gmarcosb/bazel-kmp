@@ -11,75 +11,65 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.python
 
-package com.google.devtools.build.lib.rules.python;
+import com.google.devtools.build.lib.skyframe.BzlLoadValue.keyForBuild
 
-import static com.google.devtools.build.lib.skyframe.BzlLoadValue.keyForBuild;
+/** Instance of the provider type for the Python rules.  */
+@com.google.common.annotations.VisibleForTesting
+class PyInfo private constructor(info: StarlarkInfo) {
+    private val info: StarlarkInfo
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.collect.nestedset.Depset;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.packages.Info;
-import com.google.devtools.build.lib.packages.RuleClass.ConfiguredTargetFactory.RuleErrorException;
-import com.google.devtools.build.lib.packages.StarlarkInfo;
-import com.google.devtools.build.lib.packages.StarlarkProviderWrapper;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import net.starlark.java.eval.EvalException;
-
-/** Instance of the provider type for the Python rules. */
-@VisibleForTesting
-public final class PyInfo {
-  private static final RulesPythonPyInfoProvider RULES_PYTHON_PROVIDER =
-      new RulesPythonPyInfoProvider();
-
-  private final StarlarkInfo info;
-
-  private PyInfo(StarlarkInfo info) {
-    this.info = info;
-  }
-
-  public static PyInfo fromTarget(ConfiguredTarget target) throws RuleErrorException {
-    PyInfo provider = target.get(RULES_PYTHON_PROVIDER);
-    if (provider != null) {
-      return provider;
-    }
-    throw new IllegalStateException(String.format("Unable to find PyInfo provider in %s", target));
-  }
-
-  public NestedSet<Artifact> getTransitiveSourcesSet() throws EvalException {
-    Object value = info.getValue("transitive_sources");
-    return Depset.cast(value, Artifact.class, "transitive_sources");
-  }
-
-  public boolean getUsesSharedLibraries() throws EvalException {
-    return info.getValue("uses_shared_libraries", Boolean.class);
-  }
-
-  public NestedSet<String> getImportsSet() throws EvalException {
-    Object value = info.getValue("imports");
-    return Depset.cast(value, String.class, "imports");
-  }
-
-  public boolean getHasPy2OnlySources() throws EvalException {
-    return info.getValue("has_py2_only_sources", Boolean.class);
-  }
-
-  public boolean getHasPy3OnlySources() throws EvalException {
-    return info.getValue("has_py3_only_sources", Boolean.class);
-  }
-
-  /** The PyInfo provider type object for the rules_python provider. */
-  public static class RulesPythonPyInfoProvider extends StarlarkProviderWrapper<PyInfo> {
-    private RulesPythonPyInfoProvider() {
-      super(keyForBuild(Label.parseCanonicalUnchecked(TestConstants.PYINFO_BZL)), "PyInfo");
+    init {
+        this.info = info
     }
 
-    @Override
-    public PyInfo wrap(Info value) {
-      return new PyInfo((StarlarkInfo) value);
+    @get:Throws(net.starlark.java.eval.EvalException::class)
+    val transitiveSourcesSet: NestedSet<Artifact?>
+        get() {
+            val value: Any? = info.getValue("transitive_sources")
+            return Depset.cast(value, Artifact::class.java, "transitive_sources")
+        }
+
+    @get:Throws(net.starlark.java.eval.EvalException::class)
+    val usesSharedLibraries: Boolean
+        get() = info.getValue("uses_shared_libraries", Boolean::class.java)
+
+    @get:Throws(net.starlark.java.eval.EvalException::class)
+    val importsSet: NestedSet<String?>
+        get() {
+            val value: Any? = info.getValue("imports")
+            return Depset.cast(value, String::class.java, "imports")
+        }
+
+    @get:Throws(net.starlark.java.eval.EvalException::class)
+    val hasPy2OnlySources: Boolean
+        get() = info.getValue("has_py2_only_sources", Boolean::class.java)
+
+    @get:Throws(net.starlark.java.eval.EvalException::class)
+    val hasPy3OnlySources: Boolean
+        get() = info.getValue("has_py3_only_sources", Boolean::class.java)
+
+    /** The PyInfo provider type object for the rules_python provider.  */
+    class RulesPythonPyInfoProvider private constructor() : StarlarkProviderWrapper<PyInfo?>(
+        keyForBuild(Label.parseCanonicalUnchecked(TestConstants.PYINFO_BZL)),
+        "PyInfo"
+    ) {
+        public override fun wrap(value: Info?): PyInfo {
+            return PyInfo(value as StarlarkInfo?)
+        }
     }
-  }
+
+    companion object {
+        private val RULES_PYTHON_PROVIDER = RulesPythonPyInfoProvider()
+
+        @Throws(RuleErrorException::class)
+        fun fromTarget(target: ConfiguredTarget): PyInfo {
+            val provider: PyInfo? = target.get(RULES_PYTHON_PROVIDER)
+            if (provider != null) {
+                return provider
+            }
+            throw java.lang.IllegalStateException(String.format("Unable to find PyInfo provider in %s", target))
+        }
+    }
 }

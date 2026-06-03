@@ -11,150 +11,143 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.server
 
-package com.google.devtools.build.lib.server;
+import com.google.devtools.build.lib.clock.BlazeClock
+import com.google.devtools.build.lib.server.ServerWatcherRunnable.ProcMeminfoLowMemoryChecker
+import com.google.devtools.build.lib.testutil.ManualClock
+import com.google.devtools.build.lib.testutil.TestUtils
+import com.google.devtools.build.lib.util.OS
+import org.junit.Test
+import java.time.Duration
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+/** Tests for [ServerWatcherRunnable].  */
+@RunWith(JUnit4::class)
+class ServerWatcherRunnableTest {
+    private var clock: ManualClock? = null
+    private var mockGrpcCommandServer: GrpcCommandServer? = null
 
-import com.google.devtools.build.lib.clock.BlazeClock;
-import com.google.devtools.build.lib.server.ServerWatcherRunnable.ProcMeminfoLowMemoryChecker;
-import com.google.devtools.build.lib.testutil.ManualClock;
-import com.google.devtools.build.lib.testutil.TestUtils;
-import com.google.devtools.build.lib.unix.ProcMeminfoParser;
-import com.google.devtools.build.lib.util.OS;
-import java.time.Duration;
-import java.util.concurrent.atomic.AtomicInteger;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @Before
+    fun setManualClock() {
+        clock = ManualClock()
+        mockGrpcCommandServer = Mockito.mock<GrpcCommandServer?>(GrpcCommandServer::class.java)
+        BlazeClock.setClock(clock!!)
+    }
 
-/** Tests for {@link ServerWatcherRunnable}. */
-@RunWith(JUnit4.class)
-public class ServerWatcherRunnableTest {
-  private ManualClock clock;
-  private GrpcCommandServer mockGrpcCommandServer;
-
-  @Before
-  public final void setManualClock() {
-    clock = new ManualClock();
-    mockGrpcCommandServer = mock(GrpcCommandServer.class);
-    BlazeClock.setClock(clock);
-  }
-
-  @Test
-  public void testBasicIdleCheck() throws Exception {
-    CommandManager mockCommands = mock(CommandManager.class);
-    ServerWatcherRunnable underTest =
-        new ServerWatcherRunnable(
-            mockGrpcCommandServer,
-            /* maxIdleSeconds= */ 10,
-            /* shutdownOnLowSysMem= */ false,
-            mockCommands);
-    Thread thread = new Thread(underTest);
-    when(mockCommands.isEmpty()).thenReturn(true);
-    AtomicInteger checkIdleCounter = new AtomicInteger();
-    doAnswer(
-            invocation -> {
-              checkIdleCounter.incrementAndGet();
-              verify(mockGrpcCommandServer, never()).shutdown();
-              clock.advanceMillis(Duration.ofSeconds(5).toMillis());
-              return null;
+    @Test
+    @Throws(Exception::class)
+    fun testBasicIdleCheck() {
+        val mockCommands: CommandManager = Mockito.mock<CommandManager>(CommandManager::class.java)
+        val underTest: ServerWatcherRunnable =
+            ServerWatcherRunnable(
+                mockGrpcCommandServer,  /* maxIdleSeconds= */
+                10,  /* shutdownOnLowSysMem= */
+                false,
+                mockCommands
+            )
+        val thread: Thread = Thread(underTest)
+        Mockito.`when`<T?>(mockCommands.isEmpty()).thenReturn(true)
+        val checkIdleCounter: AtomicInteger = AtomicInteger()
+        Mockito.doAnswer(
+            Answer { invocation: InvocationOnMock? ->
+                checkIdleCounter.incrementAndGet()
+                Mockito.verify<Any?>(mockGrpcCommandServer, Mockito.never()).shutdown()
+                clock!!.advanceMillis(Duration.ofSeconds(5).toMillis())
+                null
             })
-        .when(mockCommands)
-        .waitForChange(anyLong());
+            .`when`<Any?>(mockCommands)
+            .waitForChange(ArgumentMatchers.anyLong())
 
-    thread.start();
-    thread.join(TestUtils.WAIT_TIMEOUT_MILLISECONDS);
+        thread.start()
+        thread.join(TestUtils.WAIT_TIMEOUT_MILLISECONDS)
 
-    verify(mockGrpcCommandServer).shutdown();
-    assertThat(checkIdleCounter.get()).isEqualTo(2);
-  }
-
-  @Test
-  public void runLowAbsoluteHighPercentageMemoryCheck() throws Exception {
-    if (!usingLinux()) {
-      return;
+        Mockito.verify<Any?>(mockGrpcCommandServer).shutdown()
+        Truth.assertThat(checkIdleCounter.get()).isEqualTo(2)
     }
-    assertThat(doesIdleLowMemoryCheckShutdown(/*freeRamKb=*/ 5000, /*totalRamKb=*/ 10000))
-        .isFalse();
-  }
 
-  @Test
-  public void runHighAbsoluteLowPercentageMemoryCheck() throws Exception {
-    if (!usingLinux()) {
-      return;
+    @Test
+    @Throws(Exception::class)
+    fun runLowAbsoluteHighPercentageMemoryCheck() {
+        if (!usingLinux()) {
+            return
+        }
+        Truth.assertThat(doesIdleLowMemoryCheckShutdown( /*freeRamKb=*/5000,  /*totalRamKb=*/10000))
+            .isFalse()
     }
-    assertThat(doesIdleLowMemoryCheckShutdown(/*freeRamKb=*/ 1L << 21, /*totalRamKb=*/ 1L << 30))
-        .isFalse();
-  }
 
-  @Test
-  public void runLowAbsoluteLowPercentageMemoryCheck() throws Exception {
-    if (!usingLinux()) {
-      return;
+    @Test
+    @Throws(Exception::class)
+    fun runHighAbsoluteLowPercentageMemoryCheck() {
+        if (!usingLinux()) {
+            return
+        }
+        Truth.assertThat(doesIdleLowMemoryCheckShutdown( /*freeRamKb=*/1L shl 21,  /*totalRamKb=*/1L shl 30))
+            .isFalse()
     }
-    assertThat(doesIdleLowMemoryCheckShutdown(/*freeRamKb=*/ 5000, /*totalRamKb=*/ 1000000))
-        .isTrue();
-  }
 
-  @Test
-  public void testshutdownOnLowSysMemDisabled() throws Exception {
-    if (!usingLinux()) {
-      return;
+    @Test
+    @Throws(Exception::class)
+    fun runLowAbsoluteLowPercentageMemoryCheck() {
+        if (!usingLinux()) {
+            return
+        }
+        Truth.assertThat(doesIdleLowMemoryCheckShutdown( /*freeRamKb=*/5000,  /*totalRamKb=*/1000000))
+            .isTrue()
     }
-    assertThat(
-            doesIdleLowMemoryCheckShutdown(
-                /*freeRamKb=*/ 5000, /*totalRamKb=*/ 1000000, /*shutdownOnLowSysMem=*/ false))
-        .isFalse();
-  }
 
-  private boolean doesIdleLowMemoryCheckShutdown(long freeRamKb, long totalRamKb) throws Exception {
-    return doesIdleLowMemoryCheckShutdown(freeRamKb, totalRamKb, /*shutdownOnLowSysMem=*/ true);
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testshutdownOnLowSysMemDisabled() {
+        if (!usingLinux()) {
+            return
+        }
+        Truth.assertThat(
+            doesIdleLowMemoryCheckShutdown( /*freeRamKb=*/
+                5000,  /*totalRamKb=*/1000000,  /*shutdownOnLowSysMem=*/false
+            )
+        )
+            .isFalse()
+    }
 
-  private boolean doesIdleLowMemoryCheckShutdown(
-      long freeRamKb, long totalRamKb, boolean shutdownOnLowSysMem) throws Exception {
-    CommandManager mockCommandManager = mock(CommandManager.class);
-    ProcMeminfoParser mockParser = mock(ProcMeminfoParser.class);
-    ServerWatcherRunnable underTest =
-        new ServerWatcherRunnable(
-            mockGrpcCommandServer,
-            // Shut down after an hour if we see no memory issues.
-            /* maxIdleSeconds= */ Duration.ofHours(1).toSeconds(),
-            shutdownOnLowSysMem,
-            mockCommandManager,
-            new ProcMeminfoLowMemoryChecker(() -> mockParser));
-    Thread thread = new Thread(underTest);
-    when(mockCommandManager.isEmpty()).thenReturn(true);
-    AtomicInteger serverWatcherLoopCounter = new AtomicInteger();
+    @Throws(Exception::class)
+    private fun doesIdleLowMemoryCheckShutdown(
+        freeRamKb: Long, totalRamKb: Long, shutdownOnLowSysMem: Boolean = true
+    ): Boolean {
+        val mockCommandManager: CommandManager = Mockito.mock<CommandManager>(CommandManager::class.java)
+        val mockParser: ProcMeminfoParser = Mockito.mock<ProcMeminfoParser>(ProcMeminfoParser::class.java)
+        val underTest: ServerWatcherRunnable =
+            ServerWatcherRunnable(
+                mockGrpcCommandServer,  // Shut down after an hour if we see no memory issues.
+                /* maxIdleSeconds= */
+                Duration.ofHours(1).toSeconds(),
+                shutdownOnLowSysMem,
+                mockCommandManager,
+                ProcMeminfoLowMemoryChecker({ mockParser })
+            )
+        val thread: Thread = Thread(underTest)
+        Mockito.`when`<T?>(mockCommandManager.isEmpty()).thenReturn(true)
+        val serverWatcherLoopCounter: AtomicInteger = AtomicInteger()
 
-    when(mockParser.getFreeRamKb()).thenReturn(freeRamKb);
-    when(mockParser.getTotalKb()).thenReturn(totalRamKb);
-    doAnswer(
-            invocation -> {
-              serverWatcherLoopCounter.incrementAndGet();
-              clock.advanceMillis(Duration.ofMinutes(1).toMillis());
-              return null;
+        Mockito.`when`<T?>(mockParser.getFreeRamKb()).thenReturn(freeRamKb)
+        Mockito.`when`<T?>(mockParser.getTotalKb()).thenReturn(totalRamKb)
+        Mockito.doAnswer(
+            Answer { invocation: InvocationOnMock? ->
+                serverWatcherLoopCounter.incrementAndGet()
+                clock!!.advanceMillis(Duration.ofMinutes(1).toMillis())
+                null
             })
-        .when(mockCommandManager)
-        .waitForChange(Duration.ofSeconds(5).toMillis());
+            .`when`<Any?>(mockCommandManager)
+            .waitForChange(Duration.ofSeconds(5).toMillis())
 
-    thread.start();
-    thread.join(TestUtils.WAIT_TIMEOUT_MILLISECONDS);
-    verify(mockGrpcCommandServer).shutdown();
+        thread.start()
+        thread.join(TestUtils.WAIT_TIMEOUT_MILLISECONDS)
+        Mockito.verify<Any?>(mockGrpcCommandServer).shutdown()
 
-    // If we shut down due to memory pressure, it will only be after 5 minutes of being idle.
-    return serverWatcherLoopCounter.get() == 5;
-  }
+        // If we shut down due to memory pressure, it will only be after 5 minutes of being idle.
+        return serverWatcherLoopCounter.get() == 5
+    }
 
-  private boolean usingLinux() {
-    return OS.getCurrent() == OS.LINUX;
-  }
+    private fun usingLinux(): Boolean {
+        return OS.getCurrent() == OS.LINUX
+    }
 }

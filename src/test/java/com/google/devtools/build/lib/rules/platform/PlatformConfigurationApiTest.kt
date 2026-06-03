@@ -11,31 +11,21 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.rules.platform;
+package com.google.devtools.build.lib.rules.platform
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.skyframe.BzlLoadValue.keyForBuild;
+import com.google.devtools.build.lib.skyframe.BzlLoadValue.keyForBuild
 
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.StarlarkProvider;
-import com.google.devtools.build.lib.packages.StructImpl;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests Starlark API for Platform configuration fragments.  */
+@RunWith(JUnit4::class)
+class PlatformConfigurationApiTest : BuildViewTestCase() {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testHostPlatform() {
+        scratch.file("platforms/BUILD", "platform(name = 'test_platform')")
 
-/** Tests Starlark API for Platform configuration fragments. */
-@RunWith(JUnit4.class)
-public class PlatformConfigurationApiTest extends BuildViewTestCase {
-
-  @Test
-  public void testHostPlatform() throws Exception {
-    scratch.file("platforms/BUILD", "platform(name = 'test_platform')");
-
-    scratch.file(
-        "verify/verify.bzl",
-        """
+        scratch.file(
+            "verify/verify.bzl",
+            """
         result = provider()
 
         def _impl(ctx):
@@ -49,35 +39,41 @@ public class PlatformConfigurationApiTest extends BuildViewTestCase {
             implementation = _impl,
             fragments = ["platform"],
         )
-        """);
-    scratch.file(
-        "verify/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "verify/BUILD",
+            """
         load(":verify.bzl", "verify")
 
         verify(name = "verify")
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration("--host_platform=//platforms:test_platform");
+        useConfiguration("--host_platform=//platforms:test_platform")
 
-    ConfiguredTarget myRuleTarget = getConfiguredTarget("//verify:verify");
-    StructImpl info =
-        (StructImpl)
+        val myRuleTarget: ConfiguredTarget = getConfiguredTarget("//verify:verify")
+        val info: StructImpl =
             myRuleTarget.get(
-                new StarlarkProvider.Key(
-                    keyForBuild(Label.parseCanonical("//verify:verify.bzl")), "result"));
+                Key(
+                    keyForBuild(Label.parseCanonical("//verify:verify.bzl")), "result"
+                )
+            ) as StructImpl
 
-    Label hostPlatform = (Label) info.getValue("host_platform");
-    assertThat(hostPlatform).isEqualTo(Label.parseCanonicalUnchecked("//platforms:test_platform"));
-  }
+        val hostPlatform: Label? = info.getValue("host_platform") as Label?
+        assertThat(hostPlatform).isEqualTo(Label.parseCanonicalUnchecked("//platforms:test_platform"))
+    }
 
-  @Test
-  public void testTargetPlatform_single() throws Exception {
-    scratch.file("platforms/BUILD", "platform(name = 'test_platform')");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTargetPlatform_single() {
+        scratch.file("platforms/BUILD", "platform(name = 'test_platform')")
 
-    scratch.file(
-        "verify/verify.bzl",
-        """
+        scratch.file(
+            "verify/verify.bzl",
+            """
         result = provider()
 
         def _impl(ctx):
@@ -91,26 +87,31 @@ public class PlatformConfigurationApiTest extends BuildViewTestCase {
             implementation = _impl,
             fragments = ["platform"],
         )
-        """);
-    scratch.file(
-        "verify/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "verify/BUILD",
+            """
         load(":verify.bzl", "verify")
 
         verify(name = "verify")
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration("--platforms=//platforms:test_platform");
+        useConfiguration("--platforms=//platforms:test_platform")
 
-    ConfiguredTarget myRuleTarget = getConfiguredTarget("//verify:verify");
-    StructImpl info =
-        (StructImpl)
+        val myRuleTarget: ConfiguredTarget = getConfiguredTarget("//verify:verify")
+        val info: StructImpl =
             myRuleTarget.get(
-                new StarlarkProvider.Key(
-                    keyForBuild(Label.parseCanonical("//verify:verify.bzl")), "result"));
+                Key(
+                    keyForBuild(Label.parseCanonical("//verify:verify.bzl")), "result"
+                )
+            ) as StructImpl
 
-    Label targetPlatform = (Label) info.getValue("target_platform");
-    assertThat(targetPlatform)
-        .isEqualTo(Label.parseCanonicalUnchecked("//platforms:test_platform"));
-  }
+        val targetPlatform: Label? = info.getValue("target_platform") as Label?
+        assertThat(targetPlatform)
+            .isEqualTo(Label.parseCanonicalUnchecked("//platforms:test_platform"))
+    }
 }

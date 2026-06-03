@@ -11,147 +11,118 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.graph
 
-package com.google.devtools.build.lib.graph;
-
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.common.base.Function;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.License;
-import com.google.devtools.build.lib.packages.Package;
-import com.google.devtools.build.lib.packages.Packageoid;
-import com.google.devtools.build.lib.packages.Rule;
-import com.google.devtools.build.lib.packages.RuleVisibility;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.packages.TargetData;
-import java.util.Comparator;
-import java.util.List;
-import net.starlark.java.syntax.Location;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.common.base.Function
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.Lists
+import com.google.devtools.build.lib.cmdline.Label
+import org.junit.Test
+import kotlin.Boolean
+import kotlin.Comparator
+import kotlin.Exception
+import kotlin.Int
+import kotlin.String
+import kotlin.UnsupportedOperationException
 
 /**
- * Test for {@link Digraph}.
+ * Test for [Digraph].
  */
-@RunWith(JUnit4.class)
-public class DigraphTest {
+@RunWith(JUnit4::class)
+class DigraphTest {
+    internal inner class FakeTarget(label: Label?) : Target {
+        private val label: Label?
 
-  class FakeTarget implements Target {
+        init {
+            this.label = label
+        }
 
-    private final Label label;
+        public override fun getLabel(): Label? {
+            return label
+        }
 
-    FakeTarget(Label label) {
-      this.label = label;
+        val packageoid: Packageoid?
+            get() = null
+
+        val packageMetadata: Package.Metadata?
+            get() = null
+
+        val packageDeclarations: Package.Declarations?
+            get() = null
+
+        val targetKind: String?
+            get() = null
+
+        val associatedRule: Rule?
+            get() = null
+
+        val license: License?
+            get() = null
+
+        val location: Location?
+            get() = null
+
+        val rawVisibility: RuleVisibility?
+            get() = null
+
+        val isConfigurable: Boolean
+            get() = true
+
+        public override fun reduceForSerialization(): TargetData? {
+            throw UnsupportedOperationException()
+        }
     }
 
-    @Override
-    public Label getLabel() {
-      return label;
+    @Test
+    @Throws(Exception::class)
+    fun testStableOrdering() {
+        val digraph = Digraph<Target?>()
+        val a = FakeTarget(Label.create("pkg", "a"))
+        val b = FakeTarget(Label.create("pkg", "b"))
+        val c = FakeTarget(Label.create("pkg", "c"))
+        val d = FakeTarget(Label.create("pkg", "d"))
+        val e = FakeTarget(Label.create("pkg", "e"))
+        val f = FakeTarget(Label.create("pkg", "f"))
+        val g = FakeTarget(Label.create("pkg", "g"))
+        //    f
+        // / | | \
+        // c g e d
+        //      / \
+        //      a  b
+        digraph.addEdge(f, c)
+        digraph.addEdge(f, g)
+        digraph.addEdge(d, a)
+        digraph.addEdge(d, b)
+        digraph.addEdge(f, e)
+        digraph.addEdge(f, d)
+
+        // Get them back in topological and, within a valid topological ordering, alphabetical order.
+        val comparator: Comparator<Target?> = object : Comparator<Target?> {
+            override fun compare(o1: Target, o2: Target): Int {
+                return o1.getLabel().compareTo(o2.getLabel()) * -1
+            }
+        }
+
+        // Unwrap the Label from the Node<Target>, to make the final assert prettier.
+        val unwrap: Function<in Node<Target?>?, Label?> =
+            object : Function<Node<Target?>?, Label?> {
+                override fun apply(node: Node<Target?>): Label {
+                    return node.label.getLabel()
+                }
+            }
+        val nodes: MutableList<Label?> =
+            Lists.transform<Node<Target?>?, Label?>(digraph.getTopologicalOrder(comparator), unwrap)
+        Truth.assertThat(nodes)
+            .containsExactlyElementsIn(
+                ImmutableList.of<E?>(
+                    Label.create("pkg", "f"),
+                    Label.create("pkg", "c"),
+                    Label.create("pkg", "d"),
+                    Label.create("pkg", "a"),
+                    Label.create("pkg", "b"),
+                    Label.create("pkg", "e"),
+                    Label.create("pkg", "g")
+                )
+            )
     }
-
-    @Override
-    public Packageoid getPackageoid() {
-      return null;
-    }
-
-    @Override
-    public Package.Metadata getPackageMetadata() {
-      return null;
-    }
-
-    @Override
-    public Package.Declarations getPackageDeclarations() {
-      return null;
-    }
-
-    @Override
-    public String getTargetKind() {
-      return null;
-    }
-
-    @Override
-    public Rule getAssociatedRule() {
-      return null;
-    }
-
-    @Override
-    public License getLicense() {
-      return null;
-    }
-
-    @Override
-    public Location getLocation() {
-      return null;
-    }
-
-    @Override
-    public RuleVisibility getRawVisibility() {
-      return null;
-    }
-
-    @Override
-    public boolean isConfigurable() {
-      return true;
-    }
-
-    @Override
-    public TargetData reduceForSerialization() {
-      throw new UnsupportedOperationException();
-    }
-  }
-
-  @Test
-  public void testStableOrdering() throws Exception {
-    Digraph<Target> digraph = new Digraph<>();
-    FakeTarget a = new FakeTarget(Label.create("pkg", "a"));
-    FakeTarget b = new FakeTarget(Label.create("pkg", "b"));
-    FakeTarget c = new FakeTarget(Label.create("pkg", "c"));
-    FakeTarget d = new FakeTarget(Label.create("pkg", "d"));
-    FakeTarget e = new FakeTarget(Label.create("pkg", "e"));
-    FakeTarget f = new FakeTarget(Label.create("pkg", "f"));
-    FakeTarget g = new FakeTarget(Label.create("pkg", "g"));
-    //    f
-    // / | | \
-    // c g e d
-    //      / \
-    //      a  b
-    digraph.addEdge(f, c);
-    digraph.addEdge(f, g);
-    digraph.addEdge(d, a);
-    digraph.addEdge(d, b);
-    digraph.addEdge(f, e);
-    digraph.addEdge(f, d);
-
-    // Get them back in topological and, within a valid topological ordering, alphabetical order.
-    Comparator<Target> comparator = new Comparator<Target>() {
-      @Override
-      public int compare(Target o1, Target o2) {
-        return o1.getLabel().compareTo(o2.getLabel()) * -1;
-      }
-    };
-
-    // Unwrap the Label from the Node<Target>, to make the final assert prettier.
-    Function<? super Node<Target>, Label> unwrap =
-        new Function<Node<Target>, Label>() {
-          @Override
-          public Label apply(Node<Target> node) {
-            return node.label.getLabel();
-          }
-        };
-    List<Label> nodes = Lists.transform(digraph.getTopologicalOrder(comparator), unwrap);
-    assertThat(nodes)
-        .containsExactlyElementsIn(
-            ImmutableList.of(
-                Label.create("pkg", "f"),
-                Label.create("pkg", "c"),
-                Label.create("pkg", "d"),
-                Label.create("pkg", "a"),
-                Label.create("pkg", "b"),
-                Label.create("pkg", "e"),
-                Label.create("pkg", "g")));
-  }
 }

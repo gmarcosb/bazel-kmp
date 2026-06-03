@@ -11,75 +11,67 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import javax.annotation.Nullable;
+/** Wrapper for a value or the untyped exception thrown when trying to compute it.  */
+abstract class ValueOrUntypedException {
+    /** Returns the stored value, if there was one.  */
+    abstract val value: SkyValue?
 
-/** Wrapper for a value or the untyped exception thrown when trying to compute it. */
-public abstract class ValueOrUntypedException {
+    /** Returns the stored exception, if there was one.  */
+    abstract val exception: java.lang.Exception?
 
-  /** Returns the stored value, if there was one. */
-  @Nullable
-  abstract SkyValue getValue();
+    private class ValueOrUntypedExceptionImpl(value: SkyValue?) : ValueOrUntypedException() {
+        private val value: SkyValue?
 
-  /** Returns the stored exception, if there was one. */
-  @Nullable
-  abstract Exception getException();
+        init {
+            this.value = value
+        }
 
-  public static ValueOrUntypedException ofValueUntyped(SkyValue value) {
-    return new ValueOrUntypedExceptionImpl(value);
-  }
+        public override fun getValue(): SkyValue? {
+            return value
+        }
 
-  public static ValueOrUntypedException ofNull() {
-    return ValueOrUntypedExceptionImpl.NULL;
-  }
+        public override fun getException(): java.lang.Exception? {
+            return null
+        }
 
-  public static ValueOrUntypedException ofExn(Exception e) {
-    return new ValueOrUntypedExceptionExnImpl(e);
-  }
+        override fun toString(): String {
+            return "ValueOrUntypedExceptionValueImpl:" + value
+        }
 
-  private static final class ValueOrUntypedExceptionImpl extends ValueOrUntypedException {
-    static final ValueOrUntypedExceptionImpl NULL = new ValueOrUntypedExceptionImpl(null);
-    @Nullable private final SkyValue value;
-
-    ValueOrUntypedExceptionImpl(@Nullable SkyValue value) {
-      this.value = value;
+        companion object {
+            val NULL: ValueOrUntypedExceptionImpl = ValueOrUntypedExceptionImpl(null)
+        }
     }
 
-    @Override
-    @Nullable
-    public SkyValue getValue() {
-      return value;
+    private class ValueOrUntypedExceptionExnImpl(exception: java.lang.Exception?) : ValueOrUntypedException() {
+        private val exception: java.lang.Exception?
+
+        init {
+            this.exception = exception
+        }
+
+        public override fun getValue(): SkyValue? {
+            return null
+        }
+
+        public override fun getException(): java.lang.Exception? {
+            return exception
+        }
     }
 
-    @Nullable
-    @Override
-    public Exception getException() {
-      return null;
-    }
+    companion object {
+        fun ofValueUntyped(value: SkyValue?): ValueOrUntypedException {
+            return ValueOrUntypedExceptionImpl(value)
+        }
 
-    @Override
-    public String toString() {
-      return "ValueOrUntypedExceptionValueImpl:" + value;
-    }
-  }
+        fun ofNull(): ValueOrUntypedException {
+            return ValueOrUntypedExceptionImpl.Companion.NULL
+        }
 
-  private static final class ValueOrUntypedExceptionExnImpl extends ValueOrUntypedException {
-    private final Exception exception;
-
-    ValueOrUntypedExceptionExnImpl(Exception exception) {
-      this.exception = exception;
+        fun ofExn(e: java.lang.Exception?): ValueOrUntypedException {
+            return ValueOrUntypedExceptionExnImpl(e)
+        }
     }
-
-    @Override
-    @Nullable
-    public SkyValue getValue() {
-      return null;
-    }
-
-    @Override
-    public Exception getException() {
-      return exception;
-    }
-  }
 }

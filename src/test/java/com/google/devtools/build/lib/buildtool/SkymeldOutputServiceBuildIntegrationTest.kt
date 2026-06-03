@@ -11,107 +11,86 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.buildtool;
+package com.google.devtools.build.lib.buildtool
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.actions.Action
 
-import com.google.devtools.build.lib.actions.Action;
-import com.google.devtools.build.lib.actions.cache.OutputMetadataStore;
-import com.google.devtools.build.lib.buildtool.util.BuildIntegrationTestCase;
-import com.google.devtools.build.lib.events.EventHandler;
-import com.google.devtools.build.lib.runtime.BlazeModule;
-import com.google.devtools.build.lib.runtime.BlazeRuntime;
-import com.google.devtools.build.lib.vfs.BatchStat;
-import com.google.devtools.build.lib.vfs.ModifiedFileSet;
-import com.google.devtools.build.lib.vfs.OutputService;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.util.Map;
-import java.util.UUID;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Integration tests for Skymeld with a dummy output service.  */
+@RunWith(JUnit4::class)
+class SkymeldOutputServiceBuildIntegrationTest : BuildIntegrationTestCase() {
+    @get:Throws(java.lang.Exception::class)
+    val runtimeBuilder: BlazeRuntime.Builder
+        get() = super.getRuntimeBuilder()
+            .addBlazeModule(
+                object : BlazeModule() {
+                    val outputService: OutputService?
+                        get() =// An output service that fails when #startBuild or #finalizeBuild is called.
+                            object : OutputService() {
+                                public override fun getFileSystemName(outputBaseFileSystemName: String?): String {
+                                    return "dummyTestFileSystem"
+                                }
 
-/** Integration tests for Skymeld with a dummy output service. */
-@RunWith(JUnit4.class)
-public class SkymeldOutputServiceBuildIntegrationTest extends BuildIntegrationTestCase {
+                                public override fun startBuild(
+                                    buildId: UUID?,
+                                    workspaceName: String?,
+                                    eventHandler: com.google.devtools.build.lib.events.EventHandler?,
+                                    finalizeActions: Boolean
+                                ): ModifiedFileSet? {
+                                    throw java.lang.IllegalStateException()
+                                }
 
-  @Override
-  protected BlazeRuntime.Builder getRuntimeBuilder() throws Exception {
-    return super.getRuntimeBuilder()
-        .addBlazeModule(
-            new BlazeModule() {
-              @Override
-              public OutputService getOutputService() {
-                // An output service that fails when #startBuild or #finalizeBuild is called.
-                return new OutputService() {
-                  @Override
-                  public String getFileSystemName(String outputBaseFileSystemName) {
-                    return "dummyTestFileSystem";
-                  }
+                                public override fun finalizeBuild(buildSuccessful: Boolean) {
+                                    throw java.lang.IllegalStateException()
+                                }
 
-                  @Override
-                  public ModifiedFileSet startBuild(
-                      UUID buildId,
-                      String workspaceName,
-                      EventHandler eventHandler,
-                      boolean finalizeActions) {
-                    throw new IllegalStateException();
-                  }
+                                public override fun finalizeAction(
+                                    action: Action?, outputMetadataStore: OutputMetadataStore?
+                                ) {
+                                }
 
-                  @Override
-                  public void finalizeBuild(boolean buildSuccessful) {
-                    throw new IllegalStateException();
-                  }
+                                val batchStatter: BatchStat?
+                                    get() = null
 
-                  @Override
-                  public void finalizeAction(
-                      Action action, OutputMetadataStore outputMetadataStore) {}
+                                public override fun canCreateSymlinkTree(): Boolean {
+                                    return false
+                                }
 
-                  @Override
-                  public BatchStat getBatchStatter() {
-                    return null;
-                  }
+                                public override fun createSymlinkTree(
+                                    symlinks: MutableMap<PathFragment?, PathFragment?>?,
+                                    symlinkTreeRoot: PathFragment?
+                                ) {
+                                }
 
-                  @Override
-                  public boolean canCreateSymlinkTree() {
-                    return false;
-                  }
+                                public override fun clean() {}
+                            }
+                })
 
-                  @Override
-                  public void createSymlinkTree(
-                      Map<PathFragment, PathFragment> symlinks, PathFragment symlinkTreeRoot) {}
+    @Before
+    fun setUp() {
+        addOptions("--experimental_merged_skyframe_analysis_execution")
+    }
 
-                  @Override
-                  public void clean() {}
-                };
-              }
-            });
-  }
-
-  @Before
-  public void setUp() {
-    addOptions("--experimental_merged_skyframe_analysis_execution");
-  }
-
-  // Regression test for b/287277301.
-  @Test
-  public void noAnalyze_outputServiceStartBuildFinalizeBuildNotCalled() throws Exception {
-    write(
-        "foo/BUILD",
-        """
+    // Regression test for b/287277301.
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun noAnalyze_outputServiceStartBuildFinalizeBuildNotCalled() {
+        write(
+            "foo/BUILD",
+            """
         genrule(
             name = "foo",
             srcs = ["foo.in"],
             outs = ["foo.out"],
-            cmd = "cp $< $@",
+            cmd = "cp ${'$'}< ${'$'}@",
         )
-        """);
-    write("foo/foo.in");
-    addOptions("--noanalyze");
+        
+        """.trimIndent()
+        )
+        write("foo/foo.in")
+        addOptions("--noanalyze")
 
-    BuildResult result = buildTarget("//foo:foo");
+        val result: BuildResult = buildTarget("//foo:foo")
 
-    assertThat(result.getSuccess()).isTrue();
-  }
+        assertThat(result.getSuccess()).isTrue()
+    }
 }

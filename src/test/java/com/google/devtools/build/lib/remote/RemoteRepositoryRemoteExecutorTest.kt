@@ -11,170 +11,174 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote;
+package com.google.devtools.build.lib.remote
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import build.bazel.remote.execution.v2.ActionResult
 
-import build.bazel.remote.execution.v2.ActionResult;
-import build.bazel.remote.execution.v2.ExecuteResponse;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.ImmutableSortedMap;
-import com.google.devtools.build.lib.remote.CombinedCache.CachedActionResult;
-import com.google.devtools.build.lib.remote.common.RemoteExecutionClient;
-import com.google.devtools.build.lib.remote.util.DigestUtil;
-import com.google.devtools.build.lib.runtime.RepositoryRemoteExecutor.ExecutionResult;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import com.google.protobuf.ByteString;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.time.Duration;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
+/** Tests for [com.google.devtools.build.lib.remote.RemoteRepositoryRemoteExecutor].  */
+@RunWith(JUnit4::class)
+class RemoteRepositoryRemoteExecutorTest {
+    @org.mockito.Mock
+    var remoteCache: RemoteExecutionCache? = null
 
-/** Tests for {@link com.google.devtools.build.lib.remote.RemoteRepositoryRemoteExecutor}. */
-@RunWith(JUnit4.class)
-public class RemoteRepositoryRemoteExecutorTest {
-  public static final DigestUtil DIGEST_UTIL =
-      new DigestUtil(SyscallCache.NO_CACHE, DigestHashFunction.SHA256);
+    @org.mockito.Mock
+    var remoteExecutor: RemoteExecutionClient? = null
 
-  @Mock public RemoteExecutionCache remoteCache;
+    private var repoExecutor: RemoteRepositoryRemoteExecutor? = null
 
-  @Mock public RemoteExecutionClient remoteExecutor;
+    @Before
+    fun setup() {
+        MockitoAnnotations.initMocks(this)
+        repoExecutor =
+            RemoteRepositoryRemoteExecutor(
+                remoteCache,
+                remoteExecutor,
+                DIGEST_UTIL,
+                "none",
+                "none",
+                TestConstants.WORKSPACE_NAME,  /* remoteInstanceName= */
+                "foo",  /* acceptCached= */
+                true
+            )
+    }
 
-  private RemoteRepositoryRemoteExecutor repoExecutor;
+    @org.junit.Test
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    fun testZeroExitCodeFromCache() {
+        // Test that an ActionResult with exit code zero is accepted as cached.
 
-  @Before
-  public void setup() {
-    MockitoAnnotations.initMocks(this);
-    repoExecutor =
-        new RemoteRepositoryRemoteExecutor(
-            remoteCache,
-            remoteExecutor,
-            DIGEST_UTIL,
-            "none",
-            "none",
-            TestConstants.WORKSPACE_NAME,
-            /* remoteInstanceName= */ "foo",
-            /* acceptCached= */ true);
-  }
+        val cachedResult: ActionResult? = ActionResult.newBuilder().setExitCode(0).build()
+        Mockito.`when`<T?>(
+            remoteCache.downloadActionResult(
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>(),  /* inlineOutErr= */
+                ArgumentMatchers.eq(true),  /* inlineOutputFiles= */
+                < T > eq < T ? > (com.google.common.collect.ImmutableSet.of<Any?>())
+        ))
+        .thenReturn(CachedActionResult.remote(cachedResult))
 
-  @Test
-  public void testZeroExitCodeFromCache() throws IOException, InterruptedException {
-    // Test that an ActionResult with exit code zero is accepted as cached.
+        val executionResult: ExecutionResult =
+            repoExecutor.execute(
+                com.google.common.collect.ImmutableList.of<E?>("/bin/bash", "-c", "exit 0"),  /* inputFiles= */
+                com.google.common.collect.ImmutableSortedMap.of<K?, V?>(),  /* executionProperties= */
+                com.google.common.collect.ImmutableMap.of<K?, V?>(),  /* environment= */
+                com.google.common.collect.ImmutableMap.of<K?, V?>(),  /* workingDirectory= */
+                null,  /* timeout= */
+                java.time.Duration.ZERO
+            )
 
-    ActionResult cachedResult = ActionResult.newBuilder().setExitCode(0).build();
-    when(remoteCache.downloadActionResult(
-            any(),
-            any(),
-            /* inlineOutErr= */ eq(true),
-            /* inlineOutputFiles= */ eq(ImmutableSet.of())))
-        .thenReturn(CachedActionResult.remote(cachedResult));
+        Mockito.verify<Any?>(remoteCache)
+            .downloadActionResult(
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.anyBoolean(),  /* inlineOutputFiles= */< T > eq < T ? > (com.google.common.collect.ImmutableSet.of<E?>()))
+        // Don't fallback to execution
+        Mockito.verify<Any?>(remoteExecutor, Mockito.never())
+            .executeRemotely(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>())
 
-    ExecutionResult executionResult =
-        repoExecutor.execute(
-            ImmutableList.of("/bin/bash", "-c", "exit 0"),
-            /* inputFiles= */ ImmutableSortedMap.of(),
-            /* executionProperties= */ ImmutableMap.of(),
-            /* environment= */ ImmutableMap.of(),
-            /* workingDirectory= */ null,
-            /* timeout= */ Duration.ZERO);
+        assertThat(executionResult.exitCode()).isEqualTo(0)
+    }
 
-    verify(remoteCache)
-        .downloadActionResult(
-            any(), any(), anyBoolean(), /* inlineOutputFiles= */ eq(ImmutableSet.of()));
-    // Don't fallback to execution
-    verify(remoteExecutor, never()).executeRemotely(any(), any(), any());
+    @org.junit.Test
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    fun testNoneZeroExitCodeFromCache() {
+        // Test that an ActionResult with a none-zero exit code is not accepted as cached.
 
-    assertThat(executionResult.exitCode()).isEqualTo(0);
-  }
+        val cachedResult: ActionResult? = ActionResult.newBuilder().setExitCode(1).build()
+        Mockito.`when`<T?>(
+            remoteCache.downloadActionResult(
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>(),  /* inlineOutErr= */
+                ArgumentMatchers.eq(true),  /* inlineOutputFiles= */
+                < T > eq < T ? > (com.google.common.collect.ImmutableSet.of<Any?>())
+        ))
+        .thenReturn(CachedActionResult.remote(cachedResult))
 
-  @Test
-  public void testNoneZeroExitCodeFromCache() throws IOException, InterruptedException {
-    // Test that an ActionResult with a none-zero exit code is not accepted as cached.
+        val response: ExecuteResponse? = ExecuteResponse.newBuilder().setResult(cachedResult).build()
+        Mockito.`when`<T?>(
+            remoteExecutor.executeRemotely(
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>()
+            )
+        ).thenReturn(response)
 
-    ActionResult cachedResult = ActionResult.newBuilder().setExitCode(1).build();
-    when(remoteCache.downloadActionResult(
-            any(),
-            any(),
-            /* inlineOutErr= */ eq(true),
-            /* inlineOutputFiles= */ eq(ImmutableSet.of())))
-        .thenReturn(CachedActionResult.remote(cachedResult));
+        val executionResult: ExecutionResult =
+            repoExecutor.execute(
+                com.google.common.collect.ImmutableList.of<E?>("/bin/bash", "-c", "exit 1"),  /* inputFiles= */
+                com.google.common.collect.ImmutableSortedMap.of<K?, V?>(),  /* executionProperties= */
+                com.google.common.collect.ImmutableMap.of<K?, V?>(),  /* environment= */
+                com.google.common.collect.ImmutableMap.of<K?, V?>(),  /* workingDirectory= */
+                null,  /* timeout= */
+                java.time.Duration.ZERO
+            )
 
-    ExecuteResponse response = ExecuteResponse.newBuilder().setResult(cachedResult).build();
-    when(remoteExecutor.executeRemotely(any(), any(), any())).thenReturn(response);
+        Mockito.verify<Any?>(remoteCache)
+            .downloadActionResult(
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.anyBoolean(),  /* inlineOutputFiles= */< T > eq < T ? > (com.google.common.collect.ImmutableSet.of<E?>()))
+        // Fallback to execution
+        Mockito.verify<Any?>(remoteExecutor)
+            .executeRemotely(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>())
 
-    ExecutionResult executionResult =
-        repoExecutor.execute(
-            ImmutableList.of("/bin/bash", "-c", "exit 1"),
-            /* inputFiles= */ ImmutableSortedMap.of(),
-            /* executionProperties= */ ImmutableMap.of(),
-            /* environment= */ ImmutableMap.of(),
-            /* workingDirectory= */ null,
-            /* timeout= */ Duration.ZERO);
+        assertThat(executionResult.exitCode()).isEqualTo(1)
+    }
 
-    verify(remoteCache)
-        .downloadActionResult(
-            any(), any(), anyBoolean(), /* inlineOutputFiles= */ eq(ImmutableSet.of()));
-    // Fallback to execution
-    verify(remoteExecutor).executeRemotely(any(), any(), any());
+    @org.junit.Test
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    fun testInlineStdoutStderr() {
+        // Test that inline stdout/stderr responses are returned in execution results.
 
-    assertThat(executionResult.exitCode()).isEqualTo(1);
-  }
+        val stdout: ByteArray = "hello".getBytes(java.nio.charset.StandardCharsets.UTF_8)
+        val stderr: ByteArray = "world".getBytes(java.nio.charset.StandardCharsets.UTF_8)
+        val cachedResult: ActionResult? =
+            ActionResult.newBuilder()
+                .setExitCode(0)
+                .setStdoutRaw(ByteString.copyFrom(stdout))
+                .setStderrRaw(ByteString.copyFrom(stderr))
+                .build()
+        Mockito.`when`<T?>(
+            remoteCache.downloadActionResult(
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>(),  /* inlineOutErr= */
+                ArgumentMatchers.eq(true),  /* inlineOutputFiles= */
+                < T > eq < T ? > (com.google.common.collect.ImmutableSet.of<Any?>())
+        ))
+        .thenReturn(CachedActionResult.remote(cachedResult))
 
-  @Test
-  public void testInlineStdoutStderr() throws IOException, InterruptedException {
-    // Test that inline stdout/stderr responses are returned in execution results.
+        val response: ExecuteResponse? = ExecuteResponse.newBuilder().setResult(cachedResult).build()
+        Mockito.`when`<T?>(
+            remoteExecutor.executeRemotely(
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>()
+            )
+        ).thenReturn(response)
 
-    byte[] stdout = "hello".getBytes(StandardCharsets.UTF_8);
-    byte[] stderr = "world".getBytes(StandardCharsets.UTF_8);
-    ActionResult cachedResult =
-        ActionResult.newBuilder()
-            .setExitCode(0)
-            .setStdoutRaw(ByteString.copyFrom(stdout))
-            .setStderrRaw(ByteString.copyFrom(stderr))
-            .build();
-    when(remoteCache.downloadActionResult(
-            any(),
-            any(),
-            /* inlineOutErr= */ eq(true),
-            /* inlineOutputFiles= */ eq(ImmutableSet.of())))
-        .thenReturn(CachedActionResult.remote(cachedResult));
+        val executionResult: ExecutionResult =
+            repoExecutor.execute(
+                com.google.common.collect.ImmutableList.of<E?>("/bin/bash", "-c", "echo hello"),  /* inputFiles= */
+                com.google.common.collect.ImmutableSortedMap.of<K?, V?>(),  /* executionProperties= */
+                com.google.common.collect.ImmutableMap.of<K?, V?>(),  /* environment= */
+                com.google.common.collect.ImmutableMap.of<K?, V?>(),  /* workingDirectory= */
+                null,  /* timeout= */
+                java.time.Duration.ZERO
+            )
 
-    ExecuteResponse response = ExecuteResponse.newBuilder().setResult(cachedResult).build();
-    when(remoteExecutor.executeRemotely(any(), any(), any())).thenReturn(response);
+        Mockito.verify<Any?>(remoteCache)
+            .downloadActionResult(
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>(),  /* inlineOutErr= */
+                ArgumentMatchers.eq(true),  /* inlineOutputFiles= */
+                < T > eq < T ? > (com.google.common.collect.ImmutableSet.of<E?>()))
 
-    ExecutionResult executionResult =
-        repoExecutor.execute(
-            ImmutableList.of("/bin/bash", "-c", "echo hello"),
-            /* inputFiles= */ ImmutableSortedMap.of(),
-            /* executionProperties= */ ImmutableMap.of(),
-            /* environment= */ ImmutableMap.of(),
-            /* workingDirectory= */ null,
-            /* timeout= */ Duration.ZERO);
+        assertThat(executionResult.exitCode()).isEqualTo(0)
+        assertThat(executionResult.stdout()).isEqualTo(stdout)
+        assertThat(executionResult.stderr()).isEqualTo(stderr)
+    }
 
-    verify(remoteCache)
-        .downloadActionResult(
-            any(),
-            any(),
-            /* inlineOutErr= */ eq(true),
-            /* inlineOutputFiles= */ eq(ImmutableSet.of()));
-
-    assertThat(executionResult.exitCode()).isEqualTo(0);
-    assertThat(executionResult.stdout()).isEqualTo(stdout);
-    assertThat(executionResult.stderr()).isEqualTo(stderr);
-  }
+    companion object {
+        val DIGEST_UTIL: DigestUtil = DigestUtil(SyscallCache.NO_CACHE, DigestHashFunction.SHA256)
+    }
 }

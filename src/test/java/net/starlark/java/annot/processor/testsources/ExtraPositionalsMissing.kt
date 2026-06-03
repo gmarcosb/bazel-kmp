@@ -11,26 +11,22 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.annot.processor.testsources
 
-package net.starlark.java.annot.processor.testsources;
-
-import net.starlark.java.annot.Param;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.StarlarkThread;
-import net.starlark.java.eval.StarlarkValue;
+import net.starlark.java.eval.StarlarkThread
 
 /**
  * Test case for a StarlarkMethod method which specifies extraPositionals, but omits that argument.
  */
-public class ExtraPositionalsMissing implements StarlarkValue {
-
-  @StarlarkMethod(
-      name = "extra_positionals_missing",
-      documented = false,
-      parameters = {@Param(name = "one")},
-      extraPositionals = @Param(name = "args"),
-      useStarlarkThread = true)
-  public String threeArgMethod(String one, StarlarkThread thread) {
-    return "bar";
-  }
+class ExtraPositionalsMissing : StarlarkValue {
+    @StarlarkMethod(
+        name = "extra_positionals_missing",
+        documented = false,
+        parameters = [net.starlark.java.annot.Param(name = "one")],
+        extraPositionals = net.starlark.java.annot.Param(name = "args"),
+        useStarlarkThread = true
+    )
+    fun threeArgMethod(one: String?, thread: StarlarkThread?): String {
+        return "bar"
+    }
 }

@@ -11,153 +11,156 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.vfs;
+package com.google.devtools.build.lib.vfs
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import com.google.common.testing.EqualsTester
+import com.google.devtools.build.lib.analysis.util.ConfigurationTestCase.create
+import com.google.devtools.build.lib.packages.util.MockToolsConfig.create
+import com.google.devtools.build.lib.vfs.PathAbstractTest
+import com.google.devtools.common.options.testing.ConverterTester.addEqualityGroup
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.nio.file.Path
 
-import com.google.common.testing.EqualsTester;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests the unix implementation of [Path].  */
+@RunWith(JUnit4::class)
+class UnixPathTest : PathAbstractTest() {
+    @org.junit.Test
+    fun testEqualsAndHashCodeUnix() {
+        EqualsTester()
+            .addEqualityGroup(create("/something/else"))
+            .addEqualityGroup(create("/"), create("//////"))
+            .testEquals()
+    }
 
-/** Tests the unix implementation of {@link Path}. */
-@RunWith(JUnit4.class)
-public class UnixPathTest extends PathAbstractTest {
+    @org.junit.Test
+    fun testRelativeToUnix() {
+        assertThat(create("/").relativeTo(create("/")).getPathString()).isEmpty()
+        assertThat(create("/foo").relativeTo(create("/foo")).getPathString()).isEmpty()
+        assertThat(create("/foo/bar/baz").relativeTo(create("/foo")).getPathString())
+            .isEqualTo("bar/baz")
+        assertThat(create("/foo/bar/baz").relativeTo(create("/foo/bar")).getPathString())
+            .isEqualTo("baz")
+        assertThat(create("/foo").relativeTo(create("/")).getPathString()).isEqualTo("foo")
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable { create("/foo/bar/baz").relativeTo(create("foo")) })
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable { create("/foo").relativeTo(create("/foo/bar/baz")) })
+    }
 
-  @Test
-  public void testEqualsAndHashCodeUnix() {
-    new EqualsTester()
-        .addEqualityGroup(create("/something/else"))
-        .addEqualityGroup(create("/"), create("//////"))
-        .testEquals();
-  }
+    @org.junit.Test
+    fun testGetRelativeUnix() {
+        assertThat(create("/a").getRelative("b").getPathString()).isEqualTo("/a/b")
+        assertThat(create("/a/b").getRelative("c/d").getPathString()).isEqualTo("/a/b/c/d")
+        assertThat(create("/c/d").getRelative("/a/b").getPathString()).isEqualTo("/a/b")
+        assertThat(create("/a").getRelative("").getPathString()).isEqualTo("/a")
+        assertThat(create("/").getRelative("").getPathString()).isEqualTo("/")
+        assertThat(create("/a/b").getRelative("../foo").getPathString()).isEqualTo("/a/foo")
 
-  @Test
-  public void testRelativeToUnix() {
-    assertThat(create("/").relativeTo(create("/")).getPathString()).isEmpty();
-    assertThat(create("/foo").relativeTo(create("/foo")).getPathString()).isEmpty();
-    assertThat(create("/foo/bar/baz").relativeTo(create("/foo")).getPathString())
-        .isEqualTo("bar/baz");
-    assertThat(create("/foo/bar/baz").relativeTo(create("/foo/bar")).getPathString())
-        .isEqualTo("baz");
-    assertThat(create("/foo").relativeTo(create("/")).getPathString()).isEqualTo("foo");
-    assertThrows(
-        IllegalArgumentException.class, () -> create("/foo/bar/baz").relativeTo(create("foo")));
-    assertThrows(
-        IllegalArgumentException.class, () -> create("/foo").relativeTo(create("/foo/bar/baz")));
-  }
+        // Make sure any fast path of Path#getRelative(PathFragment) works
+        assertThat(create("/a/b").getRelative(PathFragment.create("../foo")).getPathString())
+            .isEqualTo("/a/foo")
 
-  @Test
-  public void testGetRelativeUnix() {
-    assertThat(create("/a").getRelative("b").getPathString()).isEqualTo("/a/b");
-    assertThat(create("/a/b").getRelative("c/d").getPathString()).isEqualTo("/a/b/c/d");
-    assertThat(create("/c/d").getRelative("/a/b").getPathString()).isEqualTo("/a/b");
-    assertThat(create("/a").getRelative("").getPathString()).isEqualTo("/a");
-    assertThat(create("/").getRelative("").getPathString()).isEqualTo("/");
-    assertThat(create("/a/b").getRelative("../foo").getPathString()).isEqualTo("/a/foo");
+        // Make sure any fast path of Path#getRelative(PathFragment) works
+        assertThat(create("/c/d").getRelative(PathFragment.create("/a/b")).getPathString())
+            .isEqualTo("/a/b")
 
-    // Make sure any fast path of Path#getRelative(PathFragment) works
-    assertThat(create("/a/b").getRelative(PathFragment.create("../foo")).getPathString())
-        .isEqualTo("/a/foo");
+        // Test normalization
+        assertThat(create("/a").getRelative(".").getPathString()).isEqualTo("/a")
+    }
 
-    // Make sure any fast path of Path#getRelative(PathFragment) works
-    assertThat(create("/c/d").getRelative(PathFragment.create("/a/b")).getPathString())
-        .isEqualTo("/a/b");
+    @org.junit.Test
+    fun testEmptyPathToEmptyPathUnix() {
+        // compare string forms
+        assertThat(create("/").getPathString()).isEqualTo("/")
+        // compare fragment forms
+        assertThat(create("/")).isEqualTo(create("/"))
+    }
 
-    // Test normalization
-    assertThat(create("/a").getRelative(".").getPathString()).isEqualTo("/a");
-  }
+    @org.junit.Test
+    fun testRedundantSlashes() {
+        // compare string forms
+        assertThat(create("///").getPathString()).isEqualTo("/")
+        // compare fragment forms
+        assertThat(create("///")).isEqualTo(create("/"))
+        // compare string forms
+        assertThat(create("/foo///bar").getPathString()).isEqualTo("/foo/bar")
+        // compare fragment forms
+        assertThat(create("/foo///bar")).isEqualTo(create("/foo/bar"))
+        // compare string forms
+        assertThat(create("////foo//bar").getPathString()).isEqualTo("/foo/bar")
+        // compare fragment forms
+        assertThat(create("////foo//bar")).isEqualTo(create("/foo/bar"))
+    }
 
-  @Test
-  public void testEmptyPathToEmptyPathUnix() {
-    // compare string forms
-    assertThat(create("/").getPathString()).isEqualTo("/");
-    // compare fragment forms
-    assertThat(create("/")).isEqualTo(create("/"));
-  }
+    @org.junit.Test
+    fun testSimpleNameToSimpleNameUnix() {
+        // compare string forms
+        assertThat(create("/foo").getPathString()).isEqualTo("/foo")
+        // compare fragment forms
+        assertThat(create("/foo")).isEqualTo(create("/foo"))
+    }
 
-  @Test
-  public void testRedundantSlashes() {
-    // compare string forms
-    assertThat(create("///").getPathString()).isEqualTo("/");
-    // compare fragment forms
-    assertThat(create("///")).isEqualTo(create("/"));
-    // compare string forms
-    assertThat(create("/foo///bar").getPathString()).isEqualTo("/foo/bar");
-    // compare fragment forms
-    assertThat(create("/foo///bar")).isEqualTo(create("/foo/bar"));
-    // compare string forms
-    assertThat(create("////foo//bar").getPathString()).isEqualTo("/foo/bar");
-    // compare fragment forms
-    assertThat(create("////foo//bar")).isEqualTo(create("/foo/bar"));
-  }
+    @org.junit.Test
+    fun testSimplePathToSimplePathUnix() {
+        // compare string forms
+        assertThat(create("/foo/bar").getPathString()).isEqualTo("/foo/bar")
+        // compare fragment forms
+        assertThat(create("/foo/bar")).isEqualTo(create("/foo/bar"))
+    }
 
-  @Test
-  public void testSimpleNameToSimpleNameUnix() {
-    // compare string forms
-    assertThat(create("/foo").getPathString()).isEqualTo("/foo");
-    // compare fragment forms
-    assertThat(create("/foo")).isEqualTo(create("/foo"));
-  }
+    @org.junit.Test
+    fun testGetParentDirectoryUnix() {
+        assertThat(create("/foo/bar/wiz").getParentDirectory()).isEqualTo(create("/foo/bar"))
+        assertThat(create("/foo/bar").getParentDirectory()).isEqualTo(create("/foo"))
+        assertThat(create("/foo").getParentDirectory()).isEqualTo(create("/"))
+        assertThat(create("/").getParentDirectory()).isNull()
+    }
 
-  @Test
-  public void testSimplePathToSimplePathUnix() {
-    // compare string forms
-    assertThat(create("/foo/bar").getPathString()).isEqualTo("/foo/bar");
-    // compare fragment forms
-    assertThat(create("/foo/bar")).isEqualTo(create("/foo/bar"));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBasenameUnix() {
+        assertThat(create("/foo/bar").getBaseName()).isEqualTo("bar")
+        assertThat(create("/foo/").getBaseName()).isEqualTo("foo")
+        assertThat(create("/foo").getBaseName()).isEqualTo("foo")
+        assertThat(create("/").getBaseName()).isEmpty()
+    }
 
-  @Test
-  public void testGetParentDirectoryUnix() {
-    assertThat(create("/foo/bar/wiz").getParentDirectory()).isEqualTo(create("/foo/bar"));
-    assertThat(create("/foo/bar").getParentDirectory()).isEqualTo(create("/foo"));
-    assertThat(create("/foo").getParentDirectory()).isEqualTo(create("/"));
-    assertThat(create("/").getParentDirectory()).isNull();
-  }
+    @org.junit.Test
+    fun testStartsWithUnix() {
+        val foobar: Path = create("/foo/bar")
 
-  @Test
-  public void testBasenameUnix() throws Exception {
-    assertThat(create("/foo/bar").getBaseName()).isEqualTo("bar");
-    assertThat(create("/foo/").getBaseName()).isEqualTo("foo");
-    assertThat(create("/foo").getBaseName()).isEqualTo("foo");
-    assertThat(create("/").getBaseName()).isEmpty();
-  }
+        // (path, prefix) => true
+        assertThat(foobar.startsWith(foobar)).isTrue()
+        assertThat(foobar.startsWith(create("/"))).isTrue()
+        assertThat(foobar.startsWith(create("/foo"))).isTrue()
+        assertThat(foobar.startsWith(create("/foo/"))).isTrue()
+        assertThat(foobar.startsWith(create("/foo/bar/"))).isTrue() // Includes trailing slash.
 
-  @Test
-  public void testStartsWithUnix() {
-    Path foobar = create("/foo/bar");
+        // (prefix, path) => false
+        assertThat(create("/foo").startsWith(foobar)).isFalse()
+        assertThat(create("/").startsWith(foobar)).isFalse()
 
-    // (path, prefix) => true
-    assertThat(foobar.startsWith(foobar)).isTrue();
-    assertThat(foobar.startsWith(create("/"))).isTrue();
-    assertThat(foobar.startsWith(create("/foo"))).isTrue();
-    assertThat(foobar.startsWith(create("/foo/"))).isTrue();
-    assertThat(foobar.startsWith(create("/foo/bar/"))).isTrue(); // Includes trailing slash.
+        // (path, sibling) => false
+        assertThat(create("/foo/wiz").startsWith(foobar)).isFalse()
+        assertThat(foobar.startsWith(create("/foo/wiz"))).isFalse()
+    }
 
-    // (prefix, path) => false
-    assertThat(create("/foo").startsWith(foobar)).isFalse();
-    assertThat(create("/").startsWith(foobar)).isFalse();
+    @org.junit.Test
+    fun testNormalizeUnix() {
+        assertThat(create("/a/b")).isEqualTo(create("/a/b"))
+        assertThat(create("/a/b/")).isEqualTo(create("/a/b"))
+        assertThat(create("/a/./b")).isEqualTo(create("/a/b"))
+        assertThat(create("/a/../b")).isEqualTo(create("/b"))
+        assertThat(create("/..")).isEqualTo(create("/.."))
+    }
 
-    // (path, sibling) => false
-    assertThat(create("/foo/wiz").startsWith(foobar)).isFalse();
-    assertThat(foobar.startsWith(create("/foo/wiz"))).isFalse();
-  }
-
-  @Test
-  public void testNormalizeUnix() {
-    assertThat(create("/a/b")).isEqualTo(create("/a/b"));
-    assertThat(create("/a/b/")).isEqualTo(create("/a/b"));
-    assertThat(create("/a/./b")).isEqualTo(create("/a/b"));
-    assertThat(create("/a/../b")).isEqualTo(create("/b"));
-    assertThat(create("/..")).isEqualTo(create("/.."));
-  }
-
-  @Test
-  public void testParentOfRootIsRootUnix() {
-    assertThat(create("/..")).isEqualTo(create("/"));
-    assertThat(create("/../../../../../..")).isEqualTo(create("/"));
-    assertThat(create("/../../../foo")).isEqualTo(create("/foo"));
-  }
+    @org.junit.Test
+    fun testParentOfRootIsRootUnix() {
+        assertThat(create("/..")).isEqualTo(create("/"))
+        assertThat(create("/../../../../../..")).isEqualTo(create("/"))
+        assertThat(create("/../../../foo")).isEqualTo(create("/foo"))
+    }
 }

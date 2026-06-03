@@ -11,185 +11,201 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.server;
+package com.google.devtools.build.lib.server
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.common.collect.ImmutableList
+import com.google.common.truth.Truth
+import com.google.common.util.concurrent.Uninterruptibles
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.time.Duration
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicBoolean
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.util.concurrent.Uninterruptibles;
-import java.time.Duration;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.atomic.AtomicBoolean;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Test for [IdleTaskManager].  */
+@RunWith(JUnit4::class)
+class IdleTaskManagerTest {
+    @Test
+    @Throws(Exception::class)
+    fun registeredTask_taskSuccessful() {
+        val taskRunning = CountDownLatch(1)
+        val taskDone = AtomicBoolean()
+        val task: IdleTask =
+            makeTask(
+                "task",
+                IdleTaskRunnable {
+                    taskRunning.countDown()
+                    Uninterruptibles.sleepUninterruptibly(Duration.ofMillis(200))
+                    taskDone.set(true)
+                })
+        val manager: IdleTaskManager = IdleTaskManager(ImmutableList.of<E?>(task))
 
-/** Test for {@link IdleTaskManager}. */
-@RunWith(JUnit4.class)
-public class IdleTaskManagerTest {
-  @Test
-  public void registeredTask_taskSuccessful() throws Exception {
-    CountDownLatch taskRunning = new CountDownLatch(1);
-    AtomicBoolean taskDone = new AtomicBoolean();
-    IdleTask task =
-        makeTask(
-            "task",
-            () -> {
-              taskRunning.countDown();
-              Uninterruptibles.sleepUninterruptibly(Duration.ofMillis(200));
-              taskDone.set(true);
-            });
-    IdleTaskManager manager = new IdleTaskManager(ImmutableList.of(task));
+        manager.idle()
+        taskRunning.await() // wait for task to start
+        val stats: ImmutableList<IdleTask.Result?> = manager.busy()
 
-    manager.idle();
-    taskRunning.await(); // wait for task to start
-    ImmutableList<IdleTask.Result> stats = manager.busy();
+        Truth.assertThat(taskDone.get()).isTrue()
 
-    assertThat(taskDone.get()).isTrue();
-
-    assertThat(stats.stream().map(s -> new IdleTask.Result(s.name, s.status, Duration.ZERO)))
-        .containsExactly(new IdleTask.Result("task", IdleTask.Status.SUCCESS, Duration.ZERO));
-  }
-
-  @Test
-  public void registeredTask_taskFailed() throws Exception {
-    CountDownLatch taskRunning = new CountDownLatch(1);
-    AtomicBoolean taskDone = new AtomicBoolean();
-    IdleTask task =
-        makeTask(
-            "task",
-            () -> {
-              taskRunning.countDown();
-              Uninterruptibles.sleepUninterruptibly(Duration.ofMillis(200));
-              try {
-                throw new IdleTaskException(new RuntimeException("failed"));
-              } finally {
-                taskDone.set(true);
-              }
-            });
-    IdleTaskManager manager = new IdleTaskManager(ImmutableList.of(task));
-
-    manager.idle();
-    taskRunning.await(); // wait for task to start
-    ImmutableList<IdleTask.Result> stats = manager.busy();
-
-    assertThat(taskDone.get()).isTrue();
-
-    assertThat(stats.stream().map(s -> new IdleTask.Result(s.name, s.status, Duration.ZERO)))
-        .containsExactly(new IdleTask.Result("task", IdleTask.Status.FAILURE, Duration.ZERO));
-  }
-
-  @Test
-  public void registeredTask_taskInterrupted() throws Exception {
-    CountDownLatch taskRunning = new CountDownLatch(1);
-    AtomicBoolean taskInterrupted = new AtomicBoolean();
-    IdleTask task =
-        makeTask(
-            "task",
-            () -> {
-              taskRunning.countDown();
-              try {
-                Thread.sleep(Duration.ofDays(1));
-              } catch (InterruptedException e) {
-                taskInterrupted.set(true);
-                throw e;
-              }
-            });
-    IdleTaskManager manager = new IdleTaskManager(ImmutableList.of(task));
-
-    manager.idle();
-    taskRunning.await(); // wait for task to start
-    ImmutableList<IdleTask.Result> stats = manager.busy();
-
-    assertThat(taskInterrupted.get()).isTrue();
-
-    assertThat(stats.stream().map(s -> new IdleTask.Result(s.name, s.status, Duration.ZERO)))
-        .containsExactly(new IdleTask.Result("task", IdleTask.Status.INTERRUPTED, Duration.ZERO));
-  }
-
-  @Test
-  public void registeredTask_taskNotStarted() throws Exception {
-    AtomicBoolean taskStarted = new AtomicBoolean();
-    IdleTask task = makeTask("task", Duration.ofDays(1), () -> taskStarted.set(true));
-    IdleTaskManager manager = new IdleTaskManager(ImmutableList.of(task));
-
-    manager.idle();
-    Thread.sleep(Duration.ofMillis(200)); // make it more likely that a bug will be caught
-    ImmutableList<IdleTask.Result> stats = manager.busy();
-
-    assertThat(taskStarted.get()).isFalse();
-
-    assertThat(stats)
-        .containsExactly(new IdleTask.Result("task", IdleTask.Status.NOT_STARTED, Duration.ZERO));
-  }
-
-  @Test
-  public void registeredTask_multipleTasks() throws Exception {
-    AtomicBoolean taskRunning = new AtomicBoolean(false);
-    AtomicBoolean concurrentTasksDetected = new AtomicBoolean(false);
-    CountDownLatch finishedTasks = new CountDownLatch(3);
-
-    ImmutableList<IdleTask> tasks =
-        ImmutableList.of(
-            makeTask("a", () -> runTask(taskRunning, concurrentTasksDetected, finishedTasks)),
-            makeTask("b", () -> runTask(taskRunning, concurrentTasksDetected, finishedTasks)),
-            makeTask("c", () -> runTask(taskRunning, concurrentTasksDetected, finishedTasks)));
-
-    IdleTaskManager manager = new IdleTaskManager(tasks);
-
-    manager.idle();
-    finishedTasks.await();
-    ImmutableList<IdleTask.Result> stats = manager.busy();
-
-    assertThat(concurrentTasksDetected.get()).isFalse();
-
-    assertThat(stats.stream().map(s -> new IdleTask.Result(s.name, s.status, Duration.ZERO)))
-        .containsExactly(
-            new IdleTask.Result("a", IdleTask.Status.SUCCESS, Duration.ZERO),
-            new IdleTask.Result("b", IdleTask.Status.SUCCESS, Duration.ZERO),
-            new IdleTask.Result("c", IdleTask.Status.SUCCESS, Duration.ZERO))
-        .inOrder();
-  }
-
-  private static final void runTask(
-      AtomicBoolean taskRunning,
-      AtomicBoolean concurrentTasksDetected,
-      CountDownLatch finishedTasks)
-      throws InterruptedException {
-    if (!taskRunning.compareAndSet(false, true)) {
-      concurrentTasksDetected.set(true);
+        Truth.assertThat(
+            stats.stream()
+                .map<IdleTask.Result?> { s: IdleTask.Result? -> IdleTask.Result(s!!.name, s.status, Duration.ZERO) })
+            .containsExactly(IdleTask.Result("task", IdleTask.Status.SUCCESS, Duration.ZERO))
     }
-    Thread.sleep(Duration.ofMillis(200)); // make it more likely that a bug will be caught
-    finishedTasks.countDown();
-    if (!taskRunning.compareAndSet(true, false)) {
-      concurrentTasksDetected.set(true);
+
+    @Test
+    @Throws(Exception::class)
+    fun registeredTask_taskFailed() {
+        val taskRunning = CountDownLatch(1)
+        val taskDone = AtomicBoolean()
+        val task: IdleTask =
+            makeTask(
+                "task",
+                IdleTaskRunnable {
+                    taskRunning.countDown()
+                    Uninterruptibles.sleepUninterruptibly(Duration.ofMillis(200))
+                    try {
+                        throw IdleTaskException(RuntimeException("failed"))
+                    } finally {
+                        taskDone.set(true)
+                    }
+                })
+        val manager: IdleTaskManager = IdleTaskManager(ImmutableList.of<E?>(task))
+
+        manager.idle()
+        taskRunning.await() // wait for task to start
+        val stats: ImmutableList<IdleTask.Result?> = manager.busy()
+
+        Truth.assertThat(taskDone.get()).isTrue()
+
+        Truth.assertThat(
+            stats.stream()
+                .map<IdleTask.Result?> { s: IdleTask.Result? -> IdleTask.Result(s!!.name, s.status, Duration.ZERO) })
+            .containsExactly(IdleTask.Result("task", IdleTask.Status.FAILURE, Duration.ZERO))
     }
-  }
 
-  private static IdleTask makeTask(String name, IdleTaskRunnable runnable) {
-    return makeTask(name, Duration.ZERO, runnable);
-  }
+    @Test
+    @Throws(Exception::class)
+    fun registeredTask_taskInterrupted() {
+        val taskRunning = CountDownLatch(1)
+        val taskInterrupted = AtomicBoolean()
+        val task: IdleTask =
+            makeTask(
+                "task",
+                IdleTaskRunnable {
+                    taskRunning.countDown()
+                    try {
+                        Thread.sleep(Duration.ofDays(1))
+                    } catch (e: InterruptedException) {
+                        taskInterrupted.set(true)
+                        throw e
+                    }
+                })
+        val manager: IdleTaskManager = IdleTaskManager(ImmutableList.of<E?>(task))
 
-  private static IdleTask makeTask(String name, Duration delay, IdleTaskRunnable runnable) {
-    return new IdleTask() {
-      @Override
-      public String displayName() {
-        return name;
-      }
+        manager.idle()
+        taskRunning.await() // wait for task to start
+        val stats: ImmutableList<IdleTask.Result?> = manager.busy()
 
-      @Override
-      public Duration delay() {
-        return delay;
-      }
+        Truth.assertThat(taskInterrupted.get()).isTrue()
 
-      @Override
-      public void run() throws IdleTaskException, InterruptedException {
-        runnable.run();
-      }
-    };
-  }
+        Truth.assertThat(
+            stats.stream()
+                .map<IdleTask.Result?> { s: IdleTask.Result? -> IdleTask.Result(s!!.name, s.status, Duration.ZERO) })
+            .containsExactly(IdleTask.Result("task", IdleTask.Status.INTERRUPTED, Duration.ZERO))
+    }
 
-  private interface IdleTaskRunnable {
-    void run() throws IdleTaskException, InterruptedException;
-  }
+    @Test
+    @Throws(Exception::class)
+    fun registeredTask_taskNotStarted() {
+        val taskStarted = AtomicBoolean()
+        val task: IdleTask = makeTask("task", Duration.ofDays(1), IdleTaskRunnable { taskStarted.set(true) })
+        val manager: IdleTaskManager = IdleTaskManager(ImmutableList.of<E?>(task))
+
+        manager.idle()
+        Thread.sleep(Duration.ofMillis(200)) // make it more likely that a bug will be caught
+        val stats: ImmutableList<IdleTask.Result?>? = manager.busy()
+
+        Truth.assertThat(taskStarted.get()).isFalse()
+
+        Truth.assertThat(stats)
+            .containsExactly(IdleTask.Result("task", IdleTask.Status.NOT_STARTED, Duration.ZERO))
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun registeredTask_multipleTasks() {
+        val taskRunning = AtomicBoolean(false)
+        val concurrentTasksDetected = AtomicBoolean(false)
+        val finishedTasks = CountDownLatch(3)
+
+        val tasks =
+            ImmutableList.of<IdleTask?>(
+                makeTask("a", IdleTaskRunnable { runTask(taskRunning, concurrentTasksDetected, finishedTasks) }),
+                makeTask("b", IdleTaskRunnable { runTask(taskRunning, concurrentTasksDetected, finishedTasks) }),
+                makeTask("c", IdleTaskRunnable { runTask(taskRunning, concurrentTasksDetected, finishedTasks) })
+            )
+
+        val manager: IdleTaskManager = IdleTaskManager(tasks)
+
+        manager.idle()
+        finishedTasks.await()
+        val stats: ImmutableList<IdleTask.Result?> = manager.busy()
+
+        Truth.assertThat(concurrentTasksDetected.get()).isFalse()
+
+        Truth.assertThat(
+            stats.stream()
+                .map<IdleTask.Result?> { s: IdleTask.Result? -> IdleTask.Result(s!!.name, s.status, Duration.ZERO) })
+            .containsExactly(
+                IdleTask.Result("a", IdleTask.Status.SUCCESS, Duration.ZERO),
+                IdleTask.Result("b", IdleTask.Status.SUCCESS, Duration.ZERO),
+                IdleTask.Result("c", IdleTask.Status.SUCCESS, Duration.ZERO)
+            )
+            .inOrder()
+    }
+
+    private interface IdleTaskRunnable {
+        @Throws(IdleTaskException::class, InterruptedException::class)
+        fun run()
+    }
+
+    companion object {
+        @Throws(InterruptedException::class)
+        private fun runTask(
+            taskRunning: AtomicBoolean,
+            concurrentTasksDetected: AtomicBoolean,
+            finishedTasks: CountDownLatch
+        ) {
+            if (!taskRunning.compareAndSet(false, true)) {
+                concurrentTasksDetected.set(true)
+            }
+            Thread.sleep(Duration.ofMillis(200)) // make it more likely that a bug will be caught
+            finishedTasks.countDown()
+            if (!taskRunning.compareAndSet(true, false)) {
+                concurrentTasksDetected.set(true)
+            }
+        }
+
+        private fun makeTask(name: String, runnable: IdleTaskRunnable): IdleTask {
+            return makeTask(name, Duration.ZERO, runnable)
+        }
+
+        private fun makeTask(name: String, delay: Duration, runnable: IdleTaskRunnable): IdleTask {
+            return object : IdleTask() {
+                override fun displayName(): String {
+                    return name
+                }
+
+                override fun delay(): Duration {
+                    return delay
+                }
+
+                @Throws(IdleTaskException::class, InterruptedException::class)
+                override fun run() {
+                    runnable.run()
+                }
+            }
+        }
+    }
 }

@@ -11,1765 +11,1864 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.truth.Truth.assertWithMessage;
-import static org.hamcrest.CoreMatchers.containsString;
-import static org.hamcrest.CoreMatchers.not;
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import build.bazel.remote.execution.v2.Digest
 
-import build.bazel.remote.execution.v2.Digest;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.actions.Action;
-import com.google.devtools.build.lib.actions.ActionCompletionEvent;
-import com.google.devtools.build.lib.actions.ActionLookupData;
-import com.google.devtools.build.lib.actions.ActionLookupKey;
-import com.google.devtools.build.lib.actions.ActionOwner;
-import com.google.devtools.build.lib.actions.ActionProgressEvent;
-import com.google.devtools.build.lib.actions.ActionStartedEvent;
-import com.google.devtools.build.lib.actions.ActionUploadFinishedEvent;
-import com.google.devtools.build.lib.actions.ActionUploadStartedEvent;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.ArtifactRoot;
-import com.google.devtools.build.lib.actions.BuildConfigurationEvent;
-import com.google.devtools.build.lib.actions.RunningActionEvent;
-import com.google.devtools.build.lib.actions.ScanningActionEvent;
-import com.google.devtools.build.lib.actions.SchedulingActionEvent;
-import com.google.devtools.build.lib.actions.cache.OutputMetadataStore;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.analysis.platform.PlatformInfo;
-import com.google.devtools.build.lib.bazel.repository.downloader.DownloadProgressEvent;
-import com.google.devtools.build.lib.buildeventstream.AnnounceBuildEventTransportsEvent;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos;
-import com.google.devtools.build.lib.buildeventstream.BuildEventTransport;
-import com.google.devtools.build.lib.buildeventstream.BuildEventTransportClosedEvent;
-import com.google.devtools.build.lib.buildtool.BuildResult;
-import com.google.devtools.build.lib.buildtool.ExecutionProgressReceiver;
-import com.google.devtools.build.lib.buildtool.buildevent.BuildCompleteEvent;
-import com.google.devtools.build.lib.buildtool.buildevent.ExecutionProgressReceiverAvailableEvent;
-import com.google.devtools.build.lib.buildtool.buildevent.TestFilteringCompleteEvent;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.LabelSyntaxException;
-import com.google.devtools.build.lib.cmdline.RepositoryMapping;
-import com.google.devtools.build.lib.events.ExtendedEventHandler.FetchProgress;
-import com.google.devtools.build.lib.exec.util.FakeActionInputFileCache;
-import com.google.devtools.build.lib.pkgcache.LoadingPhaseCompleteEvent;
-import com.google.devtools.build.lib.remote.Store;
-import com.google.devtools.build.lib.runtime.SkymeldUiStateTracker.BuildStatus;
-import com.google.devtools.build.lib.runtime.UiStateTracker.StrategyIds;
-import com.google.devtools.build.lib.skyframe.AnalysisProgressReceiver;
-import com.google.devtools.build.lib.skyframe.ConfigurationPhaseStartedEvent;
-import com.google.devtools.build.lib.skyframe.LoadingPhaseStartedEvent;
-import com.google.devtools.build.lib.skyframe.PackageProgressReceiver;
-import com.google.devtools.build.lib.skyframe.TopLevelStatusEvents.TestAnalyzedEvent;
-import com.google.devtools.build.lib.testutil.FoundationTestCase;
-import com.google.devtools.build.lib.testutil.ManualClock;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.lib.util.Pair;
-import com.google.devtools.build.lib.util.io.LoggingTerminalWriter;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.lib.view.test.TestStatus.BlazeTestStatus;
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import java.io.IOException;
-import java.net.URI;
-import java.time.Duration;
-import java.util.HashSet;
-import java.util.Set;
-import java.util.concurrent.TimeUnit;
-import net.starlark.java.syntax.Location;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.mockito.AdditionalMatchers;
+/** Tests [UiStateTracker].  */
+@RunWith(TestParameterInjector::class)
+class UiStateTrackerTest : FoundationTestCase() {
+    @TestParameter
+    var isSkymeld: Boolean = false
 
-/** Tests {@link UiStateTracker}. */
-@RunWith(TestParameterInjector.class)
-public class UiStateTrackerTest extends FoundationTestCase {
-
-  @TestParameter boolean isSkymeld;
-
-  private UiStateTracker getUiStateTracker(ManualClock clock) {
-    if (isSkymeld) {
-      return new SkymeldUiStateTracker(clock);
-    } else {
-      return new UiStateTracker(clock);
-    }
-  }
-
-  private UiStateTracker getUiStateTracker(ManualClock clock, int targetWidth) {
-    if (isSkymeld) {
-      return new SkymeldUiStateTracker(clock, targetWidth);
-    } else {
-      return new UiStateTracker(clock, targetWidth);
-    }
-  }
-
-  @Test
-  public void testStrategyIds_getId_idsAreBitmasks() {
-    StrategyIds strategyIds = new StrategyIds();
-    Integer id1 = strategyIds.getId("foo");
-    Integer id2 = strategyIds.getId("bar");
-    Integer id3 = strategyIds.getId("baz");
-
-    assertThat(id1).isGreaterThan(0);
-    assertThat(id2).isGreaterThan(0);
-    assertThat(id3).isGreaterThan(0);
-
-    assertThat(id1 & id2).isEqualTo(0);
-    assertThat(id1 & id3).isEqualTo(0);
-    assertThat(id2 & id3).isEqualTo(0);
-  }
-
-  @Test
-  public void testStrategyIds_getId_idsAreReusedIfAlreadyExist() {
-    StrategyIds strategyIds = new StrategyIds();
-    Integer id1 = strategyIds.getId("foo");
-    Integer id2 = strategyIds.getId("bar");
-    Integer id3 = strategyIds.getId("foo");
-
-    assertThat(id1).isNotEqualTo(id2);
-    assertThat(id1).isEqualTo(id3);
-  }
-
-  @Test
-  public void testStrategyIds_getId_exhaustIds() {
-    StrategyIds strategyIds = new StrategyIds();
-    Set<Integer> ids = new HashSet<>();
-    StringBuilder name = new StringBuilder();
-    for (; ; ) {
-      name.append('a');
-      Integer id = strategyIds.getId(name.toString());
-      if (id.equals(strategyIds.fallbackId)) {
-        break;
-      }
-      ids.add(id);
-    }
-    assertThat(ids).hasSize(Integer.SIZE - 1); // Minus 1 for FALLBACK_NAME.
-
-    assertThat(strategyIds.getId("some")).isEqualTo(strategyIds.fallbackId);
-    assertThat(strategyIds.getId("more")).isEqualTo(strategyIds.fallbackId);
-  }
-
-  @Test
-  public void testStrategyIds_formatNames_fallbackExistsByDefault() {
-    StrategyIds strategyIds = new StrategyIds();
-    assertThat(strategyIds.formatNames(strategyIds.fallbackId))
-        .isEqualTo(StrategyIds.FALLBACK_NAME);
-  }
-
-  @Test
-  public void testStrategyIds_formatNames_oneHasNoComma() {
-    StrategyIds strategyIds = new StrategyIds();
-    Integer id1 = strategyIds.getId("abc");
-    assertThat(strategyIds.formatNames(id1)).isEqualTo("abc");
-  }
-
-  @Test
-  public void testStrategyIds_formatNames() {
-    StrategyIds strategyIds = new StrategyIds();
-    Integer id1 = strategyIds.getId("abc");
-    Integer id2 = strategyIds.getId("xyz");
-    Integer id3 = strategyIds.getId("def");
-
-    // Names are not sorted alphabetically but their order is stable based on prior getId calls.
-    assertThat(strategyIds.formatNames(id1 | id2)).isEqualTo("abc, xyz");
-    assertThat(strategyIds.formatNames(id1 | id3)).isEqualTo("abc, def");
-    assertThat(strategyIds.formatNames(id2 | id3)).isEqualTo("xyz, def");
-    assertThat(strategyIds.formatNames(id1 | id2 | id3)).isEqualTo("abc, xyz, def");
-  }
-
-  private Action mockAction(String progressMessage, String primaryOutput) {
-    Path path = outputBase.getRelative(PathFragment.create(primaryOutput));
-    Artifact artifact =
-        ActionsTestUtil.createArtifact(ArtifactRoot.asSourceRoot(Root.fromPath(outputBase)), path);
-
-    Action action = mock(Action.class);
-    when(action.getProgressMessage(eq(RepositoryMapping.EMPTY))).thenReturn(progressMessage);
-    when(action.getPrimaryOutput()).thenReturn(artifact);
-
-    verify(action, never()).getProgressMessage(AdditionalMatchers.not(eq(RepositoryMapping.EMPTY)));
-    verify(action, never()).getProgressMessage();
-    return action;
-  }
-
-  private ActionOwner dummyActionOwner() throws LabelSyntaxException {
-    return ActionOwner.createDummy(
-        Label.parseCanonical("//foo:a"),
-        new Location("dummy-file", 0, 0),
-        /* targetKind= */ "",
-        /* buildConfigurationMnemonic= */ "",
-        /* configurationChecksum= */ "",
-        new BuildConfigurationEvent(
-            BuildEventStreamProtos.BuildEventId.getDefaultInstance(),
-            BuildEventStreamProtos.BuildEvent.getDefaultInstance()),
-        /* isToolConfiguration= */ true,
-        /* executionPlatform= */ PlatformInfo.EMPTY_PLATFORM_INFO,
-        /* aspectDescriptors= */ ImmutableList.of(),
-        /* execProperties= */ ImmutableMap.of());
-  }
-
-  private void simulateExecutionPhase(UiStateTracker uiStateTracker) {
-    uiStateTracker.loadingComplete(
-        new LoadingPhaseCompleteEvent(
-            ImmutableSet.of(), ImmutableSet.of(), RepositoryMapping.EMPTY));
-    if (this.isSkymeld) {
-      // SkymeldUiStateTracker needs to be in the configuration phase before the execution phase.
-      ((SkymeldUiStateTracker) uiStateTracker)
-          .setBuildStatusForTestingOnly(BuildStatus.ANALYSIS_COMPLETE);
-      uiStateTracker.executionPhaseStarted();
-    } else {
-      String unused = uiStateTracker.analysisComplete();
-    }
-    uiStateTracker.progressReceiverAvailable(
-        new ExecutionProgressReceiverAvailableEvent(dummyExecutionProgressReceiver()));
-  }
-
-  private ExecutionProgressReceiver dummyExecutionProgressReceiver() {
-    return new ExecutionProgressReceiver(0, null);
-  }
-
-  private static int longestLine(String output) {
-    int maxLength = 0;
-    for (String line : output.split("\n")) {
-      maxLength = Math.max(maxLength, line.length());
-    }
-    return maxLength;
-  }
-
-  @Test
-  public void testLoadingActivity() throws IOException {
-    // During loading phase, state and activity, as reported by the PackageProgressReceiver,
-    // should be visible in the progress bar.
-    String loadingState = "42 packages loaded";
-    String loadingActivity = "currently loading //src/foo/bar and 17 more";
-    PackageProgressReceiver progress = mock(PackageProgressReceiver.class);
-    when(progress.progressState()).thenReturn(new Pair<>(loadingState, loadingActivity));
-
-    ManualClock clock = new ManualClock();
-    UiStateTracker stateTracker = getUiStateTracker(clock);
-
-    stateTracker.loadingStarted(new LoadingPhaseStartedEvent(progress));
-
-    // When it is just loading packages.
-    LoggingTerminalWriter terminalWriterLoading =
-        new LoggingTerminalWriter(/* discardHighlight= */ true);
-    stateTracker.writeProgressBar(terminalWriterLoading);
-    String loadingOutput = terminalWriterLoading.getTranscript();
-
-    assertThat(loadingOutput).contains("Loading");
-    assertThat(loadingOutput).contains(loadingState);
-    assertThat(loadingOutput).contains(loadingActivity);
-
-    // When it is configuring targets.
-    stateTracker.loadingComplete(
-        new LoadingPhaseCompleteEvent(
-            ImmutableSet.of(), ImmutableSet.of(), RepositoryMapping.EMPTY));
-    String additionalMessage = "5 targets";
-    stateTracker.additionalMessage = additionalMessage;
-    String analysisProgressString = "5 targets and 0 aspects configured";
-    AnalysisProgressReceiver analysisProgressReceiver = mock(AnalysisProgressReceiver.class);
-    when(analysisProgressReceiver.getProgressString()).thenReturn(analysisProgressString);
-    stateTracker.configurationStarted(new ConfigurationPhaseStartedEvent(analysisProgressReceiver));
-
-    LoggingTerminalWriter terminalWriterLoadingConfiguration =
-        new LoggingTerminalWriter(/* discardHighlight= */ true);
-    stateTracker.writeProgressBar(terminalWriterLoadingConfiguration);
-    String loadingConfigurationOutput = terminalWriterLoadingConfiguration.getTranscript();
-    assertThat(loadingConfigurationOutput).contains("Analyzing");
-    assertThat(loadingConfigurationOutput).contains(additionalMessage);
-    assertThat(loadingConfigurationOutput).contains(loadingState);
-    assertThat(loadingConfigurationOutput).contains(loadingActivity);
-    // It should contain the analysis progress string along with the loading information.
-    assertThat(loadingConfigurationOutput).contains(analysisProgressString);
-  }
-
-  @Test
-  public void testLargeTargetCountFormattedWithCommas() throws IOException {
-    // Verify that large target counts in "Analyzing: X targets" are formatted with comma
-    // separators.
-    ManualClock clock = new ManualClock();
-    UiStateTracker stateTracker = getUiStateTracker(clock);
-
-    ImmutableSet.Builder<Label> labelsBuilder = ImmutableSet.builder();
-    for (int i = 0; i < 12345; i++) {
-      labelsBuilder.add(Label.parseCanonicalUnchecked("//pkg:target" + i));
-    }
-    ImmutableSet<Label> labels = labelsBuilder.build();
-
-    stateTracker.loadingComplete(
-        new LoadingPhaseCompleteEvent(labels, ImmutableSet.of(), RepositoryMapping.EMPTY));
-
-    LoggingTerminalWriter terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
-    stateTracker.writeProgressBar(terminalWriter);
-    String output = terminalWriter.getTranscript();
-
-    assertThat(output).contains("Analyzing:");
-    assertThat(output).contains("12,345 targets");
-  }
-
-  @Test
-  public void testSmallTargetCountNotFormattedWithCommas() throws IOException {
-    // Verify that target counts below 10,000 (IEEE style threshold) are NOT formatted with commas.
-    ManualClock clock = new ManualClock();
-    UiStateTracker stateTracker = getUiStateTracker(clock);
-
-    ImmutableSet.Builder<Label> labelsBuilder = ImmutableSet.builder();
-    for (int i = 0; i < 1234; i++) {
-      labelsBuilder.add(Label.parseCanonicalUnchecked("//pkg:target" + i));
-    }
-    ImmutableSet<Label> labels = labelsBuilder.build();
-
-    stateTracker.loadingComplete(
-        new LoadingPhaseCompleteEvent(labels, ImmutableSet.of(), RepositoryMapping.EMPTY));
-
-    LoggingTerminalWriter terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
-    stateTracker.writeProgressBar(terminalWriter);
-    String output = terminalWriter.getTranscript();
-
-    assertThat(output).contains("Analyzing:");
-    assertThat(output).contains("1234 targets");
-    assertThat(output).doesNotContain("1,234 targets");
-  }
-
-  @Test
-  public void testActionVisible() throws IOException {
-    // If there is only one action running, it should be visible
-    // somewhere in the progress bar, and also the short version thereof.
-
-    String message = "Building foo";
-    ManualClock clock = new ManualClock();
-    clock.advanceMillis(120000);
-
-    UiStateTracker stateTracker = getUiStateTracker(clock);
-    // Mimic being at the execution phase.
-    simulateExecutionPhase(stateTracker);
-    stateTracker.actionStarted(new ActionStartedEvent(mockAction(message, "bar/foo"), 123456789));
-
-    LoggingTerminalWriter terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
-    stateTracker.writeProgressBar(terminalWriter);
-    String output = terminalWriter.getTranscript();
-    assertWithMessage("Action message '%s' should be present in output: %s", message, output)
-        .that(output.contains(message))
-        .isTrue();
-
-    terminalWriter = new LoggingTerminalWriter();
-    stateTracker.writeProgressBar(terminalWriter, /* shortVersion= */ true);
-    output = terminalWriter.getTranscript();
-    assertWithMessage("Action message '%s' should be present in short output: %s", message, output)
-        .that(output.contains(message))
-        .isTrue();
-  }
-
-  @Test
-  public void testCompletedActionNotShown() throws IOException {
-    // Completed actions should not be reported in the progress bar, nor in the
-    // short progress bar.
-
-    String messageFast = "Running quick action";
-    String messageSlow = "Running slow action";
-
-    ManualClock clock = new ManualClock();
-    clock.advanceMillis(120000);
-    Action fastAction = mockAction(messageFast, "foo/fast");
-    Action slowAction = mockAction(messageSlow, "bar/slow");
-    UiStateTracker stateTracker = getUiStateTracker(clock);
-    // Mimic being at the execution phase.
-    simulateExecutionPhase(stateTracker);
-    stateTracker.actionStarted(new ActionStartedEvent(fastAction, 123456789));
-    stateTracker.actionStarted(new ActionStartedEvent(slowAction, 123456999));
-
-    ActionLookupData actionLookupData = ActionLookupData.create(mock(ActionLookupKey.class), 1);
-    stateTracker.actionCompletion(
-        new ActionCompletionEvent(
-            20,
-            clock.nanoTime(),
-            fastAction,
-            new FakeActionInputFileCache(),
-            mock(OutputMetadataStore.class),
-            actionLookupData));
-
-    LoggingTerminalWriter terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
-    stateTracker.writeProgressBar(terminalWriter);
-    String output = terminalWriter.getTranscript();
-    assertWithMessage(
-            "Completed action '%s' should not be present in output: %s", messageFast, output)
-        .that(output.contains(messageFast))
-        .isFalse();
-    assertWithMessage(
-            "Only running action '%s' should be present in output: %s", messageSlow, output)
-        .that(output.contains(messageSlow))
-        .isTrue();
-
-    terminalWriter = new LoggingTerminalWriter();
-    stateTracker.writeProgressBar(terminalWriter, /* shortVersion= */ true);
-    output = terminalWriter.getTranscript();
-    assertWithMessage(
-            "Completed action '%s' should not be present in short output: %s", messageFast, output)
-        .that(output.contains(messageFast))
-        .isFalse();
-    assertWithMessage(
-            "Only running action '%s' should be present in short output: %s", messageSlow, output)
-        .that(output.contains(messageSlow))
-        .isTrue();
-  }
-
-  @Test
-  public void testOldestActionVisible() throws IOException {
-    // The earliest-started action is always visible somehow in the progress bar
-    // and its short version.
-
-    String messageOld = "Running the first-started action";
-
-    ManualClock clock = new ManualClock();
-    clock.advanceMillis(120000);
-    UiStateTracker stateTracker = getUiStateTracker(clock);
-    // Mimic being at the execution phase.
-    simulateExecutionPhase(stateTracker);
-    stateTracker.actionStarted(
-        new ActionStartedEvent(mockAction(messageOld, "bar/foo"), 123456789));
-    for (int i = 0; i < 30; i++) {
-      stateTracker.actionStarted(
-          new ActionStartedEvent(
-              mockAction("Other action " + i, "some/other/actions/number" + i), 123456790 + i));
+    private fun getUiStateTracker(clock: com.google.devtools.build.lib.testutil.ManualClock?): UiStateTracker {
+        if (isSkymeld) {
+            return SkymeldUiStateTracker(clock)
+        } else {
+            return UiStateTracker(clock)
+        }
     }
 
-    LoggingTerminalWriter terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
-    stateTracker.writeProgressBar(terminalWriter);
-    String output = terminalWriter.getTranscript();
-    assertWithMessage(
-            "Longest running action '%s' should be visible in output: %s", messageOld, output)
-        .that(output.contains(messageOld))
-        .isTrue();
-
-    terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
-    stateTracker.writeProgressBar(terminalWriter, /* shortVersion= */ true);
-    output = terminalWriter.getTranscript();
-    assertWithMessage(
-            "Longest running action '%s' should be visible in short output: %s", messageOld, output)
-        .that(output.contains(messageOld))
-        .isTrue();
-  }
-
-  @Test
-  public void testSampleSize() throws IOException {
-    // Verify that the number of actions shown in the progress bar can be set as sample size.
-    ManualClock clock = new ManualClock();
-    clock.advanceMillis(TimeUnit.SECONDS.toMillis(123));
-    UiStateTracker stateTracker = getUiStateTracker(clock);
-    // Mimic being at the execution phase.
-    simulateExecutionPhase(stateTracker);
-    clock.advanceMillis(TimeUnit.SECONDS.toMillis(2));
-
-    // Start 10 actions (numbered 0 to 9).
-    for (int i = 0; i < 10; i++) {
-      clock.advanceMillis(TimeUnit.SECONDS.toMillis(1));
-      Action action = mockAction("Performing action A" + i + ".", "action_A" + i + ".out");
-      stateTracker.actionStarted(new ActionStartedEvent(action, clock.nanoTime()));
+    private fun getUiStateTracker(
+        clock: com.google.devtools.build.lib.testutil.ManualClock?,
+        targetWidth: Int
+    ): UiStateTracker {
+        if (isSkymeld) {
+            return SkymeldUiStateTracker(clock, targetWidth)
+        } else {
+            return UiStateTracker(clock, targetWidth)
+        }
     }
 
-    // For various sample sizes verify the progress bar
-    for (int i = 1; i < 11; i++) {
-      stateTracker.setProgressSampleSize(i);
-      LoggingTerminalWriter terminalWriter =
-          new LoggingTerminalWriter(/* discardHighlight= */ true);
-      stateTracker.writeProgressBar(terminalWriter);
-      String output = terminalWriter.getTranscript();
-      assertWithMessage("Action %s should still be shown in the output: '%s", (i - 1), output)
-          .that(output.contains("A" + (i - 1) + "."))
-          .isTrue();
-      assertWithMessage("Action %s should not be shown in the output: %s", i, output)
-          .that(output.contains("A" + i + "."))
-          .isFalse();
-      if (i < 10) {
-        assertWithMessage("Ellipsis symbol should be shown in output: %s", output)
-            .that(output.contains("..."))
-            .isTrue();
-      } else {
-        assertWithMessage("Ellipsis symbol should not be shown in output: %s", output)
-            .that(output.contains("..."))
-            .isFalse();
-      }
+    @org.junit.Test
+    fun testStrategyIds_getId_idsAreBitmasks() {
+        val strategyIds: StrategyIds = StrategyIds()
+        val id1: Int = strategyIds.getId("foo")
+        val id2: Int = strategyIds.getId("bar")
+        val id3: Int = strategyIds.getId("baz")
+
+        Truth.assertThat(id1).isGreaterThan(0)
+        Truth.assertThat(id2).isGreaterThan(0)
+        Truth.assertThat(id3).isGreaterThan(0)
+
+        Truth.assertThat(id1 and id2).isEqualTo(0)
+        Truth.assertThat(id1 and id3).isEqualTo(0)
+        Truth.assertThat(id2 and id3).isEqualTo(0)
     }
-  }
 
-  @Test
-  public void testTimesShown() throws IOException {
-    // For sufficiently long running actions, the time that has passed since their start is shown.
-    // In the short version of the progress bar, this should be true at least for the oldest action.
+    @org.junit.Test
+    fun testStrategyIds_getId_idsAreReusedIfAlreadyExist() {
+        val strategyIds: StrategyIds = StrategyIds()
+        val id1: Int? = strategyIds.getId("foo")
+        val id2: Int? = strategyIds.getId("bar")
+        val id3: Int? = strategyIds.getId("foo")
 
-    ManualClock clock = new ManualClock();
-    clock.advanceMillis(TimeUnit.SECONDS.toMillis(123));
-    UiStateTracker stateTracker = getUiStateTracker(clock);
-    // Mimic being at the execution phase.
-    simulateExecutionPhase(stateTracker);
-    clock.advanceMillis(TimeUnit.SECONDS.toMillis(2));
+        Truth.assertThat(id1).isNotEqualTo(id2)
+        Truth.assertThat(id1).isEqualTo(id3)
+    }
 
-    stateTracker.actionStarted(
-        new ActionStartedEvent(mockAction("First action", "foo"), clock.nanoTime()));
-    clock.advanceMillis(TimeUnit.SECONDS.toMillis(7));
-    stateTracker.actionStarted(
-        new ActionStartedEvent(mockAction("Second action", "bar"), clock.nanoTime()));
-    clock.advanceMillis(TimeUnit.SECONDS.toMillis(20));
+    @org.junit.Test
+    fun testStrategyIds_getId_exhaustIds() {
+        val strategyIds: StrategyIds = StrategyIds()
+        val ids: MutableSet<Int?> = HashSet<Int?>()
+        val name: java.lang.StringBuilder = java.lang.StringBuilder()
+        while (true) {
+            name.append('a')
+            val id: Int = strategyIds.getId(name.toString())
+            if (id == strategyIds.fallbackId) {
+                break
+            }
+            ids.add(id)
+        }
+        Truth.assertThat(ids).hasSize(java.lang.Integer.SIZE - 1) // Minus 1 for FALLBACK_NAME.
 
-    LoggingTerminalWriter terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
-    stateTracker.writeProgressBar(terminalWriter);
-    String output = terminalWriter.getTranscript();
-    assertWithMessage("Runtime of first action should be visible in output: %s", output)
-        .that(output.contains("27s"))
-        .isTrue();
-    assertWithMessage("Runtime of second action should be visible in output: %s", output)
-        .that(output.contains("20s"))
-        .isTrue();
+        assertThat(strategyIds.getId("some")).isEqualTo(strategyIds.fallbackId)
+        assertThat(strategyIds.getId("more")).isEqualTo(strategyIds.fallbackId)
+    }
 
-    terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
-    stateTracker.writeProgressBar(terminalWriter, /* shortVersion= */ true);
-    output = terminalWriter.getTranscript();
-    assertWithMessage("Runtime of first action should be visible in short output: %s", output)
-        .that(output.contains("27s"))
-        .isTrue();
-  }
+    @org.junit.Test
+    fun testStrategyIds_formatNames_fallbackExistsByDefault() {
+        val strategyIds: StrategyIds = StrategyIds()
+        assertThat(strategyIds.formatNames(strategyIds.fallbackId))
+            .isEqualTo(StrategyIds.FALLBACK_NAME)
+    }
 
-  @Test
-  public void initialProgressBarTimeIndependent() {
-    ManualClock clock = new ManualClock();
-    clock.advanceMillis(TimeUnit.SECONDS.toMillis(123));
-    UiStateTracker stateTracker = getUiStateTracker(clock);
-    stateTracker.buildStarted();
+    @org.junit.Test
+    fun testStrategyIds_formatNames_oneHasNoComma() {
+        val strategyIds: StrategyIds = StrategyIds()
+        val id1: Int? = strategyIds.getId("abc")
+        assertThat(strategyIds.formatNames(id1)).isEqualTo("abc")
+    }
 
-    assertWithMessage("Initial progress status should be time independent")
-        .that(stateTracker.progressBarTimeDependent())
-        .isFalse();
-  }
+    @org.junit.Test
+    fun testStrategyIds_formatNames() {
+        val strategyIds: StrategyIds = StrategyIds()
+        val id1: Int = strategyIds.getId("abc")
+        val id2: Int = strategyIds.getId("xyz")
+        val id3: Int = strategyIds.getId("def")
 
-  @Test
-  public void runningActionTimeIndependent() {
-    ManualClock clock = new ManualClock();
-    clock.advanceMillis(TimeUnit.SECONDS.toMillis(123));
-    UiStateTracker stateTracker = getUiStateTracker(clock);
-    clock.advanceMillis(TimeUnit.SECONDS.toMillis(1));
-    simulateExecutionPhase(stateTracker);
-    stateTracker.actionStarted(
-        new ActionStartedEvent(mockAction("Some action", "foo"), clock.nanoTime()));
+        // Names are not sorted alphabetically but their order is stable based on prior getId calls.
+        assertThat(strategyIds.formatNames(id1 or id2)).isEqualTo("abc, xyz")
+        assertThat(strategyIds.formatNames(id1 or id3)).isEqualTo("abc, def")
+        assertThat(strategyIds.formatNames(id2 or id3)).isEqualTo("xyz, def")
+        assertThat(strategyIds.formatNames(id1 or id2 or id3)).isEqualTo("abc, xyz, def")
+    }
 
-    assertWithMessage("Progress bar showing a running action should be time dependent")
-        .that(stateTracker.progressBarTimeDependent())
-        .isTrue();
-  }
+    private fun mockAction(progressMessage: String?, primaryOutput: String?): Action {
+        val path: Path? = outputBase.getRelative(PathFragment.create(primaryOutput))
+        val artifact: Artifact? =
+            ActionsTestUtil.createArtifact(ArtifactRoot.asSourceRoot(Root.fromPath(outputBase)), path)
 
-  @Test
-  public void testCountVisible() throws Exception {
-    // The test count should be visible in the status bar, as well as the short status bar
-    ManualClock clock = new ManualClock();
-    UiStateTracker stateTracker = getUiStateTracker(clock);
-    // Mimic being at the execution phase.
-    simulateExecutionPhase(stateTracker);
-    TestFilteringCompleteEvent filteringComplete = mock(TestFilteringCompleteEvent.class);
-    Label labelA = Label.parseCanonical("//foo/bar:baz");
-    ConfiguredTarget targetA = mock(ConfiguredTarget.class);
-    when(targetA.getLabel()).thenReturn(labelA);
-    ConfiguredTarget targetB = mock(ConfiguredTarget.class);
-    when(filteringComplete.getTestTargets()).thenReturn(ImmutableSet.of(targetA, targetB));
-    TestSummary testSummary = mock(TestSummary.class);
-    when(testSummary.getTarget()).thenReturn(targetA);
-    when(testSummary.getLabel()).thenReturn(labelA);
+        val action: Action = Mockito.mock<Action>(Action::class.java)
+        Mockito.`when`<T?>(action.getProgressMessage(< T > eq < T ? > (RepositoryMapping.EMPTY))).thenReturn(progressMessage)
+        Mockito.`when`<T?>(action.getPrimaryOutput()).thenReturn(artifact)
 
-    stateTracker.testFilteringComplete(filteringComplete);
-    stateTracker.testSummary(testSummary);
+        Mockito.verify<Any?>(action, Mockito.never())
+            .getProgressMessage(AdditionalMatchers.< T > not < T ? > (<T> eq < T ? > (RepositoryMapping.EMPTY)))
+        Mockito.verify<Any?>(action, Mockito.never()).getProgressMessage()
+        return action
+    }
 
-    LoggingTerminalWriter terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
-    stateTracker.writeProgressBar(terminalWriter);
-    String output = terminalWriter.getTranscript();
-    assertWithMessage("Test count should be visible in output: %s", output)
-        .that(output.contains(" 1 / 2 tests"))
-        .isTrue();
-
-    terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
-    stateTracker.writeProgressBar(terminalWriter, /* shortVersion= */ true);
-    output = terminalWriter.getTranscript();
-    assertWithMessage("Test count should be visible in short output: %s", output)
-        .that(output.contains(" 1 / 2 tests"))
-        .isTrue();
-  }
-
-  @Test
-  public void testPassedVisible() throws Exception {
-    // The last test should still be visible in the long status bar, and colored as ok if it passed.
-    ManualClock clock = new ManualClock();
-    UiStateTracker stateTracker = getUiStateTracker(clock);
-    // Mimic being at the execution phase.
-    simulateExecutionPhase(stateTracker);
-    TestFilteringCompleteEvent filteringComplete = mock(TestFilteringCompleteEvent.class);
-    Label labelA = Label.parseCanonical("//foo/bar:baz");
-    ConfiguredTarget targetA = mock(ConfiguredTarget.class);
-    when(targetA.getLabel()).thenReturn(labelA);
-    ConfiguredTarget targetB = mock(ConfiguredTarget.class);
-    when(filteringComplete.getTestTargets()).thenReturn(ImmutableSet.of(targetA, targetB));
-    TestSummary testSummary = mock(TestSummary.class);
-    when(testSummary.getStatus()).thenReturn(BlazeTestStatus.PASSED);
-    when(testSummary.getTarget()).thenReturn(targetA);
-    when(testSummary.getLabel()).thenReturn(labelA);
-
-    stateTracker.testFilteringComplete(filteringComplete);
-    stateTracker.testSummary(testSummary);
-
-    LoggingTerminalWriter terminalWriter = new LoggingTerminalWriter();
-    stateTracker.writeProgressBar(terminalWriter);
-    String output = terminalWriter.getTranscript();
-
-    String expected = LoggingTerminalWriter.OK + labelA;
-    assertWithMessage(
-            "Sequence '%s' should be present in colored progress bar: %s", expected, output)
-        .that(output.contains(expected))
-        .isTrue();
-  }
-
-  @Test
-  public void testFailedVisible() throws Exception {
-    // The last test should still be visible in the long status bar, and colored as fail if it
-    // did not pass.
-    ManualClock clock = new ManualClock();
-    UiStateTracker stateTracker = getUiStateTracker(clock);
-    // Mimic being at the execution phase.
-    simulateExecutionPhase(stateTracker);
-    TestFilteringCompleteEvent filteringComplete = mock(TestFilteringCompleteEvent.class);
-    Label labelA = Label.parseCanonical("//foo/bar:baz");
-    ConfiguredTarget targetA = mock(ConfiguredTarget.class);
-    when(targetA.getLabel()).thenReturn(labelA);
-    ConfiguredTarget targetB = mock(ConfiguredTarget.class);
-    when(filteringComplete.getTestTargets()).thenReturn(ImmutableSet.of(targetA, targetB));
-    TestSummary testSummary = mock(TestSummary.class);
-    when(testSummary.getStatus()).thenReturn(BlazeTestStatus.FAILED);
-    when(testSummary.getTarget()).thenReturn(targetA);
-    when(testSummary.getLabel()).thenReturn(labelA);
-
-    stateTracker.testFilteringComplete(filteringComplete);
-    stateTracker.testSummary(testSummary);
-
-    LoggingTerminalWriter terminalWriter = new LoggingTerminalWriter();
-    stateTracker.writeProgressBar(terminalWriter);
-    String output = terminalWriter.getTranscript();
-
-    String expected = LoggingTerminalWriter.FAIL + labelA;
-    assertWithMessage(
-            "Sequence '%s' should be present in colored progress bar: %s", expected, output)
-        .that(output.contains(expected))
-        .isTrue();
-  }
-
-  @Test
-  public void testSensibleShortening() throws Exception {
-    // Verify that in the typical case, we shorten the progress message by shortening
-    // the path implicit in it, that can also be extracted from the label. In particular,
-    // the parts
-    ManualClock clock = new ManualClock();
-    UiStateTracker stateTracker = getUiStateTracker(clock, /* targetWidth= */ 70);
-    // Mimic being at the execution phase.
-    simulateExecutionPhase(stateTracker);
-    Action action =
-        mockAction(
-            "Building some/very/very/long/path/for/some/library/directory/foo.jar (42 source"
-                + " files)",
-            "some/very/very/long/path/for/some/library/directory/foo.jar");
-    Label label =
-        Label.parseCanonical("//some/very/very/long/path/for/some/library/directory:libfoo");
-    ActionOwner owner =
-        ActionOwner.createDummy(
-            label,
-            new Location("dummy-file", 0, 0),
-            /* targetKind= */ "dummy-target-kind",
-            /* buildConfigurationMnemonic= */ "dummy-mnemonic",
-            /* configurationChecksum= */ "fedcba",
-            new BuildConfigurationEvent(
+    @Throws(LabelSyntaxException::class)
+    private fun dummyActionOwner(): ActionOwner {
+        return ActionOwner.createDummy(
+            Label.parseCanonical("//foo:a"),
+            net.starlark.java.syntax.Location("dummy-file", 0, 0),  /* targetKind= */
+            "",  /* buildConfigurationMnemonic= */
+            "",  /* configurationChecksum= */
+            "",
+            BuildConfigurationEvent(
                 BuildEventStreamProtos.BuildEventId.getDefaultInstance(),
-                BuildEventStreamProtos.BuildEvent.getDefaultInstance()),
-            /* isToolConfiguration= */ false,
-            /* executionPlatform= */ PlatformInfo.EMPTY_PLATFORM_INFO,
-            /* aspectDescriptors= */ ImmutableList.of(),
-            /* execProperties= */ ImmutableMap.of());
-    when(action.getOwner()).thenReturn(owner);
+                BuildEventStreamProtos.BuildEvent.getDefaultInstance()
+            ),  /* isToolConfiguration= */
+            true,  /* executionPlatform= */
+            PlatformInfo.EMPTY_PLATFORM_INFO,  /* aspectDescriptors= */
+            com.google.common.collect.ImmutableList.of<E?>(),  /* execProperties= */
+            com.google.common.collect.ImmutableMap.of<K?, V?>()
+        )
+    }
 
-    clock.advanceMillis(TimeUnit.SECONDS.toMillis(3));
-    stateTracker.actionStarted(new ActionStartedEvent(action, clock.nanoTime()));
-    clock.advanceMillis(TimeUnit.SECONDS.toMillis(5));
+    private fun simulateExecutionPhase(uiStateTracker: UiStateTracker) {
+        uiStateTracker.loadingComplete(
+            LoadingPhaseCompleteEvent(
+                com.google.common.collect.ImmutableSet.of<E?>(),
+                com.google.common.collect.ImmutableSet.of<E?>(),
+                RepositoryMapping.EMPTY
+            )
+        )
+        if (this.isSkymeld) {
+            // SkymeldUiStateTracker needs to be in the configuration phase before the execution phase.
+            (uiStateTracker as SkymeldUiStateTracker)
+                .setBuildStatusForTestingOnly(BuildStatus.ANALYSIS_COMPLETE)
+            uiStateTracker.executionPhaseStarted()
+        } else {
+            val unused: String? = uiStateTracker.analysisComplete()
+        }
+        uiStateTracker.progressReceiverAvailable(
+            ExecutionProgressReceiverAvailableEvent(dummyExecutionProgressReceiver())
+        )
+    }
 
-    LoggingTerminalWriter terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
-    stateTracker.writeProgressBar(terminalWriter);
-    String output = terminalWriter.getTranscript();
+    private fun dummyExecutionProgressReceiver(): ExecutionProgressReceiver {
+        return ExecutionProgressReceiver(0, null)
+    }
 
-    assertWithMessage("Progress bar should contain 'Building ', but was:\n%s", output)
-        .that(output.contains("Building "))
-        .isTrue();
-    assertWithMessage(
-            "Progress bar should contain 'foo.jar (42 source files)', but was:\n%s", output)
-        .that(output.contains("foo.jar (42 source files)"))
-        .isTrue();
-  }
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun testLoadingActivity() {
+        // During loading phase, state and activity, as reported by the PackageProgressReceiver,
+        // should be visible in the progress bar.
+        val loadingState = "42 packages loaded"
+        val loadingActivity = "currently loading //src/foo/bar and 17 more"
+        val progress: PackageProgressReceiver =
+            Mockito.mock<PackageProgressReceiver>(PackageProgressReceiver::class.java)
+        Mockito.`when`<T?>(progress.progressState()).thenReturn(Pair(loadingState, loadingActivity))
 
-  @Test
-  public void testActionStrategyVisible() throws Exception {
-    // verify that, if a strategy was reported for a shown action, it is visible
-    // in the progress bar.
-    String strategy = "verySpecialStrategy";
-    String primaryOutput = "some/path/to/a/file";
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        val stateTracker: UiStateTracker = getUiStateTracker(clock)
 
-    ManualClock clock = new ManualClock();
-    Path path = outputBase.getRelative(PathFragment.create(primaryOutput));
-    Artifact artifact =
-        ActionsTestUtil.createArtifact(ArtifactRoot.asSourceRoot(Root.fromPath(outputBase)), path);
-    Action action = mockAction("Some random action", primaryOutput);
-    when(action.getOwner()).thenReturn(dummyActionOwner());
-    when(action.getPrimaryOutput()).thenReturn(artifact);
+        stateTracker.loadingStarted(LoadingPhaseStartedEvent(progress))
 
-    UiStateTracker stateTracker = getUiStateTracker(clock);
-    // Mimic being at the execution phase.
-    simulateExecutionPhase(stateTracker);
-    stateTracker.actionStarted(new ActionStartedEvent(action, clock.nanoTime()));
-    stateTracker.runningAction(new RunningActionEvent(action, strategy));
+        // When it is just loading packages.
+        val terminalWriterLoading: LoggingTerminalWriter =
+            LoggingTerminalWriter( /* discardHighlight= */true)
+        stateTracker.writeProgressBar(terminalWriterLoading)
+        val loadingOutput: String? = terminalWriterLoading.getTranscript()
 
-    LoggingTerminalWriter terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
-    stateTracker.writeProgressBar(terminalWriter);
-    String output = terminalWriter.getTranscript();
+        Truth.assertThat(loadingOutput).contains("Loading")
+        Truth.assertThat(loadingOutput).contains(loadingState)
+        Truth.assertThat(loadingOutput).contains(loadingActivity)
 
-    assertWithMessage("Output should mention strategy '%s', but was: %s", strategy, output)
-        .that(output.contains(strategy))
-        .isTrue();
-  }
+        // When it is configuring targets.
+        stateTracker.loadingComplete(
+            LoadingPhaseCompleteEvent(
+                com.google.common.collect.ImmutableSet.of<E?>(),
+                com.google.common.collect.ImmutableSet.of<E?>(),
+                RepositoryMapping.EMPTY
+            )
+        )
+        val additionalMessage = "5 targets"
+        stateTracker.additionalMessage = additionalMessage
+        val analysisProgressString = "5 targets and 0 aspects configured"
+        val analysisProgressReceiver: AnalysisProgressReceiver =
+            Mockito.mock<AnalysisProgressReceiver>(AnalysisProgressReceiver::class.java)
+        Mockito.`when`<T?>(analysisProgressReceiver.getProgressString()).thenReturn(analysisProgressString)
+        stateTracker.configurationStarted(ConfigurationPhaseStartedEvent(analysisProgressReceiver))
 
-  private Action createDummyAction(String progressMessage) throws LabelSyntaxException {
-    String primaryOutput = "some/path/to/a/file";
-    Path path = outputBase.getRelative(PathFragment.create(primaryOutput));
-    Artifact artifact =
-        ActionsTestUtil.createArtifact(ArtifactRoot.asSourceRoot(Root.fromPath(outputBase)), path);
-    Action action = mockAction(progressMessage, primaryOutput);
-    when(action.getOwner()).thenReturn(dummyActionOwner());
-    when(action.getPrimaryOutput()).thenReturn(artifact);
-    return action;
-  }
+        val terminalWriterLoadingConfiguration: LoggingTerminalWriter =
+            LoggingTerminalWriter( /* discardHighlight= */true)
+        stateTracker.writeProgressBar(terminalWriterLoadingConfiguration)
+        val loadingConfigurationOutput: String? = terminalWriterLoadingConfiguration.getTranscript()
+        Truth.assertThat(loadingConfigurationOutput).contains("Analyzing")
+        Truth.assertThat(loadingConfigurationOutput).contains(additionalMessage)
+        Truth.assertThat(loadingConfigurationOutput).contains(loadingState)
+        Truth.assertThat(loadingConfigurationOutput).contains(loadingActivity)
+        // It should contain the analysis progress string along with the loading information.
+        Truth.assertThat(loadingConfigurationOutput).contains(analysisProgressString)
+    }
 
-  @Test
-  public void actionProgress_visible() throws Exception {
-    // arrange
-    ManualClock clock = new ManualClock();
-    Action action = createDummyAction("Some random action");
-    UiStateTracker stateTracker = getUiStateTracker(clock, /* targetWidth= */ 70);
-    // Mimic being at the execution phase.
-    simulateExecutionPhase(stateTracker);
-    stateTracker.actionStarted(new ActionStartedEvent(action, clock.nanoTime()));
-    stateTracker.actionProgress(
-        ActionProgressEvent.create(action, "action-id", "action progress", false));
-    LoggingTerminalWriter terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun testLargeTargetCountFormattedWithCommas() {
+        // Verify that large target counts in "Analyzing: X targets" are formatted with comma
+        // separators.
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        val stateTracker: UiStateTracker = getUiStateTracker(clock)
 
-    // act
-    stateTracker.writeProgressBar(terminalWriter);
+        val labelsBuilder: com.google.common.collect.ImmutableSet.Builder<Label?> =
+            com.google.common.collect.ImmutableSet.builder<Label?>()
+        for (i in 0..12344) {
+            labelsBuilder.add(Label.parseCanonicalUnchecked("//pkg:target" + i))
+        }
+        val labels: com.google.common.collect.ImmutableSet<Label?> = labelsBuilder.build()
 
-    // assert
-    String output = terminalWriter.getTranscript();
-    assertThat(output).contains("action progress");
-  }
+        stateTracker.loadingComplete(
+            LoadingPhaseCompleteEvent(labels, com.google.common.collect.ImmutableSet.of<E?>(), RepositoryMapping.EMPTY)
+        )
 
-  @Test
-  public void actionProgress_withTooSmallWidth_progressSkipped() throws Exception {
-    // arrange
-    ManualClock clock = new ManualClock();
-    Action action = createDummyAction("Some random action");
-    UiStateTracker stateTracker = getUiStateTracker(clock, /* targetWidth= */ 30);
-    // Mimic being at the execution phase.
-    simulateExecutionPhase(stateTracker);
-    stateTracker.actionStarted(new ActionStartedEvent(action, clock.nanoTime()));
-    stateTracker.actionProgress(
-        ActionProgressEvent.create(action, "action-id", "action progress", false));
-    LoggingTerminalWriter terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
+        val terminalWriter: LoggingTerminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+        stateTracker.writeProgressBar(terminalWriter)
+        val output: String? = terminalWriter.getTranscript()
 
-    // act
-    stateTracker.writeProgressBar(terminalWriter);
+        Truth.assertThat(output).contains("Analyzing:")
+        Truth.assertThat(output).contains("12,345 targets")
+    }
 
-    // assert
-    String output = terminalWriter.getTranscript();
-    assertThat(output).doesNotContain("action progress");
-  }
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun testSmallTargetCountNotFormattedWithCommas() {
+        // Verify that target counts below 10,000 (IEEE style threshold) are NOT formatted with commas.
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        val stateTracker: UiStateTracker = getUiStateTracker(clock)
 
-  @Test
-  public void actionProgress_withSmallWidth_progressShortened() throws Exception {
-    // arrange
-    ManualClock clock = new ManualClock();
-    Action action = createDummyAction("some action");
-    // The targetWidth needs to be small enough to cause shortening to occur.
-    UiStateTracker stateTracker = getUiStateTracker(clock, /* targetWidth= */ 40);
-    // Mimic being at the execution phase.
-    simulateExecutionPhase(stateTracker);
-    stateTracker.actionStarted(new ActionStartedEvent(action, clock.nanoTime()));
-    stateTracker.actionProgress(
-        ActionProgressEvent.create(action, "action-id", "action progress", false));
-    LoggingTerminalWriter terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
+        val labelsBuilder: com.google.common.collect.ImmutableSet.Builder<Label?> =
+            com.google.common.collect.ImmutableSet.builder<Label?>()
+        for (i in 0..1233) {
+            labelsBuilder.add(Label.parseCanonicalUnchecked("//pkg:target" + i))
+        }
+        val labels: com.google.common.collect.ImmutableSet<Label?> = labelsBuilder.build()
 
-    // act
-    stateTracker.writeProgressBar(terminalWriter);
+        stateTracker.loadingComplete(
+            LoadingPhaseCompleteEvent(labels, com.google.common.collect.ImmutableSet.of<E?>(), RepositoryMapping.EMPTY)
+        )
 
-    // assert
-    String output = terminalWriter.getTranscript();
-    assertThat(output).contains("action p...");
-  }
+        val terminalWriter: LoggingTerminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+        stateTracker.writeProgressBar(terminalWriter)
+        val output: String? = terminalWriter.getTranscript()
 
-  @Test
-  public void actionProgress_multipleProgress_displayInOrder() throws Exception {
-    // arrange
-    ManualClock clock = new ManualClock();
-    Action action = createDummyAction("Some random action");
-    UiStateTracker stateTracker = getUiStateTracker(clock, /* targetWidth= */ 70);
-    // Mimic being at the execution phase.
-    simulateExecutionPhase(stateTracker);
-    stateTracker.actionStarted(new ActionStartedEvent(action, clock.nanoTime()));
-    stateTracker.actionProgress(
-        ActionProgressEvent.create(action, "action-id1", "action progress 1", false));
-    stateTracker.actionProgress(
-        ActionProgressEvent.create(action, "action-id2", "action progress 2", false));
-    LoggingTerminalWriter terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
+        Truth.assertThat(output).contains("Analyzing:")
+        Truth.assertThat(output).contains("1234 targets")
+        Truth.assertThat(output).doesNotContain("1,234 targets")
+    }
 
-    // act
-    stateTracker.writeProgressBar(terminalWriter);
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun testActionVisible() {
+        // If there is only one action running, it should be visible
+        // somewhere in the progress bar, and also the short version thereof.
 
-    // assert
-    String output = terminalWriter.getTranscript();
-    assertThat(output).contains("action progress 1");
-    assertThat(output).doesNotContain("action progress 2");
-  }
+        val message = "Building foo"
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        clock.advanceMillis(120000)
 
-  @Test
-  public void testMultipleActionStrategiesVisibleForDynamicScheduling() throws Exception {
-    String strategy1 = "strategy1";
-    String strategy2 = "stratagy2";
-    String primaryOutput = "some/path/to/a/file";
+        val stateTracker: UiStateTracker = getUiStateTracker(clock)
+        // Mimic being at the execution phase.
+        simulateExecutionPhase(stateTracker)
+        stateTracker.actionStarted(ActionStartedEvent(mockAction(message, "bar/foo"), 123456789))
 
-    ManualClock clock = new ManualClock();
-    Path path = outputBase.getRelative(PathFragment.create(primaryOutput));
-    Artifact artifact =
-        ActionsTestUtil.createArtifact(ArtifactRoot.asSourceRoot(Root.fromPath(outputBase)), path);
-    Action action = mockAction("Some random action", primaryOutput);
-    when(action.getOwner()).thenReturn(dummyActionOwner());
-    when(action.getPrimaryOutput()).thenReturn(artifact);
+        var terminalWriter: LoggingTerminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+        stateTracker.writeProgressBar(terminalWriter)
+        var output: String = terminalWriter.getTranscript()
+        Truth.assertWithMessage("Action message '%s' should be present in output: %s", message, output)
+            .that(output.contains(message))
+            .isTrue()
 
-    UiStateTracker stateTracker = getUiStateTracker(clock);
-    // Mimic being at the execution phase.
-    simulateExecutionPhase(stateTracker);
-    stateTracker.actionStarted(new ActionStartedEvent(action, clock.nanoTime()));
-    stateTracker.runningAction(new RunningActionEvent(action, strategy1));
-    stateTracker.runningAction(new RunningActionEvent(action, strategy2));
+        terminalWriter = LoggingTerminalWriter()
+        stateTracker.writeProgressBar(terminalWriter,  /* shortVersion= */true)
+        output = terminalWriter.getTranscript()
+        Truth.assertWithMessage("Action message '%s' should be present in short output: %s", message, output)
+            .that(output.contains(message))
+            .isTrue()
+    }
 
-    LoggingTerminalWriter terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
-    stateTracker.writeProgressBar(terminalWriter);
-    String output = terminalWriter.getTranscript();
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun testCompletedActionNotShown() {
+        // Completed actions should not be reported in the progress bar, nor in the
+        // short progress bar.
 
-    assertWithMessage(
+        val messageFast = "Running quick action"
+        val messageSlow = "Running slow action"
+
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        clock.advanceMillis(120000)
+        val fastAction: Action = mockAction(messageFast, "foo/fast")
+        val slowAction: Action = mockAction(messageSlow, "bar/slow")
+        val stateTracker: UiStateTracker = getUiStateTracker(clock)
+        // Mimic being at the execution phase.
+        simulateExecutionPhase(stateTracker)
+        stateTracker.actionStarted(ActionStartedEvent(fastAction, 123456789))
+        stateTracker.actionStarted(ActionStartedEvent(slowAction, 123456999))
+
+        val actionLookupData: ActionLookupData? =
+            ActionLookupData.create(< T > mock < T ? > (ActionLookupKey::class.java), 1)
+        stateTracker.actionCompletion(
+            ActionCompletionEvent(
+                20,
+                clock.nanoTime(),
+                fastAction,
+                FakeActionInputFileCache(),
+                < T > mock < T ? > (OutputMetadataStore::class.java),
+            actionLookupData
+        ))
+
+        var terminalWriter: LoggingTerminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+        stateTracker.writeProgressBar(terminalWriter)
+        var output: String = terminalWriter.getTranscript()
+        Truth.assertWithMessage(
+            "Completed action '%s' should not be present in output: %s", messageFast, output
+        )
+            .that(output.contains(messageFast))
+            .isFalse()
+        Truth.assertWithMessage(
+            "Only running action '%s' should be present in output: %s", messageSlow, output
+        )
+            .that(output.contains(messageSlow))
+            .isTrue()
+
+        terminalWriter = LoggingTerminalWriter()
+        stateTracker.writeProgressBar(terminalWriter,  /* shortVersion= */true)
+        output = terminalWriter.getTranscript()
+        Truth.assertWithMessage(
+            "Completed action '%s' should not be present in short output: %s", messageFast, output
+        )
+            .that(output.contains(messageFast))
+            .isFalse()
+        Truth.assertWithMessage(
+            "Only running action '%s' should be present in short output: %s", messageSlow, output
+        )
+            .that(output.contains(messageSlow))
+            .isTrue()
+    }
+
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun testOldestActionVisible() {
+        // The earliest-started action is always visible somehow in the progress bar
+        // and its short version.
+
+        val messageOld = "Running the first-started action"
+
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        clock.advanceMillis(120000)
+        val stateTracker: UiStateTracker = getUiStateTracker(clock)
+        // Mimic being at the execution phase.
+        simulateExecutionPhase(stateTracker)
+        stateTracker.actionStarted(
+            ActionStartedEvent(mockAction(messageOld, "bar/foo"), 123456789)
+        )
+        for (i in 0..29) {
+            stateTracker.actionStarted(
+                ActionStartedEvent(
+                    mockAction("Other action " + i, "some/other/actions/number" + i), 123456790 + i
+                )
+            )
+        }
+
+        var terminalWriter: LoggingTerminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+        stateTracker.writeProgressBar(terminalWriter)
+        var output: String = terminalWriter.getTranscript()
+        Truth.assertWithMessage(
+            "Longest running action '%s' should be visible in output: %s", messageOld, output
+        )
+            .that(output.contains(messageOld))
+            .isTrue()
+
+        terminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+        stateTracker.writeProgressBar(terminalWriter,  /* shortVersion= */true)
+        output = terminalWriter.getTranscript()
+        Truth.assertWithMessage(
+            "Longest running action '%s' should be visible in short output: %s", messageOld, output
+        )
+            .that(output.contains(messageOld))
+            .isTrue()
+    }
+
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun testSampleSize() {
+        // Verify that the number of actions shown in the progress bar can be set as sample size.
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        clock.advanceMillis(TimeUnit.SECONDS.toMillis(123))
+        val stateTracker: UiStateTracker = getUiStateTracker(clock)
+        // Mimic being at the execution phase.
+        simulateExecutionPhase(stateTracker)
+        clock.advanceMillis(TimeUnit.SECONDS.toMillis(2))
+
+        // Start 10 actions (numbered 0 to 9).
+        for (i in 0..9) {
+            clock.advanceMillis(TimeUnit.SECONDS.toMillis(1))
+            val action: Action = mockAction("Performing action A" + i + ".", "action_A" + i + ".out")
+            stateTracker.actionStarted(ActionStartedEvent(action, clock.nanoTime()))
+        }
+
+        // For various sample sizes verify the progress bar
+        for (i in 1..10) {
+            stateTracker.setProgressSampleSize(i)
+            val terminalWriter: LoggingTerminalWriter =
+                LoggingTerminalWriter( /* discardHighlight= */true)
+            stateTracker.writeProgressBar(terminalWriter)
+            val output: String = terminalWriter.getTranscript()
+            Truth.assertWithMessage("Action %s should still be shown in the output: '%s", (i - 1), output)
+                .that(output.contains("A" + (i - 1) + "."))
+                .isTrue()
+            Truth.assertWithMessage("Action %s should not be shown in the output: %s", i, output)
+                .that(output.contains("A" + i + "."))
+                .isFalse()
+            if (i < 10) {
+                Truth.assertWithMessage("Ellipsis symbol should be shown in output: %s", output)
+                    .that(output.contains("..."))
+                    .isTrue()
+            } else {
+                Truth.assertWithMessage("Ellipsis symbol should not be shown in output: %s", output)
+                    .that(output.contains("..."))
+                    .isFalse()
+            }
+        }
+    }
+
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun testTimesShown() {
+        // For sufficiently long running actions, the time that has passed since their start is shown.
+        // In the short version of the progress bar, this should be true at least for the oldest action.
+
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        clock.advanceMillis(TimeUnit.SECONDS.toMillis(123))
+        val stateTracker: UiStateTracker = getUiStateTracker(clock)
+        // Mimic being at the execution phase.
+        simulateExecutionPhase(stateTracker)
+        clock.advanceMillis(TimeUnit.SECONDS.toMillis(2))
+
+        stateTracker.actionStarted(
+            ActionStartedEvent(mockAction("First action", "foo"), clock.nanoTime())
+        )
+        clock.advanceMillis(TimeUnit.SECONDS.toMillis(7))
+        stateTracker.actionStarted(
+            ActionStartedEvent(mockAction("Second action", "bar"), clock.nanoTime())
+        )
+        clock.advanceMillis(TimeUnit.SECONDS.toMillis(20))
+
+        var terminalWriter: LoggingTerminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+        stateTracker.writeProgressBar(terminalWriter)
+        var output: String = terminalWriter.getTranscript()
+        Truth.assertWithMessage("Runtime of first action should be visible in output: %s", output)
+            .that(output.contains("27s"))
+            .isTrue()
+        Truth.assertWithMessage("Runtime of second action should be visible in output: %s", output)
+            .that(output.contains("20s"))
+            .isTrue()
+
+        terminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+        stateTracker.writeProgressBar(terminalWriter,  /* shortVersion= */true)
+        output = terminalWriter.getTranscript()
+        Truth.assertWithMessage("Runtime of first action should be visible in short output: %s", output)
+            .that(output.contains("27s"))
+            .isTrue()
+    }
+
+    @org.junit.Test
+    fun initialProgressBarTimeIndependent() {
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        clock.advanceMillis(TimeUnit.SECONDS.toMillis(123))
+        val stateTracker: UiStateTracker = getUiStateTracker(clock)
+        stateTracker.buildStarted()
+
+        Truth.assertWithMessage("Initial progress status should be time independent")
+            .that(stateTracker.progressBarTimeDependent())
+            .isFalse()
+    }
+
+    @org.junit.Test
+    fun runningActionTimeIndependent() {
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        clock.advanceMillis(TimeUnit.SECONDS.toMillis(123))
+        val stateTracker: UiStateTracker = getUiStateTracker(clock)
+        clock.advanceMillis(TimeUnit.SECONDS.toMillis(1))
+        simulateExecutionPhase(stateTracker)
+        stateTracker.actionStarted(
+            ActionStartedEvent(mockAction("Some action", "foo"), clock.nanoTime())
+        )
+
+        Truth.assertWithMessage("Progress bar showing a running action should be time dependent")
+            .that(stateTracker.progressBarTimeDependent())
+            .isTrue()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCountVisible() {
+        // The test count should be visible in the status bar, as well as the short status bar
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        val stateTracker: UiStateTracker = getUiStateTracker(clock)
+        // Mimic being at the execution phase.
+        simulateExecutionPhase(stateTracker)
+        val filteringComplete: TestFilteringCompleteEvent =
+            Mockito.mock<TestFilteringCompleteEvent>(TestFilteringCompleteEvent::class.java)
+        val labelA: Label? = Label.parseCanonical("//foo/bar:baz")
+        val targetA: ConfiguredTarget = Mockito.mock<ConfiguredTarget>(ConfiguredTarget::class.java)
+        Mockito.`when`<T?>(targetA.getLabel()).thenReturn(labelA)
+        val targetB: ConfiguredTarget? = Mockito.mock<ConfiguredTarget?>(ConfiguredTarget::class.java)
+        Mockito.`when`<MutableCollection<ConfiguredTarget>?>(filteringComplete.getTestTargets())
+            .thenReturn(com.google.common.collect.ImmutableSet.of<ConfiguredTarget>(targetA, targetB))
+        val testSummary: TestSummary = Mockito.mock<TestSummary>(TestSummary::class.java)
+        Mockito.`when`<T?>(testSummary.getTarget()).thenReturn(targetA)
+        Mockito.`when`<T?>(testSummary.getLabel()).thenReturn(labelA)
+
+        stateTracker.testFilteringComplete(filteringComplete)
+        stateTracker.testSummary(testSummary)
+
+        var terminalWriter: LoggingTerminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+        stateTracker.writeProgressBar(terminalWriter)
+        var output: String = terminalWriter.getTranscript()
+        Truth.assertWithMessage("Test count should be visible in output: %s", output)
+            .that(output.contains(" 1 / 2 tests"))
+            .isTrue()
+
+        terminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+        stateTracker.writeProgressBar(terminalWriter,  /* shortVersion= */true)
+        output = terminalWriter.getTranscript()
+        Truth.assertWithMessage("Test count should be visible in short output: %s", output)
+            .that(output.contains(" 1 / 2 tests"))
+            .isTrue()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testPassedVisible() {
+        // The last test should still be visible in the long status bar, and colored as ok if it passed.
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        val stateTracker: UiStateTracker = getUiStateTracker(clock)
+        // Mimic being at the execution phase.
+        simulateExecutionPhase(stateTracker)
+        val filteringComplete: TestFilteringCompleteEvent =
+            Mockito.mock<TestFilteringCompleteEvent>(TestFilteringCompleteEvent::class.java)
+        val labelA: Label? = Label.parseCanonical("//foo/bar:baz")
+        val targetA: ConfiguredTarget = Mockito.mock<ConfiguredTarget>(ConfiguredTarget::class.java)
+        Mockito.`when`<T?>(targetA.getLabel()).thenReturn(labelA)
+        val targetB: ConfiguredTarget? = Mockito.mock<ConfiguredTarget?>(ConfiguredTarget::class.java)
+        Mockito.`when`<MutableCollection<ConfiguredTarget>?>(filteringComplete.getTestTargets())
+            .thenReturn(com.google.common.collect.ImmutableSet.of<ConfiguredTarget>(targetA, targetB))
+        val testSummary: TestSummary = Mockito.mock<TestSummary>(TestSummary::class.java)
+        Mockito.`when`<T?>(testSummary.getStatus()).thenReturn(BlazeTestStatus.PASSED)
+        Mockito.`when`<T?>(testSummary.getTarget()).thenReturn(targetA)
+        Mockito.`when`<T?>(testSummary.getLabel()).thenReturn(labelA)
+
+        stateTracker.testFilteringComplete(filteringComplete)
+        stateTracker.testSummary(testSummary)
+
+        val terminalWriter: LoggingTerminalWriter = LoggingTerminalWriter()
+        stateTracker.writeProgressBar(terminalWriter)
+        val output: String = terminalWriter.getTranscript()
+
+        val expected = LoggingTerminalWriter.OK + labelA
+        Truth.assertWithMessage(
+            "Sequence '%s' should be present in colored progress bar: %s", expected, output
+        )
+            .that(output.contains(expected))
+            .isTrue()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFailedVisible() {
+        // The last test should still be visible in the long status bar, and colored as fail if it
+        // did not pass.
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        val stateTracker: UiStateTracker = getUiStateTracker(clock)
+        // Mimic being at the execution phase.
+        simulateExecutionPhase(stateTracker)
+        val filteringComplete: TestFilteringCompleteEvent =
+            Mockito.mock<TestFilteringCompleteEvent>(TestFilteringCompleteEvent::class.java)
+        val labelA: Label? = Label.parseCanonical("//foo/bar:baz")
+        val targetA: ConfiguredTarget = Mockito.mock<ConfiguredTarget>(ConfiguredTarget::class.java)
+        Mockito.`when`<T?>(targetA.getLabel()).thenReturn(labelA)
+        val targetB: ConfiguredTarget? = Mockito.mock<ConfiguredTarget?>(ConfiguredTarget::class.java)
+        Mockito.`when`<MutableCollection<ConfiguredTarget>?>(filteringComplete.getTestTargets())
+            .thenReturn(com.google.common.collect.ImmutableSet.of<ConfiguredTarget>(targetA, targetB))
+        val testSummary: TestSummary = Mockito.mock<TestSummary>(TestSummary::class.java)
+        Mockito.`when`<T?>(testSummary.getStatus()).thenReturn(BlazeTestStatus.FAILED)
+        Mockito.`when`<T?>(testSummary.getTarget()).thenReturn(targetA)
+        Mockito.`when`<T?>(testSummary.getLabel()).thenReturn(labelA)
+
+        stateTracker.testFilteringComplete(filteringComplete)
+        stateTracker.testSummary(testSummary)
+
+        val terminalWriter: LoggingTerminalWriter = LoggingTerminalWriter()
+        stateTracker.writeProgressBar(terminalWriter)
+        val output: String = terminalWriter.getTranscript()
+
+        val expected = LoggingTerminalWriter.FAIL + labelA
+        Truth.assertWithMessage(
+            "Sequence '%s' should be present in colored progress bar: %s", expected, output
+        )
+            .that(output.contains(expected))
+            .isTrue()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSensibleShortening() {
+        // Verify that in the typical case, we shorten the progress message by shortening
+        // the path implicit in it, that can also be extracted from the label. In particular,
+        // the parts
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        val stateTracker: UiStateTracker = getUiStateTracker(clock,  /* targetWidth= */70)
+        // Mimic being at the execution phase.
+        simulateExecutionPhase(stateTracker)
+        val action: Action =
+            mockAction(
+                "Building some/very/very/long/path/for/some/library/directory/foo.jar (42 source"
+                        + " files)",
+                "some/very/very/long/path/for/some/library/directory/foo.jar"
+            )
+        val label: Label? =
+            Label.parseCanonical("//some/very/very/long/path/for/some/library/directory:libfoo")
+        val owner: ActionOwner? =
+            ActionOwner.createDummy(
+                label,
+                net.starlark.java.syntax.Location("dummy-file", 0, 0),  /* targetKind= */
+                "dummy-target-kind",  /* buildConfigurationMnemonic= */
+                "dummy-mnemonic",  /* configurationChecksum= */
+                "fedcba",
+                BuildConfigurationEvent(
+                    BuildEventStreamProtos.BuildEventId.getDefaultInstance(),
+                    BuildEventStreamProtos.BuildEvent.getDefaultInstance()
+                ),  /* isToolConfiguration= */
+                false,  /* executionPlatform= */
+                PlatformInfo.EMPTY_PLATFORM_INFO,  /* aspectDescriptors= */
+                com.google.common.collect.ImmutableList.of<E?>(),  /* execProperties= */
+                com.google.common.collect.ImmutableMap.of<K?, V?>()
+            )
+        Mockito.`when`<T?>(action.getOwner()).thenReturn(owner)
+
+        clock.advanceMillis(TimeUnit.SECONDS.toMillis(3))
+        stateTracker.actionStarted(ActionStartedEvent(action, clock.nanoTime()))
+        clock.advanceMillis(TimeUnit.SECONDS.toMillis(5))
+
+        val terminalWriter: LoggingTerminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+        stateTracker.writeProgressBar(terminalWriter)
+        val output: String = terminalWriter.getTranscript()
+
+        Truth.assertWithMessage("Progress bar should contain 'Building ', but was:\n%s", output)
+            .that(output.contains("Building "))
+            .isTrue()
+        Truth.assertWithMessage(
+            "Progress bar should contain 'foo.jar (42 source files)', but was:\n%s", output
+        )
+            .that(output.contains("foo.jar (42 source files)"))
+            .isTrue()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testActionStrategyVisible() {
+        // verify that, if a strategy was reported for a shown action, it is visible
+        // in the progress bar.
+        val strategy = "verySpecialStrategy"
+        val primaryOutput = "some/path/to/a/file"
+
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        val path: Path? = outputBase.getRelative(PathFragment.create(primaryOutput))
+        val artifact: Artifact? =
+            ActionsTestUtil.createArtifact(ArtifactRoot.asSourceRoot(Root.fromPath(outputBase)), path)
+        val action: Action = mockAction("Some random action", primaryOutput)
+        Mockito.`when`<T?>(action.getOwner()).thenReturn(dummyActionOwner())
+        Mockito.`when`<T?>(action.getPrimaryOutput()).thenReturn(artifact)
+
+        val stateTracker: UiStateTracker = getUiStateTracker(clock)
+        // Mimic being at the execution phase.
+        simulateExecutionPhase(stateTracker)
+        stateTracker.actionStarted(ActionStartedEvent(action, clock.nanoTime()))
+        stateTracker.runningAction(RunningActionEvent(action, strategy))
+
+        val terminalWriter: LoggingTerminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+        stateTracker.writeProgressBar(terminalWriter)
+        val output: String = terminalWriter.getTranscript()
+
+        Truth.assertWithMessage("Output should mention strategy '%s', but was: %s", strategy, output)
+            .that(output.contains(strategy))
+            .isTrue()
+    }
+
+    @Throws(LabelSyntaxException::class)
+    private fun createDummyAction(progressMessage: String?): Action {
+        val primaryOutput = "some/path/to/a/file"
+        val path: Path? = outputBase.getRelative(PathFragment.create(primaryOutput))
+        val artifact: Artifact? =
+            ActionsTestUtil.createArtifact(ArtifactRoot.asSourceRoot(Root.fromPath(outputBase)), path)
+        val action: Action = mockAction(progressMessage, primaryOutput)
+        Mockito.`when`<T?>(action.getOwner()).thenReturn(dummyActionOwner())
+        Mockito.`when`<T?>(action.getPrimaryOutput()).thenReturn(artifact)
+        return action
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun actionProgress_visible() {
+        // arrange
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        val action: Action = createDummyAction("Some random action")
+        val stateTracker: UiStateTracker = getUiStateTracker(clock,  /* targetWidth= */70)
+        // Mimic being at the execution phase.
+        simulateExecutionPhase(stateTracker)
+        stateTracker.actionStarted(ActionStartedEvent(action, clock.nanoTime()))
+        stateTracker.actionProgress(
+            ActionProgressEvent.create(action, "action-id", "action progress", false)
+        )
+        val terminalWriter: LoggingTerminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+
+        // act
+        stateTracker.writeProgressBar(terminalWriter)
+
+        // assert
+        val output: String? = terminalWriter.getTranscript()
+        Truth.assertThat(output).contains("action progress")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun actionProgress_withTooSmallWidth_progressSkipped() {
+        // arrange
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        val action: Action = createDummyAction("Some random action")
+        val stateTracker: UiStateTracker = getUiStateTracker(clock,  /* targetWidth= */30)
+        // Mimic being at the execution phase.
+        simulateExecutionPhase(stateTracker)
+        stateTracker.actionStarted(ActionStartedEvent(action, clock.nanoTime()))
+        stateTracker.actionProgress(
+            ActionProgressEvent.create(action, "action-id", "action progress", false)
+        )
+        val terminalWriter: LoggingTerminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+
+        // act
+        stateTracker.writeProgressBar(terminalWriter)
+
+        // assert
+        val output: String? = terminalWriter.getTranscript()
+        Truth.assertThat(output).doesNotContain("action progress")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun actionProgress_withSmallWidth_progressShortened() {
+        // arrange
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        val action: Action = createDummyAction("some action")
+        // The targetWidth needs to be small enough to cause shortening to occur.
+        val stateTracker: UiStateTracker = getUiStateTracker(clock,  /* targetWidth= */40)
+        // Mimic being at the execution phase.
+        simulateExecutionPhase(stateTracker)
+        stateTracker.actionStarted(ActionStartedEvent(action, clock.nanoTime()))
+        stateTracker.actionProgress(
+            ActionProgressEvent.create(action, "action-id", "action progress", false)
+        )
+        val terminalWriter: LoggingTerminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+
+        // act
+        stateTracker.writeProgressBar(terminalWriter)
+
+        // assert
+        val output: String? = terminalWriter.getTranscript()
+        Truth.assertThat(output).contains("action p...")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun actionProgress_multipleProgress_displayInOrder() {
+        // arrange
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        val action: Action = createDummyAction("Some random action")
+        val stateTracker: UiStateTracker = getUiStateTracker(clock,  /* targetWidth= */70)
+        // Mimic being at the execution phase.
+        simulateExecutionPhase(stateTracker)
+        stateTracker.actionStarted(ActionStartedEvent(action, clock.nanoTime()))
+        stateTracker.actionProgress(
+            ActionProgressEvent.create(action, "action-id1", "action progress 1", false)
+        )
+        stateTracker.actionProgress(
+            ActionProgressEvent.create(action, "action-id2", "action progress 2", false)
+        )
+        val terminalWriter: LoggingTerminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+
+        // act
+        stateTracker.writeProgressBar(terminalWriter)
+
+        // assert
+        val output: String? = terminalWriter.getTranscript()
+        Truth.assertThat(output).contains("action progress 1")
+        Truth.assertThat(output).doesNotContain("action progress 2")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMultipleActionStrategiesVisibleForDynamicScheduling() {
+        val strategy1 = "strategy1"
+        val strategy2 = "stratagy2"
+        val primaryOutput = "some/path/to/a/file"
+
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        val path: Path? = outputBase.getRelative(PathFragment.create(primaryOutput))
+        val artifact: Artifact? =
+            ActionsTestUtil.createArtifact(ArtifactRoot.asSourceRoot(Root.fromPath(outputBase)), path)
+        val action: Action = mockAction("Some random action", primaryOutput)
+        Mockito.`when`<T?>(action.getOwner()).thenReturn(dummyActionOwner())
+        Mockito.`when`<T?>(action.getPrimaryOutput()).thenReturn(artifact)
+
+        val stateTracker: UiStateTracker = getUiStateTracker(clock)
+        // Mimic being at the execution phase.
+        simulateExecutionPhase(stateTracker)
+        stateTracker.actionStarted(ActionStartedEvent(action, clock.nanoTime()))
+        stateTracker.runningAction(RunningActionEvent(action, strategy1))
+        stateTracker.runningAction(RunningActionEvent(action, strategy2))
+
+        val terminalWriter: LoggingTerminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+        stateTracker.writeProgressBar(terminalWriter)
+        val output: String = terminalWriter.getTranscript()
+
+        Truth.assertWithMessage(
             "Output should mention strategies '%s' and '%s', but was: %s",
-            strategy1, strategy2, output)
-        .that(output.contains(strategy1 + ", " + strategy2))
-        .isTrue();
-  }
-
-  @Test
-  public void testActionCountsWithDynamicScheduling() throws Exception {
-    String primaryOutput1 = "some/path/to/a/file";
-    String primaryOutput2 = "some/path/to/b/file";
-
-    ManualClock clock = new ManualClock();
-    UiStateTracker stateTracker = getUiStateTracker(clock);
-    // Mimic being at the execution phase.
-    simulateExecutionPhase(stateTracker);
-    LoggingTerminalWriter terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
-
-    Path path1 = outputBase.getRelative(PathFragment.create(primaryOutput1));
-    Artifact artifact1 =
-        ActionsTestUtil.createArtifact(ArtifactRoot.asSourceRoot(Root.fromPath(outputBase)), path1);
-    Action action1 = mockAction("First random action", primaryOutput1);
-    when(action1.getOwner()).thenReturn(dummyActionOwner());
-    when(action1.getPrimaryOutput()).thenReturn(artifact1);
-    stateTracker.actionStarted(new ActionStartedEvent(action1, clock.nanoTime()));
-
-    Path path2 = outputBase.getRelative(PathFragment.create(primaryOutput2));
-    Artifact artifact2 =
-        ActionsTestUtil.createArtifact(ArtifactRoot.asSourceRoot(Root.fromPath(outputBase)), path2);
-    Action action2 = mockAction("First random action", primaryOutput1);
-    when(action2.getOwner()).thenReturn(dummyActionOwner());
-    when(action2.getPrimaryOutput()).thenReturn(artifact2);
-    stateTracker.actionStarted(new ActionStartedEvent(action2, clock.nanoTime()));
-
-    stateTracker.runningAction(new RunningActionEvent(action1, "strategy1"));
-    stateTracker.schedulingAction(new SchedulingActionEvent(action2, "strategy1"));
-    terminalWriter.reset();
-    stateTracker.writeProgressBar(terminalWriter);
-    assertThat(terminalWriter.getTranscript()).contains("2 actions, 1 running");
-
-    stateTracker.runningAction(new RunningActionEvent(action1, "strategy2"));
-    terminalWriter.reset();
-    stateTracker.writeProgressBar(terminalWriter);
-    assertThat(terminalWriter.getTranscript()).contains("2 actions, 1 running");
-
-    stateTracker.runningAction(new RunningActionEvent(action2, "strategy1"));
-    terminalWriter.reset();
-    stateTracker.writeProgressBar(terminalWriter);
-    assertThat(terminalWriter.getTranscript()).contains("2 actions running");
-
-    stateTracker.runningAction(new RunningActionEvent(action2, "strategy2"));
-    terminalWriter.reset();
-    stateTracker.writeProgressBar(terminalWriter);
-    assertThat(terminalWriter.getTranscript()).contains("2 actions running");
-  }
-
-  private void doTestOutputLength(boolean withTest, int actions) throws Exception {
-    // If we target 70 characters, then there should be enough space to both,
-    // keep the line limit, and show the local part of the running actions and
-    // the passed test.
-    ManualClock clock = new ManualClock();
-    UiStateTracker stateTracker = getUiStateTracker(clock, /* targetWidth= */ 70);
-    // Mimic being at the execution phase.
-    simulateExecutionPhase(stateTracker);
-
-    Action foobuildAction =
-        mockAction(
-            "Building"
-                + " //src/some/very/long/path/long/long/long/long/long/long/long/foo/foobuild.jar",
-            "src/some/very/long/path/long/long/long/long/long/long/long/foo/foobuild.jar");
-    Action bazbuildAction =
-        mockAction(
-            "Building"
-                + " //src/some/very/long/path/long/long/long/long/long/long/long/baz/bazbuild.jar",
-            "src/some/very/long/path/long/long/long/long/long/long/long/baz/bazbuild.jar");
-
-    Label bartestLabel =
-        Label.parseCanonical(
-            "//src/another/very/long/long/path/long/long/long/long/long/long/long/long/bars:bartest");
-    ConfiguredTarget bartestTarget = mock(ConfiguredTarget.class);
-    when(bartestTarget.getLabel()).thenReturn(bartestLabel);
-
-    TestFilteringCompleteEvent filteringComplete = mock(TestFilteringCompleteEvent.class);
-    when(filteringComplete.getTestTargets()).thenReturn(ImmutableSet.of(bartestTarget));
-
-    TestSummary testSummary = mock(TestSummary.class);
-    when(testSummary.getStatus()).thenReturn(BlazeTestStatus.PASSED);
-    when(testSummary.getTarget()).thenReturn(bartestTarget);
-    when(testSummary.getLabel()).thenReturn(bartestLabel);
-
-    if (actions >= 1) {
-      stateTracker.actionStarted(new ActionStartedEvent(foobuildAction, 123456789));
-    }
-    if (actions >= 2) {
-      stateTracker.actionStarted(new ActionStartedEvent(bazbuildAction, 123456900));
-    }
-    if (withTest) {
-      stateTracker.testFilteringComplete(filteringComplete);
-      stateTracker.testSummary(testSummary);
+            strategy1, strategy2, output
+        )
+            .that(output.contains(strategy1 + ", " + strategy2))
+            .isTrue()
     }
 
-    LoggingTerminalWriter terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
-    stateTracker.writeProgressBar(terminalWriter);
-    String output = terminalWriter.getTranscript();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testActionCountsWithDynamicScheduling() {
+        val primaryOutput1 = "some/path/to/a/file"
+        val primaryOutput2 = "some/path/to/b/file"
 
-    assertWithMessage(
-            "Only lines with at most 70 chars should be present in the output:\n%s", output)
-        .that(longestLine(output) <= 70)
-        .isTrue();
-    if (actions >= 1) {
-      assertWithMessage("Running action 'foobuild' should be mentioned in output:\n%s", output)
-          .that(output.contains("foobuild"))
-          .isTrue();
-    }
-    if (actions >= 2) {
-      assertWithMessage("Running action 'bazbuild' should be mentioned in output:\n%s", output)
-          .that(output.contains("bazbuild"))
-          .isTrue();
-    }
-    if (withTest) {
-      assertWithMessage("Passed test ':bartest' should be mentioned in output:\n%s", output)
-          .that(output.contains(":bartest"))
-          .isTrue();
-    }
-  }
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        val stateTracker: UiStateTracker = getUiStateTracker(clock)
+        // Mimic being at the execution phase.
+        simulateExecutionPhase(stateTracker)
+        val terminalWriter: LoggingTerminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
 
-  @Test
-  public void testOutputLength() throws Exception {
-    for (int i = 0; i < 3; i++) {
-      doTestOutputLength(true, i);
-      doTestOutputLength(false, i);
-    }
-  }
+        val path1: Path? = outputBase.getRelative(PathFragment.create(primaryOutput1))
+        val artifact1: Artifact? =
+            ActionsTestUtil.createArtifact(ArtifactRoot.asSourceRoot(Root.fromPath(outputBase)), path1)
+        val action1: Action = mockAction("First random action", primaryOutput1)
+        Mockito.`when`<T?>(action1.getOwner()).thenReturn(dummyActionOwner())
+        Mockito.`when`<T?>(action1.getPrimaryOutput()).thenReturn(artifact1)
+        stateTracker.actionStarted(ActionStartedEvent(action1, clock.nanoTime()))
 
-  @Test
-  public void testStatusShown() throws Exception {
-    // Verify that for non-executing actions, at least the first 3 characters of the
-    // status are shown.
-    // Also verify that the number of running actions is reported correctly, if there is
-    // more than one active action and not all are running.
-    ManualClock clock = new ManualClock();
-    clock.advanceMillis(120000);
-    UiStateTracker stateTracker = getUiStateTracker(clock);
-    // Mimic being at the execution phase.
-    simulateExecutionPhase(stateTracker);
-    Action actionFoo = mockAction("Building foo", "foo/foo");
-    ActionOwner ownerFoo = dummyActionOwner();
-    when(actionFoo.getOwner()).thenReturn(ownerFoo);
-    Action actionBar = mockAction("Building bar", "bar/bar");
-    ActionOwner ownerBar = dummyActionOwner();
-    when(actionBar.getOwner()).thenReturn(ownerBar);
-    LoggingTerminalWriter terminalWriter;
-    String output;
+        val path2: Path? = outputBase.getRelative(PathFragment.create(primaryOutput2))
+        val artifact2: Artifact? =
+            ActionsTestUtil.createArtifact(ArtifactRoot.asSourceRoot(Root.fromPath(outputBase)), path2)
+        val action2: Action = mockAction("First random action", primaryOutput1)
+        Mockito.`when`<T?>(action2.getOwner()).thenReturn(dummyActionOwner())
+        Mockito.`when`<T?>(action2.getPrimaryOutput()).thenReturn(artifact2)
+        stateTracker.actionStarted(ActionStartedEvent(action2, clock.nanoTime()))
 
-    // Action foo being scanned.
-    stateTracker.actionStarted(new ActionStartedEvent(actionFoo, 123456700));
-    stateTracker.scanningAction(new ScanningActionEvent(actionFoo));
+        stateTracker.runningAction(RunningActionEvent(action1, "strategy1"))
+        stateTracker.schedulingAction(SchedulingActionEvent(action2, "strategy1"))
+        terminalWriter.reset()
+        stateTracker.writeProgressBar(terminalWriter)
+        com.google.common.truth.Subject.contains("2 actions, 1 running")
 
-    terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
-    stateTracker.writeProgressBar(terminalWriter);
-    output = terminalWriter.getTranscript();
-    assertWithMessage("Action foo being scanned should be visible in output:\n%s", output)
-        .that(output.contains("sca") || output.contains("Sca"))
-        .isTrue();
+        stateTracker.runningAction(RunningActionEvent(action1, "strategy2"))
+        terminalWriter.reset()
+        stateTracker.writeProgressBar(terminalWriter)
+        com.google.common.truth.Subject.contains("2 actions, 1 running")
 
-    // Then action bar gets scheduled.
-    stateTracker.actionStarted(new ActionStartedEvent(actionBar, 123456701));
-    stateTracker.schedulingAction(new SchedulingActionEvent(actionBar, "bar-sandbox"));
+        stateTracker.runningAction(RunningActionEvent(action2, "strategy1"))
+        terminalWriter.reset()
+        stateTracker.writeProgressBar(terminalWriter)
+        com.google.common.truth.Subject.contains("2 actions running")
 
-    terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
-    stateTracker.writeProgressBar(terminalWriter);
-    output = terminalWriter.getTranscript();
-    assertWithMessage("Action bar being scheduled should be visible in output:\n%s", output)
-        .that(output.contains("sch") || output.contains("Sch"))
-        .isTrue();
-    assertWithMessage("Action foo being scanned should still be visible in output:\n%s", output)
-        .that(output.contains("sca") || output.contains("Sca"))
-        .isTrue();
-    assertWithMessage("Indication that no actions are running is missing in output:\n%s", output)
-        .that(output.contains("0 running"))
-        .isTrue();
-    assertWithMessage("Total number of actions expected  in output:\n%s", output)
-        .that(output.contains("2 actions"))
-        .isTrue();
-
-    // Then foo starts.
-    stateTracker.runningAction(new RunningActionEvent(actionFoo, "xyz-sandbox"));
-    stateTracker.writeProgressBar(terminalWriter);
-
-    terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
-    stateTracker.writeProgressBar(terminalWriter);
-    output = terminalWriter.getTranscript();
-    assertWithMessage("Action foo's xyz-sandbox strategy should be shown in output:\n%s", output)
-        .that(output.contains("xyz-sandbox"))
-        .isTrue();
-    assertWithMessage("Action foo should no longer be analyzed in output:\n%s", output)
-        .that(output.contains("ana") || output.contains("Ana"))
-        .isFalse();
-    assertWithMessage("Action bar being scheduled should still be visible in output:\n%s", output)
-        .that(output.contains("sch") || output.contains("Sch"))
-        .isTrue();
-    assertWithMessage("Indication that one action is running is missing in output:\n%s", output)
-        .that(output.contains("1 running"))
-        .isTrue();
-    assertWithMessage("Total number of actions expected  in output:\n%s", output)
-        .that(output.contains("2 actions"))
-        .isTrue();
-  }
-
-  @Test
-  public void testTimerReset() throws Exception {
-    // Verify that a change in an action state (e.g., from scheduling to executing) resets
-    // the time associated with that action.
-
-    ManualClock clock = new ManualClock();
-    clock.advanceMillis(TimeUnit.SECONDS.toMillis(123));
-    UiStateTracker stateTracker = getUiStateTracker(clock);
-    // Mimic being at the execution phase.
-    simulateExecutionPhase(stateTracker);
-    clock.advanceMillis(TimeUnit.SECONDS.toMillis(2));
-    LoggingTerminalWriter terminalWriter;
-    String output;
-
-    Action actionFoo = mockAction("Building foo", "foo/foo");
-    ActionOwner ownerFoo = dummyActionOwner();
-    when(actionFoo.getOwner()).thenReturn(ownerFoo);
-    Action actionBar = mockAction("Building bar", "bar/bar");
-    ActionOwner ownerBar = dummyActionOwner();
-    when(actionBar.getOwner()).thenReturn(ownerBar);
-
-    stateTracker.actionStarted(new ActionStartedEvent(actionFoo, clock.nanoTime()));
-    stateTracker.runningAction(new RunningActionEvent(actionFoo, "foo-sandbox"));
-    clock.advanceMillis(TimeUnit.SECONDS.toMillis(7));
-    stateTracker.actionStarted(new ActionStartedEvent(actionBar, clock.nanoTime()));
-    stateTracker.schedulingAction(new SchedulingActionEvent(actionBar, "bar-sandbox"));
-    clock.advanceMillis(TimeUnit.SECONDS.toMillis(21));
-
-    terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
-    stateTracker.writeProgressBar(terminalWriter);
-    output = terminalWriter.getTranscript();
-    assertWithMessage("Runtime of first action should be visible in output: %s", output)
-        .that(output.contains("28s"))
-        .isTrue();
-    assertWithMessage("Scheduling time of second action should be visible in output: %s", output)
-        .that(output.contains("21s"))
-        .isTrue();
-
-    stateTracker.runningAction(new RunningActionEvent(actionBar, "bar-sandbox"));
-    terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
-    stateTracker.writeProgressBar(terminalWriter);
-    output = terminalWriter.getTranscript();
-    assertWithMessage("Runtime of first action should still be visible in output: %s", output)
-        .that(output.contains("28s"))
-        .isTrue();
-    assertWithMessage("Time of second action should no longer be visible in output: %s", output)
-        .that(output.contains("21s"))
-        .isFalse();
-
-    clock.advanceMillis(TimeUnit.SECONDS.toMillis(30));
-    terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
-    stateTracker.writeProgressBar(terminalWriter);
-    output = terminalWriter.getTranscript();
-    assertWithMessage("New runtime of first action should be visible in output: %s", output)
-        .that(output.contains("58s"))
-        .isTrue();
-    assertWithMessage("Runtime of second action should be visible in output: %s", output)
-        .that(output.contains("30s"))
-        .isTrue();
-  }
-
-  @Test
-  public void testEarlyStatusHandledGracefully() throws Exception {
-    // On the event bus, events sometimes are sent out of order; verify that we handle an
-    // early message that an action is running gracefully.
-    ManualClock clock = new ManualClock();
-    UiStateTracker stateTracker = getUiStateTracker(clock);
-    // Mimic being at the execution phase.
-    simulateExecutionPhase(stateTracker);
-    Action actionFoo = mockAction("Building foo", "foo/foo");
-    ActionOwner ownerFoo = dummyActionOwner();
-    when(actionFoo.getOwner()).thenReturn(ownerFoo);
-    LoggingTerminalWriter terminalWriter;
-    String output;
-
-    // Early status announcement
-    stateTracker.runningAction(new RunningActionEvent(actionFoo, "foo-sandbox"));
-
-    // Here we don't expect any particular output, just some description; in particular, we do
-    // not expect the state tracker to hit an internal error.
-    terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
-    stateTracker.writeProgressBar(terminalWriter);
-    output = terminalWriter.getTranscript();
-    assertWithMessage("Expected at least some status bar").that(output).isNotEmpty();
-
-    // Action actually started
-    stateTracker.actionStarted(new ActionStartedEvent(actionFoo, clock.nanoTime()));
-
-    terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
-    stateTracker.writeProgressBar(terminalWriter);
-    output = terminalWriter.getTranscript();
-    assertWithMessage("Even a strategy announced early should be shown in output:\n%s", output)
-        .that(output.contains("foo-sandbox"))
-        .isTrue();
-  }
-
-  @Test
-  public void testExecutingActionsFirst() throws Exception {
-    // Verify that executing actions, even if started late, are visible.
-    ManualClock clock = new ManualClock();
-    UiStateTracker stateTracker = getUiStateTracker(clock);
-    // Mimic being at the execution phase.
-    simulateExecutionPhase(stateTracker);
-    clock.advanceMillis(120000);
-
-    for (int i = 0; i < 30; i++) {
-      Action action = mockAction("Takes long to schedule number " + i, "long/startup" + i);
-      ActionOwner owner = dummyActionOwner();
-      when(action.getOwner()).thenReturn(owner);
-      stateTracker.actionStarted(new ActionStartedEvent(action, 123456789 + i));
-      stateTracker.schedulingAction(new SchedulingActionEvent(action, "xyz-sandbox"));
+        stateTracker.runningAction(RunningActionEvent(action2, "strategy2"))
+        terminalWriter.reset()
+        stateTracker.writeProgressBar(terminalWriter)
+        com.google.common.truth.Subject.contains("2 actions running")
     }
 
-    for (int i = 0; i < 3; i++) {
-      Action action = mockAction("quickstart" + i, "pkg/quickstart" + i);
-      ActionOwner owner = dummyActionOwner();
-      when(action.getOwner()).thenReturn(owner);
-      stateTracker.actionStarted(new ActionStartedEvent(action, 123457000 + i));
-      stateTracker.runningAction(new RunningActionEvent(action, "xyz-sandbox"));
+    @Throws(java.lang.Exception::class)
+    private fun doTestOutputLength(withTest: Boolean, actions: Int) {
+        // If we target 70 characters, then there should be enough space to both,
+        // keep the line limit, and show the local part of the running actions and
+        // the passed test.
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        val stateTracker: UiStateTracker = getUiStateTracker(clock,  /* targetWidth= */70)
+        // Mimic being at the execution phase.
+        simulateExecutionPhase(stateTracker)
 
-      LoggingTerminalWriter terminalWriter =
-          new LoggingTerminalWriter(/* discardHighlight= */ true);
-      stateTracker.writeProgressBar(terminalWriter);
-      String output = terminalWriter.getTranscript();
-      assertWithMessage("Action quickstart%s should be visible in output:\n%s", i, output)
-          .that(output.contains("quickstart" + i))
-          .isTrue();
-      assertWithMessage("Number of running actions should be indicated in output:\n%s", output)
-          .that(output.contains((i + 1) + " running"))
-          .isTrue();
-    }
-  }
+        val foobuildAction: Action =
+            mockAction(
+                "Building"
+                        + " //src/some/very/long/path/long/long/long/long/long/long/long/foo/foobuild.jar",
+                "src/some/very/long/path/long/long/long/long/long/long/long/foo/foobuild.jar"
+            )
+        val bazbuildAction: Action =
+            mockAction(
+                "Building"
+                        + " //src/some/very/long/path/long/long/long/long/long/long/long/baz/bazbuild.jar",
+                "src/some/very/long/path/long/long/long/long/long/long/long/baz/bazbuild.jar"
+            )
 
-  @Test
-  public void testAggregation() throws Exception {
-    // Assert that actions for the same test are aggregated so that an action afterwards
-    // is still shown.
-    ManualClock clock = new ManualClock();
-    clock.advanceMillis(TimeUnit.SECONDS.toMillis(1234));
-    UiStateTracker stateTracker = getUiStateTracker(clock, /* targetWidth= */ 80);
-    stateTracker.setProgressSampleSize(4);
-    // Mimic being at the execution phase.
-    simulateExecutionPhase(stateTracker);
+        val bartestLabel: Label? =
+            Label.parseCanonical(
+                "//src/another/very/long/long/path/long/long/long/long/long/long/long/long/bars:bartest"
+            )
+        val bartestTarget: ConfiguredTarget = Mockito.mock<ConfiguredTarget>(ConfiguredTarget::class.java)
+        Mockito.`when`<T?>(bartestTarget.getLabel()).thenReturn(bartestLabel)
 
-    Label labelFooTest = Label.parseCanonical("//foo/bar:footest");
-    ConfiguredTarget targetFooTest = mock(ConfiguredTarget.class);
-    when(targetFooTest.getLabel()).thenReturn(labelFooTest);
-    ActionOwner fooOwner =
-        ActionOwner.createDummy(
-            labelFooTest,
-            new Location("dummy-file", 0, 0),
-            /* targetKind= */ "dummy-target-kind",
-            /* buildConfigurationMnemonic= */ "TestRunner",
-            /* configurationChecksum= */ "abcdef",
-            new BuildConfigurationEvent(
-                BuildEventStreamProtos.BuildEventId.getDefaultInstance(),
-                BuildEventStreamProtos.BuildEvent.getDefaultInstance()),
-            /* isToolConfiguration= */ false,
-            /* executionPlatform= */ PlatformInfo.EMPTY_PLATFORM_INFO,
-            /* aspectDescriptors= */ ImmutableList.of(),
-            /* execProperties= */ ImmutableMap.of());
+        val filteringComplete: TestFilteringCompleteEvent =
+            Mockito.mock<TestFilteringCompleteEvent>(TestFilteringCompleteEvent::class.java)
+        Mockito.`when`<MutableCollection<ConfiguredTarget>?>(filteringComplete.getTestTargets())
+            .thenReturn(com.google.common.collect.ImmutableSet.of<ConfiguredTarget>(bartestTarget))
 
-    Label labelBarTest = Label.parseCanonical("//baz:bartest");
-    ConfiguredTarget targetBarTest = mock(ConfiguredTarget.class);
-    when(targetBarTest.getLabel()).thenReturn(labelBarTest);
-    ActionOwner barOwner =
-        ActionOwner.createDummy(
-            labelBarTest,
-            new Location("dummy-file", 0, 0),
-            /* targetKind= */ "dummy-target-kind",
-            /* buildConfigurationMnemonic= */ "TestRunner",
-            /* configurationChecksum= */ "abcdef",
-            new BuildConfigurationEvent(
-                BuildEventStreamProtos.BuildEventId.getDefaultInstance(),
-                BuildEventStreamProtos.BuildEvent.getDefaultInstance()),
-            /* isToolConfiguration= */ false,
-            /* executionPlatform= */ PlatformInfo.EMPTY_PLATFORM_INFO,
-            /* aspectDescriptors= */ ImmutableList.of(),
-            /* execProperties= */ ImmutableMap.of());
+        val testSummary: TestSummary = Mockito.mock<TestSummary>(TestSummary::class.java)
+        Mockito.`when`<T?>(testSummary.getStatus()).thenReturn(BlazeTestStatus.PASSED)
+        Mockito.`when`<T?>(testSummary.getTarget()).thenReturn(bartestTarget)
+        Mockito.`when`<T?>(testSummary.getLabel()).thenReturn(bartestLabel)
 
-    Label labelBazTest = Label.parseCanonical("//baz:baztest");
-    ConfiguredTarget targetBazTest = mock(ConfiguredTarget.class);
-    when(targetBazTest.getLabel()).thenReturn(labelBazTest);
-    ActionOwner bazOwner =
-        ActionOwner.createDummy(
-            labelBazTest,
-            new Location("dummy-file", 0, 0),
-            /* targetKind= */ "dummy-target-kind",
-            /* buildConfigurationMnemonic= */ "NonTestAction",
-            /* configurationChecksum= */ "fedcba",
-            new BuildConfigurationEvent(
-                BuildEventStreamProtos.BuildEventId.getDefaultInstance(),
-                BuildEventStreamProtos.BuildEvent.getDefaultInstance()),
-            /* isToolConfiguration= */ false,
-            /* executionPlatform= */ PlatformInfo.EMPTY_PLATFORM_INFO,
-            /* aspectDescriptors= */ ImmutableList.of(),
-            /* execProperties= */ ImmutableMap.of());
+        if (actions >= 1) {
+            stateTracker.actionStarted(ActionStartedEvent(foobuildAction, 123456789))
+        }
+        if (actions >= 2) {
+            stateTracker.actionStarted(ActionStartedEvent(bazbuildAction, 123456900))
+        }
+        if (withTest) {
+            stateTracker.testFilteringComplete(filteringComplete)
+            stateTracker.testSummary(testSummary)
+        }
 
-    TestFilteringCompleteEvent filteringComplete = mock(TestFilteringCompleteEvent.class);
-    when(filteringComplete.getTestTargets())
-        .thenReturn(ImmutableSet.of(targetFooTest, targetBarTest, targetBazTest));
-    stateTracker.testFilteringComplete(filteringComplete);
+        val terminalWriter: LoggingTerminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+        stateTracker.writeProgressBar(terminalWriter)
+        val output: String = terminalWriter.getTranscript()
 
-    // First produce 10 actions for footest...
-    for (int i = 0; i < 10; i++) {
-      clock.advanceMillis(TimeUnit.SECONDS.toMillis(1));
-      Action action = mockAction("Testing foo, shard " + i, "testlog_foo_" + i);
-      when(action.getOwner()).thenReturn(fooOwner);
-      stateTracker.actionStarted(new ActionStartedEvent(action, clock.nanoTime()));
-    }
-    // ...then produce 10 actions for bartest...
-    for (int i = 0; i < 10; i++) {
-      clock.advanceMillis(TimeUnit.SECONDS.toMillis(1));
-      Action action = mockAction("Testing bar, shard " + i, "testlog_bar_" + i);
-      when(action.getOwner()).thenReturn(barOwner);
-      stateTracker.actionStarted(new ActionStartedEvent(action, clock.nanoTime()));
-    }
-    // ...run a completely unrelated action..
-    clock.advanceMillis(TimeUnit.SECONDS.toMillis(1));
-    stateTracker.actionStarted(
-        new ActionStartedEvent(mockAction("Other action", "other/action"), clock.nanoTime()));
-    // ...and finally, run actions that are associated with baztest but are not a test.
-    for (int i = 0; i < 10; i++) {
-      clock.advanceMillis(1_000);
-      Action action = mockAction("Doing something " + i, "someartifact_" + i);
-      when(action.getOwner()).thenReturn(bazOwner);
-      stateTracker.actionStarted(new ActionStartedEvent(action, clock.nanoTime()));
-    }
-    clock.advanceMillis(TimeUnit.SECONDS.toMillis(1));
-
-    LoggingTerminalWriter terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
-    stateTracker.writeProgressBar(terminalWriter);
-    String output = terminalWriter.getTranscript();
-
-    assertWithMessage("Progress bar should contain ':footest', but was:\n%s", output)
-        .that(output.contains(":footest"))
-        .isTrue();
-    assertWithMessage("Progress bar should contain ':bartest', but was:\n%s", output)
-        .that(output.contains(":bartest"))
-        .isTrue();
-    assertWithMessage("Progress bar should contain 'Other action', but was:\n%s", output)
-        .that(output.contains("Other action"))
-        .isTrue();
-    assertThat(output).doesNotContain("Testing //baz:baztest");
-    assertThat(output).contains("Doing something");
-  }
-
-  @Test
-  public void testSuffix() {
-    assertThat(UiStateTracker.suffix("foobar", 3)).isEqualTo("bar");
-    assertThat(UiStateTracker.suffix("foo", -2)).isEmpty();
-    assertThat(UiStateTracker.suffix("foobar", 200)).isEqualTo("foobar");
-  }
-
-  @Test
-  public void testDownloadShown_duringLoading() throws Exception {
-    // Verify that, whenever a single download is running in loading phase, it is shown in the
-    // status bar.
-    ManualClock clock = new ManualClock();
-    clock.advance(Duration.ofSeconds(1234));
-    UiStateTracker stateTracker = getUiStateTracker(clock, /* targetWidth= */ 80);
-
-    URI url = URI.create("http://example.org/first/dep");
-
-    stateTracker.buildStarted();
-    stateTracker.downloadProgress(new DownloadProgressEvent(url));
-    clock.advance(Duration.ofSeconds(6));
-
-    LoggingTerminalWriter terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
-    stateTracker.writeProgressBar(terminalWriter);
-    String output = terminalWriter.getTranscript();
-
-    assertThat(output).contains(url.toString());
-    assertThat(output).contains("6s");
-
-    // Progress on the pending download should be reported appropriately
-    clock.advance(Duration.ofSeconds(1));
-    stateTracker.downloadProgress(new DownloadProgressEvent(url, 256));
-
-    terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
-    stateTracker.writeProgressBar(terminalWriter);
-    output = terminalWriter.getTranscript();
-
-    assertThat(output).contains(url.toString());
-    assertThat(output).contains("7s");
-    assertThat(output).contains("256");
-
-    // After finishing the download, it should no longer be reported.
-    clock.advance(Duration.ofSeconds(1));
-    stateTracker.downloadProgress(new DownloadProgressEvent(url, 256, true));
-
-    terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
-    stateTracker.writeProgressBar(terminalWriter);
-    output = terminalWriter.getTranscript();
-
-    assertThat(output).doesNotContain("example.org");
-  }
-
-  @Test
-  public void testDownloadShown_duringMainRepoMappingComputation() throws Exception {
-    ManualClock clock = new ManualClock();
-    clock.advance(Duration.ofSeconds(1234));
-    UiStateTracker stateTracker = getUiStateTracker(clock, /* targetWidth= */ 80);
-
-    URI url = URI.create("http://example.org/first/dep");
-
-    stateTracker.mainRepoMappingComputationStarted();
-    stateTracker.downloadProgress(new DownloadProgressEvent(url));
-    clock.advance(Duration.ofSeconds(6));
-
-    LoggingTerminalWriter terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
-    stateTracker.writeProgressBar(terminalWriter);
-    String output = terminalWriter.getTranscript();
-
-    assertThat(output).contains(url.toString());
-    assertThat(output).contains("6s");
-
-    // Progress on the pending download should be reported appropriately
-    clock.advance(Duration.ofSeconds(1));
-    stateTracker.downloadProgress(new DownloadProgressEvent(url, 256));
-
-    terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
-    stateTracker.writeProgressBar(terminalWriter);
-    output = terminalWriter.getTranscript();
-
-    assertThat(output).contains(url.toString());
-    assertThat(output).contains("7s");
-    assertThat(output).contains("256");
-
-    // After finishing the download, it should no longer be reported.
-    clock.advance(Duration.ofSeconds(1));
-    stateTracker.downloadProgress(new DownloadProgressEvent(url, 256, true));
-
-    terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
-    stateTracker.writeProgressBar(terminalWriter);
-    output = terminalWriter.getTranscript();
-
-    assertThat(output).doesNotContain("example.org");
-  }
-
-  @Test
-  public void testDownloadOutputLength() throws Exception {
-    // Verify that URLs are shortened in a reasonable way, if the terminal is not wide enough
-    // Also verify that the length is respected, even if only a download sample is shown.
-    ManualClock clock = new ManualClock();
-    clock.advanceMillis(TimeUnit.SECONDS.toMillis(1234));
-    UiStateTracker stateTracker = getUiStateTracker(clock, /* targetWidth= */ 60);
-    URI url = URI.create("http://example.org/some/really/very/very/long/path/filename.tar.gz");
-
-    stateTracker.buildStarted();
-    stateTracker.downloadProgress(new DownloadProgressEvent(url));
-    clock.advanceMillis(TimeUnit.SECONDS.toMillis(6));
-    for (int i = 0; i < 10; i++) {
-      stateTracker.downloadProgress(
-          new DownloadProgressEvent(
-              URI.create(
-                  "http://otherhost.example/another/also/length/path/to/another/download"
-                      + i
-                      + ".zip")));
-      clock.advanceMillis(TimeUnit.SECONDS.toMillis(1));
+        Truth.assertWithMessage(
+            "Only lines with at most 70 chars should be present in the output:\n%s", output
+        )
+            .that(longestLine(output) <= 70)
+            .isTrue()
+        if (actions >= 1) {
+            Truth.assertWithMessage("Running action 'foobuild' should be mentioned in output:\n%s", output)
+                .that(output.contains("foobuild"))
+                .isTrue()
+        }
+        if (actions >= 2) {
+            Truth.assertWithMessage("Running action 'bazbuild' should be mentioned in output:\n%s", output)
+                .that(output.contains("bazbuild"))
+                .isTrue()
+        }
+        if (withTest) {
+            Truth.assertWithMessage("Passed test ':bartest' should be mentioned in output:\n%s", output)
+                .that(output.contains(":bartest"))
+                .isTrue()
+        }
     }
 
-    LoggingTerminalWriter terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
-    stateTracker.writeProgressBar(terminalWriter);
-    String output = terminalWriter.getTranscript();
-
-    assertWithMessage(
-            "Only lines with at most 60 chars should be present in the output:\n%s", output)
-        .that(longestLine(output) <= 60)
-        .isTrue();
-    assertWithMessage("Output still should contain the filename, but was:\n%s", output)
-        .that(output.contains("filename.tar.gz"))
-        .isTrue();
-    assertWithMessage("Output still should contain the host name, but was:\n%s", output)
-        .that(output.contains("example.org"))
-        .isTrue();
-  }
-
-  @Test
-  public void testMultipleBuildEventProtocolTransports() throws Exception {
-    // Verify that all announced transports are present in the progress bar
-    // and that as transports are closed they disappear from the progress bar.
-    // Verify that the wait duration is displayed.
-    // Verify that after all transports have been closed, the build status is displayed.
-    ManualClock clock = new ManualClock();
-    BuildEventTransport transport1 = newBepTransport("BuildEventTransport1");
-    BuildEventTransport transport2 = newBepTransport("BuildEventTransport2");
-    BuildEventTransport transport3 = newBepTransport("BuildEventTransport3");
-    BuildResult buildResult = new BuildResult(clock.currentTimeMillis());
-    buildResult.setDetailedExitCode(DetailedExitCode.success());
-    clock.advanceMillis(TimeUnit.SECONDS.toMillis(1));
-    buildResult.setStopTime(clock.currentTimeMillis());
-
-    UiStateTracker stateTracker = getUiStateTracker(clock, /* targetWidth= */ 80);
-    stateTracker.buildStarted();
-    stateTracker.buildEventTransportsAnnounced(
-        new AnnounceBuildEventTransportsEvent(ImmutableList.of(transport1, transport2)));
-    stateTracker.buildEventTransportsAnnounced(
-        new AnnounceBuildEventTransportsEvent(ImmutableList.of(transport3)));
-    var unused = stateTracker.buildComplete(new BuildCompleteEvent(buildResult));
-
-    LoggingTerminalWriter terminalWriter = new LoggingTerminalWriter(true);
-
-    clock.advanceMillis(TimeUnit.SECONDS.toMillis(1));
-    stateTracker.writeProgressBar(terminalWriter);
-    String output = terminalWriter.getTranscript();
-    assertThat(output, containsString("1s"));
-    assertThat(output, containsString("BuildEventTransport1"));
-    assertThat(output, containsString("BuildEventTransport2"));
-    assertThat(output, containsString("BuildEventTransport3"));
-
-    clock.advanceMillis(TimeUnit.SECONDS.toMillis(1));
-    stateTracker.buildEventTransportClosed(new BuildEventTransportClosedEvent(transport1));
-    terminalWriter = new LoggingTerminalWriter(true);
-    stateTracker.writeProgressBar(terminalWriter);
-    output = terminalWriter.getTranscript();
-    assertThat(output, containsString("2s"));
-    assertThat(output, not(containsString("BuildEventTransport1")));
-    assertThat(output, containsString("BuildEventTransport2"));
-    assertThat(output, containsString("BuildEventTransport3"));
-
-    clock.advanceMillis(TimeUnit.SECONDS.toMillis(1));
-    stateTracker.buildEventTransportClosed(new BuildEventTransportClosedEvent(transport3));
-    terminalWriter = new LoggingTerminalWriter(true);
-    stateTracker.writeProgressBar(terminalWriter);
-    output = terminalWriter.getTranscript();
-    assertThat(output, containsString("3s"));
-    assertThat(output, not(containsString("BuildEventTransport1")));
-    assertThat(output, containsString("BuildEventTransport2"));
-    assertThat(output, not(containsString("BuildEventTransport3")));
-
-    clock.advanceMillis(TimeUnit.SECONDS.toMillis(1));
-    stateTracker.buildEventTransportClosed(new BuildEventTransportClosedEvent(transport2));
-    terminalWriter = new LoggingTerminalWriter(true);
-    stateTracker.writeProgressBar(terminalWriter);
-    output = terminalWriter.getTranscript();
-    assertThat(output, not(containsString("3s")));
-    assertThat(output, not(containsString("BuildEventTransport1")));
-    assertThat(output, not(containsString("BuildEventTransport2")));
-    assertThat(output, not(containsString("BuildEventTransport3")));
-    assertThat(output.split("\\n")).hasLength(1);
-  }
-
-  @Test
-  public void testBuildEventTransportsOnNarrowTerminal() throws IOException {
-    // Verify that the progress bar contains useful information on a 60-character terminal.
-    //   - Too long names should be shortened to reasonably long prefixes of the name.
-    ManualClock clock = new ManualClock();
-    BuildEventTransport transport1 = newBepTransport("A".repeat(61));
-    BuildEventTransport transport2 = newBepTransport("BuildEventTransport");
-    BuildResult buildResult = new BuildResult(clock.currentTimeMillis());
-    buildResult.setDetailedExitCode(DetailedExitCode.success());
-    LoggingTerminalWriter terminalWriter = new LoggingTerminalWriter(true);
-    UiStateTracker stateTracker = getUiStateTracker(clock, /* targetWidth= */ 60);
-    stateTracker.buildStarted();
-    stateTracker.buildEventTransportsAnnounced(
-        new AnnounceBuildEventTransportsEvent(ImmutableList.of(transport1, transport2)));
-    var unused = stateTracker.buildComplete(new BuildCompleteEvent(buildResult));
-    clock.advanceMillis(TimeUnit.SECONDS.toMillis(1));
-    stateTracker.writeProgressBar(terminalWriter);
-    String output = terminalWriter.getTranscript();
-    assertThat(longestLine(output)).isAtMost(60);
-    assertThat(output, containsString("1s"));
-    assertThat(output, containsString("A".repeat(30) + "..."));
-    assertThat(output, containsString("BuildEventTransport"));
-
-    clock.advanceMillis(TimeUnit.SECONDS.toMillis(1));
-    stateTracker.buildEventTransportClosed(new BuildEventTransportClosedEvent(transport2));
-    terminalWriter = new LoggingTerminalWriter(true);
-    stateTracker.writeProgressBar(terminalWriter);
-    output = terminalWriter.getTranscript();
-    assertThat(longestLine(output)).isAtMost(60);
-    assertThat(output, containsString("2s"));
-    assertThat(output, containsString("A".repeat(30) + "..."));
-    assertThat(output, not(containsString("BuildEventTransport")));
-    assertThat(output.split("\\n")).hasLength(2);
-  }
-
-  private static BuildEventTransport newBepTransport(String name) {
-    BuildEventTransport transport = mock(BuildEventTransport.class);
-    when(transport.name()).thenReturn(name);
-    return transport;
-  }
-
-  @Test
-  public void testTotalFetchesReported() throws IOException {
-    ManualClock clock = new ManualClock();
-    UiStateTracker stateTracker = getUiStateTracker(clock, /* targetWidth= */ 80);
-
-    stateTracker.buildStarted();
-    for (int i = 0; i < 30; i++) {
-      stateTracker.downloadProgress(new FetchEvent("@repoFoo" + i));
-    }
-    clock.advanceMillis(TimeUnit.SECONDS.toMillis(7));
-
-    LoggingTerminalWriter terminalWriter = new LoggingTerminalWriter(true);
-    stateTracker.writeProgressBar(terminalWriter);
-    String output = terminalWriter.getTranscript();
-    assertThat(output, containsString("@repoFoo"));
-    assertThat(output, containsString("7s"));
-    assertThat(output, containsString("30 fetches"));
-  }
-
-  private static class FetchEvent implements FetchProgress {
-    private final String id;
-
-    FetchEvent(String id) {
-      this.id = id;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testOutputLength() {
+        for (i in 0..2) {
+            doTestOutputLength(true, i)
+            doTestOutputLength(false, i)
+        }
     }
 
-    @Override
-    public String getResourceIdentifier() {
-      return id;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStatusShown() {
+        // Verify that for non-executing actions, at least the first 3 characters of the
+        // status are shown.
+        // Also verify that the number of running actions is reported correctly, if there is
+        // more than one active action and not all are running.
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        clock.advanceMillis(120000)
+        val stateTracker: UiStateTracker = getUiStateTracker(clock)
+        // Mimic being at the execution phase.
+        simulateExecutionPhase(stateTracker)
+        val actionFoo: Action = mockAction("Building foo", "foo/foo")
+        val ownerFoo: ActionOwner = dummyActionOwner()
+        Mockito.`when`<T?>(actionFoo.getOwner()).thenReturn(ownerFoo)
+        val actionBar: Action = mockAction("Building bar", "bar/bar")
+        val ownerBar: ActionOwner = dummyActionOwner()
+        Mockito.`when`<T?>(actionBar.getOwner()).thenReturn(ownerBar)
+        var terminalWriter: LoggingTerminalWriter?
+        var output: String
+
+        // Action foo being scanned.
+        stateTracker.actionStarted(ActionStartedEvent(actionFoo, 123456700))
+        stateTracker.scanningAction(ScanningActionEvent(actionFoo))
+
+        terminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+        stateTracker.writeProgressBar(terminalWriter)
+        output = terminalWriter.getTranscript()
+        Truth.assertWithMessage("Action foo being scanned should be visible in output:\n%s", output)
+            .that(output.contains("sca") || output.contains("Sca"))
+            .isTrue()
+
+        // Then action bar gets scheduled.
+        stateTracker.actionStarted(ActionStartedEvent(actionBar, 123456701))
+        stateTracker.schedulingAction(SchedulingActionEvent(actionBar, "bar-sandbox"))
+
+        terminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+        stateTracker.writeProgressBar(terminalWriter)
+        output = terminalWriter.getTranscript()
+        Truth.assertWithMessage("Action bar being scheduled should be visible in output:\n%s", output)
+            .that(output.contains("sch") || output.contains("Sch"))
+            .isTrue()
+        Truth.assertWithMessage("Action foo being scanned should still be visible in output:\n%s", output)
+            .that(output.contains("sca") || output.contains("Sca"))
+            .isTrue()
+        Truth.assertWithMessage("Indication that no actions are running is missing in output:\n%s", output)
+            .that(output.contains("0 running"))
+            .isTrue()
+        Truth.assertWithMessage("Total number of actions expected  in output:\n%s", output)
+            .that(output.contains("2 actions"))
+            .isTrue()
+
+        // Then foo starts.
+        stateTracker.runningAction(RunningActionEvent(actionFoo, "xyz-sandbox"))
+        stateTracker.writeProgressBar(terminalWriter)
+
+        terminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+        stateTracker.writeProgressBar(terminalWriter)
+        output = terminalWriter.getTranscript()
+        Truth.assertWithMessage("Action foo's xyz-sandbox strategy should be shown in output:\n%s", output)
+            .that(output.contains("xyz-sandbox"))
+            .isTrue()
+        Truth.assertWithMessage("Action foo should no longer be analyzed in output:\n%s", output)
+            .that(output.contains("ana") || output.contains("Ana"))
+            .isFalse()
+        Truth.assertWithMessage("Action bar being scheduled should still be visible in output:\n%s", output)
+            .that(output.contains("sch") || output.contains("Sch"))
+            .isTrue()
+        Truth.assertWithMessage("Indication that one action is running is missing in output:\n%s", output)
+            .that(output.contains("1 running"))
+            .isTrue()
+        Truth.assertWithMessage("Total number of actions expected  in output:\n%s", output)
+            .that(output.contains("2 actions"))
+            .isTrue()
     }
 
-    @Override
-    public String getProgress() {
-      return "working...";
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTimerReset() {
+        // Verify that a change in an action state (e.g., from scheduling to executing) resets
+        // the time associated with that action.
+
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        clock.advanceMillis(TimeUnit.SECONDS.toMillis(123))
+        val stateTracker: UiStateTracker = getUiStateTracker(clock)
+        // Mimic being at the execution phase.
+        simulateExecutionPhase(stateTracker)
+        clock.advanceMillis(TimeUnit.SECONDS.toMillis(2))
+        var terminalWriter: LoggingTerminalWriter?
+        var output: String
+
+        val actionFoo: Action = mockAction("Building foo", "foo/foo")
+        val ownerFoo: ActionOwner = dummyActionOwner()
+        Mockito.`when`<T?>(actionFoo.getOwner()).thenReturn(ownerFoo)
+        val actionBar: Action = mockAction("Building bar", "bar/bar")
+        val ownerBar: ActionOwner = dummyActionOwner()
+        Mockito.`when`<T?>(actionBar.getOwner()).thenReturn(ownerBar)
+
+        stateTracker.actionStarted(ActionStartedEvent(actionFoo, clock.nanoTime()))
+        stateTracker.runningAction(RunningActionEvent(actionFoo, "foo-sandbox"))
+        clock.advanceMillis(TimeUnit.SECONDS.toMillis(7))
+        stateTracker.actionStarted(ActionStartedEvent(actionBar, clock.nanoTime()))
+        stateTracker.schedulingAction(SchedulingActionEvent(actionBar, "bar-sandbox"))
+        clock.advanceMillis(TimeUnit.SECONDS.toMillis(21))
+
+        terminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+        stateTracker.writeProgressBar(terminalWriter)
+        output = terminalWriter.getTranscript()
+        Truth.assertWithMessage("Runtime of first action should be visible in output: %s", output)
+            .that(output.contains("28s"))
+            .isTrue()
+        Truth.assertWithMessage("Scheduling time of second action should be visible in output: %s", output)
+            .that(output.contains("21s"))
+            .isTrue()
+
+        stateTracker.runningAction(RunningActionEvent(actionBar, "bar-sandbox"))
+        terminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+        stateTracker.writeProgressBar(terminalWriter)
+        output = terminalWriter.getTranscript()
+        Truth.assertWithMessage("Runtime of first action should still be visible in output: %s", output)
+            .that(output.contains("28s"))
+            .isTrue()
+        Truth.assertWithMessage("Time of second action should no longer be visible in output: %s", output)
+            .that(output.contains("21s"))
+            .isFalse()
+
+        clock.advanceMillis(TimeUnit.SECONDS.toMillis(30))
+        terminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+        stateTracker.writeProgressBar(terminalWriter)
+        output = terminalWriter.getTranscript()
+        Truth.assertWithMessage("New runtime of first action should be visible in output: %s", output)
+            .that(output.contains("58s"))
+            .isTrue()
+        Truth.assertWithMessage("Runtime of second action should be visible in output: %s", output)
+            .that(output.contains("30s"))
+            .isTrue()
     }
 
-    @Override
-    public boolean isFinished() {
-      return false;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEarlyStatusHandledGracefully() {
+        // On the event bus, events sometimes are sent out of order; verify that we handle an
+        // early message that an action is running gracefully.
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        val stateTracker: UiStateTracker = getUiStateTracker(clock)
+        // Mimic being at the execution phase.
+        simulateExecutionPhase(stateTracker)
+        val actionFoo: Action = mockAction("Building foo", "foo/foo")
+        val ownerFoo: ActionOwner = dummyActionOwner()
+        Mockito.`when`<T?>(actionFoo.getOwner()).thenReturn(ownerFoo)
+        var terminalWriter: LoggingTerminalWriter?
+        var output: String
+
+        // Early status announcement
+        stateTracker.runningAction(RunningActionEvent(actionFoo, "foo-sandbox"))
+
+        // Here we don't expect any particular output, just some description; in particular, we do
+        // not expect the state tracker to hit an internal error.
+        terminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+        stateTracker.writeProgressBar(terminalWriter)
+        output = terminalWriter.getTranscript()
+        Truth.assertWithMessage("Expected at least some status bar").that(output).isNotEmpty()
+
+        // Action actually started
+        stateTracker.actionStarted(ActionStartedEvent(actionFoo, clock.nanoTime()))
+
+        terminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+        stateTracker.writeProgressBar(terminalWriter)
+        output = terminalWriter.getTranscript()
+        Truth.assertWithMessage("Even a strategy announced early should be shown in output:\n%s", output)
+            .that(output.contains("foo-sandbox"))
+            .isTrue()
     }
-  }
 
-  @Test
-  public void waitingRemoteCacheMessage_beforeBuildComplete_invisible() throws IOException {
-    ManualClock clock = new ManualClock();
-    Action action = mockAction("Some action", "foo");
-    UiStateTracker stateTracker = getUiStateTracker(clock);
-    // Mimic being at the execution phase.
-    simulateExecutionPhase(stateTracker);
-    stateTracker.actionUploadStarted(
-        ActionUploadStartedEvent.create(
-            action, Store.AC, Digest.newBuilder().setHash("foo").setSizeBytes(1).build()));
-    LoggingTerminalWriter terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExecutingActionsFirst() {
+        // Verify that executing actions, even if started late, are visible.
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        val stateTracker: UiStateTracker = getUiStateTracker(clock)
+        // Mimic being at the execution phase.
+        simulateExecutionPhase(stateTracker)
+        clock.advanceMillis(120000)
 
-    stateTracker.writeProgressBar(terminalWriter);
+        for (i in 0..29) {
+            val action: Action = mockAction("Takes long to schedule number " + i, "long/startup" + i)
+            val owner: ActionOwner = dummyActionOwner()
+            Mockito.`when`<T?>(action.getOwner()).thenReturn(owner)
+            stateTracker.actionStarted(ActionStartedEvent(action, 123456789 + i))
+            stateTracker.schedulingAction(SchedulingActionEvent(action, "xyz-sandbox"))
+        }
 
-    String output = terminalWriter.getTranscript();
-    assertThat(output).doesNotContain("1 upload");
-  }
+        for (i in 0..2) {
+            val action: Action = mockAction("quickstart" + i, "pkg/quickstart" + i)
+            val owner: ActionOwner = dummyActionOwner()
+            Mockito.`when`<T?>(action.getOwner()).thenReturn(owner)
+            stateTracker.actionStarted(ActionStartedEvent(action, 123457000 + i))
+            stateTracker.runningAction(RunningActionEvent(action, "xyz-sandbox"))
 
-  @Test
-  public void waitingRemoteCacheMessage_afterBuildComplete_visible() throws IOException {
-    ManualClock clock = new ManualClock();
-    Action action = mockAction("Some action", "foo");
-    UiStateTracker stateTracker = getUiStateTracker(clock);
-    // Mimic being at the execution phase.
-    simulateExecutionPhase(stateTracker);
-    stateTracker.actionUploadStarted(
-        ActionUploadStartedEvent.create(
-            action, Store.AC, Digest.newBuilder().setHash("foo").setSizeBytes(1).build()));
-    BuildResult buildResult = new BuildResult(clock.currentTimeMillis());
-    buildResult.setDetailedExitCode(DetailedExitCode.success());
-    buildResult.setStopTime(clock.currentTimeMillis());
-    var unused = stateTracker.buildComplete(new BuildCompleteEvent(buildResult));
-    clock.advanceMillis(Duration.ofSeconds(2).toMillis());
-    LoggingTerminalWriter terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
+            val terminalWriter: LoggingTerminalWriter =
+                LoggingTerminalWriter( /* discardHighlight= */true)
+            stateTracker.writeProgressBar(terminalWriter)
+            val output: String = terminalWriter.getTranscript()
+            Truth.assertWithMessage("Action quickstart%s should be visible in output:\n%s", i, output)
+                .that(output.contains("quickstart" + i))
+                .isTrue()
+            Truth.assertWithMessage("Number of running actions should be indicated in output:\n%s", output)
+                .that(output.contains((i + 1).toString() + " running"))
+                .isTrue()
+        }
+    }
 
-    stateTracker.writeProgressBar(terminalWriter);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAggregation() {
+        // Assert that actions for the same test are aggregated so that an action afterwards
+        // is still shown.
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        clock.advanceMillis(TimeUnit.SECONDS.toMillis(1234))
+        val stateTracker: UiStateTracker = getUiStateTracker(clock,  /* targetWidth= */80)
+        stateTracker.setProgressSampleSize(4)
+        // Mimic being at the execution phase.
+        simulateExecutionPhase(stateTracker)
 
-    String output = terminalWriter.getTranscript();
-    assertThat(output).contains("1 upload");
-  }
+        val labelFooTest: Label? = Label.parseCanonical("//foo/bar:footest")
+        val targetFooTest: ConfiguredTarget = Mockito.mock<ConfiguredTarget>(ConfiguredTarget::class.java)
+        Mockito.`when`<T?>(targetFooTest.getLabel()).thenReturn(labelFooTest)
+        val fooOwner: ActionOwner? =
+            ActionOwner.createDummy(
+                labelFooTest,
+                net.starlark.java.syntax.Location("dummy-file", 0, 0),  /* targetKind= */
+                "dummy-target-kind",  /* buildConfigurationMnemonic= */
+                "TestRunner",  /* configurationChecksum= */
+                "abcdef",
+                BuildConfigurationEvent(
+                    BuildEventStreamProtos.BuildEventId.getDefaultInstance(),
+                    BuildEventStreamProtos.BuildEvent.getDefaultInstance()
+                ),  /* isToolConfiguration= */
+                false,  /* executionPlatform= */
+                PlatformInfo.EMPTY_PLATFORM_INFO,  /* aspectDescriptors= */
+                com.google.common.collect.ImmutableList.of<E?>(),  /* execProperties= */
+                com.google.common.collect.ImmutableMap.of<K?, V?>()
+            )
 
-  @Test
-  public void waitingRemoteCacheMessage_multipleUploadEvents_countCorrectly() throws IOException {
-    Digest a = Digest.newBuilder().setHash("a").setSizeBytes(1).build();
-    Digest b = Digest.newBuilder().setHash("b").setSizeBytes(2).build();
-    Digest c = Digest.newBuilder().setHash("c").setSizeBytes(3).build();
-    ManualClock clock = new ManualClock();
-    Action action = mockAction("Some action", "foo");
-    UiStateTracker stateTracker = getUiStateTracker(clock);
-    stateTracker.actionUploadStarted(ActionUploadStartedEvent.create(action, Store.AC, a));
-    BuildResult buildResult = new BuildResult(clock.currentTimeMillis());
-    buildResult.setDetailedExitCode(DetailedExitCode.success());
-    buildResult.setStopTime(clock.currentTimeMillis());
-    var unused = stateTracker.buildComplete(new BuildCompleteEvent(buildResult));
-    stateTracker.actionUploadStarted(ActionUploadStartedEvent.create(action, Store.CAS, b));
-    stateTracker.actionUploadStarted(ActionUploadStartedEvent.create(action, Store.CAS, c));
-    stateTracker.actionUploadFinished(ActionUploadFinishedEvent.create(action, Store.AC, a));
-    clock.advanceMillis(Duration.ofSeconds(2).toMillis());
-    LoggingTerminalWriter terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
+        val labelBarTest: Label? = Label.parseCanonical("//baz:bartest")
+        val targetBarTest: ConfiguredTarget = Mockito.mock<ConfiguredTarget>(ConfiguredTarget::class.java)
+        Mockito.`when`<T?>(targetBarTest.getLabel()).thenReturn(labelBarTest)
+        val barOwner: ActionOwner? =
+            ActionOwner.createDummy(
+                labelBarTest,
+                net.starlark.java.syntax.Location("dummy-file", 0, 0),  /* targetKind= */
+                "dummy-target-kind",  /* buildConfigurationMnemonic= */
+                "TestRunner",  /* configurationChecksum= */
+                "abcdef",
+                BuildConfigurationEvent(
+                    BuildEventStreamProtos.BuildEventId.getDefaultInstance(),
+                    BuildEventStreamProtos.BuildEvent.getDefaultInstance()
+                ),  /* isToolConfiguration= */
+                false,  /* executionPlatform= */
+                PlatformInfo.EMPTY_PLATFORM_INFO,  /* aspectDescriptors= */
+                com.google.common.collect.ImmutableList.of<E?>(),  /* execProperties= */
+                com.google.common.collect.ImmutableMap.of<K?, V?>()
+            )
 
-    stateTracker.writeProgressBar(terminalWriter);
+        val labelBazTest: Label? = Label.parseCanonical("//baz:baztest")
+        val targetBazTest: ConfiguredTarget = Mockito.mock<ConfiguredTarget>(ConfiguredTarget::class.java)
+        Mockito.`when`<T?>(targetBazTest.getLabel()).thenReturn(labelBazTest)
+        val bazOwner: ActionOwner? =
+            ActionOwner.createDummy(
+                labelBazTest,
+                net.starlark.java.syntax.Location("dummy-file", 0, 0),  /* targetKind= */
+                "dummy-target-kind",  /* buildConfigurationMnemonic= */
+                "NonTestAction",  /* configurationChecksum= */
+                "fedcba",
+                BuildConfigurationEvent(
+                    BuildEventStreamProtos.BuildEventId.getDefaultInstance(),
+                    BuildEventStreamProtos.BuildEvent.getDefaultInstance()
+                ),  /* isToolConfiguration= */
+                false,  /* executionPlatform= */
+                PlatformInfo.EMPTY_PLATFORM_INFO,  /* aspectDescriptors= */
+                com.google.common.collect.ImmutableList.of<E?>(),  /* execProperties= */
+                com.google.common.collect.ImmutableMap.of<K?, V?>()
+            )
 
-    String output = terminalWriter.getTranscript();
-    assertThat(output).contains("2 uploads");
-  }
+        val filteringComplete: TestFilteringCompleteEvent =
+            Mockito.mock<TestFilteringCompleteEvent>(TestFilteringCompleteEvent::class.java)
+        Mockito.`when`<MutableCollection<ConfiguredTarget>?>(filteringComplete.getTestTargets())
+            .thenReturn(
+                com.google.common.collect.ImmutableSet.of<ConfiguredTarget>(
+                    targetFooTest,
+                    targetBarTest,
+                    targetBazTest
+                )
+            )
+        stateTracker.testFilteringComplete(filteringComplete)
 
-  @Test
-  public void testTestAnalyzedEvent() throws Exception {
-    // The test count should be visible in the status bar, as well as the short status bar
-    ManualClock clock = new ManualClock();
-    UiStateTracker stateTracker = getUiStateTracker(clock);
-    // Mimic being at the execution phase.
-    simulateExecutionPhase(stateTracker);
-    Label labelA = Label.parseCanonical("//foo:A");
-    ConfiguredTarget targetA = mock(ConfiguredTarget.class);
-    when(targetA.getLabel()).thenReturn(labelA);
-    TestAnalyzedEvent testAnalyzedEventA =
-        TestAnalyzedEvent.create(
-            targetA, mock(BuildConfigurationValue.class), /* isSkipped= */ false);
-    Label labelB = Label.parseCanonical("//foo:B");
-    ConfiguredTarget targetB = mock(ConfiguredTarget.class);
-    when(targetB.getLabel()).thenReturn(labelB);
-    TestAnalyzedEvent testAnalyzedEventB =
-        TestAnalyzedEvent.create(
-            targetB, mock(BuildConfigurationValue.class), /* isSkipped= */ false);
-    // Only targetA has finished running.
-    TestSummary testSummary = mock(TestSummary.class);
-    when(testSummary.getTarget()).thenReturn(targetA);
-    when(testSummary.getLabel()).thenReturn(labelA);
+        // First produce 10 actions for footest...
+        for (i in 0..9) {
+            clock.advanceMillis(TimeUnit.SECONDS.toMillis(1))
+            val action: Action = mockAction("Testing foo, shard " + i, "testlog_foo_" + i)
+            Mockito.`when`<T?>(action.getOwner()).thenReturn(fooOwner)
+            stateTracker.actionStarted(ActionStartedEvent(action, clock.nanoTime()))
+        }
+        // ...then produce 10 actions for bartest...
+        for (i in 0..9) {
+            clock.advanceMillis(TimeUnit.SECONDS.toMillis(1))
+            val action: Action = mockAction("Testing bar, shard " + i, "testlog_bar_" + i)
+            Mockito.`when`<T?>(action.getOwner()).thenReturn(barOwner)
+            stateTracker.actionStarted(ActionStartedEvent(action, clock.nanoTime()))
+        }
+        // ...run a completely unrelated action..
+        clock.advanceMillis(TimeUnit.SECONDS.toMillis(1))
+        stateTracker.actionStarted(
+            ActionStartedEvent(mockAction("Other action", "other/action"), clock.nanoTime())
+        )
+        // ...and finally, run actions that are associated with baztest but are not a test.
+        for (i in 0..9) {
+            clock.advanceMillis(1000)
+            val action: Action = mockAction("Doing something " + i, "someartifact_" + i)
+            Mockito.`when`<T?>(action.getOwner()).thenReturn(bazOwner)
+            stateTracker.actionStarted(ActionStartedEvent(action, clock.nanoTime()))
+        }
+        clock.advanceMillis(TimeUnit.SECONDS.toMillis(1))
 
-    stateTracker.singleTestAnalyzed(testAnalyzedEventA);
-    stateTracker.singleTestAnalyzed(testAnalyzedEventB);
-    stateTracker.testSummary(testSummary);
+        val terminalWriter: LoggingTerminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+        stateTracker.writeProgressBar(terminalWriter)
+        val output: String = terminalWriter.getTranscript()
 
-    LoggingTerminalWriter terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
-    stateTracker.writeProgressBar(terminalWriter);
-    String output = terminalWriter.getTranscript();
-    assertThat(output).contains(" 1 / 2 tests");
+        Truth.assertWithMessage("Progress bar should contain ':footest', but was:\n%s", output)
+            .that(output.contains(":footest"))
+            .isTrue()
+        Truth.assertWithMessage("Progress bar should contain ':bartest', but was:\n%s", output)
+            .that(output.contains(":bartest"))
+            .isTrue()
+        Truth.assertWithMessage("Progress bar should contain 'Other action', but was:\n%s", output)
+            .that(output.contains("Other action"))
+            .isTrue()
+        Truth.assertThat(output).doesNotContain("Testing //baz:baztest")
+        Truth.assertThat(output).contains("Doing something")
+    }
 
-    terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
-    stateTracker.writeProgressBar(terminalWriter, /* shortVersion= */ true);
-    output = terminalWriter.getTranscript();
-    assertThat(output).contains(" 1 / 2 tests");
-  }
+    @org.junit.Test
+    fun testSuffix() {
+        assertThat(UiStateTracker.suffix("foobar", 3)).isEqualTo("bar")
+        assertThat(UiStateTracker.suffix("foo", -2)).isEmpty()
+        assertThat(UiStateTracker.suffix("foobar", 200)).isEqualTo("foobar")
+    }
 
-  @Test
-  public void testTestAnalyzedEvent_repeated_noDuplicatedCount() throws Exception {
-    // The test count should be visible in the status bar, as well as the short status bar
-    ManualClock clock = new ManualClock();
-    UiStateTracker stateTracker = getUiStateTracker(clock);
-    // Mimic being at the execution phase.
-    simulateExecutionPhase(stateTracker);
-    Label labelA = Label.parseCanonical("//foo:A");
-    ConfiguredTarget targetA = mock(ConfiguredTarget.class);
-    when(targetA.getLabel()).thenReturn(labelA);
-    TestAnalyzedEvent testAnalyzedEventA =
-        TestAnalyzedEvent.create(
-            targetA, mock(BuildConfigurationValue.class), /* isSkipped= */ false);
-    TestAnalyzedEvent testAnalyzedEventARepeated =
-        TestAnalyzedEvent.create(
-            targetA, mock(BuildConfigurationValue.class), /* isSkipped= */ false);
-    // Only targetA has finished running.
-    TestSummary testSummary = mock(TestSummary.class);
-    when(testSummary.getTarget()).thenReturn(targetA);
-    when(testSummary.getLabel()).thenReturn(labelA);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDownloadShown_duringLoading() {
+        // Verify that, whenever a single download is running in loading phase, it is shown in the
+        // status bar.
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        clock.advance(java.time.Duration.ofSeconds(1234))
+        val stateTracker: UiStateTracker = getUiStateTracker(clock,  /* targetWidth= */80)
 
-    stateTracker.singleTestAnalyzed(testAnalyzedEventA);
-    stateTracker.singleTestAnalyzed(testAnalyzedEventARepeated);
-    stateTracker.testSummary(testSummary);
+        val url: java.net.URI = java.net.URI.create("http://example.org/first/dep")
 
-    LoggingTerminalWriter terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
-    stateTracker.writeProgressBar(terminalWriter);
-    String output = terminalWriter.getTranscript();
-    assertThat(output).contains(" 1 / 1 tests");
+        stateTracker.buildStarted()
+        stateTracker.downloadProgress(DownloadProgressEvent(url))
+        clock.advance(java.time.Duration.ofSeconds(6))
 
-    terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
-    stateTracker.writeProgressBar(terminalWriter, /* shortVersion= */ true);
-    output = terminalWriter.getTranscript();
-    assertThat(output).contains(" 1 / 1 tests");
-  }
+        var terminalWriter: LoggingTerminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+        stateTracker.writeProgressBar(terminalWriter)
+        var output: String? = terminalWriter.getTranscript()
 
-  @Test
-  public void testGetOldestAction_prioritizesRunningOverScheduled() throws Exception {
-    ManualClock clock = new ManualClock();
-    UiStateTracker stateTracker = getUiStateTracker(clock);
-    simulateExecutionPhase(stateTracker);
+        Truth.assertThat(output).contains(url.toString())
+        Truth.assertThat(output).contains("6s")
 
-    Action scheduledAction = mockAction("Scheduled action", "scheduled/action");
-    when(scheduledAction.getOwner()).thenReturn(dummyActionOwner());
-    stateTracker.actionStarted(new ActionStartedEvent(scheduledAction, clock.nanoTime()));
-    stateTracker.schedulingAction(new SchedulingActionEvent(scheduledAction, "some-strategy"));
+        // Progress on the pending download should be reported appropriately
+        clock.advance(java.time.Duration.ofSeconds(1))
+        stateTracker.downloadProgress(DownloadProgressEvent(url, 256))
 
-    clock.advanceMillis(1000);
-    Action runningAction = mockAction("Running action", "running/action");
-    when(runningAction.getOwner()).thenReturn(dummyActionOwner());
-    stateTracker.actionStarted(new ActionStartedEvent(runningAction, clock.nanoTime()));
-    stateTracker.runningAction(new RunningActionEvent(runningAction, "some-strategy"));
+        terminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+        stateTracker.writeProgressBar(terminalWriter)
+        output = terminalWriter.getTranscript()
 
-    LoggingTerminalWriter terminalWriter = new LoggingTerminalWriter(/* discardHighlight= */ true);
-    stateTracker.writeProgressBar(terminalWriter, /* shortVersion= */ true);
-    String output = terminalWriter.getTranscript();
+        Truth.assertThat(output).contains(url.toString())
+        Truth.assertThat(output).contains("7s")
+        Truth.assertThat(output).contains("256")
 
-    assertThat(output).contains("Running action");
-    assertThat(output).contains("(2 actions, 1 running)");
-    assertThat(output).doesNotContain("Scheduled action");
-  }
+        // After finishing the download, it should no longer be reported.
+        clock.advance(java.time.Duration.ofSeconds(1))
+        stateTracker.downloadProgress(DownloadProgressEvent(url, 256, true))
+
+        terminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+        stateTracker.writeProgressBar(terminalWriter)
+        output = terminalWriter.getTranscript()
+
+        Truth.assertThat(output).doesNotContain("example.org")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDownloadShown_duringMainRepoMappingComputation() {
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        clock.advance(java.time.Duration.ofSeconds(1234))
+        val stateTracker: UiStateTracker = getUiStateTracker(clock,  /* targetWidth= */80)
+
+        val url: java.net.URI = java.net.URI.create("http://example.org/first/dep")
+
+        stateTracker.mainRepoMappingComputationStarted()
+        stateTracker.downloadProgress(DownloadProgressEvent(url))
+        clock.advance(java.time.Duration.ofSeconds(6))
+
+        var terminalWriter: LoggingTerminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+        stateTracker.writeProgressBar(terminalWriter)
+        var output: String? = terminalWriter.getTranscript()
+
+        Truth.assertThat(output).contains(url.toString())
+        Truth.assertThat(output).contains("6s")
+
+        // Progress on the pending download should be reported appropriately
+        clock.advance(java.time.Duration.ofSeconds(1))
+        stateTracker.downloadProgress(DownloadProgressEvent(url, 256))
+
+        terminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+        stateTracker.writeProgressBar(terminalWriter)
+        output = terminalWriter.getTranscript()
+
+        Truth.assertThat(output).contains(url.toString())
+        Truth.assertThat(output).contains("7s")
+        Truth.assertThat(output).contains("256")
+
+        // After finishing the download, it should no longer be reported.
+        clock.advance(java.time.Duration.ofSeconds(1))
+        stateTracker.downloadProgress(DownloadProgressEvent(url, 256, true))
+
+        terminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+        stateTracker.writeProgressBar(terminalWriter)
+        output = terminalWriter.getTranscript()
+
+        Truth.assertThat(output).doesNotContain("example.org")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDownloadOutputLength() {
+        // Verify that URLs are shortened in a reasonable way, if the terminal is not wide enough
+        // Also verify that the length is respected, even if only a download sample is shown.
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        clock.advanceMillis(TimeUnit.SECONDS.toMillis(1234))
+        val stateTracker: UiStateTracker = getUiStateTracker(clock,  /* targetWidth= */60)
+        val url: java.net.URI =
+            java.net.URI.create("http://example.org/some/really/very/very/long/path/filename.tar.gz")
+
+        stateTracker.buildStarted()
+        stateTracker.downloadProgress(DownloadProgressEvent(url))
+        clock.advanceMillis(TimeUnit.SECONDS.toMillis(6))
+        for (i in 0..9) {
+            stateTracker.downloadProgress(
+                DownloadProgressEvent(
+                    java.net.URI.create(
+                        ("http://otherhost.example/another/also/length/path/to/another/download"
+                                + i
+                                + ".zip")
+                    )
+                )
+            )
+            clock.advanceMillis(TimeUnit.SECONDS.toMillis(1))
+        }
+
+        val terminalWriter: LoggingTerminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+        stateTracker.writeProgressBar(terminalWriter)
+        val output: String = terminalWriter.getTranscript()
+
+        Truth.assertWithMessage(
+            "Only lines with at most 60 chars should be present in the output:\n%s", output
+        )
+            .that(longestLine(output) <= 60)
+            .isTrue()
+        Truth.assertWithMessage("Output still should contain the filename, but was:\n%s", output)
+            .that(output.contains("filename.tar.gz"))
+            .isTrue()
+        Truth.assertWithMessage("Output still should contain the host name, but was:\n%s", output)
+            .that(output.contains("example.org"))
+            .isTrue()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMultipleBuildEventProtocolTransports() {
+        // Verify that all announced transports are present in the progress bar
+        // and that as transports are closed they disappear from the progress bar.
+        // Verify that the wait duration is displayed.
+        // Verify that after all transports have been closed, the build status is displayed.
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        val transport1: BuildEventTransport = newBepTransport("BuildEventTransport1")
+        val transport2: BuildEventTransport = newBepTransport("BuildEventTransport2")
+        val transport3: BuildEventTransport = newBepTransport("BuildEventTransport3")
+        val buildResult: BuildResult = BuildResult(clock.currentTimeMillis())
+        buildResult.setDetailedExitCode(DetailedExitCode.success())
+        clock.advanceMillis(TimeUnit.SECONDS.toMillis(1))
+        buildResult.setStopTime(clock.currentTimeMillis())
+
+        val stateTracker: UiStateTracker = getUiStateTracker(clock,  /* targetWidth= */80)
+        stateTracker.buildStarted()
+        stateTracker.buildEventTransportsAnnounced(
+            AnnounceBuildEventTransportsEvent(com.google.common.collect.ImmutableList.of<E?>(transport1, transport2))
+        )
+        stateTracker.buildEventTransportsAnnounced(
+            AnnounceBuildEventTransportsEvent(com.google.common.collect.ImmutableList.of<E?>(transport3))
+        )
+        val unused: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            stateTracker.buildComplete(BuildCompleteEvent(buildResult))
+
+        var terminalWriter: LoggingTerminalWriter = LoggingTerminalWriter(true)
+
+        clock.advanceMillis(TimeUnit.SECONDS.toMillis(1))
+        stateTracker.writeProgressBar(terminalWriter)
+        var output: String = terminalWriter.getTranscript()
+        MatcherAssert.assertThat<String?>(output, CoreMatchers.containsString("1s"))
+        MatcherAssert.assertThat<String?>(output, CoreMatchers.containsString("BuildEventTransport1"))
+        MatcherAssert.assertThat<String?>(output, CoreMatchers.containsString("BuildEventTransport2"))
+        MatcherAssert.assertThat<String?>(output, CoreMatchers.containsString("BuildEventTransport3"))
+
+        clock.advanceMillis(TimeUnit.SECONDS.toMillis(1))
+        stateTracker.buildEventTransportClosed(BuildEventTransportClosedEvent(transport1))
+        terminalWriter = LoggingTerminalWriter(true)
+        stateTracker.writeProgressBar(terminalWriter)
+        output = terminalWriter.getTranscript()
+        MatcherAssert.assertThat<String?>(output, CoreMatchers.containsString("2s"))
+        MatcherAssert.assertThat<String?>(
+            output,
+            CoreMatchers.not<String?>(CoreMatchers.containsString("BuildEventTransport1"))
+        )
+        MatcherAssert.assertThat<String?>(output, CoreMatchers.containsString("BuildEventTransport2"))
+        MatcherAssert.assertThat<String?>(output, CoreMatchers.containsString("BuildEventTransport3"))
+
+        clock.advanceMillis(TimeUnit.SECONDS.toMillis(1))
+        stateTracker.buildEventTransportClosed(BuildEventTransportClosedEvent(transport3))
+        terminalWriter = LoggingTerminalWriter(true)
+        stateTracker.writeProgressBar(terminalWriter)
+        output = terminalWriter.getTranscript()
+        MatcherAssert.assertThat<String?>(output, CoreMatchers.containsString("3s"))
+        MatcherAssert.assertThat<String?>(
+            output,
+            CoreMatchers.not<String?>(CoreMatchers.containsString("BuildEventTransport1"))
+        )
+        MatcherAssert.assertThat<String?>(output, CoreMatchers.containsString("BuildEventTransport2"))
+        MatcherAssert.assertThat<String?>(
+            output,
+            CoreMatchers.not<String?>(CoreMatchers.containsString("BuildEventTransport3"))
+        )
+
+        clock.advanceMillis(TimeUnit.SECONDS.toMillis(1))
+        stateTracker.buildEventTransportClosed(BuildEventTransportClosedEvent(transport2))
+        terminalWriter = LoggingTerminalWriter(true)
+        stateTracker.writeProgressBar(terminalWriter)
+        output = terminalWriter.getTranscript()
+        MatcherAssert.assertThat<String?>(output, CoreMatchers.not<String?>(CoreMatchers.containsString("3s")))
+        MatcherAssert.assertThat<String?>(
+            output,
+            CoreMatchers.not<String?>(CoreMatchers.containsString("BuildEventTransport1"))
+        )
+        MatcherAssert.assertThat<String?>(
+            output,
+            CoreMatchers.not<String?>(CoreMatchers.containsString("BuildEventTransport2"))
+        )
+        MatcherAssert.assertThat<String?>(
+            output,
+            CoreMatchers.not<String?>(CoreMatchers.containsString("BuildEventTransport3"))
+        )
+        Truth.assertThat<String?>(output.split("\\n".toRegex()).dropLastWhile { it.isEmpty() }.toTypedArray())
+            .hasLength(1)
+    }
+
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun testBuildEventTransportsOnNarrowTerminal() {
+        // Verify that the progress bar contains useful information on a 60-character terminal.
+        //   - Too long names should be shortened to reasonably long prefixes of the name.
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        val transport1: BuildEventTransport = newBepTransport("A".repeat(61))
+        val transport2: BuildEventTransport = newBepTransport("BuildEventTransport")
+        val buildResult: BuildResult = BuildResult(clock.currentTimeMillis())
+        buildResult.setDetailedExitCode(DetailedExitCode.success())
+        var terminalWriter: LoggingTerminalWriter = LoggingTerminalWriter(true)
+        val stateTracker: UiStateTracker = getUiStateTracker(clock,  /* targetWidth= */60)
+        stateTracker.buildStarted()
+        stateTracker.buildEventTransportsAnnounced(
+            AnnounceBuildEventTransportsEvent(com.google.common.collect.ImmutableList.of<E?>(transport1, transport2))
+        )
+        val unused: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            stateTracker.buildComplete(BuildCompleteEvent(buildResult))
+        clock.advanceMillis(TimeUnit.SECONDS.toMillis(1))
+        stateTracker.writeProgressBar(terminalWriter)
+        var output: String = terminalWriter.getTranscript()
+        Truth.assertThat(longestLine(output)).isAtMost(60)
+        MatcherAssert.assertThat<String?>(output, CoreMatchers.containsString("1s"))
+        MatcherAssert.assertThat<String?>(output, CoreMatchers.containsString("A".repeat(30) + "..."))
+        MatcherAssert.assertThat<String?>(output, CoreMatchers.containsString("BuildEventTransport"))
+
+        clock.advanceMillis(TimeUnit.SECONDS.toMillis(1))
+        stateTracker.buildEventTransportClosed(BuildEventTransportClosedEvent(transport2))
+        terminalWriter = LoggingTerminalWriter(true)
+        stateTracker.writeProgressBar(terminalWriter)
+        output = terminalWriter.getTranscript()
+        Truth.assertThat(longestLine(output)).isAtMost(60)
+        MatcherAssert.assertThat<String?>(output, CoreMatchers.containsString("2s"))
+        MatcherAssert.assertThat<String?>(output, CoreMatchers.containsString("A".repeat(30) + "..."))
+        MatcherAssert.assertThat<String?>(
+            output,
+            CoreMatchers.not<String?>(CoreMatchers.containsString("BuildEventTransport"))
+        )
+        Truth.assertThat<String?>(output.split("\\n".toRegex()).dropLastWhile { it.isEmpty() }.toTypedArray())
+            .hasLength(2)
+    }
+
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun testTotalFetchesReported() {
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        val stateTracker: UiStateTracker = getUiStateTracker(clock,  /* targetWidth= */80)
+
+        stateTracker.buildStarted()
+        for (i in 0..29) {
+            stateTracker.downloadProgress(FetchEvent("@repoFoo" + i))
+        }
+        clock.advanceMillis(TimeUnit.SECONDS.toMillis(7))
+
+        val terminalWriter: LoggingTerminalWriter = LoggingTerminalWriter(true)
+        stateTracker.writeProgressBar(terminalWriter)
+        val output: String? = terminalWriter.getTranscript()
+        MatcherAssert.assertThat<String?>(output, CoreMatchers.containsString("@repoFoo"))
+        MatcherAssert.assertThat<String?>(output, CoreMatchers.containsString("7s"))
+        MatcherAssert.assertThat<String?>(output, CoreMatchers.containsString("30 fetches"))
+    }
+
+    private class FetchEvent(val resourceIdentifier: String?) : FetchProgress {
+        val progress: String
+            get() = "working..."
+
+        val isFinished: Boolean
+            get() = false
+    }
+
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun waitingRemoteCacheMessage_beforeBuildComplete_invisible() {
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        val action: Action = mockAction("Some action", "foo")
+        val stateTracker: UiStateTracker = getUiStateTracker(clock)
+        // Mimic being at the execution phase.
+        simulateExecutionPhase(stateTracker)
+        stateTracker.actionUploadStarted(
+            ActionUploadStartedEvent.create(
+                action, Store.AC, Digest.newBuilder().setHash("foo").setSizeBytes(1).build()
+            )
+        )
+        val terminalWriter: LoggingTerminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+
+        stateTracker.writeProgressBar(terminalWriter)
+
+        val output: String? = terminalWriter.getTranscript()
+        Truth.assertThat(output).doesNotContain("1 upload")
+    }
+
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun waitingRemoteCacheMessage_afterBuildComplete_visible() {
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        val action: Action = mockAction("Some action", "foo")
+        val stateTracker: UiStateTracker = getUiStateTracker(clock)
+        // Mimic being at the execution phase.
+        simulateExecutionPhase(stateTracker)
+        stateTracker.actionUploadStarted(
+            ActionUploadStartedEvent.create(
+                action, Store.AC, Digest.newBuilder().setHash("foo").setSizeBytes(1).build()
+            )
+        )
+        val buildResult: BuildResult = BuildResult(clock.currentTimeMillis())
+        buildResult.setDetailedExitCode(DetailedExitCode.success())
+        buildResult.setStopTime(clock.currentTimeMillis())
+        val unused: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            stateTracker.buildComplete(BuildCompleteEvent(buildResult))
+        clock.advanceMillis(java.time.Duration.ofSeconds(2).toMillis())
+        val terminalWriter: LoggingTerminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+
+        stateTracker.writeProgressBar(terminalWriter)
+
+        val output: String? = terminalWriter.getTranscript()
+        Truth.assertThat(output).contains("1 upload")
+    }
+
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun waitingRemoteCacheMessage_multipleUploadEvents_countCorrectly() {
+        val a: Digest? = Digest.newBuilder().setHash("a").setSizeBytes(1).build()
+        val b: Digest? = Digest.newBuilder().setHash("b").setSizeBytes(2).build()
+        val c: Digest? = Digest.newBuilder().setHash("c").setSizeBytes(3).build()
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        val action: Action = mockAction("Some action", "foo")
+        val stateTracker: UiStateTracker = getUiStateTracker(clock)
+        stateTracker.actionUploadStarted(ActionUploadStartedEvent.create(action, Store.AC, a))
+        val buildResult: BuildResult = BuildResult(clock.currentTimeMillis())
+        buildResult.setDetailedExitCode(DetailedExitCode.success())
+        buildResult.setStopTime(clock.currentTimeMillis())
+        val unused: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            stateTracker.buildComplete(BuildCompleteEvent(buildResult))
+        stateTracker.actionUploadStarted(ActionUploadStartedEvent.create(action, Store.CAS, b))
+        stateTracker.actionUploadStarted(ActionUploadStartedEvent.create(action, Store.CAS, c))
+        stateTracker.actionUploadFinished(ActionUploadFinishedEvent.create(action, Store.AC, a))
+        clock.advanceMillis(java.time.Duration.ofSeconds(2).toMillis())
+        val terminalWriter: LoggingTerminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+
+        stateTracker.writeProgressBar(terminalWriter)
+
+        val output: String? = terminalWriter.getTranscript()
+        Truth.assertThat(output).contains("2 uploads")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTestAnalyzedEvent() {
+        // The test count should be visible in the status bar, as well as the short status bar
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        val stateTracker: UiStateTracker = getUiStateTracker(clock)
+        // Mimic being at the execution phase.
+        simulateExecutionPhase(stateTracker)
+        val labelA: Label? = Label.parseCanonical("//foo:A")
+        val targetA: ConfiguredTarget = Mockito.mock<ConfiguredTarget>(ConfiguredTarget::class.java)
+        Mockito.`when`<T?>(targetA.getLabel()).thenReturn(labelA)
+        val testAnalyzedEventA: TestAnalyzedEvent? =
+            TestAnalyzedEvent.create(
+                targetA, < T > mock < T ? > (BuildConfigurationValue::class.java),  /* isSkipped= */false)
+        val labelB: Label? = Label.parseCanonical("//foo:B")
+        val targetB: ConfiguredTarget = Mockito.mock<ConfiguredTarget>(ConfiguredTarget::class.java)
+        Mockito.`when`<T?>(targetB.getLabel()).thenReturn(labelB)
+        val testAnalyzedEventB: TestAnalyzedEvent? =
+            TestAnalyzedEvent.create(
+                targetB, < T > mock < T ? > (BuildConfigurationValue::class.java),  /* isSkipped= */false)
+        // Only targetA has finished running.
+        val testSummary: TestSummary = Mockito.mock<TestSummary>(TestSummary::class.java)
+        Mockito.`when`<T?>(testSummary.getTarget()).thenReturn(targetA)
+        Mockito.`when`<T?>(testSummary.getLabel()).thenReturn(labelA)
+
+        stateTracker.singleTestAnalyzed(testAnalyzedEventA)
+        stateTracker.singleTestAnalyzed(testAnalyzedEventB)
+        stateTracker.testSummary(testSummary)
+
+        var terminalWriter: LoggingTerminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+        stateTracker.writeProgressBar(terminalWriter)
+        var output: String? = terminalWriter.getTranscript()
+        Truth.assertThat(output).contains(" 1 / 2 tests")
+
+        terminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+        stateTracker.writeProgressBar(terminalWriter,  /* shortVersion= */true)
+        output = terminalWriter.getTranscript()
+        Truth.assertThat(output).contains(" 1 / 2 tests")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTestAnalyzedEvent_repeated_noDuplicatedCount() {
+        // The test count should be visible in the status bar, as well as the short status bar
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        val stateTracker: UiStateTracker = getUiStateTracker(clock)
+        // Mimic being at the execution phase.
+        simulateExecutionPhase(stateTracker)
+        val labelA: Label? = Label.parseCanonical("//foo:A")
+        val targetA: ConfiguredTarget = Mockito.mock<ConfiguredTarget>(ConfiguredTarget::class.java)
+        Mockito.`when`<T?>(targetA.getLabel()).thenReturn(labelA)
+        val testAnalyzedEventA: TestAnalyzedEvent? =
+            TestAnalyzedEvent.create(
+                targetA, < T > mock < T ? > (BuildConfigurationValue::class.java),  /* isSkipped= */false)
+        val testAnalyzedEventARepeated: TestAnalyzedEvent? =
+            TestAnalyzedEvent.create(
+                targetA, < T > mock < T ? > (BuildConfigurationValue::class.java),  /* isSkipped= */false)
+        // Only targetA has finished running.
+        val testSummary: TestSummary = Mockito.mock<TestSummary>(TestSummary::class.java)
+        Mockito.`when`<T?>(testSummary.getTarget()).thenReturn(targetA)
+        Mockito.`when`<T?>(testSummary.getLabel()).thenReturn(labelA)
+
+        stateTracker.singleTestAnalyzed(testAnalyzedEventA)
+        stateTracker.singleTestAnalyzed(testAnalyzedEventARepeated)
+        stateTracker.testSummary(testSummary)
+
+        var terminalWriter: LoggingTerminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+        stateTracker.writeProgressBar(terminalWriter)
+        var output: String? = terminalWriter.getTranscript()
+        Truth.assertThat(output).contains(" 1 / 1 tests")
+
+        terminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+        stateTracker.writeProgressBar(terminalWriter,  /* shortVersion= */true)
+        output = terminalWriter.getTranscript()
+        Truth.assertThat(output).contains(" 1 / 1 tests")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGetOldestAction_prioritizesRunningOverScheduled() {
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        val stateTracker: UiStateTracker = getUiStateTracker(clock)
+        simulateExecutionPhase(stateTracker)
+
+        val scheduledAction: Action = mockAction("Scheduled action", "scheduled/action")
+        Mockito.`when`<T?>(scheduledAction.getOwner()).thenReturn(dummyActionOwner())
+        stateTracker.actionStarted(ActionStartedEvent(scheduledAction, clock.nanoTime()))
+        stateTracker.schedulingAction(SchedulingActionEvent(scheduledAction, "some-strategy"))
+
+        clock.advanceMillis(1000)
+        val runningAction: Action = mockAction("Running action", "running/action")
+        Mockito.`when`<T?>(runningAction.getOwner()).thenReturn(dummyActionOwner())
+        stateTracker.actionStarted(ActionStartedEvent(runningAction, clock.nanoTime()))
+        stateTracker.runningAction(RunningActionEvent(runningAction, "some-strategy"))
+
+        val terminalWriter: LoggingTerminalWriter = LoggingTerminalWriter( /* discardHighlight= */true)
+        stateTracker.writeProgressBar(terminalWriter,  /* shortVersion= */true)
+        val output: String? = terminalWriter.getTranscript()
+
+        Truth.assertThat(output).contains("Running action")
+        Truth.assertThat(output).contains("(2 actions, 1 running)")
+        Truth.assertThat(output).doesNotContain("Scheduled action")
+    }
+
+    companion object {
+        private fun longestLine(output: String): Int {
+            var maxLength = 0
+            for (line in output.split("\n".toRegex()).dropLastWhile { it.isEmpty() }.toTypedArray()) {
+                maxLength = max(maxLength, line.length)
+            }
+            return maxLength
+        }
+
+        private fun newBepTransport(name: String?): BuildEventTransport {
+            val transport: BuildEventTransport = Mockito.mock<BuildEventTransport>(BuildEventTransport::class.java)
+            Mockito.`when`<T?>(transport.name()).thenReturn(name)
+            return transport
+        }
+    }
 }

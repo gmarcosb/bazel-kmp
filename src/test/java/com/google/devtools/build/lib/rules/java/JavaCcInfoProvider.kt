@@ -11,40 +11,34 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.java
 
-package com.google.devtools.build.lib.rules.java;
+import com.google.devtools.build.lib.packages.StarlarkInfo
 
-import static java.util.Objects.requireNonNull;
-
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.packages.StarlarkInfo;
-import com.google.devtools.build.lib.packages.StructImpl;
-import com.google.devtools.build.lib.rules.cpp.CcInfo;
-import com.google.devtools.build.lib.rules.java.JavaInfo.JavaInfoInternalProvider;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.EvalException;
-
-/** Provides information about C++ libraries to be linked into Java targets. */
-@Immutable
+/** Provides information about C++ libraries to be linked into Java targets.  */
+@com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
 @AutoCodec
-public record JavaCcInfoProvider(CcInfo ccInfo) implements JavaInfoInternalProvider {
-  public JavaCcInfoProvider {
-    requireNonNull(ccInfo, "ccInfo");
-  }
+class JavaCcInfoProvider(ccInfo: CcInfo?) : JavaInfoInternalProvider {
+    val ccInfo: CcInfo?
 
-  // TODO(b/183579145): Replace CcInfo with only linking information.
-
-  public static JavaCcInfoProvider create(CcInfo ccInfo) {
-    return new JavaCcInfoProvider(ccInfo);
-  }
-
-  @Nullable
-  static JavaCcInfoProvider fromStarlarkJavaInfo(StructImpl javaInfo) throws EvalException {
-    StarlarkInfo ccInfo = javaInfo.getValue("cc_link_params_info", StarlarkInfo.class);
-    if (ccInfo == null) {
-      return null;
+    init {
+        this.ccInfo = ccInfo
+        java.util.Objects.requireNonNull<Any?>(ccInfo, "ccInfo")
     }
-    return create(CcInfo.wrap(ccInfo));
-  }
+
+    companion object {
+        // TODO(b/183579145): Replace CcInfo with only linking information.
+        fun create(ccInfo: CcInfo?): JavaCcInfoProvider {
+            return JavaCcInfoProvider(ccInfo)
+        }
+
+        @Throws(net.starlark.java.eval.EvalException::class)
+        fun fromStarlarkJavaInfo(javaInfo: StructImpl): JavaCcInfoProvider? {
+            val ccInfo: StarlarkInfo? = javaInfo.getValue("cc_link_params_info", StarlarkInfo::class.java)
+            if (ccInfo == null) {
+                return null
+            }
+            return create(CcInfo.wrap(ccInfo))
+        }
+    }
 }

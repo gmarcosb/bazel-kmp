@@ -11,121 +11,110 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.concurrent;
+package com.google.devtools.build.lib.concurrent
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.util.concurrent.MoreExecutors.directExecutor;
-import static org.junit.Assert.assertThrows;
+import com.google.common.truth.Truth
+import com.google.common.util.concurrent.MoreExecutors
+import org.junit.Assert
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+@RunWith(JUnit4::class)
+class QuiescingFutureTaskTest {
+    @Test
+    @Throws(Exception::class)
+    fun runOnce() {
+        val callCount = AtomicInteger(0)
+        val task: QuiescingFutureTask<String?>? =
+            object : QuiescingFutureTask<String?>(MoreExecutors.directExecutor()) {
+                protected override fun arrangeSubtasks() {
+                    callCount.incrementAndGet()
+                }
 
-@RunWith(JUnit4.class)
-public final class QuiescingFutureTaskTest {
+                protected val value: String
+                    get() = "result"
+            }
 
-  @Test
-  public void runOnce() throws Exception {
-    AtomicInteger callCount = new AtomicInteger(0);
-    var task =
-        new QuiescingFutureTask<String>(directExecutor()) {
-          @Override
-          protected void arrangeSubtasks() {
-            callCount.incrementAndGet();
-          }
+        assertThat(task.isDone()).isFalse()
+        task.run()
+        assertThat(task.isDone()).isTrue()
+        assertThat(task.get()).isEqualTo("result")
+        Truth.assertThat(callCount.get()).isEqualTo(1)
 
-          @Override
-          protected String getValue() {
-            return "result";
-          }
-        };
+        // Running again should not call arrangeSubtasks but still result in the same value (already
+        // done)
+        task.run()
+        Truth.assertThat(callCount.get()).isEqualTo(1)
+    }
 
-    assertThat(task.isDone()).isFalse();
-    task.run();
-    assertThat(task.isDone()).isTrue();
-    assertThat(task.get()).isEqualTo("result");
-    assertThat(callCount.get()).isEqualTo(1);
+    @Test
+    @Throws(Exception::class)
+    fun subtasksCompletion() {
+        val subtaskCallCount = AtomicInteger(0)
+        val task: QuiescingFutureTask<String?>? =
+            object : QuiescingFutureTask<String?>(MoreExecutors.directExecutor()) {
+                protected override fun arrangeSubtasks() {
+                    increment()
+                    subtaskCallCount.incrementAndGet()
+                }
 
-    // Running again should not call arrangeSubtasks but still result in the same value (already
-    // done)
-    task.run();
-    assertThat(callCount.get()).isEqualTo(1);
-  }
+                protected val value: String
+                    get() = "result"
+            }
 
-  @Test
-  public void subtasksCompletion() throws Exception {
-    AtomicInteger subtaskCallCount = new AtomicInteger(0);
-    var task =
-        new QuiescingFutureTask<String>(directExecutor()) {
-          @Override
-          protected void arrangeSubtasks() {
-            increment();
-            subtaskCallCount.incrementAndGet();
-          }
+        task.run()
+        assertThat(task.isDone()).isFalse()
+        Truth.assertThat(subtaskCallCount.get()).isEqualTo(1)
 
-          @Override
-          protected String getValue() {
-            return "result";
-          }
-        };
+        task.decrement()
+        assertThat(task.isDone()).isTrue()
+        assertThat(task.get()).isEqualTo("result")
+    }
 
-    task.run();
-    assertThat(task.isDone()).isFalse();
-    assertThat(subtaskCallCount.get()).isEqualTo(1);
+    @Test
+    @Throws(Exception::class)
+    fun exceptionInArrangeSubtasks() {
+        val error = RuntimeException("oops")
+        val task: QuiescingFutureTask<String?>? =
+            object : QuiescingFutureTask<String?>(MoreExecutors.directExecutor()) {
+                protected override fun arrangeSubtasks() {
+                    throw error
+                }
 
-    task.decrement();
-    assertThat(task.isDone()).isTrue();
-    assertThat(task.get()).isEqualTo("result");
-  }
+                protected val value: String
+                    get() = "result"
+            }
 
-  @Test
-  public void exceptionInArrangeSubtasks() throws Exception {
-    var error = new RuntimeException("oops");
-    var task =
-        new QuiescingFutureTask<String>(directExecutor()) {
-          @Override
-          protected void arrangeSubtasks() {
-            throw error;
-          }
+        task.run()
+        assertThat(task.isDone()).isTrue()
+        val thrown = Assert.assertThrows<ExecutionException?>(ExecutionException::class.java, task::get)
+        Truth.assertThat(thrown).hasCauseThat().isSameInstanceAs(error)
+    }
 
-          @Override
-          protected String getValue() {
-            return "result";
-          }
-        };
+    @Test
+    @Throws(Exception::class)
+    fun doneWithErrorCalled() {
+        val doneWithErrorCalled = AtomicBoolean(false)
+        val task: QuiescingFutureTask<String?>? =
+            object : QuiescingFutureTask<String?>(MoreExecutors.directExecutor()) {
+                protected override fun arrangeSubtasks() {
+                    notifyException(RuntimeException("error"))
+                }
 
-    task.run();
-    assertThat(task.isDone()).isTrue();
-    var thrown = assertThrows(ExecutionException.class, task::get);
-    assertThat(thrown).hasCauseThat().isSameInstanceAs(error);
-  }
+                protected val value: String
+                    get() = "result"
 
-  @Test
-  public void doneWithErrorCalled() throws Exception {
-    AtomicBoolean doneWithErrorCalled = new AtomicBoolean(false);
-    var task =
-        new QuiescingFutureTask<String>(directExecutor()) {
-          @Override
-          protected void arrangeSubtasks() {
-            notifyException(new RuntimeException("error"));
-          }
+                protected override fun doneWithError() {
+                    doneWithErrorCalled.set(true)
+                }
+            }
 
-          @Override
-          protected String getValue() {
-            return "result";
-          }
-
-          @Override
-          protected void doneWithError() {
-            doneWithErrorCalled.set(true);
-          }
-        };
-
-    task.run();
-    assertThat(task.isDone()).isTrue();
-    assertThat(doneWithErrorCalled.get()).isTrue();
-  }
+        task.run()
+        assertThat(task.isDone()).isTrue()
+        Truth.assertThat(doneWithErrorCalled.get()).isTrue()
+    }
 }

@@ -11,117 +11,128 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.profiler;
+package com.google.devtools.build.lib.profiler
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.testutil.TestThread
+import com.google.devtools.build.lib.testutil.TestThread.TestRunnable
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.util.concurrent.CountDownLatch
 
-import com.google.devtools.build.lib.testutil.TestThread;
-import java.time.Duration;
-import java.util.Arrays;
-import java.util.concurrent.CountDownLatch;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link TimeSeriesImpl}. */
-@RunWith(JUnit4.class)
-public final class TimeSeriesTest {
-  @Test
-  public void testAddRange() {
-    TimeSeries timeSeries = new TimeSeriesImpl(Duration.ofMillis(42), Duration.ofMillis(100));
-    timeSeries.addRange(Duration.ofMillis(42), Duration.ofMillis(142));
-    timeSeries.addRange(Duration.ofMillis(442), Duration.ofMillis(542));
-    double[] values = timeSeries.toDoubleArray(5);
-    assertThat(values).usingTolerance(1.0e-10).containsExactly(1, 0, 0, 0, 1).inOrder();
-  }
-
-  @Test
-  public void testAddRangeWithValue() {
-    TimeSeries timeSeries = new TimeSeriesImpl(Duration.ofMillis(42), Duration.ofMillis(100));
-    timeSeries.addRange(Duration.ofMillis(42), Duration.ofMillis(242), 3);
-    timeSeries.addRange(Duration.ofMillis(442), Duration.ofMillis(542), 0.5);
-    double[] values = timeSeries.toDoubleArray(5);
-    assertThat(values).usingTolerance(1.0e-10).containsExactly(3, 3, 0, 0, .5).inOrder();
-  }
-
-  @Test
-  public void testAddRangeOverlappingWithValue() {
-    TimeSeries timeSeries = new TimeSeriesImpl(Duration.ofMillis(42), Duration.ofMillis(100));
-    timeSeries.addRange(Duration.ofMillis(42), Duration.ofMillis(242), 3);
-    timeSeries.addRange(Duration.ofMillis(142), Duration.ofMillis(442), 0.5);
-    double[] values = timeSeries.toDoubleArray(5);
-    assertThat(values).usingTolerance(1.0e-10).containsExactly(3, 3.5, 0.5, 0.5, 0).inOrder();
-  }
-
-  @Test
-  public void testAddRangeFractions() {
-    TimeSeries timeSeries = new TimeSeriesImpl(Duration.ofMillis(42), Duration.ofMillis(100));
-    timeSeries.addRange(Duration.ofMillis(92), Duration.ofMillis(267));
-    double[] values = timeSeries.toDoubleArray(5);
-    assertThat(values).usingTolerance(1.0e-10).containsExactly(0.5, 1, 0.25, 0, 0).inOrder();
-  }
-
-  @Test
-  public void testAddRangeWithValueFractions() {
-    TimeSeries timeSeries = new TimeSeriesImpl(Duration.ofMillis(42), Duration.ofMillis(100));
-    timeSeries.addRange(Duration.ofMillis(92), Duration.ofMillis(267), 3);
-    double[] values = timeSeries.toDoubleArray(5);
-    assertThat(values).usingTolerance(1.0e-10).containsExactly(1.5, 3, 0.75, 0, 0).inOrder();
-  }
-
-  @Test
-  public void testResize() {
-    TimeSeries timeSeries = new TimeSeriesImpl(Duration.ZERO, Duration.ofMillis(100));
-    timeSeries.addRange(Duration.ZERO, Duration.ofMillis(100 * 100 + 1), 42);
-    double[] values = timeSeries.toDoubleArray(101);
-    double[] expected = new double[101];
-    Arrays.fill(expected, 0, expected.length - 1, 42);
-    expected[expected.length - 1] = 0.42;
-    assertThat(values).usingTolerance(1.0e-10).containsExactly(expected).inOrder();
-  }
-
-  @Test
-  public void testParallelism() throws Exception {
-    // Define two threads. One is writing 1 on odd places, and another writes 2 on even places.
-    TimeSeries timeSeries = new TimeSeriesImpl(Duration.ZERO, Duration.ofMillis(100));
-    CountDownLatch latch = new CountDownLatch(2);
-    TestThread thread1 =
-        new TestThread(
-            () -> {
-              latch.countDown();
-              latch.await();
-              for (int i = 0; i < 50; i++) {
-                timeSeries.addRange(
-                    Duration.ofMillis(2 * i * 100), Duration.ofMillis((2 * i + 1) * 100), 1);
-              }
-            });
-    TestThread thread2 =
-        new TestThread(
-            () -> {
-              latch.countDown();
-              latch.await();
-              for (int i = 0; i < 50; i++) {
-                timeSeries.addRange(
-                    Duration.ofMillis((2 * i + 1) * 100), Duration.ofMillis((2 * i + 2) * 100), 2);
-              }
-            });
-    double[] expected = new double[100];
-    for (int i = 0; i < 100; i++) {
-      if (i % 2 == 0) {
-        expected[i] = 1;
-      } else {
-        expected[i] = 2;
-      }
+/** Tests for [TimeSeriesImpl].  */
+@RunWith(JUnit4::class)
+class TimeSeriesTest {
+    @org.junit.Test
+    fun testAddRange() {
+        val timeSeries: com.google.devtools.build.lib.profiler.TimeSeries =
+            TimeSeriesImpl(java.time.Duration.ofMillis(42), java.time.Duration.ofMillis(100))
+        timeSeries.addRange(java.time.Duration.ofMillis(42), java.time.Duration.ofMillis(142))
+        timeSeries.addRange(java.time.Duration.ofMillis(442), java.time.Duration.ofMillis(542))
+        val values: DoubleArray? = timeSeries.toDoubleArray(5)
+        Truth.assertThat(values).usingTolerance(1.0e-10).containsExactly(1, 0, 0, 0, 1).inOrder()
     }
 
-    thread1.start();
-    thread2.start();
+    @org.junit.Test
+    fun testAddRangeWithValue() {
+        val timeSeries: com.google.devtools.build.lib.profiler.TimeSeries =
+            TimeSeriesImpl(java.time.Duration.ofMillis(42), java.time.Duration.ofMillis(100))
+        timeSeries.addRange(java.time.Duration.ofMillis(42), java.time.Duration.ofMillis(242), 3.0)
+        timeSeries.addRange(java.time.Duration.ofMillis(442), java.time.Duration.ofMillis(542), 0.5)
+        val values: DoubleArray? = timeSeries.toDoubleArray(5)
+        Truth.assertThat(values).usingTolerance(1.0e-10).containsExactly(3, 3, 0, 0, .5).inOrder()
+    }
 
-    thread1.joinAndAssertState(10000);
-    thread2.joinAndAssertState(10000);
-    assertThat(timeSeries.toDoubleArray(100))
-        .usingTolerance(1.0e-10)
-        .containsExactly(expected)
-        .inOrder();
-  }
+    @org.junit.Test
+    fun testAddRangeOverlappingWithValue() {
+        val timeSeries: com.google.devtools.build.lib.profiler.TimeSeries =
+            TimeSeriesImpl(java.time.Duration.ofMillis(42), java.time.Duration.ofMillis(100))
+        timeSeries.addRange(java.time.Duration.ofMillis(42), java.time.Duration.ofMillis(242), 3.0)
+        timeSeries.addRange(java.time.Duration.ofMillis(142), java.time.Duration.ofMillis(442), 0.5)
+        val values: DoubleArray? = timeSeries.toDoubleArray(5)
+        Truth.assertThat(values).usingTolerance(1.0e-10).containsExactly(3, 3.5, 0.5, 0.5, 0).inOrder()
+    }
+
+    @org.junit.Test
+    fun testAddRangeFractions() {
+        val timeSeries: com.google.devtools.build.lib.profiler.TimeSeries =
+            TimeSeriesImpl(java.time.Duration.ofMillis(42), java.time.Duration.ofMillis(100))
+        timeSeries.addRange(java.time.Duration.ofMillis(92), java.time.Duration.ofMillis(267))
+        val values: DoubleArray? = timeSeries.toDoubleArray(5)
+        Truth.assertThat(values).usingTolerance(1.0e-10).containsExactly(0.5, 1, 0.25, 0, 0).inOrder()
+    }
+
+    @org.junit.Test
+    fun testAddRangeWithValueFractions() {
+        val timeSeries: com.google.devtools.build.lib.profiler.TimeSeries =
+            TimeSeriesImpl(java.time.Duration.ofMillis(42), java.time.Duration.ofMillis(100))
+        timeSeries.addRange(java.time.Duration.ofMillis(92), java.time.Duration.ofMillis(267), 3.0)
+        val values: DoubleArray? = timeSeries.toDoubleArray(5)
+        Truth.assertThat(values).usingTolerance(1.0e-10).containsExactly(1.5, 3, 0.75, 0, 0).inOrder()
+    }
+
+    @org.junit.Test
+    fun testResize() {
+        val timeSeries: com.google.devtools.build.lib.profiler.TimeSeries =
+            TimeSeriesImpl(java.time.Duration.ZERO, java.time.Duration.ofMillis(100))
+        timeSeries.addRange(java.time.Duration.ZERO, java.time.Duration.ofMillis((100 * 100 + 1).toLong()), 42.0)
+        val values: DoubleArray? = timeSeries.toDoubleArray(101)
+        val expected = DoubleArray(101)
+        java.util.Arrays.fill(expected, 0, expected.size - 1, 42.0)
+        expected[expected.size - 1] = 0.42
+        Truth.assertThat(values).usingTolerance(1.0e-10).containsExactly(expected).inOrder()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testParallelism() {
+        // Define two threads. One is writing 1 on odd places, and another writes 2 on even places.
+        val timeSeries: com.google.devtools.build.lib.profiler.TimeSeries =
+            TimeSeriesImpl(java.time.Duration.ZERO, java.time.Duration.ofMillis(100))
+        val latch: CountDownLatch = CountDownLatch(2)
+        val thread1: TestThread =
+            TestThread(
+                TestRunnable {
+                    latch.countDown()
+                    latch.await()
+                    for (i in 0..49) {
+                        timeSeries.addRange(
+                            java.time.Duration.ofMillis((2 * i * 100).toLong()),
+                            java.time.Duration.ofMillis(((2 * i + 1) * 100).toLong()),
+                            1.0
+                        )
+                    }
+                })
+        val thread2: TestThread =
+            TestThread(
+                TestRunnable {
+                    latch.countDown()
+                    latch.await()
+                    for (i in 0..49) {
+                        timeSeries.addRange(
+                            java.time.Duration.ofMillis(((2 * i + 1) * 100).toLong()),
+                            java.time.Duration.ofMillis(((2 * i + 2) * 100).toLong()),
+                            2.0
+                        )
+                    }
+                })
+        val expected = DoubleArray(100)
+        for (i in 0..99) {
+            if (i % 2 == 0) {
+                expected[i] = 1.0
+            } else {
+                expected[i] = 2.0
+            }
+        }
+
+        thread1.start()
+        thread2.start()
+
+        thread1.joinAndAssertState(10000)
+        thread2.joinAndAssertState(10000)
+        Truth.assertThat(timeSeries.toDoubleArray(100))
+            .usingTolerance(1.0e-10)
+            .containsExactly(expected)
+            .inOrder()
+    }
 }

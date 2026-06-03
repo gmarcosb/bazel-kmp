@@ -11,52 +11,46 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util;
+package com.google.devtools.build.lib.util
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.server.FailureDetails.FailureDetail
 
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.server.FailureDetails.Interrupted;
-import com.google.devtools.build.lib.server.FailureDetails.Interrupted.Code;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [InterruptedFailureDetails].  */
+@RunWith(JUnit4::class)
+class InterruptedFailureDetailsTest {
+    @org.junit.Test
+    fun detailedExitCode() {
+        val detailedExitCode: DetailedExitCode? = InterruptedFailureDetails.detailedExitCode("myMessage")
+        assertThat(detailedExitCode)
+            .isEqualTo(
+                DetailedExitCode.of(
+                    FailureDetail.newBuilder()
+                        .setMessage("myMessage")
+                        .setInterrupted(Interrupted.newBuilder().setCode(Code.INTERRUPTED))
+                        .build()
+                )
+            )
+    }
 
-/** Tests for {@link InterruptedFailureDetails}. */
-@RunWith(JUnit4.class)
-public class InterruptedFailureDetailsTest {
+    @org.junit.Test
+    fun abruptExitException() {
+        val abruptExitException: AbruptExitException =
+            InterruptedFailureDetails.abruptExitException("myMessage")
+        assertThat(abruptExitException).hasMessageThat().isEqualTo("myMessage")
+        assertThat(abruptExitException.getExitCode()).isEqualTo(ExitCode.INTERRUPTED)
+        assertThat(abruptExitException.getDetailedExitCode())
+            .isEqualTo(InterruptedFailureDetails.detailedExitCode("myMessage"))
+    }
 
-  @Test
-  public void detailedExitCode() {
-    DetailedExitCode detailedExitCode = InterruptedFailureDetails.detailedExitCode("myMessage");
-    assertThat(detailedExitCode)
-        .isEqualTo(
-            DetailedExitCode.of(
-                FailureDetail.newBuilder()
-                    .setMessage("myMessage")
-                    .setInterrupted(Interrupted.newBuilder().setCode(Code.INTERRUPTED))
-                    .build()));
-  }
-
-  @Test
-  public void abruptExitException() {
-    AbruptExitException abruptExitException =
-        InterruptedFailureDetails.abruptExitException("myMessage");
-    assertThat(abruptExitException).hasMessageThat().isEqualTo("myMessage");
-    assertThat(abruptExitException.getExitCode()).isEqualTo(ExitCode.INTERRUPTED);
-    assertThat(abruptExitException.getDetailedExitCode())
-        .isEqualTo(InterruptedFailureDetails.detailedExitCode("myMessage"));
-  }
-
-  @Test
-  public void abruptExitExceptionWithCause() {
-    Exception cause = new Exception();
-    AbruptExitException abruptExitException =
-        InterruptedFailureDetails.abruptExitException("myMessage", cause);
-    assertThat(abruptExitException).hasMessageThat().isEqualTo("myMessage");
-    assertThat(abruptExitException).hasCauseThat().isSameInstanceAs(cause);
-    assertThat(abruptExitException.getExitCode()).isEqualTo(ExitCode.INTERRUPTED);
-    assertThat(abruptExitException.getDetailedExitCode())
-        .isEqualTo(InterruptedFailureDetails.detailedExitCode("myMessage"));
-  }
+    @org.junit.Test
+    fun abruptExitExceptionWithCause() {
+        val cause: java.lang.Exception = java.lang.Exception()
+        val abruptExitException: AbruptExitException =
+            InterruptedFailureDetails.abruptExitException("myMessage", cause)
+        assertThat(abruptExitException).hasMessageThat().isEqualTo("myMessage")
+        assertThat(abruptExitException).hasCauseThat().isSameInstanceAs(cause)
+        assertThat(abruptExitException.getExitCode()).isEqualTo(ExitCode.INTERRUPTED)
+        assertThat(abruptExitException.getDetailedExitCode())
+            .isEqualTo(InterruptedFailureDetails.detailedExitCode("myMessage"))
+    }
 }

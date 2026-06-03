@@ -11,147 +11,124 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.exec.util;
+package com.google.devtools.build.lib.exec.util
 
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.actions.ActionInput;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.Artifact.TreeFileArtifact;
-import com.google.devtools.build.lib.actions.FileArtifactValue;
-import com.google.devtools.build.lib.actions.FilesetOutputTree;
-import com.google.devtools.build.lib.actions.InputMetadataProvider;
-import com.google.devtools.build.lib.actions.RunfilesArtifactValue;
-import com.google.devtools.build.lib.actions.RunfilesTree;
-import com.google.devtools.build.lib.skyframe.TreeArtifactValue;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import javax.annotation.Nullable;
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.ImmutableMap
+import com.google.devtools.build.lib.actions.ActionInput
+import java.lang.String
+import kotlin.UnsupportedOperationException
+import kotlin.collections.ArrayList
+import kotlin.collections.MutableList
+import kotlin.collections.MutableMap
 
-/** A fake implementation of the {@link InputMetadataProvider} interface. */
-public final class FakeActionInputFileCache implements InputMetadataProvider {
-  private final Map<ActionInput, FileArtifactValue> inputs = new HashMap<>();
-  private final Map<ActionInput, TreeArtifactValue> treeArtifacts = new HashMap<>();
-  private final Map<ActionInput, RunfilesArtifactValue> runfilesInputs = new HashMap<>();
-  private final Map<Artifact, FilesetOutputTree> filesets = new HashMap<>();
-  private final List<RunfilesTree> runfilesTrees = new ArrayList<>();
+/** A fake implementation of the [InputMetadataProvider] interface.  */
+class FakeActionInputFileCache : InputMetadataProvider {
+    private val inputs: MutableMap<ActionInput, FileArtifactValue?> = HashMap<ActionInput, FileArtifactValue?>()
+    private val treeArtifacts: MutableMap<ActionInput?, TreeArtifactValue?> =
+        HashMap<ActionInput?, TreeArtifactValue?>()
+    private val runfilesInputs: MutableMap<ActionInput?, RunfilesArtifactValue?> =
+        HashMap<ActionInput?, RunfilesArtifactValue?>()
+    private val filesets: MutableMap<Artifact?, FilesetOutputTree?> = HashMap<Artifact?, FilesetOutputTree?>()
+    private val runfilesTrees: MutableList<RunfilesTree?> = ArrayList<RunfilesTree?>()
 
-  public FakeActionInputFileCache() {}
+    fun put(artifact: ActionInput?, metadata: FileArtifactValue?) {
+        inputs.put(artifact, metadata)
+    }
 
-  public void put(ActionInput artifact, FileArtifactValue metadata) {
-    inputs.put(artifact, metadata);
-  }
+    fun putTreeArtifact(actionInput: ActionInput?, treeArtifactValue: TreeArtifactValue?) {
+        treeArtifacts.put(actionInput, treeArtifactValue)
+    }
 
-  public void putTreeArtifact(ActionInput actionInput, TreeArtifactValue treeArtifactValue) {
-    treeArtifacts.put(actionInput, treeArtifactValue);
-  }
+    fun putRunfilesTree(runfilesTreeArtifact: ActionInput?, runfilesTree: RunfilesTree?) {
+        val runfilesArtifactValue: RunfilesArtifactValue =
+            RunfilesArtifactValue(
+                runfilesTree,
+                ImmutableList.of<E?>(),
+                ImmutableList.of<E?>(),
+                ImmutableList.of<E?>(),
+                ImmutableList.of<E?>(),
+                ImmutableList.of<E?>(),
+                ImmutableList.of<E?>()
+            )
+        runfilesInputs.put(runfilesTreeArtifact, runfilesArtifactValue)
+        runfilesTrees.add(runfilesTree)
+    }
 
-  public void putRunfilesTree(ActionInput runfilesTreeArtifact, RunfilesTree runfilesTree) {
-    RunfilesArtifactValue runfilesArtifactValue =
-        new RunfilesArtifactValue(
-            runfilesTree,
-            ImmutableList.of(),
-            ImmutableList.of(),
-            ImmutableList.of(),
-            ImmutableList.of(),
-            ImmutableList.of(),
-            ImmutableList.of());
-    runfilesInputs.put(runfilesTreeArtifact, runfilesArtifactValue);
-    runfilesTrees.add(runfilesTree);
-  }
+    fun putFileset(fileset: Artifact?, filesetOutputTree: FilesetOutputTree?) {
+        filesets.put(fileset, filesetOutputTree)
+    }
 
-  public void putFileset(Artifact fileset, FilesetOutputTree filesetOutputTree) {
-    filesets.put(fileset, filesetOutputTree);
-  }
-
-  @Override
-  @Nullable
-  public FileArtifactValue getInputMetadataChecked(ActionInput input) throws IOException {
-    FileArtifactValue result = null;
-    if (input instanceof TreeFileArtifact treeFileArtifact) {
-      for (var entry : treeArtifacts.entrySet()) {
-        if (input.getExecPath().startsWith(entry.getKey().getExecPath())) {
-          result = entry.getValue().getChildValues().get(treeFileArtifact);
-          break;
+    @Throws(IOException::class)
+    public override fun getInputMetadataChecked(input: ActionInput): FileArtifactValue? {
+        var result: FileArtifactValue? = null
+        if (input is TreeFileArtifact) {
+            for (entry in treeArtifacts.entries) {
+                if (input.getExecPath().startsWith(entry.key.getExecPath())) {
+                    result = entry.value.getChildValues().get(input)
+                    break
+                }
+            }
+        } else {
+            result = inputs.get(input)
         }
-      }
-    } else {
-      result = inputs.get(input);
-    }
 
-    if (result == FileArtifactValue.MISSING_FILE_MARKER) {
-      throw new FileNotFoundException(
-          String.format("File '%s' does not exist", input.getExecPathString()));
-    }
-
-    return result;
-  }
-
-  @Nullable
-  @Override
-  public TreeArtifactValue getTreeMetadata(ActionInput actionInput) {
-    return treeArtifacts.get(actionInput);
-  }
-
-  @Nullable
-  @Override
-  public TreeArtifactValue getEnclosingTreeMetadata(PathFragment execPath) {
-    throw new UnsupportedOperationException();
-  }
-
-  @Override
-  @Nullable
-  public FilesetOutputTree getFileset(ActionInput input) {
-    return filesets.get(input);
-  }
-
-  @Override
-  public ImmutableMap<Artifact, FilesetOutputTree> getFilesets() {
-    return ImmutableMap.copyOf(filesets);
-  }
-
-  @Override
-  @Nullable
-  public RunfilesArtifactValue getRunfilesMetadata(ActionInput input) {
-    return runfilesInputs.get(input);
-  }
-
-  @Override
-  public ImmutableList<RunfilesTree> getRunfilesTrees() {
-    return ImmutableList.copyOf(runfilesTrees);
-  }
-
-  @Override
-  @Nullable
-  public ActionInput getInput(PathFragment execPath) {
-    for (ActionInput i : inputs.keySet()) {
-      if (i.getExecPath().equals(execPath)) {
-        return i;
-      }
-    }
-
-    for (var e : treeArtifacts.entrySet()) {
-      if (!execPath.startsWith(e.getKey().getExecPath())) {
-        continue;
-      }
-
-      for (var c : e.getValue().getChildValues().keySet()) {
-        if (c.getExecPath().equals(execPath)) {
-          return c;
+        if (result === FileArtifactValue.MISSING_FILE_MARKER) {
+            throw FileNotFoundException(
+                String.format("File '%s' does not exist", input.getExecPathString())
+            )
         }
-      }
+
+        return result
     }
 
-    return null;
-  }
+    public override fun getTreeMetadata(actionInput: ActionInput?): TreeArtifactValue? {
+        return treeArtifacts.get(actionInput)
+    }
 
-  public ImmutableMap<ActionInput, TreeArtifactValue> getAllTreeArtifacts() {
-    return ImmutableMap.copyOf(treeArtifacts);
-  }
+    public override fun getEnclosingTreeMetadata(execPath: PathFragment?): TreeArtifactValue? {
+        throw UnsupportedOperationException()
+    }
+
+    public override fun getFileset(input: ActionInput?): FilesetOutputTree? {
+        return filesets.get(input)
+    }
+
+    public override fun getFilesets(): ImmutableMap<Artifact?, FilesetOutputTree?> {
+        return ImmutableMap.copyOf<Artifact?, FilesetOutputTree?>(filesets)
+    }
+
+    public override fun getRunfilesMetadata(input: ActionInput?): RunfilesArtifactValue? {
+        return runfilesInputs.get(input)
+    }
+
+    public override fun getRunfilesTrees(): ImmutableList<RunfilesTree?> {
+        return ImmutableList.copyOf<RunfilesTree?>(runfilesTrees)
+    }
+
+    public override fun getInput(execPath: PathFragment): ActionInput? {
+        for (i in inputs.keys) {
+            if (i.getExecPath().equals(execPath)) {
+                return i
+            }
+        }
+
+        for (e in treeArtifacts.entries) {
+            if (!execPath.startsWith(e.key.getExecPath())) {
+                continue
+            }
+
+            for (c in e.value.getChildValues().keySet()) {
+                if (c.getExecPath().equals(execPath)) {
+                    return c
+                }
+            }
+        }
+
+        return null
+    }
+
+    val allTreeArtifacts: ImmutableMap<ActionInput, TreeArtifactValue>
+        get() = ImmutableMap.copyOf<ActionInput?, TreeArtifactValue?>(treeArtifacts)
 }

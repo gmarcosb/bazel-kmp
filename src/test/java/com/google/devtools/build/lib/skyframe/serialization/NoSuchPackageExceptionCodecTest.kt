@@ -11,66 +11,63 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.cmdline.PackageIdentifier
 
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.packages.BuildFileContainsErrorsException;
-import com.google.devtools.build.lib.packages.BuildFileNotFoundException;
-import com.google.devtools.build.lib.packages.InvalidPackageNameException;
-import com.google.devtools.build.lib.packages.NoSuchPackageException;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.io.IOException;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link NoSuchPackageException} serialization. */
-@RunWith(JUnit4.class)
-public class NoSuchPackageExceptionCodecTest {
-  @Test
-  public void smoke() throws Exception {
-    new SerializationTester(
-            new BuildFileNotFoundException(
-                PackageIdentifier.create("repo", PathFragment.create("foo")), "msg"),
-            new BuildFileNotFoundException(
+/** Tests for [NoSuchPackageException] serialization.  */
+@RunWith(JUnit4::class)
+class NoSuchPackageExceptionCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun smoke() {
+        SerializationTester(
+            BuildFileNotFoundException(
+                PackageIdentifier.create("repo", PathFragment.create("foo")), "msg"
+            ),
+            BuildFileNotFoundException(
                 PackageIdentifier.create("repo", PathFragment.create("foo")),
                 "msg",
-                new IOException("bar")),
-            new BuildFileContainsErrorsException(
-                PackageIdentifier.create("repo", PathFragment.create("foo")), "msg"),
-            new BuildFileContainsErrorsException(
+                IOException("bar")
+            ),
+            BuildFileContainsErrorsException(
+                PackageIdentifier.create("repo", PathFragment.create("foo")), "msg"
+            ),
+            BuildFileContainsErrorsException(
                 PackageIdentifier.create("repo", PathFragment.create("foo")),
                 "msg",
-                new IOException("bar")),
-            new InvalidPackageNameException(
-                PackageIdentifier.create("repo", PathFragment.create("foo")), "msg"),
-            new NoSuchPackageException(
-                PackageIdentifier.create("repo", PathFragment.create("foo")), "msg"),
-            new NoSuchPackageException(
+                IOException("bar")
+            ),
+            InvalidPackageNameException(
+                PackageIdentifier.create("repo", PathFragment.create("foo")), "msg"
+            ),
+            NoSuchPackageException(
+                PackageIdentifier.create("repo", PathFragment.create("foo")), "msg"
+            ),
+            NoSuchPackageException(
                 PackageIdentifier.create("repo", PathFragment.create("foo")),
                 "msg",
-                new IOException("bar")))
-        .setVerificationFunction(verifyDeserialization)
-        .makeMemoizing()
-        .runTests();
-  }
+                IOException("bar")
+            )
+        )
+            .setVerificationFunction(verifyDeserialization)
+            .makeMemoizing()
+            .runTests()
+    }
 
-  private static final SerializationTester.VerificationFunction<NoSuchPackageException>
-      verifyDeserialization =
-          (deserialized, subject) -> {
-            assertThat(deserialized).hasMessageThat().isEqualTo(subject.getMessage());
-            assertThat(deserialized.getPackageId()).isEqualTo(subject.getPackageId());
-
-            if (subject.getCause() == null) {
-              assertThat(deserialized).hasCauseThat().isNull();
-            } else {
-              assertThat(deserialized)
-                  .hasCauseThat()
-                  .hasMessageThat()
-                  .isEqualTo(subject.getCause().getMessage());
+    companion object {
+        private val verifyDeserialization: SerializationTester.VerificationFunction<NoSuchPackageException?> =
+            SerializationTester.VerificationFunction { deserialized, subject ->
+                assertThat(deserialized).hasMessageThat().isEqualTo(subject.getMessage())
+                assertThat(deserialized.getPackageId()).isEqualTo(subject.getPackageId())
+                if (subject.getCause() == null) {
+                    assertThat(deserialized).hasCauseThat().isNull()
+                } else {
+                    assertThat(deserialized)
+                        .hasCauseThat()
+                        .hasMessageThat()
+                        .isEqualTo(subject.getCause().getMessage())
+                }
             }
-          };
+    }
 }

@@ -11,23 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import com.google.devtools.build.lib.skyframe.serialization.testutils.ObjectCodecTester;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.ObjectCodecTester
 
-/** Tests for {@link BooleanCodec}. */
-@RunWith(JUnit4.class)
-public class BooleanCodecTest {
-
-  @Test
-  public void testCodec() throws Exception {
-    ObjectCodecTester.newBuilder(new BooleanCodec())
-        // No error checking, accepts any data.
-        .skipBadDataTest()
-        .addSubjects(true, false)
-        .buildAndRunTests();
-  }
+/** Tests for [BooleanCodec].  */
+@RunWith(JUnit4::class)
+class BooleanCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCodec() {
+        ObjectCodecTester.newBuilder(BooleanCodec()) // No error checking, accepts any data.
+            .skipBadDataTest()
+            .addSubjects(true, false)
+            .buildAndRunTests()
+    }
 }

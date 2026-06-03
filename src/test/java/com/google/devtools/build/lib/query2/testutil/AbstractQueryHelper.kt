@@ -11,137 +11,108 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.testutil;
+package com.google.devtools.build.lib.query2.testutil
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.bazel.bzlmod.ModuleKey;
-import com.google.devtools.build.lib.cmdline.RepositoryMapping;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.cmdline.TargetPattern;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.EventBusEventHandler;
-import com.google.devtools.build.lib.events.EventCollector;
-import com.google.devtools.build.lib.events.EventKind;
-import com.google.devtools.build.lib.events.Reporter;
-import com.google.devtools.build.lib.query2.common.UniverseScope;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.Setting;
-import com.google.devtools.build.lib.query2.testutil.AbstractQueryTest.QueryHelper;
-import com.google.devtools.build.lib.testutil.MoreAsserts;
-import com.google.devtools.build.lib.util.AbruptExitException;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.util.Arrays;
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.ImmutableMap
+import com.google.common.collect.ImmutableSet
+import com.google.devtools.build.lib.bazel.bzlmod.ModuleKey
+import com.google.devtools.build.lib.events.EventKind
+import com.google.devtools.build.lib.events.Reporter
+import com.google.devtools.build.lib.query2.engine.QueryEnvironment
+import java.util.*
 
-/** Partial {@link QueryHelper} implementation for settings storage and event handling. */
-public abstract class AbstractQueryHelper<T> implements QueryHelper<T> {
-  private Reporter reporter;
-  private EventCollector eventCollector;
+/** Partial [QueryHelper] implementation for settings storage and event handling.  */
+abstract class AbstractQueryHelper<T> : QueryHelper<T?> {
+    var reporter: Reporter? = null
+        private set
+    private var eventCollector: EventCollector? = null
 
-  protected boolean keepGoing;
-  protected ImmutableSet<Setting> settings = ImmutableSet.of();
-  protected boolean orderedResults = true;
-  protected UniverseScope universeScope = UniverseScope.EMPTY;
+    var isKeepGoing: Boolean = false
+    protected var settings: ImmutableSet<QueryEnvironment.Setting?> = ImmutableSet.of<QueryEnvironment.Setting?>()
+    protected var orderedResults: Boolean = true
+    protected var universeScope: UniverseScope? = UniverseScope.EMPTY
 
-  public static final RepositoryMapping DEFAULT_MAIN_REPO_MAPPING =
-      RepositoryMapping.create(
-          ImmutableMap.of(
-              "",
-              RepositoryName.MAIN,
-              "bazel_tools",
-              RepositoryName.BAZEL_TOOLS,
-              "platforms",
-              RepositoryName.createUnvalidated("platforms")),
-          RepositoryName.MAIN);
-  protected TargetPattern.Parser mainRepoTargetParser;
+    protected var mainRepoTargetParser: TargetPattern.Parser? = null
 
-  @Override
-  public void setUp() throws Exception {
-    eventCollector = new EventCollector(EventKind.ERRORS_AND_WARNINGS);
-    reporter = new Reporter(EventBusEventHandler.createWithNewEventBus(), eventCollector);
-    mainRepoTargetParser =
-        new TargetPattern.Parser(
-            PathFragment.EMPTY_FRAGMENT, RepositoryName.MAIN, DEFAULT_MAIN_REPO_MAPPING);
-  }
+    @Throws(Exception::class)
+    override fun setUp() {
+        eventCollector = EventCollector(EventKind.ERRORS_AND_WARNINGS)
+        reporter = Reporter(EventBusEventHandler.createWithNewEventBus(), eventCollector)
+        mainRepoTargetParser =
+            Parser(
+                PathFragment.EMPTY_FRAGMENT, RepositoryName.MAIN, DEFAULT_MAIN_REPO_MAPPING
+            )
+    }
 
-  public Reporter getReporter() {
-    return reporter;
-  }
+    override fun setUniverseScope(universeScope: String) {
+        this.universeScope =
+            UniverseScope.fromUniverseScopeList(
+                ImmutableList.< E > copyOf < E ? > (Arrays.< T > asList < T ? > (universeScope.split(",".toRegex())
+                    .dropLastWhile { it.isEmpty() }.toTypedArray()))
+            )
+    }
 
-  @Override
-  public void setUniverseScope(String universeScope) {
-    this.universeScope =
-        UniverseScope.fromUniverseScopeList(
-            ImmutableList.copyOf(Arrays.asList(universeScope.split(","))));
-  }
+    override fun clearEvents() {
+        eventCollector.clear()
+    }
 
-  @Override
-  public void clearEvents() {
-    eventCollector.clear();
-  }
+    override fun setOrderedResults(orderedResults: Boolean) {
+        this.orderedResults = orderedResults
+    }
 
-  @Override
-  public void setOrderedResults(boolean orderedResults) {
-    this.orderedResults = orderedResults;
-  }
+    override fun setQuerySettings(vararg settings: QueryEnvironment.Setting?) {
+        this.settings = ImmutableSet.copyOf<QueryEnvironment.Setting?>(settings)
+    }
 
-  @Override
-  public void setKeepGoing(boolean keepGoing) {
-    this.keepGoing = keepGoing;
-  }
+    override fun assertContainsEvent(expectedMessage: String?) {
+        MoreAsserts.assertContainsEvent(eventCollector, expectedMessage)
+    }
 
-  @Override
-  public boolean isKeepGoing() {
-    return keepGoing;
-  }
+    override fun assertDoesNotContainEvent(expectedMessage: String?) {
+        MoreAsserts.assertDoesNotContainEvent(eventCollector, expectedMessage)
+    }
 
-  @Override
-  public void setQuerySettings(Setting... settings) {
-    this.settings = ImmutableSet.copyOf(settings);
-  }
+    val firstEvent: String?
+        get() = eventCollector.iterator().next().getMessage()
 
-  @Override
-  public void assertContainsEvent(String expectedMessage) {
-    MoreAsserts.assertContainsEvent(eventCollector, expectedMessage);
-  }
+    val events: Iterable<Event?>
+        get() = eventCollector
 
-  @Override
-  public void assertDoesNotContainEvent(String expectedMessage) {
-    MoreAsserts.assertDoesNotContainEvent(eventCollector, expectedMessage);
-  }
+    override fun addModule(key: ModuleKey?, vararg moduleFileLines: String?) {
+        throw IllegalStateException("Cannot call this on non-bzlmod-enabled query environments.")
+    }
 
-  @Override
-  public String getFirstEvent() {
-    return eventCollector.iterator().next().getMessage();
-  }
+    val moduleRoot: Path?
+        get() {
+            throw IllegalStateException("Cannot call this on non-bzlmod-enabled query environments.")
+        }
 
-  @Override
-  public Iterable<Event> getEvents() {
-    return eventCollector;
-  }
+    override fun setMainRepoTargetParser(mapping: RepositoryMapping) {
+        this.mainRepoTargetParser =
+            Parser(
+                PathFragment.EMPTY_FRAGMENT,
+                RepositoryName.MAIN,
+                mapping.withAdditionalMappings(DEFAULT_MAIN_REPO_MAPPING)
+            )
+    }
 
-  @Override
-  public void addModule(ModuleKey key, String... moduleFileLines) {
-    throw new IllegalStateException("Cannot call this on non-bzlmod-enabled query environments.");
-  }
+    @Throws(AbruptExitException::class, InterruptedException::class)
+    override fun maybeHandleDiffs() {
+        // Do nothing.
+    }
 
-  @Override
-  public Path getModuleRoot() {
-    throw new IllegalStateException("Cannot call this on non-bzlmod-enabled query environments.");
-  }
-
-  @Override
-  public void setMainRepoTargetParser(RepositoryMapping mapping) {
-    this.mainRepoTargetParser =
-        new TargetPattern.Parser(
-            PathFragment.EMPTY_FRAGMENT,
-            RepositoryName.MAIN,
-            mapping.withAdditionalMappings(DEFAULT_MAIN_REPO_MAPPING));
-  }
-
-  @Override
-  public void maybeHandleDiffs() throws AbruptExitException, InterruptedException {
-    // Do nothing.
-  }
+    companion object {
+        val DEFAULT_MAIN_REPO_MAPPING: RepositoryMapping? = RepositoryMapping.create(
+            ImmutableMap.of<K?, V?>(
+                "",
+                RepositoryName.MAIN,
+                "bazel_tools",
+                RepositoryName.BAZEL_TOOLS,
+                "platforms",
+                RepositoryName.createUnvalidated("platforms")
+            ),
+            RepositoryName.MAIN
+        )
+    }
 }

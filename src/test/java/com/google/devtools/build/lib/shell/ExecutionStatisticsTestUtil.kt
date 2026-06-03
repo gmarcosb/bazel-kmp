@@ -11,60 +11,53 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.shell
 
-package com.google.devtools.build.lib.shell;
-
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.devtools.build.lib.vfs.Path;
-import java.io.IOException;
-import java.time.Duration;
-import java.util.List;
-import java.util.Optional;
+import com.google.devtools.build.lib.vfs.Path
 
 /**
- * Utilities to assist with testing execution statistics generated via the {@code process-wrapper}
- * and {@code linux-sandbox} tools.
+ * Utilities to assist with testing execution statistics generated via the `process-wrapper`
+ * and `linux-sandbox` tools.
  */
-public class ExecutionStatisticsTestUtil {
-  /**
-   * Executes a command and checks that the execution statistics timing info for that command
-   * satisfy certain constraints.
-   *
-   * @param userTimeToSpend a lower bound for how much CPU user execution time was expected
-   * @param systemTimeToSpend a lower bound for how much CPU system execution time was expected
-   * @param fullCommandLine the command to execute, including any wrappers used (like linux-sandbox)
-   * @param statisticsFilePath where the execution statistics file will be generated (to be read)
-   */
-  public static void executeCommandAndCheckStatisticsAboutCpuTimeSpent(
-      Duration userTimeToSpend,
-      Duration systemTimeToSpend,
-      List<String> fullCommandLine,
-      Path statisticsFilePath)
-      throws CommandException, IOException, InterruptedException {
-    Duration userTimeLowerBound = userTimeToSpend;
-    Duration userTimeUpperBound = userTimeToSpend.plusSeconds(9);
-    Duration systemTimeLowerBound = systemTimeToSpend;
+object ExecutionStatisticsTestUtil {
+    /**
+     * Executes a command and checks that the execution statistics timing info for that command
+     * satisfy certain constraints.
+     * 
+     * @param userTimeToSpend a lower bound for how much CPU user execution time was expected
+     * @param systemTimeToSpend a lower bound for how much CPU system execution time was expected
+     * @param fullCommandLine the command to execute, including any wrappers used (like linux-sandbox)
+     * @param statisticsFilePath where the execution statistics file will be generated (to be read)
+     */
+    @Throws(CommandException::class, IOException::class, java.lang.InterruptedException::class)
+    fun executeCommandAndCheckStatisticsAboutCpuTimeSpent(
+        userTimeToSpend: java.time.Duration,
+        systemTimeToSpend: java.time.Duration?,
+        fullCommandLine: MutableList<String?>?,
+        statisticsFilePath: Path?
+    ) {
+        val userTimeLowerBound: java.time.Duration? = userTimeToSpend
+        val userTimeUpperBound: java.time.Duration? = userTimeToSpend.plusSeconds(9)
+        val systemTimeLowerBound: java.time.Duration? = systemTimeToSpend
 
-    // TODO(b/110456205) This check fails under very heavy load, investigate why and re-enable it
-    // Duration systemTimeUpperBound = systemTimeToSpend.plusSeconds(9);
+        // TODO(b/110456205) This check fails under very heavy load, investigate why and re-enable it
+        // Duration systemTimeUpperBound = systemTimeToSpend.plusSeconds(9);
+        val command: Command = Command(fullCommandLine, java.lang.System.getenv())
+        val commandResult: CommandResult = command.execute()
+        assertThat(commandResult.terminationStatus().success()).isTrue()
 
-    Command command = new Command(fullCommandLine, System.getenv());
-    CommandResult commandResult = command.execute();
-    assertThat(commandResult.terminationStatus().success()).isTrue();
+        val resourceUsage: java.util.Optional<ExecutionStatistics.ResourceUsage?>? =
+            ExecutionStatistics.getResourceUsage(statisticsFilePath)
+        Truth.assertThat(resourceUsage).isPresent()
 
-    Optional<ExecutionStatistics.ResourceUsage> resourceUsage =
-        ExecutionStatistics.getResourceUsage(statisticsFilePath);
-    assertThat(resourceUsage).isPresent();
+        val userTime: java.time.Duration? = resourceUsage.get().getUserExecutionTime()
+        Truth.assertThat<java.time.Duration?>(userTime).isAtLeast(userTimeLowerBound)
+        Truth.assertThat<java.time.Duration?>(userTime).isAtMost(userTimeUpperBound)
 
-    Duration userTime = resourceUsage.get().getUserExecutionTime();
-    assertThat(userTime).isAtLeast(userTimeLowerBound);
-    assertThat(userTime).isAtMost(userTimeUpperBound);
+        val systemTime: java.time.Duration? = resourceUsage.get().getSystemExecutionTime()
+        Truth.assertThat<java.time.Duration?>(systemTime).isAtLeast(systemTimeLowerBound)
 
-    Duration systemTime = resourceUsage.get().getSystemExecutionTime();
-    assertThat(systemTime).isAtLeast(systemTimeLowerBound);
-
-    // TODO(b/110456205) This check fails under very heavy load, investigate why and re-enable it
-    // assertThat(systemTime).isAtMost(systemTimeUpperBound);
-  }
+        // TODO(b/110456205) This check fails under very heavy load, investigate why and re-enable it
+        // assertThat(systemTime).isAtMost(systemTimeUpperBound);
+    }
 }

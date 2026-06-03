@@ -11,113 +11,96 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.buildeventstream.transports
 
-package com.google.devtools.build.lib.buildeventstream.transports;
+import com.google.common.base.Joiner
+import com.google.devtools.build.lib.buildeventservice.BuildEventServiceOptions.BesUploadMode
+import org.junit.After
+import org.junit.Rule
+import org.junit.Test
+import org.mockito.Mock
+import java.nio.charset.StandardCharsets
+import java.nio.file.Files
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.Mockito.when;
+/** Tests [TextFormatFileTransport].  */
+@RunWith(JUnit4::class)
+class TextFormatFileTransportTest {
+    private val defaultOpts: BuildEventProtocolOptions = Options.getDefaults(BuildEventProtocolOptions::class.java)
 
-import com.google.common.base.Joiner;
-import com.google.common.io.Files;
-import com.google.devtools.build.lib.buildeventservice.BuildEventServiceOptions.BesUploadMode;
-import com.google.devtools.build.lib.buildeventstream.ArtifactGroupNamer;
-import com.google.devtools.build.lib.buildeventstream.BuildEvent;
-import com.google.devtools.build.lib.buildeventstream.BuildEventContext;
-import com.google.devtools.build.lib.buildeventstream.BuildEventProtocolOptions;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildStarted;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.Progress;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.TargetComplete;
-import com.google.devtools.build.lib.buildeventstream.LocalFilesArtifactUploader;
-import com.google.devtools.build.lib.buildeventstream.PathConverter;
-import com.google.devtools.common.options.Options;
-import com.google.protobuf.TextFormat;
-import java.io.BufferedOutputStream;
-import java.io.File;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Paths;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-import org.mockito.ArgumentMatchers;
-import org.mockito.Mock;
-import org.mockito.Mockito;
-import org.mockito.MockitoAnnotations;
+    @Rule
+    var tmp: TemporaryFolder = TemporaryFolder()
 
-/** Tests {@link TextFormatFileTransport}. **/
-@RunWith(JUnit4.class)
-public class TextFormatFileTransportTest {
-  private final BuildEventProtocolOptions defaultOpts =
-      Options.getDefaults(BuildEventProtocolOptions.class);
+    @Mock
+    var buildEvent: BuildEvent? = null
 
-  @Rule public TemporaryFolder tmp = new TemporaryFolder();
+    @Mock
+    var pathConverter: PathConverter? = null
 
-  @Mock public BuildEvent buildEvent;
+    @Mock
+    var artifactGroupNamer: ArtifactGroupNamer? = null
 
-  @Mock public PathConverter pathConverter;
-  @Mock public ArtifactGroupNamer artifactGroupNamer;
+    @Before
+    @Throws(IOException::class)
+    fun setUp() {
+        MockitoAnnotations.initMocks(this)
+    }
 
-  @Before
-  public void setUp() throws IOException {
-    MockitoAnnotations.initMocks(this);
-  }
+    @After
+    fun tearDown() {
+        Mockito.validateMockitoUsage()
+    }
 
-  @After
-  public void tearDown() {
-    Mockito.validateMockitoUsage();
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testCreatesFileAndWritesProtoTextFormat() {
+        val output = tmp.newFile()
+        val outputStream: BufferedOutputStream =
+            BufferedOutputStream(
+                Files.newOutputStream(Paths.get(output.getAbsolutePath()))
+            )
 
-  @Test
-  public void testCreatesFileAndWritesProtoTextFormat() throws Exception {
-    File output = tmp.newFile();
-    BufferedOutputStream outputStream =
-        new BufferedOutputStream(
-            java.nio.file.Files.newOutputStream(Paths.get(output.getAbsolutePath())));
+        val started: BuildEventStreamProtos.BuildEvent? =
+            BuildEventStreamProtos.BuildEvent.newBuilder()
+                .setStarted(BuildStarted.newBuilder().setCommand("build"))
+                .build()
+        Mockito.`when`<T?>(buildEvent.asStreamProto(ArgumentMatchers.any<BuildEventContext?>())).thenReturn(started)
+        val transport =
+            TextFormatFileTransport(
+                outputStream,
+                defaultOpts,
+                LocalFilesArtifactUploader(),
+                artifactGroupNamer,
+                BesUploadMode.WAIT_FOR_UPLOAD_COMPLETE
+            )
+        transport.sendBuildEvent(buildEvent)
 
-    BuildEventStreamProtos.BuildEvent started =
-        BuildEventStreamProtos.BuildEvent.newBuilder()
-            .setStarted(BuildStarted.newBuilder().setCommand("build"))
-            .build();
-    when(buildEvent.asStreamProto(ArgumentMatchers.<BuildEventContext>any())).thenReturn(started);
-    TextFormatFileTransport transport =
-        new TextFormatFileTransport(
-            outputStream,
-            defaultOpts,
-            new LocalFilesArtifactUploader(),
-            artifactGroupNamer,
-            BesUploadMode.WAIT_FOR_UPLOAD_COMPLETE);
-    transport.sendBuildEvent(buildEvent);
+        val progress: BuildEventStreamProtos.BuildEvent? =
+            BuildEventStreamProtos.BuildEvent.newBuilder()
+                .setProgress(Progress.getDefaultInstance())
+                .build()
+        Mockito.`when`<T?>(buildEvent.asStreamProto(ArgumentMatchers.any<BuildEventContext?>())).thenReturn(progress)
+        transport.sendBuildEvent(buildEvent)
 
-    BuildEventStreamProtos.BuildEvent progress =
-        BuildEventStreamProtos.BuildEvent.newBuilder()
-            .setProgress(Progress.getDefaultInstance())
-            .build();
-    when(buildEvent.asStreamProto(ArgumentMatchers.<BuildEventContext>any())).thenReturn(progress);
-    transport.sendBuildEvent(buildEvent);
+        val completed: BuildEventStreamProtos.BuildEvent? =
+            BuildEventStreamProtos.BuildEvent.newBuilder()
+                .setCompleted(TargetComplete.newBuilder().setSuccess(true))
+                .build()
+        Mockito.`when`<T?>(buildEvent.asStreamProto(ArgumentMatchers.any<BuildEventContext?>())).thenReturn(completed)
+        transport.sendBuildEvent(buildEvent)
 
-    BuildEventStreamProtos.BuildEvent completed =
-        BuildEventStreamProtos.BuildEvent.newBuilder()
-            .setCompleted(TargetComplete.newBuilder().setSuccess(true))
-            .build();
-    when(buildEvent.asStreamProto(ArgumentMatchers.<BuildEventContext>any())).thenReturn(completed);
-    transport.sendBuildEvent(buildEvent);
+        transport.close().get()
+        val contents: String? =
+            trimLines(Joiner.on("\n").join(com.google.common.io.Files.readLines(output, StandardCharsets.UTF_8)))
 
-    transport.close().get();
-    String contents =
-        trimLines(Joiner.on("\n").join(Files.readLines(output, StandardCharsets.UTF_8)));
+        Truth.assertThat(contents).contains(trimLines(TextFormat.printer().printToString(started)))
+        Truth.assertThat(contents).contains(trimLines(TextFormat.printer().printToString(progress)))
+        Truth.assertThat(contents).contains(trimLines(TextFormat.printer().printToString(completed)))
+    }
 
-    assertThat(contents).contains(trimLines(TextFormat.printer().printToString(started)));
-    assertThat(contents).contains(trimLines(TextFormat.printer().printToString(progress)));
-    assertThat(contents).contains(trimLines(TextFormat.printer().printToString(completed)));
-  }
-
-  private static String trimLines(String text) {
-    // Replace CRLF with LF and trim leading and trailing spaces.
-    return text.replaceAll("\\r", "").replaceAll(" *\\n *", "\n");
-  }
+    companion object {
+        private fun trimLines(text: String): String? {
+            // Replace CRLF with LF and trim leading and trailing spaces.
+            return text.replace("\\r".toRegex(), "").replace(" *\\n *".toRegex(), "\n")
+        }
+    }
 }

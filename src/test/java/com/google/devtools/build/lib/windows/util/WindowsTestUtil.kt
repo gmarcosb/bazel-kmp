@@ -11,108 +11,109 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.windows.util
 
-package com.google.devtools.build.lib.windows.util;
+import com.google.common.base.Strings
+import com.google.devtools.build.lib.vfs.FileSystem
+import org.junit.Assert
+import java.io.File
+import java.nio.file.Files
 
-import static com.google.common.truth.Truth.assertWithMessage;
-import static org.junit.Assert.fail;
-
-import com.google.common.base.Strings;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.windows.WindowsFileOperations;
-import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.util.Map;
-import java.util.concurrent.TimeUnit;
-
-/** Utilities for running Java tests on Windows. */
-public final class WindowsTestUtil {
-
-  /** A path where temp files can be created. It is NOT owned by this class. */
-  private final String scratchRoot;
-
-  public WindowsTestUtil(String scratchRoot) {
-    this.scratchRoot = scratchRoot;
-  }
-
-  /**
-   * Create directory junctions then assert their existence.
-   *
-   * <p>Each key in the map is a junction path, relative to {@link #scratchRoot}. These are the link
-   * names.
-   *
-   * <p>Each value in the map is a directory or junction path, also relative to {@link
-   * #scratchRoot}. These are the link targets.
-   */
-  public void createJunctions(Map<String, String> links) throws Exception {
-    for (Map.Entry<String, String> e : links.entrySet()) {
-      WindowsFileOperations.createJunction(
-          scratchRoot + "/" + e.getKey(), scratchRoot + "/" + e.getValue());
+/** Utilities for running Java tests on Windows.  */
+class WindowsTestUtil(
+    /** A path where temp files can be created. It is NOT owned by this class.  */
+    private val scratchRoot: String
+) {
+    /**
+     * Create directory junctions then assert their existence.
+     * 
+     * 
+     * Each key in the map is a junction path, relative to [.scratchRoot]. These are the link
+     * names.
+     * 
+     * 
+     * Each value in the map is a directory or junction path, also relative to [ ][.scratchRoot]. These are the link targets.
+     */
+    @Throws(Exception::class)
+    fun createJunctions(links: MutableMap<String?, String?>) {
+        for (e in links.entries) {
+            WindowsFileOperations.createJunction(
+                scratchRoot + "/" + e.key, scratchRoot + "/" + e.value
+            )
+        }
     }
-  }
 
-  /**
-   * Create symbolic links.
-   *
-   * <p>Each key in the map is a symlink path relative to {@link #scratchRoot}. These are the link
-   * names.
-   *
-   * <p>Each value in the map is a file path relative to {@link #scratchRoot}. These are the link
-   * targets.
-   */
-  public void createSymlinks(Map<String, String> links) throws Exception {
-    for (Map.Entry<String, String> entry : links.entrySet()) {
-      WindowsFileOperations.createSymlink(
-          scratchRoot + "/" + entry.getKey(), scratchRoot + "/" + entry.getValue());
+    /**
+     * Create symbolic links.
+     * 
+     * 
+     * Each key in the map is a symlink path relative to [.scratchRoot]. These are the link
+     * names.
+     * 
+     * 
+     * Each value in the map is a file path relative to [.scratchRoot]. These are the link
+     * targets.
+     */
+    @Throws(Exception::class)
+    fun createSymlinks(links: MutableMap<String?, String?>) {
+        for (entry in links.entries) {
+            WindowsFileOperations.createSymlink(
+                scratchRoot + "/" + entry.key, scratchRoot + "/" + entry.value
+            )
+        }
     }
-  }
 
-  /** Delete everything under {@link #scratchRoot}/path. */
-  public void deleteAllUnder(String path) throws IOException {
-    if (Strings.isNullOrEmpty(path)) {
-      path = scratchRoot;
-    } else {
-      path = scratchRoot + "\\" + path;
+    /** Delete everything under [.scratchRoot]/path.  */
+    @Throws(IOException::class)
+    fun deleteAllUnder(path: String) {
+        var path = path
+        if (Strings.isNullOrEmpty(path)) {
+            path = scratchRoot
+        } else {
+            path = scratchRoot + "\\" + path
+        }
+        if (File(path).exists()) {
+            runCommand("cmd.exe /c rd /s /q \"" + path + "\"")
+        }
     }
-    if (new File(path).exists()) {
-      runCommand("cmd.exe /c rd /s /q \"" + path + "\"");
+
+    /** Create a directory under `path`, relative to [.scratchRoot].  */
+    @Throws(IOException::class)
+    fun scratchDir(path: String): Path? {
+        return Files.createDirectories(File(scratchRoot, path).toPath())
     }
-  }
 
-  /** Create a directory under `path`, relative to {@link #scratchRoot}. */
-  public java.nio.file.Path scratchDir(String path) throws IOException {
-    return Files.createDirectories(new File(scratchRoot, path).toPath());
-  }
-
-  /** Create a file with the given contents under `path`, relative to {@link #scratchRoot}. */
-  public java.nio.file.Path scratchFile(String path, String... contents) throws IOException {
-    File fd = new File(scratchRoot, path);
-    Files.createDirectories(fd.toPath().getParent());
-    try (FileWriter w = new FileWriter(fd)) {
-      for (String line : contents) {
-        w.write(line);
-        w.write('\n');
-      }
+    /** Create a file with the given contents under `path`, relative to [.scratchRoot].  */
+    @Throws(IOException::class)
+    fun scratchFile(path: String, vararg contents: String?): Path? {
+        val fd = File(scratchRoot, path)
+        Files.createDirectories(fd.toPath().getParent())
+        FileWriter(fd).use { w ->
+            for (line in contents) {
+                w.write(line)
+                w.write('\n'.code)
+            }
+        }
+        return fd.toPath()
     }
-    return fd.toPath();
-  }
 
-  /** Run a Command Prompt command. */
-  public static void runCommand(String cmd) throws IOException {
-    Process p = Runtime.getRuntime().exec(cmd);
-    try {
-      // Wait no more than 5 seconds to create all junctions.
-      p.waitFor(5, TimeUnit.SECONDS);
-    } catch (InterruptedException e) {
-      fail("Failed to execute command; cmd: " + cmd);
+    @Throws(IOException::class)
+    fun createVfsPath(fs: FileSystem, path: String?): Path {
+        return fs.getPath(scratchRoot + "/" + path)
     }
-    assertWithMessage("Command failed: " + cmd).that(p.exitValue()).isEqualTo(0);
-  }
 
-  public Path createVfsPath(FileSystem fs, String path) throws IOException {
-    return fs.getPath(scratchRoot + "/" + path);
-  }
+    companion object {
+        /** Run a Command Prompt command.  */
+        @Throws(IOException::class)
+        fun runCommand(cmd: String?) {
+            val p = Runtime.getRuntime().exec(cmd)
+            try {
+                // Wait no more than 5 seconds to create all junctions.
+                p.waitFor(5, TimeUnit.SECONDS)
+            } catch (e: InterruptedException) {
+                Assert.fail("Failed to execute command; cmd: " + cmd)
+            }
+            Truth.assertWithMessage("Command failed: " + cmd).that(p.exitValue()).isEqualTo(0)
+        }
+    }
 }

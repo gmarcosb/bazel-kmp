@@ -11,27 +11,30 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.events;
+package com.google.devtools.build.lib.events
 
-import net.starlark.java.syntax.Location;
-import org.junit.Before;
+import org.junit.Before
 
 // Without 'public', tests fail in the guts of junit reflection.
 // TODO(adonovan): copy this code into all subclasses.
 // This is yet another terrible use of 'extends'.
-public abstract class EventTestTemplate {
+abstract class EventTestTemplate {
+    protected var event: com.google.devtools.build.lib.events.Event? = null
+    protected var file: String? = null
+    protected var location: net.starlark.java.syntax.Location? = null
 
-  protected Event event;
-  protected String file;
-  protected Location location;
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun createLocations() {
+        val message = "This is not an error message."
+        file = "/path/to/workspace/my/sample/path.txt"
 
-  @Before
-  public final void createLocations() throws Exception  {
-    String message = "This is not an error message.";
-    file = "/path/to/workspace/my/sample/path.txt";
+        location = net.starlark.java.syntax.Location.fromFileLineColumn(file, 3, 4)
 
-    location = Location.fromFileLineColumn(file, 3, 4);
-
-    event = Event.of(EventKind.WARNING, location, message);
-  }
+        event = com.google.devtools.build.lib.events.Event.of(
+            com.google.devtools.build.lib.events.EventKind.WARNING,
+            location,
+            message
+        )
+    }
 }

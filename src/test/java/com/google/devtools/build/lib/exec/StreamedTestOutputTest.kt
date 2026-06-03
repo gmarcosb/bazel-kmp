@@ -11,131 +11,127 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.exec
 
-package com.google.devtools.build.lib.exec;
+import com.google.devtools.build.lib.util.io.OutErr
 
-import static com.google.common.truth.Truth.assertThat;
+/** Tests for [StreamedTestOutput].  */
+@RunWith(JUnit4::class)
+class StreamedTestOutputTest {
+    private val fileSystem: InMemoryFileSystem = InMemoryFileSystem(DigestHashFunction.SHA256)
 
-import com.google.common.io.ByteStreams;
-import com.google.devtools.build.lib.util.io.OutErr;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun testEmptyFile() {
+        val watchedPath: Path? = fileSystem.getPath("/myfile")
+        FileSystemUtils.writeContent(watchedPath, ByteArray(0))
 
-/** Tests for {@link StreamedTestOutput}. */
-@RunWith(JUnit4.class)
-public class StreamedTestOutputTest {
-
-  private final InMemoryFileSystem fileSystem = new InMemoryFileSystem(DigestHashFunction.SHA256);
-
-  @Test
-  public void testEmptyFile() throws IOException {
-    Path watchedPath = fileSystem.getPath("/myfile");
-    FileSystemUtils.writeContent(watchedPath, new byte[0]);
-
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    ByteArrayOutputStream err = new ByteArrayOutputStream();
-    try (StreamedTestOutput underTest =
-        new StreamedTestOutput(OutErr.create(out, err), fileSystem.getPath("/myfile"))) {}
-
-    assertThat(out.toByteArray()).isEmpty();
-    assertThat(err.toByteArray()).isEmpty();
-  }
-
-  @Test
-  public void testNoHeaderOutputsEntireFile() throws IOException {
-    Path watchedPath = fileSystem.getPath("/myfile");
-    FileSystemUtils.writeContent(watchedPath, StandardCharsets.UTF_8, "random\nlines\n");
-
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    ByteArrayOutputStream err = new ByteArrayOutputStream();
-    try (StreamedTestOutput underTest =
-        new StreamedTestOutput(OutErr.create(out, err), fileSystem.getPath("/myfile"))) {}
-
-    assertThat(out.toString(StandardCharsets.UTF_8)).isEqualTo("random\nlines\n");
-    assertThat(err.toString(StandardCharsets.UTF_8)).isEmpty();
-  }
-
-  @Test
-  public void testOnlyOutputsContentsAfterHeaderWhenPresent() throws IOException {
-    Path watchedPath = fileSystem.getPath("/myfile");
-    FileSystemUtils.writeLinesAs(
-        watchedPath,
-        StandardCharsets.UTF_8,
-        "ignored",
-        "lines",
-        TestLogHelper.HEADER_DELIMITER,
-        "included",
-        "lines");
-
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    ByteArrayOutputStream err = new ByteArrayOutputStream();
-    try (StreamedTestOutput underTest =
-        new StreamedTestOutput(OutErr.create(out, err), fileSystem.getPath("/myfile"))) {}
-
-    assertThat(out.toString(StandardCharsets.UTF_8)).isEqualTo("included\nlines\n");
-    assertThat(err.toString(StandardCharsets.UTF_8)).isEmpty();
-  }
-
-  @Test
-  public void testWatcherDoneAfterClose() throws IOException {
-    Path watchedPath = fileSystem.getPath("/myfile");
-    FileSystemUtils.writeLinesAs(
-        watchedPath, StandardCharsets.UTF_8, TestLogHelper.HEADER_DELIMITER, "x".repeat(10 << 20));
-    StreamedTestOutput underTest =
-        new StreamedTestOutput(
-            OutErr.create(ByteStreams.nullOutputStream(), ByteStreams.nullOutputStream()),
-            fileSystem.getPath("/myfile"));
-    underTest.close();
-    assertThat(underTest.getFileWatcher().isAlive()).isFalse();
-  }
-
-  @Test
-  public void testInterruptWaitsForWatcherToClose() throws IOException {
-    Path watchedPath = fileSystem.getPath("/myfile");
-    FileSystemUtils.writeLinesAs(
-        watchedPath, StandardCharsets.UTF_8, TestLogHelper.HEADER_DELIMITER, "x".repeat(10 << 20));
-
-    StreamedTestOutput underTest =
-        new StreamedTestOutput(
-            OutErr.create(ByteStreams.nullOutputStream(), ByteStreams.nullOutputStream()),
-            fileSystem.getPath("/myfile"));
-    try {
-      Thread.currentThread().interrupt();
-      underTest.close();
-      assertThat(underTest.getFileWatcher().isAlive()).isFalse();
-    } finally {
-      // Both checks that the interrupt bit was reset and clears it for later tests.
-      assertThat(Thread.interrupted()).isTrue();
-    }
-  }
-
-  @Test
-  public void testOutputsFileWithHeaderRegardlessOfInterrupt() throws IOException {
-    Path watchedPath = fileSystem.getPath("/myfile");
-    FileSystemUtils.writeContent(watchedPath, StandardCharsets.UTF_8, "blahblahblah");
-
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    ByteArrayOutputStream err = new ByteArrayOutputStream();
-    StreamedTestOutput underTest =
-        new StreamedTestOutput(OutErr.create(out, err), fileSystem.getPath("/myfile"));
-    try {
-      Thread.currentThread().interrupt();
-      underTest.close();
-      assertThat(underTest.getFileWatcher().isAlive()).isFalse();
-    } finally {
-      // Both checks that the interrupt bit was reset and clears it for later tests.
-      assertThat(Thread.interrupted()).isTrue();
+        val out: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        val err: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        StreamedTestOutput(OutErr.create(out, err), fileSystem.getPath("/myfile")).use { underTest -> }
+        Truth.assertThat(out.toByteArray()).isEmpty()
+        Truth.assertThat(err.toByteArray()).isEmpty()
     }
 
-    assertThat(out.toString(StandardCharsets.UTF_8)).isEqualTo("blahblahblah");
-    assertThat(err.toString(StandardCharsets.UTF_8)).isEmpty();
-  }
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun testNoHeaderOutputsEntireFile() {
+        val watchedPath: Path? = fileSystem.getPath("/myfile")
+        FileSystemUtils.writeContent(watchedPath, java.nio.charset.StandardCharsets.UTF_8, "random\nlines\n")
+
+        val out: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        val err: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        StreamedTestOutput(OutErr.create(out, err), fileSystem.getPath("/myfile")).use { underTest -> }
+        Truth.assertThat(out.toString(java.nio.charset.StandardCharsets.UTF_8)).isEqualTo("random\nlines\n")
+        Truth.assertThat(err.toString(java.nio.charset.StandardCharsets.UTF_8)).isEmpty()
+    }
+
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun testOnlyOutputsContentsAfterHeaderWhenPresent() {
+        val watchedPath: Path? = fileSystem.getPath("/myfile")
+        FileSystemUtils.writeLinesAs(
+            watchedPath,
+            java.nio.charset.StandardCharsets.UTF_8,
+            "ignored",
+            "lines",
+            TestLogHelper.HEADER_DELIMITER,
+            "included",
+            "lines"
+        )
+
+        val out: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        val err: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        StreamedTestOutput(OutErr.create(out, err), fileSystem.getPath("/myfile")).use { underTest -> }
+        Truth.assertThat(out.toString(java.nio.charset.StandardCharsets.UTF_8)).isEqualTo("included\nlines\n")
+        Truth.assertThat(err.toString(java.nio.charset.StandardCharsets.UTF_8)).isEmpty()
+    }
+
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun testWatcherDoneAfterClose() {
+        val watchedPath: Path? = fileSystem.getPath("/myfile")
+        FileSystemUtils.writeLinesAs(
+            watchedPath, java.nio.charset.StandardCharsets.UTF_8, TestLogHelper.HEADER_DELIMITER, "x".repeat(10 shl 20)
+        )
+        val underTest: StreamedTestOutput =
+            StreamedTestOutput(
+                OutErr.create(
+                    com.google.common.io.ByteStreams.nullOutputStream(),
+                    com.google.common.io.ByteStreams.nullOutputStream()
+                ),
+                fileSystem.getPath("/myfile")
+            )
+        underTest.close()
+        assertThat(underTest.getFileWatcher().isAlive()).isFalse()
+    }
+
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun testInterruptWaitsForWatcherToClose() {
+        val watchedPath: Path? = fileSystem.getPath("/myfile")
+        FileSystemUtils.writeLinesAs(
+            watchedPath, java.nio.charset.StandardCharsets.UTF_8, TestLogHelper.HEADER_DELIMITER, "x".repeat(10 shl 20)
+        )
+
+        val underTest: StreamedTestOutput =
+            StreamedTestOutput(
+                OutErr.create(
+                    com.google.common.io.ByteStreams.nullOutputStream(),
+                    com.google.common.io.ByteStreams.nullOutputStream()
+                ),
+                fileSystem.getPath("/myfile")
+            )
+        try {
+            java.lang.Thread.currentThread().interrupt()
+            underTest.close()
+            assertThat(underTest.getFileWatcher().isAlive()).isFalse()
+        } finally {
+            // Both checks that the interrupt bit was reset and clears it for later tests.
+            Truth.assertThat(java.lang.Thread.interrupted()).isTrue()
+        }
+    }
+
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun testOutputsFileWithHeaderRegardlessOfInterrupt() {
+        val watchedPath: Path? = fileSystem.getPath("/myfile")
+        FileSystemUtils.writeContent(watchedPath, java.nio.charset.StandardCharsets.UTF_8, "blahblahblah")
+
+        val out: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        val err: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        val underTest: StreamedTestOutput =
+            StreamedTestOutput(OutErr.create(out, err), fileSystem.getPath("/myfile"))
+        try {
+            java.lang.Thread.currentThread().interrupt()
+            underTest.close()
+            assertThat(underTest.getFileWatcher().isAlive()).isFalse()
+        } finally {
+            // Both checks that the interrupt bit was reset and clears it for later tests.
+            Truth.assertThat(java.lang.Thread.interrupted()).isTrue()
+        }
+
+        Truth.assertThat(out.toString(java.nio.charset.StandardCharsets.UTF_8)).isEqualTo("blahblahblah")
+        Truth.assertThat(err.toString(java.nio.charset.StandardCharsets.UTF_8)).isEmpty()
+    }
 }

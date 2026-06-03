@@ -11,42 +11,37 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.view.java;
+package com.google.devtools.build.lib.view.java
 
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.analysis.util.ConfigurationTestCase;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.rules.java.JavaConfiguration;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue
+import org.junit.Test
 
 /**
- * Tests for the Java-specific parts of {@link BuildConfigurationValue} creation, and the
+ * Tests for the Java-specific parts of [BuildConfigurationValue] creation, and the
  * Java-related configuration transitions.
  */
-@RunWith(JUnit4.class)
-public class JavaConfigurationTest extends ConfigurationTestCase {
+@RunWith(JUnit4::class)
+class JavaConfigurationTest : ConfigurationTestCase() {
+    @Test
+    @Throws(Exception::class)
+    fun testJavaLauncherConfiguration() {
+        // Default value of --java_launcher: null.
+        var config: BuildConfigurationValue = create()
+        var cfg: JavaConfiguration = config.getFragment(JavaConfiguration::class.java)
+        assertThat(cfg.getJavaLauncherLabel()).isNull()
 
-  @Test
-  public void testJavaLauncherConfiguration() throws Exception {
-    // Default value of --java_launcher: null.
-    BuildConfigurationValue config = create();
-    JavaConfiguration cfg = config.getFragment(JavaConfiguration.class);
-    assertThat(cfg.getJavaLauncherLabel()).isNull();
-
-    // Explicitly enabled launcher as default
-    scratch.file(
-        "foo/BUILD",
-        """
+        // Explicitly enabled launcher as default
+        scratch.file(
+            "foo/BUILD",
+            """
         filegroup(name = "bar")
 
         filegroup(name = "baz")
-        """);
-    config = create("--java_launcher=//foo:bar");
-    cfg = config.getFragment(JavaConfiguration.class);
-    assertThat(Label.parseCanonicalUnchecked("//foo:bar")).isEqualTo(cfg.getJavaLauncherLabel());
-  }
+        
+        """.trimIndent()
+        )
+        config = create("--java_launcher=//foo:bar")
+        cfg = config.getFragment(JavaConfiguration::class.java)
+        assertThat(Label.parseCanonicalUnchecked("//foo:bar")).isEqualTo(cfg.getJavaLauncherLabel())
+    }
 }

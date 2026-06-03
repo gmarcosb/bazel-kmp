@@ -11,24 +11,22 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.common.options.processor.optiontestsources;
+package com.google.devtools.common.options.processor.optiontestsources
 
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
-import java.util.Map;
+import OptionFilters.OptionEffectTag
+import com.google.devtools.common.options.OptionDocumentationCategory
+import com.google.devtools.common.options.OptionEffectTag
+import com.google.devtools.common.options.OptionsBase
+import com.google.devtools.common.options.OptionsClass
 
-/** This example options class should fail to compile. */
+/** This example options class should fail to compile.  */
 @OptionsClass
-public abstract class ConverterlessOption extends OptionsBase {
-  @Option(
-      name = "bad_option",
-      defaultValue = "true",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS})
-  public abstract Map<String, String> getBadOption();
-
-  public abstract void setBadOption(Map<String, String> value);
+abstract class ConverterlessOption : OptionsBase() {
+    @get:com.google.devtools.common.options.Option(
+        name = "bad_option",
+        defaultValue = "true",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.AFFECTS_OUTPUTS]
+    )
+    abstract var badOption: MutableMap<String?, String?>?
 }

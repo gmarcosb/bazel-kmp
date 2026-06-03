@@ -11,64 +11,52 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.Dumper.dumpStructure
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.skyframe.serialization.testutils.Dumper.dumpStructure;
+/** Tests for [HashMapCodec].  */
+@RunWith(JUnit4::class)
+class HashMapCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun smoke() {
+        val map1: HashMap<String?, String?> = HashMap<String?, String?>()
+        map1.put("a", "first")
+        map1.put("b", null)
 
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester.VerificationFunction;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+        val map2: LinkedHashMap<String?, Any?> = LinkedHashMap<String?, Any?>()
+        map2.put("c", null)
+        map2.put("a", "second")
+        map2.put("d", map2) // This map contains itself.
 
-/** Tests for {@link HashMapCodec}. */
-@RunWith(JUnit4.class)
-public final class HashMapCodecTest {
-  @Test
-  @SuppressWarnings({"rawtypes", "unchecked"})
-  public void smoke() throws Exception {
-    HashMap<String, String> map1 = new HashMap<>();
-    map1.put("a", "first");
-    map1.put("b", null);
+        val emptyMap: HashMap<String?, String?> = HashMap<String?, String?>()
 
-    LinkedHashMap<String, Object> map2 = new LinkedHashMap<>();
-    map2.put("c", null);
-    map2.put("a", "second");
-    map2.put("d", map2); // This map contains itself.
-
-    HashMap<String, String> emptyMap = new HashMap<>();
-
-    List<Map<String, String>> deserializedMaps = new ArrayList<>();
-    // Put in empty map twice to make sure codec doesn't return same empty object.
-    new SerializationTester(map1, map2, emptyMap, emptyMap)
-        .makeMemoizing()
-        .setVerificationFunction(
-            (VerificationFunction<Map>)
-                (original, deserialized) -> {
-                  if (!(original instanceof LinkedHashMap)) {
-                    original = new LinkedHashMap(original);
-                  }
-                  // Compares the structure to avoid stack overflow when the equals operation
-                  // attempts to traverse the circular maps.
-                  assertThat(dumpStructure(original)).isEqualTo(dumpStructure(deserialized));
-                  deserializedMaps.add(deserialized);
-                })
-        .runTests();
-    assertThat(deserializedMaps).hasSize(4);
-    for (int i = 0; i < 4; i++) {
-      for (int j = 0; j < 4; j++) {
-        if (i == j) {
-          continue;
+        val deserializedMaps: MutableList<MutableMap<String?, String?>?> =
+            java.util.ArrayList<MutableMap<String?, String?>?>()
+        // Put in empty map twice to make sure codec doesn't return same empty object.
+        SerializationTester(map1, map2, emptyMap, emptyMap)
+            .makeMemoizing()
+            .setVerificationFunction(
+                VerificationFunction { original, deserialized ->
+                    var original = original
+                    if (original !is LinkedHashMap<*, *>) {
+                        original = LinkedHashMap<Any?, Any?>(original)
+                    }
+                    // Compares the structure to avoid stack overflow when the equals operation
+                    // attempts to traverse the circular maps.
+                    assertThat(dumpStructure(original)).isEqualTo(dumpStructure(deserialized))
+                    deserializedMaps.add(deserialized)
+                } as VerificationFunction<MutableMap<*, *>?>)
+            .runTests()
+        Truth.assertThat(deserializedMaps).hasSize(4)
+        for (i in 0..3) {
+            for (j in 0..3) {
+                if (i == j) {
+                    continue
+                }
+                Truth.assertThat(deserializedMaps.get(i)).isNotSameInstanceAs(deserializedMaps.get(j))
+            }
         }
-        assertThat(deserializedMaps.get(i)).isNotSameInstanceAs(deserializedMaps.get(j));
-      }
     }
-  }
 }

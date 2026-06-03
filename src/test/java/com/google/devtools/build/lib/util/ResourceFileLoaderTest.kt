@@ -11,38 +11,37 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util;
+package com.google.devtools.build.lib.util
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-
-import java.io.IOException;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.common.truth.Truth
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.io.IOException
 
 /**
- * A test for {@link ResourceFileLoader}.
+ * A test for [ResourceFileLoader].
  */
-@RunWith(JUnit4.class)
-public class ResourceFileLoaderTest {
+@RunWith(JUnit4::class)
+class ResourceFileLoaderTest {
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun loader() {
+        val message: String? = ResourceFileLoader.loadResource(
+            ResourceFileLoaderTest::class.java, "ResourceFileLoaderTest.message"
+        )
+        Truth.assertThat(message).isEqualTo("Hello, world.")
+    }
 
-  @Test
-  public void loader() throws IOException {
-    String message = ResourceFileLoader.loadResource(
-        ResourceFileLoaderTest.class, "ResourceFileLoaderTest.message");
-    assertThat(message).isEqualTo("Hello, world.");
-  }
-
-  @Test
-  public void resourceNotFound() {
-    IOException e =
-        assertThrows(
-            IOException.class,
-            () ->
-                ResourceFileLoader.loadResource(
-                    ResourceFileLoaderTest.class, "does_not_exist.txt"));
-    assertThat(e).hasMessageThat().isEqualTo("does_not_exist.txt not found.");
-  }
-
+    @org.junit.Test
+    fun resourceNotFound() {
+        val e: IOException? =
+            org.junit.Assert.assertThrows<IOException?>(
+                IOException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    ResourceFileLoader.loadResource(
+                        ResourceFileLoaderTest::class.java, "does_not_exist.txt"
+                    )
+                })
+        Truth.assertThat(e).hasMessageThat().isEqualTo("does_not_exist.txt not found.")
+    }
 }

@@ -11,423 +11,439 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.grpc;
+package com.google.devtools.build.lib.remote.grpc
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import com.google.common.collect.ImmutableList
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.remote.grpc.Connection.call
+import com.google.devtools.build.lib.remote.grpc.SharedConnectionFactory.SharedConnection
+import com.google.devtools.build.lib.remote.util.RxNoGlobalErrorsRule
+import io.grpc.*
+import io.grpc.MethodDescriptor.Marshaller
+import io.reactivex.rxjava3.core.Single
+import io.reactivex.rxjava3.core.SingleEmitter
+import io.reactivex.rxjava3.core.SingleOnSubscribe
+import io.reactivex.rxjava3.functions.Action
+import io.reactivex.rxjava3.functions.Cancellable
+import io.reactivex.rxjava3.functions.Predicate
+import io.reactivex.rxjava3.observers.TestObserver
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import org.mockito.ArgumentMatchers
+import org.mockito.Mock
+import org.mockito.Mockito
+import org.mockito.invocation.InvocationOnMock
+import org.mockito.junit.MockitoJUnit
+import org.mockito.junit.MockitoRule
+import org.mockito.stubbing.Answer
+import java.io.IOException
+import java.io.InputStream
+import java.util.*
+import java.util.concurrent.Semaphore
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.remote.grpc.SharedConnectionFactory.SharedConnection;
-import com.google.devtools.build.lib.remote.util.RxNoGlobalErrorsRule;
-import io.grpc.CallOptions;
-import io.grpc.ClientCall;
-import io.grpc.Metadata;
-import io.grpc.MethodDescriptor;
-import io.grpc.Status;
-import io.reactivex.rxjava3.core.Single;
-import io.reactivex.rxjava3.observers.TestObserver;
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.ArrayDeque;
-import java.util.Queue;
-import java.util.concurrent.Semaphore;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnit;
-import org.mockito.junit.MockitoRule;
+/** Tests for [SharedConnectionFactory].  */
+@RunWith(JUnit4::class)
+class SharedConnectionFactoryTest {
+    @Rule
+    val mockito: MockitoRule = MockitoJUnit.rule()
 
-/** Tests for {@link SharedConnectionFactory}. */
-@RunWith(JUnit4.class)
-public class SharedConnectionFactoryTest {
-  @Rule public final MockitoRule mockito = MockitoJUnit.rule();
-  @Rule public final RxNoGlobalErrorsRule rxNoGlobalErrorsRule = new RxNoGlobalErrorsRule();
+    @Rule
+    val rxNoGlobalErrorsRule: RxNoGlobalErrorsRule = RxNoGlobalErrorsRule()
 
-  @Mock private Connection connection;
-  @Mock private ConnectionFactory connectionFactory;
+    @Mock
+    private val connection: Connection? = null
 
-  @Before
-  public void setUp() {
-    when(connectionFactory.create()).thenAnswer(invocation -> Single.just(connection));
-  }
+    @Mock
+    private val connectionFactory: ConnectionFactory? = null
 
-  @Test
-  public void create_smoke() {
-    SharedConnectionFactory factory = new SharedConnectionFactory(connectionFactory, 1);
-    assertThat(factory.numAvailableConnections()).isEqualTo(1);
-
-    TestObserver<SharedConnection> observer = factory.create().test();
-
-    observer.assertValue(conn -> conn.getUnderlyingConnection() == connection).assertComplete();
-    verify(connectionFactory, times(1)).create();
-    assertThat(factory.numAvailableConnections()).isEqualTo(0);
-  }
-
-  @Test
-  public void create_noConnectionCreationBeforeSubscription() {
-    SharedConnectionFactory factory = new SharedConnectionFactory(connectionFactory, 1);
-
-    factory.create();
-
-    verify(connectionFactory, times(0)).create();
-  }
-
-  @Test
-  public void create_exceedingMaxConcurrency_waiting() {
-    SharedConnectionFactory factory = new SharedConnectionFactory(connectionFactory, 1);
-    TestObserver<SharedConnection> observer1 = factory.create().test();
-    assertThat(factory.numAvailableConnections()).isEqualTo(0);
-    observer1.assertValue(conn -> conn.getUnderlyingConnection() == connection).assertComplete();
-
-    TestObserver<SharedConnection> observer2 = factory.create().test();
-    observer2.assertEmpty();
-  }
-
-  @Test
-  public void create_afterConnectionClosed_shareConnections() throws IOException {
-    SharedConnectionFactory factory = new SharedConnectionFactory(connectionFactory, 1);
-    TestObserver<SharedConnection> observer1 = factory.create().test();
-    assertThat(factory.numAvailableConnections()).isEqualTo(0);
-    observer1.assertValue(conn -> conn.getUnderlyingConnection() == connection).assertComplete();
-    TestObserver<SharedConnection> observer2 = factory.create().test();
-
-    observer1.values().get(0).close();
-
-    observer2.assertValue(conn -> conn.getUnderlyingConnection() == connection).assertComplete();
-    assertThat(factory.numAvailableConnections()).isEqualTo(0);
-  }
-
-  @Test
-  public void create_belowMaxConcurrency_shareConnections() {
-    SharedConnectionFactory factory = new SharedConnectionFactory(connectionFactory, 2);
-
-    TestObserver<SharedConnection> observer1 = factory.create().test();
-    assertThat(factory.numAvailableConnections()).isEqualTo(1);
-    observer1.assertValue(conn -> conn.getUnderlyingConnection() == connection).assertComplete();
-
-    TestObserver<SharedConnection> observer2 = factory.create().test();
-    observer2.assertValue(conn -> conn.getUnderlyingConnection() == connection).assertComplete();
-    assertThat(factory.numAvailableConnections()).isEqualTo(0);
-  }
-
-  @Test
-  public void create_concurrentCreate_shareConnections() throws InterruptedException {
-    int maxConcurrency = 10;
-    SharedConnectionFactory factory =
-        new SharedConnectionFactory(connectionFactory, maxConcurrency);
-    AtomicReference<Throwable> error = new AtomicReference<>(null);
-    Runnable runnable =
-        () -> {
-          try {
-            TestObserver<SharedConnection> observer = factory.create().test();
-
-            observer
-                .assertNoErrors()
-                .assertValue(conn -> conn.getUnderlyingConnection() == connection)
-                .assertComplete();
-          } catch (Throwable e) {
-            error.set(e);
-          }
-        };
-    Thread[] threads = new Thread[maxConcurrency];
-    for (int i = 0; i < threads.length; ++i) {
-      threads[i] = new Thread(runnable);
+    @Before
+    fun setUp() {
+        Mockito.`when`<Any?>(connectionFactory!!.create())
+            .thenAnswer(Answer { invocation: InvocationOnMock? -> Single.just<Connection?>(connection) })
     }
 
-    for (Thread thread : threads) {
-      thread.start();
-    }
-    for (Thread thread : threads) {
-      thread.join();
-    }
+    @Test
+    fun create_smoke() {
+        val factory = SharedConnectionFactory(connectionFactory!!, 1)
+        Truth.assertThat(factory.numAvailableConnections()).isEqualTo(1)
 
-    assertThat(error.get()).isNull();
-    verify(connectionFactory, times(1)).create();
-  }
+        val observer: TestObserver<SharedConnection?> = factory.create().test()
 
-  private static final class FatalIOException extends IOException {
-    FatalIOException() {
-      super("fatal");
-    }
-  }
-
-  @SuppressWarnings({"unchecked", "CannotMockFinalClass"})
-  @Test
-  public void create_belowMaxConcurrency_fatalErrorPreventsReuse() throws IOException {
-    Connection brokenConnection =
-        new Connection() {
-          @Override
-          public <ReqT, RespT> ClientCall<ReqT, RespT> call(
-              MethodDescriptor<ReqT, RespT> method, CallOptions options) {
-            var call = mock(ClientCall.class);
-            doAnswer(
-                    invocationOnMock -> {
-                      ((ClientCall.Listener) invocationOnMock.getArgument(0))
-                          .onClose(Status.fromThrowable(new FatalIOException()), new Metadata());
-                      return null;
-                    })
-                .when(call)
-                .start(any(), any());
-            return call;
-          }
-
-          @Override
-          public void close() {}
-        };
-    Connection newConnection = mock(Connection.class);
-    Queue<Connection> connectionsToCreate =
-        new ArrayDeque<>(ImmutableList.of(brokenConnection, newConnection));
-    when(connectionFactory.create())
-        .thenAnswer(invocation -> Single.just(connectionsToCreate.remove()));
-
-    SharedConnectionFactory factory =
-        new SharedConnectionFactory(connectionFactory, 2, t -> t instanceof FatalIOException);
-
-    TestObserver<SharedConnection> observer1 = factory.create().test();
-    assertThat(factory.numAvailableConnections()).isEqualTo(1);
-    observer1
-        .assertValue(conn -> conn.getUnderlyingConnection() == brokenConnection)
-        .assertComplete();
-
-    // Submit a call on the first connection and have it fail.
-    MethodDescriptor.Marshaller<byte[]> nullMarshaller =
-        new MethodDescriptor.Marshaller<>() {
-          @Override
-          public InputStream stream(byte[] bytes) {
-            return null;
-          }
-
-          @Override
-          public byte[] parse(InputStream inputStream) {
-            return null;
-          }
-        };
-    try (Connection firstConnection = observer1.values().getFirst()) {
-      var call =
-          firstConnection.call(
-              MethodDescriptor.newBuilder(nullMarshaller, nullMarshaller)
-                  .setType(MethodDescriptor.MethodType.CLIENT_STREAMING)
-                  .setFullMethodName("testMethod")
-                  .build(),
-              CallOptions.DEFAULT);
-      ClientCall.Listener<byte[]> listener = new ClientCall.Listener<>() {};
-      call.start(listener, new Metadata());
-      listener.onClose(Status.fromThrowable(new FatalIOException()), new Metadata());
+        observer.assertValue(Predicate { conn: SharedConnection? -> conn!!.underlyingConnection === connection })
+            .assertComplete()
+        Mockito.verify<ConnectionFactory?>(connectionFactory, Mockito.times(1)).create()
+        Truth.assertThat(factory.numAvailableConnections()).isEqualTo(0)
     }
 
-    // Validate that the connection is not reused.
-    TestObserver<SharedConnection> observer2 = factory.create().test();
-    observer2.assertValue(conn -> conn.getUnderlyingConnection() == newConnection).assertComplete();
-    assertThat(factory.numAvailableConnections()).isEqualTo(1);
-  }
+    @Test
+    fun create_noConnectionCreationBeforeSubscription() {
+        val factory = SharedConnectionFactory(connectionFactory!!, 1)
 
-  @Test
-  public void create_afterLastFailed_success() {
-    AtomicInteger times = new AtomicInteger(0);
-    ConnectionFactory connectionFactory = mock(ConnectionFactory.class);
-    when(connectionFactory.create())
-        .thenAnswer(
-            invocation -> {
-              if (times.getAndIncrement() == 0) {
-                return Single.error(new IllegalStateException("error"));
-              }
+        factory.create()
 
-              return Single.just(connection);
-            });
-    SharedConnectionFactory factory = new SharedConnectionFactory(connectionFactory, 1);
-    Single<SharedConnection> connectionSingle = factory.create();
+        Mockito.verify<ConnectionFactory?>(connectionFactory, Mockito.times(0)).create()
+    }
 
-    connectionSingle
-        .test()
-        .assertError(IllegalStateException.class)
-        .assertError(e -> e.getMessage().contains("error"));
-    assertThat(factory.numAvailableConnections()).isEqualTo(1);
-    connectionSingle
-        .test()
-        .assertValue(conn -> conn.getUnderlyingConnection() == connection)
-        .assertComplete();
+    @Test
+    fun create_exceedingMaxConcurrency_waiting() {
+        val factory = SharedConnectionFactory(connectionFactory!!, 1)
+        val observer1: TestObserver<SharedConnection?> = factory.create().test()
+        Truth.assertThat(factory.numAvailableConnections()).isEqualTo(0)
+        observer1.assertValue(Predicate { conn: SharedConnection? -> conn!!.underlyingConnection === connection })
+            .assertComplete()
 
-    assertThat(times.get()).isEqualTo(2);
-    assertThat(factory.numAvailableConnections()).isEqualTo(0);
-  }
+        val observer2: TestObserver<SharedConnection?> = factory.create().test()
+        observer2.assertEmpty()
+    }
 
-  @Test
-  public void create_disposeWhenWaitingForConnectionCreation_doNotCancelCreation()
-      throws InterruptedException {
-    AtomicBoolean canceled = new AtomicBoolean(false);
-    AtomicBoolean finished = new AtomicBoolean(false);
-    Semaphore disposed = new Semaphore(0);
-    Semaphore terminated = new Semaphore(0);
-    ConnectionFactory connectionFactory = mock(ConnectionFactory.class);
-    when(connectionFactory.create())
-        .thenAnswer(
-            invocation ->
-                Single.create(
-                        emitter ->
-                            new Thread(
-                                    () -> {
-                                      try {
-                                        disposed.acquire();
-                                        finished.set(true);
-                                        emitter.onSuccess(connection);
-                                      } catch (InterruptedException e) {
-                                        emitter.onError(e);
-                                      }
-                                      terminated.release();
-                                    })
-                                .start())
-                    .doOnDispose(() -> canceled.set(true)));
-    SharedConnectionFactory factory = new SharedConnectionFactory(connectionFactory, 1);
-    TestObserver<SharedConnection> observer = factory.create().test();
-    assertThat(factory.numAvailableConnections()).isEqualTo(0);
+    @Test
+    @Throws(IOException::class)
+    fun create_afterConnectionClosed_shareConnections() {
+        val factory = SharedConnectionFactory(connectionFactory!!, 1)
+        val observer1: TestObserver<SharedConnection?> = factory.create().test()
+        Truth.assertThat(factory.numAvailableConnections()).isEqualTo(0)
+        observer1.assertValue(Predicate { conn: SharedConnection? -> conn!!.underlyingConnection === connection })
+            .assertComplete()
+        val observer2: TestObserver<SharedConnection?> = factory.create().test()
 
-    observer.assertEmpty().dispose();
-    disposed.release();
+        observer1.values().get(0)!!.close()
 
-    terminated.acquire();
-    assertThat(canceled.get()).isFalse();
-    assertThat(finished.get()).isTrue();
-    assertThat(factory.numAvailableConnections()).isEqualTo(1);
-  }
+        observer2.assertValue(Predicate { conn: SharedConnection? -> conn!!.underlyingConnection === connection })
+            .assertComplete()
+        Truth.assertThat(factory.numAvailableConnections()).isEqualTo(0)
+    }
 
-  @Test
-  public void create_interrupt_terminate() throws InterruptedException {
-    AtomicBoolean finished = new AtomicBoolean(false);
-    AtomicBoolean interrupted = new AtomicBoolean(true);
-    Semaphore threadTerminatedSemaphore = new Semaphore(0);
-    Semaphore connectionCreationSemaphore = new Semaphore(0);
-    ConnectionFactory connectionFactory = mock(ConnectionFactory.class);
-    when(connectionFactory.create())
-        .thenAnswer(
-            invocation ->
-                Single.create(
-                    emitter ->
-                        new Thread(
-                                () -> {
-                                  try {
-                                    Thread.sleep(Integer.MAX_VALUE);
-                                    finished.set(true);
-                                    emitter.onSuccess(connectionFactory);
-                                  } catch (InterruptedException e) {
-                                    emitter.onError(e);
-                                  }
-                                })
-                            .start()));
-    SharedConnectionFactory factory = new SharedConnectionFactory(connectionFactory, 2);
-    factory.create().test().assertEmpty();
-    Thread t =
-        new Thread(
-            () -> {
-              try {
-                TestObserver<SharedConnection> observer = factory.create().test();
-                connectionCreationSemaphore.release();
-                observer.await();
-              } catch (InterruptedException e) {
-                interrupted.set(true);
-              }
+    @Test
+    fun create_belowMaxConcurrency_shareConnections() {
+        val factory = SharedConnectionFactory(connectionFactory!!, 2)
 
-              threadTerminatedSemaphore.release();
-            });
-    t.start();
+        val observer1: TestObserver<SharedConnection?> = factory.create().test()
+        Truth.assertThat(factory.numAvailableConnections()).isEqualTo(1)
+        observer1.assertValue(Predicate { conn: SharedConnection? -> conn!!.underlyingConnection === connection })
+            .assertComplete()
 
-    connectionCreationSemaphore.acquire();
-    t.interrupt();
-    threadTerminatedSemaphore.acquire();
+        val observer2: TestObserver<SharedConnection?> = factory.create().test()
+        observer2.assertValue(Predicate { conn: SharedConnection? -> conn!!.underlyingConnection === connection })
+            .assertComplete()
+        Truth.assertThat(factory.numAvailableConnections()).isEqualTo(0)
+    }
 
-    assertThat(finished.get()).isFalse();
-    assertThat(interrupted.get()).isTrue();
-  }
+    @Test
+    @Throws(InterruptedException::class)
+    fun create_concurrentCreate_shareConnections() {
+        val maxConcurrency = 10
+        val factory =
+            SharedConnectionFactory(connectionFactory!!, maxConcurrency)
+        val error = AtomicReference<Throwable?>(null)
+        val runnable =
+            Runnable {
+                try {
+                    val observer: TestObserver<SharedConnection?> = factory.create().test()
 
-  @Test
-  public void closeConnection_connectionBecomeAvailable() throws IOException {
-    SharedConnectionFactory factory = new SharedConnectionFactory(connectionFactory, 1);
-    TestObserver<SharedConnection> observer = factory.create().test();
-    observer.assertComplete();
-    SharedConnection conn = observer.values().get(0);
-    assertThat(factory.numAvailableConnections()).isEqualTo(0);
+                    observer
+                        .assertNoErrors()
+                        .assertValue(Predicate { conn: SharedConnection? -> conn!!.underlyingConnection === connection })
+                        .assertComplete()
+                } catch (e: Throwable) {
+                    error.set(e)
+                }
+            }
+        val threads: Array<Thread> = arrayOfNulls<Thread>(maxConcurrency)
+        for (i in threads.indices) {
+            threads[i] = Thread(runnable)
+        }
 
-    conn.close();
+        for (thread in threads) {
+            thread.start()
+        }
+        for (thread in threads) {
+            thread.join()
+        }
 
-    assertThat(factory.numAvailableConnections()).isEqualTo(1);
-    verify(connection, times(0)).close();
-  }
+        Truth.assertThat(error.get()).isNull()
+        Mockito.verify<ConnectionFactory?>(connectionFactory, Mockito.times(1)).create()
+    }
 
-  @Test
-  public void closeFactory_closeUnderlyingConnection() throws IOException {
-    SharedConnectionFactory factory = new SharedConnectionFactory(connectionFactory, 1);
-    TestObserver<SharedConnection> observer = factory.create().test();
-    observer.assertComplete();
+    private class FatalIOException : IOException("fatal")
 
-    factory.close();
-
-    verify(connection, times(1)).close();
-  }
-
-  @Test
-  public void closeFactory_noNewConnectionAllowed() throws IOException {
-    SharedConnectionFactory factory = new SharedConnectionFactory(connectionFactory, 1);
-    factory.close();
-
-    TestObserver<SharedConnection> observer = factory.create().test();
-
-    observer
-        .assertError(IllegalStateException.class)
-        .assertError(e -> e.getMessage().contains("closed"));
-  }
-
-  @Test
-  public void closeFactory_pendingConnectionCreation_closedError()
-      throws IOException, InterruptedException {
-    AtomicBoolean canceled = new AtomicBoolean(false);
-    AtomicBoolean finished = new AtomicBoolean(false);
-    Semaphore terminated = new Semaphore(0);
-    ConnectionFactory connectionFactory = mock(ConnectionFactory.class);
-    when(connectionFactory.create())
-        .thenAnswer(
-            invocation ->
-                Single.create(
-                        emitter -> {
-                          Thread t =
-                              new Thread(
-                                  () -> {
-                                    try {
-                                      Thread.sleep(Integer.MAX_VALUE);
-                                      finished.set(true);
-                                      emitter.onSuccess(connection);
-                                    } catch (InterruptedException ignored) {
-                                      /* no-op */
-                                    }
-
-                                    terminated.release();
-                                  });
-                          t.start();
-
-                          emitter.setCancellable(t::interrupt);
+    @Test
+    @Throws(IOException::class)
+    fun create_belowMaxConcurrency_fatalErrorPreventsReuse() {
+        val brokenConnection: Connection =
+            object : Connection {
+                override fun <ReqT, RespT> call(
+                    method: MethodDescriptor<ReqT?, RespT?>?, options: CallOptions?
+                ): ClientCall<ReqT?, RespT?>? {
+                    val call: ClientCall<*, *>? = Mockito.mock<ClientCall<*, *>?>(ClientCall::class.java)
+                    Mockito.doAnswer(
+                        Answer { invocationOnMock: InvocationOnMock? ->
+                            (invocationOnMock!!.getArgument<Any?>(0) as ClientCall.Listener<*>)
+                                .onClose(Status.fromThrowable(FatalIOException()), Metadata())
+                            null
                         })
-                    .doOnDispose(() -> canceled.set(true)));
-    SharedConnectionFactory factory = new SharedConnectionFactory(connectionFactory, 1);
-    TestObserver<SharedConnection> observer = factory.create().test();
-    observer.assertEmpty();
+                        .`when`<ClientCall<*, *>?>(call)
+                        .start(ArgumentMatchers.any<ClientCall.Listener<*>?>(), ArgumentMatchers.any<Metadata?>())
+                    return call
+                }
 
-    assertThat(canceled.get()).isFalse();
-    factory.close();
+                override fun close() {}
+            }
+        val newConnection: Connection? = Mockito.mock<Connection?>(Connection::class.java)
+        val connectionsToCreate: Queue<Connection?> =
+            ArrayDeque<Connection?>(ImmutableList.of<Connection?>(brokenConnection, newConnection))
+        Mockito.`when`<Any?>(connectionFactory!!.create())
+            .thenAnswer(Answer { invocation: InvocationOnMock? -> Single.just<Connection?>(connectionsToCreate.remove()) })
 
-    terminated.acquire();
-    observer
-        .assertError(IllegalStateException.class)
-        .assertError(e -> e.getMessage().contains("closed"));
-    assertThat(canceled.get()).isTrue();
-    assertThat(finished.get()).isFalse();
-  }
+        val factory =
+            SharedConnectionFactory(
+                connectionFactory,
+                2,
+                java.util.function.Predicate { t: Throwable? -> t is FatalIOException })
+
+        val observer1: TestObserver<SharedConnection> = factory.create().test()
+        Truth.assertThat(factory.numAvailableConnections()).isEqualTo(1)
+        observer1
+            .assertValue(Predicate { conn: SharedConnection? -> conn!!.underlyingConnection === brokenConnection })
+            .assertComplete()
+
+        // Submit a call on the first connection and have it fail.
+        val nullMarshaller: Marshaller<ByteArray?> =
+            object : Marshaller<ByteArray?> {
+                override fun stream(bytes: ByteArray?): InputStream? {
+                    return null
+                }
+
+                override fun parse(inputStream: InputStream?): ByteArray? {
+                    return null
+                }
+            }
+        observer1.values().getFirst().use { firstConnection ->
+            val call: ClientCall<ByteArray?, ByteArray?>? =
+                firstConnection.call<ByteArray?, ByteArray?>(
+                    MethodDescriptor.newBuilder<ByteArray?, ByteArray?>(nullMarshaller, nullMarshaller)
+                        .setType(MethodDescriptor.MethodType.CLIENT_STREAMING)
+                        .setFullMethodName("testMethod")
+                        .build(),
+                    CallOptions.DEFAULT
+                )
+            val listener: ClientCall.Listener<ByteArray?> = object : ClientCall.Listener<ByteArray?>() {}
+            call!!.start(listener, Metadata())
+            listener.onClose(Status.fromThrowable(FatalIOException()), Metadata())
+        }
+        // Validate that the connection is not reused.
+        val observer2: TestObserver<SharedConnection?> = factory.create().test()
+        observer2.assertValue(Predicate { conn: SharedConnection? -> conn!!.underlyingConnection === newConnection })
+            .assertComplete()
+        Truth.assertThat(factory.numAvailableConnections()).isEqualTo(1)
+    }
+
+    @Test
+    fun create_afterLastFailed_success() {
+        val times = AtomicInteger(0)
+        val connectionFactory: ConnectionFactory = Mockito.mock<ConnectionFactory>(ConnectionFactory::class.java)
+        Mockito.`when`<Any?>(connectionFactory.create())
+            .thenAnswer(
+                Answer { invocation: InvocationOnMock? ->
+                    if (times.getAndIncrement() == 0) {
+                        return@thenAnswer Single.error<Any?>(IllegalStateException("error"))
+                    }
+                    Single.just<Connection?>(connection)
+                })
+        val factory = SharedConnectionFactory(connectionFactory, 1)
+        val connectionSingle: Single<SharedConnection?> = factory.create()
+
+        connectionSingle
+            .test()
+            .assertError(IllegalStateException::class.java)
+            .assertError(Predicate { e: Throwable? -> e!!.message.contains("error") })
+        Truth.assertThat(factory.numAvailableConnections()).isEqualTo(1)
+        connectionSingle
+            .test()
+            .assertValue(Predicate { conn: SharedConnection? -> conn!!.underlyingConnection === connection })
+            .assertComplete()
+
+        Truth.assertThat(times.get()).isEqualTo(2)
+        Truth.assertThat(factory.numAvailableConnections()).isEqualTo(0)
+    }
+
+    @Test
+    @Throws(InterruptedException::class)
+    fun create_disposeWhenWaitingForConnectionCreation_doNotCancelCreation() {
+        val canceled = AtomicBoolean(false)
+        val finished = AtomicBoolean(false)
+        val disposed = Semaphore(0)
+        val terminated = Semaphore(0)
+        val connectionFactory: ConnectionFactory = Mockito.mock<ConnectionFactory>(ConnectionFactory::class.java)
+        Mockito.`when`<Any?>(connectionFactory.create())
+            .thenAnswer(
+                Answer { invocation: InvocationOnMock? ->
+                    Single.create<Any?>(
+                        SingleOnSubscribe { emitter: SingleEmitter<Any?>? ->
+                            Thread(
+                                Runnable {
+                                    try {
+                                        disposed.acquire()
+                                        finished.set(true)
+                                        emitter!!.onSuccess(connection)
+                                    } catch (e: InterruptedException) {
+                                        emitter!!.onError(e)
+                                    }
+                                    terminated.release()
+                                })
+                                .start()
+                        })
+                        .doOnDispose(Action { canceled.set(true) })
+                })
+        val factory = SharedConnectionFactory(connectionFactory, 1)
+        val observer: TestObserver<SharedConnection?> = factory.create().test()
+        Truth.assertThat(factory.numAvailableConnections()).isEqualTo(0)
+
+        observer.assertEmpty().dispose()
+        disposed.release()
+
+        terminated.acquire()
+        Truth.assertThat(canceled.get()).isFalse()
+        Truth.assertThat(finished.get()).isTrue()
+        Truth.assertThat(factory.numAvailableConnections()).isEqualTo(1)
+    }
+
+    @Test
+    @Throws(InterruptedException::class)
+    fun create_interrupt_terminate() {
+        val finished = AtomicBoolean(false)
+        val interrupted = AtomicBoolean(true)
+        val threadTerminatedSemaphore = Semaphore(0)
+        val connectionCreationSemaphore = Semaphore(0)
+        val connectionFactory: ConnectionFactory = Mockito.mock<ConnectionFactory>(ConnectionFactory::class.java)
+        Mockito.`when`<Any?>(connectionFactory.create())
+            .thenAnswer(
+                Answer { invocation: InvocationOnMock? ->
+                    Single.create<Any?>(
+                        SingleOnSubscribe { emitter: SingleEmitter<Any?>? ->
+                            Thread(
+                                Runnable {
+                                    try {
+                                        Thread.sleep(Int.Companion.MAX_VALUE.toLong())
+                                        finished.set(true)
+                                        emitter!!.onSuccess(connectionFactory)
+                                    } catch (e: InterruptedException) {
+                                        emitter!!.onError(e)
+                                    }
+                                })
+                                .start()
+                        })
+                })
+        val factory = SharedConnectionFactory(connectionFactory, 2)
+        factory.create().test().assertEmpty()
+        val t =
+            Thread(
+                Runnable {
+                    try {
+                        val observer: TestObserver<SharedConnection?> = factory.create().test()
+                        connectionCreationSemaphore.release()
+                        observer.await()
+                    } catch (e: InterruptedException) {
+                        interrupted.set(true)
+                    }
+                    threadTerminatedSemaphore.release()
+                })
+        t.start()
+
+        connectionCreationSemaphore.acquire()
+        t.interrupt()
+        threadTerminatedSemaphore.acquire()
+
+        Truth.assertThat(finished.get()).isFalse()
+        Truth.assertThat(interrupted.get()).isTrue()
+    }
+
+    @Test
+    @Throws(IOException::class)
+    fun closeConnection_connectionBecomeAvailable() {
+        val factory = SharedConnectionFactory(connectionFactory!!, 1)
+        val observer: TestObserver<SharedConnection> = factory.create().test()
+        observer.assertComplete()
+        val conn = observer.values().get(0)
+        Truth.assertThat(factory.numAvailableConnections()).isEqualTo(0)
+
+        conn.close()
+
+        Truth.assertThat(factory.numAvailableConnections()).isEqualTo(1)
+        Mockito.verify<Connection?>(connection, Mockito.times(0)).close()
+    }
+
+    @Test
+    @Throws(IOException::class)
+    fun closeFactory_closeUnderlyingConnection() {
+        val factory = SharedConnectionFactory(connectionFactory!!, 1)
+        val observer: TestObserver<SharedConnection?> = factory.create().test()
+        observer.assertComplete()
+
+        factory.close()
+
+        Mockito.verify<Connection?>(connection, Mockito.times(1)).close()
+    }
+
+    @Test
+    @Throws(IOException::class)
+    fun closeFactory_noNewConnectionAllowed() {
+        val factory = SharedConnectionFactory(connectionFactory!!, 1)
+        factory.close()
+
+        val observer: TestObserver<SharedConnection?> = factory.create().test()
+
+        observer
+            .assertError(IllegalStateException::class.java)
+            .assertError(Predicate { e: Throwable? -> e!!.message.contains("closed") })
+    }
+
+    @Test
+    @Throws(IOException::class, InterruptedException::class)
+    fun closeFactory_pendingConnectionCreation_closedError() {
+        val canceled = AtomicBoolean(false)
+        val finished = AtomicBoolean(false)
+        val terminated = Semaphore(0)
+        val connectionFactory: ConnectionFactory = Mockito.mock<ConnectionFactory>(ConnectionFactory::class.java)
+        Mockito.`when`<Any?>(connectionFactory.create())
+            .thenAnswer(
+                Answer { invocation: InvocationOnMock? ->
+                    Single.create<Any?>(
+                        SingleOnSubscribe { emitter: SingleEmitter<Any?>? ->
+                            val t =
+                                Thread(
+                                    Runnable {
+                                        try {
+                                            Thread.sleep(Int.Companion.MAX_VALUE.toLong())
+                                            finished.set(true)
+                                            emitter!!.onSuccess(connection)
+                                        } catch (ignored: InterruptedException) {
+                                            /* no-op */
+                                        }
+                                        terminated.release()
+                                    })
+                            t.start()
+                            emitter!!.setCancellable(Cancellable { t.interrupt() })
+                        })
+                        .doOnDispose(Action { canceled.set(true) })
+                })
+        val factory = SharedConnectionFactory(connectionFactory, 1)
+        val observer: TestObserver<SharedConnection?> = factory.create().test()
+        observer.assertEmpty()
+
+        Truth.assertThat(canceled.get()).isFalse()
+        factory.close()
+
+        terminated.acquire()
+        observer
+            .assertError(IllegalStateException::class.java)
+            .assertError(Predicate { e: Throwable? -> e!!.message.contains("closed") })
+        Truth.assertThat(canceled.get()).isTrue()
+        Truth.assertThat(finished.get()).isFalse()
+    }
 }

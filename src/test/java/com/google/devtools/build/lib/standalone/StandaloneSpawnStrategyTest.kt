@@ -11,316 +11,305 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.standalone;
+package com.google.devtools.build.lib.standalone
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.truth.Truth.assertWithMessage;
-import static org.junit.Assert.assertThrows;
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.ImmutableMap
+import com.google.common.collect.ImmutableSet
+import com.google.common.collect.Sets
+import com.google.devtools.build.lib.actions.ActionExecutionContext
+import com.google.devtools.build.lib.events.Reporter
+import com.google.devtools.build.lib.testutil.TestUtils
+import com.google.devtools.build.lib.util.OS
+import com.google.devtools.build.lib.vfs.util.FileSystems
+import com.google.devtools.common.options.Options
+import org.junit.Assert
+import org.junit.Test
+import org.junit.function.ThrowingRunnable
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Sets;
-import com.google.devtools.build.lib.actions.ActionExecutionContext;
-import com.google.devtools.build.lib.actions.ActionExecutionContext.LostInputsCheck;
-import com.google.devtools.build.lib.actions.ActionExecutionException;
-import com.google.devtools.build.lib.actions.ActionInputPrefetcher;
-import com.google.devtools.build.lib.actions.ActionKeyContext;
-import com.google.devtools.build.lib.actions.DiscoveredModulesPruner;
-import com.google.devtools.build.lib.actions.ExecException;
-import com.google.devtools.build.lib.actions.ResourceManager;
-import com.google.devtools.build.lib.actions.ResourceSet;
-import com.google.devtools.build.lib.actions.SimpleSpawn;
-import com.google.devtools.build.lib.actions.Spawn;
-import com.google.devtools.build.lib.actions.SpawnResult;
-import com.google.devtools.build.lib.actions.ThreadStateReceiver;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil.NullAction;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.analysis.ServerDirectories;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.events.EventBusEventHandler;
-import com.google.devtools.build.lib.events.PrintingEventHandler;
-import com.google.devtools.build.lib.events.Reporter;
-import com.google.devtools.build.lib.exec.BinTools;
-import com.google.devtools.build.lib.exec.BlazeExecutor;
-import com.google.devtools.build.lib.exec.ExecutionOptions;
-import com.google.devtools.build.lib.exec.RunfilesTreeUpdater;
-import com.google.devtools.build.lib.exec.SingleBuildFileCache;
-import com.google.devtools.build.lib.exec.SpawnStrategyResolver;
-import com.google.devtools.build.lib.exec.local.LocalExecutionOptions;
-import com.google.devtools.build.lib.exec.local.LocalSpawnRunner;
-import com.google.devtools.build.lib.exec.util.TestExecutorBuilder;
-import com.google.devtools.build.lib.integration.util.IntegrationMock;
-import com.google.devtools.build.lib.shell.WindowsSubprocessFactory;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import com.google.devtools.build.lib.testutil.TestUtils;
-import com.google.devtools.build.lib.util.OS;
-import com.google.devtools.build.lib.util.io.FileOutErr;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import com.google.devtools.build.lib.vfs.util.FileSystems;
-import com.google.devtools.common.options.Options;
-import com.google.devtools.common.options.OptionsParser;
-import java.io.IOException;
-import java.util.HashSet;
-import java.util.List;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-import org.mockito.Mockito;
+/** Test StandaloneSpawnStrategy.  */
+@RunWith(JUnit4::class)
+class StandaloneSpawnStrategyTest {
+    private val reporter = Reporter(
+        EventBusEventHandler.createWithNewEventBus(),
+        PrintingEventHandler.ERRORS_AND_WARNINGS_TO_STDERR
+    )
+    private var executor: BlazeExecutor? = null
+    private var fileSystem: FileSystem? = null
+    private var outErr: FileOutErr? = null
 
-/** Test StandaloneSpawnStrategy. */
-@RunWith(JUnit4.class)
-public class StandaloneSpawnStrategyTest {
-  static {
-    WindowsSubprocessFactory.maybeInstallWindowsSubprocessFactory();
-  }
-
-  private static final String WINDOWS_SYSTEM_DRIVE = "C:";
-  private static final String CMD_EXE = getWinSystemBinary("cmd.exe");
-
-  private final Reporter reporter =
-      new Reporter(
-          EventBusEventHandler.createWithNewEventBus(),
-          PrintingEventHandler.ERRORS_AND_WARNINGS_TO_STDERR);
-  private BlazeExecutor executor;
-  private FileSystem fileSystem;
-  private FileOutErr outErr;
-
-  private Path createTestRoot() throws IOException {
-    fileSystem = FileSystems.getNativeFileSystem();
-    Path testRoot = fileSystem.getPath(TestUtils.tmpDir()).getRelative("test");
-    testRoot.createDirectoryAndParents();
-    try {
-      testRoot.deleteTreesBelow();
-    } catch (IOException e) {
-      System.err.println("Failed to remove directory " + testRoot + ": " + e.getMessage());
-      throw e;
+    @Throws(IOException::class)
+    private fun createTestRoot(): Path {
+        fileSystem = FileSystems.getNativeFileSystem()
+        val testRoot: Path = fileSystem.getPath(TestUtils.tmpDir()).getRelative("test")
+        testRoot.createDirectoryAndParents()
+        try {
+            testRoot.deleteTreesBelow()
+        } catch (e: IOException) {
+            System.err.println("Failed to remove directory " + testRoot + ": " + e.message)
+            throw e
+        }
+        return testRoot
     }
-    return testRoot;
-  }
 
-  /**
-   * We assume Windows is installed on C: and all system binaries exist under C:\Windows\System32\
-   */
-  private static String getWinSystemBinary(String binary) {
-    return WINDOWS_SYSTEM_DRIVE + "\\Windows\\System32\\" + binary;
-  }
+    @Before
+    @Throws(Exception::class)
+    fun setUp() {
+        val testRoot: Path = createTestRoot()
+        val workspaceDir: Path = testRoot.getRelative("workspace-name")
+        workspaceDir.createDirectory()
+        outErr = FileOutErr(testRoot.getRelative("stdout"), testRoot.getRelative("stderr"))
 
-  @Before
-  public final void setUp() throws Exception {
-    Path testRoot = createTestRoot();
-    Path workspaceDir = testRoot.getRelative("workspace-name");
-    workspaceDir.createDirectory();
-    outErr = new FileOutErr(testRoot.getRelative("stdout"), testRoot.getRelative("stderr"));
+        // setup output base & directories
+        val outputBase: Path = testRoot.getRelative("outputBase")
+        outputBase.createDirectory()
 
-    // setup output base & directories
-    Path outputBase = testRoot.getRelative("outputBase");
-    outputBase.createDirectory();
+        val directories: BlazeDirectories =
+            BlazeDirectories(
+                ServerDirectories(outputBase, outputBase, outputBase),
+                workspaceDir,
+                "mock-product-name"
+            )
+        // This call implicitly symlinks the integration bin tools into the exec root.
+        IntegrationMock.get().getIntegrationBinTools(fileSystem, directories)
+        val optionsParser: OptionsParser =
+            OptionsParser.builder().optionsClasses(ExecutionOptions::class.java).build()
+        optionsParser.parse("--verbose_failures")
+        val localExecutionOptions: LocalExecutionOptions? = Options.getDefaults<O?>(LocalExecutionOptions::class.java)
 
-    BlazeDirectories directories =
-        new BlazeDirectories(
-            new ServerDirectories(outputBase, outputBase, outputBase),
-            workspaceDir,
-            "mock-product-name");
-    // This call implicitly symlinks the integration bin tools into the exec root.
-    IntegrationMock.get().getIntegrationBinTools(fileSystem, directories);
-    OptionsParser optionsParser =
-        OptionsParser.builder().optionsClasses(ExecutionOptions.class).build();
-    optionsParser.parse("--verbose_failures");
-    LocalExecutionOptions localExecutionOptions = Options.getDefaults(LocalExecutionOptions.class);
+        val resourceManager: ResourceManager = ResourceManager()
+        resourceManager.setAvailableResources(
+            ResourceSet.create( /* memoryMb= */1,  /* cpu= */1,  /* localTestCount= */1)
+        )
+        val execRoot: Path? = directories.getExecRoot(TestConstants.WORKSPACE_NAME)
+        val binTools: BinTools? = BinTools.forIntegrationTesting(directories, ImmutableList.of<E?>())
+        val strategy =
+            StandaloneSpawnStrategy(
+                LocalSpawnRunner(
+                    execRoot,
+                    localExecutionOptions,
+                    resourceManager,
+                    { env, binTools1, fallbackTmpDir -> ImmutableMap.copyOf(env) },
+                    binTools,  /* processWrapper= */
+                    null,
+                    Mockito.< T > mock < T ? > (RunfilesTreeUpdater::class.java)
+                ),
+                Options.getDefaults<O?>(ExecutionOptions::class.java)
+            )
+        this.executor =
+            TestExecutorBuilder(fileSystem, directories)
+                .addStrategy(strategy, "standalone")
+                .setDefaultStrategies("standalone")
+                .build()
 
-    ResourceManager resourceManager = new ResourceManager();
-    resourceManager.setAvailableResources(
-        ResourceSet.create(/* memoryMb= */ 1, /* cpu= */ 1, /* localTestCount= */ 1));
-    Path execRoot = directories.getExecRoot(TestConstants.WORKSPACE_NAME);
-    BinTools binTools = BinTools.forIntegrationTesting(directories, ImmutableList.of());
-    StandaloneSpawnStrategy strategy =
-        new StandaloneSpawnStrategy(
-            new LocalSpawnRunner(
-                execRoot,
-                localExecutionOptions,
-                resourceManager,
-                (env, binTools1, fallbackTmpDir) -> ImmutableMap.copyOf(env),
-                binTools,
-                /* processWrapper= */ null,
-                Mockito.mock(RunfilesTreeUpdater.class)),
-            Options.getDefaults(ExecutionOptions.class));
-    this.executor =
-        new TestExecutorBuilder(fileSystem, directories)
-            .addStrategy(strategy, "standalone")
-            .setDefaultStrategies("standalone")
-            .build();
-
-    executor.getExecRoot().createDirectoryAndParents();
-  }
-
-  private static Spawn createSpawn(String... arguments) {
-    return new SimpleSpawn(
-        new ActionsTestUtil.NullAction(),
-        ImmutableList.copyOf(arguments),
-        /* environment= */ ImmutableMap.of(),
-        /* executionInfo= */ ImmutableMap.of(),
-        /* inputs= */ NestedSetBuilder.emptySet(Order.STABLE_ORDER),
-        /* outputs= */ ImmutableSet.of(),
-        ResourceSet.ZERO);
-  }
-
-  private String out() {
-    return outErr.outAsLatin1();
-  }
-
-  private String err() {
-    return outErr.errAsLatin1();
-  }
-
-  @Test
-  public void testBinTrueExecutesFine() throws Exception {
-    Spawn spawn = createSpawn(getTrueCommand());
-    executor.getContext(SpawnStrategyResolver.class).exec(spawn, createContext());
-
-    if (OS.getCurrent() != OS.WINDOWS) {
-      assertThat(out()).isEmpty();
+        executor.getExecRoot().createDirectoryAndParents()
     }
-    assertThat(err()).isEmpty();
-  }
 
-  private List<SpawnResult> run(Spawn spawn) throws Exception {
-    return executor.getContext(SpawnStrategyResolver.class).exec(spawn, createContext());
-  }
-
-  private ActionExecutionContext createContext() {
-    Path execRoot = executor.getExecRoot();
-    return new ActionExecutionContext(
-        executor,
-        new SingleBuildFileCache(
-            execRoot.getPathString(),
-            PathFragment.create("dummy-output-path"),
-            execRoot.getFileSystem(),
-            SyscallCache.NO_CACHE),
-        ActionInputPrefetcher.NONE,
-        new ActionKeyContext(),
-        /* outputMetadataStore= */ null,
-        /* rewindingEnabled= */ false,
-        LostInputsCheck.NONE,
-        outErr,
-        reporter,
-        /* clientEnv= */ System.getenv(),
-        /* actionFileSystem= */ null,
-        DiscoveredModulesPruner.DEFAULT,
-        SyscallCache.NO_CACHE,
-        ThreadStateReceiver.NULL_INSTANCE);
-  }
-
-  @Test
-  public void testBinFalseYieldsException() {
-    ExecException e = assertThrows(ExecException.class, () -> run(createSpawn(getFalseCommand())));
-    assertWithMessage("got: %s", e.getMessage())
-        .that(e.getMessage().contains("failed: error executing Null command"))
-        .isTrue();
-  }
-
-  private static String getFalseCommand() {
-    if (OS.getCurrent() == OS.WINDOWS) {
-      // No false command on Windows, we use help.exe as an alternative,
-      // the caveat is that the command will have some output to stdout.
-      // Default exit code of help is 1
-      return getWinSystemBinary("help.exe");
+    private fun out(): String {
+        return outErr.outAsLatin1()
     }
-    return OS.getCurrent() == OS.DARWIN ? "/usr/bin/false" : "/bin/false";
-  }
 
-  private static String getTrueCommand() {
-    if (OS.getCurrent() == OS.WINDOWS) {
-      // No true command on Windows, we use whoami.exe as an alternative,
-      // the caveat is that the command will have some output to stdout.
-      // Default exit code of help is 0
-      return getWinSystemBinary("whoami.exe");
+    private fun err(): String {
+        return outErr.errAsLatin1()
     }
-    return OS.getCurrent() == OS.DARWIN ? "/usr/bin/true" : "/bin/true";
-  }
 
-  @Test
-  public void testBinEchoPrintsArguments() throws Exception {
-    Spawn spawn;
-    if (OS.getCurrent() == OS.WINDOWS) {
-      spawn = createSpawn(CMD_EXE, "/c", "echo", "Hello,", "world.");
-    } else {
-      spawn = createSpawn("/bin/echo", "Hello,", "world.");
+    @Test
+    @Throws(Exception::class)
+    fun testBinTrueExecutesFine() {
+        val spawn: Spawn = createSpawn(trueCommand)
+        executor.getContext(SpawnStrategyResolver::class.java).exec(spawn, createContext())
+
+        if (OS.getCurrent() != OS.WINDOWS) {
+            Truth.assertThat(out()).isEmpty()
+        }
+        Truth.assertThat(err()).isEmpty()
     }
-    run(spawn);
-    assertThat(out()).isEqualTo("Hello, world." + System.lineSeparator());
-    assertThat(err()).isEmpty();
-  }
 
-  @Test
-  public void testCommandRunsInWorkingDir() throws Exception {
-    Spawn spawn;
-    if (OS.getCurrent() == OS.WINDOWS) {
-      spawn = createSpawn(CMD_EXE, "/c", "cd");
-    } else {
-      spawn = createSpawn("/bin/pwd");
+    @Throws(Exception::class)
+    private fun run(spawn: Spawn?): MutableList<SpawnResult?> {
+        return executor.getContext(SpawnStrategyResolver::class.java).exec(spawn, createContext())
     }
-    run(spawn);
-    assertThat(out().replace('\\', '/')).isEqualTo(executor.getExecRoot() + System.lineSeparator());
-  }
 
-  @Test
-  public void testCommandHonorsEnvironment() throws Exception {
-    Spawn spawn =
-        new SimpleSpawn(
-            new ActionsTestUtil.NullAction(),
-            OS.getCurrent() == OS.WINDOWS
-                ? ImmutableList.of(CMD_EXE, "/c", "set")
-                : ImmutableList.of("/usr/bin/env"),
-            /* environment= */ ImmutableMap.of("foo", "bar", "baz", "boo"),
-            /* executionInfo= */ ImmutableMap.of(),
-            /* inputs= */ NestedSetBuilder.emptySet(Order.STABLE_ORDER),
-            /* outputs= */ ImmutableSet.of(),
-            ResourceSet.ZERO);
-    run(spawn);
-    HashSet<String> environment = Sets.newHashSet(out().split(System.lineSeparator()));
-    if (OS.getCurrent() == OS.WINDOWS || OS.getCurrent() == OS.DARWIN) {
-      // On Windows and macOS, we may have some other env vars
-      // (eg. SystemRoot or __CF_USER_TEXT_ENCODING).
-      assertThat(environment).contains("foo=bar");
-      assertThat(environment).contains("baz=boo");
-    } else {
-      assertThat(environment).isEqualTo(Sets.newHashSet("foo=bar", "baz=boo"));
+    private fun createContext(): ActionExecutionContext {
+        val execRoot: Path = executor.getExecRoot()
+        return ActionExecutionContext(
+            executor,
+            SingleBuildFileCache(
+                execRoot.getPathString(),
+                PathFragment.create("dummy-output-path"),
+                execRoot.getFileSystem(),
+                SyscallCache.NO_CACHE
+            ),
+            ActionInputPrefetcher.NONE,
+            ActionKeyContext(),  /* outputMetadataStore= */
+            null,  /* rewindingEnabled= */
+            false,
+            LostInputsCheck.NONE,
+            outErr,
+            reporter,  /* clientEnv= */
+            System.getenv(),  /* actionFileSystem= */
+            null,
+            DiscoveredModulesPruner.DEFAULT,
+            SyscallCache.NO_CACHE,
+            ThreadStateReceiver.NULL_INSTANCE
+        )
     }
-  }
 
-  @Test
-  public void testStandardError() throws Exception {
-    Spawn spawn;
-    if (OS.getCurrent() == OS.WINDOWS) {
-      spawn = createSpawn(CMD_EXE, "/c", "echo Oops!>&2");
-    } else {
-      spawn = createSpawn("/bin/sh", "-c", "echo Oops! >&2");
+    @Test
+    fun testBinFalseYieldsException() {
+        val e: ExecException = Assert.assertThrows<T>(ExecException::class.java, ThrowingRunnable {
+            run(
+                createSpawn(
+                    falseCommand
+                )
+            )
+        })
+        assertWithMessage("got: %s", e.getMessage())
+            .that(e.getMessage().contains("failed: error executing Null command"))
+            .isTrue()
     }
-    run(spawn);
-    assertThat(err()).isEqualTo("Oops!" + System.lineSeparator());
-    assertThat(out()).isEmpty();
-  }
 
-  /**
-   * Regression test for https://github.com/bazelbuild/bazel/issues/10572 Make sure we do have the
-   * command line executed in the error message of ActionExecutionException when --verbose_failures
-   * is enabled.
-   */
-  @Test
-  public void testVerboseFailures() {
-    ExecException e = assertThrows(ExecException.class, () -> run(createSpawn(getFalseCommand())));
-    ActionExecutionException actionExecutionException =
-        ActionExecutionException.fromExecException(e, new NullAction());
-    assertWithMessage("got: %s", actionExecutionException.getMessage())
-        .that(
-            actionExecutionException.getMessage().contains("failed: error executing Null command"))
-        .isTrue();
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testBinEchoPrintsArguments() {
+        val spawn: Spawn?
+        if (OS.getCurrent() == OS.WINDOWS) {
+            spawn = createSpawn(CMD_EXE, "/c", "echo", "Hello,", "world.")
+        } else {
+            spawn = createSpawn("/bin/echo", "Hello,", "world.")
+        }
+        run(spawn)
+        Truth.assertThat(out()).isEqualTo("Hello, world." + System.lineSeparator())
+        Truth.assertThat(err()).isEmpty()
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testCommandRunsInWorkingDir() {
+        val spawn: Spawn?
+        if (OS.getCurrent() == OS.WINDOWS) {
+            spawn = createSpawn(CMD_EXE, "/c", "cd")
+        } else {
+            spawn = createSpawn("/bin/pwd")
+        }
+        run(spawn)
+        Truth.assertThat(out().replace('\\', '/')).isEqualTo(executor.getExecRoot() + System.lineSeparator())
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testCommandHonorsEnvironment() {
+        val spawn: Spawn =
+            SimpleSpawn(
+                NullAction(),
+                if (OS.getCurrent() == OS.WINDOWS)
+                    ImmutableList.of<E?>(CMD_EXE, "/c", "set")
+                else
+                    ImmutableList.of<E?>("/usr/bin/env"),  /* environment= */
+                ImmutableMap.of<K?, V?>("foo", "bar", "baz", "boo"),  /* executionInfo= */
+                ImmutableMap.of<K?, V?>(),  /* inputs= */
+                NestedSetBuilder.emptySet(Order.STABLE_ORDER),  /* outputs= */
+                ImmutableSet.of<E?>(),
+                ResourceSet.ZERO
+            )
+        run(spawn)
+        val environment: HashSet<String?> =
+            Sets.newHashSet<String?>(*out().split(System.lineSeparator().toRegex()).dropLastWhile { it.isEmpty() }
+                .toTypedArray())
+        if (OS.getCurrent() == OS.WINDOWS || OS.getCurrent() == OS.DARWIN) {
+            // On Windows and macOS, we may have some other env vars
+            // (eg. SystemRoot or __CF_USER_TEXT_ENCODING).
+            Truth.assertThat(environment).contains("foo=bar")
+            Truth.assertThat(environment).contains("baz=boo")
+        } else {
+            Truth.assertThat(environment).isEqualTo(Sets.newHashSet<String?>("foo=bar", "baz=boo"))
+        }
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testStandardError() {
+        val spawn: Spawn?
+        if (OS.getCurrent() == OS.WINDOWS) {
+            spawn = createSpawn(CMD_EXE, "/c", "echo Oops!>&2")
+        } else {
+            spawn = createSpawn("/bin/sh", "-c", "echo Oops! >&2")
+        }
+        run(spawn)
+        Truth.assertThat(err()).isEqualTo("Oops!" + System.lineSeparator())
+        Truth.assertThat(out()).isEmpty()
+    }
+
+    /**
+     * Regression test for https://github.com/bazelbuild/bazel/issues/10572 Make sure we do have the
+     * command line executed in the error message of ActionExecutionException when --verbose_failures
+     * is enabled.
+     */
+    @Test
+    fun testVerboseFailures() {
+        val e: ExecException? = Assert.assertThrows<T?>(ExecException::class.java, ThrowingRunnable {
+            run(
+                createSpawn(
+                    falseCommand
+                )
+            )
+        })
+        val actionExecutionException: ActionExecutionException =
+            ActionExecutionException.fromExecException(e, NullAction())
+        assertWithMessage("got: %s", actionExecutionException.getMessage())
+            .that(
+                actionExecutionException.getMessage().contains("failed: error executing Null command")
+            )
+            .isTrue()
+    }
+
+    companion object {
+        init {
+            WindowsSubprocessFactory.maybeInstallWindowsSubprocessFactory()
+        }
+
+        private const val WINDOWS_SYSTEM_DRIVE = "C:"
+        private val CMD_EXE: String = getWinSystemBinary("cmd.exe")
+
+        /**
+         * We assume Windows is installed on C: and all system binaries exist under C:\Windows\System32\
+         */
+        private fun getWinSystemBinary(binary: String?): String {
+            return WINDOWS_SYSTEM_DRIVE + "\\Windows\\System32\\" + binary
+        }
+
+        private fun createSpawn(vararg arguments: String?): Spawn {
+            return SimpleSpawn(
+                NullAction(),
+                ImmutableList.< E > copyOf < E ? > (arguments),  /* environment= */
+                ImmutableMap.of<K?, V?>(),  /* executionInfo= */
+                ImmutableMap.of<K?, V?>(),  /* inputs= */
+                NestedSetBuilder.emptySet(Order.STABLE_ORDER),  /* outputs= */
+                ImmutableSet.of<E?>(),
+                ResourceSet.ZERO
+            )
+        }
+
+        private val falseCommand: String
+            get() {
+                if (OS.getCurrent() == OS.WINDOWS) {
+                    // No false command on Windows, we use help.exe as an alternative,
+                    // the caveat is that the command will have some output to stdout.
+                    // Default exit code of help is 1
+                    return getWinSystemBinary("help.exe")
+                }
+                return if (OS.getCurrent() == OS.DARWIN) "/usr/bin/false" else "/bin/false"
+            }
+
+        private val trueCommand: String
+            get() {
+                if (OS.getCurrent() == OS.WINDOWS) {
+                    // No true command on Windows, we use whoami.exe as an alternative,
+                    // the caveat is that the command will have some output to stdout.
+                    // Default exit code of help is 0
+                    return getWinSystemBinary("whoami.exe")
+                }
+                return if (OS.getCurrent() == OS.DARWIN) "/usr/bin/true" else "/bin/true"
+            }
+    }
 }

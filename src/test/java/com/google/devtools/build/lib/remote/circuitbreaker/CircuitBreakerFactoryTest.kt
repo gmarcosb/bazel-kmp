@@ -11,34 +11,28 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.circuitbreaker;
+package com.google.devtools.build.lib.remote.circuitbreaker
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.remote.Retrier
+import com.google.devtools.common.options.Options
+import org.junit.Test
 
-import com.google.devtools.build.lib.remote.Retrier;
-import com.google.devtools.build.lib.remote.options.RemoteOptions;
-import com.google.devtools.build.lib.remote.options.RemoteOptions.CircuitBreakerStrategy;
-import com.google.devtools.common.options.Options;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [CircuitBreakerFactory].  */
+@RunWith(JUnit4::class)
+class CircuitBreakerFactoryTest {
+    @Test
+    fun testCreateCircuitBreaker_failureStrategy() {
+        val remoteOptions: RemoteOptions = Options.getDefaults<O>(RemoteOptions::class.java)
+        remoteOptions.circuitBreakerStrategy = CircuitBreakerStrategy.FAILURE
 
-/** Tests for {@link CircuitBreakerFactory}. */
-@RunWith(JUnit4.class)
-public class CircuitBreakerFactoryTest {
-  @Test
-  public void testCreateCircuitBreaker_failureStrategy() {
-    RemoteOptions remoteOptions = Options.getDefaults(RemoteOptions.class);
-    remoteOptions.setCircuitBreakerStrategy(CircuitBreakerStrategy.FAILURE);
+        assertThat(CircuitBreakerFactory.createCircuitBreaker(remoteOptions))
+            .isInstanceOf(FailureCircuitBreaker::class.java)
+    }
 
-    assertThat(CircuitBreakerFactory.createCircuitBreaker(remoteOptions))
-        .isInstanceOf(FailureCircuitBreaker.class);
-  }
-
-  @Test
-  public void testCreateCircuitBreaker_nullStrategy() {
-    RemoteOptions remoteOptions = Options.getDefaults(RemoteOptions.class);
-    assertThat(CircuitBreakerFactory.createCircuitBreaker(remoteOptions))
-        .isEqualTo(Retrier.ALLOW_ALL_CALLS);
-  }
+    @Test
+    fun testCreateCircuitBreaker_nullStrategy() {
+        val remoteOptions: RemoteOptions = Options.getDefaults<O>(RemoteOptions::class.java)
+        assertThat(CircuitBreakerFactory.createCircuitBreaker(remoteOptions))
+            .isEqualTo(Retrier.ALLOW_ALL_CALLS)
+    }
 }

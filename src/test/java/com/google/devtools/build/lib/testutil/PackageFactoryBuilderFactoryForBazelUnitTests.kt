@@ -11,57 +11,48 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.testutil;
+package com.google.devtools.build.lib.testutil
 
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
-import com.google.devtools.build.lib.packages.BuilderFactoryForTesting;
-import com.google.devtools.build.lib.packages.Package.Builder.PackageSettings;
-import com.google.devtools.build.lib.packages.PackageFactory;
-import com.google.devtools.build.lib.packages.PackageLoadingListener;
-import com.google.devtools.build.lib.packages.RuleClassProvider;
-import com.google.devtools.build.lib.skyframe.packages.PackageFactoryBuilderWithSkyframeForTesting;
-import com.google.devtools.build.lib.vfs.FileSystem;
+import com.google.devtools.build.lib.analysis.BlazeDirectories
 
 /**
- * A {@link BuilderFactoryForTesting} implementation that injects a {@link
- * BazelPackageLoadingListenerForTesting}.
+ * A [BuilderFactoryForTesting] implementation that injects a [ ].
  */
-class PackageFactoryBuilderFactoryForBazelUnitTests implements BuilderFactoryForTesting {
-  static final PackageFactoryBuilderFactoryForBazelUnitTests INSTANCE =
-      new PackageFactoryBuilderFactoryForBazelUnitTests();
-
-  private PackageFactoryBuilderFactoryForBazelUnitTests() {}
-
-  @Override
-  public PackageFactoryBuilderWithSkyframeForTesting builder(BlazeDirectories directories) {
-    return new PackageFactoryBuilderForBazelUnitTests(directories);
-  }
-
-  private static class PackageFactoryBuilderForBazelUnitTests
-      extends PackageFactoryBuilderWithSkyframeForTesting {
-
-    private final BlazeDirectories directories;
-
-    public PackageFactoryBuilderForBazelUnitTests(BlazeDirectories directories) {
-      this.directories = directories;
+internal class PackageFactoryBuilderFactoryForBazelUnitTests private constructor() : BuilderFactoryForTesting {
+    public override fun builder(directories: BlazeDirectories?): PackageFactoryBuilderWithSkyframeForTesting? {
+        return PackageFactoryBuilderForBazelUnitTests(directories)
     }
 
-    @Override
-    public PackageFactory build(RuleClassProvider ruleClassProvider, FileSystem fs) {
-      return new PackageFactory(
-          ruleClassProvider,
-          PackageFactory.makeDefaultSizedForkJoinPoolForGlobbing(),
-          PackageSettings.DEFAULTS,
-          packageValidator,
-          packageOverheadEstimator,
-          doChecksForTesting
-              ? new BazelPackageLoadingListenerForTesting(
-                  (ConfiguredRuleClassProvider) ruleClassProvider,
-                  directories,
-                  extraPrecomputedValues,
-                  extraSkyFunctions)
-              : PackageLoadingListener.NOOP_LISTENER);
+    private class PackageFactoryBuilderForBazelUnitTests
+        (directories: BlazeDirectories?) : PackageFactoryBuilderWithSkyframeForTesting() {
+        private val directories: BlazeDirectories?
+
+        init {
+            this.directories = directories
+        }
+
+        public override fun build(ruleClassProvider: RuleClassProvider?, fs: FileSystem?): PackageFactory {
+            return PackageFactory(
+                ruleClassProvider,
+                PackageFactory.makeDefaultSizedForkJoinPoolForGlobbing(),
+                PackageSettings.DEFAULTS,
+                packageValidator,
+                packageOverheadEstimator,
+                if (doChecksForTesting)
+                    BazelPackageLoadingListenerForTesting(
+                        ruleClassProvider as ConfiguredRuleClassProvider?,
+                        directories,
+                        extraPrecomputedValues,
+                        extraSkyFunctions
+                    )
+                else
+                    PackageLoadingListener.NOOP_LISTENER
+            )
+        }
     }
-  }
+
+    companion object {
+        @kotlin.jvm.JvmField
+        val INSTANCE: PackageFactoryBuilderFactoryForBazelUnitTests = PackageFactoryBuilderFactoryForBazelUnitTests()
+    }
 }

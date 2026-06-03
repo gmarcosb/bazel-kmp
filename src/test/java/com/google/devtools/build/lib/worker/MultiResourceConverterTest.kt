@@ -11,63 +11,58 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.worker;
+package com.google.devtools.build.lib.worker
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.util.ResourceConverter
 
-import com.google.devtools.build.lib.util.ResourceConverter;
-import com.google.devtools.build.lib.worker.WorkerOptions.MultiResourceConverter;
-import com.google.devtools.common.options.OptionsParsingException;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests [MultiResourceConverter].  */
+@RunWith(JUnit4::class)
+class MultiResourceConverterTest {
+    var multiResourceConverter: MultiResourceConverter? = null
+    var resourceConverter: ResourceConverter<*>? = null
 
-/** Tests {@link MultiResourceConverter}. */
-@RunWith(JUnit4.class)
-public class MultiResourceConverterTest {
+    @Before
+    fun setUp() {
+        multiResourceConverter = MultiResourceConverter()
+        resourceConverter = IntegerConverter({ null }, 1, Int.Companion.MAX_VALUE)
+    }
 
-  public MultiResourceConverter multiResourceConverter;
-  public ResourceConverter<?> resourceConverter;
+    @org.junit.Test
+    @Throws(OptionsParsingException::class)
+    fun convert_mnemonicEqualsAuto_returnsDefault() {
+        assertThat(multiResourceConverter.convert("someMnemonic=auto").getValue()).isNull()
+    }
 
-  @Before
-  public void setUp() {
-    multiResourceConverter = new MultiResourceConverter();
-    resourceConverter = new ResourceConverter.IntegerConverter(() -> null, 1, Integer.MAX_VALUE);
-  }
+    @org.junit.Test
+    @Throws(OptionsParsingException::class)
+    fun convert_mnemonicEqualsKeyword_equalsResourceConverterConvertKeyword() {
+        assertThat(multiResourceConverter.convert("someMnemonic=HOST_CPUS-1").getValue())
+            .isEqualTo(resourceConverter.convert("HOST_CPUS-1"))
+    }
 
-  @Test
-  public void convert_mnemonicEqualsAuto_returnsDefault() throws OptionsParsingException {
-    assertThat(multiResourceConverter.convert("someMnemonic=auto").getValue()).isNull();
-  }
+    @org.junit.Test
+    @Throws(OptionsParsingException::class)
+    fun convert_auto_returnsDefault() {
+        assertThat(multiResourceConverter.convert("auto").getValue()).isNull()
+    }
 
-  @Test
-  public void convert_mnemonicEqualsKeyword_equalsResourceConverterConvertKeyword()
-      throws OptionsParsingException {
-    assertThat(multiResourceConverter.convert("someMnemonic=HOST_CPUS-1").getValue())
-        .isEqualTo(resourceConverter.convert("HOST_CPUS-1"));
-  }
+    @org.junit.Test
+    @Throws(OptionsParsingException::class)
+    fun convert_keyword_equalsResourceConverterConvertKeyword() {
+        assertThat(multiResourceConverter.convert("HOST_CPUS-1").getValue())
+            .isEqualTo(resourceConverter.convert("HOST_CPUS-1"))
+    }
 
-  @Test
-  public void convert_auto_returnsDefault() throws OptionsParsingException {
-    assertThat(multiResourceConverter.convert("auto").getValue()).isNull();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun convert_mnemonic_savesCorrectKey() {
+        assertThat(multiResourceConverter.convert("someMnemonic=10").getKey())
+            .isEqualTo("someMnemonic")
+    }
 
-  @Test
-  public void convert_keyword_equalsResourceConverterConvertKeyword()
-      throws OptionsParsingException {
-    assertThat(multiResourceConverter.convert("HOST_CPUS-1").getValue())
-        .isEqualTo(resourceConverter.convert("HOST_CPUS-1"));
-  }
-
-  @Test
-  public void convert_mnemonic_savesCorrectKey() throws Exception {
-    assertThat(multiResourceConverter.convert("someMnemonic=10").getKey())
-        .isEqualTo("someMnemonic");
-  }
-
-  @Test
-  public void convert_auto_setsEmptyStringAKADefaultAsKey() throws Exception {
-    assertThat(multiResourceConverter.convert("auto").getKey()).isNull();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun convert_auto_setsEmptyStringAKADefaultAsKey() {
+        assertThat(multiResourceConverter.convert("auto").getKey()).isNull()
+    }
 }

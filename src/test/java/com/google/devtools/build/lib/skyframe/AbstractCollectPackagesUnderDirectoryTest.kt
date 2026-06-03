@@ -11,354 +11,345 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.actions.ActionKeyContext;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
-import com.google.devtools.build.lib.analysis.ServerDirectories;
-import com.google.devtools.build.lib.bazel.repository.RepoDefinitionFunction;
-import com.google.devtools.build.lib.bugreport.BugReporter;
-import com.google.devtools.build.lib.clock.BlazeClock;
-import com.google.devtools.build.lib.cmdline.IgnoredSubdirectories;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.events.EventBusEventHandler;
-import com.google.devtools.build.lib.events.EventCollector;
-import com.google.devtools.build.lib.events.Reporter;
-import com.google.devtools.build.lib.packages.BuildFileName;
-import com.google.devtools.build.lib.packages.semantics.BuildLanguageOptions;
-import com.google.devtools.build.lib.pkgcache.PackageOptions;
-import com.google.devtools.build.lib.pkgcache.PathPackageLocator;
-import com.google.devtools.build.lib.rules.repository.RepositoryDirectoryValue;
-import com.google.devtools.build.lib.runtime.QuiescingExecutorsImpl;
-import com.google.devtools.build.lib.skyframe.packages.PackageFactoryBuilderWithSkyframeForTesting;
-import com.google.devtools.build.lib.testing.common.FakeOptions;
-import com.google.devtools.build.lib.testutil.MoreAsserts;
-import com.google.devtools.build.lib.testutil.Scratch;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import com.google.devtools.build.lib.testutil.TestPackageFactoryBuilderFactory;
-import com.google.devtools.build.lib.testutil.TestRuleClassProvider;
-import com.google.devtools.build.lib.util.AbruptExitException;
-import com.google.devtools.build.lib.util.io.TimestampGranularityMonitor;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.lib.vfs.RootedPath;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import com.google.devtools.build.skyframe.EvaluationContext;
-import com.google.devtools.build.skyframe.EvaluationResult;
-import com.google.devtools.build.skyframe.MemoizingEvaluator;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.common.options.Options;
-import com.google.devtools.common.options.OptionsParser;
-import com.google.devtools.common.options.OptionsParsingException;
-import com.google.errorprone.annotations.ForOverride;
-import java.io.IOException;
-import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
-import org.junit.Before;
-import org.junit.Test;
+import com.google.devtools.build.lib.actions.ActionKeyContext
 
 /**
- * Abstract base class for testing an implementation of a {@link SkyFunction} for {@link
- * SkyFunctions#COLLECT_PACKAGES_UNDER_DIRECTORY}.
+ * Abstract base class for testing an implementation of a [SkyFunction] for [ ][SkyFunctions.COLLECT_PACKAGES_UNDER_DIRECTORY].
  */
-public abstract class AbstractCollectPackagesUnderDirectoryTest {
-  private static final String FAKE_INSTALL_MD5_STRING = "abcedf1234567890abcedf1234567890";
+abstract class AbstractCollectPackagesUnderDirectoryTest {
+    protected var fileSystem: FileSystem? = null
+    protected var root: Root? = null
+    protected var workingDir: Path? = null
+    private var scratch: Scratch? = null
+    protected var directories: BlazeDirectories? = null
+    private var eventCollector: EventCollector? = null
+    private var reporter: com.google.devtools.build.lib.events.Reporter? = null
+    protected var ruleClassProvider: ConfiguredRuleClassProvider? = null
+    private var evaluator: MemoizingEvaluator? = null
 
-  protected FileSystem fileSystem;
-  protected Root root;
-  protected Path workingDir;
-  private Scratch scratch;
-  protected BlazeDirectories directories;
-  private EventCollector eventCollector;
-  private Reporter reporter;
-  protected ConfiguredRuleClassProvider ruleClassProvider;
-  private MemoizingEvaluator evaluator;
-
-  @Before
-  public void setUp() throws IOException {
-    fileSystem = new InMemoryFileSystem(DigestHashFunction.SHA256);
-    workingDir = fileSystem.getPath(getWorkspacePathString());
-    workingDir.createDirectoryAndParents();
-    root = Root.fromPath(workingDir);
-    scratch = new Scratch(workingDir);
-    directories =
-        new BlazeDirectories(
-            new ServerDirectories(
-                fileSystem.getPath("/install"),
-                fileSystem.getPath("/output"),
-                fileSystem.getPath("/user_root"),
-                fileSystem.getPath("/execroot"),
-                useVirtualSourceRoot() ? root : null,
-                FAKE_INSTALL_MD5_STRING),
-            workingDir,
-            /* productName= */ "DummyProductNameForUnitTests");
-    eventCollector = new EventCollector();
-    reporter = new Reporter(EventBusEventHandler.createWithNewEventBus());
-    reporter.addHandler(eventCollector);
-  }
-
-  protected abstract String getWorkspacePathString();
-
-  protected abstract List<BuildFileName> getBuildFileNamesByPriority();
-
-  protected abstract ImmutableMap<SkyFunctionName, SkyFunction> getExtraSkyFunctions();
-
-  protected abstract SkyframeExecutorFactory makeSkyframeExecutorFactory();
-
-  @ForOverride
-  protected abstract boolean useVirtualSourceRoot();
-
-  @Test
-  public void noPackageErrors() throws Exception {
-    initEvaluator();
-
-    scratch.file("BUILD");
-    scratch.dir("a1/b1/c1");
-    scratch.file("a1/b1/c1/BUILD");
-    scratch.dir("a1/b1/c2");
-    scratch.dir("a1/b2/c1");
-    scratch.dir("a1/b2/c2");
-    scratch.dir("a2/b1/c1");
-    scratch.file("a2/b1/c1/BUILD");
-    scratch.dir("a2/b1/c2");
-    scratch.dir("a2/b2/c1");
-    scratch.dir("a2/b2/c2");
-    scratch.file("a2/b2/c2/BUILD");
-
-    {
-      CollectPackagesUnderDirectoryValue collectPackagesUnderDirectoryValue =
-          getCollectPackagesUnderDirectoryValue("");
-      assertThat(collectPackagesUnderDirectoryValue.isDirectoryPackage).isTrue();
-      assertThat(
-              collectPackagesUnderDirectoryValue
-                  .getSubdirectoryTransitivelyContainsPackagesOrErrors())
-          .containsExactly(rootedPath("tools"), rootedPath("a1"), rootedPath("a2"));
+    @Before
+    @Throws(IOException::class)
+    fun setUp() {
+        fileSystem = InMemoryFileSystem(DigestHashFunction.SHA256)
+        workingDir = fileSystem.getPath(this.workspacePathString)
+        workingDir.createDirectoryAndParents()
+        root = Root.fromPath(workingDir)
+        scratch = Scratch(workingDir)
+        directories =
+            BlazeDirectories(
+                ServerDirectories(
+                    fileSystem.getPath("/install"),
+                    fileSystem.getPath("/output"),
+                    fileSystem.getPath("/user_root"),
+                    fileSystem.getPath("/execroot"),
+                    if (useVirtualSourceRoot()) root else null,
+                    FAKE_INSTALL_MD5_STRING
+                ),
+                workingDir,  /* productName= */
+                "DummyProductNameForUnitTests"
+            )
+        eventCollector = EventCollector()
+        reporter = com.google.devtools.build.lib.events.Reporter(EventBusEventHandler.createWithNewEventBus())
+        reporter.addHandler(eventCollector)
     }
 
-    {
-      CollectPackagesUnderDirectoryValue collectPackagesUnderDirectoryValue =
-          getCollectPackagesUnderDirectoryValue("a1");
-      assertThat(collectPackagesUnderDirectoryValue.isDirectoryPackage).isFalse();
-      assertThat(
-              collectPackagesUnderDirectoryValue
-                  .getSubdirectoryTransitivelyContainsPackagesOrErrors())
-          .containsExactly(rootedPath("a1/b1"));
+    protected abstract val workspacePathString: String?
+
+    protected abstract val buildFileNamesByPriority: MutableList<BuildFileName>?
+
+    protected abstract val extraSkyFunctions: com.google.common.collect.ImmutableMap<SkyFunctionName?, SkyFunction?>?
+
+    protected abstract fun makeSkyframeExecutorFactory(): SkyframeExecutorFactory?
+
+    @com.google.errorprone.annotations.ForOverride
+    protected abstract fun useVirtualSourceRoot(): Boolean
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun noPackageErrors() {
+        initEvaluator()
+
+        scratch.file("BUILD")
+        scratch.dir("a1/b1/c1")
+        scratch.file("a1/b1/c1/BUILD")
+        scratch.dir("a1/b1/c2")
+        scratch.dir("a1/b2/c1")
+        scratch.dir("a1/b2/c2")
+        scratch.dir("a2/b1/c1")
+        scratch.file("a2/b1/c1/BUILD")
+        scratch.dir("a2/b1/c2")
+        scratch.dir("a2/b2/c1")
+        scratch.dir("a2/b2/c2")
+        scratch.file("a2/b2/c2/BUILD")
+
+        run {
+            val collectPackagesUnderDirectoryValue: CollectPackagesUnderDirectoryValue =
+                getCollectPackagesUnderDirectoryValue("")
+            assertThat(collectPackagesUnderDirectoryValue.isDirectoryPackage).isTrue()
+            assertThat(
+                collectPackagesUnderDirectoryValue
+                    .getSubdirectoryTransitivelyContainsPackagesOrErrors()
+            )
+                .containsExactly(rootedPath("tools"), rootedPath("a1"), rootedPath("a2"))
+        }
+
+        run {
+            val collectPackagesUnderDirectoryValue: CollectPackagesUnderDirectoryValue =
+                getCollectPackagesUnderDirectoryValue("a1")
+            assertThat(collectPackagesUnderDirectoryValue.isDirectoryPackage).isFalse()
+            assertThat(
+                collectPackagesUnderDirectoryValue
+                    .getSubdirectoryTransitivelyContainsPackagesOrErrors()
+            )
+                .containsExactly(rootedPath("a1/b1"))
+        }
+
+        run {
+            val collectPackagesUnderDirectoryValue: CollectPackagesUnderDirectoryValue =
+                getCollectPackagesUnderDirectoryValue("a2/b1")
+            assertThat(collectPackagesUnderDirectoryValue.isDirectoryPackage).isFalse()
+            assertThat(
+                collectPackagesUnderDirectoryValue
+                    .getSubdirectoryTransitivelyContainsPackagesOrErrors()
+            )
+                .containsExactly(rootedPath("a2/b1/c1"))
+        }
     }
 
-    {
-      CollectPackagesUnderDirectoryValue collectPackagesUnderDirectoryValue =
-          getCollectPackagesUnderDirectoryValue("a2/b1");
-      assertThat(collectPackagesUnderDirectoryValue.isDirectoryPackage).isFalse();
-      assertThat(
-              collectPackagesUnderDirectoryValue
-                  .getSubdirectoryTransitivelyContainsPackagesOrErrors())
-          .containsExactly(rootedPath("a2/b1/c1"));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun packageErrors() {
+        initEvaluator()
+
+        scratch.dir("a1/b1")
+        scratch.file("a1/b1/BUILD", "xxx")
+        scratch.dir("a1/b2")
+        scratch.dir("a2/b1")
+        scratch.dir("a2/b2")
+        scratch.file("a2/b2/BUILD", "yyy")
+
+        val collectPackagesUnderDirectoryValue: CollectPackagesUnderDirectoryValue =
+            getCollectPackagesUnderDirectoryValue("")
+        assertThat(collectPackagesUnderDirectoryValue.isDirectoryPackage).isFalse()
+        assertThat(
+            collectPackagesUnderDirectoryValue
+                .getSubdirectoryTransitivelyContainsPackagesOrErrors()
+        )
+            .containsExactly(rootedPath("tools"), rootedPath("a1"), rootedPath("a2"))
+        MoreAsserts.assertContainsEvent(eventCollector, "Loading package: a1/b1")
+        MoreAsserts.assertContainsEvent(eventCollector, "a1/b1/BUILD:1:1: name 'xxx' is not defined")
+        MoreAsserts.assertContainsEvent(eventCollector, "Loading package: a2/b2")
+        MoreAsserts.assertContainsEvent(eventCollector, "a2/b2/BUILD:1:1: name 'yyy' is not defined")
     }
-  }
 
-  @Test
-  public void packageErrors() throws Exception {
-    initEvaluator();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun symlinks() {
+        initEvaluator()
 
-    scratch.dir("a1/b1");
-    scratch.file("a1/b1/BUILD", "xxx");
-    scratch.dir("a1/b2");
-    scratch.dir("a2/b1");
-    scratch.dir("a2/b2");
-    scratch.file("a2/b2/BUILD", "yyy");
+        val a1DirPath: Path = scratch.dir("a1")
+        scratch.dir("a1/b1/c1")
+        val a1CircularPath: Path? = scratch.resolve("a1/circular")
+        FileSystemUtils.ensureSymbolicLink(a1CircularPath, a1CircularPath)
+        scratch.file("a1/b1/c1/BUILD")
+        FileSystemUtils.ensureSymbolicLink(scratch.resolve("a2"), a1DirPath)
+        scratch.dir("a3")
+        scratch.file(
+            "a3/DONT_FOLLOW_SYMLINKS_WHEN_TRAVERSING_THIS_DIRECTORY_VIA_A_RECURSIVE_TARGET_PATTERN"
+        )
+        FileSystemUtils.ensureSymbolicLink(scratch.resolve("a3/dirlink"), a1DirPath)
 
-    CollectPackagesUnderDirectoryValue collectPackagesUnderDirectoryValue =
-        getCollectPackagesUnderDirectoryValue("");
-    assertThat(collectPackagesUnderDirectoryValue.isDirectoryPackage).isFalse();
-    assertThat(
+        val collectPackagesUnderDirectoryValue: CollectPackagesUnderDirectoryValue =
+            getCollectPackagesUnderDirectoryValue("")
+        assertThat(collectPackagesUnderDirectoryValue.isDirectoryPackage).isFalse()
+        assertThat(
             collectPackagesUnderDirectoryValue
-                .getSubdirectoryTransitivelyContainsPackagesOrErrors())
-        .containsExactly(rootedPath("tools"), rootedPath("a1"), rootedPath("a2"));
-    MoreAsserts.assertContainsEvent(eventCollector, "Loading package: a1/b1");
-    MoreAsserts.assertContainsEvent(eventCollector, "a1/b1/BUILD:1:1: name 'xxx' is not defined");
-    MoreAsserts.assertContainsEvent(eventCollector, "Loading package: a2/b2");
-    MoreAsserts.assertContainsEvent(eventCollector, "a2/b2/BUILD:1:1: name 'yyy' is not defined");
-  }
+                .getSubdirectoryTransitivelyContainsPackagesOrErrors()
+        )
+            .containsExactly(rootedPath("tools"), rootedPath("a1"), rootedPath("a2"))
+        MoreAsserts.assertContainsEvent(eventCollector, "Loading package: a1/b1/c1")
+        MoreAsserts.assertContainsEvent(eventCollector, "Loading package: a2/b1/c1")
+        MoreAsserts.assertDoesNotContainEvent(eventCollector, "Loading package: a3/b1/c1")
+        MoreAsserts.assertContainsEvent(
+            eventCollector,
+            "Failed to get information about path, for a1/circular, skipping: Symlink cycle"
+        )
+        MoreAsserts.assertContainsEvent(
+            eventCollector,
+            "Failed to get information about path, for a2/circular, skipping: Symlink cycle"
+        )
+    }
 
-  @Test
-  public void symlinks() throws Exception {
-    initEvaluator();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun excludedPaths() {
+        initEvaluator()
 
-    Path a1DirPath = scratch.dir("a1");
-    scratch.dir("a1/b1/c1");
-    Path a1CircularPath = scratch.resolve("a1/circular");
-    FileSystemUtils.ensureSymbolicLink(a1CircularPath, a1CircularPath);
-    scratch.file("a1/b1/c1/BUILD");
-    FileSystemUtils.ensureSymbolicLink(scratch.resolve("a2"), a1DirPath);
-    scratch.dir("a3");
-    scratch.file(
-        "a3/DONT_FOLLOW_SYMLINKS_WHEN_TRAVERSING_THIS_DIRECTORY_VIA_A_RECURSIVE_TARGET_PATTERN");
-    FileSystemUtils.ensureSymbolicLink(scratch.resolve("a3/dirlink"), a1DirPath);
+        scratch.dir("a1/b1/c1")
+        scratch.file("a1/b1/c1/BUILD")
+        scratch.dir("a1/b1/c2")
+        scratch.file("a1/b1/c2/BUILD")
+        scratch.dir("a1/b2/c1")
+        scratch.file("a1/b2/c1/BUILD")
+        scratch.dir("a1/b2/c2")
+        scratch.file("a1/b2/c2/BUILD")
+        scratch.dir("a2/b1/c1")
+        scratch.file("a2/b1/c1/BUILD")
+        scratch.dir("a2/b1/c2")
+        scratch.file("a2/b1/c2/BUILD")
+        scratch.dir("a2/b2/c1")
+        scratch.file("a2/b2/c1/BUILD")
+        scratch.dir("a2/b2/c2")
+        scratch.file("a2/b2/c2/BUILD")
 
-    CollectPackagesUnderDirectoryValue collectPackagesUnderDirectoryValue =
-        getCollectPackagesUnderDirectoryValue("");
-    assertThat(collectPackagesUnderDirectoryValue.isDirectoryPackage).isFalse();
-    assertThat(
+        val collectPackagesUnderDirectoryValue: CollectPackagesUnderDirectoryValue =
+            getCollectPackagesUnderDirectoryValue(
+                "",  /* excludedPaths= */
+                com.google.common.collect.ImmutableSet.of<E?>(
+                    PathFragment.create("a1"),
+                    PathFragment.create("a2/b1"),
+                    PathFragment.create("a2/b2/c2")
+                )
+            )
+        assertThat(collectPackagesUnderDirectoryValue.isDirectoryPackage).isFalse()
+        // There is not supposed to be a map entry for excluded subdirectories.
+        assertThat(
             collectPackagesUnderDirectoryValue
-                .getSubdirectoryTransitivelyContainsPackagesOrErrors())
-        .containsExactly(rootedPath("tools"), rootedPath("a1"), rootedPath("a2"));
-    MoreAsserts.assertContainsEvent(eventCollector, "Loading package: a1/b1/c1");
-    MoreAsserts.assertContainsEvent(eventCollector, "Loading package: a2/b1/c1");
-    MoreAsserts.assertDoesNotContainEvent(eventCollector, "Loading package: a3/b1/c1");
-    MoreAsserts.assertContainsEvent(
-        eventCollector,
-        "Failed to get information about path, for a1/circular, skipping: Symlink cycle");
-    MoreAsserts.assertContainsEvent(
-        eventCollector,
-        "Failed to get information about path, for a2/circular, skipping: Symlink cycle");
-  }
+                .getSubdirectoryTransitivelyContainsPackagesOrErrors()
+        )
+            .containsExactly(rootedPath("tools"), rootedPath("a2"))
+        MoreAsserts.assertDoesNotContainEvents(
+            eventCollector,
+            "Loading package: a1/b1/c1",
+            "Loading package: a1/b1/c2",
+            "Loading package: a1/b2/c1",
+            "Loading package: a1/b1/c2",
+            "Loading package: a2/b1/c1",
+            "Loading package: a2/b1/c2",
+            "Loading package: a2/b2/c2"
+        )
+        MoreAsserts.assertContainsEvent(eventCollector, "Loading package: a2/b2/c1")
+    }
 
-  @Test
-  public void excludedPaths() throws Exception {
-    initEvaluator();
+    @Throws(
+        AbruptExitException::class,
+        java.lang.InterruptedException::class,
+        IOException::class,
+        OptionsParsingException::class
+    )
+    private fun initEvaluator() {
+        val pathPackageLocator: PathPackageLocator? =
+            PathPackageLocator.createWithoutExistenceCheck(
+                directories.getOutputBase(),
+                com.google.common.collect.ImmutableList.of<E?>(root),
+                this.buildFileNamesByPriority
+            )
+        val packageOptions: PackageOptions =
+            com.google.devtools.common.options.Options.getDefaults<O>(PackageOptions::class.java)
+        packageOptions.setPackagePath(com.google.common.collect.ImmutableList.of<E?>(this.workspacePathString))
+        scratch.file("tools/BUILD")
+        scratch.file("tools/empty_prelude.bzl")
+        ruleClassProvider =
+            Builder()
+                .setRunfilesPrefix("workspace")
+                .setPrelude("//tools:empty_prelude.bzl")
+                .useDummyBuiltinsBzl()
+                .setPrerequisiteValidator(MinimalPrerequisiteValidator())
+                .build()
+        val skyframeExecutor: SkyframeExecutor =
+            makeSkyframeExecutorFactory()
+                .create(
+                    (TestPackageFactoryBuilderFactory.getInstance()
+                        .builder(directories) as PackageFactoryBuilderWithSkyframeForTesting)
+                        .setExtraSkyFunctions(this.extraSkyFunctions)
+                        .build(ruleClassProvider, fileSystem),
+                    fileSystem,
+                    directories,
+                    ActionKeyContext(),  /* workspaceStatusActionFactory= */
+                    null,  /* diffAwarenessFactories= */
+                    com.google.common.collect.ImmutableList.of<E?>(),
+                    this.extraSkyFunctions,
+                    SyscallCache.NO_CACHE,  /* allowExternalRepositories= */
+                    false,  /* repoContentsCachePathSupplier= */
+                    { null },
+                    SkyframeExecutor.SkyKeyStateReceiver.NULL_INSTANCE,
+                    BugReporter.defaultInstance()
+                )
+        skyframeExecutor.injectExtraPrecomputedValues(
+            com.google.common.collect.ImmutableList.of<E?>(
+                PrecomputedValue.injected(
+                    RepoDefinitionFunction.REPOSITORY_OVERRIDES, com.google.common.collect.ImmutableMap.of<K?, V?>()
+                ),
+                PrecomputedValue.injected(RepositoryDirectoryValue.FETCH_DISABLED, false),
+                PrecomputedValue.injected(
+                    RepositoryDirectoryValue.FORCE_FETCH,
+                    RepositoryDirectoryValue.FORCE_FETCH_DISABLED
+                ),
+                PrecomputedValue.injected(
+                    RepositoryDirectoryValue.VENDOR_DIRECTORY, java.util.Optional.empty<T?>()
+                )
+            )
+        )
+        val parser: OptionsParser =
+            OptionsParser.builder().optionsClasses(BuildLanguageOptions::class.java).build()
+        parser.parse(TestConstants.PRODUCT_SPECIFIC_BUILD_LANG_OPTIONS)
+        val options: BuildLanguageOptions? = parser.getOptions<O?>(BuildLanguageOptions::class.java)
+        skyframeExecutor.sync(
+            reporter,
+            pathPackageLocator,
+            UUID.randomUUID(),  /* clientEnv= */
+            com.google.common.collect.ImmutableMap.of<K?, V?>(),
+            TimestampGranularityMonitor(com.google.devtools.build.lib.clock.BlazeClock.instance()),
+            QuiescingExecutorsImpl.forTesting(),
+            FakeOptions.builder().put(packageOptions).put(options).build(),  /* commandName= */
+            "build",  /* commandExecutes= */
+            true
+        )
+        evaluator = skyframeExecutor.getEvaluator()
+    }
 
-    scratch.dir("a1/b1/c1");
-    scratch.file("a1/b1/c1/BUILD");
-    scratch.dir("a1/b1/c2");
-    scratch.file("a1/b1/c2/BUILD");
-    scratch.dir("a1/b2/c1");
-    scratch.file("a1/b2/c1/BUILD");
-    scratch.dir("a1/b2/c2");
-    scratch.file("a1/b2/c2/BUILD");
-    scratch.dir("a2/b1/c1");
-    scratch.file("a2/b1/c1/BUILD");
-    scratch.dir("a2/b1/c2");
-    scratch.file("a2/b1/c2/BUILD");
-    scratch.dir("a2/b2/c1");
-    scratch.file("a2/b2/c1/BUILD");
-    scratch.dir("a2/b2/c2");
-    scratch.file("a2/b2/c2/BUILD");
+    @Throws(java.lang.InterruptedException::class)
+    private fun getCollectPackagesUnderDirectoryValue(directory: String?): CollectPackagesUnderDirectoryValue {
+        return getCollectPackagesUnderDirectoryValue(
+            directory,  /* excludedPaths= */
+            com.google.common.collect.ImmutableSet.of<PathFragment?>()
+        )
+    }
 
-    CollectPackagesUnderDirectoryValue collectPackagesUnderDirectoryValue =
-        getCollectPackagesUnderDirectoryValue(
-            "",
-            /* excludedPaths= */ ImmutableSet.of(
-                PathFragment.create("a1"),
-                PathFragment.create("a2/b1"),
-                PathFragment.create("a2/b2/c2")));
-    assertThat(collectPackagesUnderDirectoryValue.isDirectoryPackage).isFalse();
-    // There is not supposed to be a map entry for excluded subdirectories.
-    assertThat(
-            collectPackagesUnderDirectoryValue
-                .getSubdirectoryTransitivelyContainsPackagesOrErrors())
-        .containsExactly(rootedPath("tools"), rootedPath("a2"));
-    MoreAsserts.assertDoesNotContainEvents(
-        eventCollector,
-        "Loading package: a1/b1/c1",
-        "Loading package: a1/b1/c2",
-        "Loading package: a1/b2/c1",
-        "Loading package: a1/b1/c2",
-        "Loading package: a2/b1/c1",
-        "Loading package: a2/b1/c2",
-        "Loading package: a2/b2/c2");
-    MoreAsserts.assertContainsEvent(eventCollector, "Loading package: a2/b2/c1");
-  }
+    @Throws(java.lang.InterruptedException::class)
+    private fun getCollectPackagesUnderDirectoryValue(
+        directory: String?, excludedPaths: com.google.common.collect.ImmutableSet<PathFragment?>?
+    ): CollectPackagesUnderDirectoryValue {
+        val key: SkyKey =
+            CollectPackagesUnderDirectoryValue.key(
+                RepositoryName.MAIN, rootedPath(directory), IgnoredSubdirectories.of(excludedPaths)
+            )
+        return evaluate(key).get(key)
+    }
 
-  private void initEvaluator()
-      throws AbruptExitException, InterruptedException, IOException, OptionsParsingException {
-    PathPackageLocator pathPackageLocator =
-        PathPackageLocator.createWithoutExistenceCheck(
-            directories.getOutputBase(), ImmutableList.of(root), getBuildFileNamesByPriority());
-    PackageOptions packageOptions = Options.getDefaults(PackageOptions.class);
-    packageOptions.setPackagePath(ImmutableList.of(getWorkspacePathString()));
-    scratch.file("tools/BUILD");
-    scratch.file("tools/empty_prelude.bzl");
-    ruleClassProvider =
-        new ConfiguredRuleClassProvider.Builder()
-            .setRunfilesPrefix("workspace")
-            .setPrelude("//tools:empty_prelude.bzl")
-            .useDummyBuiltinsBzl()
-            .setPrerequisiteValidator(new TestRuleClassProvider.MinimalPrerequisiteValidator())
-            .build();
-    SkyframeExecutor skyframeExecutor =
-        makeSkyframeExecutorFactory()
-            .create(
-                ((PackageFactoryBuilderWithSkyframeForTesting)
-                        TestPackageFactoryBuilderFactory.getInstance().builder(directories))
-                    .setExtraSkyFunctions(getExtraSkyFunctions())
-                    .build(ruleClassProvider, fileSystem),
-                fileSystem,
-                directories,
-                new ActionKeyContext(),
-                /* workspaceStatusActionFactory= */ null,
-                /* diffAwarenessFactories= */ ImmutableList.of(),
-                getExtraSkyFunctions(),
-                SyscallCache.NO_CACHE,
-                /* allowExternalRepositories= */ false,
-                /* repoContentsCachePathSupplier= */ () -> null,
-                SkyframeExecutor.SkyKeyStateReceiver.NULL_INSTANCE,
-                BugReporter.defaultInstance());
-    skyframeExecutor.injectExtraPrecomputedValues(
-        ImmutableList.of(
-            PrecomputedValue.injected(
-                RepoDefinitionFunction.REPOSITORY_OVERRIDES, ImmutableMap.of()),
-            PrecomputedValue.injected(RepositoryDirectoryValue.FETCH_DISABLED, false),
-            PrecomputedValue.injected(
-                RepositoryDirectoryValue.FORCE_FETCH,
-                RepositoryDirectoryValue.FORCE_FETCH_DISABLED),
-            PrecomputedValue.injected(
-                RepositoryDirectoryValue.VENDOR_DIRECTORY, Optional.empty())));
-    OptionsParser parser =
-        OptionsParser.builder().optionsClasses(BuildLanguageOptions.class).build();
-    parser.parse(TestConstants.PRODUCT_SPECIFIC_BUILD_LANG_OPTIONS);
-    BuildLanguageOptions options = parser.getOptions(BuildLanguageOptions.class);
-    skyframeExecutor.sync(
-        reporter,
-        pathPackageLocator,
-        UUID.randomUUID(),
-        /* clientEnv= */ ImmutableMap.of(),
-        new TimestampGranularityMonitor(BlazeClock.instance()),
-        QuiescingExecutorsImpl.forTesting(),
-        FakeOptions.builder().put(packageOptions).put(options).build(),
-        /* commandName= */ "build",
-        /* commandExecutes= */ true);
-    evaluator = skyframeExecutor.getEvaluator();
-  }
+    private fun rootedPath(relativePath: String?): RootedPath {
+        return RootedPath.toRootedPath(root, PathFragment.create(relativePath))
+    }
 
-  private CollectPackagesUnderDirectoryValue getCollectPackagesUnderDirectoryValue(String directory)
-      throws InterruptedException {
-    return getCollectPackagesUnderDirectoryValue(directory, /* excludedPaths= */ ImmutableSet.of());
-  }
+    @Throws(java.lang.InterruptedException::class)
+    private fun evaluate(key: SkyKey): EvaluationResult<CollectPackagesUnderDirectoryValue?> {
+        val evaluationContext: EvaluationContext? =
+            EvaluationContext.newBuilder()
+                .setKeepGoing(true)
+                .setParallelism(1)
+                .setEventHandler(
+                    com.google.devtools.build.lib.events.Reporter(
+                        EventBusEventHandler.createWithNewEventBus(),
+                        reporter
+                    )
+                )
+                .build()
+        return evaluator.evaluate(com.google.common.collect.ImmutableList.of<E?>(key), evaluationContext)
+    }
 
-  private CollectPackagesUnderDirectoryValue getCollectPackagesUnderDirectoryValue(
-      String directory, ImmutableSet<PathFragment> excludedPaths) throws InterruptedException {
-    SkyKey key =
-        CollectPackagesUnderDirectoryValue.key(
-            RepositoryName.MAIN, rootedPath(directory), IgnoredSubdirectories.of(excludedPaths));
-    return evaluate(key).get(key);
-  }
-
-  private RootedPath rootedPath(String relativePath) {
-    return RootedPath.toRootedPath(root, PathFragment.create(relativePath));
-  }
-
-  private EvaluationResult<CollectPackagesUnderDirectoryValue> evaluate(SkyKey key)
-      throws InterruptedException {
-    EvaluationContext evaluationContext =
-        EvaluationContext.newBuilder()
-            .setKeepGoing(true)
-            .setParallelism(1)
-            .setEventHandler(new Reporter(EventBusEventHandler.createWithNewEventBus(), reporter))
-            .build();
-    return evaluator.evaluate(ImmutableList.of(key), evaluationContext);
-  }
+    companion object {
+        private const val FAKE_INSTALL_MD5_STRING = "abcedf1234567890abcedf1234567890"
+    }
 }

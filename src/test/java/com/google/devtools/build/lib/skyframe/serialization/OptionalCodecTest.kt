@@ -11,20 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester
 
-import com.google.common.base.Optional;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link OptionalCodec}. */
-@RunWith(JUnit4.class)
-public class OptionalCodecTest {
-  @Test
-  public void smoke() throws Exception {
-    new SerializationTester(Optional.absent(), Optional.of("string")).runTests();
-  }
+/** Tests for [OptionalCodec].  */
+@RunWith(JUnit4::class)
+class OptionalCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun smoke() {
+        SerializationTester(
+            com.google.common.base.Optional.absent<T?>(),
+            com.google.common.base.Optional.of<T?>("string")
+        ).runTests()
+    }
 }

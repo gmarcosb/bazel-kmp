@@ -11,28 +11,25 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.annot.processor.testsources
 
-package net.starlark.java.annot.processor.testsources;
-
-import net.starlark.java.annot.Param;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.StarlarkInt;
-import net.starlark.java.eval.StarlarkValue;
+import net.starlark.java.eval.StarlarkInt
 
 /**
  * Test case for a StarlarkMethod which has a positional parameter specified after a non positional
  * parameter.
  */
-public class PositionalParamAfterNonPositional implements StarlarkValue {
-
-  @StarlarkMethod(
-      name = "positional_after_non_positional",
-      documented = false,
-      parameters = {
-        @Param(name = "one", named = true, positional = false),
-        @Param(name = "two", named = true, positional = true)
-      })
-  public Integer positionalAfterNonPositional(StarlarkInt one, StarlarkInt two) {
-    return 42;
-  }
+class PositionalParamAfterNonPositional : StarlarkValue {
+    @StarlarkMethod(
+        name = "positional_after_non_positional",
+        documented = false,
+        parameters = [net.starlark.java.annot.Param(
+            name = "one",
+            named = true,
+            positional = false
+        ), net.starlark.java.annot.Param(name = "two", named = true, positional = true)]
+    )
+    fun positionalAfterNonPositional(one: StarlarkInt?, two: StarlarkInt?): Int {
+        return 42
+    }
 }

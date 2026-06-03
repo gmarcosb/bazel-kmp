@@ -11,79 +11,76 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.sandbox.cgroups
 
-package com.google.devtools.build.lib.sandbox.cgroups;
+import com.google.common.io.Files
+import com.google.devtools.build.lib.sandbox.cgroups.controller.Controller.Cpu
+import org.junit.Test
+import java.io.File
+import java.nio.charset.StandardCharsets
 
-import static com.google.common.truth.Truth.assertThat;
-import static java.nio.charset.StandardCharsets.UTF_8;
+@RunWith(JUnit4::class)
+class CpuTest {
+    private val scratch: FsApparatus = FsApparatus.newNative()
 
-import com.google.common.io.Files;
-import com.google.devtools.build.lib.sandbox.cgroups.controller.Controller.Cpu;
-import com.google.devtools.build.lib.sandbox.cgroups.controller.v1.LegacyCpu;
-import com.google.devtools.build.lib.sandbox.cgroups.controller.v2.UnifiedCpu;
-import com.google.devtools.build.lib.vfs.util.FsApparatus;
-import java.io.File;
-import java.io.IOException;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @Test
+    @Throws(IOException::class)
+    fun setCpuLimit_v1() {
+        val quota: File = scratch.file("cgroup/cpu/cpu.cfs_quota_us", "-1").getPathFile()
+        scratch.file("cgroup/cpu/cpu.cfs_period_us", "1000")
+        val cpu: Cpu = LegacyCpu(scratch.path("cgroup/cpu").getPathFile().toPath())
+        cpu.setCpus(3)
+        Truth.assertThat(Files.asCharSource(quota, StandardCharsets.UTF_8).read()).isEqualTo("3000")
+    }
 
-@RunWith(JUnit4.class)
-public class CpuTest {
+    @Test
+    @Throws(IOException::class)
+    fun getCpuLimit_v1() {
+        scratch.file("cgroup/cpu/cpu.cfs_quota_us", "4000")
+        scratch.file("cgroup/cpu/cpu.cfs_period_us", "1000")
+        val cpu: Cpu = LegacyCpu(scratch.path("cgroup/cpu").getPathFile().toPath())
+        assertThat(cpu.cpus).isEqualTo(4)
+    }
 
-  private final FsApparatus scratch = FsApparatus.newNative();
+    @Test
+    @Throws(IOException::class)
+    fun setCpuLimit_v2() {
+        val limit: File = scratch.file("cgroup/cpu/cpu.max", "-1 100000").getPathFile()
+        val cpu: Cpu = UnifiedCpu(scratch.path("cgroup/cpu").getPathFile().toPath())
+        cpu.setCpus(5)
+        Truth.assertThat(Files.asCharSource(limit, StandardCharsets.UTF_8).read()).isEqualTo("500000 100000")
+    }
 
-  @Test
-  public void setCpuLimit_v1() throws IOException {
-    File quota = scratch.file("cgroup/cpu/cpu.cfs_quota_us", "-1").getPathFile();
-    scratch.file("cgroup/cpu/cpu.cfs_period_us", "1000");
-    Cpu cpu = new LegacyCpu(scratch.path("cgroup/cpu").getPathFile().toPath());
-    cpu.setCpus(3);
-    assertThat(Files.asCharSource(quota, UTF_8).read()).isEqualTo("3000");
-  }
+    @Test
+    @Throws(IOException::class)
+    fun setCpuLimitNewLine_v2() {
+        val limit: File = scratch.file("cgroup/cpu/cpu.max", "-1 100000\n").getPathFile()
+        val cpu: Cpu = UnifiedCpu(scratch.path("cgroup/cpu").getPathFile().toPath())
+        cpu.setCpus(5)
+        Truth.assertThat(Files.asCharSource(limit, StandardCharsets.UTF_8).read()).isEqualTo("500000 100000")
+    }
 
-  @Test
-  public void getCpuLimit_v1() throws IOException {
-    scratch.file("cgroup/cpu/cpu.cfs_quota_us", "4000");
-    scratch.file("cgroup/cpu/cpu.cfs_period_us", "1000");
-    Cpu cpu = new LegacyCpu(scratch.path("cgroup/cpu").getPathFile().toPath());
-    assertThat(cpu.cpus).isEqualTo(4);
-  }
+    @Test
+    @Throws(IOException::class)
+    fun getCpuLimit_v2() {
+        scratch.file("cgroup/cpu/cpu.max", "6000 1000")
+        val cpu: Cpu = UnifiedCpu(scratch.path("cgroup/cpu").getPathFile().toPath())
+        assertThat(cpu.cpus).isEqualTo(6)
+    }
 
-  @Test
-  public void setCpuLimit_v2() throws IOException {
-    File limit = scratch.file("cgroup/cpu/cpu.max", "-1 100000").getPathFile();
-    Cpu cpu = new UnifiedCpu(scratch.path("cgroup/cpu").getPathFile().toPath());
-    cpu.setCpus(5);
-    assertThat(Files.asCharSource(limit, UTF_8).read()).isEqualTo("500000 100000");
-  }
+    @Test
+    @Throws(IOException::class)
+    fun getCpuLimitNewLine_v2() {
+        scratch.file("cgroup/cpu/cpu.max", "6000 1000\n")
+        val cpu: Cpu = UnifiedCpu(scratch.path("cgroup/cpu").getPathFile().toPath())
+        assertThat(cpu.cpus).isEqualTo(6)
+    }
 
-  @Test
-  public void setCpuLimitNewLine_v2() throws IOException {
-    File limit = scratch.file("cgroup/cpu/cpu.max", "-1 100000\n").getPathFile();
-    Cpu cpu = new UnifiedCpu(scratch.path("cgroup/cpu").getPathFile().toPath());
-    cpu.setCpus(5);
-    assertThat(Files.asCharSource(limit, UTF_8).read()).isEqualTo("500000 100000");
-  }
-
-  @Test
-  public void getCpuLimit_v2() throws IOException {
-    scratch.file("cgroup/cpu/cpu.max", "6000 1000");
-    Cpu cpu = new UnifiedCpu(scratch.path("cgroup/cpu").getPathFile().toPath());
-    assertThat(cpu.cpus).isEqualTo(6);
-  }
-
-  @Test
-  public void getCpuLimitNewLine_v2() throws IOException {
-    scratch.file("cgroup/cpu/cpu.max", "6000 1000\n");
-    Cpu cpu = new UnifiedCpu(scratch.path("cgroup/cpu").getPathFile().toPath());
-    assertThat(cpu.cpus).isEqualTo(6);
-  }
-
-  @Test
-  public void getCpuLimitMax_v2() throws IOException {
-    scratch.file("cgroup/cpu/cpu.max", "max 1000\n");
-    Cpu cpu = new UnifiedCpu(scratch.path("cgroup/cpu").getPathFile().toPath());
-    assertThat(cpu.cpus).isEqualTo(Runtime.getRuntime().availableProcessors());
-  }
+    @Test
+    @Throws(IOException::class)
+    fun getCpuLimitMax_v2() {
+        scratch.file("cgroup/cpu/cpu.max", "max 1000\n")
+        val cpu: Cpu = UnifiedCpu(scratch.path("cgroup/cpu").getPathFile().toPath())
+        assertThat(cpu.cpus).isEqualTo(Runtime.getRuntime().availableProcessors())
+    }
 }

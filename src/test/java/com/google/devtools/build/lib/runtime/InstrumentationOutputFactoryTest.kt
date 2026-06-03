@@ -11,273 +11,270 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import static com.google.common.base.StandardSystemProperty.JAVA_IO_TMPDIR;
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-import static org.mockito.Mockito.mock;
+import com.google.devtools.build.lib.buildeventstream.BuildEventArtifactUploader
 
-import com.google.devtools.build.lib.buildeventstream.BuildEventArtifactUploader;
-import com.google.devtools.build.lib.buildtool.util.BuildIntegrationTestCase;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.EventHandler;
-import com.google.devtools.build.lib.events.EventKind;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.runtime.InstrumentationOutputFactory.DestinationRelativeTo;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import java.util.ArrayList;
-import java.util.List;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+@RunWith(TestParameterInjector::class)
+class InstrumentationOutputFactoryTest : BuildIntegrationTestCase() {
+    @org.junit.Test
+    fun testInstrumentationOutputFactory_cannotCreateFactoryIfLocalSupplierUnset() {
+        val factoryBuilder: InstrumentationOutputFactory.Builder =
+            Builder()
+        factoryBuilder.setBuildEventArtifactInstrumentationOutputBuilderSupplier(
+            { BuildEventArtifactInstrumentationOutput.Builder() })
 
-@RunWith(TestParameterInjector.class)
-public final class InstrumentationOutputFactoryTest extends BuildIntegrationTestCase {
-  @Test
-  public void testInstrumentationOutputFactory_cannotCreateFactoryIfLocalSupplierUnset() {
-    InstrumentationOutputFactory.Builder factoryBuilder =
-        new InstrumentationOutputFactory.Builder();
-    factoryBuilder.setBuildEventArtifactInstrumentationOutputBuilderSupplier(
-        BuildEventArtifactInstrumentationOutput.Builder::new);
-
-    assertThrows(
-        "Cannot create InstrumentationOutputFactory without localOutputBuilderSupplier",
-        NullPointerException.class,
-        factoryBuilder::build);
-  }
-
-  @Test
-  public void testInstrumentationOutputFactory_cannotCreateFactorIfBepSupplierUnset() {
-    InstrumentationOutputFactory.Builder factoryBuilder =
-        new InstrumentationOutputFactory.Builder();
-    factoryBuilder.setLocalInstrumentationOutputBuilderSupplier(
-        LocalInstrumentationOutput.Builder::new);
-
-    assertThrows(
-        "Cannot create InstrumentationOutputFactory without bepOutputBuilderSupplier",
-        NullPointerException.class,
-        factoryBuilder::build);
-  }
-
-  private static InstrumentationOutputFactory createInstrumentationOutputFactory(
-      boolean setLocalTempLoggingDir) {
-    InstrumentationOutputFactory.Builder factoryBuilder =
-        new InstrumentationOutputFactory.Builder();
-    factoryBuilder.setLocalInstrumentationOutputBuilderSupplier(
-        LocalInstrumentationOutput.Builder::new);
-    factoryBuilder.setBuildEventArtifactInstrumentationOutputBuilderSupplier(
-        BuildEventArtifactInstrumentationOutput.Builder::new);
-    if (setLocalTempLoggingDir) {
-      factoryBuilder.setLocalTempLoggingDirPathStr("/tmp");
+        org.junit.Assert.assertThrows<java.lang.NullPointerException?>(
+            "Cannot create InstrumentationOutputFactory without localOutputBuilderSupplier",
+            java.lang.NullPointerException::class.java,
+            factoryBuilder::build
+        )
     }
-    return factoryBuilder.build();
-  }
 
-  @Test
-  public void testInstrumentationOutputFactory_successfullyCreateLocalOutputWithConvenientLink()
-      throws Exception {
-    InstrumentationOutputFactory outputFactory =
-        createInstrumentationOutputFactory(/* setLocalTempLoggingDir= */ false);
+    @org.junit.Test
+    fun testInstrumentationOutputFactory_cannotCreateFactorIfBepSupplierUnset() {
+        val factoryBuilder: InstrumentationOutputFactory.Builder =
+            Builder()
+        factoryBuilder.setLocalInstrumentationOutputBuilderSupplier(
+            { LocalInstrumentationOutput.Builder() })
 
-    CommandEnvironment env = runtimeWrapper.newCommand();
-    InstrumentationOutput output =
-        outputFactory.createLocalOutputWithConvenientName(
-            /* name= */ "output",
-            env.getWorkspace().getRelative("output-file"),
-            /* convenienceName= */ "link-to-output");
-    assertThat(output).isInstanceOf(LocalInstrumentationOutput.class);
-
-    ((LocalInstrumentationOutput) output).makeConvenienceLink();
-    assertThat(env.getWorkspace().getRelative("link-to-output").isSymbolicLink()).isTrue();
-  }
-
-  @Test
-  public void testInstrumentationOutputFactory_localRelativeToOutputBase() throws Exception {
-    InstrumentationOutputFactory outputFactory =
-        createInstrumentationOutputFactory(/* setLocalTempLoggingDir= */ false);
-
-    CommandEnvironment env = runtimeWrapper.newCommand();
-    InstrumentationOutput output =
-        outputFactory.createInstrumentationOutput(
-            /* name= */ "output-baseoutput",
-            PathFragment.create("output-baseoutput"),
-            DestinationRelativeTo.OUTPUT_BASE,
-            env,
-            mock(EventHandler.class),
-            /* append= */ null,
-            /* internal= */ null);
-
-    assertThat(output).isInstanceOf(LocalInstrumentationOutput.class);
-    assertThat(output.getPathString())
-        .isEqualTo(env.getOutputBase().getRelative("output-baseoutput").getPathString());
-  }
-
-  @Test
-  public void testInstrumentationOutputFactory_localAbsolutePath() throws Exception {
-    InstrumentationOutputFactory outputFactory =
-        createInstrumentationOutputFactory(/* setLocalTempLoggingDir= */ false);
-
-    CommandEnvironment env = runtimeWrapper.newCommand();
-    InstrumentationOutput output =
-        outputFactory.createInstrumentationOutput(
-            /* name= */ "output-absolute",
-            PathFragment.create("/tmp/absolute-path-output"),
-            DestinationRelativeTo.WORKSPACE_OR_HOME,
-            env,
-            mock(EventHandler.class),
-            /* append= */ null,
-            /* internal= */ null);
-
-    assertThat(output).isInstanceOf(LocalInstrumentationOutput.class);
-    assertThat(output.getPathString())
-        .isEqualTo(
-            env.getRuntime().getFileSystem().getPath("/tmp/absolute-path-output").getPathString());
-  }
-
-  @Test
-  public void testInstrumentationOutputFactory_localRelativePath(
-      @TestParameter({"WORKSPACE_OR_HOME", "WORKING_DIRECTORY_OR_HOME"})
-          DestinationRelativeTo relativeTo)
-      throws Exception {
-    InstrumentationOutputFactory outputFactory =
-        createInstrumentationOutputFactory(/* setLocalTempLoggingDir= */ false);
-
-    CommandEnvironment env = runtimeWrapper.newCommand();
-    InstrumentationOutput output =
-        outputFactory.createInstrumentationOutput(
-            /* name= */ "output-relative",
-            PathFragment.create("relative-output"),
-            relativeTo,
-            env,
-            mock(EventHandler.class),
-            /* append= */ null,
-            /* internal= */ null);
-
-    assertThat(output).isInstanceOf(LocalInstrumentationOutput.class);
-    assertThat(output.getPathString())
-        .isEqualTo(
-            (relativeTo.equals(DestinationRelativeTo.WORKSPACE_OR_HOME)
-                    ? env.getWorkspace()
-                    : env.getWorkingDirectory())
-                .getRelative("relative-output")
-                .getPathString());
-  }
-
-  @Test
-  public void testInstrumentationOutputFactory_localRelativeToTempLogging(
-      @TestParameter boolean setLocalTempLoggingDir) throws Exception {
-    InstrumentationOutputFactory outputFactory =
-        createInstrumentationOutputFactory(setLocalTempLoggingDir);
-
-    CommandEnvironment env = runtimeWrapper.newCommand();
-    InstrumentationOutput output =
-        outputFactory.createInstrumentationOutput(
-            /* name= */ "output-relative",
-            PathFragment.create("relative-output"),
-            DestinationRelativeTo.TEMP_LOGGING_DIRECTORY,
-            env,
-            mock(EventHandler.class),
-            /* append= */ null,
-            /* internal= */ null);
-
-    assertThat(output).isInstanceOf(LocalInstrumentationOutput.class);
-    String expectedOutputBaseDir = setLocalTempLoggingDir ? "/tmp" : JAVA_IO_TMPDIR.value();
-    assertThat(output.getPathString()).isEqualTo(expectedOutputBaseDir + "/relative-output");
-  }
-
-  @Test
-  public void testInstrumentationOutputFactory_successfulFactoryCreation(
-      @TestParameter boolean injectRedirectOutputBuilderSupplier,
-      @TestParameter boolean createRedirectOutput)
-      throws Exception {
-    if (createRedirectOutput) {
-      runtimeWrapper.addOptions("--redirect_local_instrumentation_output_writes");
+        org.junit.Assert.assertThrows<java.lang.NullPointerException?>(
+            "Cannot create InstrumentationOutputFactory without bepOutputBuilderSupplier",
+            java.lang.NullPointerException::class.java,
+            factoryBuilder::build
+        )
     }
-    CommandEnvironment env = runtimeWrapper.newCommand();
 
-    InstrumentationOutputFactory.Builder factoryBuilder =
-        new InstrumentationOutputFactory.Builder();
-    factoryBuilder.setLocalInstrumentationOutputBuilderSupplier(
-        LocalInstrumentationOutput.Builder::new);
-    factoryBuilder.setBuildEventArtifactInstrumentationOutputBuilderSupplier(
-        BuildEventArtifactInstrumentationOutput.Builder::new);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testInstrumentationOutputFactory_successfullyCreateLocalOutputWithConvenientLink() {
+        val outputFactory: InstrumentationOutputFactory =
+            createInstrumentationOutputFactory( /* setLocalTempLoggingDir= */false)
 
-    InstrumentationOutput fakeRedirectInstrumentationOutput = mock(InstrumentationOutput.class);
-    if (injectRedirectOutputBuilderSupplier) {
-      InstrumentationOutputBuilder fakeRedirectInstrumentationBuilder =
-          new InstrumentationOutputBuilder() {
-            @Override
-            @CanIgnoreReturnValue
-            public InstrumentationOutputBuilder setName(String name) {
-              return this;
+        val env: CommandEnvironment = runtimeWrapper.newCommand()
+        val output: InstrumentationOutput =
+            outputFactory.createLocalOutputWithConvenientName( /* name= */
+                "output",
+                env.getWorkspace().getRelative("output-file"),  /* convenienceName= */
+                "link-to-output"
+            )
+        assertThat(output).isInstanceOf(LocalInstrumentationOutput::class.java)
+
+        (output as LocalInstrumentationOutput).makeConvenienceLink()
+        assertThat(env.getWorkspace().getRelative("link-to-output").isSymbolicLink()).isTrue()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testInstrumentationOutputFactory_localRelativeToOutputBase() {
+        val outputFactory: InstrumentationOutputFactory =
+            createInstrumentationOutputFactory( /* setLocalTempLoggingDir= */false)
+
+        val env: CommandEnvironment = runtimeWrapper.newCommand()
+        val output: InstrumentationOutput =
+            outputFactory.createInstrumentationOutput( /* name= */
+                "output-baseoutput",
+                PathFragment.create("output-baseoutput"),
+                DestinationRelativeTo.OUTPUT_BASE,
+                env,
+                < T > mock < T ? > (com.google.devtools.build.lib.events.EventHandler::class.java),  /* append= */
+        null,  /* internal= */
+        null)
+
+        assertThat(output).isInstanceOf(LocalInstrumentationOutput::class.java)
+        assertThat(output.getPathString())
+            .isEqualTo(env.getOutputBase().getRelative("output-baseoutput").getPathString())
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testInstrumentationOutputFactory_localAbsolutePath() {
+        val outputFactory: InstrumentationOutputFactory =
+            createInstrumentationOutputFactory( /* setLocalTempLoggingDir= */false)
+
+        val env: CommandEnvironment = runtimeWrapper.newCommand()
+        val output: InstrumentationOutput =
+            outputFactory.createInstrumentationOutput( /* name= */
+                "output-absolute",
+                PathFragment.create("/tmp/absolute-path-output"),
+                DestinationRelativeTo.WORKSPACE_OR_HOME,
+                env,
+                < T > mock < T ? > (com.google.devtools.build.lib.events.EventHandler::class.java),  /* append= */
+        null,  /* internal= */
+        null)
+
+        assertThat(output).isInstanceOf(LocalInstrumentationOutput::class.java)
+        assertThat(output.getPathString())
+            .isEqualTo(
+                env.getRuntime().getFileSystem().getPath("/tmp/absolute-path-output").getPathString()
+            )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testInstrumentationOutputFactory_localRelativePath(
+        @TestParameter("WORKSPACE_OR_HOME", "WORKING_DIRECTORY_OR_HOME") relativeTo: DestinationRelativeTo
+    ) {
+        val outputFactory: InstrumentationOutputFactory =
+            createInstrumentationOutputFactory( /* setLocalTempLoggingDir= */false)
+
+        val env: CommandEnvironment = runtimeWrapper.newCommand()
+        val output: InstrumentationOutput =
+            outputFactory.createInstrumentationOutput( /* name= */
+                "output-relative",
+                PathFragment.create("relative-output"),
+                relativeTo,
+                env,
+                < T > mock < T ? > (com.google.devtools.build.lib.events.EventHandler::class.java),  /* append= */
+        null,  /* internal= */
+        null)
+
+        assertThat(output).isInstanceOf(LocalInstrumentationOutput::class.java)
+        assertThat(output.getPathString())
+            .isEqualTo(
+                (if (relativeTo.equals(DestinationRelativeTo.WORKSPACE_OR_HOME))
+                    env.getWorkspace()
+                else
+                    env.getWorkingDirectory())
+                    .getRelative("relative-output")
+                    .getPathString()
+            )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testInstrumentationOutputFactory_localRelativeToTempLogging(
+        @TestParameter setLocalTempLoggingDir: Boolean
+    ) {
+        val outputFactory: InstrumentationOutputFactory =
+            createInstrumentationOutputFactory(setLocalTempLoggingDir)
+
+        val env: CommandEnvironment = runtimeWrapper.newCommand()
+        val output: InstrumentationOutput =
+            outputFactory.createInstrumentationOutput( /* name= */
+                "output-relative",
+                PathFragment.create("relative-output"),
+                DestinationRelativeTo.TEMP_LOGGING_DIRECTORY,
+                env,
+                < T > mock < T ? > (com.google.devtools.build.lib.events.EventHandler::class.java),  /* append= */
+        null,  /* internal= */
+        null)
+
+        assertThat(output).isInstanceOf(LocalInstrumentationOutput::class.java)
+        val expectedOutputBaseDir: String? =
+            if (setLocalTempLoggingDir) "/tmp" else com.google.common.base.StandardSystemProperty.JAVA_IO_TMPDIR.value()
+        assertThat(output.getPathString()).isEqualTo(expectedOutputBaseDir + "/relative-output")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testInstrumentationOutputFactory_successfulFactoryCreation(
+        @TestParameter injectRedirectOutputBuilderSupplier: Boolean,
+        @TestParameter createRedirectOutput: Boolean
+    ) {
+        if (createRedirectOutput) {
+            runtimeWrapper.addOptions("--redirect_local_instrumentation_output_writes")
+        }
+        val env: CommandEnvironment = runtimeWrapper.newCommand()
+
+        val factoryBuilder: InstrumentationOutputFactory.Builder =
+            Builder()
+        factoryBuilder.setLocalInstrumentationOutputBuilderSupplier(
+            { LocalInstrumentationOutput.Builder() })
+        factoryBuilder.setBuildEventArtifactInstrumentationOutputBuilderSupplier(
+            { BuildEventArtifactInstrumentationOutput.Builder() })
+
+        val fakeRedirectInstrumentationOutput: InstrumentationOutput? =
+            Mockito.mock<InstrumentationOutput?>(InstrumentationOutput::class.java)
+        if (injectRedirectOutputBuilderSupplier) {
+            val fakeRedirectInstrumentationBuilder: InstrumentationOutputBuilder =
+                object : InstrumentationOutputBuilder() {
+                    @com.google.errorprone.annotations.CanIgnoreReturnValue
+                    public override fun setName(name: String?): InstrumentationOutputBuilder? {
+                        return this
+                    }
+
+                    @com.google.errorprone.annotations.CanIgnoreReturnValue
+                    public override fun setCreateParent(createParent: Boolean): InstrumentationOutputBuilder? {
+                        return this
+                    }
+
+                    public override fun build(): InstrumentationOutput? {
+                        return fakeRedirectInstrumentationOutput
+                    }
+                }
+
+            factoryBuilder.setRedirectInstrumentationOutputBuilderSupplier(
+                { fakeRedirectInstrumentationBuilder })
+        }
+
+        val warningEvents: MutableList<com.google.devtools.build.lib.events.Event?> =
+            java.util.ArrayList<com.google.devtools.build.lib.events.Event?>()
+        val eventHandler: ExtendedEventHandler =
+            object : ExtendedEventHandler() {
+                override fun post(obj: Postable?) {}
+
+                override fun handle(event: com.google.devtools.build.lib.events.Event?) {
+                    warningEvents.add(event)
+                }
             }
 
-            @Override
-            @CanIgnoreReturnValue
-            public InstrumentationOutputBuilder setCreateParent(boolean createParent) {
-              return this;
+        val outputFactory: InstrumentationOutputFactory = factoryBuilder.build()
+        val instrumentationOutput: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            outputFactory.createInstrumentationOutput( /* name= */
+                "local",  /* destination= */
+                PathFragment.create("/file"),
+                DestinationRelativeTo.WORKSPACE_OR_HOME,
+                env,
+                eventHandler,  /* append= */
+                null,  /* internal= */
+                null
+            )
+
+        // Only when redirectOutputBuilderSupplier is provided to the factory, and we intend to create a
+        // RedirectOutputBuilder object, we expect a non-LocalInstrumentationOutput to be created. In
+        // all other scenarios, a LocalInstrumentationOutput is returned.
+        if (createRedirectOutput && injectRedirectOutputBuilderSupplier) {
+            assertThat(instrumentationOutput).isEqualTo(fakeRedirectInstrumentationOutput)
+        } else {
+            assertThat(instrumentationOutput).isInstanceOf(LocalInstrumentationOutput::class.java)
+        }
+
+        // When user wants to create a redirectOutputBuilder object but its builder supplier is not
+        // provided, eventHandler should post a warning event.
+        if (createRedirectOutput && !injectRedirectOutputBuilderSupplier) {
+            Truth.assertThat(warningEvents)
+                .containsExactly(
+                    com.google.devtools.build.lib.events.Event.of(
+                        com.google.devtools.build.lib.events.EventKind.WARNING,
+                        "Redirecting to write Instrumentation Output on a different machine is not"
+                                + " supported. Defaulting to writing output locally."
+                    )
+                )
+        } else {
+            Truth.assertThat(warningEvents).isEmpty()
+        }
+        assertThat(
+            outputFactory.createBuildEventArtifactInstrumentationOutput( /* name= */
+                "bep", < T > mock < T ? > (BuildEventArtifactUploader::class.java)
+        ))
+        .isNotNull()
+    }
+
+    companion object {
+        private fun createInstrumentationOutputFactory(
+            setLocalTempLoggingDir: Boolean
+        ): InstrumentationOutputFactory {
+            val factoryBuilder: InstrumentationOutputFactory.Builder =
+                Builder()
+            factoryBuilder.setLocalInstrumentationOutputBuilderSupplier(
+                { LocalInstrumentationOutput.Builder() })
+            factoryBuilder.setBuildEventArtifactInstrumentationOutputBuilderSupplier(
+                { BuildEventArtifactInstrumentationOutput.Builder() })
+            if (setLocalTempLoggingDir) {
+                factoryBuilder.setLocalTempLoggingDirPathStr("/tmp")
             }
-
-            @Override
-            public InstrumentationOutput build() {
-              return fakeRedirectInstrumentationOutput;
-            }
-          };
-
-      factoryBuilder.setRedirectInstrumentationOutputBuilderSupplier(
-          () -> fakeRedirectInstrumentationBuilder);
+            return factoryBuilder.build()
+        }
     }
-
-    List<Event> warningEvents = new ArrayList<>();
-    ExtendedEventHandler eventHandler =
-        new ExtendedEventHandler() {
-          @Override
-          public void post(Postable obj) {}
-
-          @Override
-          public void handle(Event event) {
-            warningEvents.add(event);
-          }
-        };
-
-    InstrumentationOutputFactory outputFactory = factoryBuilder.build();
-    var instrumentationOutput =
-        outputFactory.createInstrumentationOutput(
-            /* name= */ "local",
-            /* destination= */ PathFragment.create("/file"),
-            DestinationRelativeTo.WORKSPACE_OR_HOME,
-            env,
-            eventHandler,
-            /* append= */ null,
-            /* internal= */ null);
-
-    // Only when redirectOutputBuilderSupplier is provided to the factory, and we intend to create a
-    // RedirectOutputBuilder object, we expect a non-LocalInstrumentationOutput to be created. In
-    // all other scenarios, a LocalInstrumentationOutput is returned.
-    if (createRedirectOutput && injectRedirectOutputBuilderSupplier) {
-      assertThat(instrumentationOutput).isEqualTo(fakeRedirectInstrumentationOutput);
-    } else {
-      assertThat(instrumentationOutput).isInstanceOf(LocalInstrumentationOutput.class);
-    }
-
-    // When user wants to create a redirectOutputBuilder object but its builder supplier is not
-    // provided, eventHandler should post a warning event.
-    if (createRedirectOutput && !injectRedirectOutputBuilderSupplier) {
-      assertThat(warningEvents)
-          .containsExactly(
-              Event.of(
-                  EventKind.WARNING,
-                  "Redirecting to write Instrumentation Output on a different machine is not"
-                      + " supported. Defaulting to writing output locally."));
-    } else {
-      assertThat(warningEvents).isEmpty();
-    }
-    assertThat(
-            outputFactory.createBuildEventArtifactInstrumentationOutput(
-                /* name= */ "bep", mock(BuildEventArtifactUploader.class)))
-        .isNotNull();
-  }
 }

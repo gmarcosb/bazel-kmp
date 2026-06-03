@@ -11,20 +11,21 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester
 
-/** Tests for {@link LongCodec}. */
-@RunWith(JUnit4.class)
-public class LongCodecTest {
-  @Test
-  public void smoke() throws Exception {
-    new SerializationTester(
-            Long.valueOf(0), Long.valueOf(Long.MAX_VALUE), Long.valueOf(Long.MIN_VALUE))
-        .runTests();
-  }
+/** Tests for [LongCodec].  */
+@RunWith(JUnit4::class)
+class LongCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun smoke() {
+        SerializationTester(
+            java.lang.Long.valueOf(0),
+            java.lang.Long.valueOf(java.lang.Long.MAX_VALUE),
+            java.lang.Long.valueOf(java.lang.Long.MIN_VALUE)
+        )
+            .runTests()
+    }
 }

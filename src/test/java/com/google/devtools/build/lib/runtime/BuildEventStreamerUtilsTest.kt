@@ -11,29 +11,20 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime
 
-package com.google.devtools.build.lib.runtime;
+import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.TestStatus
 
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.TestStatus;
-import com.google.devtools.build.lib.view.test.TestStatus.BlazeTestStatus;
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-
-/** Unit test for BuildEventStreamerUtils. */
-@RunWith(TestParameterInjector.class)
-public final class BuildEventStreamerUtilsTest {
-
-  @Test
-  public void allValuesConvertToRealStatus(@TestParameter BlazeTestStatus status) {
-    TestStatus bepStatus = BuildEventStreamerUtils.bepStatus(status);
-    if (status.equals(BlazeTestStatus.NO_STATUS)) {
-      assertThat(bepStatus).isEqualTo(TestStatus.NO_STATUS);
-    } else {
-      assertThat(bepStatus).isNotEqualTo(TestStatus.NO_STATUS);
+/** Unit test for BuildEventStreamerUtils.  */
+@RunWith(TestParameterInjector::class)
+class BuildEventStreamerUtilsTest {
+    @org.junit.Test
+    fun allValuesConvertToRealStatus(@TestParameter status: BlazeTestStatus) {
+        val bepStatus: TestStatus? = BuildEventStreamerUtils.bepStatus(status)
+        if (status.equals(BlazeTestStatus.NO_STATUS)) {
+            assertThat(bepStatus).isEqualTo(TestStatus.NO_STATUS)
+        } else {
+            assertThat(bepStatus).isNotEqualTo(TestStatus.NO_STATUS)
+        }
     }
-  }
 }

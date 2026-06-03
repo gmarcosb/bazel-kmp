@@ -11,95 +11,84 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.aquery;
+package com.google.devtools.build.lib.query2.aquery
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.analysis.ConfiguredTargetValue
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.ConfiguredTargetValue;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.QueryFunction;
-import com.google.devtools.build.lib.query2.testutil.PostAnalysisQueryTest;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.Set;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [ActionGraphQueryEnvironment].  */
+@RunWith(JUnit4::class)
+class ActionGraphQueryTest : PostAnalysisQueryTest<ConfiguredTargetValue>() {
+    val defaultFunctions: HashMap<String?, QueryFunction?>
+        get() {
+            val defaultFunctions: com.google.common.collect.ImmutableList<QueryFunction> =
+                com.google.common.collect.ImmutableList.Builder<QueryFunction?>()
+                    .addAll(ActionGraphQueryEnvironment.FUNCTIONS)
+                    .addAll(ActionGraphQueryEnvironment.AQUERY_FUNCTIONS)
+                    .build()
+            val functions: HashMap<String?, QueryFunction?> = HashMap<String?, QueryFunction?>()
+            for (queryFunction in defaultFunctions) {
+                functions.put(queryFunction.name, queryFunction)
+            }
+            return functions
+        }
 
-/** Tests for {@link ActionGraphQueryEnvironment}. */
-@RunWith(JUnit4.class)
-public class ActionGraphQueryTest extends PostAnalysisQueryTest<ConfiguredTargetValue> {
-  @Override
-  protected HashMap<String, QueryFunction> getDefaultFunctions() {
-    ImmutableList<QueryFunction> defaultFunctions =
-        new ImmutableList.Builder<QueryFunction>()
-            .addAll(ActionGraphQueryEnvironment.FUNCTIONS)
-            .addAll(ActionGraphQueryEnvironment.AQUERY_FUNCTIONS)
-            .build();
-    HashMap<String, QueryFunction> functions = new HashMap<>();
-    for (QueryFunction queryFunction : defaultFunctions) {
-      functions.put(queryFunction.getName(), queryFunction);
+    override fun getConfiguration(configuredTargetValue: ConfiguredTargetValue): BuildConfigurationValue {
+        return getHelper()
+            .getSkyframeExecutor()
+            .getConfiguration(
+                getHelper().getReporter(),
+                configuredTargetValue.getConfiguredTarget().getConfigurationKey()
+            )
     }
-    return functions;
-  }
 
-  @Override
-  protected BuildConfigurationValue getConfiguration(ConfiguredTargetValue configuredTargetValue) {
-    return getHelper()
-        .getSkyframeExecutor()
-        .getConfiguration(
-            getHelper().getReporter(),
-            configuredTargetValue.getConfiguredTarget().getConfigurationKey());
-  }
+    override fun createQueryHelper(): QueryHelper<ConfiguredTargetValue?> {
+        return ActionGraphQueryHelper()
+    }
 
-  @Override
-  protected QueryHelper<ConfiguredTargetValue> createQueryHelper() {
-    return new ActionGraphQueryHelper();
-  }
-
-  @Override
-  @Test
-  public void testMultipleTopLevelConfigurations_nullConfigs() throws Exception {
-    writeFile(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    override fun testMultipleTopLevelConfigurations_nullConfigs() {
+        writeFile(
+            "test/BUILD",
+            """
         load("@rules_java//java:defs.bzl", "java_library")
         java_library(
             name = "my_java",
             srcs = ["foo.java"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    Set<ConfiguredTargetValue> result = eval("//test:my_java+//test:foo.java");
+        val result: MutableSet<ConfiguredTargetValue> = eval("//test:my_java+//test:foo.java")
 
-    assertThat(result).hasSize(2);
+        Truth.assertThat(result).hasSize(2)
 
-    Iterator<ConfiguredTargetValue> resultIterator = result.iterator();
-    ConfiguredTargetValue first = resultIterator.next();
-    if (first.getConfiguredTarget().getLabel().toString().equals("//test:foo.java")) {
-      assertThat(getConfiguration(first)).isNull();
-      assertThat(getConfiguration(resultIterator.next())).isNotNull();
-    } else {
-      assertThat(getConfiguration(first)).isNotNull();
-      assertThat(getConfiguration(resultIterator.next())).isNull();
+        val resultIterator: MutableIterator<ConfiguredTargetValue> = result.iterator()
+        val first: ConfiguredTargetValue = resultIterator.next()
+        if (first.getConfiguredTarget().getLabel().toString().equals("//test:foo.java")) {
+            assertThat(getConfiguration(first)).isNull()
+            assertThat(getConfiguration(resultIterator.next())).isNotNull()
+        } else {
+            assertThat(getConfiguration(first)).isNotNull()
+            assertThat(getConfiguration(resultIterator.next())).isNull()
+        }
     }
-  }
 
-  // Regression test for b/235526333.
-  @Test
-  public void testImplicitToolchainBinding_containsToolchainTarget() throws Exception {
-    writeFile(
-        "q/BUILD",
-        """
+    // Regression test for b/235526333.
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testImplicitToolchainBinding_containsToolchainTarget() {
+        writeFile(
+            "q/BUILD",
+            """
         load(":q.bzl", "r", "tc")
 
         genrule(
             name = "gr",
             srcs = [],
             outs = ["gro"],
-            cmd = "echo GRO > $@",
+            cmd = "echo GRO > ${'$'}@",
         )
 
         tc(
@@ -116,10 +105,12 @@ public class ActionGraphQueryTest extends PostAnalysisQueryTest<ConfiguredTarget
         )
 
         r(name = "r")
-        """);
-    writeFile(
-        "q/q.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        writeFile(
+            "q/q.bzl",
+            """
         def _r_impl(ctx):
             gro = ctx.toolchains["//q:type"].gro
             o = ctx.actions.declare_file(ctx.label.name + ".output")
@@ -142,16 +133,18 @@ public class ActionGraphQueryTest extends PostAnalysisQueryTest<ConfiguredTarget
             implementation = _r_impl,
             toolchains = ["//q:type"],
         )
-        """);
-    overwriteFile("MODULE.bazel", "register_toolchains('//q:tc.toolchain')");
+        
+        """.trimIndent()
+        )
+        overwriteFile("MODULE.bazel", "register_toolchains('//q:tc.toolchain')")
 
-    Set<ConfiguredTargetValue> result = eval("deps('//q:r')");
+        val result: MutableSet<ConfiguredTargetValue> = eval("deps('//q:r')")
 
-    assertDoesNotContainEvent("Targets were missing from graph");
-    assertThat(
+        assertDoesNotContainEvent("Targets were missing from graph")
+        Truth.assertThat(
             result.stream()
-                .map(x -> x.getConfiguredTarget().getOriginalLabel().getCanonicalForm())
-                .collect(toImmutableList()))
-        .contains("//q:tc");
-  }
+                .map<Any?> { x: ConfiguredTargetValue -> x.getConfiguredTarget().getOriginalLabel().getCanonicalForm() }
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<Any?>()))
+            .contains("//q:tc")
+    }
 }

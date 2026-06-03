@@ -11,38 +11,28 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.vfs.util;
+package com.google.devtools.build.lib.vfs.util
 
-import com.google.devtools.build.lib.unix.NativePosixFilesServiceImpl;
-import com.google.devtools.build.lib.unix.UnixFileSystem;
-import com.google.devtools.build.lib.util.OS;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.JavaIoFileSystem;
-import com.google.devtools.build.lib.windows.WindowsFileSystem;
+import com.google.devtools.build.lib.unix.NativePosixFilesServiceImpl
 
-/** Convenience factory methods. */
-public final class FileSystems {
-
-  private FileSystems() {}
-
-  /** Constructs a platform native (Unix or Windows) file system. */
-  public static FileSystem getNativeFileSystem(DigestHashFunction digestHashFunction) {
-    if (OS.getCurrent() == OS.WINDOWS) {
-      return new WindowsFileSystem(digestHashFunction, /* createSymbolicLinks= */ true);
-    } else {
-      return new UnixFileSystem(
-          digestHashFunction, /* hashAttributeName= */ "", new NativePosixFilesServiceImpl());
+/** Convenience factory methods.  */
+object FileSystems {
+    /** Constructs a platform native (Unix or Windows) file system.  */
+    fun getNativeFileSystem(digestHashFunction: DigestHashFunction?): FileSystem {
+        if (OS.getCurrent() === OS.WINDOWS) {
+            return WindowsFileSystem(digestHashFunction,  /* createSymbolicLinks= */true)
+        } else {
+            return UnixFileSystem(
+                digestHashFunction,  /* hashAttributeName= */"", NativePosixFilesServiceImpl()
+            )
+        }
     }
-  }
 
-  /** Constructs a platform native (Unix or Windows) file system with SHA256 digests. */
-  public static FileSystem getNativeFileSystem() {
-    return getNativeFileSystem(DigestHashFunction.SHA256);
-  }
+    val nativeFileSystem: FileSystem
+        /** Constructs a platform native (Unix or Windows) file system with SHA256 digests.  */
+        get() = com.google.devtools.build.lib.vfs.util.FileSystems.getNativeFileSystem(DigestHashFunction.SHA256)
 
-  /** Constructs a java.io.File file system. */
-  public static FileSystem getJavaIoFileSystem() {
-    return new JavaIoFileSystem(DigestHashFunction.SHA256);
-  }
+    val javaIoFileSystem: FileSystem
+        /** Constructs a java.io.File file system.  */
+        get() = JavaIoFileSystem(DigestHashFunction.SHA256)
 }

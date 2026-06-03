@@ -11,23 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.annot.processor.testsources
 
-package net.starlark.java.annot.processor.testsources;
+import net.starlark.java.eval.Sequence
 
-import net.starlark.java.annot.Param;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.Sequence;
-import net.starlark.java.eval.StarlarkValue;
-
-/** Test case which verifies a struct field method cannot specify extraArgs. */
-public class StructFieldWithExtraArgs implements StarlarkValue {
-
-  @StarlarkMethod(
-      name = "struct_field_method_with_extra_args",
-      documented = false,
-      structField = true,
-      extraPositionals = @Param(name = "args"))
-  public String structFieldMethodWithExtraArgs(Sequence<?> args) {
-    return "Cat.";
-  }
+/** Test case which verifies a struct field method cannot specify extraArgs.  */
+class StructFieldWithExtraArgs : StarlarkValue {
+    @StarlarkMethod(
+        name = "struct_field_method_with_extra_args",
+        documented = false,
+        structField = true,
+        extraPositionals = net.starlark.java.annot.Param(name = "args")
+    )
+    fun structFieldMethodWithExtraArgs(args: Sequence<*>?): String {
+        return "Cat."
+    }
 }

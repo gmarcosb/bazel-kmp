@@ -11,212 +11,250 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
+import com.google.common.truth.Truth
+import com.google.protobuf.ByteString
+import com.google.protobuf.CodedInputStream
+import com.google.protobuf.CodedOutputStream
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import org.mockito.ArgumentMatchers
+import org.mockito.Mockito
+import org.mockito.invocation.InvocationOnMock
+import org.mockito.stubbing.Answer
+import java.io.IOException
+import java.util.concurrent.atomic.AtomicInteger
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.spy;
+/** Tests for [ObjectCodecs].  */
+@RunWith(JUnit4::class)
+class ObjectCodecsTest {
+    /** Dummy ObjectCodec implementation so we can verify nice type system interaction.  */
+    private class IntegerCodec : ObjectCodec<Int?> {
+        val encodedClass: java.lang.Class<Int?>
+            get() = Int::class.java
 
-import com.google.common.collect.ImmutableClassToInstanceMap;
-import com.google.protobuf.ByteString;
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
-import java.util.concurrent.atomic.AtomicInteger;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+        public override fun autoRegister(): Boolean {
+            return false
+        }
 
-/** Tests for {@link ObjectCodecs}. */
-@RunWith(JUnit4.class)
-public final class ObjectCodecsTest {
+        @Throws(SerializationException::class, IOException::class)
+        public override fun serialize(context: SerializationContext?, obj: Int, codedOut: CodedOutputStream) {
+            codedOut.writeInt32NoTag(obj)
+        }
 
-  /** Dummy ObjectCodec implementation so we can verify nice type system interaction. */
-  private static class IntegerCodec implements ObjectCodec<Integer> {
-
-    @Override
-    public Class<Integer> getEncodedClass() {
-      return Integer.class;
+        @Throws(SerializationException::class, IOException::class)
+        public override fun deserialize(context: DeserializationContext?, codedIn: CodedInputStream): Int {
+            return codedIn.readInt32()
+        }
     }
 
-    @Override
-    public boolean autoRegister() {
-      return false;
-    }
+    private val spyObjectCodec: ObjectCodec<Int?>? = Mockito.spy<IntegerCodec?>(IntegerCodec())
 
-    @Override
-    public void serialize(SerializationContext context, Integer obj, CodedOutputStream codedOut)
-        throws SerializationException, IOException {
-      codedOut.writeInt32NoTag(obj);
-    }
+    private val underTest: ObjectCodecs = ObjectCodecs(
+        ObjectCodecRegistry.newBuilder().add(spyObjectCodec).build(),
+        com.google.common.collect.ImmutableClassToInstanceMap.of<B?>()
+    )
 
-    @Override
-    public Integer deserialize(DeserializationContext context, CodedInputStream codedIn)
-        throws SerializationException, IOException {
-      return codedIn.readInt32();
-    }
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSerializeDeserializeUsesCustomLogicWhenAvailable() {
+        val original = 12345
 
-  private final ObjectCodec<Integer> spyObjectCodec = spy(new IntegerCodec());
-
-  private final ObjectCodecs underTest =
-      new ObjectCodecs(
-          ObjectCodecRegistry.newBuilder().add(spyObjectCodec).build(),
-          ImmutableClassToInstanceMap.of());
-
-  @Test
-  public void testSerializeDeserializeUsesCustomLogicWhenAvailable() throws Exception {
-    Integer original = 12345;
-
-    doAnswer(
-            invocation -> {
-              CodedOutputStream codedOutArg = (CodedOutputStream) invocation.getArguments()[2];
-              codedOutArg.writeInt32NoTag(42);
-              return null;
+        Mockito.doAnswer(
+            Answer { invocation: InvocationOnMock? ->
+                val codedOutArg: CodedOutputStream = invocation.getArguments()[2] as CodedOutputStream
+                codedOutArg.writeInt32NoTag(42)
+                null
             })
-        .when(spyObjectCodec)
-        .serialize(any(SerializationContext.class), eq(original), any(CodedOutputStream.class));
-    AtomicInteger readInteger = new AtomicInteger(0);
-    doAnswer(
-            invocation -> {
-              readInteger.set(((CodedInputStream) invocation.getArguments()[1]).readInt32());
-              return original;
+            .`when`<Any?>(spyObjectCodec)
+            .serialize(
+                ArgumentMatchers.any<T?>(SerializationContext::class.java),
+                ArgumentMatchers.eq<T?>(original),
+                ArgumentMatchers.any<T?>(CodedOutputStream::class.java)
+            )
+        val readInteger: AtomicInteger = AtomicInteger(0)
+        Mockito.doAnswer(
+            Answer { invocation: InvocationOnMock? ->
+                readInteger.set((invocation.getArguments()[1] as CodedInputStream).readInt32())
+                original
             })
-        .when(spyObjectCodec)
-        .deserialize(any(DeserializationContext.class), any(CodedInputStream.class));
+            .`when`<Any?>(spyObjectCodec)
+            .deserialize(
+                ArgumentMatchers.any<T?>(DeserializationContext::class.java),
+                ArgumentMatchers.any<T?>(CodedInputStream::class.java)
+            )
 
-    ByteString serialized = underTest.serialize(original);
-    Object deserialized = underTest.deserialize(serialized);
-    assertThat(deserialized).isEqualTo(original);
+        val serialized: ByteString? = underTest.serialize(original)
+        val deserialized: Any? = underTest.deserialize(serialized)
+        Truth.assertThat(deserialized).isEqualTo(original)
 
-    assertThat(readInteger.get()).isEqualTo(42);
-  }
+        Truth.assertThat(readInteger.get()).isEqualTo(42)
+    }
 
-  @Test
-  public void tooManyBytesCausesFailure() throws Exception {
-    doReturn(1)
-        .when(spyObjectCodec)
-        .deserialize(any(DeserializationContext.class), any(CodedInputStream.class));
-    doAnswer(
-            invocation -> {
-              ((CodedOutputStream) invocation.getArguments()[2]).writeInt64NoTag(0xAAAAAA);
-              return null;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun tooManyBytesCausesFailure() {
+        Mockito.doReturn(1)
+            .`when`<Any?>(spyObjectCodec)
+            .deserialize(
+                ArgumentMatchers.any<T?>(DeserializationContext::class.java),
+                ArgumentMatchers.any<T?>(CodedInputStream::class.java)
+            )
+        Mockito.doAnswer(
+            Answer { invocation: InvocationOnMock? ->
+                (invocation.getArguments()[2] as CodedOutputStream).writeInt64NoTag(0xAAAAAA)
+                null
             })
-        .when(spyObjectCodec)
-        .serialize(any(SerializationContext.class), eq(1), any(CodedOutputStream.class));
-    SerializationException e =
-        assertThrows(
-            SerializationException.class, () -> underTest.deserialize(underTest.serialize(1)));
-    assertThat(e).hasMessageThat().isEqualTo("input stream not exhausted after deserializing 1");
-  }
+            .`when`<Any?>(spyObjectCodec)
+            .serialize(
+                ArgumentMatchers.any<T?>(SerializationContext::class.java),
+                ArgumentMatchers.eq(1),
+                ArgumentMatchers.any<T?>(CodedOutputStream::class.java)
+            )
+        val e: SerializationException? =
+            org.junit.Assert.assertThrows<T?>(
+                SerializationException::class.java,
+                org.junit.function.ThrowingRunnable { underTest.deserialize(underTest.serialize(1)) })
+        assertThat(e).hasMessageThat().isEqualTo("input stream not exhausted after deserializing 1")
+    }
 
-  @Test
-  public void testSerializePropagatesSerializationExceptionFromCustomCodec() throws Exception {
-    Integer original = Integer.valueOf(12345);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSerializePropagatesSerializationExceptionFromCustomCodec() {
+        val original: Int = java.lang.Integer.valueOf(12345)
 
-    SerializationException staged = new SerializationException("BECAUSE FAIL");
-    doThrow(staged)
-        .when(spyObjectCodec)
-        .serialize(any(SerializationContext.class), eq(original), any(CodedOutputStream.class));
-    SerializationException e =
-        assertThrows(SerializationException.class, () -> underTest.serialize(original));
-    assertThat(e).isSameInstanceAs(staged);
-  }
+        val staged: SerializationException = SerializationException("BECAUSE FAIL")
+        doThrow(staged)
+            .`when`<Any?>(spyObjectCodec)
+            .serialize(
+                ArgumentMatchers.any<T?>(SerializationContext::class.java),
+                ArgumentMatchers.eq<T?>(original),
+                ArgumentMatchers.any<T?>(CodedOutputStream::class.java)
+            )
+        val e: SerializationException? =
+            org.junit.Assert.assertThrows<T?>(
+                SerializationException::class.java,
+                org.junit.function.ThrowingRunnable { underTest.serialize(original) })
+        assertThat(e).isSameInstanceAs(staged)
+    }
 
-  @Test
-  public void testSerializePropagatesIOExceptionFromCustomCodecsAsSerializationException()
-      throws Exception {
-    Integer original = Integer.valueOf(12345);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSerializePropagatesIOExceptionFromCustomCodecsAsSerializationException() {
+        val original: Int = java.lang.Integer.valueOf(12345)
 
-    IOException staged = new IOException("BECAUSE FAIL");
-    doThrow(staged)
-        .when(spyObjectCodec)
-        .serialize(any(SerializationContext.class), eq(original), any(CodedOutputStream.class));
-    SerializationException e =
-        assertThrows(SerializationException.class, () -> underTest.serialize(original));
-    assertThat(e).hasCauseThat().isSameInstanceAs(staged);
-  }
+        val staged: IOException = IOException("BECAUSE FAIL")
+        Mockito.doThrow(staged)
+            .`when`<Any?>(spyObjectCodec)
+            .serialize(
+                ArgumentMatchers.any<T?>(SerializationContext::class.java),
+                ArgumentMatchers.eq<T?>(original),
+                ArgumentMatchers.any<T?>(CodedOutputStream::class.java)
+            )
+        val e: SerializationException? =
+            org.junit.Assert.assertThrows<T?>(
+                SerializationException::class.java,
+                org.junit.function.ThrowingRunnable { underTest.serialize(original) })
+        assertThat(e).hasCauseThat().isSameInstanceAs(staged)
+    }
 
-  @Test
-  public void testDeserializePropagatesSerializationExceptionFromCustomCodec() throws Exception {
-    SerializationException staged = new SerializationException("BECAUSE FAIL");
-    doThrow(staged)
-        .when(spyObjectCodec)
-        .deserialize(any(DeserializationContext.class), any(CodedInputStream.class));
-    SerializationException thrown =
-        assertThrows(
-            SerializationException.class, () -> underTest.deserialize(underTest.serialize(1)));
-    assertThat(thrown).isSameInstanceAs(staged);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDeserializePropagatesSerializationExceptionFromCustomCodec() {
+        val staged: SerializationException = SerializationException("BECAUSE FAIL")
+        doThrow(staged)
+            .`when`<Any?>(spyObjectCodec)
+            .deserialize(
+                ArgumentMatchers.any<T?>(DeserializationContext::class.java),
+                ArgumentMatchers.any<T?>(CodedInputStream::class.java)
+            )
+        val thrown: SerializationException? =
+            org.junit.Assert.assertThrows<T?>(
+                SerializationException::class.java,
+                org.junit.function.ThrowingRunnable { underTest.deserialize(underTest.serialize(1)) })
+        assertThat(thrown).isSameInstanceAs(staged)
+    }
 
-  @Test
-  public void testDeserializePropagatesIOExceptionFromCustomCodecAsSerializationException()
-      throws Exception {
-    IOException staged = new IOException("BECAUSE FAIL");
-    doThrow(staged)
-        .when(spyObjectCodec)
-        .deserialize(any(DeserializationContext.class), any(CodedInputStream.class));
-    SerializationException e =
-        assertThrows(
-            SerializationException.class, () -> underTest.deserialize(underTest.serialize(1)));
-    assertThat(e).hasCauseThat().isSameInstanceAs(staged);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDeserializePropagatesIOExceptionFromCustomCodecAsSerializationException() {
+        val staged: IOException = IOException("BECAUSE FAIL")
+        Mockito.doThrow(staged)
+            .`when`<Any?>(spyObjectCodec)
+            .deserialize(
+                ArgumentMatchers.any<T?>(DeserializationContext::class.java),
+                ArgumentMatchers.any<T?>(CodedInputStream::class.java)
+            )
+        val e: SerializationException? =
+            org.junit.Assert.assertThrows<T?>(
+                SerializationException::class.java,
+                org.junit.function.ThrowingRunnable { underTest.deserialize(underTest.serialize(1)) })
+        assertThat(e).hasCauseThat().isSameInstanceAs(staged)
+    }
 
-  @Test
-  public void testDeserializePropagatesSerializationExceptionFromDefaultCodec() {
-    ByteString serialized = ByteString.copyFromUtf8("probably not serialized anything");
+    @org.junit.Test
+    fun testDeserializePropagatesSerializationExceptionFromDefaultCodec() {
+        val serialized: ByteString = ByteString.copyFromUtf8("probably not serialized anything")
 
-    assertThrows(SerializationException.class, () -> underTest.deserialize(serialized));
-  }
+        org.junit.Assert.assertThrows<T?>(
+            SerializationException::class.java,
+            org.junit.function.ThrowingRunnable { underTest.deserialize(serialized) })
+    }
 
-  @Test
-  public void testSerializeFailsWhenNoCustomCodecAndFallbackDisabled() {
-    ObjectCodecs underTest =
-        new ObjectCodecs(
-            ObjectCodecRegistry.newBuilder().setAllowDefaultCodec(false).build(),
-            ImmutableClassToInstanceMap.of());
-    SerializationException.NoCodecException expected =
-        assertThrows(SerializationException.NoCodecException.class, () -> underTest.serialize("Y"));
-    assertThat(expected)
-        .hasMessageThat()
-        .isEqualTo("No codec available for class java.lang.String and default fallback disabled");
-  }
+    @org.junit.Test
+    fun testSerializeFailsWhenNoCustomCodecAndFallbackDisabled() {
+        val underTest: ObjectCodecs =
+            ObjectCodecs(
+                ObjectCodecRegistry.newBuilder().setAllowDefaultCodec(false).build(),
+                com.google.common.collect.ImmutableClassToInstanceMap.of<B?>()
+            )
+        val expected: SerializationException.NoCodecException? =
+            org.junit.Assert.assertThrows<T?>(
+                SerializationException.NoCodecException::class.java,
+                org.junit.function.ThrowingRunnable { underTest.serialize("Y") })
+        assertThat(expected)
+            .hasMessageThat()
+            .isEqualTo("No codec available for class java.lang.String and default fallback disabled")
+    }
 
-  @Test
-  public void testDeserializeFailsWithNoCodecs() throws Exception {
-    ByteString serialized = underTest.serialize(1);
-    ObjectCodecs underTest =
-        new ObjectCodecs(
-            ObjectCodecRegistry.newBuilder().setAllowDefaultCodec(false).build(),
-            ImmutableClassToInstanceMap.of());
-    assertThrows(
-        SerializationException.NoCodecException.class, () -> underTest.deserialize(serialized));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDeserializeFailsWithNoCodecs() {
+        val serialized: ByteString? = underTest.serialize(1)
+        val underTest: ObjectCodecs =
+            ObjectCodecs(
+                ObjectCodecRegistry.newBuilder().setAllowDefaultCodec(false).build(),
+                com.google.common.collect.ImmutableClassToInstanceMap.of<B?>()
+            )
+        org.junit.Assert.assertThrows<T?>(
+            SerializationException.NoCodecException::class.java,
+            org.junit.function.ThrowingRunnable { underTest.deserialize(serialized) })
+    }
 
-  @Test
-  public void testSerializeDeserialize() throws Exception {
-    ObjectCodecs underTest = new ObjectCodecs(AutoRegistry.get(), ImmutableClassToInstanceMap.of());
-    assertThat((String) underTest.deserialize(underTest.serialize("hello"))).isEqualTo("hello");
-    assertThat(underTest.deserialize(underTest.serialize(null))).isNull();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSerializeDeserialize() {
+        val underTest: ObjectCodecs =
+            ObjectCodecs(AutoRegistry.get(), com.google.common.collect.ImmutableClassToInstanceMap.of<B?>())
+        Truth.assertThat(underTest.deserialize(underTest.serialize("hello")) as String?).isEqualTo("hello")
+        assertThat(underTest.deserialize(underTest.serialize(null))).isNull()
+    }
 
-  private static class MyException extends Exception {}
+    private class MyException : java.lang.Exception()
 
-  @Test
-  public void exception() throws SerializationException {
-    MyException exception = new MyException();
-    // Force initialization of stack trace.
-    StackTraceElement[] stackTrace = exception.getStackTrace();
-    ObjectCodecs underTest = new ObjectCodecs(AutoRegistry.get(), ImmutableClassToInstanceMap.of());
-    assertThat(
-            ((MyException) underTest.deserializeMemoized(underTest.serializeMemoized(exception)))
-                .getStackTrace())
-        .isEqualTo(stackTrace);
-  }
+    @org.junit.Test
+    @Throws(SerializationException::class)
+    fun exception() {
+        val exception = MyException()
+        // Force initialization of stack trace.
+        val stackTrace: Array<java.lang.StackTraceElement?>? = exception.getStackTrace()
+        val underTest: ObjectCodecs =
+            ObjectCodecs(AutoRegistry.get(), com.google.common.collect.ImmutableClassToInstanceMap.of<B?>())
+        Truth.assertThat<java.lang.StackTraceElement?>(
+            (underTest.deserializeMemoized(underTest.serializeMemoized(exception)) as MyException)
+                .getStackTrace()
+        )
+            .isEqualTo(stackTrace)
+    }
 }

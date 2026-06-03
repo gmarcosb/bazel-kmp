@@ -11,92 +11,211 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.exec.local
 
-package com.google.devtools.build.lib.exec.local;
+import com.google.common.truth.Truth
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import static com.google.common.truth.Truth.assertThat;
+/** Unit tests for [WindowsLocalEnvProvider].  */
+@RunWith(JUnit4::class)
+class WindowsLocalEnvProviderTest {
+    /** Should use the client environment's TMP envvar if specified.  */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRewriteEnvWithClientTmp() {
+        val p: WindowsLocalEnvProvider =
+            WindowsLocalEnvProvider(
+                com.google.common.collect.ImmutableMap.of<K?, V?>(
+                    "TMP",
+                    "client-env/tmp",
+                    "TEMP",
+                    "ignore/when/tmp/is/present"
+                )
+            )
 
-import com.google.common.collect.ImmutableMap;
-import java.util.Map;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Unit tests for {@link WindowsLocalEnvProvider}. */
-@RunWith(JUnit4.class)
-public final class WindowsLocalEnvProviderTest {
-
-  private static Map<String, String> rewriteEnv(
-      WindowsLocalEnvProvider p, ImmutableMap<String, String> env) {
-    return p.rewriteLocalEnv(env, null, null);
-  }
-
-  private static Map<String, String> rewriteEnv(
-      WindowsLocalEnvProvider p, ImmutableMap<String, String> env, String fallback) {
-    return p.rewriteLocalEnv(env, null, fallback);
-  }
-
-  /** Should use the client environment's TMP envvar if specified. */
-  @Test
-  public void testRewriteEnvWithClientTmp() throws Exception {
-    WindowsLocalEnvProvider p =
-        new WindowsLocalEnvProvider(
-            ImmutableMap.of("TMP", "client-env/tmp", "TEMP", "ignore/when/tmp/is/present"));
-
-    assertThat(rewriteEnv(p, ImmutableMap.of("key1", "value1", "TMP", "ignore", "TEMP", "ignore")))
-        .isEqualTo(
-            ImmutableMap.of("key1", "value1", "TMP", "client-env\\tmp", "TEMP", "client-env\\tmp"));
-
-    assertThat(rewriteEnv(p, ImmutableMap.of("key1", "value1", "TMP", "ignore")))
-        .isEqualTo(
-            ImmutableMap.of("key1", "value1", "TMP", "client-env\\tmp", "TEMP", "client-env\\tmp"));
-
-    assertThat(rewriteEnv(p, ImmutableMap.of("key1", "value1")))
-        .isEqualTo(
-            ImmutableMap.of("key1", "value1", "TMP", "client-env\\tmp", "TEMP", "client-env\\tmp"));
-  }
-
-  /** Should use the client environment's TEMP envvar if TMP is unspecified. */
-  @Test
-  public void testRewriteEnvWithoutClientTmpWithClientTemp() throws Exception {
-    WindowsLocalEnvProvider p =
-        new WindowsLocalEnvProvider(ImmutableMap.of("TEMP", "client-env/temp"));
-
-    assertThat(rewriteEnv(p, ImmutableMap.of("key1", "value1", "TMP", "ignore", "TEMP", "ignore")))
-        .isEqualTo(
-            ImmutableMap.of(
-                "key1", "value1", "TMP", "client-env\\temp", "TEMP", "client-env\\temp"));
-
-    assertThat(rewriteEnv(p, ImmutableMap.of("key1", "value1", "TMP", "ignore")))
-        .isEqualTo(
-            ImmutableMap.of(
-                "key1", "value1", "TMP", "client-env\\temp", "TEMP", "client-env\\temp"));
-
-    assertThat(rewriteEnv(p, ImmutableMap.of("key1", "value1")))
-        .isEqualTo(
-            ImmutableMap.of(
-                "key1", "value1", "TMP", "client-env\\temp", "TEMP", "client-env\\temp"));
-  }
-
-  /** Should use the fallback temp dir when the client env defines neither TMP nor TEMP. */
-  @Test
-  public void testRewriteEnvWithFallbackTmp() throws Exception {
-    WindowsLocalEnvProvider p = new WindowsLocalEnvProvider(ImmutableMap.<String, String>of());
-
-    assertThat(
+        Truth.assertThat(
             rewriteEnv(
                 p,
-                ImmutableMap.of("key1", "value1", "TMP", "ignore", "TEMP", "ignore"),
-                "fallback/tmp"))
-        .isEqualTo(
-            ImmutableMap.of("key1", "value1", "TMP", "fallback\\tmp", "TEMP", "fallback\\tmp"));
+                com.google.common.collect.ImmutableMap.of<String?, String?>(
+                    "key1",
+                    "value1",
+                    "TMP",
+                    "ignore",
+                    "TEMP",
+                    "ignore"
+                )
+            )
+        )
+            .isEqualTo(
+                com.google.common.collect.ImmutableMap.of<String?, String?>(
+                    "key1",
+                    "value1",
+                    "TMP",
+                    "client-env\\tmp",
+                    "TEMP",
+                    "client-env\\tmp"
+                )
+            )
 
-    assertThat(rewriteEnv(p, ImmutableMap.of("key1", "value1", "TMP", "ignore"), "fallback/tmp"))
-        .isEqualTo(
-            ImmutableMap.of("key1", "value1", "TMP", "fallback\\tmp", "TEMP", "fallback\\tmp"));
+        Truth.assertThat(
+            rewriteEnv(
+                p,
+                com.google.common.collect.ImmutableMap.of<String?, String?>("key1", "value1", "TMP", "ignore")
+            )
+        )
+            .isEqualTo(
+                com.google.common.collect.ImmutableMap.of<String?, String?>(
+                    "key1",
+                    "value1",
+                    "TMP",
+                    "client-env\\tmp",
+                    "TEMP",
+                    "client-env\\tmp"
+                )
+            )
 
-    assertThat(rewriteEnv(p, ImmutableMap.of("key1", "value1"), "fallback/tmp"))
-        .isEqualTo(
-            ImmutableMap.of("key1", "value1", "TMP", "fallback\\tmp", "TEMP", "fallback\\tmp"));
-  }
+        Truth.assertThat(rewriteEnv(p, com.google.common.collect.ImmutableMap.of<String?, String?>("key1", "value1")))
+            .isEqualTo(
+                com.google.common.collect.ImmutableMap.of<String?, String?>(
+                    "key1",
+                    "value1",
+                    "TMP",
+                    "client-env\\tmp",
+                    "TEMP",
+                    "client-env\\tmp"
+                )
+            )
+    }
+
+    /** Should use the client environment's TEMP envvar if TMP is unspecified.  */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRewriteEnvWithoutClientTmpWithClientTemp() {
+        val p: WindowsLocalEnvProvider =
+            WindowsLocalEnvProvider(com.google.common.collect.ImmutableMap.of<K?, V?>("TEMP", "client-env/temp"))
+
+        Truth.assertThat(
+            rewriteEnv(
+                p,
+                com.google.common.collect.ImmutableMap.of<String?, String?>(
+                    "key1",
+                    "value1",
+                    "TMP",
+                    "ignore",
+                    "TEMP",
+                    "ignore"
+                )
+            )
+        )
+            .isEqualTo(
+                com.google.common.collect.ImmutableMap.of<String?, String?>(
+                    "key1", "value1", "TMP", "client-env\\temp", "TEMP", "client-env\\temp"
+                )
+            )
+
+        Truth.assertThat(
+            rewriteEnv(
+                p,
+                com.google.common.collect.ImmutableMap.of<String?, String?>("key1", "value1", "TMP", "ignore")
+            )
+        )
+            .isEqualTo(
+                com.google.common.collect.ImmutableMap.of<String?, String?>(
+                    "key1", "value1", "TMP", "client-env\\temp", "TEMP", "client-env\\temp"
+                )
+            )
+
+        Truth.assertThat(rewriteEnv(p, com.google.common.collect.ImmutableMap.of<String?, String?>("key1", "value1")))
+            .isEqualTo(
+                com.google.common.collect.ImmutableMap.of<String?, String?>(
+                    "key1", "value1", "TMP", "client-env\\temp", "TEMP", "client-env\\temp"
+                )
+            )
+    }
+
+    /** Should use the fallback temp dir when the client env defines neither TMP nor TEMP.  */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRewriteEnvWithFallbackTmp() {
+        val p: WindowsLocalEnvProvider =
+            WindowsLocalEnvProvider(com.google.common.collect.ImmutableMap.of<String?, String?>())
+
+        Truth.assertThat(
+            rewriteEnv(
+                p,
+                com.google.common.collect.ImmutableMap.of<String?, String?>(
+                    "key1",
+                    "value1",
+                    "TMP",
+                    "ignore",
+                    "TEMP",
+                    "ignore"
+                ),
+                "fallback/tmp"
+            )
+        )
+            .isEqualTo(
+                com.google.common.collect.ImmutableMap.of<String?, String?>(
+                    "key1",
+                    "value1",
+                    "TMP",
+                    "fallback\\tmp",
+                    "TEMP",
+                    "fallback\\tmp"
+                )
+            )
+
+        Truth.assertThat(
+            rewriteEnv(
+                p,
+                com.google.common.collect.ImmutableMap.of<String?, String?>("key1", "value1", "TMP", "ignore"),
+                "fallback/tmp"
+            )
+        )
+            .isEqualTo(
+                com.google.common.collect.ImmutableMap.of<String?, String?>(
+                    "key1",
+                    "value1",
+                    "TMP",
+                    "fallback\\tmp",
+                    "TEMP",
+                    "fallback\\tmp"
+                )
+            )
+
+        Truth.assertThat(
+            rewriteEnv(
+                p,
+                com.google.common.collect.ImmutableMap.of<String?, String?>("key1", "value1"),
+                "fallback/tmp"
+            )
+        )
+            .isEqualTo(
+                com.google.common.collect.ImmutableMap.of<String?, String?>(
+                    "key1",
+                    "value1",
+                    "TMP",
+                    "fallback\\tmp",
+                    "TEMP",
+                    "fallback\\tmp"
+                )
+            )
+    }
+
+    companion object {
+        private fun rewriteEnv(
+            p: WindowsLocalEnvProvider, env: com.google.common.collect.ImmutableMap<String?, String?>?
+        ): MutableMap<String?, String?> {
+            return p.rewriteLocalEnv(env, null, null)
+        }
+
+        private fun rewriteEnv(
+            p: WindowsLocalEnvProvider,
+            env: com.google.common.collect.ImmutableMap<String?, String?>?,
+            fallback: String?
+        ): MutableMap<String?, String?> {
+            return p.rewriteLocalEnv(env, null, fallback)
+        }
+    }
 }

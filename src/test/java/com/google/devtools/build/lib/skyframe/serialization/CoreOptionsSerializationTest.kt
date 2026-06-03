@@ -11,94 +11,89 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static com.google.common.truth.Truth.assertThat;
+@RunWith(JUnit4::class)
+class CoreOptionsSerializationTest {
+    /**
+     * Tests serialization (with [BuildOptions] dependency).
+     * 
+     * 
+     * `checkVisibility` is not serialized, but restored from [BuildOptions] during
+     * deserialization.
+     */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun coreOptionsRoundTrip() {
+        val buildOptionsToSerialize: BuildOptions =
+            BuildOptions.of(com.google.common.collect.ImmutableList.of<E?>(CoreOptions::class.java))
+        val optionsToSerialize: CoreOptions = buildOptionsToSerialize.get(CoreOptions::class.java)
+        optionsToSerialize.setCheckVisibility(false)
 
-import com.google.common.collect.ImmutableClassToInstanceMap;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.config.CommonOptions;
-import com.google.devtools.build.lib.analysis.config.CoreOptions;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.FakeDirectories;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+        val buildOptions: BuildOptions =
+            BuildOptions.of(com.google.common.collect.ImmutableList.of<E?>(CoreOptions::class.java))
+        buildOptions.get(CoreOptions::class.java).setCheckVisibility(true) // This will be source of truth.
 
-@RunWith(JUnit4.class)
-public class CoreOptionsSerializationTest {
-
-  /**
-   * Tests serialization (with {@link BuildOptions} dependency).
-   *
-   * <p>{@code checkVisibility} is not serialized, but restored from {@link BuildOptions} during
-   * deserialization.
-   */
-  @Test
-  public void coreOptionsRoundTrip() throws Exception {
-    BuildOptions buildOptionsToSerialize = BuildOptions.of(ImmutableList.of(CoreOptions.class));
-    CoreOptions optionsToSerialize = buildOptionsToSerialize.get(CoreOptions.class);
-    optionsToSerialize.setCheckVisibility(false);
-
-    BuildOptions buildOptions = BuildOptions.of(ImmutableList.of(CoreOptions.class));
-    buildOptions.get(CoreOptions.class).setCheckVisibility(true); // This will be source of truth.
-
-    SerializationTester tester = new SerializationTester(optionsToSerialize);
-    for (ObjectCodec<?> codec : SerializationRegistrySetupHelpers.analysisCachingCodecs()) {
-      tester.addCodec(codec);
-    }
-    tester
-        .setVerificationFunction(
-            (original, deserialized) -> {
-              // Deserialized value comes from BuildOptions dependency, not original value.
-              assertThat(((CoreOptions) deserialized).getCheckVisibility()).isTrue();
-            })
-        .addDependency(BuildOptions.class, buildOptions)
-        .runTests();
-  }
-
-  @Test
-  public void emptyOptionsRoundTrip_toSameInstance_withCustomCoreOptionsCodec() throws Exception {
-    BuildOptions original = CommonOptions.EMPTY_OPTIONS;
-
-    // Simulates the reader build passing --check_visibility=false.
-    BuildOptions readerOptions = BuildOptions.of(ImmutableList.of(CoreOptions.class));
-    readerOptions.get(CoreOptions.class).setCheckVisibility(false);
-
-    ObjectCodecRegistry.Builder registryBuilder = AutoRegistry.get().getBuilder();
-    for (ObjectCodec<?> codec : SerializationRegistrySetupHelpers.analysisCachingCodecs()) {
-      registryBuilder.add(codec);
+        val tester: SerializationTester = SerializationTester(optionsToSerialize)
+        for (codec in SerializationRegistrySetupHelpers.analysisCachingCodecs()) {
+            tester.addCodec(codec)
+        }
+        tester
+            .setVerificationFunction(
+                { original, deserialized ->
+                    // Deserialized value comes from BuildOptions dependency, not original value.
+                    assertThat((deserialized as CoreOptions).getCheckVisibility()).isTrue()
+                })
+            .addDependency(BuildOptions::class.java, buildOptions)
+            .runTests()
     }
 
-    registryBuilder.addReferenceConstants(
-        SerializationRegistrySetupHelpers.makeReferenceConstants(
-            FakeDirectories.BLAZE_DIRECTORIES,
-            new ConfiguredRuleClassProvider.Builder()
-                .setToolsRepository(RepositoryName.createUnvalidated("bazel_tools"))
-                .build(),
-            "root"));
-    ObjectCodecRegistry registry = registryBuilder.build();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun emptyOptionsRoundTrip_toSameInstance_withCustomCoreOptionsCodec() {
+        val original: BuildOptions? = CommonOptions.EMPTY_OPTIONS
 
-    // Inject the reader options.
-    ImmutableClassToInstanceMap<Object> dependencies =
-        ImmutableClassToInstanceMap.of(BuildOptions.class, readerOptions);
+        // Simulates the reader build passing --check_visibility=false.
+        val readerOptions: BuildOptions =
+            BuildOptions.of(com.google.common.collect.ImmutableList.of<E?>(CoreOptions::class.java))
+        readerOptions.get(CoreOptions::class.java).setCheckVisibility(false)
 
-    ObjectCodecs codecs = new ObjectCodecs(registry, dependencies);
+        val registryBuilder: ObjectCodecRegistry.Builder = AutoRegistry.get().getBuilder()
+        for (codec in SerializationRegistrySetupHelpers.analysisCachingCodecs()) {
+            registryBuilder.add(codec)
+        }
 
-    SerializationTester tester = new SerializationTester(original);
-    tester.setObjectCodecs(codecs);
+        registryBuilder.addReferenceConstants(
+            SerializationRegistrySetupHelpers.makeReferenceConstants(
+                FakeDirectories.BLAZE_DIRECTORIES,
+                Builder()
+                    .setToolsRepository(RepositoryName.createUnvalidated("bazel_tools"))
+                    .build(),
+                "root"
+            )
+        )
+        val registry: ObjectCodecRegistry? = registryBuilder.build()
 
-    tester
-        .makeMemoizingAndAllowFutureBlocking(true)
-        .setVerificationFunction(
-            (orig, deserialized) -> {
-              // Check that EMPTY_OPTIONS remain untainted by the custom CoreOptions
-              // check_visibility trimming.
-              assertThat(deserialized).isSameInstanceAs(orig);
-            })
-        .runTests();
-  }
+        // Inject the reader options.
+        val dependencies: com.google.common.collect.ImmutableClassToInstanceMap<Any?> =
+            com.google.common.collect.ImmutableClassToInstanceMap.of<Any?, BuildOptions?>(
+                BuildOptions::class.java,
+                readerOptions
+            )
+
+        val codecs: ObjectCodecs = ObjectCodecs(registry, dependencies)
+
+        val tester: SerializationTester = SerializationTester(original)
+        tester.setObjectCodecs(codecs)
+
+        tester
+            .makeMemoizingAndAllowFutureBlocking(true)
+            .setVerificationFunction(
+                { orig, deserialized ->
+                    // Check that EMPTY_OPTIONS remain untainted by the custom CoreOptions
+                    // check_visibility trimming.
+                    assertThat(deserialized).isSameInstanceAs(orig)
+                })
+            .runTests()
+    }
 }

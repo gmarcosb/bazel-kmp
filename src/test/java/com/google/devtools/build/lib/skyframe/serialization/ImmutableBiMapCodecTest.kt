@@ -11,103 +11,99 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.RoundTripping
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+/** Tests for [ImmutableBiMapCodec].  */
+@RunWith(JUnit4::class)
+class ImmutableBiMapCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun smoke() {
+        SerializationTester(
+            com.google.common.collect.ImmutableBiMap.of<K?, V?>(),
+            com.google.common.collect.ImmutableBiMap.< K, V > of<K?, V?>("A", "//foo:A"),
+            com.google.common.collect.ImmutableBiMap.< K, V > of<K?, V?>("B", "//foo:B")
+        ) // Check for order.
+            .setVerificationFunction(
+                VerificationFunction { deserialized, subject ->
+                    assertThat(deserialized).isEqualTo(subject)
+                    assertThat(deserialized).containsExactlyEntriesIn(subject).inOrder()
+                } as VerificationFunction<com.google.common.collect.ImmutableBiMap<*, *>?>)
+            .runTests()
+    }
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableBiMap;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.RoundTripping;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester.VerificationFunction;
-import com.google.protobuf.ByteString;
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link ImmutableBiMapCodec}. */
-@RunWith(JUnit4.class)
-public class ImmutableBiMapCodecTest {
-  @Test
-  public void smoke() throws Exception {
-    new SerializationTester(
-            ImmutableBiMap.of(),
-            ImmutableBiMap.of("A", "//foo:A"),
-            ImmutableBiMap.of("B", "//foo:B"))
-        // Check for order.
-        .setVerificationFunction(
-            (VerificationFunction<ImmutableBiMap<?, ?>>)
-                (deserialized, subject) -> {
-                  assertThat(deserialized).isEqualTo(subject);
-                  assertThat(deserialized).containsExactlyEntriesIn(subject).inOrder();
+    @org.junit.Test
+    fun serializingErrorIncludesKeyStringAndValueClass() {
+        val expected: SerializationException? =
+            org.junit.Assert.assertThrows<T?>(
+                SerializationException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    RoundTripping.toBytesMemoized(
+                        com.google.common.collect.ImmutableBiMap.< K,
+                        V > of<K?, V?>(
+                            "a",
+                            com.google.devtools.build.lib.skyframe.serialization.ImmutableBiMapCodecTest.Dummy()
+                        ),
+                        AutoRegistry.get()
+                            .getBuilder()
+                            .add(
+                                com.google.devtools.build.lib.skyframe.serialization.ImmutableBiMapCodecTest.DummyThrowingCodec( /* throwsOnSerialization= */
+                                    true
+                                )
+                            )
+                            .build()
+                    )
                 })
-        .runTests();
-  }
-
-  @Test
-  public void serializingErrorIncludesKeyStringAndValueClass() {
-    SerializationException expected =
-        assertThrows(
-            SerializationException.class,
-            () ->
-                RoundTripping.toBytesMemoized(
-                    ImmutableBiMap.of("a", new Dummy()),
-                    AutoRegistry.get()
-                        .getBuilder()
-                        .add(new DummyThrowingCodec(/* throwsOnSerialization= */ true))
-                        .build()));
-    assertThat(expected)
-        .hasMessageThat()
-        .containsMatch("Exception while serializing value of type .*\\$Dummy for key 'a'");
-  }
-
-  @Test
-  public void deserializingErrorIncludesKeyString() throws Exception {
-    ObjectCodecRegistry registry =
-        AutoRegistry.get()
-            .getBuilder()
-            .add(new DummyThrowingCodec(/*throwsOnSerialization=*/ false))
-            .build();
-    ObjectCodecs codecs = new ObjectCodecs(registry);
-    ByteString data = codecs.serialize(ImmutableBiMap.of("a", new Dummy()));
-    SerializationException expected =
-        assertThrows(SerializationException.class, () -> codecs.deserialize(data));
-    assertThat(expected)
-        .hasMessageThat()
-        .contains("Exception while deserializing value for key 'a'");
-  }
-
-  private static class Dummy {}
-
-  private static class DummyThrowingCodec implements ObjectCodec<Dummy> {
-    private final boolean throwsOnSerialization;
-
-    private DummyThrowingCodec(boolean throwsOnSerialization) {
-      this.throwsOnSerialization = throwsOnSerialization;
+        assertThat(expected)
+            .hasMessageThat()
+            .containsMatch("Exception while serializing value of type .*\\\$Dummy for key 'a'")
     }
 
-    @Override
-    public Class<Dummy> getEncodedClass() {
-      return Dummy.class;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun deserializingErrorIncludesKeyString() {
+        val registry: ObjectCodecRegistry? =
+            AutoRegistry.get()
+                .getBuilder()
+                .add(
+                    com.google.devtools.build.lib.skyframe.serialization.ImmutableBiMapCodecTest.DummyThrowingCodec( /*throwsOnSerialization=*/
+                        false
+                    )
+                )
+                .build()
+        val codecs: ObjectCodecs = ObjectCodecs(registry)
+        val data: ByteString? = codecs.serialize(
+            com.google.common.collect.ImmutableBiMap.< K,
+            V > of<K?, V?>("a", com.google.devtools.build.lib.skyframe.serialization.ImmutableBiMapCodecTest.Dummy())
+        )
+        val expected: SerializationException? =
+            org.junit.Assert.assertThrows<T?>(
+                SerializationException::class.java,
+                org.junit.function.ThrowingRunnable { codecs.deserialize(data) })
+        assertThat(expected)
+            .hasMessageThat()
+            .contains("Exception while deserializing value for key 'a'")
     }
 
-    @Override
-    public void serialize(SerializationContext context, Dummy value, CodedOutputStream codedOut)
-        throws SerializationException {
-      if (throwsOnSerialization) {
-        throw new SerializationException("Expected failure");
-      }
-    }
+    private class Dummy
 
-    @Override
-    public Dummy deserialize(DeserializationContext context, CodedInputStream codedIn)
-        throws SerializationException {
-      Preconditions.checkState(!throwsOnSerialization);
-      throw new SerializationException("Expected failure");
+    private class DummyThrowingCodec(private val throwsOnSerialization: Boolean) : ObjectCodec<Dummy?> {
+        val encodedClass: java.lang.Class<Dummy?>
+            get() = com.google.devtools.build.lib.skyframe.serialization.ImmutableBiMapCodecTest.Dummy::class.java
+
+        @Throws(SerializationException::class)
+        public override fun serialize(context: SerializationContext?, value: Dummy?, codedOut: CodedOutputStream?) {
+            if (throwsOnSerialization) {
+                throw SerializationException("Expected failure")
+            }
+        }
+
+        @Throws(SerializationException::class)
+        public override fun deserialize(context: DeserializationContext?, codedIn: CodedInputStream?): Dummy? {
+            com.google.common.base.Preconditions.checkState(!throwsOnSerialization)
+            throw SerializationException("Expected failure")
+        }
     }
-  }
 }

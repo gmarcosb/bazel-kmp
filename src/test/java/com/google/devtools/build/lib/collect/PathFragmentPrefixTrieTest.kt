@@ -11,147 +11,148 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.collect;
+package com.google.devtools.build.lib.collect
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.collect.PathFragmentPrefixTrie.PathFragmentAlreadyAddedException
 
-import com.google.devtools.build.lib.collect.PathFragmentPrefixTrie.PathFragmentAlreadyAddedException;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Unit tests for [PathFragmentPrefixTrie].  */
+@RunWith(JUnit4::class)
+class PathFragmentPrefixTrieTest {
+    @org.junit.Test
+    fun testEmpty() {
+        val trie: PathFragmentPrefixTrie = PathFragmentPrefixTrie()
 
-/** Unit tests for {@link PathFragmentPrefixTrie}. */
-@RunWith(JUnit4.class)
-public class PathFragmentPrefixTrieTest {
+        assertThat(trie.includes(PathFragment.create("a"))).isFalse()
+        assertThat(trie.includes(PathFragment.create("a/b"))).isFalse()
+    }
 
-  @Test
-  public void testEmpty() {
-    PathFragmentPrefixTrie trie = new PathFragmentPrefixTrie();
+    @org.junit.Test
+    fun testEmptyPathFragment_isDisallowedForPut() {
+        val trie: PathFragmentPrefixTrie = PathFragmentPrefixTrie()
 
-    assertThat(trie.includes(PathFragment.create("a"))).isFalse();
-    assertThat(trie.includes(PathFragment.create("a/b"))).isFalse();
-  }
+        val e: java.lang.IllegalArgumentException? =
+            org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+                java.lang.IllegalArgumentException::class.java,
+                org.junit.function.ThrowingRunnable { trie.put(PathFragment.EMPTY_FRAGMENT, true) })
+        Truth.assertThat(e).hasMessageThat().contains("path fragment cannot be the empty fragment.")
+    }
 
-  @Test
-  public void testEmptyPathFragment_isDisallowedForPut() {
-    PathFragmentPrefixTrie trie = new PathFragmentPrefixTrie();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSimpleInclusions() {
+        val trie: PathFragmentPrefixTrie = PathFragmentPrefixTrie()
 
-    IllegalArgumentException e =
-        assertThrows(
-            IllegalArgumentException.class, () -> trie.put(PathFragment.EMPTY_FRAGMENT, true));
-    assertThat(e).hasMessageThat().contains("path fragment cannot be the empty fragment.");
-  }
+        trie.put(PathFragment.create("a"), true)
+        trie.put(PathFragment.create("b"), true)
 
-  @Test
-  public void testSimpleInclusions() throws Exception {
-    PathFragmentPrefixTrie trie = new PathFragmentPrefixTrie();
+        assertThat(trie.includes(PathFragment.EMPTY_FRAGMENT)).isFalse()
+        assertThat(trie.includes(PathFragment.create("a"))).isTrue()
+        assertThat(trie.includes(PathFragment.create("a/b"))).isTrue()
+        assertThat(trie.includes(PathFragment.create("a/b/c"))).isTrue()
+        assertThat(trie.includes(PathFragment.create("b"))).isTrue()
+        assertThat(trie.includes(PathFragment.create("c"))).isFalse()
+    }
 
-    trie.put(PathFragment.create("a"), true);
-    trie.put(PathFragment.create("b"), true);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSimpleExclusions() {
+        val trie: PathFragmentPrefixTrie = PathFragmentPrefixTrie()
 
-    assertThat(trie.includes(PathFragment.EMPTY_FRAGMENT)).isFalse();
-    assertThat(trie.includes(PathFragment.create("a"))).isTrue();
-    assertThat(trie.includes(PathFragment.create("a/b"))).isTrue();
-    assertThat(trie.includes(PathFragment.create("a/b/c"))).isTrue();
-    assertThat(trie.includes(PathFragment.create("b"))).isTrue();
-    assertThat(trie.includes(PathFragment.create("c"))).isFalse();
-  }
+        trie.put(PathFragment.create("a"), true)
+        trie.put(PathFragment.create("a/b"), false)
+        trie.put(PathFragment.create("a/b/c"), true)
 
-  @Test
-  public void testSimpleExclusions() throws Exception {
-    PathFragmentPrefixTrie trie = new PathFragmentPrefixTrie();
+        assertThat(trie.includes(PathFragment.create("a"))).isTrue()
+        assertThat(trie.includes(PathFragment.create("a/b"))).isFalse()
+        assertThat(trie.includes(PathFragment.create("a/b/c"))).isTrue()
+        assertThat(trie.includes(PathFragment.create("a/b/d"))).isFalse()
+    }
 
-    trie.put(PathFragment.create("a"), true);
-    trie.put(PathFragment.create("a/b"), false);
-    trie.put(PathFragment.create("a/b/c"), true);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAncestors() {
+        val trie: PathFragmentPrefixTrie = PathFragmentPrefixTrie()
 
-    assertThat(trie.includes(PathFragment.create("a"))).isTrue();
-    assertThat(trie.includes(PathFragment.create("a/b"))).isFalse();
-    assertThat(trie.includes(PathFragment.create("a/b/c"))).isTrue();
-    assertThat(trie.includes(PathFragment.create("a/b/d"))).isFalse();
-  }
+        trie.put(PathFragment.create("a/b/c"), true)
+        assertThat(trie.includes(PathFragment.create("a"))).isFalse()
+        assertThat(trie.includes(PathFragment.create("a/b"))).isFalse()
+        assertThat(trie.includes(PathFragment.create("a/b/c"))).isTrue() // toggled explicitly
+        assertThat(trie.includes(PathFragment.create("a/b/c/d"))).isTrue() // toggled automatically
 
-  @Test
-  public void testAncestors() throws Exception {
-    PathFragmentPrefixTrie trie = new PathFragmentPrefixTrie();
+        trie.put(PathFragment.create("a/b/c/d"), false)
+        assertThat(trie.includes(PathFragment.create("a"))).isFalse()
+        assertThat(trie.includes(PathFragment.create("a/b"))).isFalse()
+        assertThat(trie.includes(PathFragment.create("a/b/c"))).isTrue()
+        assertThat(trie.includes(PathFragment.create("a/b/c/d"))).isFalse() // toggled explicitly
 
-    trie.put(PathFragment.create("a/b/c"), true);
-    assertThat(trie.includes(PathFragment.create("a"))).isFalse();
-    assertThat(trie.includes(PathFragment.create("a/b"))).isFalse();
-    assertThat(trie.includes(PathFragment.create("a/b/c"))).isTrue(); // toggled explicitly
-    assertThat(trie.includes(PathFragment.create("a/b/c/d"))).isTrue(); // toggled automatically
+        trie.put(PathFragment.create("a"), true)
 
-    trie.put(PathFragment.create("a/b/c/d"), false);
-    assertThat(trie.includes(PathFragment.create("a"))).isFalse();
-    assertThat(trie.includes(PathFragment.create("a/b"))).isFalse();
-    assertThat(trie.includes(PathFragment.create("a/b/c"))).isTrue();
-    assertThat(trie.includes(PathFragment.create("a/b/c/d"))).isFalse(); // toggled explicitly
+        assertThat(trie.includes(PathFragment.create("a"))).isTrue() // toggled explicitly
+        assertThat(trie.includes(PathFragment.create("a/b"))).isTrue() // toggled automatically
+        assertThat(trie.includes(PathFragment.create("a/b/c"))).isTrue()
+        assertThat(trie.includes(PathFragment.create("a/b/c/d"))).isFalse()
 
-    trie.put(PathFragment.create("a"), true);
+        trie.put(PathFragment.create("a/b"), false)
 
-    assertThat(trie.includes(PathFragment.create("a"))).isTrue(); // toggled explicitly
-    assertThat(trie.includes(PathFragment.create("a/b"))).isTrue(); // toggled automatically
-    assertThat(trie.includes(PathFragment.create("a/b/c"))).isTrue();
-    assertThat(trie.includes(PathFragment.create("a/b/c/d"))).isFalse();
+        assertThat(trie.includes(PathFragment.create("a"))).isTrue()
+        assertThat(trie.includes(PathFragment.create("a/b"))).isFalse() // toggled explicitly
+        assertThat(trie.includes(PathFragment.create("a/b/c"))).isTrue()
+        assertThat(trie.includes(PathFragment.create("a/b/c/d"))).isFalse()
+    }
 
-    trie.put(PathFragment.create("a/b"), false);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSamePathFragmentIncludedAndExcluded_isDisallowed() {
+        val trie: PathFragmentPrefixTrie = PathFragmentPrefixTrie()
 
-    assertThat(trie.includes(PathFragment.create("a"))).isTrue();
-    assertThat(trie.includes(PathFragment.create("a/b"))).isFalse(); // toggled explicitly
-    assertThat(trie.includes(PathFragment.create("a/b/c"))).isTrue();
-    assertThat(trie.includes(PathFragment.create("a/b/c/d"))).isFalse();
-  }
+        trie.put(PathFragment.create("a/b/c"), false)
+        var e: PathFragmentAlreadyAddedException? =
+            org.junit.Assert.assertThrows<T?>(
+                PathFragmentAlreadyAddedException::class.java,
+                org.junit.function.ThrowingRunnable { trie.put(PathFragment.create("a/b/c"), true) })
+        assertThat(e)
+            .hasMessageThat()
+            .contains(
+                "a/b/c has already been explicitly marked as excluded. Current state: [included:"
+                        + " [], excluded: [a/b/c]]"
+            )
 
-  @Test
-  public void testSamePathFragmentIncludedAndExcluded_isDisallowed() throws Exception {
-    PathFragmentPrefixTrie trie = new PathFragmentPrefixTrie();
+        trie.put(PathFragment.create("a/b"), true)
 
-    trie.put(PathFragment.create("a/b/c"), false);
-    PathFragmentAlreadyAddedException e =
-        assertThrows(
-            PathFragmentAlreadyAddedException.class,
-            () -> trie.put(PathFragment.create("a/b/c"), true));
-    assertThat(e)
-        .hasMessageThat()
-        .contains(
-            "a/b/c has already been explicitly marked as excluded. Current state: [included:"
-                + " [], excluded: [a/b/c]]");
+        e =
+            org.junit.Assert.assertThrows<T?>(
+                PathFragmentAlreadyAddedException::class.java,
+                org.junit.function.ThrowingRunnable { trie.put(PathFragment.create("a/b"), false) })
+        assertThat(e)
+            .hasMessageThat()
+            .contains(
+                "a/b has already been explicitly marked as included. Current state: [included:"
+                        + " [a/b], excluded: [a/b/c]]"
+            )
+    }
 
-    trie.put(PathFragment.create("a/b"), true);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStringRepr() {
+        val trie: PathFragmentPrefixTrie = PathFragmentPrefixTrie()
 
-    e =
-        assertThrows(
-            PathFragmentAlreadyAddedException.class,
-            () -> trie.put(PathFragment.create("a/b"), false));
-    assertThat(e)
-        .hasMessageThat()
-        .contains(
-            "a/b has already been explicitly marked as included. Current state: [included:"
-                + " [a/b], excluded: [a/b/c]]");
-  }
+        trie.put(PathFragment.create("a"), true)
+        trie.put(PathFragment.create("a/b"), false)
+        trie.put(PathFragment.create("a/b/c"), true)
+        trie.put(PathFragment.create("a/b/d"), false)
+        trie.put(PathFragment.create("e"), true)
 
-  @Test
-  public void testStringRepr() throws Exception {
-    PathFragmentPrefixTrie trie = new PathFragmentPrefixTrie();
+        assertThat(trie.toString()).isEqualTo("[included: [a, a/b/c, e], excluded: [a/b, a/b/d]]")
+    }
 
-    trie.put(PathFragment.create("a"), true);
-    trie.put(PathFragment.create("a/b"), false);
-    trie.put(PathFragment.create("a/b/c"), true);
-    trie.put(PathFragment.create("a/b/d"), false);
-    trie.put(PathFragment.create("e"), true);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testHasIncludedPaths() {
+        val trie: PathFragmentPrefixTrie = PathFragmentPrefixTrie()
 
-    assertThat(trie.toString()).isEqualTo("[included: [a, a/b/c, e], excluded: [a/b, a/b/d]]");
-  }
+        assertThat(trie.hasIncludedPaths()).isFalse()
 
-  @Test
-  public void testHasIncludedPaths() throws Exception {
-    PathFragmentPrefixTrie trie = new PathFragmentPrefixTrie();
-
-    assertThat(trie.hasIncludedPaths()).isFalse();
-
-    trie.put(PathFragment.create("a"), true);
-    assertThat(trie.hasIncludedPaths()).isTrue();
-  }
+        trie.put(PathFragment.create("a"), true)
+        assertThat(trie.hasIncludedPaths()).isTrue()
+    }
 }

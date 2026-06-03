@@ -11,34 +11,30 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.objc
 
-package com.google.devtools.build.lib.rules.objc;
+import com.google.common.truth.Subject
+import com.google.devtools.build.lib.actions.CommandAction
+import org.junit.Test
 
-import static com.google.common.truth.Truth.assertThat;
+/** Tests for cc_library with Apple-specific logic.  */
+@RunWith(JUnit4::class)
+class CcLibraryTest : ObjcRuleTestCase() {
+    override fun createLibraryTargetWriter(labelString: String?): ScratchAttributeWriter {
+        return ScratchAttributeWriter.fromLabelString(
+            this,
+            "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
+            "cc_library",
+            labelString
+        )
+    }
 
-import com.google.devtools.build.lib.actions.CommandAction;
-import com.google.devtools.build.lib.analysis.util.ScratchAttributeWriter;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for cc_library with Apple-specific logic. */
-@RunWith(JUnit4.class)
-public class CcLibraryTest extends ObjcRuleTestCase {
-  @Override
-  protected ScratchAttributeWriter createLibraryTargetWriter(String labelString) {
-    return ScratchAttributeWriter.fromLabelString(
-        this,
-        "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
-        "cc_library",
-        labelString);
-  }
-
-  @Test
-  public void testGenerateDsymFlagPropagatesToCcLibraryFeature() throws Exception {
-    useConfiguration("--apple_generate_dsym");
-    createLibraryTargetWriter("//cc/lib").setList("srcs", "a.cc").write();
-    CommandAction compileAction = compileAction("//cc/lib", "a.o");
-    assertThat(compileAction.getArguments()).contains("-DDUMMY_GENERATE_DSYM_FILE");
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testGenerateDsymFlagPropagatesToCcLibraryFeature() {
+        useConfiguration("--apple_generate_dsym")
+        createLibraryTargetWriter("//cc/lib").setList("srcs", "a.cc").write()
+        val compileAction: CommandAction = compileAction("//cc/lib", "a.o")
+        Subject.contains("-DDUMMY_GENERATE_DSYM_FILE")
+    }
 }

@@ -11,102 +11,83 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import java.util.Collection;
-import java.util.Map;
-import java.util.function.Consumer;
-import javax.annotation.Nullable;
+import com.google.devtools.build.skyframe.DeterministicHelper.DeterministicProcessableGraph
+import com.google.devtools.build.skyframe.NotifyingHelper
 
 /**
- * {@link DeterministicHelper.DeterministicProcessableGraph} that implements the {@link
- * InMemoryGraph} interface. Sadly, cannot be a {@link NotifyingInMemoryGraph} due to Java's
+ * [DeterministicHelper.DeterministicProcessableGraph] that implements the [ ] interface. Sadly, cannot be a [NotifyingInMemoryGraph] due to Java's
  * forbidding multiple inheritance.
  */
-class DeterministicInMemoryGraph extends DeterministicHelper.DeterministicProcessableGraph
-    implements InMemoryGraph {
-  DeterministicInMemoryGraph(InMemoryGraph delegate, NotifyingHelper.Listener graphListener) {
-    super(delegate, graphListener);
-  }
-
-  @Override
-  public NodeBatch createIfAbsentBatch(
-      @Nullable SkyKey requestor, Reason reason, Iterable<? extends SkyKey> keys) {
-    try {
-      return super.createIfAbsentBatch(requestor, reason, keys);
-    } catch (InterruptedException e) {
-      throw new IllegalStateException(e);
+internal class DeterministicInMemoryGraph(
+    delegate: InMemoryGraph?,
+    graphListener: com.google.devtools.build.skyframe.NotifyingHelper.Listener?
+) : DeterministicProcessableGraph(delegate, graphListener), InMemoryGraph {
+    override fun createIfAbsentBatch(
+        requestor: SkyKey?, reason: Reason?, keys: Iterable<out SkyKey?>
+    ): NodeBatch? {
+        try {
+            return super.createIfAbsentBatch(requestor, reason, keys)
+        } catch (e: java.lang.InterruptedException) {
+            throw java.lang.IllegalStateException(e)
+        }
     }
-  }
 
-  @Nullable
-  @Override
-  public NodeEntry get(@Nullable SkyKey requestor, Reason reason, SkyKey key) {
-    try {
-      return super.get(requestor, reason, key);
-    } catch (InterruptedException e) {
-      throw new IllegalStateException(e);
+    override fun get(requestor: SkyKey?, reason: Reason?, key: SkyKey?): NodeEntry? {
+        try {
+            return super.get(requestor, reason, key)
+        } catch (e: java.lang.InterruptedException) {
+            throw java.lang.IllegalStateException(e)
+        }
     }
-  }
 
-  @Override
-  public NodeBatch getBatch(
-      @Nullable SkyKey requestor, Reason reason, Iterable<? extends SkyKey> keys) {
-    try {
-      return super.getBatch(requestor, reason, keys);
-    } catch (InterruptedException e) {
-      throw new IllegalStateException(e);
+    override fun getBatch(
+        requestor: SkyKey?, reason: Reason?, keys: Iterable<out SkyKey?>?
+    ): NodeBatch? {
+        try {
+            return super.getBatch(requestor, reason, keys)
+        } catch (e: java.lang.InterruptedException) {
+            throw java.lang.IllegalStateException(e)
+        }
     }
-  }
 
-  @Override
-  public Map<SkyKey, ? extends NodeEntry> getBatchMap(
-      @Nullable SkyKey requestor, Reason reason, Iterable<? extends SkyKey> keys) {
-    try {
-      return super.getBatchMap(requestor, reason, keys);
-    } catch (InterruptedException e) {
-      throw new IllegalStateException(e);
+    override fun getBatchMap(
+        requestor: SkyKey?, reason: Reason?, keys: Iterable<out SkyKey?>?
+    ): MutableMap<SkyKey?, out NodeEntry?>? {
+        try {
+            return super.getBatchMap(requestor, reason, keys)
+        } catch (e: java.lang.InterruptedException) {
+            throw java.lang.IllegalStateException(e)
+        }
     }
-  }
 
-  @Override
-  public Map<SkyKey, SkyValue> getValues() {
-    return ((InMemoryGraph) delegate).values;
-  }
+    val values: MutableMap<SkyKey, SkyValue>
+        get() = (delegate as InMemoryGraph).values
 
-  @Override
-  public Map<SkyKey, SkyValue> getDoneValues() {
-    return ((InMemoryGraph) delegate).doneValues;
-  }
+    val doneValues: MutableMap<SkyKey, SkyValue>
+        get() = (delegate as InMemoryGraph).doneValues
 
-  @Override
-  public Collection<InMemoryNodeEntry> getAllNodeEntries() {
-    return ((InMemoryGraph) delegate).allNodeEntries;
-  }
+    val allNodeEntries: MutableCollection<InMemoryNodeEntry>
+        get() = (delegate as InMemoryGraph).allNodeEntries
 
-  @Override
-  public void parallelForEach(Consumer<InMemoryNodeEntry> consumer) {
-    ((InMemoryGraph) delegate).parallelForEach(consumer);
-  }
+    public override fun parallelForEach(consumer: java.util.function.Consumer<InMemoryNodeEntry?>?) {
+        (delegate as InMemoryGraph).parallelForEach(consumer)
+    }
 
-  @Override
-  public void cleanupInterningPools() {
-    ((InMemoryGraph) delegate).cleanupInterningPools();
-  }
+    public override fun cleanupInterningPools() {
+        (delegate as InMemoryGraph).cleanupInterningPools()
+    }
 
-  @Override
-  public void removeIfDone(SkyKey key) {
-    ((InMemoryGraph) delegate).removeIfDone(key);
-  }
+    public override fun removeIfDone(key: SkyKey?) {
+        (delegate as InMemoryGraph).removeIfDone(key)
+    }
 
-  @Override
-  @Nullable
-  public InMemoryNodeEntry getIfPresent(SkyKey key) {
-    return ((InMemoryGraph) delegate).getIfPresent(key);
-  }
+    public override fun getIfPresent(key: SkyKey?): InMemoryNodeEntry? {
+        return (delegate as InMemoryGraph).getIfPresent(key)
+    }
 
-  @Override
-  public void shrinkNodeMap() {
-    ((InMemoryGraph) delegate).shrinkNodeMap();
-  }
+    public override fun shrinkNodeMap() {
+        (delegate as InMemoryGraph).shrinkNodeMap()
+    }
 }

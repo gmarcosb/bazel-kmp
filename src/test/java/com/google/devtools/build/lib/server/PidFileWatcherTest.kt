@@ -11,94 +11,90 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.server
 
-package com.google.devtools.build.lib.server;
+import com.google.devtools.build.lib.vfs.DigestHashFunction
+import org.junit.Assert
+import org.junit.Test
+import java.nio.charset.StandardCharsets
 
-import static com.google.common.truth.Truth.assertThat;
-import static java.nio.charset.StandardCharsets.US_ASCII;
-import static org.junit.Assert.assertThrows;
+/** Tests for [PidFileWatcher].  */
+@RunWith(JUnit4::class)
+class PidFileWatcherTest {
+    private var pidFile: Path? = null
+    private var underTest: PidFileWatcher? = null
 
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import java.io.IOException;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @Before
+    fun setUp() {
+        val fileSystem: FileSystem = InMemoryFileSystem(DigestHashFunction.SHA256)
+        pidFile = fileSystem.getPath("/pid")
+        underTest =
+            PidFileWatcher(
+                pidFile,
+                EXPECTED_PID,
+                {
+                    throw THROWN_ON_HALT
+                })
+    }
 
-/** Tests for {@link PidFileWatcher}. */
-@RunWith(JUnit4.class)
-public class PidFileWatcherTest {
+    @Test
+    @Throws(IOException::class)
+    fun testMissingPidFileHaltsProgram() {
+        // Delete just in case.
+        pidFile.delete()
 
-  private static final int EXPECTED_PID = 42;
-  private static final IllegalStateException THROWN_ON_HALT = new IllegalStateException("crash!");
+        assertPidCheckHaltsProgram()
+    }
 
-  private Path pidFile;
-  private PidFileWatcher underTest;
+    @Test
+    @Throws(IOException::class)
+    fun testEmptyPidFileCountsAsChanged() {
+        FileSystemUtils.writeContent(pidFile, ByteArray(0))
 
-  @Before
-  public void setUp() {
-    FileSystem fileSystem = new InMemoryFileSystem(DigestHashFunction.SHA256);
-    pidFile = fileSystem.getPath("/pid");
-    underTest =
-        new PidFileWatcher(
-            pidFile,
-            EXPECTED_PID,
-            () -> {
-              throw THROWN_ON_HALT;
-            });
-  }
+        assertPidCheckHaltsProgram()
+    }
 
-  @Test
-  public void testMissingPidFileHaltsProgram() throws IOException {
-    // Delete just in case.
-    pidFile.delete();
+    @Test
+    @Throws(IOException::class)
+    fun testGarbagePidFileCountsAsChanged() {
+        FileSystemUtils.writeContent(pidFile, "junk".toByteArray(StandardCharsets.US_ASCII))
 
-    assertPidCheckHaltsProgram();
-  }
+        assertPidCheckHaltsProgram()
+    }
 
-  @Test
-  public void testEmptyPidFileCountsAsChanged() throws IOException {
-    FileSystemUtils.writeContent(pidFile, new byte[0]);
+    @Test
+    @Throws(IOException::class)
+    fun testPidFileContinuesExecution() {
+        FileSystemUtils.writeContent(pidFile, "42".toByteArray(StandardCharsets.US_ASCII))
 
-    assertPidCheckHaltsProgram();
-  }
+        assertThat(underTest.runPidFileChecks()).isTrue()
+    }
 
-  @Test
-  public void testGarbagePidFileCountsAsChanged() throws IOException {
-    FileSystemUtils.writeContent(pidFile, "junk".getBytes(US_ASCII));
+    @Test
+    @Throws(IOException::class)
+    fun testPidFileTrailingWhitespaceNotTolerated() {
+        FileSystemUtils.writeContent(pidFile, "42\n".toByteArray(StandardCharsets.US_ASCII))
 
-    assertPidCheckHaltsProgram();
-  }
+        assertPidCheckHaltsProgram()
+    }
 
-  @Test
-  public void testPidFileContinuesExecution() throws IOException {
-    FileSystemUtils.writeContent(pidFile, "42".getBytes(US_ASCII));
+    @Test
+    @Throws(IOException::class)
+    fun testPidFileChangeAfterShutdownNotificationStopsWatcher() {
+        FileSystemUtils.writeContent(pidFile, "42\n".toByteArray(StandardCharsets.US_ASCII))
 
-    assertThat(underTest.runPidFileChecks()).isTrue();
-  }
+        underTest.signalShutdown()
+        assertThat(underTest.runPidFileChecks()).isFalse()
+    }
 
-  @Test
-  public void testPidFileTrailingWhitespaceNotTolerated() throws IOException {
-    FileSystemUtils.writeContent(pidFile, "42\n".getBytes(US_ASCII));
+    private fun assertPidCheckHaltsProgram() {
+        val expected =
+            Assert.assertThrows<IllegalStateException?>(IllegalStateException::class.java, underTest::runPidFileChecks)
+        Truth.assertThat(expected).isSameInstanceAs(THROWN_ON_HALT)
+    }
 
-    assertPidCheckHaltsProgram();
-  }
-
-  @Test
-  public void testPidFileChangeAfterShutdownNotificationStopsWatcher() throws IOException {
-    FileSystemUtils.writeContent(pidFile, "42\n".getBytes(US_ASCII));
-
-    underTest.signalShutdown();
-    assertThat(underTest.runPidFileChecks()).isFalse();
-  }
-
-  private void assertPidCheckHaltsProgram() {
-    IllegalStateException expected =
-        assertThrows(IllegalStateException.class, underTest::runPidFileChecks);
-    assertThat(expected).isSameInstanceAs(THROWN_ON_HALT);
-  }
+    companion object {
+        private const val EXPECTED_PID = 42
+        private val THROWN_ON_HALT = IllegalStateException("crash!")
+    }
 }

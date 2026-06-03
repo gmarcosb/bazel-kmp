@@ -11,140 +11,140 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.server;
+package com.google.devtools.build.lib.server
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.server.InstallBaseGarbageCollector.DELETED_SUFFIX;
-import static com.google.devtools.build.lib.server.InstallBaseGarbageCollector.LOCK_SUFFIX;
+import com.google.devtools.build.lib.server.InstallBaseGarbageCollector.DELETED_SUFFIX
+import com.google.devtools.build.lib.testutil.TestUtils
+import org.junit.Test
+import java.time.Duration
 
-import com.google.devtools.build.lib.testutil.ExternalFileSystemLock;
-import com.google.devtools.build.lib.testutil.TestUtils;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.io.IOException;
-import java.time.Duration;
-import java.time.Instant;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [InstallBaseGarbageCollector].  */
+@RunWith(JUnit4::class)
+class InstallBaseGarbageCollectorTest {
+    private var rootDir: Path? = null
+    private var ownInstallBase: Path? = null
 
-/** Tests for {@link InstallBaseGarbageCollector}. */
-@RunWith(JUnit4.class)
-public final class InstallBaseGarbageCollectorTest {
-  private static final String OWN_MD5 = "012345678901234567890123456789012";
-  private static final String OTHER_MD5 = "abcdefabcdefabcdefabcdefabcdefab";
-
-  private Path rootDir;
-  private Path ownInstallBase;
-
-  @Before
-  public void setUp() throws Exception {
-    rootDir = TestUtils.createUniqueTmpDir(null);
-    ownInstallBase = createSubdirectory(OWN_MD5);
-  }
-
-  @Test
-  public void onlyOwnInstallBase_notCollected() throws Exception {
-    run(Duration.ZERO);
-
-    assertDirectoryContents(OWN_MD5);
-  }
-
-  @Test
-  public void otherInstallBase_notStaleAndUnlocked_notCollected() throws Exception {
-    Path otherInstallBase = createSubdirectory(OTHER_MD5);
-    setAge(otherInstallBase, Duration.ofDays(1));
-
-    run(Duration.ofDays(2));
-
-    assertDirectoryContents(OWN_MD5, OTHER_MD5, OTHER_MD5 + LOCK_SUFFIX);
-  }
-
-  @Test
-  public void otherInstallBase_notStaleAndLocked_notCollected() throws Exception {
-    Path otherInstallBase = createSubdirectory(OTHER_MD5);
-    setAge(otherInstallBase, Duration.ofDays(1));
-
-    try (var lock = ExternalFileSystemLock.getShared(rootDir.getChild(OTHER_MD5 + LOCK_SUFFIX))) {
-      run(Duration.ofDays(2));
+    @Before
+    @Throws(Exception::class)
+    fun setUp() {
+        rootDir = TestUtils.createUniqueTmpDir(null)
+        ownInstallBase = createSubdirectory(OWN_MD5)
     }
 
-    assertDirectoryContents(OWN_MD5, OTHER_MD5, OTHER_MD5 + LOCK_SUFFIX);
-  }
+    @Test
+    @Throws(Exception::class)
+    fun onlyOwnInstallBase_notCollected() {
+        run(Duration.ZERO)
 
-  @Test
-  public void otherInstallBase_staleAndUnlocked_collected() throws Exception {
-    Path otherInstallBase = createSubdirectory(OTHER_MD5);
-    setAge(otherInstallBase, Duration.ofDays(3));
-
-    run(Duration.ofDays(2));
-
-    assertDirectoryContents(OWN_MD5);
-  }
-
-  @Test
-  public void otherInstallBase_staleAndLocked_notCollected() throws Exception {
-    Path otherInstallBase = createSubdirectory(OTHER_MD5);
-    setAge(otherInstallBase, Duration.ofDays(3));
-
-    try (var lock = ExternalFileSystemLock.getShared(rootDir.getChild(OTHER_MD5 + LOCK_SUFFIX))) {
-      run(Duration.ofDays(2));
+        assertDirectoryContents(OWN_MD5)
     }
 
-    assertDirectoryContents(OWN_MD5, OTHER_MD5, OTHER_MD5 + LOCK_SUFFIX);
-  }
+    @Test
+    @Throws(Exception::class)
+    fun otherInstallBase_notStaleAndUnlocked_notCollected() {
+        val otherInstallBase: Path = createSubdirectory(OTHER_MD5)
+        setAge(otherInstallBase, Duration.ofDays(1))
 
-  @Test
-  public void incompleteDeletion_collected() throws Exception {
-    Path incompleteDeletion = createSubdirectory(OTHER_MD5 + DELETED_SUFFIX);
-    setAge(incompleteDeletion, Duration.ofDays(2));
+        run(Duration.ofDays(2))
 
-    run(Duration.ofDays(1));
+        assertDirectoryContents(OWN_MD5, OTHER_MD5, OTHER_MD5 + LOCK_SUFFIX)
+    }
 
-    assertDirectoryContents(OWN_MD5);
-  }
+    @Test
+    @Throws(Exception::class)
+    fun otherInstallBase_notStaleAndLocked_notCollected() {
+        val otherInstallBase: Path = createSubdirectory(OTHER_MD5)
+        setAge(otherInstallBase, Duration.ofDays(1))
 
-  @Test
-  public void otherFilesAndDirectories_notCollected() throws Exception {
-    Path otherFile = rootDir.getChild("file");
-    FileSystemUtils.writeContentAsLatin1(otherFile, "content");
-    setAge(otherFile, Duration.ofDays(2));
-    Path otherDir = rootDir.getChild("dir");
-    otherDir.createDirectoryAndParents();
-    setAge(otherDir, Duration.ofDays(2));
-    Path otherSymlink = rootDir.getChild("symlink");
-    otherSymlink.createSymbolicLink(PathFragment.create(OWN_MD5));
+        ExternalFileSystemLock.getShared(rootDir.getChild(OTHER_MD5 + LOCK_SUFFIX)).use { lock ->
+            run(Duration.ofDays(2))
+        }
+        assertDirectoryContents(OWN_MD5, OTHER_MD5, OTHER_MD5 + LOCK_SUFFIX)
+    }
 
-    run(Duration.ofDays(1));
+    @Test
+    @Throws(Exception::class)
+    fun otherInstallBase_staleAndUnlocked_collected() {
+        val otherInstallBase: Path = createSubdirectory(OTHER_MD5)
+        setAge(otherInstallBase, Duration.ofDays(3))
 
-    assertDirectoryContents(OWN_MD5, "file", "dir", "symlink");
-  }
+        run(Duration.ofDays(2))
 
-  private Path createSubdirectory(String name) throws IOException {
-    Path dir = rootDir.getChild(name);
-    Path file = dir.getChild("file");
-    Path subdir = dir.getChild("subdir");
-    Path subfile = subdir.getChild("file");
-    dir.createDirectoryAndParents();
-    subdir.createDirectoryAndParents();
-    FileSystemUtils.writeContentAsLatin1(file, "content");
-    FileSystemUtils.writeContentAsLatin1(subfile, "content");
+        assertDirectoryContents(OWN_MD5)
+    }
 
-    return dir;
-  }
+    @Test
+    @Throws(Exception::class)
+    fun otherInstallBase_staleAndLocked_notCollected() {
+        val otherInstallBase: Path = createSubdirectory(OTHER_MD5)
+        setAge(otherInstallBase, Duration.ofDays(3))
 
-  private void setAge(Path path, Duration age) throws IOException {
-    path.setLastModifiedTime(Instant.now().minus(age).toEpochMilli());
-  }
+        ExternalFileSystemLock.getShared(rootDir.getChild(OTHER_MD5 + LOCK_SUFFIX)).use { lock ->
+            run(Duration.ofDays(2))
+        }
+        assertDirectoryContents(OWN_MD5, OTHER_MD5, OTHER_MD5 + LOCK_SUFFIX)
+    }
 
-  private void run(Duration maxAge) throws Exception {
-    new InstallBaseGarbageCollector(rootDir, ownInstallBase, maxAge).run();
-  }
+    @Test
+    @Throws(Exception::class)
+    fun incompleteDeletion_collected() {
+        val incompleteDeletion: Path = createSubdirectory(OTHER_MD5 + DELETED_SUFFIX)
+        setAge(incompleteDeletion, Duration.ofDays(2))
 
-  private void assertDirectoryContents(Object... expected) throws Exception {
-    assertThat(rootDir.getDirectoryEntries().stream().map(Path::getBaseName))
-        .containsExactly(expected);
-  }
+        run(Duration.ofDays(1))
+
+        assertDirectoryContents(OWN_MD5)
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun otherFilesAndDirectories_notCollected() {
+        val otherFile: Path = rootDir.getChild("file")
+        FileSystemUtils.writeContentAsLatin1(otherFile, "content")
+        setAge(otherFile, Duration.ofDays(2))
+        val otherDir: Path = rootDir.getChild("dir")
+        otherDir.createDirectoryAndParents()
+        setAge(otherDir, Duration.ofDays(2))
+        val otherSymlink: Path = rootDir.getChild("symlink")
+        otherSymlink.createSymbolicLink(PathFragment.create(OWN_MD5))
+
+        run(Duration.ofDays(1))
+
+        assertDirectoryContents(OWN_MD5, "file", "dir", "symlink")
+    }
+
+    @Throws(IOException::class)
+    private fun createSubdirectory(name: String?): Path {
+        val dir: Path = rootDir.getChild(name)
+        val file: Path? = dir.getChild("file")
+        val subdir: Path = dir.getChild("subdir")
+        val subfile: Path? = subdir.getChild("file")
+        dir.createDirectoryAndParents()
+        subdir.createDirectoryAndParents()
+        FileSystemUtils.writeContentAsLatin1(file, "content")
+        FileSystemUtils.writeContentAsLatin1(subfile, "content")
+
+        return dir
+    }
+
+    @Throws(IOException::class)
+    private fun setAge(path: Path, age: Duration) {
+        path.setLastModifiedTime(Instant.now().minus(age).toEpochMilli())
+    }
+
+    @Throws(Exception::class)
+    private fun run(maxAge: Duration?) {
+        InstallBaseGarbageCollector(rootDir, ownInstallBase, maxAge).run()
+    }
+
+    @Throws(Exception::class)
+    private fun assertDirectoryContents(vararg expected: Any?) {
+        assertThat(rootDir.getDirectoryEntries().stream().map(Path::getBaseName))
+            .containsExactly(expected)
+    }
+
+    companion object {
+        private const val OWN_MD5 = "012345678901234567890123456789012"
+        private const val OTHER_MD5 = "abcdefabcdefabcdefabcdefabcdefab"
+    }
 }

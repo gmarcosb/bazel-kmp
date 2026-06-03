@@ -11,31 +11,32 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util;
+package com.google.devtools.build.lib.util
 
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.devtools.build.lib.clock.Clock;
-import com.google.devtools.build.lib.clock.JavaClock;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.clock.Clock.currentTimeMillis
+import com.google.devtools.build.lib.clock.Clock.nanoTime
+import com.google.devtools.build.lib.exec.util.SpawnBuilder.build
+import com.google.devtools.common.options.testing.ConverterTesterMap.Builder.build
+import net.starlark.java.syntax.FileOptions.Builder.build
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
 /**
  * Tests for the Clock instance based on the Java System class.
  */
-@RunWith(JUnit4.class)
-public class JavaClockTest {
+@RunWith(JUnit4::class)
+class JavaClockTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun javaClockIsAdvancing() {
+        val clock: com.google.devtools.build.lib.clock.Clock = com.google.devtools.build.lib.clock.JavaClock()
+        val millis: Long = clock.currentTimeMillis()
+        val nanos: Long = clock.nanoTime()
 
-  @Test
-  public void javaClockIsAdvancing() throws Exception {
-    Clock clock = new JavaClock();
-    long millis = clock.currentTimeMillis();
-    long nanos = clock.nanoTime();
+        java.lang.Thread.sleep(10)
 
-    Thread.sleep(10);
-
-    assertThat(clock.currentTimeMillis()).isNotEqualTo(millis);
-    assertThat(clock.nanoTime()).isNotEqualTo(nanos);
-  }
+        Truth.assertThat(clock.currentTimeMillis()).isNotEqualTo(millis)
+        Truth.assertThat(clock.nanoTime()).isNotEqualTo(nanos)
+    }
 }

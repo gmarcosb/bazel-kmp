@@ -11,145 +11,132 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.shell
 
-package com.google.devtools.build.lib.shell;
+import com.google.devtools.build.lib.sandbox.LinuxSandboxCommandLineBuilder
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assume.assumeTrue;
+/** Unit tests for [Command]s that are run using the `linux-sandbox`.  */
+@RunWith(JUnit4::class)
+class CommandUsingLinuxSandboxTest {
+    private var testFS: FileSystem? = null
+    private var runfilesDir: Path? = null
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.sandbox.LinuxSandboxCommandLineBuilder;
-import com.google.devtools.build.lib.testutil.BlazeTestUtils;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import com.google.devtools.build.lib.testutil.TestUtils;
-import com.google.devtools.build.lib.unix.NativePosixFilesServiceImpl;
-import com.google.devtools.build.lib.unix.UnixFileSystem;
-import com.google.devtools.build.lib.util.OS;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import java.io.IOException;
-import java.time.Duration;
-import java.util.List;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @Before
+    fun createFileSystem() {
+        testFS =
+            UnixFileSystem(
+                DigestHashFunction.SHA256,  /* hashAttributeName= */
+                "",
+                NativePosixFilesServiceImpl()
+            )
+        runfilesDir = testFS.getPath(BlazeTestUtils.runfilesDir())
+    }
 
-/** Unit tests for {@link Command}s that are run using the {@code linux-sandbox}. */
-@RunWith(JUnit4.class)
-public final class CommandUsingLinuxSandboxTest {
-  private FileSystem testFS;
-  private Path runfilesDir;
+    private val linuxSandboxPath: Path
+        get() = runfilesDir.getRelative(TestConstants.LINUX_SANDBOX_PATH)
 
-  @Before
-  public final void createFileSystem() {
-    testFS =
-        new UnixFileSystem(
-            DigestHashFunction.SHA256,
-            /* hashAttributeName= */ "",
-            new NativePosixFilesServiceImpl());
-    runfilesDir = testFS.getPath(BlazeTestUtils.runfilesDir());
-  }
+    private val cpuTimeSpenderPath: Path
+        get() = runfilesDir.getRelative(TestConstants.CPU_TIME_SPENDER_PATH)
 
-  private Path getLinuxSandboxPath() {
-    return runfilesDir.getRelative(TestConstants.LINUX_SANDBOX_PATH);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCommand_echo() {
+        val commandArguments: com.google.common.collect.ImmutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>("echo", "colorless green ideas")
 
-  private Path getCpuTimeSpenderPath() {
-    return runfilesDir.getRelative(TestConstants.CPU_TIME_SPENDER_PATH);
-  }
+        val command: Command = Command(commandArguments, java.lang.System.getenv())
+        val commandResult: CommandResult = command.execute()
 
-  @Test
-  public void testCommand_echo() throws Exception {
-    ImmutableList<String> commandArguments = ImmutableList.of("echo", "colorless green ideas");
+        assertThat(commandResult.terminationStatus().success()).isTrue()
+        com.google.common.truth.Subject.contains("colorless green ideas")
+    }
 
-    Command command = new Command(commandArguments, System.getenv());
-    CommandResult commandResult = command.execute();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLinuxSandboxedCommand_echo() {
+        // TODO(b/62588075) Currently no linux-sandbox tool support in Windows.
+        Assume.assumeTrue(com.google.devtools.build.lib.util.OS.getCurrent() != com.google.devtools.build.lib.util.OS.WINDOWS)
+        // TODO(b/62588075) Currently no linux-sandbox tool support in MacOS.
+        Assume.assumeTrue(com.google.devtools.build.lib.util.OS.getCurrent() != com.google.devtools.build.lib.util.OS.DARWIN)
 
-    assertThat(commandResult.terminationStatus().success()).isTrue();
-    assertThat(commandResult.stdoutStream().toString()).contains("colorless green ideas");
-  }
+        val commandArguments: com.google.common.collect.ImmutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>("echo", "sleep furiously")
 
-  @Test
-  public void testLinuxSandboxedCommand_echo() throws Exception {
-    // TODO(b/62588075) Currently no linux-sandbox tool support in Windows.
-    assumeTrue(OS.getCurrent() != OS.WINDOWS);
-    // TODO(b/62588075) Currently no linux-sandbox tool support in MacOS.
-    assumeTrue(OS.getCurrent() != OS.DARWIN);
+        val fullCommandLine: MutableList<String?>? =
+            LinuxSandboxCommandLineBuilder.commandLineBuilder(this.linuxSandboxPath)
+                .buildForCommand(commandArguments)
 
-    ImmutableList<String> commandArguments = ImmutableList.of("echo", "sleep furiously");
+        val command: Command = Command(fullCommandLine, java.lang.System.getenv())
+        val commandResult: CommandResult = command.execute()
 
-    List<String> fullCommandLine =
-        LinuxSandboxCommandLineBuilder.commandLineBuilder(getLinuxSandboxPath())
-            .buildForCommand(commandArguments);
+        assertThat(commandResult.terminationStatus().success()).isTrue()
+        com.google.common.truth.Subject.contains("sleep furiously")
+    }
 
-    Command command = new Command(fullCommandLine, System.getenv());
-    CommandResult commandResult = command.execute();
+    @Throws(IOException::class, CommandException::class, java.lang.InterruptedException::class)
+    private fun checkLinuxSandboxStatistics(
+        userTimeToSpend: java.time.Duration,
+        systemTimeToSpend: java.time.Duration
+    ) {
+        val commandArguments: com.google.common.collect.ImmutableList<String?> =
+            com.google.common.collect.ImmutableList.of<E?>(
+                this.cpuTimeSpenderPath.getPathString(),
+                userTimeToSpend.toSeconds().toString(),
+                systemTimeToSpend.toSeconds().toString()
+            )
 
-    assertThat(commandResult.terminationStatus().success()).isTrue();
-    assertThat(commandResult.stdoutStream().toString()).contains("sleep furiously");
-  }
+        val outputDir: Path = com.google.devtools.build.lib.testutil.TestUtils.createUniqueTmpDir(testFS)
+        val statisticsFilePath: Path? = outputDir.getRelative("stats.out")
 
-  private void checkLinuxSandboxStatistics(Duration userTimeToSpend, Duration systemTimeToSpend)
-      throws IOException, CommandException, InterruptedException {
-    ImmutableList<String> commandArguments =
-        ImmutableList.of(
-            getCpuTimeSpenderPath().getPathString(),
-            Long.toString(userTimeToSpend.toSeconds()),
-            Long.toString(systemTimeToSpend.toSeconds()));
+        val fullCommandLine: MutableList<String?>? =
+            LinuxSandboxCommandLineBuilder.commandLineBuilder(this.linuxSandboxPath)
+                .setStatisticsPath(statisticsFilePath)
+                .buildForCommand(commandArguments)
 
-    Path outputDir = TestUtils.createUniqueTmpDir(testFS);
-    Path statisticsFilePath = outputDir.getRelative("stats.out");
+        ExecutionStatisticsTestUtil.executeCommandAndCheckStatisticsAboutCpuTimeSpent(
+            userTimeToSpend, systemTimeToSpend, fullCommandLine, statisticsFilePath
+        )
+    }
 
-    List<String> fullCommandLine =
-        LinuxSandboxCommandLineBuilder.commandLineBuilder(getLinuxSandboxPath())
-            .setStatisticsPath(statisticsFilePath)
-            .buildForCommand(commandArguments);
+    @org.junit.Test
+    @Throws(CommandException::class, IOException::class, java.lang.InterruptedException::class)
+    fun testLinuxSandboxedCommand_withStatistics_spendUserTime() {
+        // TODO(b/62588075) Currently no linux-sandbox tool support in Windows.
+        Assume.assumeTrue(com.google.devtools.build.lib.util.OS.getCurrent() != com.google.devtools.build.lib.util.OS.WINDOWS)
+        // TODO(b/62588075) Currently no linux-sandbox tool support in MacOS.
+        Assume.assumeTrue(com.google.devtools.build.lib.util.OS.getCurrent() != com.google.devtools.build.lib.util.OS.DARWIN)
 
-    ExecutionStatisticsTestUtil.executeCommandAndCheckStatisticsAboutCpuTimeSpent(
-        userTimeToSpend, systemTimeToSpend, fullCommandLine, statisticsFilePath);
-  }
+        val userTimeToSpend: java.time.Duration = java.time.Duration.ofSeconds(10)
+        val systemTimeToSpend: java.time.Duration = java.time.Duration.ZERO
 
-  @Test
-  public void testLinuxSandboxedCommand_withStatistics_spendUserTime()
-      throws CommandException, IOException, InterruptedException {
-    // TODO(b/62588075) Currently no linux-sandbox tool support in Windows.
-    assumeTrue(OS.getCurrent() != OS.WINDOWS);
-    // TODO(b/62588075) Currently no linux-sandbox tool support in MacOS.
-    assumeTrue(OS.getCurrent() != OS.DARWIN);
+        checkLinuxSandboxStatistics(userTimeToSpend, systemTimeToSpend)
+    }
 
-    Duration userTimeToSpend = Duration.ofSeconds(10);
-    Duration systemTimeToSpend = Duration.ZERO;
+    @org.junit.Test
+    @Throws(CommandException::class, IOException::class, java.lang.InterruptedException::class)
+    fun testLinuxSandboxedCommand_withStatistics_spendSystemTime() {
+        // TODO(b/62588075) Currently no linux-sandbox tool support in Windows.
+        Assume.assumeTrue(com.google.devtools.build.lib.util.OS.getCurrent() != com.google.devtools.build.lib.util.OS.WINDOWS)
+        // TODO(b/62588075) Currently no linux-sandbox tool support in MacOS.
+        Assume.assumeTrue(com.google.devtools.build.lib.util.OS.getCurrent() != com.google.devtools.build.lib.util.OS.DARWIN)
 
-    checkLinuxSandboxStatistics(userTimeToSpend, systemTimeToSpend);
-  }
+        val userTimeToSpend: java.time.Duration = java.time.Duration.ZERO
+        val systemTimeToSpend: java.time.Duration = java.time.Duration.ofSeconds(10)
 
-  @Test
-  public void testLinuxSandboxedCommand_withStatistics_spendSystemTime()
-      throws CommandException, IOException, InterruptedException {
-    // TODO(b/62588075) Currently no linux-sandbox tool support in Windows.
-    assumeTrue(OS.getCurrent() != OS.WINDOWS);
-    // TODO(b/62588075) Currently no linux-sandbox tool support in MacOS.
-    assumeTrue(OS.getCurrent() != OS.DARWIN);
+        checkLinuxSandboxStatistics(userTimeToSpend, systemTimeToSpend)
+    }
 
-    Duration userTimeToSpend = Duration.ZERO;
-    Duration systemTimeToSpend = Duration.ofSeconds(10);
+    @org.junit.Test
+    @Throws(CommandException::class, IOException::class, java.lang.InterruptedException::class)
+    fun testLinuxSandboxedCommand_withStatistics_spendUserAndSystemTime() {
+        // TODO(b/62588075) Currently no linux-sandbox tool support in Windows.
+        Assume.assumeTrue(com.google.devtools.build.lib.util.OS.getCurrent() != com.google.devtools.build.lib.util.OS.WINDOWS)
+        // TODO(b/62588075) Currently no linux-sandbox tool support in MacOS.
+        Assume.assumeTrue(com.google.devtools.build.lib.util.OS.getCurrent() != com.google.devtools.build.lib.util.OS.DARWIN)
 
-    checkLinuxSandboxStatistics(userTimeToSpend, systemTimeToSpend);
-  }
+        val userTimeToSpend: java.time.Duration = java.time.Duration.ofSeconds(10)
+        val systemTimeToSpend: java.time.Duration = java.time.Duration.ofSeconds(10)
 
-  @Test
-  public void testLinuxSandboxedCommand_withStatistics_spendUserAndSystemTime()
-      throws CommandException, IOException, InterruptedException {
-    // TODO(b/62588075) Currently no linux-sandbox tool support in Windows.
-    assumeTrue(OS.getCurrent() != OS.WINDOWS);
-    // TODO(b/62588075) Currently no linux-sandbox tool support in MacOS.
-    assumeTrue(OS.getCurrent() != OS.DARWIN);
-
-    Duration userTimeToSpend = Duration.ofSeconds(10);
-    Duration systemTimeToSpend = Duration.ofSeconds(10);
-
-    checkLinuxSandboxStatistics(userTimeToSpend, systemTimeToSpend);
-  }
+        checkLinuxSandboxStatistics(userTimeToSpend, systemTimeToSpend)
+    }
 }

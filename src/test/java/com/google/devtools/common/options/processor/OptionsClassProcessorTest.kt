@@ -11,416 +11,432 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.common.options.processor;
+package com.google.devtools.common.options.processor
 
-import static com.google.common.truth.Truth.assertAbout;
-import static com.google.testing.compile.JavaSourceSubjectFactory.javaSource;
-import static com.google.testing.compile.JavaSourcesSubjectFactory.javaSources;
+import com.google.common.truth.Truth
+import com.google.devtools.common.options.processor.OptionsClassProcessor
+import com.google.testing.compile.JavaFileObjects
+import com.google.testing.compile.JavaSourceSubjectFactory
+import com.google.testing.compile.JavaSourcesSubject
+import com.google.testing.compile.JavaSourcesSubject.SingleSourceAdapter
+import com.google.testing.compile.JavaSourcesSubjectFactory
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import javax.tools.JavaFileObject
 
-import com.google.common.io.Resources;
-import com.google.testing.compile.JavaFileObjects;
-import java.util.Arrays;
-import javax.tools.JavaFileObject;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Unit tests for [OptionsClassProcessor].  */
+@RunWith(JUnit4::class)
+class OptionsClassProcessorTest {
+    @org.junit.Test
+    fun optionsInNonOptionBasesAreRejected() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("OptionInNonOptionBase.java"))
+            .processedWith(OptionsClassProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "@Option annotated fields can only be in classes that inherit from OptionsBase."
+            )
+    }
 
-/** Unit tests for {@link OptionsClassProcessor}. */
-@RunWith(JUnit4.class)
-public class OptionsClassProcessorTest {
-  private static JavaFileObject getFile(String pathToFile) {
-    return JavaFileObjects.forResource(
-        Resources.getResource(
-            "com/google/devtools/common/options/processor/optiontestsources/" + pathToFile));
-  }
+    @org.junit.Test
+    fun privatelyDeclaredOptionsAreRejected() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("PrivateOptionField.java"))
+            .processedWith(OptionsClassProcessor())
+            .failsToCompile()
+            .withErrorContaining("@Option method must be public")
+    }
 
-  @Test
-  public void optionsInNonOptionBasesAreRejected() {
-    assertAbout(javaSource())
-        .that(getFile("OptionInNonOptionBase.java"))
-        .processedWith(new OptionsClassProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "@Option annotated fields can only be in classes that inherit from OptionsBase.");
-  }
+    @org.junit.Test
+    fun protectedOptionsAreRejected() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("ProtectedOptionField.java"))
+            .processedWith(OptionsClassProcessor())
+            .failsToCompile()
+            .withErrorContaining("@Option method must be public")
+    }
 
-  @Test
-  public void privatelyDeclaredOptionsAreRejected() {
-    assertAbout(javaSource())
-        .that(getFile("PrivateOptionField.java"))
-        .processedWith(new OptionsClassProcessor())
-        .failsToCompile()
-        .withErrorContaining("@Option method must be public");
-  }
+    @org.junit.Test
+    fun staticOptionsAreRejected() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("StaticOptionField.java"))
+            .processedWith(OptionsClassProcessor())
+            .failsToCompile()
+            .withErrorContaining("@Option method must be abstract")
+    }
 
-  @Test
-  public void protectedOptionsAreRejected() {
-    assertAbout(javaSource())
-        .that(getFile("ProtectedOptionField.java"))
-        .processedWith(new OptionsClassProcessor())
-        .failsToCompile()
-        .withErrorContaining("@Option method must be public");
-  }
+    @org.junit.Test
+    fun finalOptionsAreRejected() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("FinalOptionField.java"))
+            .processedWith(OptionsClassProcessor())
+            .failsToCompile()
+            .withErrorContaining("@Option method must be abstract")
+    }
 
-  @Test
-  public void staticOptionsAreRejected() {
-    assertAbout(javaSource())
-        .that(getFile("StaticOptionField.java"))
-        .processedWith(new OptionsClassProcessor())
-        .failsToCompile()
-        .withErrorContaining("@Option method must be abstract");
-  }
+    @org.junit.Test
+    fun namelessOptionsAreRejected() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("NamelessOption.java"))
+            .processedWith(OptionsClassProcessor())
+            .failsToCompile()
+            .withErrorContaining("Option must have an actual name.")
+    }
 
-  @Test
-  public void finalOptionsAreRejected() {
-    assertAbout(javaSource())
-        .that(getFile("FinalOptionField.java"))
-        .processedWith(new OptionsClassProcessor())
-        .failsToCompile()
-        .withErrorContaining("@Option method must be abstract");
-  }
+    @org.junit.Test
+    fun badNamesAreRejected() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("BadNameForDocumentedOption.java"))
+            .processedWith(OptionsClassProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "Options that are used on the command line as flags must have names made from word "
+                        + "characters only."
+            )
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("BadNameWithEqualsSign.java"))
+            .processedWith(OptionsClassProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "Options that are used on the command line as flags must have names made from word "
+                        + "characters only."
+            )
+    }
 
-  @Test
-  public void namelessOptionsAreRejected() {
-    assertAbout(javaSource())
-        .that(getFile("NamelessOption.java"))
-        .processedWith(new OptionsClassProcessor())
-        .failsToCompile()
-        .withErrorContaining("Option must have an actual name.");
-  }
+    @org.junit.Test
+    fun badNamesForHiddenOptionsPass() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("BadNameForInternalOption.java"))
+            .processedWith(OptionsClassProcessor())
+            .compilesWithoutError()
+    }
 
-  @Test
-  public void badNamesAreRejected() {
-    assertAbout(javaSource())
-        .that(getFile("BadNameForDocumentedOption.java"))
-        .processedWith(new OptionsClassProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "Options that are used on the command line as flags must have names made from word "
-                + "characters only.");
-    assertAbout(javaSource())
-        .that(getFile("BadNameWithEqualsSign.java"))
-        .processedWith(new OptionsClassProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "Options that are used on the command line as flags must have names made from word "
-                + "characters only.");
-  }
+    @org.junit.Test
+    fun deprecatedCategorySaysUndocumented() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("DeprecatedUndocumentedCategory.java"))
+            .processedWith(OptionsClassProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "Documentation level is no longer read from the option category. Category "
+                        + "\"undocumented\" is disallowed, see OptionMetadataTags for the relevant tags."
+            )
+    }
 
-  @Test
-  public void badNamesForHiddenOptionsPass() {
-    assertAbout(javaSource())
-        .that(getFile("BadNameForInternalOption.java"))
-        .processedWith(new OptionsClassProcessor())
-        .compilesWithoutError();
-  }
+    @org.junit.Test
+    fun deprecatedCategorySaysHidden() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("DeprecatedHiddenCategory.java"))
+            .processedWith(OptionsClassProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "Documentation level is no longer read from the option category. Category "
+                        + "\"hidden\" is disallowed, see OptionMetadataTags for the relevant tags."
+            )
+    }
 
-  @Test
-  public void deprecatedCategorySaysUndocumented() {
-    assertAbout(javaSource())
-        .that(getFile("DeprecatedUndocumentedCategory.java"))
-        .processedWith(new OptionsClassProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "Documentation level is no longer read from the option category. Category "
-                + "\"undocumented\" is disallowed, see OptionMetadataTags for the relevant tags.");
-  }
+    @org.junit.Test
+    fun deprecatedCategorySaysInternal() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("DeprecatedInternalCategory.java"))
+            .processedWith(OptionsClassProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "Documentation level is no longer read from the option category. Category "
+                        + "\"internal\" is disallowed, see OptionMetadataTags for the relevant tags."
+            )
+    }
 
-  @Test
-  public void deprecatedCategorySaysHidden() {
-    assertAbout(javaSource())
-        .that(getFile("DeprecatedHiddenCategory.java"))
-        .processedWith(new OptionsClassProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "Documentation level is no longer read from the option category. Category "
-                + "\"hidden\" is disallowed, see OptionMetadataTags for the relevant tags.");
-  }
+    @org.junit.Test
+    fun optionMustHaveEffectExplicitlyStated() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("EffectlessOption.java"))
+            .processedWith(OptionsClassProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                ("Option does not list at least one OptionEffectTag. "
+                        + "If the option has no effect, please be explicit and add NO_OP. "
+                        + "Otherwise, add a tag representing its effect.")
+            )
+    }
 
-  @Test
-  public void deprecatedCategorySaysInternal() {
-    assertAbout(javaSource())
-        .that(getFile("DeprecatedInternalCategory.java"))
-        .processedWith(new OptionsClassProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "Documentation level is no longer read from the option category. Category "
-                + "\"internal\" is disallowed, see OptionMetadataTags for the relevant tags.");
-  }
+    @org.junit.Test
+    fun contradictingEffectTagsAreRejected() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("OptionWithContradictingNoopEffects.java"))
+            .processedWith(OptionsClassProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "Option includes NO_OP with other effects. This doesn't make much sense. "
+                        + "Please remove NO_OP or the actual effects from the list, whichever is correct."
+            )
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("OptionWithContradictingUnknownEffects.java"))
+            .processedWith(OptionsClassProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "Option includes UNKNOWN with other, known, effects. "
+                        + "Please remove UNKNOWN from the list."
+            )
+    }
 
-  @Test
-  public void optionMustHaveEffectExplicitlyStated() {
-    assertAbout(javaSource())
-        .that(getFile("EffectlessOption.java"))
-        .processedWith(new OptionsClassProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "Option does not list at least one OptionEffectTag. "
-                + "If the option has no effect, please be explicit and add NO_OP. "
-                + "Otherwise, add a tag representing its effect.");
-  }
+    @org.junit.Test
+    fun contradictoryDocumentationCategoryIsRejected() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("HiddenOptionWithCategory.java"))
+            .processedWith(OptionsClassProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "Option has metadata tag HIDDEN but does not have category UNDOCUMENTED. "
+                        + "Please fix."
+            )
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("InternalOptionWithCategory.java"))
+            .processedWith(OptionsClassProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "Option has metadata tag INTERNAL but does not have category UNDOCUMENTED. "
+                        + "Please fix."
+            )
+    }
 
-  @Test
-  public void contradictingEffectTagsAreRejected() {
-    assertAbout(javaSource())
-        .that(getFile("OptionWithContradictingNoopEffects.java"))
-        .processedWith(new OptionsClassProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "Option includes NO_OP with other effects. This doesn't make much sense. "
-                + "Please remove NO_OP or the actual effects from the list, whichever is correct.");
-    assertAbout(javaSource())
-        .that(getFile("OptionWithContradictingUnknownEffects.java"))
-        .processedWith(new OptionsClassProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "Option includes UNKNOWN with other, known, effects. "
-                + "Please remove UNKNOWN from the list.");
-  }
+    @org.junit.Test
+    fun defaultConvertersAreFound() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("AllDefaultConverters.java"))
+            .processedWith(OptionsClassProcessor())
+            .compilesWithoutError()
+    }
 
-  @Test
-  public void contradictoryDocumentationCategoryIsRejected() {
-    assertAbout(javaSource())
-        .that(getFile("HiddenOptionWithCategory.java"))
-        .processedWith(new OptionsClassProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "Option has metadata tag HIDDEN but does not have category UNDOCUMENTED. "
-                + "Please fix.");
-    assertAbout(javaSource())
-        .that(getFile("InternalOptionWithCategory.java"))
-        .processedWith(new OptionsClassProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "Option has metadata tag INTERNAL but does not have category UNDOCUMENTED. "
-                + "Please fix.");
-  }
+    @org.junit.Test
+    fun converterReturnsListForAllowMultipleIsAllowed() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("MultipleOptionWithListTypeConverter.java"))
+            .processedWith(OptionsClassProcessor())
+            .compilesWithoutError()
+    }
 
-  @Test
-  public void defaultConvertersAreFound() {
-    assertAbout(javaSource())
-        .that(getFile("AllDefaultConverters.java"))
-        .processedWith(new OptionsClassProcessor())
-        .compilesWithoutError();
-  }
+    @org.junit.Test
+    fun correctCustomConverterForPrimitiveTypePasses() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("CorrectCustomConverterForPrimitiveType.java"))
+            .processedWith(OptionsClassProcessor())
+            .compilesWithoutError()
+    }
 
-  @Test
-  public void converterReturnsListForAllowMultipleIsAllowed() {
-    assertAbout(javaSource())
-        .that(getFile("MultipleOptionWithListTypeConverter.java"))
-        .processedWith(new OptionsClassProcessor())
-        .compilesWithoutError();
-  }
+    @org.junit.Test
+    fun converterlessOptionIsRejected() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("ConverterlessOption.java"))
+            .processedWith(OptionsClassProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "Cannot find valid converter for option of type "
+                        + "java.util.Map<java.lang.String,java.lang.String>"
+            )
+    }
 
-  @Test
-  public void correctCustomConverterForPrimitiveTypePasses() {
-    assertAbout(javaSource())
-        .that(getFile("CorrectCustomConverterForPrimitiveType.java"))
-        .processedWith(new OptionsClassProcessor())
-        .compilesWithoutError();
-  }
+    @org.junit.Test
+    fun allowMultipleOptionWithCollectionTypeIsRejected() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("CollectionTypeForAllowMultipleOption.java"))
+            .processedWith(OptionsClassProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "Option that allows multiple occurrences must be assignable to type java.util.List<E>,"
+                        + " but is of type java.util.Collection<java.lang.String>"
+            )
+    }
 
-  @Test
-  public void converterlessOptionIsRejected() {
-    assertAbout(javaSource())
-        .that(getFile("ConverterlessOption.java"))
-        .processedWith(new OptionsClassProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "Cannot find valid converter for option of type "
-                + "java.util.Map<java.lang.String,java.lang.String>");
-  }
+    @org.junit.Test
+    fun allowMultipleOptionWithNonListTypeIsRejected() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("NonListTypeForAllowMultipleOption.java"))
+            .processedWith(OptionsClassProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "Option that allows multiple occurrences must be assignable to type java.util.List<E>,"
+                        + " but is of type java.lang.String"
+            )
+    }
 
-  @Test
-  public void allowMultipleOptionWithCollectionTypeIsRejected() {
-    assertAbout(javaSource())
-        .that(getFile("CollectionTypeForAllowMultipleOption.java"))
-        .processedWith(new OptionsClassProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "Option that allows multiple occurrences must be assignable to type java.util.List<E>,"
-                + " but is of type java.util.Collection<java.lang.String>");
-  }
+    @org.junit.Test
+    fun allowMultipleOptionWithImmutableListTypeIsAllowed() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("ImmutableListTypeForAllowMultipleOption.java"))
+            .processedWith(OptionsClassProcessor())
+            .compilesWithoutError()
+    }
 
-  @Test
-  public void allowMultipleOptionWithNonListTypeIsRejected() {
-    assertAbout(javaSource())
-        .that(getFile("NonListTypeForAllowMultipleOption.java"))
-        .processedWith(new OptionsClassProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "Option that allows multiple occurrences must be assignable to type java.util.List<E>,"
-                + " but is of type java.lang.String");
-  }
+    @org.junit.Test
+    fun allowMultipleOptionsWithDefaultValuesAreRejected() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("AllowMultipleOptionWithDefaultValue.java"))
+            .processedWith(OptionsClassProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "Default values for multiple options are not allowed - use \"null\" special value"
+            )
+    }
 
-  @Test
-  public void allowMultipleOptionWithImmutableListTypeIsAllowed() {
-    assertAbout(javaSource())
-        .that(getFile("ImmutableListTypeForAllowMultipleOption.java"))
-        .processedWith(new OptionsClassProcessor())
-        .compilesWithoutError();
-  }
+    @org.junit.Test
+    fun optionWithIncorrectConverterIsRejected() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("IncorrectConverterType.java"))
+            .processedWith(OptionsClassProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "Type of field (java.lang.String) must be assignable from the converter's return type "
+                        + "(java.lang.Integer)"
+            )
+    }
 
-  @Test
-  public void allowMultipleOptionsWithDefaultValuesAreRejected() {
-    assertAbout(javaSource())
-        .that(getFile("AllowMultipleOptionWithDefaultValue.java"))
-        .processedWith(new OptionsClassProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "Default values for multiple options are not allowed - use \"null\" special value");
-  }
+    @org.junit.Test
+    fun allowMultipleOptionWithIncorrectConverterIsRejected() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("IncorrectConverterTypeForAllowMultipleOption.java"))
+            .processedWith(OptionsClassProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "Type of field (java.lang.String) must be assignable from the converter's return type "
+                        + "(java.lang.Integer)"
+            )
+    }
 
-  @Test
-  public void optionWithIncorrectConverterIsRejected() {
-    assertAbout(javaSource())
-        .that(getFile("IncorrectConverterType.java"))
-        .processedWith(new OptionsClassProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "Type of field (java.lang.String) must be assignable from the converter's return type "
-                + "(java.lang.Integer)");
-  }
+    @org.junit.Test
+    fun expansionOptionThatAllowsMultipleIsRejected() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("ExpansionOptionWithAllowMultiple.java"))
+            .processedWith(OptionsClassProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "Can't set an option to accumulate multiple values and let it expand to other flags."
+            )
+    }
 
-  @Test
-  public void allowMultipleOptionWithIncorrectConverterIsRejected() {
-    assertAbout(javaSource())
-        .that(getFile("IncorrectConverterTypeForAllowMultipleOption.java"))
-        .processedWith(new OptionsClassProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "Type of field (java.lang.String) must be assignable from the converter's return type "
-                + "(java.lang.Integer)");
-  }
+    @org.junit.Test
+    fun expansionOptionWithImplicitRequirementIsRejected() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("ExpansionOptionWithImplicitRequirement.java"))
+            .processedWith(OptionsClassProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "Can't set an option to be both an expansion option and have implicit requirements."
+            )
+    }
 
-  @Test
-  public void expansionOptionThatAllowsMultipleIsRejected() {
-    assertAbout(javaSource())
-        .that(getFile("ExpansionOptionWithAllowMultiple.java"))
-        .processedWith(new OptionsClassProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "Can't set an option to accumulate multiple values and let it expand to other flags.");
-  }
+    @org.junit.Test
+    fun deprecatedAttributeWithoutMetadataTagIsRejected() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("DeprecatedAttributeWithoutMetadataTag.java"))
+            .processedWith(OptionsClassProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "Options annotated with @Deprecated must have metadata tag DEPRECATED."
+            )
+    }
 
-  @Test
-  public void expansionOptionWithImplicitRequirementIsRejected() {
-    assertAbout(javaSource())
-        .that(getFile("ExpansionOptionWithImplicitRequirement.java"))
-        .processedWith(new OptionsClassProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "Can't set an option to be both an expansion option and have implicit requirements.");
-  }
+    @org.junit.Test
+    fun deprecatedMetadataTagWithoutAttributeIsRejected() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("DeprecatedMetadataTagWithoutAttribute.java"))
+            .processedWith(OptionsClassProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "Options with metadata tag DEPRECATED must be annotated with @Deprecated."
+            )
+    }
 
-  @Test
-  public void deprecatedAttributeWithoutMetadataTagIsRejected() {
-    assertAbout(javaSource())
-        .that(getFile("DeprecatedAttributeWithoutMetadataTag.java"))
-        .processedWith(new OptionsClassProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "Options annotated with @Deprecated must have metadata tag DEPRECATED.");
-  }
+    @org.junit.Test
+    fun noopWithoutReasonIsRejected() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("NoopWithoutReason.java"))
+            .processedWith(OptionsClassProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "No-op options must be annotated with @Deprecated, or have metadata tag HIDDEN or"
+                        + " INTERNAL."
+            )
+    }
 
-  @Test
-  public void deprecatedMetadataTagWithoutAttributeIsRejected() {
-    assertAbout(javaSource())
-        .that(getFile("DeprecatedMetadataTagWithoutAttribute.java"))
-        .processedWith(new OptionsClassProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "Options with metadata tag DEPRECATED must be annotated with @Deprecated.");
-  }
+    @org.junit.Test
+    fun nonPublicOptionMethodIsRejected() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("NonPublicOptionMethod.java"))
+            .processedWith(OptionsClassProcessor())
+            .failsToCompile()
+            .withErrorContaining("@Option method must be public")
+    }
 
-  @Test
-  public void noopWithoutReasonIsRejected() {
-    assertAbout(javaSource())
-        .that(getFile("NoopWithoutReason.java"))
-        .processedWith(new OptionsClassProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "No-op options must be annotated with @Deprecated, or have metadata tag HIDDEN or"
-                + " INTERNAL.");
-  }
+    @org.junit.Test
+    fun nonAbstractOptionMethodIsRejected() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("NonAbstractGetter.java"))
+            .processedWith(OptionsClassProcessor())
+            .failsToCompile()
+            .withErrorContaining("@Option method must be abstract")
+    }
 
-  @Test
-  public void nonPublicOptionMethodIsRejected() {
-    assertAbout(javaSource())
-        .that(getFile("NonPublicOptionMethod.java"))
-        .processedWith(new OptionsClassProcessor())
-        .failsToCompile()
-        .withErrorContaining("@Option method must be public");
-  }
+    @org.junit.Test
+    fun nonAbstractSetterIsRejected() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("NonAbstractSetter.java"))
+            .processedWith(OptionsClassProcessor())
+            .failsToCompile()
+            .withErrorContaining("Setter must be abstract")
+    }
 
-  @Test
-  public void nonAbstractOptionMethodIsRejected() {
-    assertAbout(javaSource())
-        .that(getFile("NonAbstractGetter.java"))
-        .processedWith(new OptionsClassProcessor())
-        .failsToCompile()
-        .withErrorContaining("@Option method must be abstract");
-  }
+    @org.junit.Test
+    fun setterWithMultipleArgumentsIsRejected() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("SetterWithMultipleArguments.java"))
+            .processedWith(OptionsClassProcessor())
+            .failsToCompile()
+            .withErrorContaining("Setter must have exactly one argument")
+    }
 
-  @Test
-  public void nonAbstractSetterIsRejected() {
-    assertAbout(javaSource())
-        .that(getFile("NonAbstractSetter.java"))
-        .processedWith(new OptionsClassProcessor())
-        .failsToCompile()
-        .withErrorContaining("Setter must be abstract");
-  }
+    @org.junit.Test
+    fun setterWithIncorrectArgumentTypeIsRejected() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("SetterWithIncorrectArgumentType.java"))
+            .processedWith(OptionsClassProcessor())
+            .failsToCompile()
+            .withErrorContaining("Setter argument type must be same as getter return type (int)")
+    }
 
-  @Test
-  public void setterWithMultipleArgumentsIsRejected() {
-    assertAbout(javaSource())
-        .that(getFile("SetterWithMultipleArguments.java"))
-        .processedWith(new OptionsClassProcessor())
-        .failsToCompile()
-        .withErrorContaining("Setter must have exactly one argument");
-  }
+    @org.junit.Test
+    fun invalidOptionMethodNameIsRejected() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("InvalidOptionMethodName.java"))
+            .processedWith(OptionsClassProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "Annotated method name must start with 'get' followed by an uppercase letter"
+            )
+    }
 
-  @Test
-  public void setterWithIncorrectArgumentTypeIsRejected() {
-    assertAbout(javaSource())
-        .that(getFile("SetterWithIncorrectArgumentType.java"))
-        .processedWith(new OptionsClassProcessor())
-        .failsToCompile()
-        .withErrorContaining("Setter argument type must be same as getter return type (int)");
-  }
+    @org.junit.Test
+    fun validOptionsClassCompiles() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("ValidOptions.java"))
+            .processedWith(OptionsClassProcessor())
+            .compilesWithoutError()
+    }
 
-  @Test
-  public void invalidOptionMethodNameIsRejected() {
-    assertAbout(javaSource())
-        .that(getFile("InvalidOptionMethodName.java"))
-        .processedWith(new OptionsClassProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "Annotated method name must start with 'get' followed by an uppercase letter");
-  }
+    @org.junit.Test
+    fun nestedOptionsClassesWithSameSimpleNameCompile() {
+        Truth.assertAbout<JavaSourcesSubject?, Iterable<out JavaFileObject?>?>(JavaSourcesSubjectFactory.javaSources())
+            .that(java.util.Arrays.asList<JavaFileObject?>(getFile("Outer1.java"), getFile("Outer2.java")))
+            .processedWith(OptionsClassProcessor())
+            .compilesWithoutError()
+    }
 
-  @Test
-  public void validOptionsClassCompiles() {
-    assertAbout(javaSource())
-        .that(getFile("ValidOptions.java"))
-        .processedWith(new OptionsClassProcessor())
-        .compilesWithoutError();
-  }
-
-  @Test
-  public void nestedOptionsClassesWithSameSimpleNameCompile() {
-    assertAbout(javaSources())
-        .that(Arrays.asList(getFile("Outer1.java"), getFile("Outer2.java")))
-        .processedWith(new OptionsClassProcessor())
-        .compilesWithoutError();
-  }
-
-  @Test
-  public void inheritingOptionsClassCompiles() {
-    JavaFileObject baseOptions =
-        JavaFileObjects.forSourceString(
-            "com.google.devtools.common.options.processor.BaseOptions",
-            """
+    @org.junit.Test
+    fun inheritingOptionsClassCompiles() {
+        val baseOptions: JavaFileObject =
+            JavaFileObjects.forSourceString(
+                "com.google.devtools.common.options.processor.BaseOptions",
+                """
             package com.google.devtools.common.options.processor;
             import com.google.devtools.common.options.Option;
             import com.google.devtools.common.options.OptionDocumentationCategory;
@@ -435,11 +451,13 @@ public class OptionsClassProcessorTest {
               public abstract String getBase();
               public abstract void setBase(String base);
             }
-            """);
-    JavaFileObject inheritingOptions =
-        JavaFileObjects.forSourceString(
-            "com.google.devtools.common.options.processor.InheritingOptions",
-            """
+            
+            """.trimIndent()
+            )
+        val inheritingOptions: JavaFileObject =
+            JavaFileObjects.forSourceString(
+                "com.google.devtools.common.options.processor.InheritingOptions",
+                """
             package com.google.devtools.common.options.processor;
             import com.google.devtools.common.options.Option;
             import com.google.devtools.common.options.OptionDocumentationCategory;
@@ -455,10 +473,22 @@ public class OptionsClassProcessorTest {
               public abstract String getDerived();
               public abstract void setDerived(String derived);
             }
-            """);
-    assertAbout(javaSources())
-        .that(Arrays.asList(baseOptions, inheritingOptions))
-        .processedWith(new OptionsClassProcessor())
-        .compilesWithoutError();
-  }
+            
+            """.trimIndent()
+            )
+        Truth.assertAbout<JavaSourcesSubject?, Iterable<out JavaFileObject?>?>(JavaSourcesSubjectFactory.javaSources())
+            .that(java.util.Arrays.asList<JavaFileObject?>(baseOptions, inheritingOptions))
+            .processedWith(OptionsClassProcessor())
+            .compilesWithoutError()
+    }
+
+    companion object {
+        private fun getFile(pathToFile: String?): JavaFileObject {
+            return JavaFileObjects.forResource(
+                com.google.common.io.Resources.getResource(
+                    "com/google/devtools/common/options/processor/optiontestsources/" + pathToFile
+                )
+            )
+        }
+    }
 }

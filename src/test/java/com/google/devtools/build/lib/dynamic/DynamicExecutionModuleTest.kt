@@ -11,166 +11,150 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.dynamic;
+package com.google.devtools.build.lib.dynamic
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import com.google.devtools.build.lib.actions.ActionExecutionContext
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.eventbus.EventBus;
-import com.google.devtools.build.lib.actions.ActionExecutionContext;
-import com.google.devtools.build.lib.actions.Spawn;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.analysis.ServerDirectories;
-import com.google.devtools.build.lib.exec.BinTools;
-import com.google.devtools.build.lib.exec.util.SpawnBuilder;
-import com.google.devtools.build.lib.runtime.BlazeRuntime;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.testutil.Scratch;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import com.google.devtools.build.lib.util.AbruptExitException;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.common.options.Converters;
-import com.google.devtools.common.options.Options;
-import com.google.devtools.common.options.OptionsParsingException;
-import com.google.devtools.common.options.OptionsParsingResult;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.Executors;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [com.google.devtools.build.lib.dynamic.DynamicExecutionModule].  */
+@RunWith(JUnit4::class)
+class DynamicExecutionModuleTest {
+    private var module: DynamicExecutionModule? = null
+    private var options: DynamicExecutionOptions? = null
+    private var blazeRuntime: BlazeRuntime? = null
 
-/** Tests for {@link com.google.devtools.build.lib.dynamic.DynamicExecutionModule}. */
-@RunWith(JUnit4.class)
-public class DynamicExecutionModuleTest {
-  private static final PathFragment OUTPUT_BASE = PathFragment.create("blaze-out");
-
-  private DynamicExecutionModule module;
-  private DynamicExecutionOptions options;
-  private BlazeRuntime blazeRuntime;
-
-  @Before
-  public void setUp() throws IOException, AbruptExitException {
-    module = new DynamicExecutionModule(Executors.newCachedThreadPool());
-    options = Options.getDefaults(DynamicExecutionOptions.class);
-    options.setDynamicLocalStrategy(Collections.emptyList()); // default
-    options.setDynamicRemoteStrategy(Collections.emptyList()); // default
-  }
-
-  @Test
-  public void testGetLocalStrategies_getsDefaultWithNoOptions()
-      throws AbruptExitException, OptionsParsingException {
-    assertThat(module.getLocalStrategies(options, /* sandboxingSupported= */ true))
-        .isEqualTo(parseStrategies("worker,sandboxed"));
-    assertThat(module.getLocalStrategies(options, /* sandboxingSupported= */ false))
-        .isEqualTo(parseStrategies("worker"));
-  }
-
-  @Test
-  public void testGetLocalStrategies_genericOptionOverridesFallbacks()
-      throws AbruptExitException, OptionsParsingException {
-    options.setDynamicLocalStrategy(parseStrategiesToOptions("local,worker"));
-    assertThat(module.getLocalStrategies(options, /* sandboxingSupported= */ true))
-        .isEqualTo(parseStrategies("local,worker"));
-  }
-
-  @Test
-  public void testGetLocalStrategies_specificOptionKeepsFallbacks()
-      throws AbruptExitException, OptionsParsingException {
-    options.setDynamicLocalStrategy(parseStrategiesToOptions("Foo=local,worker"));
-    assertThat(module.getLocalStrategies(options, /* sandboxingSupported= */ true))
-        .isEqualTo(parseStrategies("Foo=local,worker", "worker,sandboxed"));
-  }
-
-  @Test
-  public void testGetLocalStrategies_canMixSpecificsAndGenericOptions()
-      throws AbruptExitException, OptionsParsingException {
-    options.setDynamicLocalStrategy(parseStrategiesToOptions("Foo=local,worker", "worker"));
-    assertThat(module.getLocalStrategies(options, /* sandboxingSupported= */ true))
-        .isEqualTo(parseStrategies("Foo=local,worker", "worker"));
-  }
-
-  @Test
-  public void canIgnoreFailure_simpleCases() throws IOException, AbruptExitException {
-    setupRuntime();
-    Spawn spawn = new SpawnBuilder().withOutput("output").build();
-    CommandEnvironment mockCommandEnvironment = mock(CommandEnvironment.class);
-    OptionsParsingResult mockOptions = mock(OptionsParsingResult.class);
-    when(mockCommandEnvironment.getOptions()).thenReturn(mockOptions);
-    EventBus mockEventBus = mock(EventBus.class);
-    when(mockCommandEnvironment.getEventBus()).thenReturn(mockEventBus);
-    when(mockCommandEnvironment.getBlazeWorkspace()).thenReturn(blazeRuntime.getWorkspace());
-    DynamicExecutionOptions options = Options.getDefaults(DynamicExecutionOptions.class);
-    when(mockOptions.getOptions(DynamicExecutionOptions.class)).thenReturn(options);
-    ActionExecutionContext context = mock(ActionExecutionContext.class);
-
-    options.setIgnoreLocalSignals(ImmutableSet.of());
-    module.beforeCommand(mockCommandEnvironment);
-    assertThat(module.canIgnoreFailure(spawn, context, 130, "Failed", null, true)).isFalse();
-
-    options.setIgnoreLocalSignals(ImmutableSet.of(9));
-    module.beforeCommand(mockCommandEnvironment);
-    assertThat(module.canIgnoreFailure(spawn, context, 130, "Failed", null, true)).isFalse();
-
-    options.setIgnoreLocalSignals(ImmutableSet.of(2, 9));
-    module.beforeCommand(mockCommandEnvironment);
-    assertThat(module.canIgnoreFailure(spawn, context, 130, "Failed", null, false)).isFalse();
-    assertThat(module.canIgnoreFailure(spawn, context, 0, "Failed", null, true)).isFalse();
-    assertThat(module.canIgnoreFailure(spawn, context, 130, "Failed", null, true)).isTrue();
-    assertThat(module.canIgnoreFailure(spawn, context, 137, "Failed", null, true)).isTrue();
-  }
-
-  private void setupRuntime() throws IOException, AbruptExitException {
-    Scratch scratch = new Scratch();
-    Path execDir = scratch.dir("/foo");
-    Root root = Root.fromPath(execDir);
-    ServerDirectories serverDirectories =
-        new ServerDirectories(
-            scratch.dir("/installBase"),
-            root.getRelative(OUTPUT_BASE),
-            scratch.dir("/output-user"));
-    blazeRuntime =
-        new BlazeRuntime.Builder()
-            .setFileSystem(scratch.getFileSystem())
-            .setProductName(TestConstants.PRODUCT_NAME)
-            .setServerDirectories(serverDirectories)
-            .setStartupOptionsProvider(mock(OptionsParsingResult.class))
-            .build();
-    BinTools binTools = BinTools.forUnitTesting(execDir, ImmutableList.of());
-    blazeRuntime.initWorkspace(
-        new BlazeDirectories(
-            serverDirectories,
-            scratch.dir(TestConstants.WORKSPACE_NAME),
-            TestConstants.PRODUCT_NAME),
-        binTools);
-  }
-
-  private static List<Map.Entry<String, List<String>>> parseStrategiesToOptions(
-      String... strategies) throws OptionsParsingException {
-    Map<String, List<String>> result = parseStrategies(strategies);
-    return new ArrayList<>(result.entrySet());
-  }
-
-  private static Map<String, List<String>> parseStrategies(String... strategies)
-      throws OptionsParsingException {
-    Map<String, List<String>> result = new LinkedHashMap<>();
-    Converters.StringToStringListConverter converter = new Converters.StringToStringListConverter();
-    for (String s : strategies) {
-      Map.Entry<String, List<String>> converted = converter.convert(s);
-      // Have to avoid using Immutable* to allow overwriting elements.
-      result.put(converted.getKey(), new ArrayList<>(converted.getValue()));
+    @Before
+    @Throws(IOException::class, AbruptExitException::class)
+    fun setUp() {
+        module = DynamicExecutionModule(Executors.newCachedThreadPool())
+        options =
+            com.google.devtools.common.options.Options.getDefaults<DynamicExecutionOptions>(DynamicExecutionOptions::class.java)
+        options.dynamicLocalStrategy =
+            mutableListOf<MutableMap.MutableEntry<String?, MutableList<String?>?>?>() // default
+        options.dynamicRemoteStrategy =
+            mutableListOf<MutableMap.MutableEntry<String?, MutableList<String?>?>?>() // default
     }
-    return result;
-  }
 
+    @org.junit.Test
+    @Throws(AbruptExitException::class, OptionsParsingException::class)
+    fun testGetLocalStrategies_getsDefaultWithNoOptions() {
+        Truth.assertThat(module.getLocalStrategies(options,  /* sandboxingSupported= */true))
+            .isEqualTo(parseStrategies("worker,sandboxed"))
+        Truth.assertThat(module.getLocalStrategies(options,  /* sandboxingSupported= */false))
+            .isEqualTo(parseStrategies("worker"))
+    }
+
+    @org.junit.Test
+    @Throws(AbruptExitException::class, OptionsParsingException::class)
+    fun testGetLocalStrategies_genericOptionOverridesFallbacks() {
+        options.dynamicLocalStrategy = parseStrategiesToOptions("local,worker")
+        Truth.assertThat(module.getLocalStrategies(options,  /* sandboxingSupported= */true))
+            .isEqualTo(parseStrategies("local,worker"))
+    }
+
+    @org.junit.Test
+    @Throws(AbruptExitException::class, OptionsParsingException::class)
+    fun testGetLocalStrategies_specificOptionKeepsFallbacks() {
+        options.dynamicLocalStrategy = parseStrategiesToOptions("Foo=local,worker")
+        Truth.assertThat(module.getLocalStrategies(options,  /* sandboxingSupported= */true))
+            .isEqualTo(parseStrategies("Foo=local,worker", "worker,sandboxed"))
+    }
+
+    @org.junit.Test
+    @Throws(AbruptExitException::class, OptionsParsingException::class)
+    fun testGetLocalStrategies_canMixSpecificsAndGenericOptions() {
+        options.dynamicLocalStrategy = parseStrategiesToOptions("Foo=local,worker", "worker")
+        Truth.assertThat(module.getLocalStrategies(options,  /* sandboxingSupported= */true))
+            .isEqualTo(parseStrategies("Foo=local,worker", "worker"))
+    }
+
+    @org.junit.Test
+    @Throws(IOException::class, AbruptExitException::class)
+    fun canIgnoreFailure_simpleCases() {
+        setupRuntime()
+        val spawn: Spawn = SpawnBuilder().withOutput("output").build()
+        val mockCommandEnvironment: CommandEnvironment =
+            Mockito.mock<CommandEnvironment>(CommandEnvironment::class.java)
+        val mockOptions: OptionsParsingResult = Mockito.mock<OptionsParsingResult>(OptionsParsingResult::class.java)
+        Mockito.`when`<T?>(mockCommandEnvironment.getOptions()).thenReturn(mockOptions)
+        val mockEventBus: com.google.common.eventbus.EventBus? =
+            Mockito.mock<com.google.common.eventbus.EventBus?>(com.google.common.eventbus.EventBus::class.java)
+        Mockito.`when`<T?>(mockCommandEnvironment.getEventBus()).thenReturn(mockEventBus)
+        Mockito.`when`<T?>(mockCommandEnvironment.getBlazeWorkspace()).thenReturn(blazeRuntime.getWorkspace())
+        val options: DynamicExecutionOptions =
+            com.google.devtools.common.options.Options.getDefaults<DynamicExecutionOptions>(DynamicExecutionOptions::class.java)
+        Mockito.`when`<DynamicExecutionOptions?>(
+            mockOptions.getOptions<DynamicExecutionOptions?>(
+                DynamicExecutionOptions::class.java
+            )
+        ).thenReturn(options)
+        val context: ActionExecutionContext = Mockito.mock<ActionExecutionContext>(ActionExecutionContext::class.java)
+
+        options.ignoreLocalSignals = com.google.common.collect.ImmutableSet.of<Int?>()
+        module.beforeCommand(mockCommandEnvironment)
+        Truth.assertThat(module.canIgnoreFailure(spawn, context, 130, "Failed", null, true)).isFalse()
+
+        options.ignoreLocalSignals = com.google.common.collect.ImmutableSet.of<Int?>(9)
+        module.beforeCommand(mockCommandEnvironment)
+        Truth.assertThat(module.canIgnoreFailure(spawn, context, 130, "Failed", null, true)).isFalse()
+
+        options.ignoreLocalSignals = com.google.common.collect.ImmutableSet.of<Int?>(2, 9)
+        module.beforeCommand(mockCommandEnvironment)
+        Truth.assertThat(module.canIgnoreFailure(spawn, context, 130, "Failed", null, false)).isFalse()
+        Truth.assertThat(module.canIgnoreFailure(spawn, context, 0, "Failed", null, true)).isFalse()
+        Truth.assertThat(module.canIgnoreFailure(spawn, context, 130, "Failed", null, true)).isTrue()
+        Truth.assertThat(module.canIgnoreFailure(spawn, context, 137, "Failed", null, true)).isTrue()
+    }
+
+    @Throws(IOException::class, AbruptExitException::class)
+    private fun setupRuntime() {
+        val scratch: Scratch = Scratch()
+        val execDir: Path = scratch.dir("/foo")
+        val root: Root = Root.fromPath(execDir)
+        val serverDirectories: ServerDirectories =
+            ServerDirectories(
+                scratch.dir("/installBase"),
+                root.getRelative(OUTPUT_BASE),
+                scratch.dir("/output-user")
+            )
+        blazeRuntime =
+            Builder()
+                .setFileSystem(scratch.getFileSystem())
+                .setProductName(TestConstants.PRODUCT_NAME)
+                .setServerDirectories(serverDirectories)
+                .setStartupOptionsProvider(< T > mock < T ? > (OptionsParsingResult::class.java))
+        .build()
+        val binTools: BinTools? = BinTools.forUnitTesting(execDir, com.google.common.collect.ImmutableList.of<E?>())
+        blazeRuntime.initWorkspace(
+            BlazeDirectories(
+                serverDirectories,
+                scratch.dir(TestConstants.WORKSPACE_NAME),
+                TestConstants.PRODUCT_NAME
+            ),
+            binTools
+        )
+    }
+
+    companion object {
+        private val OUTPUT_BASE: PathFragment? = PathFragment.create("blaze-out")
+
+        @Throws(OptionsParsingException::class)
+        private fun parseStrategiesToOptions(
+            vararg strategies: String?
+        ): MutableList<MutableMap.MutableEntry<String?, MutableList<String?>?>?> {
+            val result = parseStrategies(*strategies)
+            return java.util.ArrayList<MutableMap.MutableEntry<String?, MutableList<String?>?>?>(result.entries)
+        }
+
+        @Throws(OptionsParsingException::class)
+        private fun parseStrategies(vararg strategies: String?): MutableMap<String?, MutableList<String?>?> {
+            val result: MutableMap<String?, MutableList<String?>?> = LinkedHashMap<String?, MutableList<String?>?>()
+            val converter: StringToStringListConverter = StringToStringListConverter()
+            for (s in strategies) {
+                val converted: MutableMap.MutableEntry<String?, MutableList<String?>?> = converter.convert(s)
+                // Have to avoid using Immutable* to allow overwriting elements.
+                result.put(converted.key, java.util.ArrayList<String?>(converted.value))
+            }
+            return result
+        }
+    }
 }

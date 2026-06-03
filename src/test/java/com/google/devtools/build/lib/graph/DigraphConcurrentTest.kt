@@ -11,277 +11,265 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.graph
 
-package com.google.devtools.build.lib.graph;
-
-import static com.google.common.truth.Truth.assertThat;
-import static java.util.Objects.requireNonNull;
-import static org.junit.Assert.fail;
-
-import com.google.common.base.Preconditions;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Random;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Stream;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.common.base.Preconditions
+import com.google.common.truth.Truth
+import org.junit.Assert
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.util.*
+import java.util.concurrent.*
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.stream.Stream
 
 /**
  * Tests that DiGraph after concurrent access is in consistent state.
- *
- * <p>Inconsistent state means that any of edges is half added.
+ * 
+ * 
+ * Inconsistent state means that any of edges is half added.
  */
-@RunWith(JUnit4.class)
-public class DigraphConcurrentTest {
+@RunWith(JUnit4::class)
+class DigraphConcurrentTest {
+    /** Created 100_000 nodes randomly. Adds 10 outgoing and 10 incoming edges for every node.  */
+    @Test
+    @Throws(InterruptedException::class)
+    fun testValidStateOfGraphAfterConcurrentAccess() {
+        val digraph = Digraph<Int?>()
+        val numberOfNodes = 100000
 
-  private static final Random RANDOM = new Random();
+        val workerBoth10: Runnable = CreateNodeWorker(digraph, 10, 10, AtomicInteger())
 
-  // need to have contention.
-  private static final int THREAD_COUNT = Runtime.getRuntime().availableProcessors() * 3;
+        runWorkers(numberOfNodes, workerBoth10)
+        Truth.assertThat(digraph.nodeCount).isEqualTo(numberOfNodes)
 
-  /** Created 100_000 nodes randomly. Adds 10 outgoing and 10 incoming edges for every node. */
-  @Test
-  public void testValidStateOfGraphAfterConcurrentAccess() throws InterruptedException {
-    Digraph<Integer> digraph = new Digraph<>();
-    final int numberOfNodes = 100_000;
+        assertGraphIsInConsistentState(digraph)
+    }
 
-    Runnable workerBoth10 = new CreateNodeWorker(digraph, 10, 10, new AtomicInteger());
+    /**
+     * Created 10_000 nodes randomly. Adds different number outgoing and incoming edges for every
+     * node.
+     */
+    @Test
+    @Throws(InterruptedException::class)
+    fun testValidStateOfGraphAfterConcurrentAccessWithVariertyOfNodes() {
+        val digraph = Digraph<Int?>()
+        val numberOfNodes = 50000
+        val idGenerator = AtomicInteger()
 
-    runWorkers(numberOfNodes, workerBoth10);
-    assertThat(digraph.getNodeCount()).isEqualTo(numberOfNodes);
+        val workerBoth3: Runnable = CreateNodeWorker(digraph, 3, 3, idGenerator)
+        val workerBoth10: Runnable = CreateNodeWorker(digraph, 10, 10, idGenerator)
+        val workerBoth100: Runnable = CreateNodeWorker(digraph, 100, 100, idGenerator)
+        val workerOutgoing20: Runnable = CreateNodeWorker(digraph, 20, 0, idGenerator)
+        val workerIncoming20: Runnable = CreateNodeWorker(digraph, 0, 20, idGenerator)
 
-    assertGraphIsInConsistentState(digraph);
-  }
+        runWorkers(
+            numberOfNodes / 5,  // have already 5 workers
+            workerBoth3,
+            workerBoth10,
+            workerBoth100,
+            workerIncoming20,
+            workerOutgoing20
+        )
 
-  /**
-   * Created 10_000 nodes randomly. Adds different number outgoing and incoming edges for every
-   * node.
-   */
-  @Test
-  public void testValidStateOfGraphAfterConcurrentAccessWithVariertyOfNodes()
-      throws InterruptedException {
+        Truth.assertThat(digraph.nodeCount).isEqualTo(numberOfNodes)
+        assertGraphIsInConsistentState(digraph)
+    }
 
-    Digraph<Integer> digraph = new Digraph<>();
-    final int numberOfNodes = 50_000;
-    final AtomicInteger idGenerator = new AtomicInteger();
+    /**
+     * Creates 20_000 nodes. Then iterate over node and for every node does: Creates 100 tasks: 50
+     * tasks for adding 10 outgoing edges and 50 tasks for 10 incoming edges per each tasks. Then
+     * executes all tasks in parallel in high contention. Only after all tasks for this node have
+     * finished, switch to next node. this behaviour introduces very high contention around one single
+     * node.
+     */
+    @Test
+    @Throws(InterruptedException::class, ExecutionException::class, TimeoutException::class)
+    fun testAddEdgeWithHighContention() {
+        val numberOfNodes = 20000
+        val edgePerNode = 1000
 
-    Runnable workerBoth3 = new CreateNodeWorker(digraph, 3, 3, idGenerator);
-    Runnable workerBoth10 = new CreateNodeWorker(digraph, 10, 10, idGenerator);
-    Runnable workerBoth100 = new CreateNodeWorker(digraph, 100, 100, idGenerator);
-    Runnable workerOutgoing20 = new CreateNodeWorker(digraph, 20, 0, idGenerator);
-    Runnable workerIncoming20 = new CreateNodeWorker(digraph, 0, 20, idGenerator);
+        val digraph = Digraph<Int?>()
+        val workerZeroEdges = CreateNodeWorker(digraph, 0, 0, AtomicInteger())
+        runWorkers(numberOfNodes, workerZeroEdges)
+        Truth.assertThat(digraph.nodeCount).isEqualTo(numberOfNodes)
 
-    runWorkers(
-        numberOfNodes / 5, // have already 5 workers
-        workerBoth3,
-        workerBoth10,
-        workerBoth100,
-        workerIncoming20,
-        workerOutgoing20);
+        val executorService = Executors.newFixedThreadPool(THREAD_COUNT)
 
-    assertThat(digraph.getNodeCount()).isEqualTo(numberOfNodes);
-    assertGraphIsInConsistentState(digraph);
-  }
+        for (node in digraph.getNodes()) {
+            // TODO(dbabkin): think about moving this interrupt callback logic to common library or make
+            // research, may be one exists already in any open source project.
 
-  /**
-   * Creates 20_000 nodes. Then iterate over node and for every node does: Creates 100 tasks: 50
-   * tasks for adding 10 outgoing edges and 50 tasks for 10 incoming edges per each tasks. Then
-   * executes all tasks in parallel in high contention. Only after all tasks for this node have
-   * finished, switch to next node. this behaviour introduces very high contention around one single
-   * node.
-   */
-  @Test
-  public void testAddEdgeWithHighContention()
-      throws InterruptedException, ExecutionException, TimeoutException {
+            val isTestInterrupted = AtomicBoolean(false)
+            val interruptedCallBack =
+                Runnable {
+                    isTestInterrupted.set(true)
+                    executorService.shutdownNow()
+                }
 
-    final int numberOfNodes = 20_000;
-    final int edgePerNode = 1000;
+            val countDownLatch = CountDownLatch(1)
+            val futures: MutableList<Future<*>> = ArrayList<Future<*>>()
+            // fork 100 tasks executed in parallel in high contention for one node:
+            // 100 =  50 tasks for adding 10 outgoing edges and 50 tasks for adding 10 incoming edges
+            for (i in 0..<edgePerNode / 20) {
+                // add 10 outgoing edges
+                val add10Outgoing: Runnable =
+                    CreateEdgeNightContention(
+                        digraph, countDownLatch, node!!.label!!, 10, true, interruptedCallBack
+                    )
+                futures.add(executorService.submit(add10Outgoing))
 
-    Digraph<Integer> digraph = new Digraph<>();
-    CreateNodeWorker workerZeroEdges = new CreateNodeWorker(digraph, 0, 0, new AtomicInteger());
-    runWorkers(numberOfNodes, workerZeroEdges);
-    assertThat(digraph.getNodeCount()).isEqualTo(numberOfNodes);
+                // add 10 incoming edges
+                val add10Incoming: Runnable =
+                    CreateEdgeNightContention(
+                        digraph, countDownLatch, node.label!!, 10, false, interruptedCallBack
+                    )
+                futures.add(executorService.submit(add10Incoming))
+            }
 
-    ExecutorService executorService = Executors.newFixedThreadPool(THREAD_COUNT);
+            // red lights go out, race has begun. http://www.formula1-dictionary.net/start_sequence.html
+            countDownLatch.countDown()
 
-    for (Node<Integer> node : digraph.getNodes()) {
-
-      // TODO(dbabkin): think about moving this interrupt callback logic to common library or make
-      // research, may be one exists already in any open source project.
-      AtomicBoolean isTestInterrupted = new AtomicBoolean(false);
-      Runnable interruptedCallBack =
-          () -> {
-            isTestInterrupted.set(true);
-            executorService.shutdownNow();
-          };
-
-      CountDownLatch countDownLatch = new CountDownLatch(1);
-      List<Future<?>> futures = new ArrayList<>();
-      // fork 100 tasks executed in parallel in high contention for one node:
-      // 100 =  50 tasks for adding 10 outgoing edges and 50 tasks for adding 10 incoming edges
-      for (int i = 0; i < edgePerNode / 20; i++) {
-        // add 10 outgoing edges
-        Runnable add10Outgoing =
-            new CreateEdgeNightContention(
-                digraph, countDownLatch, node.label, 10, true, interruptedCallBack);
-        futures.add(executorService.submit(add10Outgoing));
-
-        // add 10 incoming edges
-        Runnable add10Incoming =
-            new CreateEdgeNightContention(
-                digraph, countDownLatch, node.label, 10, false, interruptedCallBack);
-        futures.add(executorService.submit(add10Incoming));
-      }
-
-      // red lights go out, race has begun. http://www.formula1-dictionary.net/start_sequence.html
-      countDownLatch.countDown();
-
-      // wait for every tasks completed before switch to the next node.
-      for (Future<?> future : futures) {
-        if (isTestInterrupted.get()) {
-          break;
+            // wait for every tasks completed before switch to the next node.
+            for (future in futures) {
+                if (isTestInterrupted.get()) {
+                    break
+                }
+                future.get(1, TimeUnit.MINUTES)
+            }
+            if (isTestInterrupted.get()) {
+                Assert.fail("Test had been interrupted.")
+            }
         }
-        future.get(1, TimeUnit.MINUTES);
-      }
-      if (isTestInterrupted.get()) {
-        fail("Test had been interrupted.");
-      }
+
+        assertGraphIsInConsistentState(digraph)
     }
 
-    assertGraphIsInConsistentState(digraph);
-  }
+    @Throws(InterruptedException::class)
+    private fun runWorkers(count: Int, vararg workers: Runnable?) {
+        val executorService = Executors.newFixedThreadPool(THREAD_COUNT)
 
-  private void runWorkers(int count, Runnable... workers) throws InterruptedException {
+        for (i in 0..<count) {
+            Stream.of<Runnable?>(*workers).forEach { command: Runnable? -> executorService.execute(command) }
+        }
 
-    ExecutorService executorService = Executors.newFixedThreadPool(THREAD_COUNT);
-
-    for (int i = 0; i < count; i++) {
-      Stream.of(workers).forEach(executorService::execute);
+        executorService.shutdown()
+        while (!executorService.isTerminated()) {
+            check(executorService.awaitTermination(1, TimeUnit.HOURS)) { "executor service termination wait time out" }
+        }
     }
 
-    executorService.shutdown();
-    while (!executorService.isTerminated()) {
-      if (!executorService.awaitTermination(1, TimeUnit.HOURS)) {
-        throw new IllegalStateException("executor service termination wait time out");
-      }
-    }
-  }
-
-  /** Asserts that there are no half added edge in the graph. */
-  private void assertGraphIsInConsistentState(Digraph<Integer> digraph) {
-    for (Node<Integer> node : digraph.getNodes()) {
-      assertNodeIsInConsistentState(node);
-    }
-  }
-
-  private void assertNodeIsInConsistentState(Node<Integer> node) {
-    for (Node<Integer> succ : node.getSuccessors()) {
-      assertThat(succ.getPredecessors()).contains(node);
+    /** Asserts that there are no half added edge in the graph.  */
+    private fun assertGraphIsInConsistentState(digraph: Digraph<Int?>) {
+        for (node in digraph.getNodes()) {
+            assertNodeIsInConsistentState(node!!)
+        }
     }
 
-    for (Node<Integer> pred : node.getPredecessors()) {
-      assertThat(pred.getSuccessors()).contains(node);
-    }
-  }
+    private fun assertNodeIsInConsistentState(node: Node<Int?>) {
+        for (succ in node.successors!!) {
+            Truth.assertThat(succ!!.predecessors).contains(node)
+        }
 
-  private static final class CreateNodeWorker implements Runnable {
-
-    private final Digraph<Integer> digraph;
-    private final int outgoingEdgesPerNode;
-    private final int incomingEdgesPerNode;
-    private final AtomicInteger idGenerator;
-
-    private CreateNodeWorker(
-        Digraph<Integer> digraph,
-        int outgoingEdgesPerNode,
-        int incomingEdgesPerNode,
-        AtomicInteger idGenerator) {
-      this.digraph = requireNonNull(digraph);
-      Preconditions.checkArgument(outgoingEdgesPerNode >= 0);
-      this.outgoingEdgesPerNode = outgoingEdgesPerNode;
-      Preconditions.checkArgument(incomingEdgesPerNode >= 0);
-      this.incomingEdgesPerNode = incomingEdgesPerNode;
-      this.idGenerator = idGenerator;
+        for (pred in node.predecessors!!) {
+            Truth.assertThat(pred!!.successors).contains(node)
+        }
     }
 
-    @Override
-    public void run() {
-      Integer newNodeId = idGenerator.getAndIncrement();
-      digraph.createNode(newNodeId);
-      addEdgesFromNew(newNodeId);
-      addEdgesToNew(newNodeId);
+    private class CreateNodeWorker(
+        digraph: Digraph<Int?>?,
+        outgoingEdgesPerNode: Int,
+        incomingEdgesPerNode: Int,
+        idGenerator: AtomicInteger
+    ) : Runnable {
+        private val digraph: Digraph<Int?>
+        private val outgoingEdgesPerNode: Int
+        private val incomingEdgesPerNode: Int
+        private val idGenerator: AtomicInteger
+
+        init {
+            this.digraph = Objects.requireNonNull<Digraph<Int?>>(digraph)
+            Preconditions.checkArgument(outgoingEdgesPerNode >= 0)
+            this.outgoingEdgesPerNode = outgoingEdgesPerNode
+            Preconditions.checkArgument(incomingEdgesPerNode >= 0)
+            this.incomingEdgesPerNode = incomingEdgesPerNode
+            this.idGenerator = idGenerator
+        }
+
+        override fun run() {
+            val newNodeId = idGenerator.getAndIncrement()
+            digraph.createNode(newNodeId)
+            addEdgesFromNew(newNodeId)
+            addEdgesToNew(newNodeId)
+        }
+
+        fun addEdgesFromNew(newNodeId: Int) {
+            val count: Int = min(newNodeId, outgoingEdgesPerNode)
+            addEdges(digraph, newNodeId, count,  /*outgoing*/true)
+        }
+
+        fun addEdgesToNew(newNodeId: Int) {
+            val count: Int = min(newNodeId, incomingEdgesPerNode)
+            addEdges(digraph, newNodeId, count,  /*outgoing*/false)
+        }
     }
 
-    private void addEdgesFromNew(int newNodeId) {
-      int count = Math.min(newNodeId, outgoingEdgesPerNode);
-      addEdges(digraph, newNodeId, count, /*outgoing*/ true);
+    private class CreateEdgeNightContention(
+        digraph: Digraph<Int?>?,
+        countDownLatch: CountDownLatch?,
+        nodeId: Int,
+        numberEdgeToAdd: Int,
+        outgoing: Boolean,
+        inerruptCallBack: Runnable?
+    ) : Runnable {
+        private val digraph: Digraph<Int?>
+        private val countDownLatch: CountDownLatch
+        private val nodeId: Int
+        private val numberEdgeToAdd: Int
+        private val outgoing: Boolean
+        private val inerruptCallBack: Runnable
+
+        init {
+            this.digraph = Objects.requireNonNull<Digraph<Int?>>(digraph)
+            this.countDownLatch = Objects.requireNonNull<CountDownLatch>(countDownLatch)
+            Preconditions.checkArgument(nodeId >= 0)
+            this.nodeId = nodeId
+            Preconditions.checkArgument(numberEdgeToAdd >= 0)
+            this.numberEdgeToAdd = numberEdgeToAdd
+            this.outgoing = outgoing
+            this.inerruptCallBack = Objects.requireNonNull<Runnable>(inerruptCallBack)
+        }
+
+        override fun run() {
+            try {
+                countDownLatch.await()
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+                inerruptCallBack.run()
+                // hardly ever will see that in the log. Who cares?
+                Assert.fail(e.message)
+            }
+            addEdges(digraph, nodeId, numberEdgeToAdd, outgoing)
+        }
     }
 
-    private void addEdgesToNew(int newNodeId) {
-      int count = Math.min(newNodeId, incomingEdgesPerNode);
-      addEdges(digraph, newNodeId, count, /*outgoing*/ false);
+    companion object {
+        private val RANDOM = Random()
+
+        // need to have contention.
+        private val THREAD_COUNT = Runtime.getRuntime().availableProcessors() * 3
+
+        private fun addEdges(digraph: Digraph<Int?>, nodeId: Int, count: Int, outgoing: Boolean) {
+            for (i in 0..<count) {
+                val id: Int = RANDOM.nextInt(digraph.nodeCount)
+                if (outgoing) {
+                    digraph.addEdge(nodeId, id)
+                } else {
+                    digraph.addEdge(id, nodeId)
+                }
+            }
+        }
     }
-  }
-
-  private static final class CreateEdgeNightContention implements Runnable {
-
-    private final Digraph<Integer> digraph;
-    private final CountDownLatch countDownLatch;
-    private final int nodeId;
-    private final int numberEdgeToAdd;
-    private final boolean outgoing;
-    private final Runnable inerruptCallBack;
-
-    private CreateEdgeNightContention(
-        Digraph<Integer> digraph,
-        CountDownLatch countDownLatch,
-        int nodeId,
-        int numberEdgeToAdd,
-        boolean outgoing,
-        Runnable inerruptCallBack) {
-      this.digraph = requireNonNull(digraph);
-      this.countDownLatch = requireNonNull(countDownLatch);
-      Preconditions.checkArgument(nodeId >= 0);
-      this.nodeId = nodeId;
-      Preconditions.checkArgument(numberEdgeToAdd >= 0);
-      this.numberEdgeToAdd = numberEdgeToAdd;
-      this.outgoing = outgoing;
-      this.inerruptCallBack = requireNonNull(inerruptCallBack);
-    }
-
-    @Override
-    public void run() {
-      try {
-        countDownLatch.await();
-      } catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-        inerruptCallBack.run();
-        // hardly ever will see that in the log. Who cares?
-        fail(e.getMessage());
-      }
-      addEdges(digraph, nodeId, numberEdgeToAdd, outgoing);
-    }
-  }
-
-  private static void addEdges(Digraph<Integer> digraph, int nodeId, int count, boolean outgoing) {
-
-    for (int i = 0; i < count; i++) {
-      int id = RANDOM.nextInt(digraph.getNodeCount());
-      if (outgoing) {
-        digraph.addEdge(nodeId, id);
-      } else {
-        digraph.addEdge(id, nodeId);
-      }
-    }
-  }
 }

@@ -11,484 +11,518 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.skyframe.serialization.NotNestedSet.createRandomLeafArray;
-import static com.google.devtools.build.lib.skyframe.serialization.testutils.Dumper.dumpStructureWithEquivalenceReduction;
-import static com.google.devtools.build.lib.testutil.TestUtils.WAIT_TIMEOUT_SECONDS;
-import static com.google.devtools.build.lib.unsafe.UnsafeProvider.getFieldOffset;
-import static java.util.concurrent.TimeUnit.SECONDS;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.Dumper.dumpStructureWithEquivalenceReduction
 
-import com.google.common.collect.ImmutableClassToInstanceMap;
-import com.google.common.collect.ImmutableList;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.common.util.concurrent.ListenableFutureTask;
-import com.google.devtools.build.lib.skyframe.serialization.NotNestedSet.NestedArrayCodec;
-import com.google.devtools.build.lib.skyframe.serialization.NotNestedSet.NotNestedSetCodec;
-import com.google.devtools.build.lib.skyframe.serialization.NotNestedSet.NotNestedSetDeferredCodec;
-import com.google.devtools.build.lib.skyframe.serialization.SharedValueDeserializationContext.MissingSharedValueBytesException;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.GetRecordingStore;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.GetRecordingStore.GetRequest;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import com.google.errorprone.annotations.Keep;
-import com.google.protobuf.ByteString;
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import com.google.testing.junit.testparameterinjector.TestParameters;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Objects;
-import java.util.Random;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ForkJoinPool;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+@RunWith(TestParameterInjector::class)
+class SharedValueDeserializationContextTest {
+    private val executor: ForkJoinPool = ForkJoinPool(CONCURRENCY)
+    private val rng: Random = Random(0)
 
-@RunWith(TestParameterInjector.class)
-public final class SharedValueDeserializationContextTest {
-  private static final int CONCURRENCY = 20;
-
-  private final ForkJoinPool executor = new ForkJoinPool(CONCURRENCY);
-  private final Random rng = new Random(0);
-
-  @Test
-  @TestParameters("{size: 2, useDeferredCodec: false}")
-  @TestParameters("{size: 4, useDeferredCodec: false}")
-  @TestParameters("{size: 4, useDeferredCodec: true}")
-  @TestParameters("{size: 8, useDeferredCodec: false}")
-  @TestParameters("{size: 16, useDeferredCodec: false}")
-  @TestParameters("{size: 16, useDeferredCodec: true}")
-  @TestParameters("{size: 32, useDeferredCodec: false}")
-  @TestParameters("{size: 64, useDeferredCodec: false}")
-  @TestParameters("{size: 128, useDeferredCodec: false}")
-  public void codec_roundTrips(int size, boolean useDeferredCodec) throws Exception {
-    new SerializationTester(NotNestedSet.createRandom(rng, size, size, Random::nextInt))
-        .addCodec(
-            useDeferredCodec
-                ? new NotNestedSetDeferredCodec(new NestedArrayCodec())
-                : getDefaultNotNestedSetCodec())
-        .makeMemoizingAndAllowFutureBlocking(/* allowFutureBlocking= */ true)
-        .setVerificationFunction(
-            SharedValueDeserializationContextTest::verifyDeserializedNotNestedSet)
-        .runTests();
-  }
-
-  @Test
-  public void getsShouldBeConcurrent() throws Exception {
-    // When deserializing a value, multiple calls to `FingerprintValueStore.get` may occur. These
-    // should not block each other.
-
-    GetRecordingStore store = new GetRecordingStore();
-    FingerprintValueService fingerprintValueService =
-        FingerprintValueService.createForTesting(store);
-    ObjectCodecs codecs = createObjectCodecs();
-
-    NotNestedSet subject =
-        new NotNestedSet(
-            new Object[] {
-              createRandomLeafArray(rng, Random::nextInt),
-              createRandomLeafArray(rng, Random::nextInt),
-              createRandomLeafArray(rng, Random::nextInt)
-            });
-
-    SerializationResult<ByteString> serialized =
-        codecs.serializeMemoizedAndBlocking(fingerprintValueService, subject);
-    ListenableFuture<?> writeStatus = serialized.getFutureToBlockWritesOn();
-    if (writeStatus != null) {
-      // If it is asynchronous, writing should complete without throwing any exceptions.
-      writeStatus.get();
+    @org.junit.Test
+    @TestParameters("{size: 2, useDeferredCodec: false}")
+    @TestParameters("{size: 4, useDeferredCodec: false}")
+    @TestParameters("{size: 4, useDeferredCodec: true}")
+    @TestParameters("{size: 8, useDeferredCodec: false}")
+    @TestParameters("{size: 16, useDeferredCodec: false}")
+    @TestParameters("{size: 16, useDeferredCodec: true}")
+    @TestParameters("{size: 32, useDeferredCodec: false}")
+    @TestParameters("{size: 64, useDeferredCodec: false}")
+    @TestParameters("{size: 128, useDeferredCodec: false}")
+    @Throws(java.lang.Exception::class)
+    fun codec_roundTrips(size: Int, useDeferredCodec: Boolean) {
+        SerializationTester(
+            NotNestedSet.Companion.createRandom(
+                rng,
+                size,
+                size,
+                java.util.function.Function { obj: Random? -> obj.nextInt() })
+        )
+            .addCodec(
+                if (useDeferredCodec)
+                    NotNestedSetDeferredCodec(NestedArrayCodec())
+                else
+                    defaultNotNestedSetCodec
+            )
+            .makeMemoizingAndAllowFutureBlocking( /* allowFutureBlocking= */true)
+            .setVerificationFunction(
+                { original: NotNestedSet?, deserialized: NotNestedSet? ->
+                    verifyDeserializedNotNestedSet(
+                        original,
+                        deserialized
+                    )
+                })
+            .runTests()
     }
 
-    ListenableFuture<Object> result =
-        deserializeWithExecutor(codecs, fingerprintValueService, serialized.getObject());
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun getsShouldBeConcurrent() {
+        // When deserializing a value, multiple calls to `FingerprintValueStore.get` may occur. These
+        // should not block each other.
 
-    // There are 4 nested arrays. The top-level one and its 3 child arrays. The child arrays aren't
-    // requested until the top-level array is requested. Completes the top-level request.
-    store.takeFirstRequest().complete();
+        val store: GetRecordingStore = GetRecordingStore()
+        val fingerprintValueService: FingerprintValueService? =
+            FingerprintValueService.createForTesting(store)
+        val codecs: ObjectCodecs = createObjectCodecs()
 
-    // The 3 child requests should become available. Since none of them are complete, they must be
-    // concurrent.
-    ArrayList<GetRequest> childGets = new ArrayList<>(3);
-    for (int i = 0; i < 3; i++) {
-      childGets.add(store.takeFirstRequest());
+        val subject: NotNestedSet =
+            NotNestedSet(
+                arrayOf<Any>(
+                    NotNestedSet.Companion.createRandomLeafArray(
+                        rng,
+                        java.util.function.Function { obj: Random? -> obj.nextInt() }),
+                    NotNestedSet.Companion.createRandomLeafArray(
+                        rng,
+                        java.util.function.Function { obj: Random? -> obj.nextInt() }),
+                    NotNestedSet.Companion.createRandomLeafArray(
+                        rng,
+                        java.util.function.Function { obj: Random? -> obj.nextInt() })
+                )
+            )
+
+        val serialized: SerializationResult<ByteString?> =
+            codecs.serializeMemoizedAndBlocking(fingerprintValueService, subject)
+        val writeStatus: com.google.common.util.concurrent.ListenableFuture<*>? = serialized.getFutureToBlockWritesOn()
+        if (writeStatus != null) {
+            // If it is asynchronous, writing should complete without throwing any exceptions.
+            writeStatus.get()
+        }
+
+        val result: com.google.common.util.concurrent.ListenableFuture<Any?> =
+            deserializeWithExecutor(codecs, fingerprintValueService, serialized.getObject())
+
+        // There are 4 nested arrays. The top-level one and its 3 child arrays. The child arrays aren't
+        // requested until the top-level array is requested. Completes the top-level request.
+        store.takeFirstRequest().complete()
+
+        // The 3 child requests should become available. Since none of them are complete, they must be
+        // concurrent.
+        val childGets: java.util.ArrayList<GetRequest> = java.util.ArrayList<GetRequest>(3)
+        for (i in 0..2) {
+            childGets.add(store.takeFirstRequest())
+        }
+
+        // Since the child requests have not been satisfied, the result can't be done yet.
+        Truth.assertThat(result.isDone()).isFalse()
+
+        // Completes the child requests and verifies the result.
+        for (request in childGets) {
+            request.complete()
+        }
+        verifyDeserializedNotNestedSet(subject, result.get() as NotNestedSet?)
     }
 
-    // Since the child requests have not been satisfied, the result can't be done yet.
-    assertThat(result.isDone()).isFalse();
+    private class NotNestedSetContainer {
+        private var first: NotNestedSet? = null
+        private var second: NotNestedSet? = null
 
-    // Completes the child requests and verifies the result.
-    for (GetRequest request : childGets) {
-      request.complete();
-    }
-    verifyDeserializedNotNestedSet(subject, (NotNestedSet) result.get());
-  }
+        private constructor()
 
-  private static class NotNestedSetContainer {
-    private static final long FIRST_OFFSET;
-    private static final long SECOND_OFFSET;
+        private constructor(first: NotNestedSet?, second: NotNestedSet?) {
+            this.first = first
+            this.second = second
+        }
 
-    private NotNestedSet first;
-    private NotNestedSet second;
+        companion object {
+            private val FIRST_OFFSET: Long
+            private val SECOND_OFFSET: Long
 
-    private NotNestedSetContainer() {}
-
-    private NotNestedSetContainer(NotNestedSet first, NotNestedSet second) {
-      this.first = first;
-      this.second = second;
-    }
-
-    static {
-      try {
-        FIRST_OFFSET = getFieldOffset(NotNestedSetContainer.class, "first");
-        SECOND_OFFSET = getFieldOffset(NotNestedSetContainer.class, "second");
-      } catch (ReflectiveOperationException e) {
-        throw new ExceptionInInitializerError(e);
-      }
-    }
-  }
-
-  /** Selects the {@link AsyncDeserializationContext#deserialize} overload. */
-  private enum DeserializeOverloadSelector {
-    OFFSET,
-    SETTER,
-    OFFSET_WITH_DONE_CALLBACK
-  }
-
-  /** Codec that observes futures through {@link AsyncObjectCodec#deserialize} overloads. */
-  private static final class NotNestedSetContainerCodec
-      extends AsyncObjectCodec<NotNestedSetContainer> {
-    private final DeserializeOverloadSelector overloadSelector;
-    private final NotNestedSet expectedFirst;
-    private final NotNestedSet expectedSecond;
-
-    private NotNestedSetContainerCodec(
-        DeserializeOverloadSelector overloadSelector,
-        NotNestedSet expectedFirst,
-        NotNestedSet expectedSecond) {
-      this.overloadSelector = overloadSelector;
-      this.expectedFirst = expectedFirst;
-      this.expectedSecond = expectedSecond;
+            init {
+                try {
+                    FIRST_OFFSET = getFieldOffset(NotNestedSetContainer::class.java, "first")
+                    SECOND_OFFSET = getFieldOffset(NotNestedSetContainer::class.java, "second")
+                } catch (e: java.lang.ReflectiveOperationException) {
+                    throw java.lang.ExceptionInInitializerError(e)
+                }
+            }
+        }
     }
 
-    @Override
-    public Class<NotNestedSetContainer> getEncodedClass() {
-      return NotNestedSetContainer.class;
+    /** Selects the [AsyncDeserializationContext.deserialize] overload.  */
+    private enum class DeserializeOverloadSelector {
+        OFFSET,
+        SETTER,
+        OFFSET_WITH_DONE_CALLBACK
     }
 
-    @Override
-    public void serialize(
-        SerializationContext context, NotNestedSetContainer container, CodedOutputStream codedOut)
-        throws SerializationException, IOException {
-      context.serialize(container.first, codedOut);
-      context.serialize(container.second, codedOut);
+    /** Codec that observes futures through [AsyncObjectCodec.deserialize] overloads.  */
+    private class NotNestedSetContainerCodec
+        (
+        private val overloadSelector: DeserializeOverloadSelector,
+        expectedFirst: NotNestedSet?,
+        expectedSecond: NotNestedSet?
+    ) : AsyncObjectCodec<NotNestedSetContainer?>() {
+        private val expectedFirst: NotNestedSet?
+        private val expectedSecond: NotNestedSet?
+
+        init {
+            this.expectedFirst = expectedFirst
+            this.expectedSecond = expectedSecond
+        }
+
+        val encodedClass: java.lang.Class<NotNestedSetContainer?>
+            get() = NotNestedSetContainer::class.java
+
+        @Throws(SerializationException::class, IOException::class)
+        public override fun serialize(
+            context: SerializationContext, container: NotNestedSetContainer, codedOut: CodedOutputStream?
+        ) {
+            context.serialize(container.first, codedOut)
+            context.serialize(container.second, codedOut)
+        }
+
+        @Throws(SerializationException::class, IOException::class)
+        public override fun deserializeAsync(
+            context: AsyncDeserializationContext, codedIn: CodedInputStream?
+        ): NotNestedSetContainer {
+            val value = NotNestedSetContainer()
+            context.registerInitialValue(value)
+            // The additional verifications in the code below are redundant with the ones performed by the
+            // SerializationTester except that they occur at the moment the context provides the values by
+            // callback. This enables verification that the provided values are fully deserialized as soon
+            // as they are set, as required by the specification.
+            when (overloadSelector) {
+                DeserializeOverloadSelector.OFFSET -> {
+                    context.deserialize(codedIn, value, NotNestedSetContainer.Companion.FIRST_OFFSET)
+                    context.deserialize(codedIn, value, NotNestedSetContainer.Companion.SECOND_OFFSET)
+                }
+
+                DeserializeOverloadSelector.SETTER -> {
+                    context.deserialize(
+                        codedIn,
+                        value,
+                        { container, untypedFirst ->
+                            val first: NotNestedSet? = untypedFirst as NotNestedSet?
+                            container.first = first
+                            verifyDeserializedNotNestedSet(expectedFirst, first)
+                        })
+                    context.deserialize(
+                        codedIn,
+                        value,
+                        { container, untypedSecond ->
+                            val second: NotNestedSet? = untypedSecond as NotNestedSet?
+                            container.second = second
+                            verifyDeserializedNotNestedSet(expectedSecond, second)
+                        })
+                }
+
+                DeserializeOverloadSelector.OFFSET_WITH_DONE_CALLBACK -> {
+                    context.deserialize(
+                        codedIn,
+                        value,
+                        NotNestedSetContainer.Companion.FIRST_OFFSET,
+                        { verifyDeserializedNotNestedSet(expectedFirst, value.first) })
+                    context.deserialize(
+                        codedIn,
+                        value,
+                        NotNestedSetContainer.Companion.SECOND_OFFSET,
+                        { verifyDeserializedNotNestedSet(expectedSecond, value.second) })
+                }
+            }
+            return value
+        }
     }
 
-    @Override
-    public NotNestedSetContainer deserializeAsync(
-        AsyncDeserializationContext context, CodedInputStream codedIn)
-        throws SerializationException, IOException {
-      NotNestedSetContainer value = new NotNestedSetContainer();
-      context.registerInitialValue(value);
-      // The additional verifications in the code below are redundant with the ones performed by the
-      // SerializationTester except that they occur at the moment the context provides the values by
-      // callback. This enables verification that the provided values are fully deserialized as soon
-      // as they are set, as required by the specification.
-      switch (overloadSelector) {
-        case OFFSET:
-          context.deserialize(codedIn, value, NotNestedSetContainer.FIRST_OFFSET);
-          context.deserialize(codedIn, value, NotNestedSetContainer.SECOND_OFFSET);
-          break;
-        case SETTER:
-          context.deserialize(
-              codedIn,
-              value,
-              (container, untypedFirst) -> {
-                NotNestedSet first = (NotNestedSet) untypedFirst;
-                container.first = first;
-                verifyDeserializedNotNestedSet(expectedFirst, first);
-              });
-          context.deserialize(
-              codedIn,
-              value,
-              (container, untypedSecond) -> {
-                NotNestedSet second = (NotNestedSet) untypedSecond;
-                container.second = second;
-                verifyDeserializedNotNestedSet(expectedSecond, second);
-              });
-          break;
-        case OFFSET_WITH_DONE_CALLBACK:
-          context.deserialize(
-              codedIn,
-              value,
-              NotNestedSetContainer.FIRST_OFFSET,
-              () -> verifyDeserializedNotNestedSet(expectedFirst, value.first));
-          context.deserialize(
-              codedIn,
-              value,
-              NotNestedSetContainer.SECOND_OFFSET,
-              () -> verifyDeserializedNotNestedSet(expectedSecond, value.second));
-          break;
-      }
-      return value;
-    }
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun valueDependsOnFuture(
+        @TestParameter overloadSelector: DeserializeOverloadSelector,
+        @TestParameter doesSecondAliasFirst: Boolean
+    ) {
+        // Exercises the case where AsyncDeserializationContext.deserialize overloads are called and the
+        // result is a future. In the special case where `doesSecondAliasFirst` = true, `subject.second`
+        // is a backreference to the first, which exercises the case where a future is added to the
+        // memoization table.
 
-  @Test
-  public void valueDependsOnFuture(
-      @TestParameter DeserializeOverloadSelector overloadSelector,
-      @TestParameter boolean doesSecondAliasFirst)
-      throws Exception {
-    // Exercises the case where AsyncDeserializationContext.deserialize overloads are called and the
-    // result is a future. In the special case where `doesSecondAliasFirst` = true, `subject.second`
-    // is a backreference to the first, which exercises the case where a future is added to the
-    // memoization table.
-
-    NotNestedSetContainer subject;
-    if (doesSecondAliasFirst) {
-      subject =
-          new NotNestedSetContainer(
-              NotNestedSet.createRandom(rng, 4, 4, Random::nextInt),
-              NotNestedSet.createRandom(rng, 4, 4, Random::nextInt));
-    } else {
-      NotNestedSet contained = NotNestedSet.createRandom(rng, 5, 5, Random::nextInt);
-      subject = new NotNestedSetContainer(contained, contained);
-    }
-    new SerializationTester(subject)
-        .addCodec(getDefaultNotNestedSetCodec())
-        .addCodec(new NotNestedSetContainerCodec(overloadSelector, subject.first, subject.second))
-        .makeMemoizingAndAllowFutureBlocking(/* allowFutureBlocking= */ true)
-        .setVerificationFunction(
-            SharedValueDeserializationContextTest::verifyDeserializedNotNestedSetContainer)
-        .runTests();
-  }
-
-  @Test
-  public void internedValueWithSharedElement() throws Exception {
-    new SerializationTester(InternedValue.create(101), InternedValue.create(45678))
-        .makeMemoizingAndAllowFutureBlocking(/* allowFutureBlocking= */ true)
-        .runTests();
-  }
-
-  @Test
-  public void missingSharedValueData_producesSpecificError() throws Exception {
-    GetRecordingStore store = new GetRecordingStore();
-    FingerprintValueService fingerprintValueService =
-        FingerprintValueService.createForTesting(store);
-    ObjectCodecs codecs = createObjectCodecs();
-
-    // This subject results in exactly one shared value, storing the leaf array.
-    var subject = new NotNestedSet(new Object[] {createRandomLeafArray(rng, Random::nextInt)});
-
-    SerializationResult<ByteString> serialized =
-        codecs.serializeMemoizedAndBlocking(fingerprintValueService, subject);
-    ListenableFuture<?> writeStatus = serialized.getFutureToBlockWritesOn();
-    if (writeStatus != null) {
-      // If it is asynchronous, writing should complete without throwing any exceptions.
-      writeStatus.get();
+        val subject: NotNestedSetContainer?
+        if (doesSecondAliasFirst) {
+            subject =
+                NotNestedSetContainer(
+                    NotNestedSet.Companion.createRandom(
+                        rng,
+                        4,
+                        4,
+                        java.util.function.Function { obj: Random? -> obj.nextInt() }),
+                    NotNestedSet.Companion.createRandom(
+                        rng,
+                        4,
+                        4,
+                        java.util.function.Function { obj: Random? -> obj.nextInt() })
+                )
+        } else {
+            val contained: NotNestedSet = NotNestedSet.Companion.createRandom(
+                rng,
+                5,
+                5,
+                java.util.function.Function { obj: Random? -> obj.nextInt() })
+            subject = NotNestedSetContainer(contained, contained)
+        }
+        SerializationTester(subject)
+            .addCodec(defaultNotNestedSetCodec)
+            .addCodec(NotNestedSetContainerCodec(overloadSelector, subject.first, subject.second))
+            .makeMemoizingAndAllowFutureBlocking( /* allowFutureBlocking= */true)
+            .setVerificationFunction(
+                { original: NotNestedSetContainer, deserialized: NotNestedSetContainer ->
+                    verifyDeserializedNotNestedSetContainer(
+                        original,
+                        deserialized
+                    )
+                })
+            .runTests()
     }
 
-    ListenableFuture<Object> result =
-        deserializeWithExecutor(codecs, fingerprintValueService, serialized.getObject());
-
-    // Completes the request for shared value bytes with null bytes, indicating missing data.
-    store.takeFirstRequest().completeWithNullBytes();
-
-    var thrown =
-        (MissingSharedValueBytesException)
-            assertThrows(ExecutionException.class, result::get).getCause();
-    assertThat(thrown).hasMessageThat().isEqualTo("Missing shared value bytes");
-  }
-
-  @Test
-  public void getSharedValue_missingBytesFromCache_notifiesLookupCollector() throws Exception {
-    GetRecordingStore store = new GetRecordingStore();
-    FingerprintValueService fingerprintValueService =
-        FingerprintValueService.createForTesting(store);
-    ObjectCodecs codecs = createObjectCodecs();
-
-    // This subject results in exactly one shared value, storing the leaf array.
-    var subject = new NotNestedSet(new Object[] {createRandomLeafArray(rng, Random::nextInt)});
-
-    SerializationResult<ByteString> serialized =
-        codecs.serializeMemoizedAndBlocking(fingerprintValueService, subject);
-    ListenableFuture<?> writeStatus = serialized.getFutureToBlockWritesOn();
-    if (writeStatus != null) {
-      // If the write is asynchronous, writing should complete without throwing any exceptions.
-      writeStatus.get();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun internedValueWithSharedElement() {
+        SerializationTester(InternedValue.Companion.create(101), InternedValue.Companion.create(45678))
+            .makeMemoizingAndAllowFutureBlocking( /* allowFutureBlocking= */true)
+            .runTests()
     }
 
-    @SuppressWarnings("unchecked")
-    var result =
-        (ListenableFuture<SkyframeLookupContinuation>)
-            SharedValueDeserializationContext.deserializeWithSkyframe(
-                codecs.getCodecRegistry(),
-                ImmutableClassToInstanceMap.of(),
-                fingerprintValueService,
-                serialized.getObject().newCodedInput());
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun missingSharedValueData_producesSpecificError() {
+        val store: GetRecordingStore = GetRecordingStore()
+        val fingerprintValueService: FingerprintValueService? =
+            FingerprintValueService.createForTesting(store)
+        val codecs: ObjectCodecs = createObjectCodecs()
 
-    // Completes the request for shared value bytes with null bytes, indicating missing data.
-    store.takeFirstRequest().completeWithNullBytes();
+        // This subject results in exactly one shared value, storing the leaf array.
+        val subject: NotNestedSet = NotNestedSet(
+            arrayOf<Any>(
+                NotNestedSet.Companion.createRandomLeafArray(
+                    rng,
+                    java.util.function.Function { obj: Random? -> obj.nextInt() })
+            )
+        )
 
-    // The following get call hangs if the missing bytes are not propagated.
-    var thrown =
-        (MissingSharedValueBytesException)
-            assertThrows(ExecutionException.class, () -> result.get(WAIT_TIMEOUT_SECONDS, SECONDS))
-                .getCause();
-    assertThat(thrown).hasMessageThat().isEqualTo("Missing shared value bytes");
-  }
+        val serialized: SerializationResult<ByteString?> =
+            codecs.serializeMemoizedAndBlocking(fingerprintValueService, subject)
+        val writeStatus: com.google.common.util.concurrent.ListenableFuture<*>? = serialized.getFutureToBlockWritesOn()
+        if (writeStatus != null) {
+            // If it is asynchronous, writing should complete without throwing any exceptions.
+            writeStatus.get()
+        }
 
-  @Test
-  public void sharedValueIsDecompressed(@TestParameter boolean compress) throws Exception {
-    GetRecordingStore store = new GetRecordingStore();
-    FingerprintValueService fingerprintValueService =
-        FingerprintValueService.createForTesting(store);
-    ObjectCodecs codecs = createObjectCodecs();
-    byte[] bytes = new byte[compress ? 2000 : 1000];
-    NotNestedSet subject =
-        new NotNestedSet(
-            new Object[] {
-              bytes,
-            });
+        val result: com.google.common.util.concurrent.ListenableFuture<Any?> =
+            deserializeWithExecutor(codecs, fingerprintValueService, serialized.getObject())
 
-    SerializationResult<ByteString> serialized =
-        codecs.serializeMemoizedAndBlocking(fingerprintValueService, subject);
-    ListenableFuture<?> writeStatus = serialized.getFutureToBlockWritesOn();
-    if (writeStatus != null) {
-      writeStatus.get();
+        // Completes the request for shared value bytes with null bytes, indicating missing data.
+        store.takeFirstRequest().completeWithNullBytes()
+
+        val thrown: MissingSharedValueBytesException? =
+            org.junit.Assert.assertThrows<ExecutionException?>(
+                ExecutionException::class.java,
+                org.junit.function.ThrowingRunnable { result.get() }).getCause() as MissingSharedValueBytesException?
+        assertThat(thrown).hasMessageThat().isEqualTo("Missing shared value bytes")
     }
 
-    ListenableFuture<Object> result =
-        deserializeWithExecutor(codecs, fingerprintValueService, serialized.getObject());
+    @get:Throws(java.lang.Exception::class)
+    @get:org.junit.Test
+    val sharedValue_missingBytesFromCache_notifiesLookupCollector: Unit
+        get() {
+            val store: GetRecordingStore = GetRecordingStore()
+            val fingerprintValueService: FingerprintValueService? =
+                FingerprintValueService.createForTesting(store)
+            val codecs: ObjectCodecs = createObjectCodecs()
 
-    ImmutableList<byte[]> storeValues =
-        ImmutableList.copyOf(store.getFingerprintToContents().values());
-    assertThat(storeValues).hasSize(1);
-    assertThat(storeValues.get(0)).hasLength(compress ? 23 : 1007);
+            // This subject results in exactly one shared value, storing the leaf array.
+            val subject: NotNestedSet = NotNestedSet(
+                arrayOf<Any>(
+                    NotNestedSet.Companion.createRandomLeafArray(
+                        rng,
+                        java.util.function.Function { obj: Random? -> obj.nextInt() })
+                )
+            )
 
-    store.takeFirstRequest().complete();
-    verifyDeserializedNotNestedSet(subject, (NotNestedSet) result.get());
-  }
+            val serialized: SerializationResult<ByteString?> =
+                codecs.serializeMemoizedAndBlocking(fingerprintValueService, subject)
+            val writeStatus: com.google.common.util.concurrent.ListenableFuture<*>? =
+                serialized.getFutureToBlockWritesOn()
+            if (writeStatus != null) {
+                // If the write is asynchronous, writing should complete without throwing any exceptions.
+                writeStatus.get()
+            }
 
-  private static class InternedValue {
-    private Integer value;
+            val result: com.google.common.util.concurrent.ListenableFuture<SkyframeLookupContinuation?> =
+                SharedValueDeserializationContext.deserializeWithSkyframe(
+                    codecs.getCodecRegistry(),
+                    com.google.common.collect.ImmutableClassToInstanceMap.of<B?>(),
+                    fingerprintValueService,
+                    serialized.getObject().newCodedInput()
+                ) as com.google.common.util.concurrent.ListenableFuture<SkyframeLookupContinuation?>
 
-    private static InternedValue create(int value) {
-      InternedValue result = new InternedValue();
-      result.value = value;
-      return result;
+            // Completes the request for shared value bytes with null bytes, indicating missing data.
+            store.takeFirstRequest().completeWithNullBytes()
+
+            // The following get call hangs if the missing bytes are not propagated.
+            val thrown: MissingSharedValueBytesException? =
+                org.junit.Assert.assertThrows<ExecutionException?>(
+                    ExecutionException::class.java,
+                    org.junit.function.ThrowingRunnable {
+                        result.get(
+                            com.google.devtools.build.lib.testutil.TestUtils.WAIT_TIMEOUT_SECONDS,
+                            TimeUnit.SECONDS
+                        )
+                    })
+                    .getCause() as MissingSharedValueBytesException?
+            assertThat(thrown).hasMessageThat().isEqualTo("Missing shared value bytes")
+        }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun sharedValueIsDecompressed(@TestParameter compress: Boolean) {
+        val store: GetRecordingStore = GetRecordingStore()
+        val fingerprintValueService: FingerprintValueService? =
+            FingerprintValueService.createForTesting(store)
+        val codecs: ObjectCodecs = createObjectCodecs()
+        val bytes = ByteArray(if (compress) 2000 else 1000)
+        val subject: NotNestedSet =
+            NotNestedSet(
+                arrayOf<Any>(
+                    bytes,
+                )
+            )
+
+        val serialized: SerializationResult<ByteString?> =
+            codecs.serializeMemoizedAndBlocking(fingerprintValueService, subject)
+        val writeStatus: com.google.common.util.concurrent.ListenableFuture<*>? = serialized.getFutureToBlockWritesOn()
+        if (writeStatus != null) {
+            writeStatus.get()
+        }
+
+        val result: com.google.common.util.concurrent.ListenableFuture<Any?> =
+            deserializeWithExecutor(codecs, fingerprintValueService, serialized.getObject())
+
+        val storeValues: com.google.common.collect.ImmutableList<ByteArray?> =
+            com.google.common.collect.ImmutableList.copyOf(store.getFingerprintToContents().values())
+        Truth.assertThat(storeValues).hasSize(1)
+        Truth.assertThat(storeValues.get(0)).hasLength(if (compress) 23 else 1007)
+
+        store.takeFirstRequest().complete()
+        verifyDeserializedNotNestedSet(subject, result.get() as NotNestedSet?)
     }
 
-    @Override
-    public int hashCode() {
-      return value;
+    private class InternedValue {
+        private var value: Int? = null
+
+        override fun hashCode(): Int {
+            return value!!
+        }
+
+        override fun equals(obj: Any?): Boolean {
+            if (obj is InternedValue) {
+                return value == obj.value
+            }
+            return false
+        }
+
+        companion object {
+            private fun create(value: Int): InternedValue {
+                val result = InternedValue()
+                result.value = value
+                return result
+            }
+        }
     }
 
-    @Override
-    public boolean equals(Object obj) {
-      if (obj instanceof InternedValue that) {
-        return Objects.equals(value, that.value);
-      }
-      return false;
-    }
-  }
+    @com.google.errorprone.annotations.Keep
+    private class InternedValueCodec : InterningObjectCodec<InternedValue?>() {
+        val encodedClass: java.lang.Class<InternedValue?>
+            get() = InternedValue::class.java
 
-  @Keep
-  private static class InternedValueCodec extends InterningObjectCodec<InternedValue> {
-    @Override
-    public Class<InternedValue> getEncodedClass() {
-      return InternedValue.class;
-    }
+        @Throws(SerializationException::class, IOException::class)
+        public override fun serialize(
+            context: SerializationContext, obj: InternedValue, codedOut: CodedOutputStream?
+        ) {
+            context.putSharedValue(
+                obj.value,  /* distinguisher= */null, DeferredIntegerCodec.Companion.INSTANCE, codedOut
+            )
+        }
 
-    @Override
-    public void serialize(
-        SerializationContext context, InternedValue obj, CodedOutputStream codedOut)
-        throws SerializationException, IOException {
-      context.putSharedValue(
-          obj.value, /* distinguisher= */ null, DeferredIntegerCodec.INSTANCE, codedOut);
-    }
+        @Throws(SerializationException::class, IOException::class)
+        public override fun deserializeInterned(
+            context: AsyncDeserializationContext, codedIn: CodedInputStream?
+        ): InternedValue {
+            val value = InternedValue()
+            context.getSharedValue(
+                codedIn,  /* distinguisher= */
+                null,
+                DeferredIntegerCodec.Companion.INSTANCE,
+                value,
+                { parent, v -> parent.value = v as Int? })
+            return value
+        }
 
-    @Override
-    public InternedValue deserializeInterned(
-        AsyncDeserializationContext context, CodedInputStream codedIn)
-        throws SerializationException, IOException {
-      InternedValue value = new InternedValue();
-      context.getSharedValue(
-          codedIn,
-          /* distinguisher= */ null,
-          DeferredIntegerCodec.INSTANCE,
-          value,
-          (parent, v) -> parent.value = (Integer) v);
-      return value;
+        // fake implementation just returns input
+        public override fun intern(interned: InternedValue): InternedValue {
+            com.google.common.base.Preconditions.checkNotNull<Int?>(interned.value)
+            return interned
+        }
     }
 
-    @Override
-    @SuppressWarnings("CanIgnoreReturnValueSuggester") // fake implementation just returns input
-    public InternedValue intern(InternedValue interned) {
-      checkNotNull(interned.value);
-      return interned;
+    private class DeferredIntegerCodec : DeferredObjectCodec<Int?>() {
+        val encodedClass: java.lang.Class<Int?>
+            get() = Int::class.java
+
+        public override fun autoRegister(): Boolean {
+            return false
+        }
+
+        @Throws(SerializationException::class, IOException::class)
+        public override fun serialize(context: SerializationContext?, obj: Int, codedOut: CodedOutputStream) {
+            codedOut.writeInt32NoTag(obj)
+        }
+
+        @Throws(SerializationException::class, IOException::class)
+        public override fun deserializeDeferred(
+            context: AsyncDeserializationContext?, codedIn: CodedInputStream
+        ): DeferredValue<Int?> {
+            val value: Int = codedIn.readInt32()
+            return DeferredValue { value }
+        }
+
+        companion object {
+            private val INSTANCE = DeferredIntegerCodec()
+        }
     }
-  }
 
-  private static class DeferredIntegerCodec extends DeferredObjectCodec<Integer> {
-    private static final DeferredIntegerCodec INSTANCE = new DeferredIntegerCodec();
-
-    @Override
-    public Class<Integer> getEncodedClass() {
-      return Integer.class;
+    private fun deserializeWithExecutor(
+        codecs: ObjectCodecs, fingerprintValueService: FingerprintValueService?, data: ByteString?
+    ): com.google.common.util.concurrent.ListenableFuture<Any?> {
+        val task: com.google.common.util.concurrent.ListenableFutureTask<V?> =
+            com.google.common.util.concurrent.ListenableFutureTask.create<V?>(
+                java.util.concurrent.Callable { codecs.deserializeMemoizedAndBlocking(fingerprintValueService, data) })
+        executor.execute(task)
+        return task
     }
 
-    @Override
-    public boolean autoRegister() {
-      return false;
+    companion object {
+        private const val CONCURRENCY = 20
+
+        private fun verifyDeserializedNotNestedSet(
+            original: NotNestedSet?, deserialized: NotNestedSet?
+        ) {
+            assertThat(dumpStructureWithEquivalenceReduction(deserialized))
+                .isEqualTo(dumpStructureWithEquivalenceReduction(original))
+        }
+
+        private fun verifyDeserializedNotNestedSetContainer(
+            original: NotNestedSetContainer, deserialized: NotNestedSetContainer
+        ) {
+            verifyDeserializedNotNestedSet(original.first, deserialized.first)
+            verifyDeserializedNotNestedSet(original.second, deserialized.second)
+        }
+
+        private fun createObjectCodecs(): ObjectCodecs {
+            return ObjectCodecs(
+                AutoRegistry.get().getBuilder().add(defaultNotNestedSetCodec).build()
+            )
+        }
+
+        private val defaultNotNestedSetCodec: ObjectCodec<NotNestedSet?>
+            get() = NotNestedSetCodec(NestedArrayCodec())
     }
-
-    @Override
-    public void serialize(SerializationContext context, Integer obj, CodedOutputStream codedOut)
-        throws SerializationException, IOException {
-      codedOut.writeInt32NoTag(obj);
-    }
-
-    @Override
-    public DeferredValue<Integer> deserializeDeferred(
-        AsyncDeserializationContext context, CodedInputStream codedIn)
-        throws SerializationException, IOException {
-      int value = codedIn.readInt32();
-      return () -> value;
-    }
-  }
-
-  private ListenableFuture<Object> deserializeWithExecutor(
-      ObjectCodecs codecs, FingerprintValueService fingerprintValueService, ByteString data) {
-    var task =
-        ListenableFutureTask.create(
-            () -> codecs.deserializeMemoizedAndBlocking(fingerprintValueService, data));
-    executor.execute(task);
-    return task;
-  }
-
-  private static void verifyDeserializedNotNestedSet(
-      NotNestedSet original, NotNestedSet deserialized) {
-    assertThat(dumpStructureWithEquivalenceReduction(deserialized))
-        .isEqualTo(dumpStructureWithEquivalenceReduction(original));
-  }
-
-  private static void verifyDeserializedNotNestedSetContainer(
-      NotNestedSetContainer original, NotNestedSetContainer deserialized) {
-    verifyDeserializedNotNestedSet(original.first, deserialized.first);
-    verifyDeserializedNotNestedSet(original.second, deserialized.second);
-  }
-
-  private static ObjectCodecs createObjectCodecs() {
-    return new ObjectCodecs(
-        AutoRegistry.get().getBuilder().add(getDefaultNotNestedSetCodec()).build());
-  }
-
-  private static ObjectCodec<NotNestedSet> getDefaultNotNestedSetCodec() {
-    return new NotNestedSetCodec(new NestedArrayCodec());
-  }
 }

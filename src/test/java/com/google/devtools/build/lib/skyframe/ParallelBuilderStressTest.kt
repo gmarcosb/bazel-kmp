@@ -11,38 +11,39 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe
 
-package com.google.devtools.build.lib.skyframe;
+import com.google.devtools.build.lib.skyframe.ParallelBuilderTest
+import com.google.devtools.build.lib.skyframe.ParallelBuilderTest.StressTest
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
 
 /**
  * Stress tests for the parallel builder.
  */
-@RunWith(JUnit4.class)
-public class ParallelBuilderStressTest extends ParallelBuilderTest {
+@RunWith(JUnit4::class)
+class ParallelBuilderStressTest : ParallelBuilderTest() {
+    /**
+     * A larger set of tests using randomly-generated complex dependency graphs.
+     */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRandomStressTest1() {
+        val numTrials = 2
+        val numArtifacts = 100
+        val randomSeed = 43
+        val test: StressTest = StressTest(numArtifacts, numTrials, randomSeed)
+        test.runStressTest()
+    }
 
-  /**
-   * A larger set of tests using randomly-generated complex dependency graphs.
-   */
-  @Test
-  public void testRandomStressTest1() throws Exception {
-    final int numTrials = 2;
-    final int numArtifacts = 100;
-    final int randomSeed = 43;
-    StressTest test = new StressTest(numArtifacts, numTrials, randomSeed);
-    test.runStressTest();
-  }
-
-  @Test
-  public void testRandomStressTest2() throws Exception {
-    final int numTrials = 10;
-    final int numArtifacts = 10;
-    final int randomSeed = 44;
-    StressTest test = new StressTest(numArtifacts, numTrials, randomSeed);
-    test.runStressTest();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRandomStressTest2() {
+        val numTrials = 10
+        val numArtifacts = 10
+        val randomSeed = 44
+        val test: StressTest = StressTest(numArtifacts, numTrials, randomSeed)
+        test.runStressTest()
+    }
 }

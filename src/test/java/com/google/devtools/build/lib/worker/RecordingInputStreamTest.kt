@@ -11,92 +11,98 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.worker
 
-package com.google.devtools.build.lib.worker;
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.io.ByteArrayInputStream
+import java.io.IOException
 
-import static com.google.common.truth.Truth.assertThat;
+/** Tests the RecordingInputStream class.  */
+@RunWith(JUnit4::class)
+class RecordingInputStreamTest {
+    @get:Throws(IOException::class)
+    @get:org.junit.Test
+    val recordedDataAsString_returnsPlainStringsAsStrings: Unit
+        get() {
+            val s = "A good string\nWith two lines\n"
+            val bais: ByteArrayInputStream =
+                ByteArrayInputStream(s.toByteArray(java.nio.charset.StandardCharsets.UTF_8))
+            val `in`: RecordingInputStream = RecordingInputStream(bais)
 
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+            `in`.startRecording(1000)
+            `in`.readRemaining()
 
-/** Tests the RecordingInputStream class. */
-@RunWith(JUnit4.class)
-public class RecordingInputStreamTest {
+            assertThat(`in`.getRecordedDataAsString()).isEqualTo(s)
+        }
 
-  @Test
-  public void getRecordedDataAsString_returnsPlainStringsAsStrings() throws IOException {
-    String s = "A good string\nWith two lines\n";
-    ByteArrayInputStream bais = new ByteArrayInputStream(s.getBytes(StandardCharsets.UTF_8));
-    RecordingInputStream in = new RecordingInputStream(bais);
+    @get:Throws(IOException::class)
+    @get:org.junit.Test
+    val recordedDataAsString_returnsNonUtf8AsHex: Unit
+        get() {
+            val bais: ByteArrayInputStream =
+                ByteArrayInputStream(byteArrayOf(0xFF.toByte(), 0xFE.toByte(), 0X01))
+            val `in`: RecordingInputStream = RecordingInputStream(bais)
+            val inBuf = ByteArray(1000)
 
-    in.startRecording(1000);
-    in.readRemaining();
+            `in`.startRecording(1000)
+            `in`.read(inBuf)
 
-    assertThat(in.getRecordedDataAsString()).isEqualTo(s);
-  }
+            assertThat(`in`.getRecordedDataAsString())
+                .isEqualTo(
+                    "Not UTF-8, printing as hex\n"
+                            + "FF FE 01                                          |...              |\n"
+                )
+        }
 
-  @Test
-  public void getRecordedDataAsString_returnsNonUtf8AsHex() throws IOException {
-    ByteArrayInputStream bais =
-        new ByteArrayInputStream(new byte[] {(byte) 0xFF, (byte) 0xFE, 0X01});
-    RecordingInputStream in = new RecordingInputStream(bais);
-    byte[] inBuf = new byte[1000];
+    @get:Throws(IOException::class)
+    @get:org.junit.Test
+    val recordedDataAsString_returnsMixedAsHex: Unit
+        get() {
+            var s = "One 17-char line!"
+            // Doubles the length on each iteration
+            for (i in 0..5) {
+                s += s
+            }
+            val bytes: ByteArray = s.toByteArray(java.nio.charset.StandardCharsets.US_ASCII)
+            bytes[0] = 0x00
+            bytes[1] = 0x01
+            val bais: ByteArrayInputStream = ByteArrayInputStream(bytes)
+            val `in`: RecordingInputStream = RecordingInputStream(bais)
+            val inBuf = ByteArray(1025)
 
-    in.startRecording(1000);
-    in.read(inBuf);
+            `in`.startRecording(1025)
+            `in`.read(inBuf)
 
-    assertThat(in.getRecordedDataAsString())
-        .isEqualTo(
-            "Not UTF-8, printing as hex\n"
-                + "FF FE 01                                          |...              |\n");
-  }
+            assertThat(`in`.getRecordedDataAsString())
+                .startsWith(
+                    "Not UTF-8, printing first 1024 bytes as hex\n"
+                            + "00 01 65 20 31 37 2D 63  68 61 72 20 6C 69 6E 65  |..e 17-c har line|"
+                )
+        }
 
-  @Test
-  public void getRecordedDataAsString_returnsMixedAsHex() throws IOException {
-    String s = "One 17-char line!";
-    // Doubles the length on each iteration
-    for (int i = 0; i < 6; i++) {
-      s += s;
-    }
-    byte[] bytes = s.getBytes(StandardCharsets.US_ASCII);
-    bytes[0] = 0x00;
-    bytes[1] = 0x01;
-    ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
-    RecordingInputStream in = new RecordingInputStream(bais);
-    byte[] inBuf = new byte[1025];
+    @get:Throws(IOException::class)
+    @get:org.junit.Test
+    val recordedDataAsString_returnsLongNonUtf8AsHexLines: Unit
+        get() {
+            val buf = ByteArray(25)
+            for (i in 0..24) {
+                buf[i] = i.toByte()
+            }
+            buf[0] = 0xFF.toByte()
+            buf[1] = 0xFE.toByte()
+            val bais: ByteArrayInputStream = ByteArrayInputStream(buf)
+            val `in`: RecordingInputStream = RecordingInputStream(bais)
+            val inBuf = ByteArray(1000)
 
-    in.startRecording(1025);
-    in.read(inBuf);
+            `in`.startRecording(1000)
+            `in`.read(inBuf)
 
-    assertThat(in.getRecordedDataAsString())
-        .startsWith(
-            "Not UTF-8, printing first 1024 bytes as hex\n"
-                + "00 01 65 20 31 37 2D 63  68 61 72 20 6C 69 6E 65  |..e 17-c har line|");
-  }
-
-  @Test
-  public void getRecordedDataAsString_returnsLongNonUtf8AsHexLines() throws IOException {
-    byte[] buf = new byte[25];
-    for (int i = 0; i < 25; i++) {
-      buf[i] = (byte) i;
-    }
-    buf[0] = (byte) 0xFF;
-    buf[1] = (byte) 0xFE;
-    ByteArrayInputStream bais = new ByteArrayInputStream(buf);
-    RecordingInputStream in = new RecordingInputStream(bais);
-    byte[] inBuf = new byte[1000];
-
-    in.startRecording(1000);
-    in.read(inBuf);
-
-    assertThat(in.getRecordedDataAsString())
-        .startsWith(
-            "Not UTF-8, printing as hex\n"
-                + "FF FE 02 03 04 05 06 07  08 09 0A 0B 0C 0D 0E 0F  |........ ........|\n"
-                + "10 11 12 13 14 15 16 17  18                       |........ .       |\n");
-  }
+            assertThat(`in`.getRecordedDataAsString())
+                .startsWith(
+                    ("Not UTF-8, printing as hex\n"
+                            + "FF FE 02 03 04 05 06 07  08 09 0A 0B 0C 0D 0E 0F  |........ ........|\n"
+                            + "10 11 12 13 14 15 16 17  18                       |........ .       |\n")
+                )
+        }
 }

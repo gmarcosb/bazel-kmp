@@ -11,660 +11,696 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.collect.nestedset;
+package com.google.devtools.build.lib.collect.nestedset
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.util.concurrent.Futures.immediateFailedFuture;
-import static com.google.common.util.concurrent.MoreExecutors.directExecutor;
-import static com.google.devtools.build.lib.skyframe.serialization.PackedFingerprint.getFingerprintForTesting;
-import static com.google.devtools.build.lib.skyframe.serialization.WriteStatuses.immediateFailedWriteStatus;
-import static com.google.devtools.build.lib.skyframe.serialization.WriteStatuses.immediateWriteStatus;
-import static java.util.Objects.requireNonNull;
-import static org.junit.Assert.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import com.google.devtools.build.lib.skyframe.serialization.PackedFingerprint.getFingerprintForTesting
 
-import com.google.common.collect.ImmutableClassToInstanceMap;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
-import com.google.common.testing.GcFinalization;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.common.util.concurrent.SettableFuture;
-import com.google.devtools.build.lib.bugreport.BugReporter;
-import com.google.devtools.build.lib.skyframe.serialization.AutoRegistry;
-import com.google.devtools.build.lib.skyframe.serialization.DeserializationContext;
-import com.google.devtools.build.lib.skyframe.serialization.FingerprintValueService;
-import com.google.devtools.build.lib.skyframe.serialization.FingerprintValueStore;
-import com.google.devtools.build.lib.skyframe.serialization.FingerprintValueStore.MissingFingerprintValueException;
-import com.google.devtools.build.lib.skyframe.serialization.KeyBytesProvider;
-import com.google.devtools.build.lib.skyframe.serialization.ObjectCodec;
-import com.google.devtools.build.lib.skyframe.serialization.ObjectCodecRegistry;
-import com.google.devtools.build.lib.skyframe.serialization.ObjectCodecs;
-import com.google.devtools.build.lib.skyframe.serialization.PackedFingerprint;
-import com.google.devtools.build.lib.skyframe.serialization.PutOperation;
-import com.google.devtools.build.lib.skyframe.serialization.SerializationContext;
-import com.google.devtools.build.lib.skyframe.serialization.SerializationDependencyProvider;
-import com.google.devtools.build.lib.skyframe.serialization.SerializationException;
-import com.google.devtools.build.lib.skyframe.serialization.SerializationResult;
-import com.google.devtools.build.lib.skyframe.serialization.WriteStatuses.SettableWriteStatus;
-import com.google.devtools.build.lib.skyframe.serialization.WriteStatuses.WriteStatus;
-import com.google.devtools.build.lib.util.io.AnsiTerminal.Color;
-import com.google.protobuf.ByteString;
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
-import java.lang.ref.WeakReference;
-import java.nio.charset.Charset;
-import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Function;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-import org.mockito.ArgumentCaptor;
+/** Tests for [NestedSet] serialization.  */
+@RunWith(JUnit4::class)
+class NestedSetCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAutoCodecedCodec() {
+        val objectCodecs: ObjectCodecs =
+            ObjectCodecs(
+                AutoRegistry.get().getBuilder().setAllowDefaultCodec(true).build(),
+                com.google.common.collect.ImmutableClassToInstanceMap.of<B?>()
+            )
+        NestedSetCodecTestUtils.checkCodec(objectCodecs, false, false)
+    }
 
-/** Tests for {@link NestedSet} serialization. */
-@RunWith(JUnit4.class)
-public final class NestedSetCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCodecWithInMemoryNestedSetStore() {
+        val objectCodecs: ObjectCodecs = createCodecs(NestedSetStore.inMemory())
+        NestedSetCodecTestUtils.checkCodec(objectCodecs, true, true)
+    }
 
-  @Test
-  public void testAutoCodecedCodec() throws Exception {
-    ObjectCodecs objectCodecs =
-        new ObjectCodecs(
-            AutoRegistry.get().getBuilder().setAllowDefaultCodec(true).build(),
-            ImmutableClassToInstanceMap.of());
-    NestedSetCodecTestUtils.checkCodec(objectCodecs, false, false);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun onlyOneReadPerArray() {
+        val base: NestedSet<String?>? = NestedSetBuilder.create(Order.STABLE_ORDER, "a", "b")
+        val top: NestedSet<String?>? = NestedSetBuilder.fromNestedSet(base).add("c").build()
 
-  @Test
-  public void testCodecWithInMemoryNestedSetStore() throws Exception {
-    ObjectCodecs objectCodecs = createCodecs(NestedSetStore.inMemory());
-    NestedSetCodecTestUtils.checkCodec(objectCodecs, true, true);
-  }
+        val reads: AtomicInteger = AtomicInteger()
+        val fingerprintValueStore: FingerprintValueStore =
+            object : FingerprintValueStore() {
+                val delegate: FingerprintValueStore = FingerprintValueStore.inMemoryStore()
 
-  @Test
-  public void onlyOneReadPerArray() throws Exception {
-    NestedSet<String> base = NestedSetBuilder.create(Order.STABLE_ORDER, "a", "b");
-    NestedSet<String> top = NestedSetBuilder.fromNestedSet(base).add("c").build();
+                public override fun put(fingerprint: KeyBytesProvider?, serializedBytes: ByteArray?): WriteStatus {
+                    return delegate.put(fingerprint, serializedBytes)
+                }
 
-    AtomicInteger reads = new AtomicInteger();
-    FingerprintValueStore fingerprintValueStore =
-        new FingerprintValueStore() {
-          final FingerprintValueStore delegate = FingerprintValueStore.inMemoryStore();
+                @Throws(IOException::class)
+                public override fun get(fingerprint: KeyBytesProvider?): com.google.common.util.concurrent.ListenableFuture<ByteArray?> {
+                    reads.incrementAndGet()
+                    return delegate.get(fingerprint)
+                }
+            }
+        val fingerprintValueService: FingerprintValueService? =
+            FingerprintValueService.createForTesting(fingerprintValueStore)
 
-          @Override
-          public WriteStatus put(KeyBytesProvider fingerprint, byte[] serializedBytes) {
-            return delegate.put(fingerprint, serializedBytes);
-          }
+        val serializer: ObjectCodecs = createCodecs(createStore(fingerprintValueStore))
+        val serializedBase: ByteString? =
+            serializer.serializeMemoizedAndBlocking(fingerprintValueService, base).getObject()
+        val serializedTop: ByteString? =
+            serializer.serializeMemoizedAndBlocking(fingerprintValueService, top).getObject()
 
-          @Override
-          public ListenableFuture<byte[]> get(KeyBytesProvider fingerprint) throws IOException {
-            reads.incrementAndGet();
-            return delegate.get(fingerprint);
-          }
-        };
-    FingerprintValueService fingerprintValueService =
-        FingerprintValueService.createForTesting(fingerprintValueStore);
+        // When deserializing top, we should perform 2 reads, one for each array in [[a, b], c].
+        // Deliberately recreates the store to avoid getting a cached value.
+        val deserializer: ObjectCodecs = createCodecs(createStore(fingerprintValueStore))
+        val deserializedTop: NestedSet<*> = deserializer.deserializeMemoized(serializedTop) as NestedSet<*>
+        assertThat(deserializedTop.toList()).containsExactly("a", "b", "c")
+        Truth.assertThat(reads.get()).isEqualTo(2)
 
-    ObjectCodecs serializer = createCodecs(createStore(fingerprintValueStore));
-    ByteString serializedBase =
-        serializer.serializeMemoizedAndBlocking(fingerprintValueService, base).getObject();
-    ByteString serializedTop =
-        serializer.serializeMemoizedAndBlocking(fingerprintValueService, top).getObject();
+        // When deserializing base, we should not need to perform any additional reads since we have
+        // already read [a, b] and it is still in memory.
+        GcFinalization.awaitFullGc()
+        val deserializedBase: NestedSet<*> = deserializer.deserializeMemoized(serializedBase) as NestedSet<*>
+        assertThat(deserializedBase.toList()).containsExactly("a", "b")
+        Truth.assertThat(reads.get()).isEqualTo(2)
+    }
 
-    // When deserializing top, we should perform 2 reads, one for each array in [[a, b], c].
-    // Deliberately recreates the store to avoid getting a cached value.
-    ObjectCodecs deserializer = createCodecs(createStore(fingerprintValueStore));
-    NestedSet<?> deserializedTop = (NestedSet<?>) deserializer.deserializeMemoized(serializedTop);
-    assertThat(deserializedTop.toList()).containsExactly("a", "b", "c");
-    assertThat(reads.get()).isEqualTo(2);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun missingNestedSetException_hiddenUntilNestedSetIsConsumed() {
+        val missingNestedSetException: Throwable =
+            MissingFingerprintValueException(getFingerprintForTesting("fingerprint"))
+        val fingerprintValueStore: FingerprintValueStore =
+            object : FingerprintValueStore() {
+                public override fun put(fingerprint: KeyBytesProvider?, serializedBytes: ByteArray?): WriteStatus {
+                    return immediateWriteStatus()
+                }
 
-    // When deserializing base, we should not need to perform any additional reads since we have
-    // already read [a, b] and it is still in memory.
-    GcFinalization.awaitFullGc();
-    NestedSet<?> deserializedBase = (NestedSet<?>) deserializer.deserializeMemoized(serializedBase);
-    assertThat(deserializedBase.toList()).containsExactly("a", "b");
-    assertThat(reads.get()).isEqualTo(2);
-  }
+                public override fun get(fingerprint: KeyBytesProvider?): com.google.common.util.concurrent.ListenableFuture<ByteArray?> {
+                    return com.google.common.util.concurrent.Futures.immediateFailedFuture<ByteArray?>(
+                        missingNestedSetException
+                    )
+                }
+            }
+        val fingerprintValueService: FingerprintValueService? =
+            FingerprintValueService.createForTesting(fingerprintValueStore)
+        val bugReporter: BugReporter? = Mockito.mock<BugReporter?>(BugReporter::class.java)
+        val serializer: ObjectCodecs = createCodecs(createStore(fingerprintValueStore))
+        val deserializer: ObjectCodecs =
+            createCodecs(createStoreWithBugReporter(fingerprintValueStore, bugReporter))
 
-  @Test
-  public void missingNestedSetException_hiddenUntilNestedSetIsConsumed() throws Exception {
-    Throwable missingNestedSetException =
-        new MissingFingerprintValueException(getFingerprintForTesting("fingerprint"));
-    FingerprintValueStore fingerprintValueStore =
-        new FingerprintValueStore() {
-          @Override
-          public WriteStatus put(KeyBytesProvider fingerprint, byte[] serializedBytes) {
-            return immediateWriteStatus();
-          }
+        val serialized: NestedSet<*>? = NestedSetBuilder.create(Order.STABLE_ORDER, "a", "b")
+        val result: ByteString? =
+            serializer.serializeMemoizedAndBlocking(fingerprintValueService, serialized).getObject()
+        val deserialized: Any = deserializer.deserializeMemoized(result)
 
-          @Override
-          public ListenableFuture<byte[]> get(KeyBytesProvider fingerprint) {
-            return immediateFailedFuture(missingNestedSetException);
-          }
-        };
-    FingerprintValueService fingerprintValueService =
-        FingerprintValueService.createForTesting(fingerprintValueStore);
-    BugReporter bugReporter = mock(BugReporter.class);
-    ObjectCodecs serializer = createCodecs(createStore(fingerprintValueStore));
-    ObjectCodecs deserializer =
-        createCodecs(createStoreWithBugReporter(fingerprintValueStore, bugReporter));
+        Truth.assertThat(deserialized).isInstanceOf(NestedSet::class.java)
+        org.junit.Assert.assertThrows<T?>(
+            MissingFingerprintValueException::class.java, (deserialized as NestedSet<*>?)::toListInterruptibly
+        )
+        Mockito.verify<BugReporter?>(bugReporter).sendNonFatalBugReport(missingNestedSetException)
+    }
 
-    NestedSet<?> serialized = NestedSetBuilder.create(Order.STABLE_ORDER, "a", "b");
-    ByteString result =
-        serializer.serializeMemoizedAndBlocking(fingerprintValueService, serialized).getObject();
-    Object deserialized = deserializer.deserializeMemoized(result);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun exceptionOnPut_propagatedToFutureToBlockWritesOn() {
+        val e: java.lang.Exception = java.lang.Exception("Something went wrong")
+        val fingerprintValueStore: FingerprintValueStore =
+            object : FingerprintValueStore() {
+                public override fun put(fingerprint: KeyBytesProvider?, serializedBytes: ByteArray?): WriteStatus {
+                    return immediateFailedWriteStatus(e)
+                }
 
-    assertThat(deserialized).isInstanceOf(NestedSet.class);
-    assertThrows(
-        MissingFingerprintValueException.class, ((NestedSet<?>) deserialized)::toListInterruptibly);
-    verify(bugReporter).sendNonFatalBugReport(missingNestedSetException);
-  }
+                public override fun get(fingerprint: KeyBytesProvider?): com.google.common.util.concurrent.ListenableFuture<ByteArray?>? {
+                    throw java.lang.UnsupportedOperationException()
+                }
+            }
+        val fingerprintValueService: FingerprintValueService? =
+            FingerprintValueService.createForTesting(fingerprintValueStore)
+        val codecs: ObjectCodecs = createCodecs(createStore(fingerprintValueStore))
 
-  @Test
-  public void exceptionOnPut_propagatedToFutureToBlockWritesOn() throws Exception {
-    Exception e = new Exception("Something went wrong");
-    FingerprintValueStore fingerprintValueStore =
-        new FingerprintValueStore() {
-          @Override
-          public WriteStatus put(KeyBytesProvider fingerprint, byte[] serializedBytes) {
-            return immediateFailedWriteStatus(e);
-          }
+        val serialized: NestedSet<*>? = NestedSetBuilder.create(Order.STABLE_ORDER, "a", "b")
+        val result: SerializationResult<ByteString?> =
+            codecs.serializeMemoizedAndBlocking(fingerprintValueService, serialized)
+        val futureToBlockWritesOn: java.util.concurrent.Future<*> = result.getFutureToBlockWritesOn()
+        val thrown: java.lang.Exception? = org.junit.Assert.assertThrows<ExecutionException?>(
+            ExecutionException::class.java,
+            org.junit.function.ThrowingRunnable { futureToBlockWritesOn.get() })
+        Truth.assertThat(thrown).hasCauseThat().isSameInstanceAs(e)
+    }
 
-          @Override
-          public ListenableFuture<byte[]> get(KeyBytesProvider fingerprint) {
-            throw new UnsupportedOperationException();
-          }
-        };
-    FingerprintValueService fingerprintValueService =
-        FingerprintValueService.createForTesting(fingerprintValueStore);
-    ObjectCodecs codecs = createCodecs(createStore(fingerprintValueStore));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun exceptionOnGet_hiddenUntilNestedSetIsConsumed() {
+        val e: java.lang.Exception = java.lang.Exception("Something went wrong")
+        val fingerprintValueStore: FingerprintValueStore =
+            object : FingerprintValueStore() {
+                public override fun put(fingerprint: KeyBytesProvider?, serializedBytes: ByteArray?): WriteStatus {
+                    return immediateWriteStatus()
+                }
 
-    NestedSet<?> serialized = NestedSetBuilder.create(Order.STABLE_ORDER, "a", "b");
-    SerializationResult<ByteString> result =
-        codecs.serializeMemoizedAndBlocking(fingerprintValueService, serialized);
-    Future<?> futureToBlockWritesOn = result.getFutureToBlockWritesOn();
-    Exception thrown = assertThrows(ExecutionException.class, futureToBlockWritesOn::get);
-    assertThat(thrown).hasCauseThat().isSameInstanceAs(e);
-  }
+                public override fun get(fingerprint: KeyBytesProvider?): com.google.common.util.concurrent.ListenableFuture<ByteArray?> {
+                    return com.google.common.util.concurrent.Futures.immediateFailedFuture<ByteArray?>(e)
+                }
+            }
+        val fingerprintValueService: FingerprintValueService? =
+            FingerprintValueService.createForTesting(fingerprintValueStore)
+        val serializer: ObjectCodecs = createCodecs(createStore(fingerprintValueStore))
+        // Creates a separate deserializer so it does not see cached entries from the serializer.
+        val deserializer: ObjectCodecs = createCodecs(createStore(fingerprintValueStore))
 
-  @Test
-  public void exceptionOnGet_hiddenUntilNestedSetIsConsumed() throws Exception {
-    Exception e = new Exception("Something went wrong");
-    FingerprintValueStore fingerprintValueStore =
-        new FingerprintValueStore() {
-          @Override
-          public WriteStatus put(KeyBytesProvider fingerprint, byte[] serializedBytes) {
-            return immediateWriteStatus();
-          }
+        val serialized: NestedSet<*>? = NestedSetBuilder.create(Order.STABLE_ORDER, "a", "b")
+        val result: ByteString? =
+            serializer.serializeMemoizedAndBlocking(fingerprintValueService, serialized).getObject()
+        val deserialized: Any =
+            deserializer.deserializeMemoizedAndBlocking(fingerprintValueService, result)
 
-          @Override
-          public ListenableFuture<byte[]> get(KeyBytesProvider fingerprint) {
-            return immediateFailedFuture(e);
-          }
-        };
-    FingerprintValueService fingerprintValueService =
-        FingerprintValueService.createForTesting(fingerprintValueStore);
-    ObjectCodecs serializer = createCodecs(createStore(fingerprintValueStore));
-    // Creates a separate deserializer so it does not see cached entries from the serializer.
-    ObjectCodecs deserializer = createCodecs(createStore(fingerprintValueStore));
+        Truth.assertThat(deserialized).isInstanceOf(NestedSet::class.java)
+        val thrown: java.lang.Exception? = org.junit.Assert.assertThrows<java.lang.RuntimeException?>(
+            java.lang.RuntimeException::class.java,
+            (deserialized as NestedSet<*>?)::toList
+        )
+        Truth.assertThat(thrown).hasMessageThat().contains("Something went wrong")
+    }
 
-    NestedSet<?> serialized = NestedSetBuilder.create(Order.STABLE_ORDER, "a", "b");
-    ByteString result =
-        serializer.serializeMemoizedAndBlocking(fingerprintValueService, serialized).getObject();
-    Object deserialized =
-        deserializer.deserializeMemoizedAndBlocking(fingerprintValueService, result);
+    /**
+     * Tests that serialization of a `NestedSet<NestedSet<String>>` waits on the writes of the
+     * inner NestedSets.
+     */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNestedNestedSetSerialization() {
+        val mockStorage: FingerprintValueStore = Mockito.mock<FingerprintValueStore>(FingerprintValueStore::class.java)
+        val fingerprintValueService: FingerprintValueService? =
+            FingerprintValueService.createForTesting(mockStorage)
+        val innerWrite: SettableWriteStatus = SettableWriteStatus()
+        val outerWrite: SettableWriteStatus = SettableWriteStatus()
+        Mockito.`when`<T?>(
+            mockStorage.put(
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>()
+            )
+        ) // The write of the inner NestedSet {"a", "b"}
+            .thenReturn(innerWrite) // The write of the inner NestedSet {"c", "d"}
+            .thenReturn(innerWrite) // The write of the outer NestedSet {{"a", "b"}, {"c", "d"}}
+            .thenReturn(outerWrite)
+        val objectCodecs: ObjectCodecs = createCodecs(createStore(mockStorage))
 
-    assertThat(deserialized).isInstanceOf(NestedSet.class);
-    Exception thrown = assertThrows(RuntimeException.class, ((NestedSet<?>) deserialized)::toList);
-    assertThat(thrown).hasMessageThat().contains("Something went wrong");
-  }
+        val nestedNestedSet: NestedSet<NestedSet<String?>?>? =
+            NestedSetBuilder.create(
+                Order.STABLE_ORDER,
+                NestedSetBuilder.create(Order.STABLE_ORDER, "a", "b"),
+                NestedSetBuilder.create(Order.STABLE_ORDER, "c", "d")
+            )
 
-  /**
-   * Tests that serialization of a {@code NestedSet<NestedSet<String>>} waits on the writes of the
-   * inner NestedSets.
-   */
-  @Test
-  public void testNestedNestedSetSerialization() throws Exception {
-    FingerprintValueStore mockStorage = mock(FingerprintValueStore.class);
-    FingerprintValueService fingerprintValueService =
-        FingerprintValueService.createForTesting(mockStorage);
-    var innerWrite = new SettableWriteStatus();
-    var outerWrite = new SettableWriteStatus();
-    when(mockStorage.put(any(), any()))
-        // The write of the inner NestedSet {"a", "b"}
-        .thenReturn(innerWrite)
-        // The write of the inner NestedSet {"c", "d"}
-        .thenReturn(innerWrite)
-        // The write of the outer NestedSet {{"a", "b"}, {"c", "d"}}
-        .thenReturn(outerWrite);
-    ObjectCodecs objectCodecs = createCodecs(createStore(mockStorage));
+        val result: SerializationResult<ByteString?> =
+            objectCodecs.serializeMemoizedAndBlocking(fingerprintValueService, nestedNestedSet)
+        outerWrite.markSuccess()
+        assertThat(result.getFutureToBlockWritesOn().isDone()).isFalse()
+        innerWrite.markSuccess()
+        assertThat(result.getFutureToBlockWritesOn().isDone()).isTrue()
+    }
 
-    NestedSet<NestedSet<String>> nestedNestedSet =
-        NestedSetBuilder.create(
-            Order.STABLE_ORDER,
-            NestedSetBuilder.create(Order.STABLE_ORDER, "a", "b"),
-            NestedSetBuilder.create(Order.STABLE_ORDER, "c", "d"));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNestedNestedSetsWithCommonDependencyWaitOnSameInnerFuture() {
+        val mockStorage: FingerprintValueStore = Mockito.mock<FingerprintValueStore>(FingerprintValueStore::class.java)
+        val fingerprintValueService: FingerprintValueService? =
+            FingerprintValueService.createForTesting(mockStorage)
+        val sharedInnerWrite: SettableWriteStatus = SettableWriteStatus()
+        val outerWrite: SettableWriteStatus = SettableWriteStatus()
+        Mockito.`when`<T?>(
+            mockStorage.put(
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>()
+            )
+        ) // The write of the shared inner NestedSet {"a", "b"}
+            .thenReturn(sharedInnerWrite) // The write of the inner NestedSet {"c", "d"}
+            .thenReturn(immediateWriteStatus()) // The write of the outer NestedSet {{"a", "b"}, {"c", "d"}}
+            .thenReturn(outerWrite) // The write of the inner NestedSet {"e", "f"}
+            .thenReturn(immediateWriteStatus())
+        val objectCodecs: ObjectCodecs = createCodecs(createStore(mockStorage))
 
-    SerializationResult<ByteString> result =
-        objectCodecs.serializeMemoizedAndBlocking(fingerprintValueService, nestedNestedSet);
-    outerWrite.markSuccess();
-    assertThat(result.getFutureToBlockWritesOn().isDone()).isFalse();
-    innerWrite.markSuccess();
-    assertThat(result.getFutureToBlockWritesOn().isDone()).isTrue();
-  }
+        val sharedInnerNestedSet: NestedSet<String?>? = NestedSetBuilder.create(Order.STABLE_ORDER, "a", "b")
+        val nestedNestedSet1: NestedSet<NestedSet<String?>?>? =
+            NestedSetBuilder.create(
+                Order.STABLE_ORDER,
+                sharedInnerNestedSet,
+                NestedSetBuilder.create(Order.STABLE_ORDER, "c", "d")
+            )
+        val nestedNestedSet2: NestedSet<NestedSet<String?>?>? =
+            NestedSetBuilder.create(
+                Order.STABLE_ORDER,
+                sharedInnerNestedSet,
+                NestedSetBuilder.create(Order.STABLE_ORDER, "e", "f")
+            )
 
-  @Test
-  public void testNestedNestedSetsWithCommonDependencyWaitOnSameInnerFuture() throws Exception {
-    FingerprintValueStore mockStorage = mock(FingerprintValueStore.class);
-    FingerprintValueService fingerprintValueService =
-        FingerprintValueService.createForTesting(mockStorage);
-    var sharedInnerWrite = new SettableWriteStatus();
-    var outerWrite = new SettableWriteStatus();
-    when(mockStorage.put(any(), any()))
-        // The write of the shared inner NestedSet {"a", "b"}
-        .thenReturn(sharedInnerWrite)
-        // The write of the inner NestedSet {"c", "d"}
-        .thenReturn(immediateWriteStatus())
-        // The write of the outer NestedSet {{"a", "b"}, {"c", "d"}}
-        .thenReturn(outerWrite)
-        // The write of the inner NestedSet {"e", "f"}
-        .thenReturn(immediateWriteStatus());
-    ObjectCodecs objectCodecs = createCodecs(createStore(mockStorage));
+        val result1: SerializationResult<ByteString?> =
+            objectCodecs.serializeMemoizedAndBlocking(fingerprintValueService, nestedNestedSet1)
+        val result2: SerializationResult<ByteString?> =
+            objectCodecs.serializeMemoizedAndBlocking(fingerprintValueService, nestedNestedSet2)
+        outerWrite.markSuccess()
+        assertThat(result1.getFutureToBlockWritesOn().isDone()).isFalse()
+        assertThat(result2.getFutureToBlockWritesOn().isDone()).isFalse()
+        sharedInnerWrite.markSuccess()
+        assertThat(result1.getFutureToBlockWritesOn().isDone()).isTrue()
+        assertThat(result2.getFutureToBlockWritesOn().isDone()).isTrue()
+    }
 
-    NestedSet<String> sharedInnerNestedSet = NestedSetBuilder.create(Order.STABLE_ORDER, "a", "b");
-    NestedSet<NestedSet<String>> nestedNestedSet1 =
-        NestedSetBuilder.create(
-            Order.STABLE_ORDER,
-            sharedInnerNestedSet,
-            NestedSetBuilder.create(Order.STABLE_ORDER, "c", "d"));
-    NestedSet<NestedSet<String>> nestedNestedSet2 =
-        NestedSetBuilder.create(
-            Order.STABLE_ORDER,
-            sharedInnerNestedSet,
-            NestedSetBuilder.create(Order.STABLE_ORDER, "e", "f"));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSingletonNestedSetSerializedWithoutStore() {
+        val mockNestedSetStore: NestedSetStore = Mockito.mock<NestedSetStore>(NestedSetStore::class.java)
+        Mockito.`when`<T?>(
+            mockNestedSetStore.computeFingerprintAndStore(
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>()
+            )
+        )
+            .thenThrow(java.lang.AssertionError("NestedSetStore should not have been used"))
 
-    SerializationResult<ByteString> result1 =
-        objectCodecs.serializeMemoizedAndBlocking(fingerprintValueService, nestedNestedSet1);
-    SerializationResult<ByteString> result2 =
-        objectCodecs.serializeMemoizedAndBlocking(fingerprintValueService, nestedNestedSet2);
-    outerWrite.markSuccess();
-    assertThat(result1.getFutureToBlockWritesOn().isDone()).isFalse();
-    assertThat(result2.getFutureToBlockWritesOn().isDone()).isFalse();
-    sharedInnerWrite.markSuccess();
-    assertThat(result1.getFutureToBlockWritesOn().isDone()).isTrue();
-    assertThat(result2.getFutureToBlockWritesOn().isDone()).isTrue();
-  }
+        val objectCodecs: ObjectCodecs = createCodecs(mockNestedSetStore)
+        val singletonNestedSet: NestedSet<String?>? =
+            NestedSet.< String > builder < kotlin . String ? > (Order.STABLE_ORDER).add("a").build()
+        objectCodecs.serialize(singletonNestedSet)
+    }
 
-  @Test
-  public void testSingletonNestedSetSerializedWithoutStore() throws Exception {
-    NestedSetStore mockNestedSetStore = mock(NestedSetStore.class);
-    when(mockNestedSetStore.computeFingerprintAndStore(any(), any()))
-        .thenThrow(new AssertionError("NestedSetStore should not have been used"));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun serializationWeaklyCachesNestedSet() {
+        // Avoid NestedSetBuilder.wrap/create - they use their own cache which interferes with what
+        // we're testing.
+        var nestedSet: NestedSet<*>? = NestedSetBuilder.stableOrder().add("a").add("b").build()
+        val storageEndpoint: FingerprintValueStore? = FingerprintValueStore.inMemoryStore()
+        val fingerprintValueService: FingerprintValueService? =
+            FingerprintValueService.createForTesting(storageEndpoint)
+        val codecs: ObjectCodecs = createCodecs(createStore(storageEndpoint))
+        val unused: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            codecs.serializeMemoizedAndBlocking(fingerprintValueService, nestedSet)
+        val ref: java.lang.ref.WeakReference<*> = java.lang.ref.WeakReference<Any?>(nestedSet)
+        nestedSet = null
+        GcFinalization.awaitClear(ref)
+    }
 
-    ObjectCodecs objectCodecs = createCodecs(mockNestedSetStore);
-    NestedSet<String> singletonNestedSet =
-        NestedSet.<String>builder(Order.STABLE_ORDER).add("a").build();
-    objectCodecs.serialize(singletonNestedSet);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDeserializationInParallel() {
+        val nestedSetFingerprintValueStore: FingerprintValueStore? =
+            spy(FingerprintValueStore.inMemoryStore())
+        val fingerprintValueService: FingerprintValueService? =
+            FingerprintValueService.createForTesting(nestedSetFingerprintValueStore)
+        val emptyNestedSetCache: NestedSetSerializationCache =
+            Mockito.mock<NestedSetSerializationCache>(NestedSetSerializationCache::class.java)
+        val nestedSetStore: NestedSetStore =
+            createStoreWithCache(nestedSetFingerprintValueStore, emptyNestedSetCache)
+        val objectCodecs: ObjectCodecs = createCodecs(nestedSetStore)
 
-  @Test
-  public void serializationWeaklyCachesNestedSet() throws Exception {
-    // Avoid NestedSetBuilder.wrap/create - they use their own cache which interferes with what
-    // we're testing.
-    NestedSet<?> nestedSet = NestedSetBuilder.stableOrder().add("a").add("b").build();
-    FingerprintValueStore storageEndpoint = FingerprintValueStore.inMemoryStore();
-    FingerprintValueService fingerprintValueService =
-        FingerprintValueService.createForTesting(storageEndpoint);
-    ObjectCodecs codecs = createCodecs(createStore(storageEndpoint));
-    var unused = codecs.serializeMemoizedAndBlocking(fingerprintValueService, nestedSet);
-    WeakReference<?> ref = new WeakReference<>(nestedSet);
-    nestedSet = null;
-    GcFinalization.awaitClear(ref);
-  }
+        val subset1: NestedSet<String?>? =
+            NestedSet.< String > builder < kotlin . String ? > (Order.STABLE_ORDER).add("a").add("b").build()
+        val subset1Future: com.google.common.util.concurrent.SettableFuture<ByteArray?> =
+            com.google.common.util.concurrent.SettableFuture.create<ByteArray?>()
+        val subset2: NestedSet<String?>? =
+            NestedSet.< String > builder < kotlin . String ? > (Order.STABLE_ORDER).add("c").add("d").build()
+        val subset2Future: com.google.common.util.concurrent.SettableFuture<ByteArray?> =
+            com.google.common.util.concurrent.SettableFuture.create<ByteArray?>()
+        val set: NestedSet<String?> =
+            NestedSet.< String > builder < kotlin . String ? > (Order.STABLE_ORDER)
+                .addTransitive(subset1)
+                .addTransitive(subset2)
+                .build()
 
-  @Test
-  public void testDeserializationInParallel() throws Exception {
-    FingerprintValueStore nestedSetFingerprintValueStore =
-        spy(FingerprintValueStore.inMemoryStore());
-    FingerprintValueService fingerprintValueService =
-        FingerprintValueService.createForTesting(nestedSetFingerprintValueStore);
-    NestedSetSerializationCache emptyNestedSetCache = mock(NestedSetSerializationCache.class);
-    NestedSetStore nestedSetStore =
-        createStoreWithCache(nestedSetFingerprintValueStore, emptyNestedSetCache);
-    ObjectCodecs objectCodecs = createCodecs(nestedSetStore);
+        // We capture the arguments to #put() during serialization, so as to correctly mock results for
+        // #get()
+        val fingerprintCaptor: ArgumentCaptor<PackedFingerprint?> =
+            ArgumentCaptor.forClass<PackedFingerprint?, PackedFingerprint?>(PackedFingerprint::class.java)
+        val fingerprint: PackedFingerprint? =
+            nestedSetStore
+                .computeFingerprintAndStore(
+                    set.getChildren() as Array<Any?>?,
+                    objectCodecs.getSharedValueSerializationContextForTesting(fingerprintValueService)
+                )
+                .fingerprint()
+        Mockito.verify<Any?>(nestedSetFingerprintValueStore, Mockito.times(3))
+            .put(fingerprintCaptor.capture(), ArgumentMatchers.any<T?>())
+        Mockito.doReturn(subset1Future)
+            .`when`<Any?>(nestedSetFingerprintValueStore)
+            .get(fingerprintCaptor.getAllValues().get(0))
+        Mockito.doReturn(subset2Future)
+            .`when`<Any?>(nestedSetFingerprintValueStore)
+            .get(fingerprintCaptor.getAllValues().get(1))
+        Mockito.`when`<T?>(
+            emptyNestedSetCache.putFutureIfAbsent(
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>()
+            )
+        ).thenReturn(null)
 
-    NestedSet<String> subset1 =
-        NestedSet.<String>builder(Order.STABLE_ORDER).add("a").add("b").build();
-    SettableFuture<byte[]> subset1Future = SettableFuture.create();
-    NestedSet<String> subset2 =
-        NestedSet.<String>builder(Order.STABLE_ORDER).add("c").add("d").build();
-    SettableFuture<byte[]> subset2Future = SettableFuture.create();
-    NestedSet<String> set =
-        NestedSet.<String>builder(Order.STABLE_ORDER)
-            .addTransitive(subset1)
-            .addTransitive(subset2)
-            .build();
-
-    // We capture the arguments to #put() during serialization, so as to correctly mock results for
-    // #get()
-    var fingerprintCaptor = ArgumentCaptor.forClass(PackedFingerprint.class);
-    PackedFingerprint fingerprint =
-        nestedSetStore
-            .computeFingerprintAndStore(
-                (Object[]) set.getChildren(),
-                objectCodecs.getSharedValueSerializationContextForTesting(fingerprintValueService))
-            .fingerprint();
-    verify(nestedSetFingerprintValueStore, times(3)).put(fingerprintCaptor.capture(), any());
-    doReturn(subset1Future)
-        .when(nestedSetFingerprintValueStore)
-        .get(fingerprintCaptor.getAllValues().get(0));
-    doReturn(subset2Future)
-        .when(nestedSetFingerprintValueStore)
-        .get(fingerprintCaptor.getAllValues().get(1));
-    when(emptyNestedSetCache.putFutureIfAbsent(any(), any(), any())).thenReturn(null);
-
-    @SuppressWarnings("unchecked")
-    ListenableFuture<Object[]> deserializationFuture =
-        (ListenableFuture<Object[]>)
+        val deserializationFuture: com.google.common.util.concurrent.ListenableFuture<Array<Any?>?> =
             nestedSetStore.getContentsAndDeserialize(
                 fingerprint,
                 objectCodecs.getSharedValueDeserializationContextForTesting(
-                    fingerprintValueService));
-    // At this point, we expect deserializationFuture to be waiting on both of the underlying
-    // fetches, which should have both been started.
-    assertThat(deserializationFuture.isDone()).isFalse();
-    verify(nestedSetFingerprintValueStore, times(3)).get(any());
+                    fingerprintValueService
+                )
+            ) as com.google.common.util.concurrent.ListenableFuture<Array<Any?>?>
+        // At this point, we expect deserializationFuture to be waiting on both of the underlying
+        // fetches, which should have both been started.
+        Truth.assertThat(deserializationFuture.isDone()).isFalse()
+        Mockito.verify<Any?>(nestedSetFingerprintValueStore, Mockito.times(3)).get(ArgumentMatchers.any<T?>())
 
-    // Once the underlying fetches complete, we expect deserialization to complete.
-    subset1Future.set(ByteString.copyFrom("mock bytes", Charset.defaultCharset()).toByteArray());
-    subset2Future.set(ByteString.copyFrom("mock bytes", Charset.defaultCharset()).toByteArray());
-    assertThat(deserializationFuture.isDone()).isTrue();
-  }
+        // Once the underlying fetches complete, we expect deserialization to complete.
+        subset1Future.set(ByteString.copyFrom("mock bytes", java.nio.charset.Charset.defaultCharset()).toByteArray())
+        subset2Future.set(ByteString.copyFrom("mock bytes", java.nio.charset.Charset.defaultCharset()).toByteArray())
+        Truth.assertThat(deserializationFuture.isDone()).isTrue()
+    }
 
-  @Test
-  public void racingDeserialization() throws Exception {
-    FingerprintValueStore nestedSetFingerprintValueStore = mock(FingerprintValueStore.class);
-    NestedSetSerializationCache nestedSetCache =
-        spy(new NestedSetSerializationCache(BugReporter.defaultInstance()));
-    NestedSetStore nestedSetStore =
-        createStoreWithCache(nestedSetFingerprintValueStore, nestedSetCache);
-    DeserializationContext deserializationContext = mock(DeserializationContext.class);
-    PackedFingerprint fingerprint = getFingerprintForTesting("fingerprint");
-    // Future never completes, so we don't have to exercise that code in NestedSetStore.
-    SettableFuture<byte[]> storageFuture = SettableFuture.create();
-    when(nestedSetFingerprintValueStore.get(fingerprint)).thenReturn(storageFuture);
-    CountDownLatch fingerprintRequested = new CountDownLatch(2);
-    doAnswer(
-            invocation -> {
-              fingerprintRequested.countDown();
-              @SuppressWarnings("unchecked")
-              ListenableFuture<Object[]> result =
-                  (ListenableFuture<Object[]>) invocation.callRealMethod();
-              fingerprintRequested.await();
-              return result;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun racingDeserialization() {
+        val nestedSetFingerprintValueStore: FingerprintValueStore =
+            Mockito.mock<FingerprintValueStore>(FingerprintValueStore::class.java)
+        val nestedSetCache: NestedSetSerializationCache? =
+            spy(NestedSetSerializationCache(BugReporter.defaultInstance()))
+        val nestedSetStore: NestedSetStore =
+            createStoreWithCache(nestedSetFingerprintValueStore, nestedSetCache)
+        val deserializationContext: DeserializationContext? =
+            Mockito.mock<DeserializationContext?>(DeserializationContext::class.java)
+        val fingerprint: PackedFingerprint? = getFingerprintForTesting("fingerprint")
+        // Future never completes, so we don't have to exercise that code in NestedSetStore.
+        val storageFuture: com.google.common.util.concurrent.SettableFuture<ByteArray?> =
+            com.google.common.util.concurrent.SettableFuture.create<ByteArray?>()
+        Mockito.`when`<T?>(nestedSetFingerprintValueStore.get(fingerprint)).thenReturn(storageFuture)
+        val fingerprintRequested: CountDownLatch = CountDownLatch(2)
+        Mockito.doAnswer(
+            Answer { invocation: InvocationOnMock? ->
+                fingerprintRequested.countDown()
+                val result: com.google.common.util.concurrent.ListenableFuture<Array<Any?>?>? =
+                    invocation.callRealMethod() as com.google.common.util.concurrent.ListenableFuture<Array<Any?>?>?
+                fingerprintRequested.await()
+                result
             })
-        .when(nestedSetCache)
-        .putFutureIfAbsent(eq(fingerprint), any(), any());
-    AtomicReference<ListenableFuture<Object[]>> asyncResult = new AtomicReference<>();
-    Thread asyncThread =
-        new Thread(
-            () -> {
-              try {
-                @SuppressWarnings("unchecked")
-                ListenableFuture<Object[]> asyncContents =
-                    (ListenableFuture<Object[]>)
-                        nestedSetStore.getContentsAndDeserialize(
-                            fingerprint, deserializationContext);
-                asyncResult.set(asyncContents);
-              } catch (IOException e) {
-                throw new IllegalStateException(e);
-              }
-            });
-    asyncThread.start();
-    @SuppressWarnings("unchecked")
-    ListenableFuture<Object[]> result =
-        (ListenableFuture<Object[]>)
-            nestedSetStore.getContentsAndDeserialize(fingerprint, deserializationContext);
-    asyncThread.join();
-    verify(nestedSetFingerprintValueStore).get(eq(fingerprint));
-    assertThat(result).isSameInstanceAs(asyncResult.get());
-    assertThat(result.isDone()).isFalse();
-  }
+            .`when`<Any?>(nestedSetCache)
+            .putFutureIfAbsent(< T > eq < T ? > (fingerprint), ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>())
+        val asyncResult: AtomicReference<com.google.common.util.concurrent.ListenableFuture<Array<Any?>?>?> =
+            AtomicReference<com.google.common.util.concurrent.ListenableFuture<Array<Any?>?>?>()
+        val asyncThread: java.lang.Thread =
+            java.lang.Thread(
+                java.lang.Runnable {
+                    try {
+                        val asyncContents: com.google.common.util.concurrent.ListenableFuture<Array<Any?>?>? =
+                            nestedSetStore.getContentsAndDeserialize(
+                                fingerprint, deserializationContext
+                            ) as com.google.common.util.concurrent.ListenableFuture<Array<Any?>?>?
+                        asyncResult.set(asyncContents)
+                    } catch (e: IOException) {
+                        throw java.lang.IllegalStateException(e)
+                    }
+                })
+        asyncThread.start()
+        val result: com.google.common.util.concurrent.ListenableFuture<Array<Any?>?> =
+            nestedSetStore.getContentsAndDeserialize(
+                fingerprint,
+                deserializationContext
+            ) as com.google.common.util.concurrent.ListenableFuture<Array<Any?>?>
+        asyncThread.join()
+        Mockito.verify<Any?>(nestedSetFingerprintValueStore).get(< T > eq < T ? > (fingerprint))
+        Truth.assertThat(result).isSameInstanceAs(asyncResult.get())
+        Truth.assertThat(result.isDone()).isFalse()
+    }
 
-  @Test
-  public void racingSerialization() throws Exception {
-    // Exercises calling serialization twice for the same contents, concurrently, in 2 threads.
-    FingerprintValueStore fingerprintValueStore = spy(FingerprintValueStore.inMemoryStore());
-    NestedSetSerializationCache nestedSetCache =
-        spy(new NestedSetSerializationCache(BugReporter.defaultInstance()));
-    NestedSetStore nestedSetStore = createStoreWithCache(fingerprintValueStore, nestedSetCache);
-    SerializationContext serializationContext =
-        new ObjectCodecs()
-            .getSharedValueSerializationContextForTesting(
-                FingerprintValueService.createForTesting(fingerprintValueStore));
-    Object[] contents = {"contents"};
-    // NestedSet serialization of a `contents` Object[] performs the following steps in sequence.
-    // 1. Checks if the fingerprint is already available via
-    //    NestedSetSerializationCache.fingerprintForContents for `contents`.
-    //    (If the fingerprint is already available, the computation is short-circuited.)
-    // 2. Serializes to bytes and computes a fingerprint for those bytes.
-    // 3. Puts the fingerprint into the cache.
-    //
-    // The latch here ensures that both threads do not short circuit in step 1.
-    CountDownLatch fingerprintRequested = new CountDownLatch(2);
-    doAnswer(
-            invocation -> {
-              PutOperation result = (PutOperation) invocation.callRealMethod();
-              assertThat(result).isNull();
-              // Allows the other thread to progress only after checking for the fingerprint.
-              fingerprintRequested.countDown();
-              // Waits for the other thread to finish checking the fingerprint before proceeding.
-              fingerprintRequested.await();
-              return null;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun racingSerialization() {
+        // Exercises calling serialization twice for the same contents, concurrently, in 2 threads.
+        val fingerprintValueStore: FingerprintValueStore? = spy(FingerprintValueStore.inMemoryStore())
+        val nestedSetCache: NestedSetSerializationCache? =
+            spy(NestedSetSerializationCache(BugReporter.defaultInstance()))
+        val nestedSetStore: NestedSetStore = createStoreWithCache(fingerprintValueStore, nestedSetCache)
+        val serializationContext: SerializationContext? =
+            ObjectCodecs()
+                .getSharedValueSerializationContextForTesting(
+                    FingerprintValueService.createForTesting(fingerprintValueStore)
+                )
+        val contents = arrayOf<Any?>("contents")
+        // NestedSet serialization of a `contents` Object[] performs the following steps in sequence.
+        // 1. Checks if the fingerprint is already available via
+        //    NestedSetSerializationCache.fingerprintForContents for `contents`.
+        //    (If the fingerprint is already available, the computation is short-circuited.)
+        // 2. Serializes to bytes and computes a fingerprint for those bytes.
+        // 3. Puts the fingerprint into the cache.
+        //
+        // The latch here ensures that both threads do not short circuit in step 1.
+        val fingerprintRequested: CountDownLatch = CountDownLatch(2)
+        Mockito.doAnswer(
+            Answer { invocation: InvocationOnMock? ->
+                val result: PutOperation? = invocation.callRealMethod() as PutOperation?
+                assertThat(result).isNull()
+                // Allows the other thread to progress only after checking for the fingerprint.
+                fingerprintRequested.countDown()
+                // Waits for the other thread to finish checking the fingerprint before proceeding.
+                fingerprintRequested.await()
+                null
             })
-        .when(nestedSetCache)
-        .fingerprintForContents(contents);
-    AtomicReference<PutOperation> asyncResult = new AtomicReference<>();
-    Thread asyncThread =
-        new Thread(
-            () -> {
-              try {
-                asyncResult.set(
-                    nestedSetStore.computeFingerprintAndStore(contents, serializationContext));
-              } catch (IOException | SerializationException e) {
-                throw new IllegalStateException(e);
-              }
-            });
-    asyncThread.start();
-    PutOperation result = nestedSetStore.computeFingerprintAndStore(contents, serializationContext);
-    asyncThread.join();
+            .`when`<Any?>(nestedSetCache)
+            .fingerprintForContents(contents)
+        val asyncResult: AtomicReference<PutOperation?> = AtomicReference<PutOperation?>()
+        val asyncThread: java.lang.Thread =
+            java.lang.Thread(
+                java.lang.Runnable {
+                    try {
+                        asyncResult.set(
+                            nestedSetStore.computeFingerprintAndStore(contents, serializationContext)
+                        )
+                    } catch (e: IOException) {
+                        throw java.lang.IllegalStateException(e)
+                    } catch (e: SerializationException) {
+                        throw java.lang.IllegalStateException(e)
+                    }
+                })
+        asyncThread.start()
+        val result: PutOperation? = nestedSetStore.computeFingerprintAndStore(contents, serializationContext)
+        asyncThread.join()
 
-    verify(fingerprintValueStore).put(any(), any());
-    assertThat(result).isSameInstanceAs(asyncResult.get());
-  }
-
-  @Test
-  public void writeFuturesWaitForTransitiveWrites() throws Exception {
-    FingerprintValueStore mockWriter = mock(FingerprintValueStore.class);
-    NestedSetStore store = createStore(mockWriter);
-    SerializationContext serializationContext =
-        createCodecs(store)
-            .getSharedValueSerializationContextForTesting(
-                FingerprintValueService.createForTesting());
-
-    var bottomReadFuture = new SettableWriteStatus();
-    var middleReadFuture = new SettableWriteStatus();
-    var topReadFuture = new SettableWriteStatus();
-    when(mockWriter.put(any(), any()))
-        .thenReturn(bottomReadFuture, middleReadFuture, topReadFuture);
-
-    NestedSet<String> bottom =
-        NestedSetBuilder.<String>stableOrder().add("bottom1").add("bottom2").build();
-    NestedSet<String> middle =
-        NestedSetBuilder.<String>stableOrder()
-            .add("middle1")
-            .add("middle2")
-            .addTransitive(bottom)
-            .build();
-    NestedSet<String> top =
-        NestedSetBuilder.<String>stableOrder()
-            .add("top1")
-            .add("top2")
-            .addTransitive(middle)
-            .build();
-
-    ListenableFuture<?> bottomWriteFuture =
-        NestedSetCodecTestUtils.writeToStoreFuture(store, bottom, serializationContext);
-    ListenableFuture<?> middleWriteFuture =
-        NestedSetCodecTestUtils.writeToStoreFuture(store, middle, serializationContext);
-    ListenableFuture<?> topWriteFuture =
-        NestedSetCodecTestUtils.writeToStoreFuture(store, top, serializationContext);
-    assertThat(bottomWriteFuture.isDone()).isFalse();
-    assertThat(middleWriteFuture.isDone()).isFalse();
-    assertThat(topWriteFuture.isDone()).isFalse();
-
-    topReadFuture.markSuccess();
-    middleReadFuture.markSuccess();
-    assertThat(bottomWriteFuture.isDone()).isFalse();
-    assertThat(middleWriteFuture.isDone()).isFalse();
-    assertThat(topWriteFuture.isDone()).isFalse();
-
-    bottomReadFuture.markSuccess();
-    assertThat(bottomWriteFuture.isDone()).isTrue();
-    assertThat(middleWriteFuture.isDone()).isTrue();
-    assertThat(topWriteFuture.isDone()).isTrue();
-  }
-
-  record ColorfulThing(String thing, Color color) {
-    ColorfulThing {
-      requireNonNull(thing, "thing");
-      requireNonNull(color, "color");
+        Mockito.verify<Any?>(fingerprintValueStore).put(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>())
+        assertThat(result).isSameInstanceAs(asyncResult.get())
     }
 
-    static ColorfulThing of(String thing, Color color) {
-      return new ColorfulThing(thing, color);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun writeFuturesWaitForTransitiveWrites() {
+        val mockWriter: FingerprintValueStore = Mockito.mock<FingerprintValueStore>(FingerprintValueStore::class.java)
+        val store: NestedSetStore = createStore(mockWriter)
+        val serializationContext: SerializationContext? =
+            createCodecs(store)
+                .getSharedValueSerializationContextForTesting(
+                    FingerprintValueService.createForTesting()
+                )
+
+        val bottomReadFuture: SettableWriteStatus = SettableWriteStatus()
+        val middleReadFuture: SettableWriteStatus = SettableWriteStatus()
+        val topReadFuture: SettableWriteStatus = SettableWriteStatus()
+        Mockito.`when`<T?>(mockWriter.put(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>()))
+            .thenReturn(bottomReadFuture, middleReadFuture, topReadFuture)
+
+        val bottom: NestedSet<String?>? =
+            NestedSetBuilder.< String > stableOrder < kotlin . String ? > ().add("bottom1").add("bottom2").build()
+        val middle: NestedSet<String?>? =
+            NestedSetBuilder.< String > stableOrder < kotlin . String ? > ()
+                .add("middle1")
+                .add("middle2")
+                .addTransitive(bottom)
+                .build()
+        val top: NestedSet<String?>? =
+            NestedSetBuilder.< String > stableOrder < kotlin . String ? > ()
+                .add("top1")
+                .add("top2")
+                .addTransitive(middle)
+                .build()
+
+        val bottomWriteFuture: com.google.common.util.concurrent.ListenableFuture<*> =
+            NestedSetCodecTestUtils.writeToStoreFuture(store, bottom, serializationContext)
+        val middleWriteFuture: com.google.common.util.concurrent.ListenableFuture<*> =
+            NestedSetCodecTestUtils.writeToStoreFuture(store, middle, serializationContext)
+        val topWriteFuture: com.google.common.util.concurrent.ListenableFuture<*> =
+            NestedSetCodecTestUtils.writeToStoreFuture(store, top, serializationContext)
+        Truth.assertThat(bottomWriteFuture.isDone()).isFalse()
+        Truth.assertThat(middleWriteFuture.isDone()).isFalse()
+        Truth.assertThat(topWriteFuture.isDone()).isFalse()
+
+        topReadFuture.markSuccess()
+        middleReadFuture.markSuccess()
+        Truth.assertThat(bottomWriteFuture.isDone()).isFalse()
+        Truth.assertThat(middleWriteFuture.isDone()).isFalse()
+        Truth.assertThat(topWriteFuture.isDone()).isFalse()
+
+        bottomReadFuture.markSuccess()
+        Truth.assertThat(bottomWriteFuture.isDone()).isTrue()
+        Truth.assertThat(middleWriteFuture.isDone()).isTrue()
+        Truth.assertThat(topWriteFuture.isDone()).isTrue()
     }
-  }
 
-  @Test
-  public void cacheContext_disambiguatesIdenticalSerializedRepresentation() throws Exception {
-    // Serializes ColorfulThing without color, reading the color as a deserialization dependency.
-    class BlackAndWhiteCodec implements ObjectCodec<ColorfulThing> {
-      @Override
-      public Class<ColorfulThing> getEncodedClass() {
-        return ColorfulThing.class;
-      }
+    internal class ColorfulThing(thing: String?, color: Color?) {
+        val thing: String?
+        val color: Color?
 
-      @Override
-      public void serialize(
-          SerializationContext context, ColorfulThing obj, CodedOutputStream codedOut)
-          throws SerializationException, IOException {
-        context.serialize(obj.thing(), codedOut);
-      }
+        init {
+            this.color = color
+            this.thing = thing
+            java.util.Objects.requireNonNull<String?>(thing, "thing")
+            java.util.Objects.requireNonNull<Any?>(color, "color")
+        }
 
-      @Override
-      public ColorfulThing deserialize(DeserializationContext context, CodedInputStream codedIn)
-          throws SerializationException, IOException {
-        String thing = context.deserialize(codedIn);
-        Color color = context.getDependency(Color.class);
-        return ColorfulThing.of(thing, color);
-      }
+        companion object {
+            fun of(thing: String?, color: Color?): ColorfulThing {
+                return ColorfulThing(thing, color)
+            }
+        }
     }
 
-    FingerprintValueStore fingerprintValueStore = FingerprintValueStore.inMemoryStore();
-    FingerprintValueService fingerprintValueService =
-        FingerprintValueService.createForTesting(fingerprintValueStore);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun cacheContext_disambiguatesIdenticalSerializedRepresentation() {
+        // Serializes ColorfulThing without color, reading the color as a deserialization dependency.
+        class BlackAndWhiteCodec : ObjectCodec<ColorfulThing?> {
+            val encodedClass: java.lang.Class<ColorfulThing?>
+                get() = ColorfulThing::class.java
 
-    ObjectCodecs codecs =
-        createCodecs(
-            createStoreWithCacheContext(
-                fingerprintValueStore, ctx -> ctx.getDependency(Color.class)),
-            new BlackAndWhiteCodec());
+            @Throws(SerializationException::class, IOException::class)
+            public override fun serialize(
+                context: SerializationContext, obj: ColorfulThing, codedOut: CodedOutputStream?
+            ) {
+                context.serialize(obj.thing, codedOut)
+            }
 
-    List<String> stuff = ImmutableList.of("bird", "paint", "shoes");
-    NestedSet<ColorfulThing> redStuff =
-        NestedSetBuilder.wrap(
-            Order.STABLE_ORDER,
-            Lists.transform(stuff, thing -> ColorfulThing.of(thing, Color.RED)));
-    NestedSet<ColorfulThing> blueStuff =
-        NestedSetBuilder.wrap(
-            Order.STABLE_ORDER,
-            Lists.transform(stuff, thing -> ColorfulThing.of(thing, Color.BLUE)));
+            @Throws(SerializationException::class, IOException::class)
+            public override fun deserialize(
+                context: DeserializationContext,
+                codedIn: CodedInputStream?
+            ): ColorfulThing {
+                val thing: String? = context.deserialize(codedIn)
+                val color: Color? = context.getDependency(Color::class.java)
+                return ColorfulThing.Companion.of(thing, color)
+            }
+        }
 
-    ObjectCodecs redCodecs =
-        codecs.withDependencyOverridesForTesting(
-            ImmutableClassToInstanceMap.of(Color.class, Color.RED));
-    ByteString redSerialized =
-        redCodecs.serializeMemoizedAndBlocking(fingerprintValueService, redStuff).getObject();
-    ObjectCodecs blueCodecs =
-        codecs.withDependencyOverridesForTesting(
-            ImmutableClassToInstanceMap.of(Color.class, Color.BLUE));
-    ByteString blueSerialized =
-        blueCodecs.serializeMemoizedAndBlocking(fingerprintValueService, blueStuff).getObject();
-    assertThat(redSerialized).isEqualTo(blueSerialized);
+        val fingerprintValueStore: FingerprintValueStore? = FingerprintValueStore.inMemoryStore()
+        val fingerprintValueService: FingerprintValueService? =
+            FingerprintValueService.createForTesting(fingerprintValueStore)
 
-    Object redDeserialized =
-        redCodecs.deserializeMemoizedAndBlocking(fingerprintValueService, redSerialized);
-    Object blueDeserialized =
-        blueCodecs.deserializeMemoizedAndBlocking(fingerprintValueService, blueSerialized);
-    assertThat(redDeserialized).isSameInstanceAs(redStuff);
-    assertThat(blueDeserialized).isSameInstanceAs(blueStuff);
+        val codecs: ObjectCodecs =
+            createCodecs(
+                createStoreWithCacheContext(
+                    fingerprintValueStore,
+                    java.util.function.Function { ctx: SerializationDependencyProvider? -> ctx.getDependency(Color::class.java) }),
+                BlackAndWhiteCodec()
+            )
 
-    // Test that we can deserialize in a context that was not previously serialized.
-    ObjectCodecs greenCodecs =
-        codecs.withDependencyOverridesForTesting(
-            ImmutableClassToInstanceMap.of(Color.class, Color.GREEN));
-    Object greenDeserialized =
-        greenCodecs.deserializeMemoizedAndBlocking(fingerprintValueService, redSerialized);
-    assertThat(greenDeserialized).isInstanceOf(NestedSet.class);
-    assertThat(((NestedSet<?>) greenDeserialized).toList())
-        .isEqualTo(Lists.transform(stuff, thing -> ColorfulThing.of(thing, Color.GREEN)));
-  }
+        val stuff: MutableList<String?> = com.google.common.collect.ImmutableList.of<String?>("bird", "paint", "shoes")
+        val redStuff: NestedSet<ColorfulThing?>? =
+            NestedSetBuilder.wrap(
+                Order.STABLE_ORDER,
+                com.google.common.collect.Lists.transform<F?, T?>(
+                    stuff,
+                    com.google.common.base.Function { thing: F? -> ColorfulThing.Companion.of(thing, Color.RED) })
+            )
+        val blueStuff: NestedSet<ColorfulThing?>? =
+            NestedSetBuilder.wrap(
+                Order.STABLE_ORDER,
+                com.google.common.collect.Lists.transform<F?, T?>(
+                    stuff,
+                    com.google.common.base.Function { thing: F? -> ColorfulThing.Companion.of(thing, Color.BLUE) })
+            )
 
-  private static NestedSetStore createStore(FingerprintValueStore fingerprintValueStore) {
-    return createStoreWithBugReporter(fingerprintValueStore, BugReporter.defaultInstance());
-  }
+        val redCodecs: ObjectCodecs =
+            codecs.withDependencyOverridesForTesting(
+                com.google.common.collect.ImmutableClassToInstanceMap.of<B?, T?>(Color::class.java, Color.RED)
+            )
+        val redSerialized: ByteString? =
+            redCodecs.serializeMemoizedAndBlocking(fingerprintValueService, redStuff).getObject()
+        val blueCodecs: ObjectCodecs =
+            codecs.withDependencyOverridesForTesting(
+                com.google.common.collect.ImmutableClassToInstanceMap.of<B?, T?>(Color::class.java, Color.BLUE)
+            )
+        val blueSerialized: ByteString? =
+            blueCodecs.serializeMemoizedAndBlocking(fingerprintValueService, blueStuff).getObject()
+        Truth.assertThat(redSerialized).isEqualTo(blueSerialized)
 
-  private static NestedSetStore createStoreWithBugReporter(
-      FingerprintValueStore fingerprintValueStore, BugReporter bugReporter) {
-    return new NestedSetStore(
-        fingerprintValueStore, directExecutor(), bugReporter, NestedSetStore.NO_CONTEXT);
-  }
+        val redDeserialized: Any? =
+            redCodecs.deserializeMemoizedAndBlocking(fingerprintValueService, redSerialized)
+        val blueDeserialized: Any? =
+            blueCodecs.deserializeMemoizedAndBlocking(fingerprintValueService, blueSerialized)
+        Truth.assertThat(redDeserialized).isSameInstanceAs(redStuff)
+        Truth.assertThat(blueDeserialized).isSameInstanceAs(blueStuff)
 
-  private static NestedSetStore createStoreWithCache(
-      FingerprintValueStore fingerprintValueStore, NestedSetSerializationCache cache) {
-    return new NestedSetStore(
-        fingerprintValueStore, directExecutor(), cache, NestedSetStore.NO_CONTEXT);
-  }
-
-  private static NestedSetStore createStoreWithCacheContext(
-      FingerprintValueStore fingerprintValueStore,
-      Function<SerializationDependencyProvider, ?> cacheContextFn) {
-    return new NestedSetStore(
-        fingerprintValueStore, directExecutor(), BugReporter.defaultInstance(), cacheContextFn);
-  }
-
-  private static ObjectCodecs createCodecs(NestedSetStore store, ObjectCodec<?>... codecs) {
-    ObjectCodecRegistry.Builder registry =
-        AutoRegistry.get()
-            .getBuilder()
-            .setAllowDefaultCodec(true)
-            .add(new NestedSetCodecWithStore(store));
-    for (ObjectCodec<?> codec : codecs) {
-      registry.add(codec);
+        // Test that we can deserialize in a context that was not previously serialized.
+        val greenCodecs: ObjectCodecs =
+            codecs.withDependencyOverridesForTesting(
+                com.google.common.collect.ImmutableClassToInstanceMap.of<B?, T?>(Color::class.java, Color.GREEN)
+            )
+        val greenDeserialized: Any =
+            greenCodecs.deserializeMemoizedAndBlocking(fingerprintValueService, redSerialized)
+        Truth.assertThat(greenDeserialized).isInstanceOf(NestedSet::class.java)
+        assertThat((greenDeserialized as NestedSet<*>).toList())
+            .isEqualTo(
+                com.google.common.collect.Lists.transform<String?, ColorfulThing?>(
+                    stuff,
+                    com.google.common.base.Function { thing: String? ->
+                        ColorfulThing.Companion.of(
+                            thing,
+                            Color.GREEN
+                        )
+                    })
+            )
     }
-    return new ObjectCodecs(registry.build(), /*dependencies=*/ ImmutableClassToInstanceMap.of());
-  }
+
+    companion object {
+        private fun createStore(fingerprintValueStore: FingerprintValueStore?): NestedSetStore {
+            return createStoreWithBugReporter(fingerprintValueStore, BugReporter.defaultInstance())
+        }
+
+        private fun createStoreWithBugReporter(
+            fingerprintValueStore: FingerprintValueStore?, bugReporter: BugReporter?
+        ): NestedSetStore {
+            return NestedSetStore(
+                fingerprintValueStore,
+                com.google.common.util.concurrent.MoreExecutors.directExecutor(),
+                bugReporter,
+                NestedSetStore.NO_CONTEXT
+            )
+        }
+
+        private fun createStoreWithCache(
+            fingerprintValueStore: FingerprintValueStore?, cache: NestedSetSerializationCache?
+        ): NestedSetStore {
+            return NestedSetStore(
+                fingerprintValueStore,
+                com.google.common.util.concurrent.MoreExecutors.directExecutor(),
+                cache,
+                NestedSetStore.NO_CONTEXT
+            )
+        }
+
+        private fun createStoreWithCacheContext(
+            fingerprintValueStore: FingerprintValueStore?,
+            cacheContextFn: java.util.function.Function<SerializationDependencyProvider?, *>?
+        ): NestedSetStore {
+            return NestedSetStore(
+                fingerprintValueStore,
+                com.google.common.util.concurrent.MoreExecutors.directExecutor(),
+                BugReporter.defaultInstance(),
+                cacheContextFn
+            )
+        }
+
+        private fun createCodecs(store: NestedSetStore?, vararg codecs: ObjectCodec<*>?): ObjectCodecs {
+            val registry: ObjectCodecRegistry.Builder =
+                AutoRegistry.get()
+                    .getBuilder()
+                    .setAllowDefaultCodec(true)
+                    .add(NestedSetCodecWithStore(store))
+            for (codec in codecs) {
+                registry.add(codec)
+            }
+            return ObjectCodecs(
+                registry.build(),  /*dependencies=*/
+                com.google.common.collect.ImmutableClassToInstanceMap.of<B?>()
+            )
+        }
+    }
 }

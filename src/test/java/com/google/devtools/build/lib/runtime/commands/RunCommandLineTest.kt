@@ -11,195 +11,208 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime.commands
 
-package com.google.devtools.build.lib.runtime.commands;
+import com.google.common.truth.Truth
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+@RunWith(JUnit4::class)
+class RunCommandLineTest {
+    @org.junit.Test
+    fun linuxFormatter_formatArgv_requiresShExecutable() {
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable {
+                LinuxFormatter()
+                    .formatArgv( /* shExecutable= */
+                        null, "run under prefix", com.google.common.collect.ImmutableList.of<E?>("argv")
+                    )
+            })
+    }
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSortedMap;
-import com.google.common.collect.ImmutableSortedSet;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @org.junit.Test
+    fun windowsFormatter_formatArgv_runUnderRequiresShExecutable() {
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable {
+                WindowsFormatter()
+                    .formatArgv( /* shExecutable= */
+                        null, "run under prefix", com.google.common.collect.ImmutableList.of<E?>("argv")
+                    )
+            })
+    }
 
-@RunWith(JUnit4.class)
-public final class RunCommandLineTest {
+    @org.junit.Test
+    fun linuxFormatter_formatArgv_returnsEscapedCommandLine() {
+        val underTest: RunCommandLine.LinuxFormatter = LinuxFormatter()
+        val result: com.google.common.collect.ImmutableList<String?>? =
+            underTest.formatArgv(
+                "/bin/bash",  /* runUnderPrefix= */
+                null,
+                com.google.common.collect.ImmutableList.of<E?>("executable", "argv1", "arg w spaces")
+            )
+        Truth.assertThat(result)
+            .containsExactly("/bin/bash", "-c", "executable argv1 'arg w spaces'")
+            .inOrder()
+    }
 
-  @Test
-  public void linuxFormatter_formatArgv_requiresShExecutable() {
-    assertThrows(
-        IllegalArgumentException.class,
-        () ->
-            new RunCommandLine.LinuxFormatter()
-                .formatArgv(
-                    /* shExecutable= */ null, "run under prefix", ImmutableList.of("argv")));
-  }
+    @org.junit.Test
+    fun windowsFormatter_formatArgv_returnsEscapedCommandLine() {
+        val underTest: RunCommandLine.WindowsFormatter = WindowsFormatter()
+        val result: com.google.common.collect.ImmutableList<String?>? =
+            underTest.formatArgv( /* shExecutable= */
+                null,  /* runUnderPrefix= */
+                null,
+                com.google.common.collect.ImmutableList.of<E?>("C:/unescaped executable", "argv1", "arg w spaces")
+            )
+        Truth.assertThat(result)
+            .containsExactly("C:/unescaped executable", "argv1", "\"arg w spaces\"")
+            .inOrder()
+    }
 
-  @Test
-  public void windowsFormatter_formatArgv_runUnderRequiresShExecutable() {
-    assertThrows(
-        IllegalArgumentException.class,
-        () ->
-            new RunCommandLine.WindowsFormatter()
-                .formatArgv(
-                    /* shExecutable= */ null, "run under prefix", ImmutableList.of("argv")));
-  }
+    @org.junit.Test
+    fun linuxFormatter_formatArgv_runUnderPrefixPrependedToEscapedCommandLine() {
+        val underTest: RunCommandLine.LinuxFormatter = LinuxFormatter()
+        val result: com.google.common.collect.ImmutableList<String?>? =
+            underTest.formatArgv(
+                "/bin/bash",
+                "unescaped run-under prefix &&",
+                com.google.common.collect.ImmutableList.of<E?>("executable", "argv1", "arg w spaces")
+            )
+        Truth.assertThat(result)
+            .containsExactly(
+                "/bin/bash", "-c", "unescaped run-under prefix && executable argv1 'arg w spaces'"
+            )
+            .inOrder()
+    }
 
-  @Test
-  public void linuxFormatter_formatArgv_returnsEscapedCommandLine() {
-    RunCommandLine.LinuxFormatter underTest = new RunCommandLine.LinuxFormatter();
-    ImmutableList<String> result =
-        underTest.formatArgv(
-            "/bin/bash",
-            /* runUnderPrefix= */ null,
-            ImmutableList.of("executable", "argv1", "arg w spaces"));
-    assertThat(result)
-        .containsExactly("/bin/bash", "-c", "executable argv1 'arg w spaces'")
-        .inOrder();
-  }
+    @org.junit.Test
+    fun windowsFormatter_formatArgv_runUnderPrefixPrependedToEscapedCommandLine() {
+        val underTest: RunCommandLine.WindowsFormatter = WindowsFormatter()
+        val result: com.google.common.collect.ImmutableList<String?>? =
+            underTest.formatArgv(
+                "unescaped /bin/bash",
+                "unescaped run-under prefix &&",
+                com.google.common.collect.ImmutableList.of<E?>("C:/unescaped executable", "argv1", "arg w spaces")
+            )
+        Truth.assertThat(result)
+            .containsExactly(
+                "unescaped /bin/bash",
+                "-c",
+                "\"unescaped run-under prefix && 'C:/unescaped executable' argv1 'arg w spaces'\""
+            )
+            .inOrder()
+    }
 
-  @Test
-  public void windowsFormatter_formatArgv_returnsEscapedCommandLine() {
-    RunCommandLine.WindowsFormatter underTest = new RunCommandLine.WindowsFormatter();
-    ImmutableList<String> result =
-        underTest.formatArgv(
-            /* shExecutable= */ null,
-            /* runUnderPrefix= */ null,
-            ImmutableList.of("C:/unescaped executable", "argv1", "arg w spaces"));
-    assertThat(result)
-        .containsExactly("C:/unescaped executable", "argv1", "\"arg w spaces\"")
-        .inOrder();
-  }
-
-  @Test
-  public void linuxFormatter_formatArgv_runUnderPrefixPrependedToEscapedCommandLine() {
-    RunCommandLine.LinuxFormatter underTest = new RunCommandLine.LinuxFormatter();
-    ImmutableList<String> result =
-        underTest.formatArgv(
-            "/bin/bash",
-            "unescaped run-under prefix &&",
-            ImmutableList.of("executable", "argv1", "arg w spaces"));
-    assertThat(result)
-        .containsExactly(
-            "/bin/bash", "-c", "unescaped run-under prefix && executable argv1 'arg w spaces'")
-        .inOrder();
-  }
-
-  @Test
-  public void windowsFormatter_formatArgv_runUnderPrefixPrependedToEscapedCommandLine() {
-    RunCommandLine.WindowsFormatter underTest = new RunCommandLine.WindowsFormatter();
-    ImmutableList<String> result =
-        underTest.formatArgv(
-            "unescaped /bin/bash",
-            "unescaped run-under prefix &&",
-            ImmutableList.of("C:/unescaped executable", "argv1", "arg w spaces"));
-    assertThat(result)
-        .containsExactly(
-            "unescaped /bin/bash",
-            "-c",
-            "\"unescaped run-under prefix && 'C:/unescaped executable' argv1 'arg w spaces'\"")
-        .inOrder();
-  }
-
-  @Test
-  public void linuxFormatter_formatScriptPathCommandLine_returnsConcatenatedEscapedCommand() {
-    RunCommandLine.LinuxFormatter underTest = new RunCommandLine.LinuxFormatter();
-    String result =
-        underTest.getScriptForm(
-            "/bin/bash",
-            "workingDir",
-            ImmutableSortedSet.of("UNSET_ME", "UNSET_ME_TOO"),
-            ImmutableSortedMap.of("ENV_VAR", "val", "ENV_VAR_WITH_SPACES", "foo bar"),
-            /* runUnderPrefix= */ null,
-            ImmutableList.of("executable", "argv1", "arg w spaces"));
-    assertThat(result)
-        .isEqualTo(
-            """
+    @org.junit.Test
+    fun linuxFormatter_formatScriptPathCommandLine_returnsConcatenatedEscapedCommand() {
+        val underTest: RunCommandLine.LinuxFormatter = LinuxFormatter()
+        val result: String? =
+            underTest.getScriptForm(
+                "/bin/bash",
+                "workingDir",
+                com.google.common.collect.ImmutableSortedSet.< E > of < E ? > ("UNSET_ME", "UNSET_ME_TOO"
+            ),
+        com.google.common.collect.ImmutableSortedMap.< K, V>of<K?, V?>("ENV_VAR", "val", "ENV_VAR_WITH_SPACES", "foo bar"),  /* runUnderPrefix= */
+        null,
+        com.google.common.collect.ImmutableList.of<E?>("executable", "argv1", "arg w spaces"))
+        Truth.assertThat(result)
+            .isEqualTo(
+                """
             #!/bin/bash
-            cd workingDir && \\
-              exec env \\
-                -u UNSET_ME \\
-                -u UNSET_ME_TOO \\
-                ENV_VAR=val \\
-                ENV_VAR_WITH_SPACES='foo bar' \\
-              executable argv1 'arg w spaces' "$@"
-            """);
-  }
+            cd workingDir && \
+              exec env \
+                -u UNSET_ME \
+                -u UNSET_ME_TOO \
+                ENV_VAR=val \
+                ENV_VAR_WITH_SPACES='foo bar' \
+              executable argv1 'arg w spaces' "${'$'}@"
+            
+            """.trimIndent()
+            )
+    }
 
-  @Test
-  public void linuxFormatter_formatScriptPathCommandLine_runUnderPrefixPrependedToEscapedCommand() {
-    RunCommandLine.LinuxFormatter underTest = new RunCommandLine.LinuxFormatter();
-    String result =
-        underTest.getScriptForm(
-            "/bin/bash",
-            "workingDir",
-            ImmutableSortedSet.of("UNSET_ME", "UNSET_ME_TOO"),
-            ImmutableSortedMap.of("ENV_VAR", "val", "ENV_VAR_WITH_SPACES", "foo bar"),
-            "unescaped run-under prefix &&",
-            ImmutableList.of("executable", "argv1", "arg w spaces"));
-    assertThat(result)
-        .isEqualTo(
-"""
+    @org.junit.Test
+    fun linuxFormatter_formatScriptPathCommandLine_runUnderPrefixPrependedToEscapedCommand() {
+        val underTest: RunCommandLine.LinuxFormatter = LinuxFormatter()
+        val result: String? =
+            underTest.getScriptForm(
+                "/bin/bash",
+                "workingDir",
+                com.google.common.collect.ImmutableSortedSet.< E > of < E ? > ("UNSET_ME", "UNSET_ME_TOO"
+            ),
+        com.google.common.collect.ImmutableSortedMap.< K, V>of<K?, V?>("ENV_VAR", "val", "ENV_VAR_WITH_SPACES", "foo bar"),
+        "unescaped run-under prefix &&",
+        com.google.common.collect.ImmutableList.of<E?>("executable", "argv1", "arg w spaces"))
+        Truth.assertThat(result)
+            .isEqualTo(
+                """
 #!/bin/bash
-cd workingDir && \\
-  exec env \\
-    -u UNSET_ME \\
-    -u UNSET_ME_TOO \\
-    ENV_VAR=val \\
-    ENV_VAR_WITH_SPACES='foo bar' \\
-  /bin/bash -c 'unescaped run-under prefix && executable argv1 '\\''arg w spaces'\\''' "$@"
-""");
-  }
+cd workingDir && \
+  exec env \
+    -u UNSET_ME \
+    -u UNSET_ME_TOO \
+    ENV_VAR=val \
+    ENV_VAR_WITH_SPACES='foo bar' \
+  /bin/bash -c 'unescaped run-under prefix && executable argv1 '\''arg w spaces'\''' "${'$'}@"
 
-  @Test
-  public void
-      windowsFormatter_formatScriptPathCommandLine_runUnderPrefixPrependedToEscapedCommand() {
-    RunCommandLine.WindowsFormatter underTest = new RunCommandLine.WindowsFormatter();
-    String result =
-        underTest.getScriptForm(
-            "/bin/bash",
-            "workingDir",
-            ImmutableSortedSet.of("UNSET_ME", "UNSET_ME_TOO"),
-            ImmutableSortedMap.of("ENV_VAR", "val", "ENV_VAR_WITH_SPACES", "foo bar"),
+""".trimIndent()
+            )
+    }
 
-            /* runUnderPrefix= */ "echo hello &&",
-            ImmutableList.of("C:/executable", "argv1", "arg w spaces"));
-    assertThat(result)
-        .isEqualTo(
-            """
+    @org.junit.Test
+    fun windowsFormatter_formatScriptPathCommandLine_runUnderPrefixPrependedToEscapedCommand() {
+        val underTest: RunCommandLine.WindowsFormatter = WindowsFormatter()
+        val result: String? =
+            underTest.getScriptForm(
+                "/bin/bash",
+                "workingDir",
+                com.google.common.collect.ImmutableSortedSet.< E > of < E ? > ("UNSET_ME", "UNSET_ME_TOO"
+            ),
+        com.google.common.collect.ImmutableSortedMap.< K, V>of<K?, V?>("ENV_VAR", "val", "ENV_VAR_WITH_SPACES", "foo bar"),  /* runUnderPrefix= */
+
+        "echo hello &&",
+        com.google.common.collect.ImmutableList.of<E?>("C:/executable", "argv1", "arg w spaces"))
+        Truth.assertThat(result)
+            .isEqualTo(
+                """
             @echo off
             cd /d workingDir
               SET UNSET_ME=
               SET UNSET_ME_TOO=
               SET ENV_VAR=val
               SET ENV_VAR_WITH_SPACES=foo bar
-              /bin/bash -c 'echo hello && C:\\executable argv1 "arg w spaces"' %*
-            """);
-  }
+              /bin/bash -c 'echo hello && C:\executable argv1 "arg w spaces"' %*
+            
+            """.trimIndent()
+            )
+    }
 
-  @Test
-  public void windowsFormatter_formatScriptPathCommandLine_returnsConcatenatedEscapedCommand() {
-    RunCommandLine.WindowsFormatter underTest = new RunCommandLine.WindowsFormatter();
-    String result =
-        underTest.getScriptForm(
-            "/bin/bash",
-            "workingDir",
-            ImmutableSortedSet.of("UNSET_ME", "UNSET_ME_TOO"),
-            ImmutableSortedMap.of("ENV_VAR", "val", "ENV_VAR_WITH_SPACES", "foo bar"),
-            /* runUnderPrefix= */ null,
-            ImmutableList.of("C:/executable", "argv1", "arg w spaces"));
-    assertThat(result)
-        .isEqualTo(
-            """
+    @org.junit.Test
+    fun windowsFormatter_formatScriptPathCommandLine_returnsConcatenatedEscapedCommand() {
+        val underTest: RunCommandLine.WindowsFormatter = WindowsFormatter()
+        val result: String? =
+            underTest.getScriptForm(
+                "/bin/bash",
+                "workingDir",
+                com.google.common.collect.ImmutableSortedSet.< E > of < E ? > ("UNSET_ME", "UNSET_ME_TOO"
+            ),
+        com.google.common.collect.ImmutableSortedMap.< K, V>of<K?, V?>("ENV_VAR", "val", "ENV_VAR_WITH_SPACES", "foo bar"),  /* runUnderPrefix= */
+        null,
+        com.google.common.collect.ImmutableList.of<E?>("C:/executable", "argv1", "arg w spaces"))
+        Truth.assertThat(result)
+            .isEqualTo(
+                """
             @echo off
             cd /d workingDir
               SET UNSET_ME=
               SET UNSET_ME_TOO=
               SET ENV_VAR=val
               SET ENV_VAR_WITH_SPACES=foo bar
-              C:\\executable argv1 "arg w spaces" %*
-            """);
-  }
+              C:\executable argv1 "arg w spaces" %*
+            
+            """.trimIndent()
+            )
+    }
 }

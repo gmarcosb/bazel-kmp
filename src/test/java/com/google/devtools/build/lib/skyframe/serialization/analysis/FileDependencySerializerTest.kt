@@ -11,160 +11,144 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.analysis;
+package com.google.devtools.build.lib.skyframe.serialization.analysis
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import com.google.devtools.build.lib.actions.FileValue
 
-import com.google.devtools.build.lib.actions.FileValue;
-import com.google.devtools.build.lib.skyframe.FileKey;
-import com.google.devtools.build.lib.skyframe.serialization.KeyValueWriter;
-import com.google.devtools.build.lib.skyframe.serialization.ProfileCollector;
-import com.google.devtools.build.lib.skyframe.serialization.WriteStatuses;
-import com.google.devtools.build.lib.skyframe.serialization.WriteStatuses.SettableWriteStatus;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.InvalidationDataInfoOrFuture.FileDataInfoOrFuture;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.InvalidationDataInfoOrFuture.FutureFileDataInfo;
-import com.google.devtools.build.lib.versioning.LongVersionGetter;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.lib.vfs.RootedPath;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import com.google.devtools.build.skyframe.InMemoryGraph;
-import com.google.devtools.build.skyframe.InMemoryNodeEntry;
-import com.google.perftools.profiles.ProfileProto.Profile;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executor;
-import java.util.concurrent.ForkJoinPool;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnit;
-import org.mockito.junit.MockitoRule;
+@RunWith(JUnit4::class)
+class FileDependencySerializerTest {
+    @org.junit.Rule
+    val mocks: MockitoRule = MockitoJUnit.rule()
 
-@RunWith(JUnit4.class)
-public final class FileDependencySerializerTest {
+    private val executor: java.util.concurrent.Executor = ForkJoinPool(THREAD_COUNT)
 
-  @Rule public final MockitoRule mocks = MockitoJUnit.rule();
+    @org.mockito.Mock
+    private val versionGetter: LongVersionGetter? = null
 
-  private static final int THREAD_COUNT = 10;
+    @org.mockito.Mock
+    private val graph: InMemoryGraph? = null
 
-  private final Executor executor = new ForkJoinPool(THREAD_COUNT);
-  @Mock private LongVersionGetter versionGetter;
-  @Mock private InMemoryGraph graph;
-  @Mock private KeyValueWriter writer;
-  @Mock private InMemoryNodeEntry nodeEntry;
+    @org.mockito.Mock
+    private val writer: KeyValueWriter? = null
 
-  private FileDependencySerializer serializer;
-  private Root root;
+    @org.mockito.Mock
+    private val nodeEntry: InMemoryNodeEntry? = null
 
-  @Before
-  public void setUp() throws Exception {
-    FileSystem fs = new InMemoryFileSystem(DigestHashFunction.SHA256);
-    root = Root.fromPath(fs.getPath("/root"));
-    root.asPath().createDirectoryAndParents();
-    serializer = new FileDependencySerializer(versionGetter, graph, writer, executor, null);
-  }
+    private var serializer: FileDependencySerializer? = null
+    private var root: Root? = null
 
-  @Test
-  public void missingNodeEntry_incrementsErrorCounter() {
-    FileKey key = FileKey.create(RootedPath.toRootedPath(root, PathFragment.create("missing.txt")));
-    when(graph.getIfPresent(key)).thenReturn(null);
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun setUp() {
+        val fs: FileSystem = InMemoryFileSystem(DigestHashFunction.SHA256)
+        root = Root.fromPath(fs.getPath("/root"))
+        root.asPath().createDirectoryAndParents()
+        serializer = FileDependencySerializer(versionGetter, graph, writer, executor, null)
+    }
 
-    FileDataInfoOrFuture result = serializer.registerDependency(key);
+    @org.junit.Test
+    fun missingNodeEntry_incrementsErrorCounter() {
+        val key: FileKey? = FileKey.create(RootedPath.toRootedPath(root, PathFragment.create("missing.txt")))
+        Mockito.`when`<T?>(graph.getIfPresent(key)).thenReturn(null)
 
-    assertThat(result).isInstanceOf(FutureFileDataInfo.class);
-    ExecutionException e =
-        assertThrows(ExecutionException.class, () -> ((FutureFileDataInfo) result).get());
-    assertThat(e).hasCauseThat().isInstanceOf(MissingSkyframeEntryException.class);
-    assertThat(serializer.counters.nodesWithProcessingErrors.get()).isEqualTo(1);
-    assertThat(serializer.counters.nodesWaitingForDeps.get()).isEqualTo(0);
-  }
+        val result: FileDataInfoOrFuture = serializer.registerDependency(key)
 
-  @Test
-  public void rootDirectoryDependency_isConstantAndDecrementsCounter() throws Exception {
-    FileKey key = FileKey.create(RootedPath.toRootedPath(root, PathFragment.EMPTY_FRAGMENT));
+        assertThat(result).isInstanceOf(FutureFileDataInfo::class.java)
+        val e: ExecutionException? =
+            org.junit.Assert.assertThrows<ExecutionException?>(
+                ExecutionException::class.java,
+                org.junit.function.ThrowingRunnable { (result as FutureFileDataInfo).get() })
+        Truth.assertThat(e).hasCauseThat().isInstanceOf(MissingSkyframeEntryException::class.java)
+        assertThat(serializer.counters.nodesWithProcessingErrors.get()).isEqualTo(1)
+        assertThat(serializer.counters.nodesWaitingForDeps.get()).isEqualTo(0)
+    }
 
-    FileDataInfoOrFuture result = serializer.registerDependency(key);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun rootDirectoryDependency_isConstantAndDecrementsCounter() {
+        val key: FileKey? = FileKey.create(RootedPath.toRootedPath(root, PathFragment.EMPTY_FRAGMENT))
 
-    assertThat(result).isEqualTo(InvalidationDataInfoOrFuture.ConstantFileData.CONSTANT_FILE);
-    assertThat(serializer.counters.nodesWaitingForDeps.get()).isEqualTo(0);
-    assertThat(serializer.counters.nodesWithProcessingErrors.get()).isEqualTo(0);
-  }
+        val result: FileDataInfoOrFuture? = serializer.registerDependency(key)
 
-  @Test
-  public void symlinkResolutionFailure_incrementsErrorCounter() throws Exception {
-    PathFragment symlinkPathFragment = PathFragment.create("symlink.txt");
-    PathFragment targetPathFragment = PathFragment.create("target.txt");
-    RootedPath symlinkRootedPath = RootedPath.toRootedPath(root, symlinkPathFragment);
-    FileKey symlinkKey = FileKey.create(symlinkRootedPath);
+        assertThat(result).isEqualTo(InvalidationDataInfoOrFuture.ConstantFileData.CONSTANT_FILE)
+        assertThat(serializer.counters.nodesWaitingForDeps.get()).isEqualTo(0)
+        assertThat(serializer.counters.nodesWithProcessingErrors.get()).isEqualTo(0)
+    }
 
-    FileValue symlinkFsv = mock(FileValue.class);
-    when(symlinkFsv.isSymlink()).thenReturn(true);
-    when(symlinkFsv.getUnresolvedLinkTarget()).thenReturn(targetPathFragment);
-    when(symlinkFsv.realRootedPath(symlinkRootedPath)).thenReturn(symlinkRootedPath);
-    when(symlinkFsv.exists()).thenReturn(true);
-    when(symlinkFsv.isDirectory()).thenReturn(false);
-    when(nodeEntry.value).thenReturn(symlinkFsv);
-    when(graph.getIfPresent(symlinkKey)).thenReturn(nodeEntry);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun symlinkResolutionFailure_incrementsErrorCounter() {
+        val symlinkPathFragment: PathFragment? = PathFragment.create("symlink.txt")
+        val targetPathFragment: PathFragment? = PathFragment.create("target.txt")
+        val symlinkRootedPath: RootedPath = RootedPath.toRootedPath(root, symlinkPathFragment)
+        val symlinkKey: FileKey? = FileKey.create(symlinkRootedPath)
 
-    // Symlink resolution calls getVersion on link path.
-    when(versionGetter.getFilePathOrSymlinkVersion(symlinkRootedPath.asPath())).thenReturn(2L);
+        val symlinkFsv: FileValue = Mockito.mock<FileValue>(FileValue::class.java)
+        Mockito.`when`<T?>(symlinkFsv.isSymlink()).thenReturn(true)
+        Mockito.`when`<T?>(symlinkFsv.getUnresolvedLinkTarget()).thenReturn(targetPathFragment)
+        Mockito.`when`<T?>(symlinkFsv.realRootedPath(symlinkRootedPath)).thenReturn(symlinkRootedPath)
+        Mockito.`when`<T?>(symlinkFsv.exists()).thenReturn(true)
+        Mockito.`when`<T?>(symlinkFsv.isDirectory()).thenReturn(false)
+        Mockito.`when`<Any?>(nodeEntry.value).thenReturn(symlinkFsv)
+        Mockito.`when`<T?>(graph.getIfPresent(symlinkKey)).thenReturn(nodeEntry)
 
-    // Create the failure mode where the symlink target does not exist in graph.
-    RootedPath targetRootedPath = RootedPath.toRootedPath(root, targetPathFragment);
-    when(graph.getIfPresent(targetRootedPath)).thenReturn(null);
+        // Symlink resolution calls getVersion on link path.
+        Mockito.`when`<Long?>(versionGetter.getFilePathOrSymlinkVersion(symlinkRootedPath.asPath())).thenReturn(2L)
 
-    FileDataInfoOrFuture result = serializer.registerDependency(symlinkKey);
+        // Create the failure mode where the symlink target does not exist in graph.
+        val targetRootedPath: RootedPath? = RootedPath.toRootedPath(root, targetPathFragment)
+        Mockito.`when`<T?>(graph.getIfPresent(targetRootedPath)).thenReturn(null)
 
-    assertThat(result).isInstanceOf(FutureFileDataInfo.class);
-    ExecutionException e =
-        assertThrows(ExecutionException.class, () -> ((FutureFileDataInfo) result).get());
-    assertThat(e).hasCauseThat().isInstanceOf(MissingSkyframeEntryException.class);
-    assertThat(serializer.counters.nodesWithProcessingErrors.get()).isEqualTo(1);
-    assertThat(serializer.counters.nodesWaitingForDeps.get()).isEqualTo(0);
-  }
+        val result: FileDataInfoOrFuture = serializer.registerDependency(symlinkKey)
 
-  @Test
-  public void registerFileDependency_recordsSamples() throws Exception {
-    ProfileCollector profileCollector = new ProfileCollector();
-    serializer =
-        new FileDependencySerializer(versionGetter, graph, writer, executor, profileCollector);
+        assertThat(result).isInstanceOf(FutureFileDataInfo::class.java)
+        val e: ExecutionException? =
+            org.junit.Assert.assertThrows<ExecutionException?>(
+                ExecutionException::class.java,
+                org.junit.function.ThrowingRunnable { (result as FutureFileDataInfo).get() })
+        Truth.assertThat(e).hasCauseThat().isInstanceOf(MissingSkyframeEntryException::class.java)
+        assertThat(serializer.counters.nodesWithProcessingErrors.get()).isEqualTo(1)
+        assertThat(serializer.counters.nodesWaitingForDeps.get()).isEqualTo(0)
+    }
 
-    PathFragment filePathFragment = PathFragment.create("file.txt");
-    RootedPath rootedPath = RootedPath.toRootedPath(root, filePathFragment);
-    FileKey key = FileKey.create(rootedPath);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun registerFileDependency_recordsSamples() {
+        val profileCollector: ProfileCollector = ProfileCollector()
+        serializer =
+            FileDependencySerializer(versionGetter, graph, writer, executor, profileCollector)
 
-    FileValue fsv = mock(FileValue.class);
-    when(fsv.isSymlink()).thenReturn(false);
-    when(fsv.realRootedPath(rootedPath)).thenReturn(rootedPath);
-    when(fsv.exists()).thenReturn(true);
-    when(fsv.isDirectory()).thenReturn(false);
-    when(nodeEntry.value).thenReturn(fsv);
-    when(graph.getIfPresent(key)).thenReturn(nodeEntry);
+        val filePathFragment: PathFragment? = PathFragment.create("file.txt")
+        val rootedPath: RootedPath = RootedPath.toRootedPath(root, filePathFragment)
+        val key: FileKey? = FileKey.create(rootedPath)
 
-    when(versionGetter.getFilePathOrSymlinkVersion(rootedPath.asPath())).thenReturn(2L);
+        val fsv: FileValue = Mockito.mock<FileValue>(FileValue::class.java)
+        Mockito.`when`<T?>(fsv.isSymlink()).thenReturn(false)
+        Mockito.`when`<T?>(fsv.realRootedPath(rootedPath)).thenReturn(rootedPath)
+        Mockito.`when`<T?>(fsv.exists()).thenReturn(true)
+        Mockito.`when`<T?>(fsv.isDirectory()).thenReturn(false)
+        Mockito.`when`<Any?>(nodeEntry.value).thenReturn(fsv)
+        Mockito.`when`<T?>(graph.getIfPresent(key)).thenReturn(nodeEntry)
 
-    SettableWriteStatus writeStatus = new WriteStatuses.SettableWriteStatus();
-    when(writer.put(any(), any())).thenReturn(writeStatus);
+        Mockito.`when`<Long?>(versionGetter.getFilePathOrSymlinkVersion(rootedPath.asPath())).thenReturn(2L)
 
-    FileDataInfoOrFuture result = serializer.registerDependency(key);
-    ((FutureFileDataInfo) result).get();
+        val writeStatus: SettableWriteStatus = SettableWriteStatus()
+        Mockito.`when`<T?>(writer.put(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>())).thenReturn(writeStatus)
 
-    // Not novel yet, no samples.
-    assertThat(profileCollector.toProto().getSampleCount()).isEqualTo(0);
+        val result: FileDataInfoOrFuture = serializer.registerDependency(key)
+        (result as FutureFileDataInfo).get()
 
-    writeStatus.markSuccess(true); // was novel
+        // Not novel yet, no samples.
+        assertThat(profileCollector.toProto().getSampleCount()).isEqualTo(0)
 
-    // Samples should be recorded now.
-    Profile profile = profileCollector.toProto();
-    assertThat(profile.getSampleCount()).isGreaterThan(0);
-  }
+        writeStatus.markSuccess(true) // was novel
+
+        // Samples should be recorded now.
+        val profile: Profile = profileCollector.toProto()
+        assertThat(profile.getSampleCount()).isGreaterThan(0)
+    }
+
+    companion object {
+        private const val THREAD_COUNT = 10
+    }
 }

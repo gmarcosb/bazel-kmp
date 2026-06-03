@@ -11,49 +11,47 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlark
 
-package com.google.devtools.build.lib.starlark;
-
-import com.google.devtools.build.lib.util.Classpath;
-import net.starlark.java.annot.StarlarkAnnotations;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.util.Classpath
 
 /**
- * Tests that bazel usages of {@link StarlarkMethod} and {@link StarlarkBuiltin} abide by the
+ * Tests that bazel usages of [StarlarkMethod] and [StarlarkBuiltin] abide by the
  * contracts specified in their documentation.
- *
- * <p>Tests in this class use the java reflection API.
- *
- * <p>This verification *would* be done via annotation processor, but annotation processors in java
+ * 
+ * 
+ * Tests in this class use the java reflection API.
+ * 
+ * 
+ * This verification *would* be done via annotation processor, but annotation processors in java
  * don't have access to the full set of information that the java reflection API has.
  */
-@RunWith(JUnit4.class)
-public class StarlarkAnnotationContractTest {
-
-  // Common prefix of packages in bazel that may have classes that implement or extend a
-  // Starlark type.
-  private static final String MODULES_PACKAGE_PREFIX = "com/google/devtools/build";
-
-  /**
-   * Verifies that every class in bazel that implements or extends a Starlark type has a clearly
-   * resolvable type.
-   *
-   * <p>If this test fails, it indicates the following error scenario:
-   *
-   * <p>Suppose class A is a subclass of both B and C, where B and C are annotated with {@link
-   * StarlarkBuiltin} annotations (and are thus considered "Starlark types"). If B is not a subclass
-   * of C (nor visa versa), then it's impossible to resolve whether A is of type B or if A is of
-   * type C. It's both! The way to resolve this is usually to have A be its own type (annotated with
-   * {@link StarlarkBuiltin}), and thus have the explicit type of A be semantically "B and C".
-   */
-  @Test
-  public void testResolvableStarlarkBuiltins() throws Exception {
-    for (Class<?> candidateClass : Classpath.findClasses(MODULES_PACKAGE_PREFIX)) {
-      StarlarkAnnotations.getStarlarkBuiltin(candidateClass);
+@RunWith(JUnit4::class)
+class StarlarkAnnotationContractTest {
+    /**
+     * Verifies that every class in bazel that implements or extends a Starlark type has a clearly
+     * resolvable type.
+     * 
+     * 
+     * If this test fails, it indicates the following error scenario:
+     * 
+     * 
+     * Suppose class A is a subclass of both B and C, where B and C are annotated with [ ] annotations (and are thus considered "Starlark types"). If B is not a subclass
+     * of C (nor visa versa), then it's impossible to resolve whether A is of type B or if A is of
+     * type C. It's both! The way to resolve this is usually to have A be its own type (annotated with
+     * [StarlarkBuiltin]), and thus have the explicit type of A be semantically "B and C".
+     */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testResolvableStarlarkBuiltins() {
+        for (candidateClass in Classpath.findClasses(MODULES_PACKAGE_PREFIX)) {
+            StarlarkAnnotations.getStarlarkBuiltin(candidateClass)
+        }
     }
-  }
+
+    companion object {
+        // Common prefix of packages in bazel that may have classes that implement or extend a
+        // Starlark type.
+        private const val MODULES_PACKAGE_PREFIX = "com/google/devtools/build"
+    }
 }

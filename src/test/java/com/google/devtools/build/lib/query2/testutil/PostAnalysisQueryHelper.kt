@@ -11,375 +11,321 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.testutil;
+package com.google.devtools.build.lib.query2.testutil
 
-import static com.google.common.collect.ImmutableMap.toImmutableMap;
-import static com.google.devtools.build.lib.testutil.FoundationTestCase.failFastHandler;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Lists;
-import com.google.devtools.build.lib.analysis.AnalysisResult;
-import com.google.devtools.build.lib.analysis.ConfiguredAspect;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.analysis.util.AnalysisTestCase;
-import com.google.devtools.build.lib.bazel.bzlmod.ModuleKey;
-import com.google.devtools.build.lib.cmdline.RepositoryMapping;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.cmdline.TargetPattern;
-import com.google.devtools.build.lib.events.Reporter;
-import com.google.devtools.build.lib.packages.util.MockObjcSupport;
-import com.google.devtools.build.lib.packages.util.MockProtoSupport;
-import com.google.devtools.build.lib.packages.util.MockToolsConfig;
-import com.google.devtools.build.lib.pkgcache.PackageManager;
-import com.google.devtools.build.lib.query2.PostAnalysisQueryEnvironment;
-import com.google.devtools.build.lib.query2.PostAnalysisQueryEnvironment.TopLevelConfigurations;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment;
-import com.google.devtools.build.lib.query2.engine.QueryEvalResult;
-import com.google.devtools.build.lib.query2.engine.QueryException;
-import com.google.devtools.build.lib.query2.engine.QueryParser;
-import com.google.devtools.build.lib.query2.engine.QuerySyntaxException;
-import com.google.devtools.build.lib.query2.engine.QueryUtil;
-import com.google.devtools.build.lib.query2.engine.QueryUtil.AggregateAllOutputFormatterCallback;
-import com.google.devtools.build.lib.query2.testutil.AbstractQueryTest.QueryHelper;
-import com.google.devtools.build.lib.server.FailureDetails.Query;
-import com.google.devtools.build.lib.skyframe.AspectKeyCreator;
-import com.google.devtools.build.lib.skyframe.SkyframeExecutor;
-import com.google.devtools.build.lib.skyframe.SkyframeExecutorWrappingWalkableGraph;
-import com.google.devtools.build.lib.testutil.Scratch;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.WalkableGraph;
-import java.io.IOException;
-import java.lang.annotation.Annotation;
-import java.lang.reflect.Method;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Set;
-import java.util.function.Function;
-import org.junit.After;
-import org.junit.Before;
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.ImmutableMap
+import com.google.common.collect.Lists
+import com.google.devtools.build.lib.analysis.AnalysisResult
+import com.google.devtools.build.lib.query2.engine.QueryException
+import com.google.devtools.build.lib.query2.engine.QueryParser
+import com.google.devtools.build.lib.query2.engine.QuerySyntaxException
+import org.junit.After
+import java.lang.reflect.Method
+import java.util.*
+import java.util.function.Function
 
 /**
- * {@link QueryHelper} for queries that need the analysis phase. Big warts: uses an {@link
- * AnalysisTestCase} to do analysis before query, but {@link AnalysisTestCase} is meant to be
- * inherited from, not composed. In particular, means that @Before and @After annotations of {@link
- * AnalysisTestCase} must be run manually. @BeforeClass and @AfterClass are completely ignored for
+ * [QueryHelper] for queries that need the analysis phase. Big warts: uses an [ ] to do analysis before query, but [AnalysisTestCase] is meant to be
+ * inherited from, not composed. In particular, means that @Before and @After annotations of [ ] must be run manually. @BeforeClass and @AfterClass are completely ignored for
  * now.
  */
-public abstract class PostAnalysisQueryHelper<T> extends AbstractQueryHelper<T> {
-  protected PathFragment parserPrefix;
-  protected AnalysisHelper analysisHelper;
-  private boolean wholeTestUniverse;
+abstract class PostAnalysisQueryHelper<T> : AbstractQueryHelper<T?>() {
+    protected var parserPrefix: PathFragment? = null
+    protected var analysisHelper: AnalysisHelper? = null
+    var isWholeTestUniverse: Boolean = false
+        private set
 
-  @Override
-  public void setUp() throws Exception {
-    super.setUp();
-    parserPrefix = PathFragment.EMPTY_FRAGMENT;
-    wholeTestUniverse = false;
-    this.analysisHelper = new AnalysisHelper();
-    // Reverse the @Before method list, so that superclass is called before subclass.
-    for (Method method :
-        Lists.reverse(getMethodsAnnotatedWith(AnalysisHelper.class, Before.class))) {
-      method.invoke(analysisHelper);
-    }
-    MockToolsConfig mockToolsConfig = analysisHelper.getMockToolsConfig();
-    MockProtoSupport.setup(mockToolsConfig);
-    MockObjcSupport.setup(mockToolsConfig);
-  }
-
-  @Override
-  public final void cleanUp() {
-    for (Method method : getMethodsAnnotatedWith(AnalysisHelper.class, After.class)) {
-      try {
-        method.invoke(analysisHelper);
-      } catch (ReflectiveOperationException e) {
-        throw new IllegalStateException(e);
-      }
-    }
-  }
-
-  MockToolsConfig getMockToolsConfig() {
-    return analysisHelper.getMockToolsConfig();
-  }
-
-  void setSyscallCache(SyscallCache syscallCache) {
-    this.analysisHelper.setSyscallCache(syscallCache);
-  }
-
-  public boolean isWholeTestUniverse() {
-    return wholeTestUniverse;
-  }
-
-  public ImmutableList<String> getUniverseScopeAsStringList() {
-    return universeScope.getConstantValueMaybe().get();
-  }
-
-  @Override
-  public void setUniverseScope(String universeScope) {
-    if (!wholeTestUniverse) {
-      super.setUniverseScope(universeScope);
-    }
-  }
-
-  public void setWholeTestUniverseScope(String universeScope) {
-    super.setUniverseScope(universeScope);
-    wholeTestUniverse = true;
-  }
-
-  @Override
-  public Path getRootDirectory() {
-    return analysisHelper.getRootDirectory();
-  }
-
-  @Override
-  public PathFragment getIgnoredSubdirectoriesFile() {
-    return PathFragment.EMPTY_FRAGMENT;
-  }
-
-  public SkyframeExecutor getSkyframeExecutor() {
-    return analysisHelper.getSkyframeExecutor();
-  }
-
-  public PackageManager getPackageManager() {
-    return analysisHelper.getPackageManager();
-  }
-
-  @Override
-  public void clearAllFiles() throws IOException {
-    analysisHelper.getRootDirectory().deleteTree();
-  }
-
-  @Override
-  public void useRuleClassProvider(ConfiguredRuleClassProvider ruleClassProvider) throws Exception {
-    analysisHelper.useRuleClassProvider(ruleClassProvider);
-  }
-
-  @Override
-  public void writeFile(String fileName, String... lines) throws IOException {
-    analysisHelper
-        .getScratch()
-        .file(getRootDirectory().getRelative(fileName).getPathString(), lines);
-  }
-
-  public Scratch getScratch() {
-    return analysisHelper.getScratch();
-  }
-
-  public void turnOffFailFast() {
-    analysisHelper.getReporter().removeHandler(failFastHandler);
-  }
-
-  @Override
-  public void overwriteFile(String fileName, String... lines) throws IOException {
-    analysisHelper
-        .getScratch()
-        .overwriteFile(getRootDirectory().getRelative(fileName).getPathString(), lines);
-  }
-
-  @Override
-  public void ensureSymbolicLink(String link, String target) throws IOException {
-    Path rootDirectory = getRootDirectory();
-    Path linkPath = rootDirectory.getRelative(link);
-    Path targetPath = rootDirectory.getRelative(target);
-    linkPath.getParentDirectory().createDirectoryAndParents();
-    FileSystemUtils.ensureSymbolicLink(linkPath, targetPath);
-  }
-
-  @Override
-  public QueryEnvironment<T> getQueryEnvironment() {
-    throw new UnsupportedOperationException();
-  }
-
-  public PostAnalysisQueryEnvironment<T> getPostAnalysisQueryEnvironment(
-      Collection<String> universe) throws Exception {
-    return getPostAnalysisQueryEnvironment(universe, ImmutableList.of());
-  }
-
-  public PostAnalysisQueryEnvironment<T> getPostAnalysisQueryEnvironment(
-      Collection<String> universe, Iterable<String> aspects) throws Exception {
-    if (ImmutableList.copyOf(universe)
-        .equals(ImmutableList.of(PostAnalysisQueryTest.DEFAULT_UNIVERSE))) {
-      throw new QueryException(
-          "Tests must set universe scope by either having parsable labels in each query expression "
-              + "or setting explicitly through query helper.",
-          Query.Code.QUERY_UNKNOWN);
-    }
-    AnalysisResult analysisResult =
-        analysisHelper.update(ImmutableList.copyOf(aspects), universe.toArray(new String[0]));
-    WalkableGraph walkableGraph =
-        SkyframeExecutorWrappingWalkableGraph.of(analysisHelper.getSkyframeExecutor());
-    ImmutableMap<String, BuildConfigurationValue> transitiveConfigurations =
-        getTransitiveConfigurations(
-            analysisHelper.getSkyframeExecutor().getTransitiveConfigurationKeys(), walkableGraph);
-
-    return getPostAnalysisQueryEnvironment(
-        walkableGraph,
-        new TopLevelConfigurations(analysisResult.getTopLevelTargetsWithConfigs()),
-        transitiveConfigurations,
-        analysisResult.getAspectsMap());
-  }
-
-  private static ImmutableMap<String, BuildConfigurationValue> getTransitiveConfigurations(
-      Collection<SkyKey> transitiveConfigurationKeys, WalkableGraph graph)
-      throws InterruptedException {
-    // BuildConfigurationKey and BuildConfigurationValue should be 1:1
-    // so merge function intentionally omitted
-    return graph.getSuccessfulValues(transitiveConfigurationKeys).values().stream()
-        .map(BuildConfigurationValue.class::cast)
-        .sorted(Comparator.comparing(BuildConfigurationValue::checksum))
-        .collect(toImmutableMap(BuildConfigurationValue::checksum, Function.identity()));
-  }
-
-  /**
-   * Returns a {@link PostAnalysisQueryEnvironment} suitable for tests.
-   *
-   * @param walkableGraph the Skyframe graph containing all configured targets that queries can
-   *     search over
-   * @param topLevelConfigurations the configurations used to build the top-level targets in a
-   *     query's universe scope
-   * @param transitiveConfigurations all configurations available in the build graph (including
-   *     those produced by configuration transitions in the top-level targets' transitive deps),
-   *     keyed by the configurations' checksums
-   * @param topLevelAspects the top-level aspects to apply
-   */
-  protected abstract PostAnalysisQueryEnvironment<T> getPostAnalysisQueryEnvironment(
-      WalkableGraph walkableGraph,
-      TopLevelConfigurations topLevelConfigurations,
-      ImmutableMap<String, BuildConfigurationValue> transitiveConfigurations,
-      ImmutableMap<AspectKeyCreator.AspectKey, ConfiguredAspect> topLevelAspects)
-      throws InterruptedException;
-
-  @Override
-  public ResultAndTargets<T> evaluateQuery(String query) throws Exception {
-    PostAnalysisQueryEnvironment<T> env =
-        getPostAnalysisQueryEnvironment(getUniverseScopeAsStringList());
-    AggregateAllOutputFormatterCallback<T, ?> callback =
-        QueryUtil.newOrderedAggregateAllOutputFormatterCallback(env);
-    QueryEvalResult queryEvalResult;
-    try {
-      queryEvalResult =
-          env.evaluateQuery(env.transformParsedQuery(QueryParser.parse(query, env)), callback);
-    } catch (IOException e) {
-      // Should be impossible since AggregateAllOutputFormatterCallback doesn't throw IOException.
-      throw new IllegalStateException(e);
-    } catch (QuerySyntaxException e) {
-      // Expect the user to provide valid syntax.
-      throw new IllegalArgumentException(e);
-    }
-    Set<T> targets = env.createThreadSafeMutableSet();
-    targets.addAll(callback.getResult());
-    return new ResultAndTargets<>(queryEvalResult, targets);
-  }
-
-  @Override
-  public void assertPackageNotLoaded(String packageName) throws Exception {}
-
-  /**
-   * Returns all methods with the given annotation for the given class in the entire hierarchy.
-   * Methods are returned in hierarchy order: superclass after subclass.
-   */
-  private static List<Method> getMethodsAnnotatedWith(
-      Class<?> type, Class<? extends Annotation> annotation) {
-    List<Method> methods = new ArrayList<>();
-    Class<?> klass = type;
-    // need to iterate through hierarchy in order to retrieve methods from above the current
-    // instance.
-    while (klass != Object.class) {
-      // iterate though the list of methods declared in the class represented by klass variable, and
-      // add those annotated with the specified annotation
-      final List<Method> allMethods = new ArrayList<>(Arrays.asList(klass.getDeclaredMethods()));
-      for (final Method method : allMethods) {
-        if (method.isAnnotationPresent(annotation)) {
-          methods.add(method);
+    @Throws(Exception::class)
+    override fun setUp() {
+        super.setUp()
+        parserPrefix = PathFragment.EMPTY_FRAGMENT
+        this.isWholeTestUniverse = false
+        this.analysisHelper = AnalysisHelper()
+        // Reverse the @Before method list, so that superclass is called before subclass.
+        for (method in Lists.reverse<Method>(getMethodsAnnotatedWith(AnalysisHelper::class.java, Before::class.java))) {
+            method.invoke(analysisHelper)
         }
-      }
-      // move to the upper class in the hierarchy in search for more methods
-      klass = klass.getSuperclass();
-    }
-    return methods;
-  }
-
-  public void useConfiguration(String... args) throws Exception {
-    analysisHelper.useConfiguration(args);
-  }
-
-  @Override
-  public void addModule(ModuleKey key, String... moduleFileLines) {
-    analysisHelper.addModule(key, moduleFileLines);
-  }
-
-  @Override
-  public Path getModuleRoot() {
-    return analysisHelper.getModuleRoot();
-  }
-
-  @Override
-  public void setMainRepoTargetParser(RepositoryMapping mapping) {
-    this.mainRepoTargetParser =
-        new TargetPattern.Parser(
-            parserPrefix,
-            RepositoryName.MAIN,
-            mapping.withAdditionalMappings(DEFAULT_MAIN_REPO_MAPPING));
-  }
-
-  /** Helper class that provides a framework for testing {@code PostAnalysisQueryHelper} */
-  public static class AnalysisHelper extends AnalysisTestCase {
-    Path getRootDirectory() {
-      return rootDirectory;
+        val mockToolsConfig: MockToolsConfig = analysisHelper!!.mockToolsConfig
+        MockProtoSupport.setup(mockToolsConfig)
+        MockObjcSupport.setup(mockToolsConfig)
     }
 
-    Path getModuleRoot() {
-      return moduleRoot;
+    override fun cleanUp() {
+        for (method in getMethodsAnnotatedWith(AnalysisHelper::class.java, After::class.java)) {
+            try {
+                method.invoke(analysisHelper)
+            } catch (e: ReflectiveOperationException) {
+                throw IllegalStateException(e)
+            }
+        }
     }
 
-    @Override
-    protected AnalysisResult update(ImmutableList<String> aspects, String... labels)
-        throws Exception {
-      return super.update(aspects, labels);
+    val mockToolsConfig: MockToolsConfig
+        get() = analysisHelper!!.mockToolsConfig
+
+    fun setSyscallCache(syscallCache: SyscallCache?) {
+        this.analysisHelper.setSyscallCache(syscallCache)
     }
 
-    protected SkyframeExecutor getSkyframeExecutor() {
-      return skyframeExecutor;
+    val universeScopeAsStringList: ImmutableList<String?>
+        get() = universeScope.getConstantValueMaybe().get()
+
+    override fun setUniverseScope(universeScope: String) {
+        if (!this.isWholeTestUniverse) {
+            super.setUniverseScope(universeScope)
+        }
     }
 
-    public PackageManager getPackageManager() {
-      return packageManager;
+    fun setWholeTestUniverseScope(universeScope: String) {
+        super.setUniverseScope(universeScope)
+        this.isWholeTestUniverse = true
     }
 
-    public MockToolsConfig getMockToolsConfig() {
-      return mockToolsConfig;
+    override fun getRootDirectory(): Path {
+        return analysisHelper!!.rootDirectory
     }
 
-    protected Reporter getReporter() {
-      return reporter;
+    override fun getIgnoredSubdirectoriesFile(): PathFragment {
+        return PathFragment.EMPTY_FRAGMENT
     }
 
-    private void setSyscallCache(SyscallCache syscallCache) {
-      this.delegatingSyscallCache.setDelegate(syscallCache);
+    val skyframeExecutor: SkyframeExecutor
+        get() = analysisHelper!!.skyframeExecutor
+
+    val packageManager: PackageManager
+        get() = analysisHelper!!.packageManager
+
+    @Throws(IOException::class)
+    override fun clearAllFiles() {
+        analysisHelper!!.rootDirectory.deleteTree()
     }
 
-    private void addModule(ModuleKey key, String... moduleFileLines) {
-      registry.addModule(key, moduleFileLines);
+    @Throws(Exception::class)
+    override fun useRuleClassProvider(ruleClassProvider: ConfiguredRuleClassProvider) {
+        analysisHelper!!.useRuleClassProvider(ruleClassProvider)
     }
 
-    @Override
-    protected BuildConfigurationValue getTargetConfiguration() throws InterruptedException {
-      return super.getTargetConfiguration();
+    @Throws(IOException::class)
+    override fun writeFile(fileName: String?, vararg lines: String?) {
+        analysisHelper
+            .getScratch()
+            .file(getRootDirectory().getRelative(fileName).getPathString(), lines)
     }
 
-    @Override
-    protected void useRuleClassProvider(ConfiguredRuleClassProvider ruleClassProvider)
-        throws Exception {
-      super.useRuleClassProvider(ruleClassProvider);
-      update();
+    val scratch: Scratch
+        get() = analysisHelper.getScratch()
+
+    fun turnOffFailFast() {
+        analysisHelper!!.reporter.removeHandler(FoundationTestCase.failFastHandler)
     }
-  }
+
+    @Throws(IOException::class)
+    override fun overwriteFile(fileName: String?, vararg lines: String?) {
+        analysisHelper
+            .getScratch()
+            .overwriteFile(getRootDirectory().getRelative(fileName).getPathString(), lines)
+    }
+
+    @Throws(IOException::class)
+    override fun ensureSymbolicLink(link: String?, target: String?) {
+        val rootDirectory: Path = getRootDirectory()
+        val linkPath: Path = rootDirectory.getRelative(link)
+        val targetPath: Path? = rootDirectory.getRelative(target)
+        linkPath.getParentDirectory().createDirectoryAndParents()
+        FileSystemUtils.ensureSymbolicLink(linkPath, targetPath)
+    }
+
+    override fun getQueryEnvironment(): QueryEnvironment<T?>? {
+        throw UnsupportedOperationException()
+    }
+
+    @Throws(Exception::class)
+    fun getPostAnalysisQueryEnvironment(
+        universe: MutableCollection<String?>
+    ): PostAnalysisQueryEnvironment<T?> {
+        return getPostAnalysisQueryEnvironment(universe, ImmutableList.of<String?>())
+    }
+
+    @Throws(Exception::class)
+    fun getPostAnalysisQueryEnvironment(
+        universe: MutableCollection<String?>, aspects: Iterable<String?>
+    ): PostAnalysisQueryEnvironment<T?> {
+        if (ImmutableList.copyOf<String?>(universe)
+            == ImmutableList.of<String?>(PostAnalysisQueryTest.Companion.DEFAULT_UNIVERSE)
+        ) {
+            throw QueryException(
+                "Tests must set universe scope by either having parsable labels in each query expression "
+                        + "or setting explicitly through query helper.",
+                Query.Code.QUERY_UNKNOWN
+            )
+        }
+        val analysisResult: AnalysisResult =
+            analysisHelper!!.update(ImmutableList.copyOf<String?>(aspects), *universe.toTypedArray<String?>())
+        val walkableGraph: WalkableGraph =
+            SkyframeExecutorWrappingWalkableGraph.of(analysisHelper!!.skyframeExecutor)
+        val transitiveConfigurations: ImmutableMap<String?, BuildConfigurationValue?> =
+            getTransitiveConfigurations(
+                analysisHelper!!.skyframeExecutor.getTransitiveConfigurationKeys(), walkableGraph
+            )
+
+        return getPostAnalysisQueryEnvironment(
+            walkableGraph,
+            TopLevelConfigurations(analysisResult.getTopLevelTargetsWithConfigs()),
+            transitiveConfigurations,
+            analysisResult.getAspectsMap()
+        )
+    }
+
+    /**
+     * Returns a [PostAnalysisQueryEnvironment] suitable for tests.
+     * 
+     * @param walkableGraph the Skyframe graph containing all configured targets that queries can
+     * search over
+     * @param topLevelConfigurations the configurations used to build the top-level targets in a
+     * query's universe scope
+     * @param transitiveConfigurations all configurations available in the build graph (including
+     * those produced by configuration transitions in the top-level targets' transitive deps),
+     * keyed by the configurations' checksums
+     * @param topLevelAspects the top-level aspects to apply
+     */
+    @Throws(InterruptedException::class)
+    protected abstract fun getPostAnalysisQueryEnvironment(
+        walkableGraph: WalkableGraph?,
+        topLevelConfigurations: TopLevelConfigurations?,
+        transitiveConfigurations: ImmutableMap<String?, BuildConfigurationValue?>?,
+        topLevelAspects: ImmutableMap<AspectKeyCreator.AspectKey?, ConfiguredAspect?>?
+    ): PostAnalysisQueryEnvironment<T?>
+
+    @Throws(Exception::class)
+    override fun evaluateQuery(query: String?): ResultAndTargets<T?> {
+        val env: PostAnalysisQueryEnvironment<T?> =
+            getPostAnalysisQueryEnvironment(this.universeScopeAsStringList)
+        val callback: AggregateAllOutputFormatterCallback<T?, *> =
+            QueryUtil.newOrderedAggregateAllOutputFormatterCallback<T?>(env)
+        val queryEvalResult: QueryEvalResult?
+        try {
+            queryEvalResult =
+                env.evaluateQuery(env.transformParsedQuery(QueryParser.parse(query, env)), callback)
+        } catch (e: IOException) {
+            // Should be impossible since AggregateAllOutputFormatterCallback doesn't throw IOException.
+            throw IllegalStateException(e)
+        } catch (e: QuerySyntaxException) {
+            // Expect the user to provide valid syntax.
+            throw IllegalArgumentException(e)
+        }
+        val targets: MutableSet<T?> = env.createThreadSafeMutableSet()
+        targets.addAll(callback.result)
+        return ResultAndTargets<T?>(queryEvalResult, targets)
+    }
+
+    @Throws(Exception::class)
+    override fun assertPackageNotLoaded(packageName: String?) {
+    }
+
+    @Throws(Exception::class)
+    fun useConfiguration(vararg args: String?) {
+        analysisHelper.useConfiguration(*args)
+    }
+
+    override fun addModule(key: ModuleKey?, vararg moduleFileLines: String?) {
+        analysisHelper.addModule(key, *moduleFileLines)
+    }
+
+    override fun getModuleRoot(): Path {
+        return analysisHelper!!.moduleRoot
+    }
+
+    override fun setMainRepoTargetParser(mapping: RepositoryMapping) {
+        this.mainRepoTargetParser =
+            Parser(
+                parserPrefix,
+                RepositoryName.MAIN,
+                mapping.withAdditionalMappings(AbstractQueryHelper.Companion.DEFAULT_MAIN_REPO_MAPPING)
+            )
+    }
+
+    /** Helper class that provides a framework for testing `PostAnalysisQueryHelper`  */
+    class AnalysisHelper : AnalysisTestCase() {
+        val rootDirectory: Path
+
+        val moduleRoot: Path
+
+        @Throws(Exception::class)
+        public override fun update(aspects: ImmutableList<String?>?, vararg labels: String?): AnalysisResult {
+            return super.update(aspects, *labels)
+        }
+
+        val skyframeExecutor: SkyframeExecutor
+
+        val packageManager: PackageManager
+
+        val mockToolsConfig: MockToolsConfig
+
+        val reporter: Reporter?
+
+        private fun setSyscallCache(syscallCache: SyscallCache?) {
+            this.delegatingSyscallCache.setDelegate(syscallCache)
+        }
+
+        private fun addModule(key: ModuleKey?, vararg moduleFileLines: String?) {
+            registry.addModule(key, moduleFileLines)
+        }
+
+        @get:Throws(InterruptedException::class)
+        val targetConfiguration: BuildConfigurationValue
+            get() = super.targetConfiguration
+
+        @Throws(Exception::class)
+        public override fun useRuleClassProvider(ruleClassProvider: ConfiguredRuleClassProvider) {
+            super.useRuleClassProvider(ruleClassProvider)
+            update()
+        }
+    }
+
+    companion object {
+        @Throws(InterruptedException::class)
+        private fun getTransitiveConfigurations(
+            transitiveConfigurationKeys: MutableCollection<SkyKey?>?, graph: WalkableGraph
+        ): ImmutableMap<String?, BuildConfigurationValue?> {
+            // BuildConfigurationKey and BuildConfigurationValue should be 1:1
+            // so merge function intentionally omitted
+            return graph.getSuccessfulValues(transitiveConfigurationKeys).values().stream()
+                .map({ obj: Any? -> BuildConfigurationValue::class.java.cast(obj) })
+                .sorted(Comparator.comparing<T?, U?>(BuildConfigurationValue::checksum))
+                .collect(
+                    ImmutableMap.toImmutableMap<T?, K?, V?>(
+                        BuildConfigurationValue::checksum,
+                        Function.identity<T?>()
+                    )
+                )
+        }
+
+        /**
+         * Returns all methods with the given annotation for the given class in the entire hierarchy.
+         * Methods are returned in hierarchy order: superclass after subclass.
+         */
+        private fun getMethodsAnnotatedWith(
+            type: Class<*>, annotation: Class<out Annotation?>?
+        ): MutableList<Method> {
+            val methods: MutableList<Method> = ArrayList<Method>()
+            var klass = type
+            // need to iterate through hierarchy in order to retrieve methods from above the current
+            // instance.
+            while (klass != Any::class.java) {
+                // iterate though the list of methods declared in the class represented by klass variable, and
+                // add those annotated with the specified annotation
+                val allMethods: MutableList<Method> =
+                    ArrayList<Method>(Arrays.asList<Method?>(*klass.getDeclaredMethods()))
+                for (method in allMethods) {
+                    if (method.isAnnotationPresent(annotation)) {
+                        methods.add(method)
+                    }
+                }
+                // move to the upper class in the hierarchy in search for more methods
+                klass = klass.getSuperclass()
+            }
+            return methods
+        }
+    }
 }

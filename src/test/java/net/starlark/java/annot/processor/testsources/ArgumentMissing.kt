@@ -11,26 +11,21 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.annot.processor.testsources
 
-package net.starlark.java.annot.processor.testsources;
-
-import net.starlark.java.annot.Param;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.StarlarkValue;
+import net.starlark.java.eval.StarlarkValue
 
 /**
  * Test case for a StarlarkMethod method which has no arguments when the annotation indicates it
  * should.
  */
-public class ArgumentMissing implements StarlarkValue {
-
-  @StarlarkMethod(
-      name = "method_with_params",
-      documented = false,
-      parameters = {
-        @Param(name = "a_parameter", named = true),
-      })
-  public String methodWithParams() {
-    return "bunny";
-  }
+class ArgumentMissing : StarlarkValue {
+    @StarlarkMethod(
+        name = "method_with_params",
+        documented = false,
+        parameters = [net.starlark.java.annot.Param(name = "a_parameter", named = true)]
+    )
+    fun methodWithParams(): String {
+        return "bunny"
+    }
 }

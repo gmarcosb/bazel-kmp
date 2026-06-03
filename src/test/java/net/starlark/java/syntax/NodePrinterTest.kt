@@ -11,569 +11,658 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.syntax
 
-package net.starlark.java.syntax;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.exec.util.SpawnBuilder.build
+import com.google.devtools.common.options.testing.ConverterTesterMap.Builder.build
+import net.starlark.java.syntax.FileOptions.Builder.build
+import net.starlark.java.syntax.SyntaxError.Exception.errors
+import net.starlark.java.syntax.TypeTable.errors
+import net.starlark.java.syntax.TypeTable.ok
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import static com.google.common.truth.Truth.assertThat;
+/** Tests [Node.toString] and `NodePrinter`.  */
+@RunWith(JUnit4::class)
+class NodePrinterTest {
+    private var fileOptions: net.starlark.java.syntax.FileOptions? = net.starlark.java.syntax.FileOptions.DEFAULT
 
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests {@link Node#toString} and {@code NodePrinter}. */
-@RunWith(JUnit4.class)
-public final class NodePrinterTest {
-  private FileOptions fileOptions = FileOptions.DEFAULT;
-
-  private void setFileOptions(FileOptions fileOptions) {
-    this.fileOptions = fileOptions;
-  }
-
-  private StarlarkFile parseFile(String... lines) throws SyntaxError.Exception {
-    ParserInput input = ParserInput.fromLines(lines);
-    StarlarkFile file = StarlarkFile.parse(input, fileOptions);
-    if (!file.ok()) {
-      throw new SyntaxError.Exception(file.errors());
+    private fun setFileOptions(fileOptions: net.starlark.java.syntax.FileOptions?) {
+        this.fileOptions = fileOptions
     }
-    return file;
-  }
 
-  private Statement parseStatement(String... lines) throws SyntaxError.Exception {
-    return parseFile(lines).getStatements().get(0);
-  }
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    private fun parseFile(vararg lines: String?): net.starlark.java.syntax.StarlarkFile {
+        val input: net.starlark.java.syntax.ParserInput? = net.starlark.java.syntax.ParserInput.fromLines(*lines)
+        val file: net.starlark.java.syntax.StarlarkFile =
+            net.starlark.java.syntax.StarlarkFile.parse(input, fileOptions)
+        if (!file.ok()) {
+            throw net.starlark.java.syntax.SyntaxError.Exception(file.errors())
+        }
+        return file
+    }
 
-  private Expression parseExpression(String... lines) throws SyntaxError.Exception {
-    return Expression.parse(ParserInput.fromLines(lines), fileOptions);
-  }
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    private fun parseStatement(vararg lines: String?): net.starlark.java.syntax.Statement {
+        return parseFile(*lines).getStatements().get(0)
+    }
 
-  /**
-   * Asserts that the given node's pretty print at a given indent level matches the given string.
-   */
-  private static void assertPrettyMatches(Node node, int indentLevel, String expected) {
-    StringBuilder buf = new StringBuilder();
-    new NodePrinter(buf, indentLevel).printNode(node);
-    assertThat(buf.toString()).isEqualTo(expected);
-  }
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    private fun parseExpression(vararg lines: String?): net.starlark.java.syntax.Expression {
+        return net.starlark.java.syntax.Expression.parse(
+            net.starlark.java.syntax.ParserInput.fromLines(*lines),
+            fileOptions
+        )
+    }
 
-  /** Asserts that the given node's pretty print with no indent matches the given string. */
-  private static void assertPrettyMatches(Node node, String expected) {
-    assertPrettyMatches(node, 0, expected);
-  }
+    /**
+     * Parses the given string as an expression, and asserts that its pretty print matches the given
+     * string.
+     */
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    private fun assertExprPrettyMatches(source: String?, expected: String?) {
+        val node: net.starlark.java.syntax.Expression = parseExpression(source)
+        assertPrettyMatches(node, expected)
+    }
 
-  /** Asserts that the given node's pretty print with one indent matches the given string. */
-  private static void assertIndentedPrettyMatches(Node node, String expected) {
-    assertPrettyMatches(node, 1, expected);
-  }
+    /**
+     * Parses the given string as an expression, and asserts that its `toString` matches the
+     * given string.
+     */
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    private fun assertExprTostringMatches(source: String?, expected: String?) {
+        val node: net.starlark.java.syntax.Expression = parseExpression(source)
+        Truth.assertThat(node.toString()).isEqualTo(expected)
+    }
 
-  /** Asserts that the given node's {@code toString} matches the given string. */
-  private static void assertTostringMatches(Node node, String expected) {
-    assertThat(node.toString()).isEqualTo(expected);
-  }
+    /**
+     * Parses the given string as an expression, and asserts that both its pretty print and `toString` return the original string.
+     */
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    private fun assertExprBothRoundTrip(source: String?) {
+        assertExprPrettyMatches(source, source)
+        assertExprTostringMatches(source, source)
+    }
 
-  /**
-   * Parses the given string as an expression, and asserts that its pretty print matches the given
-   * string.
-   */
-  private void assertExprPrettyMatches(String source, String expected)
-      throws SyntaxError.Exception {
-    Expression node = parseExpression(source);
-    assertPrettyMatches(node, expected);
-  }
+    /**
+     * Parses the given string as a statement, and asserts that its pretty print with one indent
+     * matches the given string.
+     */
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    private fun assertStmtIndentedPrettyMatches(source: String?, expected: String?) {
+        val node: net.starlark.java.syntax.Statement = parseStatement(source)
+        assertIndentedPrettyMatches(node, expected)
+    }
 
-  /**
-   * Parses the given string as an expression, and asserts that its {@code toString} matches the
-   * given string.
-   */
-  private void assertExprTostringMatches(String source, String expected)
-      throws SyntaxError.Exception {
-    Expression node = parseExpression(source);
-    assertThat(node.toString()).isEqualTo(expected);
-  }
+    /**
+     * Parses the given string as an statement, and asserts that its `toString` matches the
+     * given string.
+     */
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    private fun assertStmtTostringMatches(source: String?, expected: String?) {
+        val node: net.starlark.java.syntax.Statement = parseStatement(source)
+        Truth.assertThat(node.toString()).isEqualTo(expected)
+    }
 
-  /**
-   * Parses the given string as an expression, and asserts that both its pretty print and {@code
-   * toString} return the original string.
-   */
-  private void assertExprBothRoundTrip(String source) throws SyntaxError.Exception {
-    assertExprPrettyMatches(source, source);
-    assertExprTostringMatches(source, source);
-  }
+    // Expressions.
+    @org.junit.Test
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    fun abstractComprehension() {
+        // Covers DictComprehension and ListComprehension.
+        assertExprBothRoundTrip("[z for y in x if True for z in y]")
+        assertExprBothRoundTrip("{z: x for y in x if True for z in y}")
+    }
 
-  /**
-   * Parses the given string as a statement, and asserts that its pretty print with one indent
-   * matches the given string.
-   */
-  private void assertStmtIndentedPrettyMatches(String source, String expected)
-      throws SyntaxError.Exception {
-    Statement node = parseStatement(source);
-    assertIndentedPrettyMatches(node, expected);
-  }
+    @org.junit.Test
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    fun binaryOperatorExpression() {
+        assertExprPrettyMatches("1 + 2", "(1 + 2)")
+        assertExprTostringMatches("1 + 2", "1 + 2")
 
-  /**
-   * Parses the given string as an statement, and asserts that its {@code toString} matches the
-   * given string.
-   */
-  private void assertStmtTostringMatches(String source, String expected)
-      throws SyntaxError.Exception {
-    Statement node = parseStatement(source);
-    assertThat(node.toString()).isEqualTo(expected);
-  }
+        assertExprPrettyMatches("1 + (2 * 3)", "(1 + (2 * 3))")
+        assertExprTostringMatches("1 + (2 * 3)", "1 + 2 * 3")
+    }
 
-  // Expressions.
+    @org.junit.Test
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    fun conditionalExpression() {
+        assertExprBothRoundTrip("1 if True else 2")
+    }
 
-  @Test
-  public void abstractComprehension() throws SyntaxError.Exception {
-    // Covers DictComprehension and ListComprehension.
-    assertExprBothRoundTrip("[z for y in x if True for z in y]");
-    assertExprBothRoundTrip("{z: x for y in x if True for z in y}");
-  }
+    @org.junit.Test
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    fun dictExpression() {
+        assertExprBothRoundTrip("{1: \"a\", 2: \"b\"}")
+    }
 
-  @Test
-  public void binaryOperatorExpression() throws SyntaxError.Exception {
-    assertExprPrettyMatches("1 + 2", "(1 + 2)");
-    assertExprTostringMatches("1 + 2", "1 + 2");
+    @org.junit.Test
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    fun dotExpression() {
+        assertExprBothRoundTrip("o.f")
+    }
 
-    assertExprPrettyMatches("1 + (2 * 3)", "(1 + (2 * 3))");
-    assertExprTostringMatches("1 + (2 * 3)", "1 + 2 * 3");
-  }
+    @org.junit.Test
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    fun funcallExpression() {
+        assertExprBothRoundTrip("f()")
+        assertExprBothRoundTrip("f(a)")
+        assertExprBothRoundTrip("f(a, b = B, c = C, *d, **e)")
+        assertExprBothRoundTrip("o.f()")
+        assertExprBothRoundTrip("f(1 + 1)")
+    }
 
-  @Test
-  public void conditionalExpression() throws SyntaxError.Exception {
-    assertExprBothRoundTrip("1 if True else 2");
-  }
+    @org.junit.Test
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    fun identifier() {
+        assertExprBothRoundTrip("foo")
+    }
 
-  @Test
-  public void dictExpression() throws SyntaxError.Exception {
-    assertExprBothRoundTrip("{1: \"a\", 2: \"b\"}");
-  }
+    @org.junit.Test
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    fun indexExpression() {
+        assertExprBothRoundTrip("a[i]")
+        assertExprBothRoundTrip("a[(1,)]")
+        assertExprPrettyMatches("a[1,2]", "a[(1, 2)]")
+        assertExprTostringMatches("a[1,2]", "a[(1, 2)]")
+    }
 
-  @Test
-  public void dotExpression() throws SyntaxError.Exception {
-    assertExprBothRoundTrip("o.f");
-  }
+    @org.junit.Test
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    fun integerLiteral() {
+        assertExprBothRoundTrip("5")
+    }
 
-  @Test
-  public void funcallExpression() throws SyntaxError.Exception {
-    assertExprBothRoundTrip("f()");
-    assertExprBothRoundTrip("f(a)");
-    assertExprBothRoundTrip("f(a, b = B, c = C, *d, **e)");
-    assertExprBothRoundTrip("o.f()");
-    assertExprBothRoundTrip("f(1 + 1)");
-  }
+    @org.junit.Test
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    fun listLiteralShort() {
+        assertExprBothRoundTrip("[]")
+        assertExprBothRoundTrip("[5]")
+        assertExprBothRoundTrip("[5, 6]")
+        assertExprBothRoundTrip("()")
+        assertExprBothRoundTrip("(5,)")
+        assertExprBothRoundTrip("(5, 6)")
+    }
 
-  @Test
-  public void identifier() throws SyntaxError.Exception {
-    assertExprBothRoundTrip("foo");
-  }
+    @org.junit.Test
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    fun listLiteralLong() {
+        // List literals with enough elements to trigger the abbreviated toString() format.
+        assertExprPrettyMatches("[1, 2, 3, 4, 5, 6]", "[1, 2, 3, 4, 5, 6]")
+        assertExprTostringMatches("[1, 2, 3, 4, 5, 6]", "[1, 2, 3, 4, +2 more]")
 
-  @Test
-  public void indexExpression() throws SyntaxError.Exception {
-    assertExprBothRoundTrip("a[i]");
-    assertExprBothRoundTrip("a[(1,)]");
-    assertExprPrettyMatches("a[1,2]", "a[(1, 2)]");
-    assertExprTostringMatches("a[1,2]", "a[(1, 2)]");
-  }
+        assertExprPrettyMatches("(1, 2, 3, 4, 5, 6)", "(1, 2, 3, 4, 5, 6)")
+        assertExprTostringMatches("(1, 2, 3, 4, 5, 6)", "(1, 2, 3, 4, +2 more)")
+    }
 
-  @Test
-  public void integerLiteral() throws SyntaxError.Exception {
-    assertExprBothRoundTrip("5");
-  }
+    @org.junit.Test
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    fun listLiteralNested() {
+        // Make sure that the inner list doesn't get abbreviated when the outer list is printed using
+        // prettyPrint().
+        assertExprPrettyMatches(
+            "[1, 2, 3, [10, 20, 30, 40, 50, 60], 4, 5, 6]",
+            "[1, 2, 3, [10, 20, 30, 40, 50, 60], 4, 5, 6]"
+        )
+        // It doesn't matter as much what toString does.
+        assertExprTostringMatches("[1, 2, 3, [10, 20, 30, 40, 50, 60], 4, 5, 6]", "[1, 2, 3, +4 more]")
+    }
 
-  @Test
-  public void listLiteralShort() throws SyntaxError.Exception {
-    assertExprBothRoundTrip("[]");
-    assertExprBothRoundTrip("[5]");
-    assertExprBothRoundTrip("[5, 6]");
-    assertExprBothRoundTrip("()");
-    assertExprBothRoundTrip("(5,)");
-    assertExprBothRoundTrip("(5, 6)");
-  }
+    @org.junit.Test
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    fun sliceExpression() {
+        assertExprBothRoundTrip("a[b:c:d]")
+        assertExprBothRoundTrip("a[b:c]")
+        assertExprBothRoundTrip("a[b:]")
+        assertExprBothRoundTrip("a[:c:d]")
+        assertExprBothRoundTrip("a[:c]")
+        assertExprBothRoundTrip("a[::d]")
+        assertExprBothRoundTrip("a[:]")
+    }
 
-  @Test
-  public void listLiteralLong() throws SyntaxError.Exception {
-    // List literals with enough elements to trigger the abbreviated toString() format.
-    assertExprPrettyMatches("[1, 2, 3, 4, 5, 6]", "[1, 2, 3, 4, 5, 6]");
-    assertExprTostringMatches("[1, 2, 3, 4, 5, 6]", "[1, 2, 3, 4, +2 more]");
+    @org.junit.Test
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    fun stringLiteral() {
+        assertExprBothRoundTrip("\"foo\"")
+        assertExprBothRoundTrip("\"quo\\\"ted\"")
+    }
 
-    assertExprPrettyMatches("(1, 2, 3, 4, 5, 6)", "(1, 2, 3, 4, 5, 6)");
-    assertExprTostringMatches("(1, 2, 3, 4, 5, 6)", "(1, 2, 3, 4, +2 more)");
-  }
+    @org.junit.Test
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    fun unaryOperatorExpression() {
+        assertExprPrettyMatches("not True", "not (True)")
+        assertExprTostringMatches("not True", "not True")
+        assertExprPrettyMatches("-(5 + 3)", "-((5 + 3))")
+        assertExprTostringMatches("-5", "-5")
+    }
 
-  @Test
-  public void listLiteralNested() throws SyntaxError.Exception {
-    // Make sure that the inner list doesn't get abbreviated when the outer list is printed using
-    // prettyPrint().
-    assertExprPrettyMatches(
-        "[1, 2, 3, [10, 20, 30, 40, 50, 60], 4, 5, 6]",
-        "[1, 2, 3, [10, 20, 30, 40, 50, 60], 4, 5, 6]");
-    // It doesn't matter as much what toString does.
-    assertExprTostringMatches("[1, 2, 3, [10, 20, 30, 40, 50, 60], 4, 5, 6]", "[1, 2, 3, +4 more]");
-  }
+    // Statements.
+    @org.junit.Test
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    fun assignmentStatement() {
+        assertStmtIndentedPrettyMatches("x = y", "  x = y\n")
+        assertStmtTostringMatches("x = y", "x = y\n")
+    }
 
-  @Test
-  public void sliceExpression() throws SyntaxError.Exception {
-    assertExprBothRoundTrip("a[b:c:d]");
-    assertExprBothRoundTrip("a[b:c]");
-    assertExprBothRoundTrip("a[b:]");
-    assertExprBothRoundTrip("a[:c:d]");
-    assertExprBothRoundTrip("a[:c]");
-    assertExprBothRoundTrip("a[::d]");
-    assertExprBothRoundTrip("a[:]");
-  }
+    @org.junit.Test
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    fun augmentedAssignmentStatement() {
+        assertStmtIndentedPrettyMatches("x += y", "  x += y\n")
+        assertStmtTostringMatches("x += y", "x += y\n")
+    }
 
-  @Test
-  public void stringLiteral() throws SyntaxError.Exception {
-    assertExprBothRoundTrip("\"foo\"");
-    assertExprBothRoundTrip("\"quo\\\"ted\"");
-  }
+    @org.junit.Test
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    fun assignmentStatementWithTypeAnnotation() {
+        setFileOptions(net.starlark.java.syntax.FileOptions.builder().allowTypeSyntax(true).build())
+        assertStmtIndentedPrettyMatches("x : T = y", "  x : T = y\n")
+        assertStmtTostringMatches("x : T = y", "x : T = y\n")
+    }
 
-  @Test
-  public void unaryOperatorExpression() throws SyntaxError.Exception {
-    assertExprPrettyMatches("not True", "not (True)");
-    assertExprTostringMatches("not True", "not True");
-    assertExprPrettyMatches("-(5 + 3)", "-((5 + 3))");
-    assertExprTostringMatches("-5", "-5");
-  }
+    @org.junit.Test
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    fun expressionStatement() {
+        assertStmtIndentedPrettyMatches("5", "  5\n")
+        assertStmtTostringMatches("5", "5\n")
+    }
 
-  // Statements.
-
-  @Test
-  public void assignmentStatement() throws SyntaxError.Exception {
-    assertStmtIndentedPrettyMatches("x = y", "  x = y\n");
-    assertStmtTostringMatches("x = y", "x = y\n");
-  }
-
-  @Test
-  public void augmentedAssignmentStatement() throws SyntaxError.Exception {
-    assertStmtIndentedPrettyMatches("x += y", "  x += y\n");
-    assertStmtTostringMatches("x += y", "x += y\n");
-  }
-
-  @Test
-  public void assignmentStatementWithTypeAnnotation() throws SyntaxError.Exception {
-    setFileOptions(FileOptions.builder().allowTypeSyntax(true).build());
-    assertStmtIndentedPrettyMatches("x : T = y", "  x : T = y\n");
-    assertStmtTostringMatches("x : T = y", "x : T = y\n");
-  }
-
-  @Test
-  public void expressionStatement() throws SyntaxError.Exception {
-    assertStmtIndentedPrettyMatches("5", "  5\n");
-    assertStmtTostringMatches("5", "5\n");
-  }
-
-  @Test
-  public void defStatement() throws SyntaxError.Exception {
-    assertStmtIndentedPrettyMatches(
-        """
+    @org.junit.Test
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    fun defStatement() {
+        assertStmtIndentedPrettyMatches(
+            """
         def f(x):
-          print(x)\
-        """,
-        """
+          print(x)
+          """.trimIndent(),
+            """
           def f(x):
             print(x)
-        """);
-    assertStmtTostringMatches(
-        """
+        
+        """.trimIndent()
+        )
+        assertStmtTostringMatches(
+            """
         def f(x):
-          print(x)\
-        """,
-        "def f(x): ...\n");
+          print(x)
+          """.trimIndent(),
+            "def f(x): ...\n"
+        )
 
-    assertStmtIndentedPrettyMatches(
-        """
+        assertStmtIndentedPrettyMatches(
+            """
         def f(a, b=B, *c, d=D, **e):
-          print(x)\
-        """,
-        """
+          print(x)
+          """.trimIndent(),
+            """
           def f(a, b=B, *c, d=D, **e):
             print(x)
-        """);
-    assertStmtTostringMatches(
-        """
+        
+        """.trimIndent()
+        )
+        assertStmtTostringMatches(
+            """
         def f(a, b=B, *c, d=D, **e):
-          print(x)\
-        """,
-        "def f(a, b=B, *c, d=D, **e): ...\n");
+          print(x)
+          """.trimIndent(),
+            "def f(a, b=B, *c, d=D, **e): ...\n"
+        )
 
-    assertStmtIndentedPrettyMatches(
-        """
+        assertStmtIndentedPrettyMatches(
+            """
         def f():
-          pass\
-        """,
-        """
+          pass
+          """.trimIndent(),
+            """
           def f():
             pass
-        """);
-    assertStmtTostringMatches(
-        """
+        
+        """.trimIndent()
+        )
+        assertStmtTostringMatches(
+            """
         def f():
-          pass\
-        """,
-        "def f(): ...\n");
-  }
+          pass
+          """.trimIndent(),
+            "def f(): ...\n"
+        )
+    }
 
-  @Test
-  public void defStatementWithTypeAnnotations() throws SyntaxError.Exception {
-    setFileOptions(FileOptions.builder().allowTypeSyntax(true).build());
-    assertStmtIndentedPrettyMatches(
-        """
+    @org.junit.Test
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    fun defStatementWithTypeAnnotations() {
+        setFileOptions(net.starlark.java.syntax.FileOptions.builder().allowTypeSyntax(true).build())
+        assertStmtIndentedPrettyMatches(
+            """
         def f(x:int):
-          print(x)\
-        """,
-        """
+          print(x)
+          """.trimIndent(),
+            """
           def f(x: int):
             print(x)
-        """);
-    assertStmtTostringMatches(
-        """
+        
+        """.trimIndent()
+        )
+        assertStmtTostringMatches(
+            """
         def f(x:bool):
-          print(x)\
-        """,
-        "def f(x: bool): ...\n");
+          print(x)
+          """.trimIndent(),
+            "def f(x: bool): ...\n"
+        )
 
-    assertStmtIndentedPrettyMatches(
-        """
+        assertStmtIndentedPrettyMatches(
+            """
         def f()->int:
-          print(x)\
-        """,
-        """
+          print(x)
+          """.trimIndent(),
+            """
           def f() -> int:
             print(x)
-        """);
-    assertStmtTostringMatches(
-        """
+        
+        """.trimIndent()
+        )
+        assertStmtTostringMatches(
+            """
         def f() -> bool:
           print(x)
-        """,
-        "def f() -> bool: ...\n");
-    assertStmtIndentedPrettyMatches(
-        """
+        
+        """.trimIndent(),
+            "def f() -> bool: ...\n"
+        )
+        assertStmtIndentedPrettyMatches(
+            """
         def f[T,U,](x:dict[T,U])->list[U]:
-          print(x)\
-        """,
-        """
+          print(x)
+          """.trimIndent(),
+            """
           def f[T, U](x: dict[T, U]) -> list[U]:
             print(x)
-        """);
-    assertStmtTostringMatches(
-        """
+        
+        """.trimIndent()
+        )
+        assertStmtTostringMatches(
+            """
         def f[T,U,](x:dict[T,U]|set[U]) -> bool:
           print(x)
-        """,
-        "def f[T, U](x: dict[T, U] | set[U]) -> bool: ...\n");
-  }
+        
+        """.trimIndent(),
+            "def f[T, U](x: dict[T, U] | set[U]) -> bool: ...\n"
+        )
+    }
 
-  @Test
-  public void typeAnnotations() throws SyntaxError.Exception {
-    // TODO(ilist@): replace with parsing type annotations directly (remove `def` from this test)
-    setFileOptions(FileOptions.builder().allowTypeSyntax(true).build());
-    assertStmtTostringMatches("def f(x:bool): pass", "def f(x: bool): ...\n");
-    assertStmtTostringMatches("def f(x:None | bool): pass", "def f(x: None | bool): ...\n");
-    assertStmtTostringMatches("def f(x:list[str]): pass", "def f(x: list[str]): ...\n");
-    assertStmtTostringMatches("def f(x:dict[str,int]): pass", "def f(x: dict[str, int]): ...\n");
-    assertStmtTostringMatches(
-        "def f(x:Callable[[str],int]): pass", "def f(x: Callable[[str], int]): ...\n");
-    assertStmtTostringMatches(
-        "def f(x:Callable[[str|int],int]): pass", "def f(x: Callable[[str | int], int]): ...\n");
-    assertStmtTostringMatches(
-        "def f(x:TypedDict[{'field1': int}]): pass",
-        "def f(x: TypedDict[{\"field1\": int}]): ...\n");
-  }
+    @org.junit.Test
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    fun typeAnnotations() {
+        // TODO(ilist@): replace with parsing type annotations directly (remove `def` from this test)
+        setFileOptions(net.starlark.java.syntax.FileOptions.builder().allowTypeSyntax(true).build())
+        assertStmtTostringMatches("def f(x:bool): pass", "def f(x: bool): ...\n")
+        assertStmtTostringMatches("def f(x:None | bool): pass", "def f(x: None | bool): ...\n")
+        assertStmtTostringMatches("def f(x:list[str]): pass", "def f(x: list[str]): ...\n")
+        assertStmtTostringMatches("def f(x:dict[str,int]): pass", "def f(x: dict[str, int]): ...\n")
+        assertStmtTostringMatches(
+            "def f(x:Callable[[str],int]): pass", "def f(x: Callable[[str], int]): ...\n"
+        )
+        assertStmtTostringMatches(
+            "def f(x:Callable[[str|int],int]): pass", "def f(x: Callable[[str | int], int]): ...\n"
+        )
+        assertStmtTostringMatches(
+            "def f(x:TypedDict[{'field1': int}]): pass",
+            "def f(x: TypedDict[{\"field1\": int}]): ...\n"
+        )
+    }
 
-  @Test
-  public void typeAliasStatement() throws SyntaxError.Exception {
-    setFileOptions(FileOptions.builder().allowTypeSyntax(true).build());
-    assertStmtTostringMatches("type my_int=int", "type my_int = ...\n");
-    assertStmtIndentedPrettyMatches("type my_int=int", "  type my_int = int\n");
-    assertStmtTostringMatches("type X[T,U]=dict[T,U]|list[U]", "type X[T, U] = ...\n");
-    assertStmtIndentedPrettyMatches(
-        "type X[T,U]=dict[T,U]|list[U]", "  type X[T, U] = dict[T, U] | list[U]\n");
-  }
+    @org.junit.Test
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    fun typeAliasStatement() {
+        setFileOptions(net.starlark.java.syntax.FileOptions.builder().allowTypeSyntax(true).build())
+        assertStmtTostringMatches("type my_int=int", "type my_int = ...\n")
+        assertStmtIndentedPrettyMatches("type my_int=int", "  type my_int = int\n")
+        assertStmtTostringMatches("type X[T,U]=dict[T,U]|list[U]", "type X[T, U] = ...\n")
+        assertStmtIndentedPrettyMatches(
+            "type X[T,U]=dict[T,U]|list[U]", "  type X[T, U] = dict[T, U] | list[U]\n"
+        )
+    }
 
-  @Test
-  public void ellipsisExpression() throws SyntaxError.Exception {
-    setFileOptions(
-        FileOptions.builder().allowTypeSyntax(true).tolerateInvalidTypeExpressions(true).build());
-    // Use `def` rather than `type` to wrap the type expression, because `type`'s toString()
-    // introduces its own metasyntactic "..." placeholder.
-    assertStmtTostringMatches(
-        "def f(x:Callable[...,int]): pass", "def f(x: Callable[(..., int)]): ...\n");
-    assertStmtIndentedPrettyMatches("type x=...", "  type x = ...\n");
-  }
+    @org.junit.Test
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    fun ellipsisExpression() {
+        setFileOptions(
+            net.starlark.java.syntax.FileOptions.builder().allowTypeSyntax(true).tolerateInvalidTypeExpressions(true)
+                .build()
+        )
+        // Use `def` rather than `type` to wrap the type expression, because `type`'s toString()
+        // introduces its own metasyntactic "..." placeholder.
+        assertStmtTostringMatches(
+            "def f(x:Callable[...,int]): pass", "def f(x: Callable[(..., int)]): ...\n"
+        )
+        assertStmtIndentedPrettyMatches("type x=...", "  type x = ...\n")
+    }
 
-  @Test
-  public void castExpression() throws SyntaxError.Exception {
-    setFileOptions(FileOptions.builder().allowTypeSyntax(true).build());
-    assertExprPrettyMatches("cast(list[int]|str,x+y)", "cast(list[int] | str, x + y)");
-    assertExprTostringMatches("cast(set|None,bar(),)", "cast(set | None, bar())");
-  }
+    @org.junit.Test
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    fun castExpression() {
+        setFileOptions(net.starlark.java.syntax.FileOptions.builder().allowTypeSyntax(true).build())
+        assertExprPrettyMatches("cast(list[int]|str,x+y)", "cast(list[int] | str, x + y)")
+        assertExprTostringMatches("cast(set|None,bar(),)", "cast(set | None, bar())")
+    }
 
-  @Test
-  public void isinstanceExpression() throws SyntaxError.Exception {
-    setFileOptions(FileOptions.builder().allowTypeSyntax(true).build());
-    assertExprPrettyMatches("isinstance(x+y, list|tuple)", "isinstance(x + y, list | tuple)");
-    assertExprTostringMatches("isinstance(foo(), T[U],)", "isinstance(foo(), T[U])");
-  }
+    @org.junit.Test
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    fun isinstanceExpression() {
+        setFileOptions(net.starlark.java.syntax.FileOptions.builder().allowTypeSyntax(true).build())
+        assertExprPrettyMatches("isinstance(x+y, list|tuple)", "isinstance(x + y, list | tuple)")
+        assertExprTostringMatches("isinstance(foo(), T[U],)", "isinstance(foo(), T[U])")
+    }
 
-  @Test
-  public void flowStatement() throws SyntaxError.Exception {
-    assertStmtIndentedPrettyMatches(
-        """
+    @org.junit.Test
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    fun flowStatement() {
+        assertStmtIndentedPrettyMatches(
+            """
         def f():
              pass
              continue
-             break\
-        """,
-        """
+             break
+             """.trimIndent(),
+            """
           def f():
             pass
             continue
             break
-        """);
-  }
+        
+        """.trimIndent()
+        )
+    }
 
-  @Test
-  public void forStatement() throws SyntaxError.Exception {
-    assertStmtIndentedPrettyMatches(
-        """
+    @org.junit.Test
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    fun forStatement() {
+        assertStmtIndentedPrettyMatches(
+            """
         for x in y:
-          print(x)\
-        """,
-        """
+          print(x)
+          """.trimIndent(),
+            """
           for x in y:
             print(x)
-        """);
-    assertStmtTostringMatches(
-        """
+        
+        """.trimIndent()
+        )
+        assertStmtTostringMatches(
+            """
         for x in y:
-          print(x)\
-        """,
-        "for x in y: ...\n");
+          print(x)
+          """.trimIndent(),
+            "for x in y: ...\n"
+        )
 
-    assertStmtIndentedPrettyMatches(
-        """
+        assertStmtIndentedPrettyMatches(
+            """
         for x in y:
-          pass\
-        """,
-        """
+          pass
+          """.trimIndent(),
+            """
           for x in y:
             pass
-        """);
-    assertStmtTostringMatches(
-        """
+        
+        """.trimIndent()
+        )
+        assertStmtTostringMatches(
+            """
         for x in y:
-          pass\
-        """,
-        "for x in y: ...\n");
-  }
+          pass
+          """.trimIndent(),
+            "for x in y: ...\n"
+        )
+    }
 
-  @Test
-  public void ifStatement() throws SyntaxError.Exception {
-    assertStmtIndentedPrettyMatches(
-        """
+    @org.junit.Test
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    fun ifStatement() {
+        assertStmtIndentedPrettyMatches(
+            """
         if True:
-          print(x)\
-        """,
-        """
+          print(x)
+          """.trimIndent(),
+            """
           if True:
             print(x)
-        """);
-    assertStmtTostringMatches(
-        """
+        
+        """.trimIndent()
+        )
+        assertStmtTostringMatches(
+            """
         if True:
-          print(x)\
-        """,
-        "if True: ...\n");
+          print(x)
+          """.trimIndent(),
+            "if True: ...\n"
+        )
 
-    assertStmtIndentedPrettyMatches(
-        """
+        assertStmtIndentedPrettyMatches(
+            """
         if True:
           print(x)
         elif False:
           print(y)
         else:
-          print(z)\
-        """,
-        """
+          print(z)
+          """.trimIndent(),
+            """
           if True:
             print(x)
           elif False:
             print(y)
           else:
             print(z)
-        """);
-    assertStmtTostringMatches(
-        """
+        
+        """.trimIndent()
+        )
+        assertStmtTostringMatches(
+            """
         if True:
           print(x)
         elif False:
           print(y)
         else:
-          print(z)\
-        """,
-        "if True: ...\n");
-  }
+          print(z)
+          """.trimIndent(),
+            "if True: ...\n"
+        )
+    }
 
-  @Test
-  public void loadStatement() throws SyntaxError.Exception {
-    assertStmtIndentedPrettyMatches(
-        "load(\"foo.bzl\", a=\"A\", \"B\")", "  load(\"foo.bzl\", a=\"A\", \"B\")\n");
-    assertStmtTostringMatches(
-        "load(\"foo.bzl\", a=\"A\", \"B\")\n", "load(\"foo.bzl\", a=\"A\", \"B\")\n");
-  }
+    @org.junit.Test
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    fun loadStatement() {
+        assertStmtIndentedPrettyMatches(
+            "load(\"foo.bzl\", a=\"A\", \"B\")", "  load(\"foo.bzl\", a=\"A\", \"B\")\n"
+        )
+        assertStmtTostringMatches(
+            "load(\"foo.bzl\", a=\"A\", \"B\")\n", "load(\"foo.bzl\", a=\"A\", \"B\")\n"
+        )
+    }
 
-  @Test
-  public void varStatement() throws SyntaxError.Exception {
-    setFileOptions(FileOptions.builder().allowTypeSyntax(true).build());
-    assertStmtIndentedPrettyMatches("x : T", "  x : T\n");
-    assertStmtTostringMatches("x : T\n", "x : T\n");
-  }
+    @org.junit.Test
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    fun varStatement() {
+        setFileOptions(net.starlark.java.syntax.FileOptions.builder().allowTypeSyntax(true).build())
+        assertStmtIndentedPrettyMatches("x : T", "  x : T\n")
+        assertStmtTostringMatches("x : T\n", "x : T\n")
+    }
 
-  @Test
-  public void returnStatement() throws SyntaxError.Exception {
-    assertStmtIndentedPrettyMatches("return \"foo\"", "  return \"foo\"\n");
-    assertStmtTostringMatches("return \"foo\"", "return \"foo\"\n");
+    @org.junit.Test
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    fun returnStatement() {
+        assertStmtIndentedPrettyMatches("return \"foo\"", "  return \"foo\"\n")
+        assertStmtTostringMatches("return \"foo\"", "return \"foo\"\n")
 
-    assertStmtIndentedPrettyMatches("return None", "  return None\n");
-    assertStmtTostringMatches("return None", "return None\n");
+        assertStmtIndentedPrettyMatches("return None", "  return None\n")
+        assertStmtTostringMatches("return None", "return None\n")
 
-    assertStmtIndentedPrettyMatches("return", "  return\n");
-    assertStmtTostringMatches("return", "return\n");
-  }
+        assertStmtIndentedPrettyMatches("return", "  return\n")
+        assertStmtTostringMatches("return", "return\n")
+    }
 
-  // Miscellaneous.
-
-  @Test
-  public void file() throws SyntaxError.Exception {
-    Node node = parseFile("print(x)\nprint(y)");
-    assertIndentedPrettyMatches(
-        node,
-        """
+    // Miscellaneous.
+    @org.junit.Test
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    fun file() {
+        val node: net.starlark.java.syntax.Node = parseFile("print(x)\nprint(y)")
+        assertIndentedPrettyMatches(
+            node,
+            """
           print(x)
           print(y)
-        """);
-    assertTostringMatches(node, "<StarlarkFile with 2 statements>");
-  }
+        
+        """.trimIndent()
+        )
+        assertTostringMatches(node, "<StarlarkFile with 2 statements>")
+    }
 
-  @Test
-  public void comment() throws SyntaxError.Exception {
-    ParserInput input =
-        ParserInput.fromLines(
-            "# foo", //
-            "expr # bar");
-    Parser.ParseResult r = Parser.parseFile(input, FileOptions.DEFAULT);
-    Comment c0 = r.comments.get(0);
-    assertIndentedPrettyMatches(c0, "  # foo");
-    assertTostringMatches(c0, "# foo");
-    Comment c1 = r.comments.get(1);
-    assertIndentedPrettyMatches(c1, "  # bar");
-    assertTostringMatches(c1, "# bar");
-  }
-
-  /* Not tested explicitly because they're covered implicitly by tests for other nodes:
+    @org.junit.Test
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    fun comment() {
+        val input: net.starlark.java.syntax.ParserInput? =
+            net.starlark.java.syntax.ParserInput.fromLines(
+                "# foo",  //
+                "expr # bar"
+            )
+        val r: net.starlark.java.syntax.Parser.ParseResult =
+            net.starlark.java.syntax.Parser.parseFile(input, net.starlark.java.syntax.FileOptions.DEFAULT)
+        val c0: net.starlark.java.syntax.Comment = r.comments.get(0)
+        assertIndentedPrettyMatches(c0, "  # foo")
+        assertTostringMatches(c0, "# foo")
+        val c1: net.starlark.java.syntax.Comment = r.comments.get(1)
+        assertIndentedPrettyMatches(c1, "  # bar")
+        assertTostringMatches(c1, "# bar")
+    } /* Not tested explicitly because they're covered implicitly by tests for other nodes:
    * - DictExpression.Entry
    * - Argument / Parameter
    * - IfStatements
    */
+
+    companion object {
+        /**
+         * Asserts that the given node's pretty print at a given indent level matches the given string.
+         */
+        private fun assertPrettyMatches(node: net.starlark.java.syntax.Node?, indentLevel: Int, expected: String?) {
+            val buf: java.lang.StringBuilder = java.lang.StringBuilder()
+            net.starlark.java.syntax.NodePrinter(buf, indentLevel).printNode(node)
+            Truth.assertThat(buf.toString()).isEqualTo(expected)
+        }
+
+        /** Asserts that the given node's pretty print with no indent matches the given string.  */
+        private fun assertPrettyMatches(node: net.starlark.java.syntax.Node?, expected: String?) {
+            assertPrettyMatches(node, 0, expected)
+        }
+
+        /** Asserts that the given node's pretty print with one indent matches the given string.  */
+        private fun assertIndentedPrettyMatches(node: net.starlark.java.syntax.Node?, expected: String?) {
+            assertPrettyMatches(node, 1, expected)
+        }
+
+        /** Asserts that the given node's `toString` matches the given string.  */
+        private fun assertTostringMatches(node: net.starlark.java.syntax.Node, expected: String?) {
+            Truth.assertThat(node.toString()).isEqualTo(expected)
+        }
+    }
 }

@@ -11,113 +11,119 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages;
+package com.google.devtools.build.lib.packages
 
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.analysis.config.Fragment;
-import com.google.devtools.build.lib.packages.ConfigurationFragmentPolicy.MissingFragmentPolicy;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.eval.StarlarkValue;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.analysis.config.Fragment
 
 /**
  * Tests for the ConfigurationFragmentPolicy builder and methods.
  */
-@RunWith(JUnit4.class)
-public final class ConfigurationFragmentPolicyTest {
+@RunWith(JUnit4::class)
+class ConfigurationFragmentPolicyTest {
+    @StarlarkBuiltin(name = "test_fragment", doc = "first fragment")
+    private class TestFragment : StarlarkValue
 
-  @StarlarkBuiltin(name = "test_fragment", doc = "first fragment")
-  private static final class TestFragment implements StarlarkValue {}
+    @StarlarkBuiltin(name = "other_fragment", doc = "second fragment")
+    private class OtherFragment : StarlarkValue
 
-  @StarlarkBuiltin(name = "other_fragment", doc = "second fragment")
-  private static final class OtherFragment implements StarlarkValue {}
+    @StarlarkBuiltin(name = "unknown_fragment", doc = "useless waste of permgen")
+    private class UnknownFragment : StarlarkValue
 
-  @StarlarkBuiltin(name = "unknown_fragment", doc = "useless waste of permgen")
-  private static final class UnknownFragment implements StarlarkValue {}
+    private class FragmentA : Fragment()
 
-  private static final class FragmentA extends Fragment {}
+    private class FragmentB : Fragment()
 
-  private static final class FragmentB extends Fragment {}
+    private class FragmentC : Fragment()
 
-  private static final class FragmentC extends Fragment {}
+    @org.junit.Test
+    fun testMissingFragmentPolicy() {
+        val policy: ConfigurationFragmentPolicy =
+            Builder()
+                .setMissingFragmentPolicy(FragmentA::class.java, MissingFragmentPolicy.IGNORE)
+                .build()
 
-  @Test
-  public void testMissingFragmentPolicy() {
-    ConfigurationFragmentPolicy policy =
-        new ConfigurationFragmentPolicy.Builder()
-            .setMissingFragmentPolicy(FragmentA.class, MissingFragmentPolicy.IGNORE)
-            .build();
+        assertThat(policy.getMissingFragmentPolicy(FragmentA::class.java))
+            .isEqualTo(MissingFragmentPolicy.IGNORE)
 
-    assertThat(policy.getMissingFragmentPolicy(FragmentA.class))
-        .isEqualTo(MissingFragmentPolicy.IGNORE);
+        val otherPolicy: ConfigurationFragmentPolicy =
+            Builder()
+                .setMissingFragmentPolicy(FragmentB::class.java, MissingFragmentPolicy.CREATE_FAIL_ACTIONS)
+                .build()
 
-    ConfigurationFragmentPolicy otherPolicy =
-        new ConfigurationFragmentPolicy.Builder()
-            .setMissingFragmentPolicy(FragmentB.class, MissingFragmentPolicy.CREATE_FAIL_ACTIONS)
-            .build();
+        assertThat(otherPolicy.getMissingFragmentPolicy(FragmentB::class.java))
+            .isEqualTo(MissingFragmentPolicy.CREATE_FAIL_ACTIONS)
+    }
 
-    assertThat(otherPolicy.getMissingFragmentPolicy(FragmentB.class))
-        .isEqualTo(MissingFragmentPolicy.CREATE_FAIL_ACTIONS);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRequiresConfigurationFragments_addsToRequiredSet() {
+        // Although these aren't configuration fragments, there are no requirements as to what the class
+        // has to be, so...
+        val policy: ConfigurationFragmentPolicy =
+            Builder()
+                .requiresConfigurationFragments(
+                    com.google.common.collect.ImmutableSet.of<E?>(
+                        FragmentA::class.java,
+                        FragmentB::class.java
+                    )
+                )
+                .requiresConfigurationFragments(
+                    com.google.common.collect.ImmutableSet.of<E?>(
+                        FragmentB::class.java,
+                        FragmentC::class.java
+                    )
+                )
+                .build()
 
-  @Test
-  public void testRequiresConfigurationFragments_addsToRequiredSet() throws Exception {
-    // Although these aren't configuration fragments, there are no requirements as to what the class
-    // has to be, so...
-    ConfigurationFragmentPolicy policy =
-        new ConfigurationFragmentPolicy.Builder()
-            .requiresConfigurationFragments(ImmutableSet.of(FragmentA.class, FragmentB.class))
-            .requiresConfigurationFragments(ImmutableSet.of(FragmentB.class, FragmentC.class))
-            .build();
+        assertThat(policy.getRequiredConfigurationFragments())
+            .containsExactly(FragmentA::class.java, FragmentB::class.java, FragmentC::class.java)
+    }
 
-    assertThat(policy.getRequiredConfigurationFragments())
-        .containsExactly(FragmentA.class, FragmentB.class, FragmentC.class);
-  }
+    @org.junit.Test
+    fun testRequiresConfigurationFragments_mapSetsLegalityByStarlarkModuleName_noRequires() {
+        val policy: ConfigurationFragmentPolicy =
+            Builder()
+                .requiresConfigurationFragmentsByStarlarkBuiltinName(com.google.common.collect.ImmutableSet.of<E?>("test_fragment"))
+                .build()
 
-  @Test
-  public void testRequiresConfigurationFragments_mapSetsLegalityByStarlarkModuleName_noRequires() {
-    ConfigurationFragmentPolicy policy =
-        new ConfigurationFragmentPolicy.Builder()
-            .requiresConfigurationFragmentsByStarlarkBuiltinName(ImmutableSet.of("test_fragment"))
-            .build();
+        assertThat(policy.getRequiredConfigurationFragments()).isEmpty()
 
-    assertThat(policy.getRequiredConfigurationFragments()).isEmpty();
+        assertThat(policy.isLegalConfigurationFragment(com.google.devtools.build.lib.packages.ConfigurationFragmentPolicyTest.TestFragment::class.java)).isTrue()
+        assertThat(policy.isLegalConfigurationFragment(com.google.devtools.build.lib.packages.ConfigurationFragmentPolicyTest.TestFragment::class.java)).isTrue()
 
-    assertThat(policy.isLegalConfigurationFragment(TestFragment.class)).isTrue();
-    assertThat(policy.isLegalConfigurationFragment(TestFragment.class)).isTrue();
+        assertThat(policy.isLegalConfigurationFragment(OtherFragment::class.java)).isFalse()
 
-    assertThat(policy.isLegalConfigurationFragment(OtherFragment.class)).isFalse();
+        assertThat(policy.isLegalConfigurationFragment(UnknownFragment::class.java)).isFalse()
+        assertThat(policy.isLegalConfigurationFragment(UnknownFragment::class.java)).isFalse()
+    }
 
-    assertThat(policy.isLegalConfigurationFragment(UnknownFragment.class)).isFalse();
-    assertThat(policy.isLegalConfigurationFragment(UnknownFragment.class)).isFalse();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testIncludeConfigurationFragmentsFrom_mergesWithExistingFragmentSet() {
+        val basePolicy: ConfigurationFragmentPolicy? =
+            Builder()
+                .requiresConfigurationFragmentsByStarlarkBuiltinName(com.google.common.collect.ImmutableSet.of<E?>("test_fragment"))
+                .requiresConfigurationFragments(
+                    com.google.common.collect.ImmutableSet.of<E?>(
+                        FragmentA::class.java,
+                        FragmentB::class.java
+                    )
+                )
+                .build()
+        val addedPolicy: ConfigurationFragmentPolicy? =
+            Builder()
+                .requiresConfigurationFragmentsByStarlarkBuiltinName(com.google.common.collect.ImmutableSet.of<E?>("other_fragment"))
+                .requiresConfigurationFragments(com.google.common.collect.ImmutableSet.of<E?>(FragmentC::class.java))
+                .build()
+        val combinedPolicy: ConfigurationFragmentPolicy =
+            Builder()
+                .includeConfigurationFragmentsFrom(basePolicy)
+                .includeConfigurationFragmentsFrom(addedPolicy)
+                .build()
 
-  @Test
-  public void testIncludeConfigurationFragmentsFrom_mergesWithExistingFragmentSet()
-      throws Exception {
-    ConfigurationFragmentPolicy basePolicy =
-        new ConfigurationFragmentPolicy.Builder()
-            .requiresConfigurationFragmentsByStarlarkBuiltinName(ImmutableSet.of("test_fragment"))
-            .requiresConfigurationFragments(ImmutableSet.of(FragmentA.class, FragmentB.class))
-            .build();
-    ConfigurationFragmentPolicy addedPolicy =
-        new ConfigurationFragmentPolicy.Builder()
-            .requiresConfigurationFragmentsByStarlarkBuiltinName(ImmutableSet.of("other_fragment"))
-            .requiresConfigurationFragments(ImmutableSet.of(FragmentC.class))
-            .build();
-    ConfigurationFragmentPolicy combinedPolicy =
-        new ConfigurationFragmentPolicy.Builder()
-            .includeConfigurationFragmentsFrom(basePolicy)
-            .includeConfigurationFragmentsFrom(addedPolicy)
-            .build();
-
-    assertThat(combinedPolicy.getRequiredConfigurationFragments())
-        .containsExactly(FragmentA.class, FragmentB.class, FragmentC.class);
-    assertThat(combinedPolicy.isLegalConfigurationFragment(TestFragment.class)).isTrue();
-    assertThat(combinedPolicy.isLegalConfigurationFragment(OtherFragment.class)).isTrue();
-  }
+        assertThat(combinedPolicy.getRequiredConfigurationFragments())
+            .containsExactly(FragmentA::class.java, FragmentB::class.java, FragmentC::class.java)
+        assertThat(combinedPolicy.isLegalConfigurationFragment(com.google.devtools.build.lib.packages.ConfigurationFragmentPolicyTest.TestFragment::class.java)).isTrue()
+        assertThat(combinedPolicy.isLegalConfigurationFragment(OtherFragment::class.java)).isTrue()
+    }
 }

@@ -11,64 +11,68 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.testutil;
+package com.google.devtools.build.lib.testutil
 
-import com.google.common.base.Predicate;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.util.OS;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import com.google.devtools.build.lib.exec.util.SpawnBuilder.build
+import com.google.devtools.build.lib.testutil.TestSpec
+import com.google.devtools.build.lib.testutil.TestSuiteBuilder
+import com.google.devtools.common.options.testing.ConverterTesterMap.Builder.build
+import net.starlark.java.syntax.FileOptions.Builder.build
 
 /**
  * A base class for constructing test suites by searching the classpath for
  * tests, possibly restricted to a predicate.
  */
-public class BazelTestSuiteBuilder {
+class BazelTestSuiteBuilder {
+    protected val builder: TestSuiteBuilder
+        /**
+         * @return a TestSuiteBuilder configured for Bazel.
+         */
+        get() = TestSuiteBuilder()
+            .addPackageRecursive("com.google.devtools.build.lib")
 
-  static {
-    // Avoid verbose INFO logging in tests.
-    Logger.getLogger(BazelTestSuiteBuilder.class.getName()).getParent().setLevel(Level.WARNING);
-  }
-
-  /**
-   * @return a TestSuiteBuilder configured for Bazel.
-   */
-  protected TestSuiteBuilder getBuilder() {
-    return new TestSuiteBuilder()
-        .addPackageRecursive("com.google.devtools.build.lib");
-  }
-
-  /** A predicate that succeeds only if the test supports the current operating system. */
-  public static final Predicate<Class<?>> TEST_SUPPORTS_CURRENT_OS =
-      new Predicate<Class<?>>() {
-        @Override
-        public boolean apply(Class<?> testClass) {
-          ImmutableSet<OS> supportedOs = ImmutableSet.copyOf(getSupportedOs(testClass));
-          return supportedOs.isEmpty() || supportedOs.contains(OS.getCurrent());
+    companion object {
+        init {
+            // Avoid verbose INFO logging in tests.
+            java.util.logging.Logger.getLogger(BazelTestSuiteBuilder::class.java.getName()).getParent()
+                .setLevel(java.util.logging.Level.WARNING)
         }
-      };
 
-  /** Given a class, determine the list of operating systems its tests can run under. */
-  private static OS[] getSupportedOs(Class<?> clazz) {
-    return getAnnotationElementOrDefault(clazz, "supportedOs");
-  }
+        /** A predicate that succeeds only if the test supports the current operating system.  */
+        val TEST_SUPPORTS_CURRENT_OS: com.google.common.base.Predicate<java.lang.Class<*>?> =
+            object : com.google.common.base.Predicate<java.lang.Class<*>?> {
+                override fun apply(testClass: java.lang.Class<*>): Boolean {
+                    val supportedOs: com.google.common.collect.ImmutableSet<com.google.devtools.build.lib.util.OS?> =
+                        com.google.common.collect.ImmutableSet.copyOf<com.google.devtools.build.lib.util.OS?>(
+                            getSupportedOs(testClass)
+                        )
+                    return supportedOs.isEmpty() || supportedOs.contains(com.google.devtools.build.lib.util.OS.getCurrent())
+                }
+            }
 
-  /**
-   * Returns the value of the given element in the {@link TestSpec} annotation of the given class,
-   * or the default value of that element if the class doesn't have a {@link TestSpec} annotation.
-   */
-  @SuppressWarnings("unchecked")
-  private static <T> T getAnnotationElementOrDefault(Class<?> clazz, String elementName) {
-    TestSpec spec = clazz.getAnnotation(TestSpec.class);
-    try {
-      Method method = TestSpec.class.getMethod(elementName);
-      return spec != null ? (T) method.invoke(spec) : (T) method.getDefaultValue();
-    } catch (NoSuchMethodException e) {
-      throw new IllegalStateException("no such element " + elementName, e);
-    } catch (IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
-      throw new IllegalStateException("can't invoke accessor for element " + elementName, e);
+        /** Given a class, determine the list of operating systems its tests can run under.  */
+        private fun getSupportedOs(clazz: java.lang.Class<*>): Array<com.google.devtools.build.lib.util.OS?>? {
+            return getAnnotationElementOrDefault<Array<com.google.devtools.build.lib.util.OS?>?>(clazz, "supportedOs")
+        }
+
+        /**
+         * Returns the value of the given element in the [TestSpec] annotation of the given class,
+         * or the default value of that element if the class doesn't have a [TestSpec] annotation.
+         */
+        private fun <T> getAnnotationElementOrDefault(clazz: java.lang.Class<*>, elementName: String): T? {
+            val spec: TestSpec? = clazz.getAnnotation<TestSpec?>(TestSpec::class.java)
+            try {
+                val method: java.lang.reflect.Method = TestSpec::class.java.getMethod(elementName)
+                return if (spec != null) method.invoke(spec) as T? else method.getDefaultValue() as T?
+            } catch (e: java.lang.NoSuchMethodException) {
+                throw java.lang.IllegalStateException("no such element " + elementName, e)
+            } catch (e: java.lang.IllegalAccessException) {
+                throw java.lang.IllegalStateException("can't invoke accessor for element " + elementName, e)
+            } catch (e: java.lang.IllegalArgumentException) {
+                throw java.lang.IllegalStateException("can't invoke accessor for element " + elementName, e)
+            } catch (e: java.lang.reflect.InvocationTargetException) {
+                throw java.lang.IllegalStateException("can't invoke accessor for element " + elementName, e)
+            }
+        }
     }
-  }
 }

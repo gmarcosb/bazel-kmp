@@ -11,64 +11,53 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License
+package com.google.devtools.build.lib.rules.config
 
-package com.google.devtools.build.lib.rules.config;
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.ImmutableSortedSet
+import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider
+import org.junit.Test
 
-import static com.google.common.truth.Truth.assertThat;
+/** Starlark-integration Tests for the ConfigFeatureFlagTransitionFactory.  */
+@RunWith(JUnit4::class)
+class StarlarkConfigFeatureFlagTransitionFactoryTest : BuildViewTestCase() {
+    @Before
+    @Throws(Exception::class)
+    fun initializeSkyframExecutor() {
+        val analysisMock: AnalysisMock = AnalysisMock.get()
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSortedSet;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.config.FragmentOptions;
-import com.google.devtools.build.lib.analysis.util.AnalysisMock;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.skyframe.PrecomputedValue;
-import com.google.devtools.build.lib.skyframe.SequencedSkyframeExecutor;
-import com.google.devtools.build.lib.skyframe.config.BaselineOptionsFunction;
-import com.google.devtools.build.lib.testutil.TestRuleClassProvider;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+        val ruleClassProvider: ConfiguredRuleClassProvider = analysisMock.createRuleClassProvider()
+        val buildOptionClasses: ImmutableSortedSet<Class<out FragmentOptions?>?>? =
+            ruleClassProvider.getFragmentRegistry().getOptionsClasses()
 
-/** Starlark-integration Tests for the ConfigFeatureFlagTransitionFactory. */
-@RunWith(JUnit4.class)
-public final class StarlarkConfigFeatureFlagTransitionFactoryTest extends BuildViewTestCase {
+        val skyframeExecutor: SequencedSkyframeExecutor = getSkyframeExecutor()
+        val defaultBuildOptions: BuildOptions? =
+            BuildOptions.getDefaultBuildOptionsForFragments(buildOptionClasses).clone()
+        skyframeExecutor.injectExtraPrecomputedValues(
+            ImmutableList.Builder<PrecomputedValue.Injected?>()
+                .add(
+                    PrecomputedValue.injected(
+                        BaselineOptionsFunction.BASELINE_CONFIGURATION, defaultBuildOptions
+                    )
+                )
+                .addAll(analysisMock.precomputedValues)
+                .build()
+        )
+    }
 
-  @Before
-  public final void initializeSkyframExecutor() throws Exception {
-    AnalysisMock analysisMock = AnalysisMock.get();
+    override fun createRuleClassProvider(): ConfiguredRuleClassProvider {
+        val builder: ConfiguredRuleClassProvider.Builder =
+            Builder().addRuleDefinition(FeatureFlagSetterRule())
+        TestRuleClassProvider.addStandardRules(builder)
+        return builder.build()
+    }
 
-    ConfiguredRuleClassProvider ruleClassProvider = analysisMock.createRuleClassProvider();
-    ImmutableSortedSet<Class<? extends FragmentOptions>> buildOptionClasses =
-        ruleClassProvider.getFragmentRegistry().getOptionsClasses();
-
-    SequencedSkyframeExecutor skyframeExecutor = getSkyframeExecutor();
-    BuildOptions defaultBuildOptions =
-        BuildOptions.getDefaultBuildOptionsForFragments(buildOptionClasses).clone();
-    skyframeExecutor.injectExtraPrecomputedValues(
-        new ImmutableList.Builder<PrecomputedValue.Injected>()
-            .add(
-                PrecomputedValue.injected(
-                    BaselineOptionsFunction.BASELINE_CONFIGURATION, defaultBuildOptions))
-            .addAll(analysisMock.getPrecomputedValues())
-            .build());
-  }
-
-  @Override
-  protected ConfiguredRuleClassProvider createRuleClassProvider() {
-    ConfiguredRuleClassProvider.Builder builder =
-        new ConfiguredRuleClassProvider.Builder().addRuleDefinition(new FeatureFlagSetterRule());
-    TestRuleClassProvider.addStandardRules(builder);
-    return builder.build();
-  }
-
-  private void setupRulesBzl() throws Exception {
-    scratch.file("rules/BUILD", "");
-    scratch.file(
-        "rules/rule.bzl",
-        """
+    @Throws(Exception::class)
+    private fun setupRulesBzl() {
+        scratch.file("rules/BUILD", "")
+        scratch.file(
+            "rules/rule.bzl",
+            """
         def _blank_impl(ctx):
             return []
 
@@ -92,15 +81,18 @@ public final class StarlarkConfigFeatureFlagTransitionFactoryTest extends BuildV
             },
             implementation = _check_impl,
         )
-        """);
-  }
+        
+        """.trimIndent()
+        )
+    }
 
-  @Test
-  public void setsFeatureFlagSuccessfully() throws Exception {
-    setupRulesBzl();
-    scratch.file(
-        "foo/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun setsFeatureFlagSuccessfully() {
+        setupRulesBzl()
+        scratch.file(
+            "foo/BUILD",
+            """
         load("//rules:rule.bzl", "check_something", "feature_flag_setter")
 
         config_feature_flag(
@@ -134,10 +126,12 @@ public final class StarlarkConfigFeatureFlagTransitionFactoryTest extends BuildV
             }),
             transitive_configs = [":fruit"],
         )
-        """);
-    scratch.overwriteFile(
-        "tools/allowlists/config_feature_flag/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.overwriteFile(
+            "tools/allowlists/config_feature_flag/BUILD",
+            """
         package_group(
             name = "config_feature_flag",
             packages = ["//foo/..."],
@@ -147,19 +141,22 @@ public final class StarlarkConfigFeatureFlagTransitionFactoryTest extends BuildV
             name = "config_feature_flag_setter",
             packages = ["//rules/..."],
         )
-        """);
-    assertThat(getConfiguredTarget("//foo:top")).isNotNull();
-    assertNoEvents();
-  }
+        
+        """.trimIndent()
+        )
+        assertThat(getConfiguredTarget("//foo:top")).isNotNull()
+        assertNoEvents()
+    }
 
-  @Test
-  public void failsWhenFeatureFlagSuccessfullySetToBadValue() throws Exception {
-    // This is mostly a test of the testing infrastructure itself.
-    // Want to ensure check_something isn't spuriously passing for whatever reason.
-    setupRulesBzl();
-    scratch.file(
-        "foo/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun failsWhenFeatureFlagSuccessfullySetToBadValue() {
+        // This is mostly a test of the testing infrastructure itself.
+        // Want to ensure check_something isn't spuriously passing for whatever reason.
+        setupRulesBzl()
+        scratch.file(
+            "foo/BUILD",
+            """
         load("//rules:rule.bzl", "check_something", "feature_flag_setter")
 
         config_feature_flag(
@@ -193,10 +190,12 @@ public final class StarlarkConfigFeatureFlagTransitionFactoryTest extends BuildV
             }),
             transitive_configs = [":fruit"],
         )
-        """);
-    scratch.overwriteFile(
-        "tools/allowlists/config_feature_flag/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.overwriteFile(
+            "tools/allowlists/config_feature_flag/BUILD",
+            """
         package_group(
             name = "config_feature_flag",
             packages = ["//foo/..."],
@@ -206,18 +205,21 @@ public final class StarlarkConfigFeatureFlagTransitionFactoryTest extends BuildV
             name = "config_feature_flag_setter",
             packages = ["//rules/..."],
         )
-        """);
-    reporter.removeHandler(failFastHandler);
-    getConfiguredTarget("//foo:top");
-    assertContainsEvent("Error in fail: Rule has failed intentionally.");
-  }
+        
+        """.trimIndent()
+        )
+        reporter.removeHandler(failFastHandler)
+        getConfiguredTarget("//foo:top")
+        assertContainsEvent("Error in fail: Rule has failed intentionally.")
+    }
 
-  @Test
-  public void failsWhenInstanceNotInAllowlist() throws Exception {
-    setupRulesBzl();
-    scratch.file(
-        "bar/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun failsWhenInstanceNotInAllowlist() {
+        setupRulesBzl()
+        scratch.file(
+            "bar/BUILD",
+            """
         config_feature_flag(
             name = "fruit",
             allowed_values = [
@@ -227,10 +229,12 @@ public final class StarlarkConfigFeatureFlagTransitionFactoryTest extends BuildV
             ],
             default_value = "orange",
         )
-        """);
-    scratch.file(
-        "foo/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "foo/BUILD",
+            """
         load("//rules:rule.bzl", "feature_flag_setter")
 
         feature_flag_setter(
@@ -238,10 +242,12 @@ public final class StarlarkConfigFeatureFlagTransitionFactoryTest extends BuildV
             flag_values = {"//bar:fruit": "apple"},
             transitive_configs = ["//bar:fruit"],
         )
-        """);
-    scratch.overwriteFile(
-        "tools/allowlists/config_feature_flag/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.overwriteFile(
+            "tools/allowlists/config_feature_flag/BUILD",
+            """
         package_group(
             name = "config_feature_flag",
             packages = ["//bar/..."],
@@ -251,18 +257,21 @@ public final class StarlarkConfigFeatureFlagTransitionFactoryTest extends BuildV
             name = "config_feature_flag_setter",
             packages = ["//rules/..."],
         )
-        """);
-    reporter.removeHandler(failFastHandler);
-    getConfiguredTarget("//foo:top");
-    assertContainsEvent("the attribute flag_values is not available in this package");
-  }
+        
+        """.trimIndent()
+        )
+        reporter.removeHandler(failFastHandler)
+        getConfiguredTarget("//foo:top")
+        assertContainsEvent("the attribute flag_values is not available in this package")
+    }
 
-  @Test
-  public void failsWhenRuleClassNotInSetterAllowlist() throws Exception {
-    setupRulesBzl();
-    scratch.file(
-        "foo/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun failsWhenRuleClassNotInSetterAllowlist() {
+        setupRulesBzl()
+        scratch.file(
+            "foo/BUILD",
+            """
         load("//rules:rule.bzl", "feature_flag_setter")
 
         config_feature_flag(
@@ -280,10 +289,12 @@ public final class StarlarkConfigFeatureFlagTransitionFactoryTest extends BuildV
             flag_values = {":fruit": "apple"},
             transitive_configs = [":fruit"],
         )
-        """);
-    scratch.overwriteFile(
-        "tools/allowlists/config_feature_flag/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.overwriteFile(
+            "tools/allowlists/config_feature_flag/BUILD",
+            """
         package_group(
             name = "config_feature_flag",
             packages = ["//foo/..."],
@@ -293,9 +304,11 @@ public final class StarlarkConfigFeatureFlagTransitionFactoryTest extends BuildV
             name = "config_feature_flag_setter",
             packages = [],
         )
-        """);
-    reporter.removeHandler(failFastHandler);
-    getConfiguredTarget("//foo:top");
-    assertContainsEvent("rule class is not allowed access to feature flags setter transition");
-  }
+        
+        """.trimIndent()
+        )
+        reporter.removeHandler(failFastHandler)
+        getConfiguredTarget("//foo:top")
+        assertContainsEvent("rule class is not allowed access to feature flags setter transition")
+    }
 }

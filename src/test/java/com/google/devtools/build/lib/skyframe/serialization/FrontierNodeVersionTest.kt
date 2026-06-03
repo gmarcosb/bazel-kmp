@@ -11,60 +11,57 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.skyframe.IntVersion
 
-import com.google.common.hash.HashCode;
-import com.google.devtools.build.skyframe.IntVersion;
-import java.util.Optional;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+@RunWith(JUnit4::class)
+class FrontierNodeVersionTest {
+    @org.junit.Test
+    fun constructor_nullClientId_throwsNullPointerException() {
+        org.junit.Assert.assertThrows<java.lang.NullPointerException?>(
+            java.lang.NullPointerException::class.java,
+            org.junit.function.ThrowingRunnable {
+                FrontierNodeVersion(
+                    "checksum",
+                    com.google.common.hash.HashCode.fromInt(1),
+                    byteArrayOf(1),
+                    IntVersion.of(1),
+                    "distinguisher",  /* useFakeStampData= */
+                    false,  /* clientId= */
+                    null
+                )
+            })
+    }
 
-@RunWith(JUnit4.class)
-public final class FrontierNodeVersionTest {
+    @org.junit.Test
+    fun constructor_nullStarlarkSemanticsFingerprint_throwsNullPointerException() {
+        org.junit.Assert.assertThrows<java.lang.NullPointerException?>(
+            java.lang.NullPointerException::class.java,
+            org.junit.function.ThrowingRunnable {
+                FrontierNodeVersion(
+                    "checksum",
+                    com.google.common.hash.HashCode.fromInt(1),  /* starlarkSemanticsFingerprint= */
+                    null,
+                    IntVersion.of(1),
+                    "distinguisher",  /* useFakeStampData= */
+                    false,
+                    java.util.Optional.empty<T?>()
+                )
+            })
+    }
 
-  @Test
-  public void constructor_nullClientId_throwsNullPointerException() {
-    assertThrows(
-        NullPointerException.class,
-        () ->
-            new FrontierNodeVersion(
+    @org.junit.Test
+    fun constructor_validArgs_success() {
+        val unused: FrontierNodeVersion =
+            FrontierNodeVersion(
                 "checksum",
-                HashCode.fromInt(1),
-                new byte[] {1},
+                com.google.common.hash.HashCode.fromInt(1),
+                byteArrayOf(1),
                 IntVersion.of(1),
-                "distinguisher",
-                /* useFakeStampData= */ false,
-                /* clientId= */ null));
-  }
-
-  @Test
-  public void constructor_nullStarlarkSemanticsFingerprint_throwsNullPointerException() {
-    assertThrows(
-        NullPointerException.class,
-        () ->
-            new FrontierNodeVersion(
-                "checksum",
-                HashCode.fromInt(1),
-                /* starlarkSemanticsFingerprint= */ null,
-                IntVersion.of(1),
-                "distinguisher",
-                /* useFakeStampData= */ false,
-                Optional.empty()));
-  }
-
-  @Test
-  public void constructor_validArgs_success() {
-    var unused =
-        new FrontierNodeVersion(
-            "checksum",
-            HashCode.fromInt(1),
-            new byte[] {1},
-            IntVersion.of(1),
-            "distinguisher",
-            /* useFakeStampData= */ false,
-            Optional.empty());
-  }
+                "distinguisher",  /* useFakeStampData= */
+                false,
+                java.util.Optional.empty<T?>()
+            )
+    }
 }

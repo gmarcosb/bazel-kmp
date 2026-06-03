@@ -11,21 +11,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization.strings
 
-package com.google.devtools.build.lib.skyframe.serialization.strings;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester
+import org.junit.Test
 
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link UnsafeStringCodec}. */
-@RunWith(JUnit4.class)
-public final class UnsafeStringCodecTest {
-
-  @Test
-  public void testCodec() throws Exception {
-    new SerializationTester("usually precomputed and supports weird unicodes: （╯°□°）╯︵┻━┻ ", "")
-        .runTests();
-  }
+/** Tests for [UnsafeStringCodec].  */
+@RunWith(JUnit4::class)
+class UnsafeStringCodecTest {
+    @Test
+    @Throws(Exception::class)
+    fun testCodec() {
+        SerializationTester("usually precomputed and supports weird unicodes: （╯°□°）╯︵┻━┻ ", "")
+            .runTests()
+    }
 }

@@ -11,27 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.collect.ImmutableSortedSet;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.skyframe.TestsForTargetPatternValue.TestsForTargetPatternKey;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.cmdline.Label
 
-/** Serialization test for test_suite. */
-@RunWith(JUnit4.class)
-public final class TestSuiteExpansionKeyCodecTest {
-
-  @Test
-  public void testCodec() throws Exception {
-    new SerializationTester(
-            new TestsForTargetPatternKey(
-                ImmutableSortedSet.of(
-                    Label.parseCanonical("//foo/bar:baz"), Label.parseCanonical("//a/b:c"))),
-            new TestsForTargetPatternKey(ImmutableSortedSet.<Label>of()))
-        .runTests();
-  }
+/** Serialization test for test_suite.  */
+@RunWith(JUnit4::class)
+class TestSuiteExpansionKeyCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCodec() {
+        SerializationTester(
+            TestsForTargetPatternKey(
+                com.google.common.collect.ImmutableSortedSet.of(
+                    Label.parseCanonical("//foo/bar:baz"), Label.parseCanonical("//a/b:c")
+                )
+            ),
+            TestsForTargetPatternKey(com.google.common.collect.ImmutableSortedSet.of<Label?>())
+        )
+            .runTests()
+    }
 }

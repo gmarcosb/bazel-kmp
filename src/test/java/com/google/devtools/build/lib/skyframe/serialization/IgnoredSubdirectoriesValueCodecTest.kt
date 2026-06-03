@@ -11,40 +11,36 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.skyframe.IgnoredSubdirectoriesValue;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.util.Arrays;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.skyframe.IgnoredSubdirectoriesValue
 
-/** Tests for {@code IgnoredSubdirectoriesValueCodec}. */
-@RunWith(JUnit4.class)
-public class IgnoredSubdirectoriesValueCodecTest {
-
-  private static ImmutableSet<PathFragment> prefixes(String... prefixes) {
-    return Arrays.stream(prefixes).map(PathFragment::create).collect(ImmutableSet.toImmutableSet());
-  }
-
-  private static ImmutableList<String> patterns(String... patterns) {
-    return ImmutableList.copyOf(patterns);
-  }
-
-  @Test
-  public void testCodec() throws Exception {
-    new SerializationTester(
+/** Tests for `IgnoredSubdirectoriesValueCodec`.  */
+@RunWith(JUnit4::class)
+class IgnoredSubdirectoriesValueCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCodec() {
+        SerializationTester(
             IgnoredSubdirectoriesValue.of(prefixes(), patterns()),
             IgnoredSubdirectoriesValue.of(prefixes("foo"), patterns()),
             IgnoredSubdirectoriesValue.of(prefixes("foo", "bar/moo"), patterns()),
             IgnoredSubdirectoriesValue.of(prefixes(), patterns("foo")),
             IgnoredSubdirectoriesValue.of(prefixes(), patterns("foo")),
             IgnoredSubdirectoriesValue.of(prefixes(), patterns("foo/**")),
-            IgnoredSubdirectoriesValue.of(prefixes("foo"), patterns("foo/**")))
-        .runTests();
-  }
+            IgnoredSubdirectoriesValue.of(prefixes("foo"), patterns("foo/**"))
+        )
+            .runTests()
+    }
+
+    companion object {
+        private fun prefixes(vararg prefixes: String?): com.google.common.collect.ImmutableSet<PathFragment?> {
+            return java.util.Arrays.stream<String?>(prefixes).map<Any?>(PathFragment::create)
+                .collect(com.google.common.collect.ImmutableSet.toImmutableSet<Any?>())
+        }
+
+        private fun patterns(vararg patterns: String?): com.google.common.collect.ImmutableList<String?> {
+            return com.google.common.collect.ImmutableList.copyOf<String?>(patterns)
+        }
+    }
 }

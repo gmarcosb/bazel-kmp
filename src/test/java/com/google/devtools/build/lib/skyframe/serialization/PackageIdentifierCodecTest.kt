@@ -11,33 +11,25 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
+import com.google.devtools.build.lib.cmdline.PackageIdentifier
 
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+/** Basic tests for [PackageIdentifier]'s codec.  */
+@RunWith(TestParameterInjector::class)
+class PackageIdentifierCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCodec(@TestParameter useSharedValues: Boolean) {
+        val tester: SerializationTester =
+            SerializationTester(PackageIdentifier.create("foo", PathFragment.create("bar/baz")))
 
-/** Basic tests for {@link PackageIdentifier}'s codec. */
-@RunWith(TestParameterInjector.class)
-public class PackageIdentifierCodecTest {
+        if (useSharedValues) {
+            tester
+                .addCodec(ValueSharingAdapter(PackageIdentifier.deferredCodec()))
+                .makeMemoizingAndAllowFutureBlocking(true)
+        }
 
-  @Test
-  public void testCodec(@TestParameter boolean useSharedValues) throws Exception {
-    var tester =
-        new SerializationTester(PackageIdentifier.create("foo", PathFragment.create("bar/baz")));
-
-    if (useSharedValues) {
-      tester
-          .addCodec(new ValueSharingAdapter<>(PackageIdentifier.deferredCodec()))
-          .makeMemoizingAndAllowFutureBlocking(true);
+        tester.runTests()
     }
-
-    tester.runTests();
-  }
-
 }

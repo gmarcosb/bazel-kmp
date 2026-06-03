@@ -11,417 +11,421 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.exec;
+package com.google.devtools.build.lib.exec
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.testutil.MoreAsserts.assertContainsEvent;
-import static com.google.devtools.build.lib.testutil.TestConstants.PRODUCT_NAME;
-import static com.google.devtools.build.lib.testutil.TestConstants.WORKSPACE_NAME;
+import com.github.luben.zstd.ZstdInputStream
 
-import com.github.luben.zstd.ZstdInputStream;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.actions.ActionInput;
-import com.google.devtools.build.lib.actions.ActionOwner;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.BuildConfigurationEvent;
-import com.google.devtools.build.lib.actions.RunfilesTree;
-import com.google.devtools.build.lib.actions.Spawn;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
-import com.google.devtools.build.lib.analysis.actions.SymlinkAction;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.exec.Protos.File;
-import com.google.devtools.build.lib.exec.Protos.SpawnExec;
-import com.google.devtools.build.lib.exec.util.SpawnBuilder;
-import com.google.devtools.build.lib.remote.options.RemoteOptions;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import com.google.devtools.common.options.Options;
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import java.io.BufferedOutputStream;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.UUID;
-import java.util.function.Predicate;
-import net.starlark.java.syntax.Location;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+/** Tests for [CompactSpawnLogContext].  */
+@RunWith(TestParameterInjector::class)
+class CompactSpawnLogContextTest : SpawnLogContextTestBase() {
+    private val logPath: Path = fs.getPath("/log")
 
-/** Tests for {@link CompactSpawnLogContext}. */
-@RunWith(TestParameterInjector.class)
-public final class CompactSpawnLogContextTest extends SpawnLogContextTestBase {
-  private final Path logPath = fs.getPath("/log");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTransitiveNestedSet(@TestParameter inputsMode: InputsMode) {
+        val file1: Artifact = ActionsTestUtil.createArtifact(rootDir, "file1")
+        val file2: Artifact = ActionsTestUtil.createArtifact(rootDir, "file2")
+        val file3: Artifact = ActionsTestUtil.createArtifact(rootDir, "file3")
 
-  @Test
-  public void testTransitiveNestedSet(@TestParameter InputsMode inputsMode) throws Exception {
-    Artifact file1 = ActionsTestUtil.createArtifact(rootDir, "file1");
-    Artifact file2 = ActionsTestUtil.createArtifact(rootDir, "file2");
-    Artifact file3 = ActionsTestUtil.createArtifact(rootDir, "file3");
+        SpawnLogContextTestBase.Companion.writeFile(file1, "abc")
+        SpawnLogContextTestBase.Companion.writeFile(file2, "def")
+        SpawnLogContextTestBase.Companion.writeFile(file3, "ghi")
 
-    writeFile(file1, "abc");
-    writeFile(file2, "def");
-    writeFile(file3, "ghi");
+        val inputs: NestedSet<ActionInput?> =
+            NestedSetBuilder.< ActionInput > stableOrder < ActionInput ? > ()
+                .add(file1)
+                .addTransitive(
+                    NestedSetBuilder.< ActionInput > stableOrder < ActionInput ? > ().add(file2).add(file3).build()
+                )
+                .build()
 
-    NestedSet<ActionInput> inputs =
-        NestedSetBuilder.<ActionInput>stableOrder()
-            .add(file1)
-            .addTransitive(
-                NestedSetBuilder.<ActionInput>stableOrder().add(file2).add(file3).build())
-            .build();
+        assertThat(inputs.getLeaves()).hasSize(1)
+        assertThat(inputs.getNonLeaves()).hasSize(1)
 
-    assertThat(inputs.getLeaves()).hasSize(1);
-    assertThat(inputs.getNonLeaves()).hasSize(1);
+        var spawn: SpawnBuilder = SpawnLogContextTestBase.Companion.defaultSpawnBuilder().withInputs(inputs)
+        if (inputsMode.isTool()) {
+            spawn = spawn.withTools(inputs)
+        }
 
-    SpawnBuilder spawn = defaultSpawnBuilder().withInputs(inputs);
-    if (inputsMode.isTool()) {
-      spawn = spawn.withTools(inputs);
+        val context: SpawnLogContext = createSpawnLogContext()
+
+        context.logSpawn(
+            spawn.build(),
+            SpawnLogContextTestBase.Companion.createInputMetadataProvider(file1, file2, file3),
+            createInputMap(file1, file2, file3),
+            fs,
+            SpawnLogContextTestBase.Companion.defaultTimeout(),
+            SpawnLogContextTestBase.Companion.defaultSpawnResult()
+        )
+
+        closeAndAssertLog(
+            context,
+            SpawnLogContextTestBase.Companion.defaultSpawnExecBuilder()
+                .addInputs(
+                    File.newBuilder()
+                        .setPath("file1")
+                        .setDigest(getDigest("abc"))
+                        .setIsTool(inputsMode.isTool())
+                )
+                .addInputs(
+                    File.newBuilder()
+                        .setPath("file2")
+                        .setDigest(getDigest("def"))
+                        .setIsTool(inputsMode.isTool())
+                )
+                .addInputs(
+                    File.newBuilder()
+                        .setPath("file3")
+                        .setDigest(getDigest("ghi"))
+                        .setIsTool(inputsMode.isTool())
+                )
+                .build()
+        )
     }
 
-    SpawnLogContext context = createSpawnLogContext();
+    @org.junit.Test
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    fun testSymlinkAction() {
+        val source: Artifact? = ActionsTestUtil.createArtifact(rootDir, "source")
+        val target: Artifact? = ActionsTestUtil.createArtifact(rootDir, "target")
+        val owner: ActionOwner? =
+            ActionOwner.createDummy(
+                Label.parseCanonicalUnchecked("//pkg:symlink"),
+                net.starlark.java.syntax.Location("dummy-file", 0, 0),
+                "some_rule",
+                "configurationMnemonic",  /* configurationChecksum= */
+                "configurationChecksum",
+                BuildConfigurationEvent(
+                    BuildEventStreamProtos.BuildEventId.getDefaultInstance(),
+                    BuildEventStreamProtos.BuildEvent.getDefaultInstance()
+                ),  /* isToolConfiguration= */
+                false,  /* executionPlatform= */
+                null,  /* aspectDescriptors= */
+                com.google.common.collect.ImmutableList.of<E?>(),  /* execProperties= */
+                com.google.common.collect.ImmutableMap.of<K?, V?>()
+            )
+        val symlinkAction: SymlinkAction? =
+            SymlinkAction.toArtifact(owner, source, target, "Creating symlink")
 
-    context.logSpawn(
-        spawn.build(),
-        createInputMetadataProvider(file1, file2, file3),
-        createInputMap(file1, file2, file3),
-        fs,
-        defaultTimeout(),
-        defaultSpawnResult());
+        val context: SpawnLogContext = createSpawnLogContext()
+        context.logSymlinkAction(symlinkAction)
 
-    closeAndAssertLog(
-        context,
-        defaultSpawnExecBuilder()
-            .addInputs(
-                File.newBuilder()
-                    .setPath("file1")
-                    .setDigest(getDigest("abc"))
-                    .setIsTool(inputsMode.isTool()))
-            .addInputs(
-                File.newBuilder()
-                    .setPath("file2")
-                    .setDigest(getDigest("def"))
-                    .setIsTool(inputsMode.isTool()))
-            .addInputs(
-                File.newBuilder()
-                    .setPath("file3")
-                    .setDigest(getDigest("ghi"))
-                    .setIsTool(inputsMode.isTool()))
-            .build());
-  }
+        val entries: com.google.common.collect.ImmutableList<Protos.ExecLogEntry?> = closeAndReadCompactLog(context)
+        Truth.assertThat(entries)
+            .containsExactly(
+                Protos.ExecLogEntry.newBuilder()
+                    .setInvocation(
+                        Protos.ExecLogEntry.Invocation.newBuilder()
+                            .setHashFunctionName("SHA-256")
+                            .setWorkspaceRunfilesDirectory(TestConstants.WORKSPACE_NAME)
+                            .setSiblingRepositoryLayout(siblingRepositoryLayout)
+                            .setId("00000000-0000-0000-0000-000000000000")
+                    )
+                    .build(),
+                Protos.ExecLogEntry.newBuilder()
+                    .setSymlinkAction(
+                        Protos.ExecLogEntry.SymlinkAction.newBuilder()
+                            .setInputPath("source")
+                            .setOutputPath("target")
+                            .setMnemonic("Symlink")
+                            .setTargetLabel("//pkg:symlink")
+                    )
+                    .build()
+            )
+    }
 
-  @Test
-  public void testSymlinkAction() throws IOException, InterruptedException {
-    Artifact source = ActionsTestUtil.createArtifact(rootDir, "source");
-    Artifact target = ActionsTestUtil.createArtifact(rootDir, "target");
-    ActionOwner owner =
-        ActionOwner.createDummy(
-            Label.parseCanonicalUnchecked("//pkg:symlink"),
-            new Location("dummy-file", 0, 0),
-            "some_rule",
-            "configurationMnemonic",
-            /* configurationChecksum= */ "configurationChecksum",
-            new BuildConfigurationEvent(
-                BuildEventStreamProtos.BuildEventId.getDefaultInstance(),
-                BuildEventStreamProtos.BuildEvent.getDefaultInstance()),
-            /* isToolConfiguration= */ false,
-            /* executionPlatform= */ null,
-            /* aspectDescriptors= */ ImmutableList.of(),
-            /* execProperties= */ ImmutableMap.of());
-    SymlinkAction symlinkAction =
-        SymlinkAction.toArtifact(owner, source, target, "Creating symlink");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRunfilesTreeReusedForTool() {
+        val tool: Artifact = ActionsTestUtil.createArtifact(rootDir, "data.txt")
+        SpawnLogContextTestBase.Companion.writeFile(tool, "abc")
+        val toolRunfiles: Artifact = ActionsTestUtil.createRunfilesArtifact(outputDir, "tool.runfiles")
 
-    SpawnLogContext context = createSpawnLogContext();
-    context.logSymlinkAction(symlinkAction);
+        val runfilesRoot: PathFragment? = outputDir.getExecPath().getRelative("foo.runfiles")
+        val runfilesTree: RunfilesTree? = SpawnLogContextTestBase.Companion.createRunfilesTree(runfilesRoot, tool)
 
-    var entries = closeAndReadCompactLog(context);
-    assertThat(entries)
-        .containsExactly(
-            Protos.ExecLogEntry.newBuilder()
-                .setInvocation(
-                    Protos.ExecLogEntry.Invocation.newBuilder()
-                        .setHashFunctionName("SHA-256")
-                        .setWorkspaceRunfilesDirectory(TestConstants.WORKSPACE_NAME)
-                        .setSiblingRepositoryLayout(siblingRepositoryLayout)
-                        .setId("00000000-0000-0000-0000-000000000000"))
+        val firstInput: Artifact = ActionsTestUtil.createArtifact(rootDir, "first_input")
+        SpawnLogContextTestBase.Companion.writeFile(firstInput, "def")
+        val secondInput: Artifact = ActionsTestUtil.createArtifact(rootDir, "second_input")
+        SpawnLogContextTestBase.Companion.writeFile(secondInput, "ghi")
+
+        val firstSpawn: Spawn =
+            SpawnLogContextTestBase.Companion.defaultSpawnBuilder().withTool(toolRunfiles)
+                .withInputs(firstInput, toolRunfiles).build()
+        val secondSpawn: Spawn =
+            SpawnLogContextTestBase.Companion.defaultSpawnBuilder().withTool(toolRunfiles)
+                .withInputs(secondInput, toolRunfiles).build()
+
+        val context: SpawnLogContext = createSpawnLogContext()
+
+        context.logSpawn(
+            firstSpawn,
+            SpawnLogContextTestBase.Companion.createInputMetadataProvider(runfilesTree, toolRunfiles, firstInput),
+            createInputMap(runfilesTree, firstInput),
+            fs,
+            SpawnLogContextTestBase.Companion.defaultTimeout(),
+            SpawnLogContextTestBase.Companion.defaultSpawnResult()
+        )
+        context.logSpawn(
+            secondSpawn,
+            SpawnLogContextTestBase.Companion.createInputMetadataProvider(runfilesTree, toolRunfiles, secondInput),
+            createInputMap(runfilesTree, secondInput),
+            fs,
+            SpawnLogContextTestBase.Companion.defaultTimeout(),
+            SpawnLogContextTestBase.Companion.defaultSpawnResult()
+        )
+
+        val entries: com.google.common.collect.ImmutableList<Protos.ExecLogEntry?> = closeAndReadCompactLog(context)
+        Truth.assertThat(entries.stream().filter(Protos.ExecLogEntry::hasRunfilesTree)).hasSize(1)
+
+        closeAndAssertLog(
+            context,
+            SpawnLogContextTestBase.Companion.defaultSpawnExecBuilder()
+                .addInputs(
+                    File.newBuilder()
+                        .setPath(
+                            (TestConstants.PRODUCT_NAME
+                                    + "-out/k8-fastbuild/bin/foo.runfiles/"
+                                    + TestConstants.WORKSPACE_NAME
+                                    + "/data.txt")
+                        )
+                        .setDigest(getDigest("abc"))
+                        .setIsTool(true)
+                )
+                .addInputs(
+                    File.newBuilder()
+                        .setPath("first_input")
+                        .setDigest(getDigest("def"))
+                        .setIsTool(false)
+                )
                 .build(),
-            Protos.ExecLogEntry.newBuilder()
-                .setSymlinkAction(
-                    Protos.ExecLogEntry.SymlinkAction.newBuilder()
-                        .setInputPath("source")
-                        .setOutputPath("target")
-                        .setMnemonic("Symlink")
-                        .setTargetLabel("//pkg:symlink"))
-                .build());
-  }
+            SpawnLogContextTestBase.Companion.defaultSpawnExecBuilder()
+                .addInputs(
+                    File.newBuilder()
+                        .setPath(
+                            (TestConstants.PRODUCT_NAME
+                                    + "-out/k8-fastbuild/bin/foo.runfiles/"
+                                    + TestConstants.WORKSPACE_NAME
+                                    + "/data.txt")
+                        )
+                        .setDigest(getDigest("abc"))
+                        .setIsTool(true)
+                )
+                .addInputs(
+                    File.newBuilder()
+                        .setPath("second_input")
+                        .setDigest(getDigest("ghi"))
+                        .setIsTool(false)
+                )
+                .build()
+        )
+    }
 
-  @Test
-  public void testRunfilesTreeReusedForTool() throws Exception {
-    Artifact tool = ActionsTestUtil.createArtifact(rootDir, "data.txt");
-    writeFile(tool, "abc");
-    Artifact toolRunfiles = ActionsTestUtil.createRunfilesArtifact(outputDir, "tool.runfiles");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testUnreadableOutputs(@TestParameter outputsMode: OutputsMode) {
+        val readableFile: Artifact = ActionsTestUtil.createArtifact(outputDir, "readable")
+        val unreadableFile: Artifact = ActionsTestUtil.createArtifact(outputDir, "unreadable")
+        val unreadableFileDir: Artifact =
+            ActionsTestUtil.createTreeArtifactWithGeneratingAction(outputDir, "unreadableFileDir")
 
-    PathFragment runfilesRoot = outputDir.getExecPath().getRelative("foo.runfiles");
-    RunfilesTree runfilesTree = createRunfilesTree(runfilesRoot, tool);
+        writeFile(readableFile.getPath(), "xyz")
+        // Make the files unreadable.
+        writeFile(unreadableFile.getPath(), "abc")
+        unreadableFile.getPath().setReadable(false)
+        writeFile(unreadableFileDir.getPath().getChild("file"), "def")
+        unreadableFileDir.getPath().getChild("file").setReadable(false)
 
-    Artifact firstInput = ActionsTestUtil.createArtifact(rootDir, "first_input");
-    writeFile(firstInput, "def");
-    Artifact secondInput = ActionsTestUtil.createArtifact(rootDir, "second_input");
-    writeFile(secondInput, "ghi");
+        val spawn: SpawnBuilder =
+            SpawnLogContextTestBase.Companion.defaultSpawnBuilder()
+                .withOutputs(readableFile, unreadableFile, unreadableFileDir)
 
-    Spawn firstSpawn =
-        defaultSpawnBuilder().withTool(toolRunfiles).withInputs(firstInput, toolRunfiles).build();
-    Spawn secondSpawn =
-        defaultSpawnBuilder().withTool(toolRunfiles).withInputs(secondInput, toolRunfiles).build();
+        val context: SpawnLogContext = createSpawnLogContext()
 
-    SpawnLogContext context = createSpawnLogContext();
+        context.logSpawn(
+            spawn.build(),
+            SpawnLogContextTestBase.Companion.createInputMetadataProvider(),
+            SpawnLogContextTestBase.Companion.createInputMap(),
+            outputsMode.getActionFileSystem(fs),
+            SpawnLogContextTestBase.Companion.defaultTimeout(),
+            SpawnLogContextTestBase.Companion.defaultSpawnResult()
+        )
 
-    context.logSpawn(
-        firstSpawn,
-        createInputMetadataProvider(runfilesTree, toolRunfiles, firstInput),
-        createInputMap(runfilesTree, firstInput),
-        fs,
-        defaultTimeout(),
-        defaultSpawnResult());
-    context.logSpawn(
-        secondSpawn,
-        createInputMetadataProvider(runfilesTree, toolRunfiles, secondInput),
-        createInputMap(runfilesTree, secondInput),
-        fs,
-        defaultTimeout(),
-        defaultSpawnResult());
+        closeAndAssertLog(
+            context,
+            SpawnLogContextTestBase.Companion.defaultSpawnExecBuilder()
+                .addActualOutputs(
+                    File.newBuilder()
+                        .setPath(TestConstants.PRODUCT_NAME + "-out/k8-fastbuild/bin/readable")
+                        .setDigest(getDigest("xyz"))
+                        .setIsTool(false)
+                )
+                .addListedOutputs(TestConstants.PRODUCT_NAME + "-out/k8-fastbuild/bin/readable")
+                .addListedOutputs(TestConstants.PRODUCT_NAME + "-out/k8-fastbuild/bin/unreadable")
+                .addListedOutputs(TestConstants.PRODUCT_NAME + "-out/k8-fastbuild/bin/unreadableFileDir")
+                .build()
+        )
 
-    var entries = closeAndReadCompactLog(context);
-    assertThat(entries.stream().filter(Protos.ExecLogEntry::hasRunfilesTree)).hasSize(1);
+        assertContainsEvent(
+            storedEventHandler.getEvents(),
+            "The compact execution log is incomplete because some outputs could not be read. Refer"
+                    + " to the server log file for details."
+        )
+        Truth.assertThat(storedEventHandler.getEvents()).hasSize(1)
+        Truth.assertThat(storedEventHandler.getPosts()).isEmpty()
+    }
 
-    closeAndAssertLog(
-        context,
-        defaultSpawnExecBuilder()
-            .addInputs(
-                File.newBuilder()
-                    .setPath(
-                        PRODUCT_NAME
-                            + "-out/k8-fastbuild/bin/foo.runfiles/"
-                            + WORKSPACE_NAME
-                            + "/data.txt")
-                    .setDigest(getDigest("abc"))
-                    .setIsTool(true))
-            .addInputs(
-                File.newBuilder()
-                    .setPath("first_input")
-                    .setDigest(getDigest("def"))
-                    .setIsTool(false))
-            .build(),
-        defaultSpawnExecBuilder()
-            .addInputs(
-                File.newBuilder()
-                    .setPath(
-                        PRODUCT_NAME
-                            + "-out/k8-fastbuild/bin/foo.runfiles/"
-                            + WORKSPACE_NAME
-                            + "/data.txt")
-                    .setDigest(getDigest("abc"))
-                    .setIsTool(true))
-            .addInputs(
-                File.newBuilder()
-                    .setPath("second_input")
-                    .setDigest(getDigest("ghi"))
-                    .setIsTool(false))
-            .build());
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMnemonicFilter() {
+        val spawn1: SpawnBuilder = SpawnLogContextTestBase.Companion.defaultSpawnBuilder().withMnemonic("Mnemonic1")
+        val spawn2: SpawnBuilder = SpawnLogContextTestBase.Companion.defaultSpawnBuilder().withMnemonic("Mnemonic2")
 
-  @Test
-  public void testUnreadableOutputs(@TestParameter OutputsMode outputsMode) throws Exception {
-    Artifact readableFile = ActionsTestUtil.createArtifact(outputDir, "readable");
-    Artifact unreadableFile = ActionsTestUtil.createArtifact(outputDir, "unreadable");
-    Artifact unreadableFileDir =
-        ActionsTestUtil.createTreeArtifactWithGeneratingAction(outputDir, "unreadableFileDir");
+        val context: SpawnLogContext =
+            createSpawnLogContext(java.util.function.Predicate { spawn: Spawn? ->
+                spawn.getMnemonic().equals("Mnemonic1")
+            })
 
-    writeFile(readableFile.getPath(), "xyz");
-    // Make the files unreadable.
-    writeFile(unreadableFile.getPath(), "abc");
-    unreadableFile.getPath().setReadable(false);
-    writeFile(unreadableFileDir.getPath().getChild("file"), "def");
-    unreadableFileDir.getPath().getChild("file").setReadable(false);
+        context.logSpawn(
+            spawn1.build(),
+            SpawnLogContextTestBase.Companion.createInputMetadataProvider(),
+            SpawnLogContextTestBase.Companion.createInputMap(),
+            fs,
+            SpawnLogContextTestBase.Companion.defaultTimeout(),
+            SpawnLogContextTestBase.Companion.defaultSpawnResult()
+        )
+        context.logSpawn(
+            spawn2.build(),
+            SpawnLogContextTestBase.Companion.createInputMetadataProvider(),
+            SpawnLogContextTestBase.Companion.createInputMap(),
+            fs,
+            SpawnLogContextTestBase.Companion.defaultTimeout(),
+            SpawnLogContextTestBase.Companion.defaultSpawnResult()
+        )
 
-    SpawnBuilder spawn =
-        defaultSpawnBuilder().withOutputs(readableFile, unreadableFile, unreadableFileDir);
+        closeAndAssertLog(
+            context,
+            SpawnLogContextTestBase.Companion.defaultSpawnExecBuilder().setMnemonic("Mnemonic1").build()
+        )
+    }
 
-    SpawnLogContext context = createSpawnLogContext();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStreaming() {
+        val file: Artifact = ActionsTestUtil.createArtifact(rootDir, "file")
+        SpawnLogContextTestBase.Companion.writeFile(file, "abc")
 
-    context.logSpawn(
-        spawn.build(),
-        createInputMetadataProvider(),
-        createInputMap(),
-        outputsMode.getActionFileSystem(fs),
-        defaultTimeout(),
-        defaultSpawnResult());
+        val spawn: SpawnBuilder = SpawnLogContextTestBase.Companion.defaultSpawnBuilder().withInput(file)
 
-    closeAndAssertLog(
-        context,
-        defaultSpawnExecBuilder()
-            .addActualOutputs(
-                File.newBuilder()
-                    .setPath(PRODUCT_NAME + "-out/k8-fastbuild/bin/readable")
-                    .setDigest(getDigest("xyz"))
-                    .setIsTool(false))
-            .addListedOutputs(PRODUCT_NAME + "-out/k8-fastbuild/bin/readable")
-            .addListedOutputs(PRODUCT_NAME + "-out/k8-fastbuild/bin/unreadable")
-            .addListedOutputs(PRODUCT_NAME + "-out/k8-fastbuild/bin/unreadableFileDir")
-            .build());
+        val baos: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        val out: BufferedOutputStream = BufferedOutputStream(baos)
 
-    assertContainsEvent(
-        storedEventHandler.getEvents(),
-        "The compact execution log is incomplete because some outputs could not be read. Refer"
-            + " to the server log file for details.");
-    assertThat(storedEventHandler.getEvents()).hasSize(1);
-    assertThat(storedEventHandler.getPosts()).isEmpty();
-  }
+        val context: SpawnLogContext =
+            CompactSpawnLogContext(
+                out,
+                "stream",
+                execRoot.asFragment(),
+                TestConstants.WORKSPACE_NAME,
+                siblingRepositoryLayout,
+                com.google.devtools.common.options.Options.getDefaults<O?>(RemoteOptions::class.java),
+                DigestHashFunction.SHA256,
+                SyscallCache.NO_CACHE,
+                UUID.fromString("00000000-0000-0000-0000-000000000000"),
+                storedEventHandler,  /* logSpawnPredicate= */
+                { s -> true })
 
-  @Test
-  public void testMnemonicFilter() throws Exception {
-    SpawnBuilder spawn1 = defaultSpawnBuilder().withMnemonic("Mnemonic1");
-    SpawnBuilder spawn2 = defaultSpawnBuilder().withMnemonic("Mnemonic2");
+        context.logSpawn(
+            spawn.build(),
+            SpawnLogContextTestBase.Companion.createInputMetadataProvider(file),
+            createInputMap(file),
+            fs,
+            SpawnLogContextTestBase.Companion.defaultTimeout(),
+            SpawnLogContextTestBase.Companion.defaultSpawnResult()
+        )
 
-    SpawnLogContext context =
-        createSpawnLogContext(spawn -> spawn.getMnemonic().equals("Mnemonic1"));
+        context.close()
 
-    context.logSpawn(
-        spawn1.build(),
-        createInputMetadataProvider(),
-        createInputMap(),
-        fs,
-        defaultTimeout(),
-        defaultSpawnResult());
-    context.logSpawn(
-        spawn2.build(),
-        createInputMetadataProvider(),
-        createInputMap(),
-        fs,
-        defaultTimeout(),
-        defaultSpawnResult());
+        val actual: java.util.ArrayList<SpawnExec?> = java.util.ArrayList<SpawnExec?>()
+        ByteArrayInputStream(baos.toByteArray()).use { `in` ->
+            SpawnLogReconstructor(`in`).use { reconstructor ->
+                var ex: SpawnExec?
+                while ((reconstructor.read().also { ex = it }) != null) {
+                    actual.add(ex)
+                }
+            }
+        }
+        Truth.assertThat(actual)
+            .containsExactly(
+                SpawnLogContextTestBase.Companion.defaultSpawnExecBuilder()
+                    .addInputs(File.newBuilder().setPath("file").setDigest(getDigest("abc")))
+                    .build()
+            )
+    }
 
-    closeAndAssertLog(context, defaultSpawnExecBuilder().setMnemonic("Mnemonic1").build());
-  }
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    override fun createSpawnLogContext(platformProperties: com.google.common.collect.ImmutableMap<String?, String?>): SpawnLogContext {
+        return createSpawnLogContext(
+            platformProperties,  /* logSpawnPredicate= */
+            java.util.function.Predicate { spawn: Spawn? -> true })
+    }
 
-  @Test
-  public void testStreaming() throws Exception {
-    Artifact file = ActionsTestUtil.createArtifact(rootDir, "file");
-    writeFile(file, "abc");
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    fun createSpawnLogContext(logSpawnPredicate: java.util.function.Predicate<Spawn?>?): SpawnLogContext {
+        return createSpawnLogContext(com.google.common.collect.ImmutableMap.of<String?, String?>(), logSpawnPredicate)
+    }
 
-    SpawnBuilder spawn = defaultSpawnBuilder().withInput(file);
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    fun createSpawnLogContext(
+        platformProperties: com.google.common.collect.ImmutableMap<String?, String?>,
+        logSpawnPredicate: java.util.function.Predicate<Spawn?>?
+    ): SpawnLogContext {
+        val remoteOptions: RemoteOptions =
+            com.google.devtools.common.options.Options.getDefaults<O>(RemoteOptions::class.java)
+        remoteOptions.setRemoteDefaultExecPropertiesField(platformProperties.entries.asList())
 
-    ByteArrayOutputStream baos = new ByteArrayOutputStream();
-    BufferedOutputStream out = new BufferedOutputStream(baos);
-
-    SpawnLogContext context =
-        new CompactSpawnLogContext(
-            out,
-            "stream",
+        return CompactSpawnLogContext(
+            BufferedOutputStream(logPath.getOutputStream()),
+            logPath.toString(),
             execRoot.asFragment(),
             TestConstants.WORKSPACE_NAME,
             siblingRepositoryLayout,
-            Options.getDefaults(RemoteOptions.class),
+            remoteOptions,
             DigestHashFunction.SHA256,
             SyscallCache.NO_CACHE,
             UUID.fromString("00000000-0000-0000-0000-000000000000"),
             storedEventHandler,
-            /* logSpawnPredicate= */ s -> true);
-
-    context.logSpawn(
-        spawn.build(),
-        createInputMetadataProvider(file),
-        createInputMap(file),
-        fs,
-        defaultTimeout(),
-        defaultSpawnResult());
-
-    context.close();
-
-    ArrayList<SpawnExec> actual = new ArrayList<>();
-    try (InputStream in = new ByteArrayInputStream(baos.toByteArray());
-        SpawnLogReconstructor reconstructor = new SpawnLogReconstructor(in)) {
-      SpawnExec ex;
-      while ((ex = reconstructor.read()) != null) {
-        actual.add(ex);
-      }
+            logSpawnPredicate
+        )
     }
 
-    assertThat(actual)
-        .containsExactly(
-            defaultSpawnExecBuilder()
-                .addInputs(File.newBuilder().setPath("file").setDigest(getDigest("abc")))
-                .build());
-  }
+    @Throws(IOException::class)
+    override fun closeAndAssertLog(context: SpawnLogContext, vararg expected: SpawnExec?) {
+        context.close()
 
-  @Override
-  protected SpawnLogContext createSpawnLogContext(ImmutableMap<String, String> platformProperties)
-      throws IOException, InterruptedException {
-    return createSpawnLogContext(platformProperties, /* logSpawnPredicate= */ spawn -> true);
-  }
-
-  SpawnLogContext createSpawnLogContext(Predicate<Spawn> logSpawnPredicate)
-      throws IOException, InterruptedException {
-    return createSpawnLogContext(ImmutableMap.of(), logSpawnPredicate);
-  }
-
-  SpawnLogContext createSpawnLogContext(
-      ImmutableMap<String, String> platformProperties, Predicate<Spawn> logSpawnPredicate)
-      throws IOException, InterruptedException {
-    RemoteOptions remoteOptions = Options.getDefaults(RemoteOptions.class);
-    remoteOptions.setRemoteDefaultExecPropertiesField(platformProperties.entrySet().asList());
-
-    return new CompactSpawnLogContext(
-        new BufferedOutputStream(logPath.getOutputStream()),
-        logPath.toString(),
-        execRoot.asFragment(),
-        TestConstants.WORKSPACE_NAME,
-        siblingRepositoryLayout,
-        remoteOptions,
-        DigestHashFunction.SHA256,
-        SyscallCache.NO_CACHE,
-        UUID.fromString("00000000-0000-0000-0000-000000000000"),
-        storedEventHandler,
-        logSpawnPredicate);
-  }
-
-  @Override
-  protected void closeAndAssertLog(SpawnLogContext context, SpawnExec... expected)
-      throws IOException {
-    context.close();
-
-    ArrayList<SpawnExec> actual = new ArrayList<>();
-    try (SpawnLogReconstructor reconstructor =
-        new SpawnLogReconstructor(logPath.getInputStream())) {
-      SpawnExec ex;
-      while ((ex = reconstructor.read()) != null) {
-        actual.add(ex);
-      }
+        val actual: java.util.ArrayList<SpawnExec?> = java.util.ArrayList<SpawnExec?>()
+        SpawnLogReconstructor(logPath.getInputStream()).use { reconstructor ->
+            var ex: SpawnExec?
+            while ((reconstructor.read().also { ex = it }) != null) {
+                actual.add(ex)
+            }
+        }
+        Truth.assertThat(actual).containsExactlyElementsIn(expected).inOrder()
     }
 
-    assertThat(actual).containsExactlyElementsIn(expected).inOrder();
-  }
+    @Throws(IOException::class)
+    private fun closeAndReadCompactLog(context: SpawnLogContext): com.google.common.collect.ImmutableList<Protos.ExecLogEntry?> {
+        context.close()
 
-  private ImmutableList<Protos.ExecLogEntry> closeAndReadCompactLog(SpawnLogContext context)
-      throws IOException {
-    context.close();
-
-    ImmutableList.Builder<Protos.ExecLogEntry> entries = ImmutableList.builder();
-    try (InputStream in = logPath.getInputStream();
-        ZstdInputStream zstdIn = new ZstdInputStream(in)) {
-      Protos.ExecLogEntry entry;
-      while ((entry = Protos.ExecLogEntry.parseDelimitedFrom(zstdIn)) != null) {
-        entries.add(entry);
-      }
+        val entries: com.google.common.collect.ImmutableList.Builder<Protos.ExecLogEntry?> =
+            com.google.common.collect.ImmutableList.builder<Protos.ExecLogEntry?>()
+        logPath.getInputStream().use { `in` ->
+            ZstdInputStream(`in`).use { zstdIn ->
+                var entry: Protos.ExecLogEntry?
+                while ((Protos.ExecLogEntry.parseDelimitedFrom(zstdIn).also { entry = it }) != null) {
+                    entries.add(entry)
+                }
+            }
+        }
+        return entries.build()
     }
-    return entries.build();
-  }
 }

@@ -11,233 +11,240 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.testutil
 
-package com.google.devtools.build.lib.testutil;
-
-import com.google.common.io.ByteStreams;
-import com.google.devtools.build.lib.clock.BlazeClock;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
-import java.util.Collection;
+import com.google.devtools.build.lib.vfs.DigestHashFunction
 
 /**
  * Allow tests to easily manage scratch files in a FileSystem.
  */
-public final class Scratch {
+class Scratch {
+    private val fileSystem: FileSystem
+    private var workingDir: Path? = null
 
-  private static final Charset DEFAULT_CHARSET = StandardCharsets.ISO_8859_1;
+    /**
+     * Create a new ScratchFileSystem using the [InMemoryFileSystem]
+     */
+    constructor(workingDir: String?) : this(
+        InMemoryFileSystem(
+            com.google.devtools.build.lib.clock.BlazeClock.instance(),
+            DigestHashFunction.SHA256
+        ), workingDir
+    )
 
-  private final FileSystem fileSystem;
-  private Path workingDir = null;
-
-  /**
-   * Create a new ScratchFileSystem using the {@link InMemoryFileSystem}
-   */
-  public Scratch() {
-    this(new InMemoryFileSystem(BlazeClock.instance(), DigestHashFunction.SHA256), "/");
-  }
-
-  /**
-   * Create a new ScratchFileSystem using the {@link InMemoryFileSystem}
-   */
-  public Scratch(String workingDir) {
-    this(new InMemoryFileSystem(BlazeClock.instance(), DigestHashFunction.SHA256), workingDir);
-  }
-
-  /**
-   * Create a new ScratchFileSystem using the given {@code Path}.
-   */
-  public Scratch(Path workingDir) {
-    this.fileSystem = workingDir.getFileSystem();
-    this.workingDir = workingDir;
-  }
-
-  /**
-   * Create a new ScratchFileSystem using the supplied FileSystem.
-   */
-  public Scratch(FileSystem fileSystem) {
-    this(fileSystem, "/");
-  }
-
-  /**
-   * Create a new ScratchFileSystem using the supplied FileSystem.
-   */
-  public Scratch(FileSystem fileSystem, String workingDir) {
-    this.fileSystem = fileSystem;
-    this.workingDir = fileSystem.getPath(workingDir);
-  }
-
-  /**
-   * Returns the FileSystem in use.
-   */
-  public FileSystem getFileSystem() {
-    return fileSystem;
-  }
-
-  public void setWorkingDir(String workingDir) {
-    this.workingDir = fileSystem.getPath(workingDir);
-  }
-
-  /**
-   * Resolves {@code pathName} relative to the working directory. Note that this will not create any
-   * entity in the filesystem; i.e., the file that the object is describing may not exist in the
-   * filesystem.
-   */
-  public Path resolve(String pathName) {
-    return workingDir.getRelative(pathName);
-  }
-
-  /**
-   * Resolves {@code pathName} relative to the working directory. Note that this will not create any
-   * entity in the filesystem; i.e., the file that the object is describing may not exist in the
-   * filesystem.
-   */
-  public Path resolve(PathFragment pathName) {
-    return workingDir.getRelative(pathName);
-  }
-
-  /**
-   * Create a directory in the scratch filesystem, with the given path name.
-   */
-  public Path dir(String pathName) throws IOException {
-    Path dir = resolve(pathName);
-    if (!dir.exists()) {
-      dir.createDirectoryAndParents();
+    /**
+     * Create a new ScratchFileSystem using the given `Path`.
+     */
+    constructor(workingDir: Path) {
+        this.fileSystem = workingDir.getFileSystem()
+        this.workingDir = workingDir
     }
-    if (!dir.isDirectory()) {
-      throw new IOException("Exists, but is not a directory: " + pathName);
+
+    /**
+     * Create a new ScratchFileSystem using the supplied FileSystem.
+     */
+    constructor(fileSystem: FileSystem) : this(fileSystem, "/")
+
+    /**
+     * Create a new ScratchFileSystem using the supplied FileSystem.
+     */
+    /**
+     * Create a new ScratchFileSystem using the [InMemoryFileSystem]
+     */
+    @kotlin.jvm.JvmOverloads
+    constructor(
+        fileSystem: FileSystem = InMemoryFileSystem(
+            com.google.devtools.build.lib.clock.BlazeClock.instance(),
+            DigestHashFunction.SHA256
+        ), workingDir: String? = "/"
+    ) {
+        this.fileSystem = fileSystem
+        this.workingDir = fileSystem.getPath(workingDir)
     }
-    return dir;
-  }
 
-  public Path file(String pathName, String... lines) throws IOException {
-    return file(pathName, DEFAULT_CHARSET, lines);
-  }
-
-  /**
-   * Create a scratch file in the scratch filesystem, with the given pathName, consisting of a set
-   * of lines. The method returns a Path instance for the scratch file.
-   */
-  public Path file(String pathName, Charset charset, String... lines) throws IOException {
-    Path file = newFile(pathName);
-    FileSystemUtils.writeContent(file, charset, linesAsString(lines));
-    file.setLastModifiedTime(-1L);
-    return file;
-  }
-
-  /**
-   * Create a scratch file in the given filesystem, with the given pathName, consisting of a set of
-   * lines. The method returns a Path instance for the scratch file.
-   */
-  public Path file(String pathName, byte[] content) throws IOException {
-    Path file = newFile(pathName);
-    FileSystemUtils.writeContent(file, content);
-    return file;
-  }
-
-  public String readFile(String pathName) throws IOException {
-    try (InputStream in = resolve(pathName).getInputStream()) {
-      return new String(ByteStreams.toByteArray(in), DEFAULT_CHARSET);
+    /**
+     * Returns the FileSystem in use.
+     */
+    fun getFileSystem(): FileSystem {
+        return fileSystem
     }
-  }
 
-  /** Like {@code scratch.file}, but the lines are added to the end if the file already exists. */
-  public Path appendFile(String pathName, Collection<String> lines) throws IOException {
-    return appendFile(pathName, lines.toArray(new String[lines.size()]));
-  }
-
-  /** Like {@code scratch.file}, but the lines are added to the end if the file already exists. */
-  public Path appendFile(String pathName, String... lines) throws IOException {
-    return appendFile(pathName, DEFAULT_CHARSET, lines);
-  }
-
-  /** Like {@code scratch.file}, but the lines are added to the end if the file already exists. */
-  public Path appendFile(String pathName, Charset charset, String... lines) throws IOException {
-    Path path = resolve(pathName);
-
-    StringBuilder content = new StringBuilder();
-    if (path.exists()) {
-      content.append(readFile(pathName));
-      content.append("\n");
+    fun setWorkingDir(workingDir: String?) {
+        this.workingDir = fileSystem.getPath(workingDir)
     }
-    content.append(linesAsString(lines));
 
-    return overwriteFile(pathName, content.toString());
-  }
-
-  /**
-   * Like {@code scratch.file}, but the file is first deleted if it already
-   * exists.
-   */
-  public Path overwriteFile(String pathName, Collection<String> lines)  throws IOException {
-    return overwriteFile(pathName, lines.toArray(new String[lines.size()]));
-  }
-
-  /**
-   * Like {@code scratch.file}, but the file is first deleted if it already
-   * exists.
-   */
-  public Path overwriteFile(String pathName, String... lines) throws IOException {
-    return overwriteFile(pathName, DEFAULT_CHARSET, lines);
-  }
-
-  /**
-   * Like {@code scratch.file}, but the file is first deleted if it already
-   * exists.
-   */
-  public Path overwriteFile(String pathName, Charset charset, String... lines) throws IOException {
-    Path oldFile = resolve(pathName);
-    long newMTime = oldFile.exists() ? oldFile.getLastModifiedTime() + 1 : -1;
-    oldFile.delete();
-    Path newFile = file(pathName, charset, lines);
-    newFile.setLastModifiedTime(newMTime);
-    return newFile;
-  }
-
-  /**
-   * Deletes the specified scratch file, using the same specification as {@link Path#delete}.
-   */
-  public boolean deleteFile(String pathName) throws IOException {
-    return resolve(pathName).delete();
-  }
-
-  /** Creates a new scratch file, ensuring parents exist. */
-  private Path newFile(String pathName) throws IOException {
-    Path file = resolve(pathName);
-    Path parentDir = file.getParentDirectory();
-    if (!parentDir.exists()) {
-      parentDir.createDirectoryAndParents();
+    /**
+     * Resolves `pathName` relative to the working directory. Note that this will not create any
+     * entity in the filesystem; i.e., the file that the object is describing may not exist in the
+     * filesystem.
+     */
+    fun resolve(pathName: String?): Path {
+        return workingDir.getRelative(pathName)
     }
-    if (file.exists()) {
-      throw new IOException("Could not create scratch file (file exists) "
-          + pathName);
-    }
-    return file;
-  }
 
-  /**
-   * Converts the lines into a String with linebreaks. Useful for creating
-   * in-memory input for a file, for example.
-   */
-  private static String linesAsString(String... lines) {
-    StringBuilder builder = new StringBuilder();
-    for (String line : lines) {
-      builder.append(line);
-      builder.append('\n');
+    /**
+     * Resolves `pathName` relative to the working directory. Note that this will not create any
+     * entity in the filesystem; i.e., the file that the object is describing may not exist in the
+     * filesystem.
+     */
+    fun resolve(pathName: PathFragment?): Path {
+        return workingDir.getRelative(pathName)
     }
-    return builder.toString();
-  }
 
-  public void copyFile(String sourceFile, String destFile) throws IOException {
-    String contents = readFile(sourceFile);
-    overwriteFile(destFile, contents);
-  }
+    /**
+     * Create a directory in the scratch filesystem, with the given path name.
+     */
+    @Throws(IOException::class)
+    fun dir(pathName: String?): Path {
+        val dir: Path = resolve(pathName)
+        if (!dir.exists()) {
+            dir.createDirectoryAndParents()
+        }
+        if (!dir.isDirectory()) {
+            throw IOException("Exists, but is not a directory: " + pathName)
+        }
+        return dir
+    }
+
+    @Throws(IOException::class)
+    fun file(pathName: String?, vararg lines: String?): Path {
+        return file(pathName, DEFAULT_CHARSET, *lines)
+    }
+
+    /**
+     * Create a scratch file in the scratch filesystem, with the given pathName, consisting of a set
+     * of lines. The method returns a Path instance for the scratch file.
+     */
+    @Throws(IOException::class)
+    fun file(pathName: String?, charset: java.nio.charset.Charset?, vararg lines: String?): Path {
+        val file: Path = newFile(pathName)
+        FileSystemUtils.writeContent(file, charset, linesAsString(*lines))
+        file.setLastModifiedTime(-1L)
+        return file
+    }
+
+    /**
+     * Create a scratch file in the given filesystem, with the given pathName, consisting of a set of
+     * lines. The method returns a Path instance for the scratch file.
+     */
+    @Throws(IOException::class)
+    fun file(pathName: String?, content: ByteArray?): Path {
+        val file: Path = newFile(pathName)
+        FileSystemUtils.writeContent(file, content)
+        return file
+    }
+
+    @Throws(IOException::class)
+    fun readFile(pathName: String?): String {
+        resolve(pathName).getInputStream().use { `in` ->
+            return String(com.google.common.io.ByteStreams.toByteArray(`in`), DEFAULT_CHARSET)
+        }
+    }
+
+    /** Like `scratch.file`, but the lines are added to the end if the file already exists.  */
+    @Throws(IOException::class)
+    fun appendFile(pathName: String?, lines: MutableCollection<String?>): Path {
+        return appendFile(pathName, *lines.toTypedArray<String?>())
+    }
+
+    /** Like `scratch.file`, but the lines are added to the end if the file already exists.  */
+    @Throws(IOException::class)
+    fun appendFile(pathName: String?, vararg lines: String?): Path {
+        return appendFile(pathName, DEFAULT_CHARSET, *lines)
+    }
+
+    /** Like `scratch.file`, but the lines are added to the end if the file already exists.  */
+    @Throws(IOException::class)
+    fun appendFile(pathName: String?, charset: java.nio.charset.Charset?, vararg lines: String?): Path {
+        val path: Path = resolve(pathName)
+
+        val content: java.lang.StringBuilder = java.lang.StringBuilder()
+        if (path.exists()) {
+            content.append(readFile(pathName))
+            content.append("\n")
+        }
+        content.append(linesAsString(*lines))
+
+        return overwriteFile(pathName, content.toString())
+    }
+
+    /**
+     * Like `scratch.file`, but the file is first deleted if it already
+     * exists.
+     */
+    @Throws(IOException::class)
+    fun overwriteFile(pathName: String?, lines: MutableCollection<String?>): Path {
+        return overwriteFile(pathName, *lines.toTypedArray<String?>())
+    }
+
+    /**
+     * Like `scratch.file`, but the file is first deleted if it already
+     * exists.
+     */
+    @Throws(IOException::class)
+    fun overwriteFile(pathName: String?, vararg lines: String?): Path {
+        return overwriteFile(pathName, DEFAULT_CHARSET, *lines)
+    }
+
+    /**
+     * Like `scratch.file`, but the file is first deleted if it already
+     * exists.
+     */
+    @Throws(IOException::class)
+    fun overwriteFile(pathName: String?, charset: java.nio.charset.Charset?, vararg lines: String?): Path {
+        val oldFile: Path = resolve(pathName)
+        val newMTime: Long = if (oldFile.exists()) oldFile.getLastModifiedTime() + 1 else -1
+        oldFile.delete()
+        val newFile: Path = file(pathName, charset, *lines)
+        newFile.setLastModifiedTime(newMTime)
+        return newFile
+    }
+
+    /**
+     * Deletes the specified scratch file, using the same specification as [Path.delete].
+     */
+    @Throws(IOException::class)
+    fun deleteFile(pathName: String?): Boolean {
+        return resolve(pathName).delete()
+    }
+
+    /** Creates a new scratch file, ensuring parents exist.  */
+    @Throws(IOException::class)
+    private fun newFile(pathName: String?): Path {
+        val file: Path = resolve(pathName)
+        val parentDir: Path = file.getParentDirectory()
+        if (!parentDir.exists()) {
+            parentDir.createDirectoryAndParents()
+        }
+        if (file.exists()) {
+            throw IOException(
+                "Could not create scratch file (file exists) "
+                        + pathName
+            )
+        }
+        return file
+    }
+
+    @Throws(IOException::class)
+    fun copyFile(sourceFile: String?, destFile: String?) {
+        val contents = readFile(sourceFile)
+        overwriteFile(destFile, contents)
+    }
+
+    companion object {
+        private val DEFAULT_CHARSET: java.nio.charset.Charset = java.nio.charset.StandardCharsets.ISO_8859_1
+
+        /**
+         * Converts the lines into a String with linebreaks. Useful for creating
+         * in-memory input for a file, for example.
+         */
+        private fun linesAsString(vararg lines: String?): String {
+            val builder: java.lang.StringBuilder = java.lang.StringBuilder()
+            for (line in lines) {
+                builder.append(line)
+                builder.append('\n')
+            }
+            return builder.toString()
+        }
+    }
 }

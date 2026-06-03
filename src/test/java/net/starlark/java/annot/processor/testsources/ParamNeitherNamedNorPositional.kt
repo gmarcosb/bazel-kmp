@@ -11,23 +11,20 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.annot.processor.testsources
 
-package net.starlark.java.annot.processor.testsources;
-
-import net.starlark.java.annot.Param;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.StarlarkValue;
+import net.starlark.java.eval.StarlarkValue
 
 /**
  * Test case for a StarlarkMethod method which has a parameter with is neither named nor positional.
  */
-public class ParamNeitherNamedNorPositional implements StarlarkValue {
-
-  @StarlarkMethod(
-      name = "param_neither_named_nor_positional",
-      documented = false,
-      parameters = {@Param(name = "a_parameter", named = false, positional = false)})
-  public Integer paramUndecidable(Object x) {
-    return 42;
-  }
+class ParamNeitherNamedNorPositional : StarlarkValue {
+    @StarlarkMethod(
+        name = "param_neither_named_nor_positional",
+        documented = false,
+        parameters = [net.starlark.java.annot.Param(name = "a_parameter", named = false, positional = false)]
+    )
+    fun paramUndecidable(x: Any?): Int {
+        return 42
+    }
 }

@@ -11,18 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.proto
 
-package com.google.devtools.build.lib.rules.proto;
-
-import com.google.auto.value.AutoValue;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.FilesToRunProvider;
-import com.google.devtools.build.lib.analysis.TransitiveInfoCollection;
-import com.google.devtools.build.lib.packages.StarlarkInfo;
-import com.google.devtools.build.lib.packages.StarlarkProvider;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.StarlarkList;
+import com.google.devtools.build.lib.analysis.FilesToRunProvider
 
 // Note: AutoValue v1.4-rc1 has AutoValue.CopyAnnotations which makes it work with Starlark. No need
 // to un-AutoValue this class to expose it to Starlark.
@@ -31,60 +22,58 @@ import net.starlark.java.eval.StarlarkList;
  * rules.
  */
 @AutoValue
-public abstract class ProtoLangToolchainProvider {
-  private static final String PROVIDER_NAME = "ProtoLangToolchainInfo";
+abstract class ProtoLangToolchainProvider {
+    // Format string used when passing output to the plugin used by proto compiler.
+    abstract fun outReplacementFormatFlag(): String?
 
-  public static final StarlarkProvider.Key protobufProtoLangToolchainKey =
-      new StarlarkProvider.Key(ProtoConstants.PROTO_LANG_TOOLCHAIN_INFO, PROVIDER_NAME);
+    // Format string used when passing plugin to proto compiler.
+    abstract fun pluginFormatFlag(): String?
 
-  // Format string used when passing output to the plugin used by proto compiler.
-  public abstract String outReplacementFormatFlag();
+    // Proto compiler plugin.
+    abstract fun pluginExecutable(): FilesToRunProvider?
 
-  // Format string used when passing plugin to proto compiler.
-  @Nullable
-  public abstract String pluginFormatFlag();
+    abstract fun runtime(): TransitiveInfoCollection?
 
-  // Proto compiler plugin.
-  @Nullable
-  public abstract FilesToRunProvider pluginExecutable();
+    // Proto compiler.
+    abstract fun protoc(): FilesToRunProvider?
 
-  @Nullable
-  public abstract TransitiveInfoCollection runtime();
+    abstract fun protocOpts(): com.google.common.collect.ImmutableList<String?>?
 
-  // Proto compiler.
-  public abstract FilesToRunProvider protoc();
+    // Progress message to set on the proto compiler action.
+    abstract fun progressMessage(): String?
 
-  public abstract ImmutableList<String> protocOpts();
+    // Mnemonic to set on the proto compiler action.
+    abstract fun mnemonic(): String?
 
-  // Progress message to set on the proto compiler action.
-  public abstract String progressMessage();
+    companion object {
+        private const val PROVIDER_NAME = "ProtoLangToolchainInfo"
 
-  // Mnemonic to set on the proto compiler action.
-  public abstract String mnemonic();
+        val protobufProtoLangToolchainKey: StarlarkProvider.Key =
+            Key(ProtoConstants.PROTO_LANG_TOOLCHAIN_INFO, PROVIDER_NAME)
 
-  public static ProtoLangToolchainProvider get(TransitiveInfoCollection prerequisite) {
-    StarlarkInfo provider = (StarlarkInfo) prerequisite.get(protobufProtoLangToolchainKey);
-    return wrapStarlarkProviderWithNativeProvider(provider);
-  }
+        fun get(prerequisite: TransitiveInfoCollection): ProtoLangToolchainProvider? {
+            val provider: StarlarkInfo? = prerequisite.get(protobufProtoLangToolchainKey) as StarlarkInfo?
+            return wrapStarlarkProviderWithNativeProvider(provider)
+        }
 
-  @Nullable
-  @SuppressWarnings("unchecked")
-  static ProtoLangToolchainProvider wrapStarlarkProviderWithNativeProvider(StarlarkInfo provider) {
-    if (provider != null) {
-      try {
-        return new AutoValue_ProtoLangToolchainProvider(
-            provider.getValue("out_replacement_format_flag", String.class),
-            provider.getNoneableValue("plugin_format_flag", String.class),
-            provider.getNoneableValue("plugin", FilesToRunProvider.class),
-            provider.getNoneableValue("runtime", TransitiveInfoCollection.class),
-            provider.getValue("proto_compiler", FilesToRunProvider.class),
-            ImmutableList.copyOf((StarlarkList<String>) provider.getValue("protoc_opts")),
-            provider.getValue("progress_message", String.class),
-            provider.getValue("mnemonic", String.class));
-      } catch (EvalException e) {
-        return null;
-      }
+        fun wrapStarlarkProviderWithNativeProvider(provider: StarlarkInfo?): ProtoLangToolchainProvider? {
+            if (provider != null) {
+                try {
+                    return AutoValue_ProtoLangToolchainProvider(
+                        provider.getValue("out_replacement_format_flag", String::class.java),
+                        provider.getNoneableValue("plugin_format_flag", String::class.java),
+                        provider.getNoneableValue("plugin", FilesToRunProvider::class.java),
+                        provider.getNoneableValue("runtime", TransitiveInfoCollection::class.java),
+                        provider.getValue("proto_compiler", FilesToRunProvider::class.java),
+                        com.google.common.collect.ImmutableList.< E > copyOf < E ? > (provider.getValue("protoc_opts") as StarlarkList<String?>?),
+                        provider.getValue("progress_message", String::class.java),
+                        provider.getValue("mnemonic", String::class.java)
+                    )
+                } catch (e: net.starlark.java.eval.EvalException) {
+                    return null
+                }
+            }
+            return null
+        }
     }
-    return null;
-  }
 }

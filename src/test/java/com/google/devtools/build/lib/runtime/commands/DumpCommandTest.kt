@@ -11,63 +11,53 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime.commands
 
-package com.google.devtools.build.lib.runtime.commands;
+import com.google.devtools.build.lib.runtime.BlazeCommandDispatcher
 
-import static com.google.common.truth.Truth.assertThat;
+/** Tests for [DumpCommand].  */
+@RunWith(JUnit4::class)
+class DumpCommandTest : BuildIntegrationTestCase() {
+    private var dispatcher: BlazeCommandDispatcher? = null
+    private var recordingOutErr: RecordingOutErr? = null
 
-import com.google.common.collect.Lists;
-import com.google.devtools.build.lib.buildtool.util.BuildIntegrationTestCase;
-import com.google.devtools.build.lib.runtime.BlazeCommandDispatcher;
-import com.google.devtools.build.lib.runtime.BlazeCommandResult;
-import com.google.devtools.build.lib.runtime.BlazeRuntime;
-import com.google.devtools.build.lib.util.io.RecordingOutErr;
-import java.util.Collections;
-import java.util.List;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @Before
+    fun createDispatcher() {
+        val runtime: BlazeRuntime = runtime
+        runtime.getCommandMap().put("dump", DumpCommand())
+        dispatcher = BlazeCommandDispatcher(runtime)
+    }
 
-/** Tests for {@link DumpCommand}. */
-@RunWith(JUnit4.class)
-public final class DumpCommandTest extends BuildIntegrationTestCase {
-  private BlazeCommandDispatcher dispatcher;
-  private RecordingOutErr recordingOutErr;
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun createRecording() {
+        recordingOutErr = RecordingOutErr()
+    }
 
-  @Before
-  public void createDispatcher() {
-    BlazeRuntime runtime = getRuntime();
-    runtime.getCommandMap().put("dump", new DumpCommand());
-    dispatcher = new BlazeCommandDispatcher(runtime);
-  }
+    @Throws(java.lang.InterruptedException::class)
+    private fun dump(vararg args: String?): BlazeCommandResult {
+        val params: MutableList<String?> = com.google.common.collect.Lists.newArrayList<String?>("dump")
+        Collections.addAll<String?>(params, *args)
+        return dispatcher.exec(params, "test", recordingOutErr)
+    }
 
-  @Before
-  public void createRecording() throws Exception {
-    recordingOutErr = new RecordingOutErr();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun doesNotContainWarningInStdout() {
+        assertThat(dump("--skyframe", "count").isSuccess()).isTrue()
+        com.google.common.truth.Subject.contains(DumpCommand.WARNING_MESSAGE)
+        assertThat(recordingOutErr.outAsLatin1()).doesNotContain(DumpCommand.WARNING_MESSAGE)
+    }
 
-  private BlazeCommandResult dump(String... args) throws InterruptedException {
-    List<String> params = Lists.newArrayList("dump");
-    Collections.addAll(params, args);
-    return dispatcher.exec(params, "test", recordingOutErr);
-  }
-
-  @Test
-  public void doesNotContainWarningInStdout() throws Exception {
-    assertThat(dump("--skyframe", "count").isSuccess()).isTrue();
-    assertThat(recordingOutErr.errAsLatin1()).contains(DumpCommand.WARNING_MESSAGE);
-    assertThat(recordingOutErr.outAsLatin1()).doesNotContain(DumpCommand.WARNING_MESSAGE);
-  }
-
-  @Test
-  public void multiOptionSmoke() throws Exception {
-    write("foo/BUILD", "genrule(name = 'foo', outs = ['out'], cmd = 'touch $@')");
-    addOptions("--nobuild");
-    buildTarget("//foo:foo");
-    assertThat(dump("--rule_classes", "--rules", "--skyframe", "summary").isSuccess()).isTrue();
-    assertThat(recordingOutErr.outAsLatin1()).contains("filegroup");
-    assertThat(recordingOutErr.outAsLatin1()).contains("RULE");
-    assertThat(recordingOutErr.outAsLatin1()).contains("Node count");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun multiOptionSmoke() {
+        write("foo/BUILD", "genrule(name = 'foo', outs = ['out'], cmd = 'touch $@')")
+        addOptions("--nobuild")
+        buildTarget("//foo:foo")
+        assertThat(dump("--rule_classes", "--rules", "--skyframe", "summary").isSuccess()).isTrue()
+        com.google.common.truth.Subject.contains("filegroup")
+        com.google.common.truth.Subject.contains("RULE")
+        com.google.common.truth.Subject.contains("Node count")
+    }
 }

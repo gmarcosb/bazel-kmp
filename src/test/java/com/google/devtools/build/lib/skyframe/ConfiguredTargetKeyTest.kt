@@ -11,76 +11,77 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.devtools.build.lib.analysis.config.BuildOptions.MapBackedChecksumCache;
-import com.google.devtools.build.lib.analysis.config.BuildOptions.OptionsChecksumCache;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import com.google.devtools.build.lib.analysis.config.BuildOptions.MapBackedChecksumCache
 
-@RunWith(TestParameterInjector.class)
-public final class ConfiguredTargetKeyTest extends BuildViewTestCase {
-  @Test
-  public void testCodec(@TestParameter boolean useSharedValues) throws Exception {
-    var nullConfigKey =
-        createKey(
-            /* useNullConfig= */ true,
-            /* isToolchainKey= */ false,
-            /* shouldApplyRuleTransition= */ true);
-    var keyWithConfig =
-        createKey(
-            /* useNullConfig= */ false,
-            /* isToolchainKey= */ false,
-            /* shouldApplyRuleTransition= */ true);
-    var keyWithFinalConfig =
-        createKey(
-            /* useNullConfig= */ false,
-            /* isToolchainKey= */ false,
-            /* shouldApplyRuleTransition= */ false);
-    var toolchainKey =
-        createKey(
-            /* useNullConfig= */ false,
-            /* isToolchainKey= */ true,
-            /* shouldApplyRuleTransition= */ true);
-    var toolchainKeyWithFinalConfig =
-        createKey(
-            /* useNullConfig= */ false,
-            /* isToolchainKey= */ true,
-            /* shouldApplyRuleTransition= */ false);
+@RunWith(TestParameterInjector::class)
+class ConfiguredTargetKeyTest : BuildViewTestCase() {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCodec(@TestParameter useSharedValues: Boolean) {
+        val nullConfigKey: ConfiguredTargetKey =
+            createKey( /* useNullConfig= */
+                true,  /* isToolchainKey= */
+                false,  /* shouldApplyRuleTransition= */
+                true
+            )
+        val keyWithConfig: ConfiguredTargetKey =
+            createKey( /* useNullConfig= */
+                false,  /* isToolchainKey= */
+                false,  /* shouldApplyRuleTransition= */
+                true
+            )
+        val keyWithFinalConfig: ConfiguredTargetKey =
+            createKey( /* useNullConfig= */
+                false,  /* isToolchainKey= */
+                false,  /* shouldApplyRuleTransition= */
+                false
+            )
+        val toolchainKey: ConfiguredTargetKey =
+            createKey( /* useNullConfig= */
+                false,  /* isToolchainKey= */
+                true,  /* shouldApplyRuleTransition= */
+                true
+            )
+        val toolchainKeyWithFinalConfig: ConfiguredTargetKey =
+            createKey( /* useNullConfig= */
+                false,  /* isToolchainKey= */
+                true,  /* shouldApplyRuleTransition= */
+                false
+            )
 
-    var tester =
-        new SerializationTester(
+        val tester: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            SerializationTester(
                 nullConfigKey,
                 keyWithConfig,
                 keyWithFinalConfig,
                 toolchainKey,
-                toolchainKeyWithFinalConfig)
-            .addDependency(OptionsChecksumCache.class, new MapBackedChecksumCache());
+                toolchainKeyWithFinalConfig
+            )
+                .addDependency(OptionsChecksumCache::class.java, MapBackedChecksumCache())
 
-    if (useSharedValues) {
-      tester
-          .addCodec(ConfiguredTargetKey.valueSharingCodec())
-          .makeMemoizingAndAllowFutureBlocking(true);
+        if (useSharedValues) {
+            tester
+                .addCodec(ConfiguredTargetKey.valueSharingCodec())
+                .makeMemoizingAndAllowFutureBlocking(true)
+        }
+
+        tester.runTests()
     }
 
-    tester.runTests();
-  }
-
-  private ConfiguredTargetKey createKey(
-      boolean useNullConfig, boolean isToolchainKey, boolean shouldApplyRuleTransition) {
-    var key = ConfiguredTargetKey.builder().setLabel(Label.parseCanonicalUnchecked("//p:key"));
-    if (!useNullConfig) {
-      key.setConfigurationKey(targetConfigKey);
+    private fun createKey(
+        useNullConfig: Boolean, isToolchainKey: Boolean, shouldApplyRuleTransition: Boolean
+    ): ConfiguredTargetKey {
+        val key: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            ConfiguredTargetKey.builder().setLabel(Label.parseCanonicalUnchecked("//p:key"))
+        if (!useNullConfig) {
+            key.setConfigurationKey(targetConfigKey)
+        }
+        if (isToolchainKey) {
+            key.setExecutionPlatformLabel(Label.parseCanonicalUnchecked("//platforms:b"))
+        }
+        key.setShouldApplyRuleTransition(shouldApplyRuleTransition)
+        return key.build()
     }
-    if (isToolchainKey) {
-      key.setExecutionPlatformLabel(Label.parseCanonicalUnchecked("//platforms:b"));
-    }
-    key.setShouldApplyRuleTransition(shouldApplyRuleTransition);
-    return key.build();
-  }
 }

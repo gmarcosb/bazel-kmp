@@ -11,27 +11,23 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.profiler;
+package com.google.devtools.build.lib.profiler
 
-import static com.google.common.truth.Truth.assertThat;
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link SingleStatRecorder}. */
-@RunWith(JUnit4.class)
-public class SingleStatRecorderTest {
-
-  @Test
-  public void meanAndStandardDeviation() {
-    SingleStatRecorder recorder = new SingleStatRecorder(null, 2);
-    recorder.addStat(43, null);
-    recorder.addStat(49, null);
-    recorder.addStat(51, null);
-    recorder.addStat(57, null);
-    MetricData metrics = recorder.snapshot();
-    assertThat(metrics.avg).isWithin(.01).of(50);
-    assertThat(metrics.stdDev).isWithin(.01).of(5);
-  }
+/** Tests for [SingleStatRecorder].  */
+@RunWith(JUnit4::class)
+class SingleStatRecorderTest {
+    @org.junit.Test
+    fun meanAndStandardDeviation() {
+        val recorder: SingleStatRecorder = SingleStatRecorder(null, 2)
+        recorder.addStat(43, null)
+        recorder.addStat(49, null)
+        recorder.addStat(51, null)
+        recorder.addStat(57, null)
+        val metrics: MetricData = recorder.snapshot()
+        assertThat(metrics.avg).isWithin(.01).of(50)
+        assertThat(metrics.stdDev).isWithin(.01).of(5)
+    }
 }

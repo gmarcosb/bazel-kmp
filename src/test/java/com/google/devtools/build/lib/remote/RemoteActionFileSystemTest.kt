@@ -11,1259 +11,1337 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote;
+package com.google.devtools.build.lib.remote
 
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.util.concurrent.Futures.immediateVoidFuture;
-import static java.nio.charset.StandardCharsets.UTF_8;
-import static java.util.Arrays.stream;
-import static org.junit.Assert.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.argThat;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.reset;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoMoreInteractions;
+import com.google.devtools.build.lib.actions.ActionExecutionMetadata
 
-import com.google.common.base.Utf8;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.devtools.build.lib.actions.ActionExecutionMetadata;
-import com.google.devtools.build.lib.actions.ActionInputMap;
-import com.google.devtools.build.lib.actions.ActionInputPrefetcher.Priority;
-import com.google.devtools.build.lib.actions.ActionInputPrefetcher.Reason;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.Artifact.SpecialArtifact;
-import com.google.devtools.build.lib.actions.Artifact.TreeFileArtifact;
-import com.google.devtools.build.lib.actions.ArtifactRoot;
-import com.google.devtools.build.lib.actions.ArtifactRoot.RootType;
-import com.google.devtools.build.lib.actions.FileArtifactValue;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
-import com.google.devtools.build.lib.remote.options.RemoteOutputsMode;
-import com.google.devtools.build.lib.skyframe.TreeArtifactValue;
-import com.google.devtools.build.lib.testing.vfs.SpiedFileSystem;
-import com.google.devtools.build.lib.vfs.Dirent;
-import com.google.devtools.build.lib.vfs.FileStatus;
-import com.google.devtools.build.lib.vfs.FileStatusWithDigest;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.FileSystem.NotASymlinkException;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.lib.vfs.Symlinks;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.util.Map;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.mockito.stubbing.Answer;
+/** Tests for [RemoteActionFileSystem]  */
+@RunWith(TestParameterInjector::class)
+class RemoteActionFileSystemTest : RemoteActionFileSystemTestBase() {
+    private val inputFetcher: RemoteActionInputFetcher? =
+        Mockito.mock<RemoteActionInputFetcher?>(RemoteActionInputFetcher::class.java)
+    private val fs: SpiedFileSystem = SpiedFileSystem.createInMemorySpy()
+    private val execRoot: Path = fs.getPath("/exec")
+    private val sourceRoot: ArtifactRoot? = ArtifactRoot.asSourceRoot(Root.fromPath(execRoot))
+    private val outputRoot: ArtifactRoot = ArtifactRoot.asDerivedRoot(execRoot, RootType.OUTPUT, RELATIVE_OUTPUT_PATH)
 
-/** Tests for {@link RemoteActionFileSystem} */
-@RunWith(TestParameterInjector.class)
-public final class RemoteActionFileSystemTest extends RemoteActionFileSystemTestBase {
-  private static final RemoteOutputChecker DUMMY_REMOTE_OUTPUT_CHECKER =
-      new RemoteOutputChecker("build", RemoteOutputsMode.MINIMAL, ImmutableList.of());
+    internal enum class FilesystemTestParam {
+        LOCAL,
+        REMOTE;
 
-  private static final String RELATIVE_OUTPUT_PATH = "out";
-
-  private final RemoteActionInputFetcher inputFetcher = mock(RemoteActionInputFetcher.class);
-  private final SpiedFileSystem fs = SpiedFileSystem.createInMemorySpy();
-  private final Path execRoot = fs.getPath("/exec");
-  private final ArtifactRoot sourceRoot = ArtifactRoot.asSourceRoot(Root.fromPath(execRoot));
-  private final ArtifactRoot outputRoot =
-      ArtifactRoot.asDerivedRoot(execRoot, RootType.OUTPUT, RELATIVE_OUTPUT_PATH);
-
-  enum FilesystemTestParam {
-    LOCAL,
-    REMOTE;
-
-    FileSystem getFilesystem(RemoteActionFileSystem actionFs) {
-      return switch (this) {
-        case LOCAL -> actionFs.getLocalFileSystem();
-        case REMOTE -> actionFs.getRemoteOutputTree();
-      };
-    }
-  }
-
-  @Before
-  public void setUp() throws IOException {
-    outputRoot.getRoot().asPath().createDirectoryAndParents();
-  }
-
-  @Override
-  protected RemoteActionFileSystem createActionFileSystem(
-      ActionInputMap inputs, Iterable<Artifact> outputs) throws IOException {
-    doReturn(DUMMY_REMOTE_OUTPUT_CHECKER).when(inputFetcher).getRemoteOutputChecker();
-    RemoteActionFileSystem remoteActionFileSystem =
-        new RemoteActionFileSystem(
-            fs, execRoot.asFragment(), RELATIVE_OUTPUT_PATH, inputs, inputFetcher);
-    remoteActionFileSystem.updateContext(mock(ActionExecutionMetadata.class));
-    remoteActionFileSystem.createDirectoryAndParents(outputRoot.getRoot().asPath().asFragment());
-    return remoteActionFileSystem;
-  }
-
-  @Override
-  protected FileSystem getLocalFileSystem(FileSystem actionFs) {
-    return ((RemoteActionFileSystem) actionFs).getLocalFileSystem();
-  }
-
-  @Override
-  protected FileSystem getRemoteFileSystem(FileSystem actionFs) {
-    return ((RemoteActionFileSystem) actionFs).getRemoteOutputTree();
-  }
-
-  @Override
-  protected PathFragment getOutputPath(String outputRootRelativePath) {
-    return outputRoot.getRoot().asPath().getRelative(outputRootRelativePath).asFragment();
-  }
-
-  private static Answer<ListenableFuture<Void>> mockPrefetchFile(Path path, String contents) {
-    return invocationOnMock -> {
-      FileSystemUtils.writeContent(path, UTF_8, contents);
-      return immediateVoidFuture();
-    };
-  }
-
-  @Test
-  public void getInputStream_forLocalSourceFile() throws Exception {
-    // arrange
-    Artifact artifact = ActionsTestUtil.createArtifact(sourceRoot, "src");
-    FileSystem actionFs = createActionFileSystem();
-    writeLocalFile(actionFs, artifact.getPath().asFragment(), "local contents");
-
-    // act
-    Path actionFsPath = actionFs.getPath(artifact.getPath().asFragment());
-    String contents = FileSystemUtils.readContent(actionFsPath, UTF_8);
-
-    // assert
-    assertThat(actionFsPath.getFileSystem()).isSameInstanceAs(actionFs);
-    assertThat(contents).isEqualTo("local contents");
-  }
-
-  @Test
-  public void testGetInputStream_forLocalOutputFile() throws Exception {
-    // arrange
-    Artifact artifact = ActionsTestUtil.createArtifact(outputRoot, "src");
-    FileSystem actionFs = createActionFileSystem();
-    writeLocalFile(actionFs, artifact.getPath().asFragment(), "local contents");
-
-    // act
-    Path actionFsPath = actionFs.getPath(artifact.getPath().asFragment());
-    String contents = FileSystemUtils.readContent(actionFsPath, UTF_8);
-
-    // assert
-    assertThat(actionFsPath.getFileSystem()).isSameInstanceAs(actionFs);
-    assertThat(contents).isEqualTo("local contents");
-  }
-
-  @Test
-  public void testGetInputStream_forRemoteOutputFile() throws Exception {
-    // arrange
-    ActionInputMap inputs = new ActionInputMap(1);
-    Artifact artifact = createRemoteArtifact("remote-file", "remote contents", inputs);
-    FileSystem actionFs = createActionFileSystem(inputs);
-    doAnswer(mockPrefetchFile(artifact.getPath(), "remote contents"))
-        .when(inputFetcher)
-        .prefetchFiles(
-            any(),
-            any(),
-            argThat(arg -> arg.get().equals(ImmutableList.of(artifact))),
-            any(),
-            eq(Priority.CRITICAL),
-            eq(Reason.INPUTS));
-
-    // act
-    Path actionFsPath = actionFs.getPath(artifact.getPath().asFragment());
-    String contents = FileSystemUtils.readContent(actionFsPath, UTF_8);
-
-    // assert
-    assertThat(actionFsPath.getFileSystem()).isSameInstanceAs(actionFs);
-    assertThat(contents).isEqualTo("remote contents");
-    verify(inputFetcher)
-        .prefetchFiles(
-            any(),
-            any(),
-            argThat(arg -> arg.get().equals(ImmutableList.of(artifact))),
-            any(),
-            eq(Priority.CRITICAL),
-            eq(Reason.INPUTS));
-    verifyNoMoreInteractions(inputFetcher);
-  }
-
-  @Test
-  public void statAndExists_fromInputArtifactData_file() throws Exception {
-    ActionInputMap inputs = new ActionInputMap(1);
-    Artifact artifact = createLocalArtifact("local-file", "local contents", inputs);
-    PathFragment path = artifact.getPath().asFragment();
-    FileArtifactValue metadata = checkNotNull(inputs.getInputMetadata(artifact));
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem(inputs);
-
-    assertThat(actionFs.exists(path, /* followSymlinks= */ true)).isTrue();
-
-    FileStatus st = actionFs.stat(path, /* followSymlinks= */ true);
-    assertThat(st.isFile).isTrue();
-    assertThat(st).isInstanceOf(FileStatusWithDigest.class);
-    assertThat(((FileStatusWithDigest) st).digest).isEqualTo(metadata.getDigest());
-  }
-
-  @Test
-  public void statAndExists_fromInputArtifactData_treeSubDir() throws Exception {
-    ActionInputMap inputs = new ActionInputMap(1);
-    SpecialArtifact tree =
-        createLocalTreeArtifact("tree", ImmutableMap.of("subdir/file", ""), inputs);
-    PathFragment path = tree.getPath().getChild("subdir").asFragment();
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem(inputs);
-
-    assertThat(actionFs.exists(path, /* followSymlinks= */ true)).isTrue();
-
-    FileStatus st = actionFs.stat(path, /* followSymlinks= */ true);
-    assertThat(st.isDirectory).isTrue();
-  }
-
-  @Test
-  public void statAndExists_fromRemoteOutputTree() throws Exception {
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem();
-    Artifact artifact = ActionsTestUtil.createArtifact(outputRoot, "out");
-    PathFragment path = artifact.getPath().asFragment();
-    FileArtifactValue metadata =
-        injectRemoteFile(actionFs, artifact.getPath().asFragment(), "remote contents");
-
-    assertThat(actionFs.exists(path, /* followSymlinks= */ true)).isTrue();
-
-    FileStatus st = actionFs.stat(path, /* followSymlinks= */ true);
-    assertThat(st.isFile).isTrue();
-    assertThat(st).isInstanceOf(FileStatusWithDigest.class);
-    assertThat(((FileStatusWithDigest) st).digest).isEqualTo(metadata.getDigest());
-  }
-
-  @Test
-  public void statAndExists_fromLocalFilesystem() throws Exception {
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem();
-    Artifact artifact = ActionsTestUtil.createArtifact(outputRoot, "out");
-    PathFragment path = artifact.getPath().asFragment();
-    writeLocalFile(actionFs, artifact.getPath().asFragment(), "local contents");
-
-    assertThat(actionFs.exists(path)).isTrue();
-
-    FileStatus st = actionFs.stat(path, /* followSymlinks= */ true);
-    assertThat(st.isFile).isTrue();
-    assertThat(st.size).isEqualTo("local contents".getBytes(UTF_8).length);
-  }
-
-  @Test
-  public void statAndExists_followSymlinks(
-      @TestParameter FilesystemTestParam from, @TestParameter FilesystemTestParam to)
-      throws Exception {
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem();
-    FileSystem fromFs = from.getFilesystem(actionFs);
-    FileSystem toFs = to.getFilesystem(actionFs);
-
-    PathFragment linkPath = getOutputPath("sym");
-    PathFragment targetPath = getOutputPath("target");
-    fromFs.getPath(linkPath).createSymbolicLink(execRoot.getRelative(targetPath).asFragment());
-
-    assertThat(actionFs.exists(linkPath, /* followSymlinks= */ false)).isTrue();
-    assertThat(actionFs.exists(linkPath, /* followSymlinks= */ true)).isFalse();
-    assertThat(actionFs.stat(linkPath, /* followSymlinks= */ false).isSymbolicLink()).isTrue();
-    assertThrows(
-        FileNotFoundException.class, () -> actionFs.stat(linkPath, /* followSymlinks= */ true));
-
-    if (toFs.equals(actionFs.getLocalFileSystem())) {
-      writeLocalFile(actionFs, targetPath, "content");
-    } else {
-      injectRemoteFile(actionFs, targetPath, "content");
+        fun getFilesystem(actionFs: RemoteActionFileSystem): FileSystem {
+            return when (this) {
+                FilesystemTestParam.LOCAL -> actionFs.getLocalFileSystem()
+                FilesystemTestParam.REMOTE -> actionFs.getRemoteOutputTree()
+            }
+        }
     }
 
-    assertThat(actionFs.exists(linkPath, /* followSymlinks= */ false)).isTrue();
-    assertThat(actionFs.stat(linkPath, /* followSymlinks= */ false).isSymbolicLink()).isTrue();
-    assertThat(actionFs.exists(linkPath, /* followSymlinks= */ true)).isTrue();
-    assertThat(actionFs.stat(linkPath, /* followSymlinks= */ true).isFile()).isTrue();
-  }
-
-  @Test
-  public void statAndExists_notFound() throws Exception {
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem();
-    PathFragment path = getOutputPath("does_not_exist");
-
-    assertThat(actionFs.exists(path)).isFalse();
-
-    assertThat(actionFs.statIfFound(path, /* followSymlinks= */ true)).isNull();
-
-    assertThrows(
-        FileNotFoundException.class, () -> actionFs.stat(path, /* followSymlinks= */ true));
-  }
-
-  @Test
-  public void statAndExists_isNotDirectory() throws Exception {
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem();
-    PathFragment nonDirPath = getOutputPath("non_dir");
-    PathFragment path = nonDirPath.getChild("file");
-
-    writeLocalFile(actionFs, nonDirPath, "content");
-
-    assertThat(actionFs.exists(path)).isFalse();
-
-    assertThat(actionFs.statIfFound(path, /* followSymlinks= */ true)).isNull();
-
-    assertThrows(
-        FileNotFoundException.class, () -> actionFs.stat(path, /* followSymlinks= */ true));
-  }
-
-  @Test
-  public void statAndExists_danglingSymlink_notFound() throws Exception {
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem();
-    PathFragment path = getOutputPath("sym");
-
-    actionFs.getPath(path).createSymbolicLink(PathFragment.create("/does_not_exist"));
-
-    assertThat(actionFs.exists(path)).isFalse();
-
-    assertThat(actionFs.statIfFound(path, /* followSymlinks= */ true)).isNull();
-
-    assertThrows(
-        FileNotFoundException.class, () -> actionFs.stat(path, /* followSymlinks= */ true));
-  }
-
-  @Test
-  public void delete_deleteSymlink() throws Exception {
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem();
-
-    PathFragment linkPath = getOutputPath("link");
-    PathFragment targetPath = getOutputPath("target");
-    actionFs.getPath(linkPath).createSymbolicLink(execRoot.getRelative(targetPath).asFragment());
-    writeLocalFile(actionFs, targetPath, "content");
-
-    assertThat(actionFs.delete(linkPath)).isTrue();
-    assertThat(actionFs.exists(linkPath, /* followSymlinks= */ false)).isFalse();
-    assertThat(actionFs.exists(targetPath, /* followSymlinks= */ false)).isTrue();
-  }
-
-  @Test
-  public void delete_followSymlinks(
-      @TestParameter FilesystemTestParam from, @TestParameter FilesystemTestParam to)
-      throws Exception {
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem();
-    FileSystem fromFs = from.getFilesystem(actionFs);
-    FileSystem toFs = to.getFilesystem(actionFs);
-
-    PathFragment dirLinkPath = getOutputPath("dirLink");
-    PathFragment dirTargetPath = getOutputPath("dirTarget");
-    fromFs
-        .getPath(dirLinkPath)
-        .createSymbolicLink(execRoot.getRelative(dirTargetPath).asFragment());
-    actionFs.getPath(dirTargetPath).createDirectoryAndParents();
-
-    PathFragment naivePath = dirLinkPath.getChild("file");
-    PathFragment canonicalPath = dirTargetPath.getChild("file");
-
-    if (toFs.equals(actionFs.getLocalFileSystem())) {
-      writeLocalFile(actionFs, canonicalPath, "content");
-    } else {
-      injectRemoteFile(actionFs, canonicalPath, "content");
+    @Before
+    @Throws(IOException::class)
+    fun setUp() {
+        outputRoot.getRoot().asPath().createDirectoryAndParents()
     }
 
-    assertThat(actionFs.delete(naivePath)).isTrue();
-    assertThat(actionFs.exists(naivePath, /* followSymlinks= */ false)).isFalse();
-    assertThat(actionFs.exists(canonicalPath, /* followSymlinks= */ false)).isFalse();
-  }
-
-  @Test
-  public void delete_invalidatesResolveSymbolicLinksCache() throws Exception {
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem();
-    PathFragment linkPath = getOutputPath("sym");
-    PathFragment targetPath = getOutputPath("target");
-
-    actionFs.getPath(linkPath).getParentDirectory().createDirectoryAndParents();
-    actionFs.getPath(linkPath).createSymbolicLink(targetPath);
-    writeLocalFile(actionFs, targetPath, "content");
-
-    assertThat(actionFs.getPath(linkPath).resolveSymbolicLinks())
-        .isEqualTo(actionFs.getPath(targetPath));
-
-    assertThat(actionFs.delete(linkPath)).isTrue();
-    writeLocalFile(actionFs, linkPath, "content");
-
-    assertThat(actionFs.getPath(linkPath).resolveSymbolicLinks())
-        .isEqualTo(actionFs.getPath(linkPath));
-  }
-
-  @Test
-  public void setLastModifiedTime_forRemoteOutputTree() throws Exception {
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem();
-    Artifact artifact = ActionsTestUtil.createArtifact(outputRoot, "out");
-    PathFragment path = artifact.getPath().asFragment();
-    injectRemoteFile(actionFs, artifact.getPath().asFragment(), "remote contents");
-
-    actionFs.getPath(path).setLastModifiedTime(1234567890);
-    assertThat(actionFs.getPath(path).getLastModifiedTime()).isEqualTo(1234567890);
-  }
-
-  @Test
-  public void setLastModifiedTime_forLocalFilesystem() throws Exception {
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem();
-    Artifact artifact = ActionsTestUtil.createArtifact(outputRoot, "out");
-    PathFragment path = artifact.getPath().asFragment();
-    writeLocalFile(actionFs, artifact.getPath().asFragment(), "local contents");
-
-    actionFs.getPath(path).setLastModifiedTime(1234567890);
-    assertThat(actionFs.getPath(path).getLastModifiedTime()).isEqualTo(1234567890);
-  }
-
-  @Test
-  public void setLastModifiedTime_followSymlinks(
-      @TestParameter FilesystemTestParam from, @TestParameter FilesystemTestParam to)
-      throws Exception {
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem();
-    FileSystem fromFs = from.getFilesystem(actionFs);
-    FileSystem toFs = to.getFilesystem(actionFs);
-
-    PathFragment linkPath = getOutputPath("sym");
-    PathFragment targetPath = getOutputPath("target");
-    fromFs.getPath(linkPath).createSymbolicLink(execRoot.getRelative(targetPath).asFragment());
-
-    if (toFs.equals(actionFs.getLocalFileSystem())) {
-      writeLocalFile(actionFs, targetPath, "content");
-    } else {
-      injectRemoteFile(actionFs, targetPath, "content");
+    @Throws(IOException::class)
+    override fun createActionFileSystem(
+        inputs: ActionInputMap?, outputs: Iterable<Artifact?>?
+    ): RemoteActionFileSystem {
+        Mockito.doReturn(DUMMY_REMOTE_OUTPUT_CHECKER).`when`<Any?>(inputFetcher).getRemoteOutputChecker()
+        val remoteActionFileSystem: RemoteActionFileSystem =
+            RemoteActionFileSystem(
+                fs, execRoot.asFragment(), RELATIVE_OUTPUT_PATH, inputs, inputFetcher
+            )
+        remoteActionFileSystem.updateContext(< T > mock < T ? > (ActionExecutionMetadata::class.java))
+        remoteActionFileSystem.createDirectoryAndParents(outputRoot.getRoot().asPath().asFragment())
+        return remoteActionFileSystem
     }
 
-    actionFs.getPath(linkPath).setLastModifiedTime(1234567890);
-    assertThat(actionFs.getPath(linkPath).getLastModifiedTime()).isEqualTo(1234567890);
-    assertThat(actionFs.getPath(targetPath).getLastModifiedTime()).isEqualTo(1234567890);
-  }
-
-  @Test
-  public void getDigest_fromInputArtifactData_forLocalArtifact() throws Exception {
-    ActionInputMap inputs = new ActionInputMap(1);
-    Artifact artifact = createRemoteArtifact("file", "local contents", inputs);
-    PathFragment path = artifact.getPath().asFragment();
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem(inputs);
-
-    // Verify that we don't fall back to a slow digest.
-    reset(fs);
-    assertThat(actionFs.getFastDigest(path)).isEqualTo(getDigest("local contents"));
-    verify(fs, never()).getDigest(any());
-
-    assertThat(actionFs.getDigest(path)).isEqualTo(getDigest("local contents"));
-  }
-
-  @Test
-  public void getDigest_fromInputArtifactData_forRemoteArtifact() throws Exception {
-    ActionInputMap inputs = new ActionInputMap(1);
-    Artifact artifact = createRemoteArtifact("file", "remote contents", inputs);
-    PathFragment path = artifact.getPath().asFragment();
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem(inputs);
-
-    // Verify that we don't fall back to a slow digest.
-    reset(fs);
-    assertThat(actionFs.getFastDigest(path)).isEqualTo(getDigest("remote contents"));
-    verify(fs, never()).getDigest(any());
-
-    assertThat(actionFs.getDigest(path)).isEqualTo(getDigest("remote contents"));
-  }
-
-  @Test
-  public void getDigest_fromRemoteOutputTree() throws Exception {
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem();
-    Artifact artifact = ActionsTestUtil.createArtifact(outputRoot, "out");
-    PathFragment path = artifact.getPath().asFragment();
-    injectRemoteFile(actionFs, artifact.getPath().asFragment(), "remote contents");
-
-    assertThat(actionFs.getFastDigest(path)).isEqualTo(getDigest("remote contents"));
-    assertThat(actionFs.getDigest(path)).isEqualTo(getDigest("remote contents"));
-  }
-
-  @Test
-  public void getDigest_fromLocalFilesystem() throws Exception {
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem();
-    Artifact artifact = ActionsTestUtil.createArtifact(outputRoot, "out");
-    PathFragment path = artifact.getPath().asFragment();
-    writeLocalFile(actionFs, artifact.getPath().asFragment(), "local contents");
-
-    assertThat(actionFs.getFastDigest(path)).isNull();
-    assertThat(actionFs.getDigest(path)).isEqualTo(getDigest("local contents"));
-  }
-
-  @Test
-  public void getDigest_notFound() throws Exception {
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem();
-    Artifact artifact = ActionsTestUtil.createArtifact(outputRoot, "out");
-    PathFragment path = artifact.getPath().asFragment();
-
-    assertThrows(FileNotFoundException.class, () -> actionFs.getFastDigest(path));
-    assertThrows(FileNotFoundException.class, () -> actionFs.getDigest(path));
-  }
-
-  @Test
-  public void getDigest_followSymlinks(
-      @TestParameter FilesystemTestParam from, @TestParameter FilesystemTestParam to)
-      throws Exception {
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem();
-    FileSystem fromFs = from.getFilesystem(actionFs);
-    FileSystem toFs = to.getFilesystem(actionFs);
-
-    PathFragment linkPath = getOutputPath("sym");
-    PathFragment targetPath = getOutputPath("target");
-    fromFs.getPath(linkPath).createSymbolicLink(execRoot.getRelative(targetPath).asFragment());
-
-    if (toFs.equals(actionFs.getLocalFileSystem())) {
-      writeLocalFile(actionFs, targetPath, "content");
-      assertThat(actionFs.getFastDigest(linkPath)).isNull();
-    } else {
-      injectRemoteFile(actionFs, targetPath, "content");
-      assertThat(actionFs.getFastDigest(linkPath)).isEqualTo(getDigest("content"));
+    override fun getLocalFileSystem(actionFs: FileSystem): FileSystem {
+        return (actionFs as RemoteActionFileSystem).getLocalFileSystem()
     }
 
-    assertThat(actionFs.getDigest(linkPath)).isEqualTo(getDigest("content"));
-  }
-
-  @Test
-  public void readdir_fromRemoteOutputTree() throws Exception {
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem();
-    injectRemoteFile(actionFs, getOutputPath("dir/out1"), "contents1");
-    injectRemoteFile(actionFs, getOutputPath("dir/out2"), "contents2");
-    injectRemoteFile(actionFs, getOutputPath("dir/subdir/out3"), "contents3");
-    PathFragment dirPath = getOutputPath("dir");
-
-    assertReaddir(
-        actionFs,
-        dirPath,
-        /* followSymlinks= */ true,
-        new Dirent("out1", Dirent.Type.FILE),
-        new Dirent("out2", Dirent.Type.FILE),
-        new Dirent("subdir", Dirent.Type.DIRECTORY));
-
-    assertReaddirThrows(actionFs, getOutputPath("dir/out1"), /* followSymlinks= */ true);
-  }
-
-  @Test
-  public void readdir_fromLocalFilesystem() throws Exception {
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem();
-    writeLocalFile(actionFs, getOutputPath("dir/file"), "contents");
-    writeLocalFile(actionFs, getOutputPath("dir/subdir/file"), "contents");
-    PathFragment dirPath = getOutputPath("dir");
-
-    assertReaddir(
-        actionFs,
-        dirPath,
-        /* followSymlinks= */ true,
-        new Dirent("file", Dirent.Type.FILE),
-        new Dirent("subdir", Dirent.Type.DIRECTORY));
-
-    assertReaddirThrows(actionFs, getOutputPath("dir/out1"), /* followSymlinks= */ true);
-  }
-
-  @Test
-  public void readdir_fromInputArtifactData() throws Exception {
-    ActionInputMap inputs = new ActionInputMap(1);
-    createLocalTreeArtifact("tree", ImmutableMap.of("file", "", "dir/subdir/subfile", ""), inputs);
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem(inputs);
-
-    assertReaddir(
-        actionFs,
-        getOutputPath("tree"),
-        /* followSymlinks= */ true,
-        new Dirent("dir", Dirent.Type.DIRECTORY),
-        new Dirent("file", Dirent.Type.FILE));
-
-    assertReaddir(
-        actionFs,
-        getOutputPath("tree/dir"),
-        /* followSymlinks= */ true,
-        new Dirent("subdir", Dirent.Type.DIRECTORY));
-
-    assertReaddir(
-        actionFs,
-        getOutputPath("tree/dir/subdir"),
-        /* followSymlinks= */ true,
-        new Dirent("subfile", Dirent.Type.FILE));
-
-    assertReaddirThrows(
-        actionFs, getOutputPath("tree/dir/subdir/subfile"), /* followSymlinks= */ true);
-  }
-
-  @Test
-  public void readdir_fromInputArtifactData_emptyDir() throws Exception {
-    ActionInputMap inputs = new ActionInputMap(1);
-    createLocalTreeArtifact("tree", ImmutableMap.of(), inputs);
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem(inputs);
-
-    assertReaddir(actionFs, getOutputPath("tree"), /* followSymlinks= */ true);
-  }
-
-  @Test
-  public void readdir_fromRemoteOutputTreeAndLocalFilesystem() throws Exception {
-    ActionInputMap inputs = new ActionInputMap(1);
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem(inputs);
-    writeLocalFile(actionFs, getOutputPath("dir/out1"), "contents1");
-    injectRemoteFile(actionFs, getOutputPath("dir/out2"), "contents2");
-    PathFragment dirPath = getOutputPath("dir");
-
-    assertReaddir(
-        actionFs,
-        dirPath,
-        /* followSymlinks= */ true,
-        new Dirent("out1", Dirent.Type.FILE),
-        new Dirent("out2", Dirent.Type.FILE));
-  }
-
-  @Test
-  public void readdir_fromRemoteOutputTreeAndLocalFilesystem_emptyDir() throws Exception {
-    ActionInputMap inputs = new ActionInputMap(1);
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem(inputs);
-    PathFragment dirPath = getOutputPath("dir");
-    actionFs.getRemoteOutputTree().getPath(dirPath).createDirectoryAndParents();
-    actionFs.getLocalFileSystem().getPath(dirPath).createDirectoryAndParents();
-
-    assertReaddir(actionFs, dirPath, /* followSymlinks= */ true);
-  }
-
-  @Test
-  public void readdir_followSymlinks_forDirectory(
-      @TestParameter FilesystemTestParam from, @TestParameter FilesystemTestParam to)
-      throws Exception {
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem();
-    FileSystem fromFs = from.getFilesystem(actionFs);
-    FileSystem toFs = to.getFilesystem(actionFs);
-
-    PathFragment linkPath = getOutputPath("sym");
-    PathFragment targetPath = getOutputPath("dir");
-    PathFragment childPath = getOutputPath("dir/child");
-
-    fromFs.getPath(linkPath).createSymbolicLink(execRoot.getRelative(targetPath).asFragment());
-    toFs.getPath(targetPath).createDirectory();
-
-    if (toFs.equals(actionFs.getLocalFileSystem())) {
-      writeLocalFile(actionFs, childPath, "content");
-    } else {
-      injectRemoteFile(actionFs, childPath, "content");
+    override fun getRemoteFileSystem(actionFs: FileSystem): FileSystem {
+        return (actionFs as RemoteActionFileSystem).getRemoteOutputTree()
     }
 
-    assertReaddir(
-        actionFs, linkPath, /* followSymlinks= */ false, new Dirent("child", Dirent.Type.FILE));
-    assertReaddir(
-        actionFs, linkPath, /* followSymlinks= */ true, new Dirent("child", Dirent.Type.FILE));
-  }
-
-  @Test
-  public void readdir_followSymlinks_forDirectoryEntries(
-      @TestParameter FilesystemTestParam from, @TestParameter FilesystemTestParam to)
-      throws Exception {
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem();
-    FileSystem fromFs = from.getFilesystem(actionFs);
-    FileSystem toFs = to.getFilesystem(actionFs);
-
-    PathFragment dirPath = getOutputPath("dir");
-    PathFragment fileLinkPath = getOutputPath("dir/file_sym");
-    PathFragment fileTargetPath = getOutputPath("file_target");
-    PathFragment dirLinkPath = getOutputPath("dir/dir_sym");
-    PathFragment dirTargetPath = getOutputPath("dir_target");
-    PathFragment loopingLinkPath = getOutputPath("dir/looping_sym");
-    PathFragment danglingLinkPath = getOutputPath("dir/dangling_sym");
-
-    fromFs.getPath(dirPath).createDirectory();
-    fromFs
-        .getPath(fileLinkPath)
-        .createSymbolicLink(execRoot.getRelative(fileTargetPath).asFragment());
-    fromFs
-        .getPath(dirLinkPath)
-        .createSymbolicLink(execRoot.getRelative(dirTargetPath).asFragment());
-    fromFs
-        .getPath(loopingLinkPath)
-        .createSymbolicLink(execRoot.getRelative(loopingLinkPath).asFragment());
-    fromFs.getPath(danglingLinkPath).createSymbolicLink(PathFragment.create("/does_not_exist"));
-
-    if (toFs.equals(actionFs.getLocalFileSystem())) {
-      writeLocalFile(actionFs, fileTargetPath, "content");
-      actionFs.getLocalFileSystem().getPath(dirTargetPath).createDirectoryAndParents();
-    } else {
-      injectRemoteFile(actionFs, fileTargetPath, "content");
-      actionFs.getRemoteOutputTree().createDirectoryAndParents(dirTargetPath);
+    override fun getOutputPath(outputRootRelativePath: String?): PathFragment {
+        return outputRoot.getRoot().asPath().getRelative(outputRootRelativePath).asFragment()
     }
 
-    assertReaddir(
-        actionFs,
-        dirPath,
-        /* followSymlinks= */ false,
-        new Dirent("file_sym", Dirent.Type.SYMLINK),
-        new Dirent("dir_sym", Dirent.Type.SYMLINK),
-        new Dirent("looping_sym", Dirent.Type.SYMLINK),
-        new Dirent("dangling_sym", Dirent.Type.SYMLINK));
-    assertReaddir(
-        actionFs,
-        dirPath,
-        /* followSymlinks= */ true,
-        new Dirent("file_sym", Dirent.Type.FILE),
-        new Dirent("dir_sym", Dirent.Type.DIRECTORY),
-        new Dirent("looping_sym", Dirent.Type.UNKNOWN),
-        new Dirent("dangling_sym", Dirent.Type.UNKNOWN));
-  }
+    @get:Throws(java.lang.Exception::class)
+    @get:org.junit.Test
+    val inputStream_forLocalSourceFile: Unit
+        get() {
+            // arrange
+            val artifact: Artifact = ActionsTestUtil.createArtifact(sourceRoot, "src")
+            val actionFs: FileSystem = createActionFileSystem()
+            writeLocalFile(actionFs, artifact.getPath().asFragment(), "local contents")
 
-  @Test
-  public void readdir_nonDirectory() throws Exception {
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem();
-    Artifact artifact = ActionsTestUtil.createArtifact(outputRoot, "dir/out");
-    PathFragment path = artifact.getPath().getParentDirectory().asFragment();
+            // act
+            val actionFsPath: Path = actionFs.getPath(artifact.getPath().asFragment())
+            val contents: String? =
+                FileSystemUtils.readContent(actionFsPath, java.nio.charset.StandardCharsets.UTF_8)
 
-    writeLocalFile(actionFs, path, "content");
+            // assert
+            assertThat(actionFsPath.getFileSystem()).isSameInstanceAs(actionFs)
+            Truth.assertThat(contents).isEqualTo("local contents")
+        }
 
-    assertReaddirThrows(actionFs, path, /* followSymlinks= */ true);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGetInputStream_forLocalOutputFile() {
+        // arrange
+        val artifact: Artifact = ActionsTestUtil.createArtifact(outputRoot, "src")
+        val actionFs: FileSystem = createActionFileSystem()
+        writeLocalFile(actionFs, artifact.getPath().asFragment(), "local contents")
 
-  @Test
-  public void readdir_notFound() throws Exception {
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem();
-    Artifact artifact = ActionsTestUtil.createArtifact(outputRoot, "dir/out");
-    PathFragment path = artifact.getPath().getParentDirectory().asFragment();
+        // act
+        val actionFsPath: Path = actionFs.getPath(artifact.getPath().asFragment())
+        val contents: String? = FileSystemUtils.readContent(actionFsPath, java.nio.charset.StandardCharsets.UTF_8)
 
-    assertReaddirThrows(actionFs, path, /* followSymlinks= */ true);
-  }
-
-  private static void assertReaddir(
-      RemoteActionFileSystem actionFs,
-      PathFragment dirPath,
-      boolean followSymlinks,
-      Dirent... expected)
-      throws Exception {
-    assertThat(actionFs.readdir(dirPath, followSymlinks)).containsExactlyElementsIn(expected);
-    assertThat(actionFs.getDirectoryEntries(dirPath))
-        .containsExactlyElementsIn(
-            stream(expected).map(Dirent::getName).collect(toImmutableList()));
-  }
-
-  private static void assertReaddirThrows(
-      RemoteActionFileSystem actionFs, PathFragment dirPath, boolean followSymlinks) {
-    assertThrows(IOException.class, () -> actionFs.readdir(dirPath, followSymlinks));
-    assertThrows(IOException.class, () -> actionFs.getDirectoryEntries(dirPath));
-  }
-
-  @Test
-  public void permissions_followSymlinks(
-      @TestParameter FilesystemTestParam from, @TestParameter FilesystemTestParam to)
-      throws Exception {
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem();
-    FileSystem fromFs = from.getFilesystem(actionFs);
-    FileSystem toFs = to.getFilesystem(actionFs);
-
-    PathFragment linkPath = getOutputPath("sym");
-    PathFragment targetPath = getOutputPath("target");
-    fromFs.getPath(linkPath).createSymbolicLink(execRoot.getRelative(targetPath).asFragment());
-
-    assertThrows(FileNotFoundException.class, () -> actionFs.chmod(linkPath, 0777));
-
-    if (toFs.equals(actionFs.getLocalFileSystem())) {
-      writeLocalFile(actionFs, targetPath, "content");
-    } else {
-      injectRemoteFile(actionFs, targetPath, "content");
+        // assert
+        assertThat(actionFsPath.getFileSystem()).isSameInstanceAs(actionFs)
+        Truth.assertThat(contents).isEqualTo("local contents")
     }
 
-    // For a remote file, permissions are always 0777.
-    boolean isRemote = toFs.equals(actionFs.getRemoteOutputTree());
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGetInputStream_forRemoteOutputFile() {
+        // arrange
+        val inputs: ActionInputMap = ActionInputMap(1)
+        val artifact: Artifact = createRemoteArtifact("remote-file", "remote contents", inputs)
+        val actionFs: FileSystem = createActionFileSystem(inputs)
+        Mockito.doAnswer(mockPrefetchFile(artifact.getPath(), "remote contents"))
+            .`when`<Any?>(inputFetcher)
+            .prefetchFiles(
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.argThat<T?>(ArgumentMatcher { arg: T? ->
+                    arg.get().equals(com.google.common.collect.ImmutableList.of<E?>(artifact))
+                }),
+                ArgumentMatchers.any<T?>(),
+                < T > eq < T ? > (Priority.CRITICAL),
+        <T > eq<T?>(Reason.INPUTS))
 
-    assertThat(actionFs.getPath(linkPath).isReadable()).isTrue();
-    assertThat(actionFs.getPath(linkPath).isWritable()).isTrue();
-    assertThat(actionFs.getPath(linkPath).isExecutable()).isEqualTo(isRemote);
+        // act
+        val actionFsPath: Path = actionFs.getPath(artifact.getPath().asFragment())
+        val contents: String? = FileSystemUtils.readContent(actionFsPath, java.nio.charset.StandardCharsets.UTF_8)
 
-    actionFs.getPath(linkPath).chmod(0111);
-    assertThat(actionFs.getPath(linkPath).isReadable()).isEqualTo(isRemote);
-    assertThat(actionFs.getPath(linkPath).isWritable()).isEqualTo(isRemote);
-    assertThat(actionFs.getPath(linkPath).isExecutable()).isTrue();
-
-    actionFs.getPath(linkPath).setReadable(true);
-    actionFs.getPath(linkPath).setWritable(true);
-    actionFs.getPath(linkPath).setExecutable(false);
-    assertThat(actionFs.getPath(linkPath).isReadable()).isTrue();
-    assertThat(actionFs.getPath(linkPath).isWritable()).isTrue();
-    assertThat(actionFs.getPath(linkPath).isExecutable()).isEqualTo(isRemote);
-  }
-
-  @Test
-  public void readSymbolicLink_fromLocalFilesystem() throws Exception {
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem();
-    PathFragment filePath = getOutputPath("file");
-    PathFragment linkPath = getOutputPath("sym");
-    PathFragment targetPath = PathFragment.create("/some/path");
-    actionFs.getLocalFileSystem().getPath(linkPath).createSymbolicLink(targetPath);
-    writeLocalFile(actionFs, filePath, "contents");
-
-    assertThat(actionFs.readSymbolicLink(linkPath)).isEqualTo(targetPath);
-
-    assertThrows(NotASymlinkException.class, () -> actionFs.readSymbolicLink(filePath));
-  }
-
-  @Test
-  public void readSymbolicLink_fromRemoteFilesystem() throws Exception {
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem();
-    PathFragment filePath = getOutputPath("file");
-    PathFragment linkPath = getOutputPath("sym");
-    PathFragment targetPath = PathFragment.create("/some/path");
-    actionFs.getRemoteOutputTree().getPath(linkPath).createSymbolicLink(targetPath);
-    injectRemoteFile(actionFs, filePath, "contents");
-
-    assertThat(actionFs.readSymbolicLink(linkPath)).isEqualTo(targetPath);
-
-    assertThrows(NotASymlinkException.class, () -> actionFs.readSymbolicLink(filePath));
-  }
-
-  @Test
-  public void readSymbolicLink_fromInputArtifactData_regularFile() throws Exception {
-    ActionInputMap inputs = new ActionInputMap(1);
-    Artifact artifact = createRemoteArtifact("file", "contents", inputs);
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem(inputs);
-
-    assertThrows(
-        NotASymlinkException.class,
-        () -> actionFs.readSymbolicLink(artifact.getPath().asFragment()));
-  }
-
-  @Test
-  public void readSymbolicLink_fromInputArtifactData_treeSubDir() throws Exception {
-    ActionInputMap inputs = new ActionInputMap(1);
-    SpecialArtifact tree =
-        createRemoteTreeArtifact("tree", ImmutableMap.of("subdir/file", ""), inputs);
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem(inputs);
-
-    assertThrows(
-        NotASymlinkException.class, () -> actionFs.readSymbolicLink(tree.getPath().asFragment()));
-
-    assertThrows(
-        NotASymlinkException.class,
-        () -> actionFs.readSymbolicLink(tree.getPath().getRelative("subdir").asFragment()));
-  }
-
-  @Test
-  public void readSymbolicLink_fromInputArtifactData_unresolvedSymlink() throws Exception {
-    ActionInputMap inputs = new ActionInputMap(1);
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem(inputs);
-
-    Artifact symlink = ActionsTestUtil.createUnresolvedSymlinkArtifact(outputRoot, "symlink");
-    PathFragment targetPath = PathFragment.create("/some/path");
-    // Create symlink on the filesystem so we can digest it, then delete it to verify that its
-    // presence in the ActionInputMap is sufficient for readSymbolicLink to work. Note that this is
-    // an unrealistic scenario, as symlinks are always materialized even when produced remotely.
-    Path symlinkPath = getLocalFileSystem(actionFs).getPath(symlink.getPath().getPathString());
-    symlinkPath.createSymbolicLink(targetPath);
-    inputs.put(symlink, FileArtifactValue.createForUnresolvedSymlink(symlinkPath));
-    symlinkPath.delete();
-
-    assertThat(actionFs.readSymbolicLink(getOutputPath("symlink"))).isEqualTo(targetPath);
-  }
-
-  @Test
-  public void readSymbolicLink_notFound() throws Exception {
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem();
-    PathFragment linkPath = getOutputPath("sym");
-
-    assertThrows(FileNotFoundException.class, () -> actionFs.readSymbolicLink(linkPath));
-  }
-
-  @Test
-  public void createSymbolicLink_localFileArtifact() throws Exception {
-    // arrange
-    ActionInputMap inputs = new ActionInputMap(1);
-    Artifact localArtifact = createLocalArtifact("local-file", "local contents", inputs);
-    Artifact outputArtifact = ActionsTestUtil.createArtifact(outputRoot, "out");
-    FileSystem actionFs = createActionFileSystem(inputs);
-
-    // act
-    PathFragment linkPath = outputArtifact.getPath().asFragment();
-    PathFragment targetPath = localArtifact.getPath().asFragment();
-    Path symlinkActionFs = actionFs.getPath(linkPath);
-    symlinkActionFs.createSymbolicLink(actionFs.getPath(targetPath));
-
-    // assert
-    assertThat(symlinkActionFs.getFileSystem()).isSameInstanceAs(actionFs);
-    assertThat(symlinkActionFs.readSymbolicLink()).isEqualTo(targetPath);
-    assertThat(getLocalFileSystem(actionFs).getPath(linkPath).readSymbolicLink())
-        .isEqualTo(targetPath);
-    assertThat(getLocalFileSystem(actionFs).getPath(linkPath).readSymbolicLink())
-        .isEqualTo(targetPath);
-  }
-
-  @Test
-  public void createSymbolicLink_remoteFileArtifact() throws Exception {
-    // arrange
-    ActionInputMap inputs = new ActionInputMap(1);
-    Artifact remoteArtifact = createRemoteArtifact("remote-file", "remote contents", inputs);
-    Artifact outputArtifact = ActionsTestUtil.createArtifact(outputRoot, "out");
-    FileSystem actionFs = createActionFileSystem(inputs);
-
-    // act
-    PathFragment linkPath = outputArtifact.getPath().asFragment();
-    PathFragment targetPath = remoteArtifact.getPath().asFragment();
-    Path symlinkActionFs = actionFs.getPath(linkPath);
-    symlinkActionFs.createSymbolicLink(actionFs.getPath(targetPath));
-
-    // assert
-    assertThat(symlinkActionFs.getFileSystem()).isSameInstanceAs(actionFs);
-    assertThat(symlinkActionFs.readSymbolicLink()).isEqualTo(targetPath);
-    assertThat(outputArtifact.getPath().readSymbolicLink()).isEqualTo(targetPath);
-    assertThat(getLocalFileSystem(actionFs).getPath(linkPath).readSymbolicLink())
-        .isEqualTo(targetPath);
-    assertThat(getLocalFileSystem(actionFs).getPath(linkPath).readSymbolicLink())
-        .isEqualTo(targetPath);
-  }
-
-  @Test
-  public void createSymbolicLink_localTreeArtifact() throws Exception {
-    // arrange
-    ActionInputMap inputs = new ActionInputMap(1);
-    ImmutableMap<String, String> contentMap =
-        ImmutableMap.of("foo", "foo contents", "bar", "bar contents");
-    Artifact localArtifact = createLocalTreeArtifact("remote-dir", contentMap, inputs);
-    SpecialArtifact outputArtifact =
-        ActionsTestUtil.createTreeArtifactWithGeneratingAction(outputRoot, "out");
-    FileSystem actionFs = createActionFileSystem(inputs);
-
-    // act
-    PathFragment linkPath = outputArtifact.getPath().asFragment();
-    PathFragment targetPath = localArtifact.getPath().asFragment();
-    Path symlinkActionFs = actionFs.getPath(linkPath);
-    symlinkActionFs.createSymbolicLink(actionFs.getPath(targetPath));
-
-    // assert
-    assertThat(symlinkActionFs.getFileSystem()).isSameInstanceAs(actionFs);
-    assertThat(symlinkActionFs.readSymbolicLink()).isEqualTo(targetPath);
-    assertThat(getLocalFileSystem(actionFs).getPath(linkPath).readSymbolicLink())
-        .isEqualTo(targetPath);
-    assertThat(getLocalFileSystem(actionFs).getPath(linkPath).readSymbolicLink())
-        .isEqualTo(targetPath);
-  }
-
-  @Test
-  public void createSymbolicLink_remoteTreeArtifact() throws Exception {
-    // arrange
-    ActionInputMap inputs = new ActionInputMap(1);
-    ImmutableMap<String, String> contentMap =
-        ImmutableMap.of("foo", "foo contents", "bar", "bar contents");
-    Artifact remoteArtifact = createRemoteTreeArtifact("remote-dir", contentMap, inputs);
-    SpecialArtifact outputArtifact =
-        ActionsTestUtil.createTreeArtifactWithGeneratingAction(outputRoot, "out");
-    FileSystem actionFs = createActionFileSystem(inputs);
-
-    // act
-    PathFragment linkPath = outputArtifact.getPath().asFragment();
-    PathFragment targetPath = remoteArtifact.getPath().asFragment();
-    Path symlinkActionFs = actionFs.getPath(linkPath);
-    symlinkActionFs.createSymbolicLink(actionFs.getPath(targetPath));
-
-    // assert
-    assertThat(symlinkActionFs.getFileSystem()).isSameInstanceAs(actionFs);
-    assertThat(symlinkActionFs.readSymbolicLink()).isEqualTo(targetPath);
-    assertThat(getLocalFileSystem(actionFs).getPath(linkPath).readSymbolicLink())
-        .isEqualTo(targetPath);
-    assertThat(getLocalFileSystem(actionFs).getPath(linkPath).readSymbolicLink())
-        .isEqualTo(targetPath);
-  }
-
-  @Test
-  public void createSymbolicLink_unresolvedSymlink() throws Exception {
-    // arrange
-    ActionInputMap inputs = new ActionInputMap(1);
-    SpecialArtifact outputArtifact =
-        ActionsTestUtil.createUnresolvedSymlinkArtifact(outputRoot, "out");
-    FileSystem actionFs = createActionFileSystem(inputs);
-    PathFragment targetPath = PathFragment.create("some/path");
-
-    // act
-    PathFragment linkPath = outputArtifact.getPath().asFragment();
-    Path symlinkActionFs = actionFs.getPath(linkPath);
-    symlinkActionFs.createSymbolicLink(targetPath);
-
-    // assert
-    assertThat(symlinkActionFs.getFileSystem()).isSameInstanceAs(actionFs);
-    assertThat(symlinkActionFs.readSymbolicLink()).isEqualTo(targetPath);
-    assertThat(getLocalFileSystem(actionFs).getPath(linkPath).readSymbolicLink())
-        .isEqualTo(targetPath);
-    assertThat(getLocalFileSystem(actionFs).getPath(linkPath).readSymbolicLink())
-        .isEqualTo(targetPath);
-  }
-
-  @Test
-  public void createAndReadSymbolicLink_followSymlinks(@TestParameter FilesystemTestParam from)
-      throws Exception {
-    // createSymbolicLink writes to both the local and remote filesystem, so it makes no sense to
-    // parameterize on the symlink's destination filesystem.
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem();
-    FileSystem fromFs = from.getFilesystem(actionFs);
-
-    PathFragment parentLinkPath = getOutputPath("parent_link");
-    PathFragment parentTargetPath = getOutputPath("parent_target");
-    fromFs
-        .getPath(parentLinkPath)
-        .createSymbolicLink(execRoot.getRelative(parentTargetPath).asFragment());
-    actionFs.getPath(parentTargetPath).createDirectoryAndParents();
-
-    PathFragment linkPath = getOutputPath("parent_target/link");
-    PathFragment targetPath = PathFragment.create("/some/path");
-    actionFs.getPath(linkPath).createSymbolicLink(targetPath);
-
-    assertThat(actionFs.getPath(linkPath).readSymbolicLink()).isEqualTo(targetPath);
-  }
-
-  @Test
-  public void resolveSymbolicLinks(
-      @TestParameter FilesystemTestParam a, @TestParameter FilesystemTestParam b) throws Exception {
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem();
-    FileSystem aFs = a.getFilesystem(actionFs);
-    FileSystem bFs = b.getFilesystem(actionFs);
-
-    // /a
-    //  |- asub
-    //  |  `- afile
-    //  `- abssym -> /b/bsub
-    //  `- relsym -> asub
-    // /b
-    //  `- bsub
-    //     `- bfile
-
-    aFs.getPath(getOutputPath("a/asub")).createDirectoryAndParents();
-    aFs.getPath(getOutputPath("a/abssym")).createSymbolicLink(getOutputPath("b/bsub"));
-    aFs.getPath(getOutputPath("a/relsym")).createSymbolicLink(PathFragment.create("asub"));
-    if (aFs.equals(actionFs.getLocalFileSystem())) {
-      writeLocalFile(actionFs, getOutputPath("a/asub/afile"), "content");
-    } else {
-      injectRemoteFile(actionFs, getOutputPath("a/asub/afile"), "content");
+        // assert
+        assertThat(actionFsPath.getFileSystem()).isSameInstanceAs(actionFs)
+        Truth.assertThat(contents).isEqualTo("remote contents")
+        Mockito.verify<Any?>(inputFetcher)
+            .prefetchFiles(
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.argThat<T?>(ArgumentMatcher { arg: T? ->
+                    arg.get().equals(com.google.common.collect.ImmutableList.of<E?>(artifact))
+                }),
+                ArgumentMatchers.any<T?>(),
+                < T > eq < T ? > (Priority.CRITICAL),
+        <T > eq<T?>(Reason.INPUTS))
+        Mockito.verifyNoMoreInteractions(inputFetcher)
     }
 
-    bFs.getPath(getOutputPath("b/bsub")).createDirectoryAndParents();
-    if (bFs.equals(actionFs.getLocalFileSystem())) {
-      writeLocalFile(actionFs, getOutputPath("b/bsub/bfile"), "content");
-    } else {
-      injectRemoteFile(actionFs, getOutputPath("b/bsub/bfile"), "content");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun statAndExists_fromInputArtifactData_file() {
+        val inputs: ActionInputMap = ActionInputMap(1)
+        val artifact: Artifact = createLocalArtifact("local-file", "local contents", inputs)
+        val path: PathFragment? = artifact.getPath().asFragment()
+        val metadata: FileArtifactValue =
+            com.google.common.base.Preconditions.checkNotNull<T>(inputs.getInputMetadata(artifact))
+        val actionFs: RemoteActionFileSystem = createActionFileSystem(inputs) as RemoteActionFileSystem
+
+        assertThat(actionFs.exists(path,  /* followSymlinks= */true)).isTrue()
+
+        val st: FileStatus = actionFs.stat(path,  /* followSymlinks= */true)
+        assertThat(st.isFile).isTrue()
+        assertThat(st).isInstanceOf(FileStatusWithDigest::class.java)
+        assertThat((st as FileStatusWithDigest).digest).isEqualTo(metadata.getDigest())
     }
 
-    assertThat(actionFs.getPath(getOutputPath("a/relsym/afile")).resolveSymbolicLinks())
-        .isEqualTo(actionFs.getPath(getOutputPath("a/asub/afile")));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun statAndExists_fromInputArtifactData_treeSubDir() {
+        val inputs: ActionInputMap = ActionInputMap(1)
+        val tree: SpecialArtifact =
+            createLocalTreeArtifact(
+                "tree",
+                com.google.common.collect.ImmutableMap.of<String?, String?>("subdir/file", ""),
+                inputs
+            )
+        val path: PathFragment? = tree.getPath().getChild("subdir").asFragment()
+        val actionFs: RemoteActionFileSystem = createActionFileSystem(inputs) as RemoteActionFileSystem
 
-    assertThrows(
-        FileNotFoundException.class,
-        () -> actionFs.getPath(getOutputPath("a/bsub/nofile")).resolveSymbolicLinks());
+        assertThat(actionFs.exists(path,  /* followSymlinks= */true)).isTrue()
 
-    assertThat(actionFs.getPath(getOutputPath("a/abssym/bfile")).resolveSymbolicLinks())
-        .isEqualTo(actionFs.getPath(getOutputPath("b/bsub/bfile")));
-
-    assertThrows(
-        FileNotFoundException.class,
-        () -> actionFs.getPath(getOutputPath("b/bsub/nofile")).resolveSymbolicLinks());
-  }
-
-  @Test
-  public void renameTo_onlyLocalFile_renameLocalFile() throws Exception {
-    FileSystem actionFs = createActionFileSystem();
-    PathFragment path = getOutputPath("file");
-    writeLocalFile(actionFs, path, "local-content");
-    PathFragment newPath = getOutputPath("file-new");
-
-    actionFs.renameTo(path, newPath);
-
-    assertThat(actionFs.exists(path)).isFalse();
-    assertThat(actionFs.exists(newPath)).isTrue();
-    assertThat(getLocalFileSystem(actionFs).exists(path)).isFalse();
-    assertThat(getLocalFileSystem(actionFs).exists(newPath)).isTrue();
-  }
-
-  @Test
-  public void renameTo_moveSymlink() throws Exception {
-    FileSystem actionFs = createActionFileSystem();
-    PathFragment oldLinkPath = getOutputPath("oldLink");
-    PathFragment newLinkPath = getOutputPath("newLink");
-    PathFragment targetPath = getOutputPath("target");
-    actionFs.getPath(oldLinkPath).createSymbolicLink(execRoot.getRelative(targetPath).asFragment());
-    writeLocalFile(actionFs, targetPath, "content");
-
-    actionFs.renameTo(oldLinkPath, newLinkPath);
-
-    assertThat(actionFs.getPath(oldLinkPath).exists(Symlinks.NOFOLLOW)).isFalse();
-    assertThat(actionFs.getPath(newLinkPath).exists(Symlinks.NOFOLLOW)).isTrue();
-    assertThat(actionFs.getPath(newLinkPath).readSymbolicLink()).isEqualTo(targetPath);
-    assertThat(actionFs.getPath(targetPath).exists()).isTrue();
-  }
-
-  @Test
-  public void renameTo_followSymlinks(
-      @TestParameter FilesystemTestParam from, @TestParameter FilesystemTestParam to)
-      throws Exception {
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem();
-    FileSystem fromFs = from.getFilesystem(actionFs);
-    FileSystem toFs = to.getFilesystem(actionFs);
-
-    PathFragment srcDirLinkPath = getOutputPath("srcDirLink");
-    PathFragment srcDirTargetPath = getOutputPath("srcDirTarget");
-    PathFragment naiveSrcPath = srcDirLinkPath.getChild("oldFile");
-    PathFragment canonicalSrcPath = srcDirTargetPath.getChild("oldFile");
-
-    PathFragment dstDirLinkPath = getOutputPath("dstDirLink");
-    PathFragment dstDirTargetPath = getOutputPath("dstDirTarget");
-    PathFragment naiveDstPath = dstDirLinkPath.getChild("newFile");
-    PathFragment canonicalDstPath = dstDirTargetPath.getChild("newFile");
-
-    actionFs.getPath(srcDirTargetPath).createDirectoryAndParents();
-    actionFs.getPath(dstDirTargetPath).createDirectoryAndParents();
-
-    fromFs
-        .getPath(srcDirLinkPath)
-        .createSymbolicLink(execRoot.getRelative(srcDirTargetPath).asFragment());
-    fromFs
-        .getPath(dstDirLinkPath)
-        .createSymbolicLink(execRoot.getRelative(dstDirTargetPath).asFragment());
-
-    if (toFs.equals(actionFs.getLocalFileSystem())) {
-      writeLocalFile(actionFs, canonicalSrcPath, "content");
-    } else {
-      injectRemoteFile(actionFs, canonicalSrcPath, "content");
+        val st: FileStatus = actionFs.stat(path,  /* followSymlinks= */true)
+        assertThat(st.isDirectory).isTrue()
     }
 
-    actionFs.renameTo(naiveSrcPath, naiveDstPath);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun statAndExists_fromRemoteOutputTree() {
+        val actionFs: RemoteActionFileSystem = createActionFileSystem() as RemoteActionFileSystem
+        val artifact: Artifact = ActionsTestUtil.createArtifact(outputRoot, "out")
+        val path: PathFragment? = artifact.getPath().asFragment()
+        val metadata: FileArtifactValue =
+            injectRemoteFile(actionFs, artifact.getPath().asFragment(), "remote contents")
 
-    assertThat(actionFs.exists(naiveSrcPath)).isFalse();
-    assertThat(actionFs.exists(canonicalSrcPath)).isFalse();
-    assertThat(actionFs.exists(naiveDstPath)).isTrue();
-    assertThat(actionFs.exists(canonicalDstPath)).isTrue();
-  }
+        assertThat(actionFs.exists(path,  /* followSymlinks= */true)).isTrue()
 
-  @Test
-  public void renameTo_invalidatesResolveSymbolicLinksCache() throws Exception {
-    RemoteActionFileSystem actionFs = (RemoteActionFileSystem) createActionFileSystem();
-    PathFragment linkPath = getOutputPath("sym");
-    PathFragment targetPath = getOutputPath("target");
-    PathFragment renamedPath = getOutputPath("renamed");
-
-    actionFs.getPath(linkPath).getParentDirectory().createDirectoryAndParents();
-    actionFs.getPath(linkPath).createSymbolicLink(targetPath);
-    writeLocalFile(actionFs, targetPath, "content");
-
-    assertThat(actionFs.getPath(linkPath).resolveSymbolicLinks())
-        .isEqualTo(actionFs.getPath(targetPath));
-
-    actionFs.renameTo(linkPath, renamedPath);
-    writeLocalFile(actionFs, linkPath, "content");
-
-    assertThat(actionFs.getPath(linkPath).resolveSymbolicLinks())
-        .isEqualTo(actionFs.getPath(linkPath));
-  }
-
-  @Override
-  @CanIgnoreReturnValue
-  protected FileArtifactValue injectRemoteFile(
-      FileSystem actionFs, PathFragment path, String content) throws IOException {
-    byte[] digest = getDigest(content);
-    int size = Utf8.encodedLength(content);
-    ((RemoteActionFileSystem) actionFs)
-        .injectRemoteFile(path, digest, size, /* expirationTime= */ null);
-    return FileArtifactValue.createForRemoteFileWithMaterializationData(
-        digest, size, /* locationIndex= */ 1, /* expirationTime= */ null);
-  }
-
-  @Override
-  protected void writeLocalFile(FileSystem actionFs, PathFragment path, String content)
-      throws IOException {
-    FileSystem localFs = getLocalFileSystem(actionFs);
-    localFs.getPath(path).getParentDirectory().createDirectoryAndParents();
-    FileSystemUtils.writeContent(localFs.getPath(path), UTF_8, content);
-  }
-
-  /** Returns a remote artifact and puts its metadata into the action input map. */
-  private Artifact createRemoteArtifact(
-      String pathFragment, String content, ActionInputMap inputs) {
-    Artifact a = ActionsTestUtil.createArtifact(outputRoot, pathFragment);
-    FileArtifactValue f =
-        FileArtifactValue.createForRemoteFileWithMaterializationData(
-            getDigest(content),
-            Utf8.encodedLength(content),
-            /* locationIndex= */ 1,
-            /* expirationTime= */ null);
-    inputs.put(a, f);
-    return a;
-  }
-
-  /** Returns a remote tree artifact and puts its metadata into the action input map. */
-  private SpecialArtifact createRemoteTreeArtifact(
-      String pathFragment, Map<String, String> contentMap, ActionInputMap inputs) {
-    SpecialArtifact a =
-        ActionsTestUtil.createTreeArtifactWithGeneratingAction(outputRoot, pathFragment);
-    inputs.putTreeArtifact(a, createRemoteTreeArtifactValue(a, contentMap));
-    return a;
-  }
-
-  private TreeArtifactValue createRemoteTreeArtifactValue(
-      SpecialArtifact a, Map<String, String> contentMap) {
-    TreeArtifactValue.Builder builder = TreeArtifactValue.newBuilder(a);
-    for (Map.Entry<String, String> entry : contentMap.entrySet()) {
-      TreeFileArtifact child = TreeFileArtifact.createTreeOutput(a, entry.getKey());
-      String content = entry.getValue();
-      FileArtifactValue childMeta =
-          FileArtifactValue.createForRemoteFileWithMaterializationData(
-              getDigest(content),
-              Utf8.encodedLength(content),
-              /* locationIndex= */ 0,
-              /* expirationTime= */ null);
-      builder.putChild(child, childMeta);
+        val st: FileStatus = actionFs.stat(path,  /* followSymlinks= */true)
+        assertThat(st.isFile).isTrue()
+        assertThat(st).isInstanceOf(FileStatusWithDigest::class.java)
+        assertThat((st as FileStatusWithDigest).digest).isEqualTo(metadata.getDigest())
     }
-    return builder.build();
-  }
 
-  /** Returns a local artifact and puts its metadata into the action input map. */
-  private Artifact createLocalArtifact(String pathFragment, String contents, ActionInputMap inputs)
-      throws IOException {
-    Path p = outputRoot.getRoot().asPath().getRelative(pathFragment);
-    FileSystemUtils.writeContent(p, UTF_8, contents);
-    Artifact a = ActionsTestUtil.createArtifact(outputRoot, p);
-    Path path = a.getPath();
-    // Caution: there's a race condition between stating the file and computing the
-    // digest. We need to stat first, since we're using the stat to detect changes.
-    // We follow symlinks here to be consistent with getDigest.
-    inputs.put(
-        a,
-        FileArtifactValue.createFromStat(path, path.stat(Symlinks.FOLLOW), SyscallCache.NO_CACHE));
-    return a;
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun statAndExists_fromLocalFilesystem() {
+        val actionFs: RemoteActionFileSystem = createActionFileSystem() as RemoteActionFileSystem
+        val artifact: Artifact = ActionsTestUtil.createArtifact(outputRoot, "out")
+        val path: PathFragment? = artifact.getPath().asFragment()
+        writeLocalFile(actionFs, artifact.getPath().asFragment(), "local contents")
 
-  /** Returns a local tree artifact and puts its metadata into the action input map. */
-  @CanIgnoreReturnValue
-  private SpecialArtifact createLocalTreeArtifact(
-      String pathFragment, Map<String, String> contentMap, ActionInputMap inputs)
-      throws IOException {
-    Path dir = outputRoot.getRoot().asPath().getRelative(pathFragment);
-    dir.createDirectoryAndParents();
-    for (Map.Entry<String, String> entry : contentMap.entrySet()) {
-      Path child = dir.getRelative(entry.getKey());
-      child.getParentDirectory().createDirectoryAndParents();
-      FileSystemUtils.writeContent(child, entry.getValue().getBytes(UTF_8));
+        assertThat(actionFs.exists(path)).isTrue()
+
+        val st: FileStatus = actionFs.stat(path,  /* followSymlinks= */true)
+        assertThat(st.isFile).isTrue()
+        assertThat(st.size).isEqualTo("local contents".toByteArray(java.nio.charset.StandardCharsets.UTF_8).size)
     }
-    SpecialArtifact a =
-        ActionsTestUtil.createTreeArtifactWithGeneratingAction(outputRoot, pathFragment);
-    inputs.putTreeArtifact(a, createLocalTreeArtifactValue(a, contentMap));
-    return a;
-  }
 
-  private static TreeArtifactValue createLocalTreeArtifactValue(
-      SpecialArtifact a, Map<String, String> contentMap) throws IOException {
-    TreeArtifactValue.Builder builder = TreeArtifactValue.newBuilder(a);
-    for (String name : contentMap.keySet()) {
-      Path path = a.getPath().getRelative(name);
-      TreeFileArtifact child = TreeFileArtifact.createTreeOutput(a, name);
-      FileArtifactValue childMeta =
-          FileArtifactValue.createFromStat(path, path.stat(Symlinks.FOLLOW), SyscallCache.NO_CACHE);
-      builder.putChild(child, childMeta);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun statAndExists_followSymlinks(
+        @TestParameter from: FilesystemTestParam, @TestParameter to: FilesystemTestParam
+    ) {
+        val actionFs: RemoteActionFileSystem = createActionFileSystem() as RemoteActionFileSystem
+        val fromFs: FileSystem = from.getFilesystem(actionFs)
+        val toFs: FileSystem = to.getFilesystem(actionFs)
+
+        val linkPath: PathFragment = getOutputPath("sym")
+        val targetPath: PathFragment = getOutputPath("target")
+        fromFs.getPath(linkPath).createSymbolicLink(execRoot.getRelative(targetPath).asFragment())
+
+        assertThat(actionFs.exists(linkPath,  /* followSymlinks= */false)).isTrue()
+        assertThat(actionFs.exists(linkPath,  /* followSymlinks= */true)).isFalse()
+        assertThat(actionFs.stat(linkPath,  /* followSymlinks= */false).isSymbolicLink()).isTrue()
+        org.junit.Assert.assertThrows<FileNotFoundException?>(
+            FileNotFoundException::class.java,
+            org.junit.function.ThrowingRunnable { actionFs.stat(linkPath,  /* followSymlinks= */true) })
+
+        if (toFs.equals(actionFs.getLocalFileSystem())) {
+            writeLocalFile(actionFs, targetPath, "content")
+        } else {
+            injectRemoteFile(actionFs, targetPath, "content")
+        }
+
+        assertThat(actionFs.exists(linkPath,  /* followSymlinks= */false)).isTrue()
+        assertThat(actionFs.stat(linkPath,  /* followSymlinks= */false).isSymbolicLink()).isTrue()
+        assertThat(actionFs.exists(linkPath,  /* followSymlinks= */true)).isTrue()
+        assertThat(actionFs.stat(linkPath,  /* followSymlinks= */true).isFile()).isTrue()
     }
-    return builder.build();
-  }
 
-  private byte[] getDigest(String content) {
-    return fs.getDigestFunction().getHashFunction().hashString(content, UTF_8).asBytes();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun statAndExists_notFound() {
+        val actionFs: RemoteActionFileSystem = createActionFileSystem() as RemoteActionFileSystem
+        val path: PathFragment = getOutputPath("does_not_exist")
+
+        assertThat(actionFs.exists(path)).isFalse()
+
+        assertThat(actionFs.statIfFound(path,  /* followSymlinks= */true)).isNull()
+
+        org.junit.Assert.assertThrows<FileNotFoundException?>(
+            FileNotFoundException::class.java,
+            org.junit.function.ThrowingRunnable { actionFs.stat(path,  /* followSymlinks= */true) })
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun statAndExists_isNotDirectory() {
+        val actionFs: RemoteActionFileSystem = createActionFileSystem() as RemoteActionFileSystem
+        val nonDirPath: PathFragment = getOutputPath("non_dir")
+        val path: PathFragment? = nonDirPath.getChild("file")
+
+        writeLocalFile(actionFs, nonDirPath, "content")
+
+        assertThat(actionFs.exists(path)).isFalse()
+
+        assertThat(actionFs.statIfFound(path,  /* followSymlinks= */true)).isNull()
+
+        org.junit.Assert.assertThrows<FileNotFoundException?>(
+            FileNotFoundException::class.java,
+            org.junit.function.ThrowingRunnable { actionFs.stat(path,  /* followSymlinks= */true) })
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun statAndExists_danglingSymlink_notFound() {
+        val actionFs: RemoteActionFileSystem = createActionFileSystem() as RemoteActionFileSystem
+        val path: PathFragment = getOutputPath("sym")
+
+        actionFs.getPath(path).createSymbolicLink(PathFragment.create("/does_not_exist"))
+
+        assertThat(actionFs.exists(path)).isFalse()
+
+        assertThat(actionFs.statIfFound(path,  /* followSymlinks= */true)).isNull()
+
+        org.junit.Assert.assertThrows<FileNotFoundException?>(
+            FileNotFoundException::class.java,
+            org.junit.function.ThrowingRunnable { actionFs.stat(path,  /* followSymlinks= */true) })
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun delete_deleteSymlink() {
+        val actionFs: RemoteActionFileSystem = createActionFileSystem() as RemoteActionFileSystem
+
+        val linkPath: PathFragment = getOutputPath("link")
+        val targetPath: PathFragment = getOutputPath("target")
+        actionFs.getPath(linkPath).createSymbolicLink(execRoot.getRelative(targetPath).asFragment())
+        writeLocalFile(actionFs, targetPath, "content")
+
+        assertThat(actionFs.delete(linkPath)).isTrue()
+        assertThat(actionFs.exists(linkPath,  /* followSymlinks= */false)).isFalse()
+        assertThat(actionFs.exists(targetPath,  /* followSymlinks= */false)).isTrue()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun delete_followSymlinks(
+        @TestParameter from: FilesystemTestParam, @TestParameter to: FilesystemTestParam
+    ) {
+        val actionFs: RemoteActionFileSystem = createActionFileSystem() as RemoteActionFileSystem
+        val fromFs: FileSystem = from.getFilesystem(actionFs)
+        val toFs: FileSystem = to.getFilesystem(actionFs)
+
+        val dirLinkPath: PathFragment = getOutputPath("dirLink")
+        val dirTargetPath: PathFragment = getOutputPath("dirTarget")
+        fromFs
+            .getPath(dirLinkPath)
+            .createSymbolicLink(execRoot.getRelative(dirTargetPath).asFragment())
+        actionFs.getPath(dirTargetPath).createDirectoryAndParents()
+
+        val naivePath: PathFragment? = dirLinkPath.getChild("file")
+        val canonicalPath: PathFragment? = dirTargetPath.getChild("file")
+
+        if (toFs.equals(actionFs.getLocalFileSystem())) {
+            writeLocalFile(actionFs, canonicalPath, "content")
+        } else {
+            injectRemoteFile(actionFs, canonicalPath, "content")
+        }
+
+        assertThat(actionFs.delete(naivePath)).isTrue()
+        assertThat(actionFs.exists(naivePath,  /* followSymlinks= */false)).isFalse()
+        assertThat(actionFs.exists(canonicalPath,  /* followSymlinks= */false)).isFalse()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun delete_invalidatesResolveSymbolicLinksCache() {
+        val actionFs: RemoteActionFileSystem = createActionFileSystem() as RemoteActionFileSystem
+        val linkPath: PathFragment = getOutputPath("sym")
+        val targetPath: PathFragment = getOutputPath("target")
+
+        actionFs.getPath(linkPath).getParentDirectory().createDirectoryAndParents()
+        actionFs.getPath(linkPath).createSymbolicLink(targetPath)
+        writeLocalFile(actionFs, targetPath, "content")
+
+        assertThat(actionFs.getPath(linkPath).resolveSymbolicLinks())
+            .isEqualTo(actionFs.getPath(targetPath))
+
+        assertThat(actionFs.delete(linkPath)).isTrue()
+        writeLocalFile(actionFs, linkPath, "content")
+
+        assertThat(actionFs.getPath(linkPath).resolveSymbolicLinks())
+            .isEqualTo(actionFs.getPath(linkPath))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun setLastModifiedTime_forRemoteOutputTree() {
+        val actionFs: RemoteActionFileSystem = createActionFileSystem() as RemoteActionFileSystem
+        val artifact: Artifact = ActionsTestUtil.createArtifact(outputRoot, "out")
+        val path: PathFragment? = artifact.getPath().asFragment()
+        injectRemoteFile(actionFs, artifact.getPath().asFragment(), "remote contents")
+
+        actionFs.getPath(path).setLastModifiedTime(1234567890)
+        assertThat(actionFs.getPath(path).getLastModifiedTime()).isEqualTo(1234567890)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun setLastModifiedTime_forLocalFilesystem() {
+        val actionFs: RemoteActionFileSystem = createActionFileSystem() as RemoteActionFileSystem
+        val artifact: Artifact = ActionsTestUtil.createArtifact(outputRoot, "out")
+        val path: PathFragment? = artifact.getPath().asFragment()
+        writeLocalFile(actionFs, artifact.getPath().asFragment(), "local contents")
+
+        actionFs.getPath(path).setLastModifiedTime(1234567890)
+        assertThat(actionFs.getPath(path).getLastModifiedTime()).isEqualTo(1234567890)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun setLastModifiedTime_followSymlinks(
+        @TestParameter from: FilesystemTestParam, @TestParameter to: FilesystemTestParam
+    ) {
+        val actionFs: RemoteActionFileSystem = createActionFileSystem() as RemoteActionFileSystem
+        val fromFs: FileSystem = from.getFilesystem(actionFs)
+        val toFs: FileSystem = to.getFilesystem(actionFs)
+
+        val linkPath: PathFragment = getOutputPath("sym")
+        val targetPath: PathFragment = getOutputPath("target")
+        fromFs.getPath(linkPath).createSymbolicLink(execRoot.getRelative(targetPath).asFragment())
+
+        if (toFs.equals(actionFs.getLocalFileSystem())) {
+            writeLocalFile(actionFs, targetPath, "content")
+        } else {
+            injectRemoteFile(actionFs, targetPath, "content")
+        }
+
+        actionFs.getPath(linkPath).setLastModifiedTime(1234567890)
+        assertThat(actionFs.getPath(linkPath).getLastModifiedTime()).isEqualTo(1234567890)
+        assertThat(actionFs.getPath(targetPath).getLastModifiedTime()).isEqualTo(1234567890)
+    }
+
+    @get:Throws(java.lang.Exception::class)
+    @get:org.junit.Test
+    val digest_fromInputArtifactData_forLocalArtifact: Unit
+        get() {
+            val inputs: ActionInputMap = ActionInputMap(1)
+            val artifact: Artifact = createRemoteArtifact("file", "local contents", inputs)
+            val path: PathFragment? = artifact.getPath().asFragment()
+            val actionFs: RemoteActionFileSystem = createActionFileSystem(inputs) as RemoteActionFileSystem
+
+            // Verify that we don't fall back to a slow digest.
+            Mockito.reset<SpiedFileSystem?>(fs)
+            assertThat(actionFs.getFastDigest(path)).isEqualTo(getDigest("local contents"))
+            Mockito.verify<SpiedFileSystem?>(fs, Mockito.never()).getDigest(ArgumentMatchers.any<T?>())
+
+            assertThat(actionFs.getDigest(path)).isEqualTo(getDigest("local contents"))
+        }
+
+    @get:Throws(java.lang.Exception::class)
+    @get:org.junit.Test
+    val digest_fromInputArtifactData_forRemoteArtifact: Unit
+        get() {
+            val inputs: ActionInputMap = ActionInputMap(1)
+            val artifact: Artifact = createRemoteArtifact("file", "remote contents", inputs)
+            val path: PathFragment? = artifact.getPath().asFragment()
+            val actionFs: RemoteActionFileSystem = createActionFileSystem(inputs) as RemoteActionFileSystem
+
+            // Verify that we don't fall back to a slow digest.
+            Mockito.reset<SpiedFileSystem?>(fs)
+            assertThat(actionFs.getFastDigest(path)).isEqualTo(getDigest("remote contents"))
+            Mockito.verify<SpiedFileSystem?>(fs, Mockito.never()).getDigest(ArgumentMatchers.any<T?>())
+
+            assertThat(actionFs.getDigest(path)).isEqualTo(getDigest("remote contents"))
+        }
+
+    @get:Throws(java.lang.Exception::class)
+    @get:org.junit.Test
+    val digest_fromRemoteOutputTree: Unit
+        get() {
+            val actionFs: RemoteActionFileSystem = createActionFileSystem() as RemoteActionFileSystem
+            val artifact: Artifact = ActionsTestUtil.createArtifact(outputRoot, "out")
+            val path: PathFragment? = artifact.getPath().asFragment()
+            injectRemoteFile(actionFs, artifact.getPath().asFragment(), "remote contents")
+
+            assertThat(actionFs.getFastDigest(path)).isEqualTo(getDigest("remote contents"))
+            assertThat(actionFs.getDigest(path)).isEqualTo(getDigest("remote contents"))
+        }
+
+    @get:Throws(java.lang.Exception::class)
+    @get:org.junit.Test
+    val digest_fromLocalFilesystem: Unit
+        get() {
+            val actionFs: RemoteActionFileSystem = createActionFileSystem() as RemoteActionFileSystem
+            val artifact: Artifact = ActionsTestUtil.createArtifact(outputRoot, "out")
+            val path: PathFragment? = artifact.getPath().asFragment()
+            writeLocalFile(actionFs, artifact.getPath().asFragment(), "local contents")
+
+            assertThat(actionFs.getFastDigest(path)).isNull()
+            assertThat(actionFs.getDigest(path)).isEqualTo(getDigest("local contents"))
+        }
+
+    @get:Throws(java.lang.Exception::class)
+    @get:org.junit.Test
+    val digest_notFound: Unit
+        get() {
+            val actionFs: RemoteActionFileSystem = createActionFileSystem() as RemoteActionFileSystem
+            val artifact: Artifact = ActionsTestUtil.createArtifact(outputRoot, "out")
+            val path: PathFragment? = artifact.getPath().asFragment()
+
+            org.junit.Assert.assertThrows<FileNotFoundException?>(
+                FileNotFoundException::class.java,
+                org.junit.function.ThrowingRunnable { actionFs.getFastDigest(path) })
+            org.junit.Assert.assertThrows<FileNotFoundException?>(
+                FileNotFoundException::class.java,
+                org.junit.function.ThrowingRunnable { actionFs.getDigest(path) })
+        }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun getDigest_followSymlinks(
+        @TestParameter from: FilesystemTestParam, @TestParameter to: FilesystemTestParam
+    ) {
+        val actionFs: RemoteActionFileSystem = createActionFileSystem() as RemoteActionFileSystem
+        val fromFs: FileSystem = from.getFilesystem(actionFs)
+        val toFs: FileSystem = to.getFilesystem(actionFs)
+
+        val linkPath: PathFragment = getOutputPath("sym")
+        val targetPath: PathFragment = getOutputPath("target")
+        fromFs.getPath(linkPath).createSymbolicLink(execRoot.getRelative(targetPath).asFragment())
+
+        if (toFs.equals(actionFs.getLocalFileSystem())) {
+            writeLocalFile(actionFs, targetPath, "content")
+            assertThat(actionFs.getFastDigest(linkPath)).isNull()
+        } else {
+            injectRemoteFile(actionFs, targetPath, "content")
+            assertThat(actionFs.getFastDigest(linkPath)).isEqualTo(getDigest("content"))
+        }
+
+        assertThat(actionFs.getDigest(linkPath)).isEqualTo(getDigest("content"))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun readdir_fromRemoteOutputTree() {
+        val actionFs: RemoteActionFileSystem = createActionFileSystem() as RemoteActionFileSystem
+        injectRemoteFile(actionFs, getOutputPath("dir/out1"), "contents1")
+        injectRemoteFile(actionFs, getOutputPath("dir/out2"), "contents2")
+        injectRemoteFile(actionFs, getOutputPath("dir/subdir/out3"), "contents3")
+        val dirPath: PathFragment = getOutputPath("dir")
+
+        assertReaddir(
+            actionFs,
+            dirPath,  /* followSymlinks= */
+            true,
+            Dirent("out1", Dirent.Type.FILE),
+            Dirent("out2", Dirent.Type.FILE),
+            Dirent("subdir", Dirent.Type.DIRECTORY)
+        )
+
+        assertReaddirThrows(actionFs, getOutputPath("dir/out1"),  /* followSymlinks= */true)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun readdir_fromLocalFilesystem() {
+        val actionFs: RemoteActionFileSystem = createActionFileSystem() as RemoteActionFileSystem
+        writeLocalFile(actionFs, getOutputPath("dir/file"), "contents")
+        writeLocalFile(actionFs, getOutputPath("dir/subdir/file"), "contents")
+        val dirPath: PathFragment = getOutputPath("dir")
+
+        assertReaddir(
+            actionFs,
+            dirPath,  /* followSymlinks= */
+            true,
+            Dirent("file", Dirent.Type.FILE),
+            Dirent("subdir", Dirent.Type.DIRECTORY)
+        )
+
+        assertReaddirThrows(actionFs, getOutputPath("dir/out1"),  /* followSymlinks= */true)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun readdir_fromInputArtifactData() {
+        val inputs: ActionInputMap = ActionInputMap(1)
+        createLocalTreeArtifact(
+            "tree",
+            com.google.common.collect.ImmutableMap.of<String?, String?>("file", "", "dir/subdir/subfile", ""),
+            inputs
+        )
+        val actionFs: RemoteActionFileSystem = createActionFileSystem(inputs) as RemoteActionFileSystem
+
+        assertReaddir(
+            actionFs,
+            getOutputPath("tree"),  /* followSymlinks= */
+            true,
+            Dirent("dir", Dirent.Type.DIRECTORY),
+            Dirent("file", Dirent.Type.FILE)
+        )
+
+        assertReaddir(
+            actionFs,
+            getOutputPath("tree/dir"),  /* followSymlinks= */
+            true,
+            Dirent("subdir", Dirent.Type.DIRECTORY)
+        )
+
+        assertReaddir(
+            actionFs,
+            getOutputPath("tree/dir/subdir"),  /* followSymlinks= */
+            true,
+            Dirent("subfile", Dirent.Type.FILE)
+        )
+
+        assertReaddirThrows(
+            actionFs, getOutputPath("tree/dir/subdir/subfile"),  /* followSymlinks= */true
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun readdir_fromInputArtifactData_emptyDir() {
+        val inputs: ActionInputMap = ActionInputMap(1)
+        createLocalTreeArtifact("tree", com.google.common.collect.ImmutableMap.of<String?, String?>(), inputs)
+        val actionFs: RemoteActionFileSystem = createActionFileSystem(inputs) as RemoteActionFileSystem
+
+        assertReaddir(actionFs, getOutputPath("tree"),  /* followSymlinks= */true)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun readdir_fromRemoteOutputTreeAndLocalFilesystem() {
+        val inputs: ActionInputMap = ActionInputMap(1)
+        val actionFs: RemoteActionFileSystem = createActionFileSystem(inputs) as RemoteActionFileSystem
+        writeLocalFile(actionFs, getOutputPath("dir/out1"), "contents1")
+        injectRemoteFile(actionFs, getOutputPath("dir/out2"), "contents2")
+        val dirPath: PathFragment = getOutputPath("dir")
+
+        assertReaddir(
+            actionFs,
+            dirPath,  /* followSymlinks= */
+            true,
+            Dirent("out1", Dirent.Type.FILE),
+            Dirent("out2", Dirent.Type.FILE)
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun readdir_fromRemoteOutputTreeAndLocalFilesystem_emptyDir() {
+        val inputs: ActionInputMap = ActionInputMap(1)
+        val actionFs: RemoteActionFileSystem = createActionFileSystem(inputs) as RemoteActionFileSystem
+        val dirPath: PathFragment = getOutputPath("dir")
+        actionFs.getRemoteOutputTree().getPath(dirPath).createDirectoryAndParents()
+        actionFs.getLocalFileSystem().getPath(dirPath).createDirectoryAndParents()
+
+        assertReaddir(actionFs, dirPath,  /* followSymlinks= */true)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun readdir_followSymlinks_forDirectory(
+        @TestParameter from: FilesystemTestParam, @TestParameter to: FilesystemTestParam
+    ) {
+        val actionFs: RemoteActionFileSystem = createActionFileSystem() as RemoteActionFileSystem
+        val fromFs: FileSystem = from.getFilesystem(actionFs)
+        val toFs: FileSystem = to.getFilesystem(actionFs)
+
+        val linkPath: PathFragment = getOutputPath("sym")
+        val targetPath: PathFragment = getOutputPath("dir")
+        val childPath: PathFragment = getOutputPath("dir/child")
+
+        fromFs.getPath(linkPath).createSymbolicLink(execRoot.getRelative(targetPath).asFragment())
+        toFs.getPath(targetPath).createDirectory()
+
+        if (toFs.equals(actionFs.getLocalFileSystem())) {
+            writeLocalFile(actionFs, childPath, "content")
+        } else {
+            injectRemoteFile(actionFs, childPath, "content")
+        }
+
+        assertReaddir(
+            actionFs, linkPath,  /* followSymlinks= */false, Dirent("child", Dirent.Type.FILE)
+        )
+        assertReaddir(
+            actionFs, linkPath,  /* followSymlinks= */true, Dirent("child", Dirent.Type.FILE)
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun readdir_followSymlinks_forDirectoryEntries(
+        @TestParameter from: FilesystemTestParam, @TestParameter to: FilesystemTestParam
+    ) {
+        val actionFs: RemoteActionFileSystem = createActionFileSystem() as RemoteActionFileSystem
+        val fromFs: FileSystem = from.getFilesystem(actionFs)
+        val toFs: FileSystem = to.getFilesystem(actionFs)
+
+        val dirPath: PathFragment = getOutputPath("dir")
+        val fileLinkPath: PathFragment = getOutputPath("dir/file_sym")
+        val fileTargetPath: PathFragment = getOutputPath("file_target")
+        val dirLinkPath: PathFragment = getOutputPath("dir/dir_sym")
+        val dirTargetPath: PathFragment = getOutputPath("dir_target")
+        val loopingLinkPath: PathFragment = getOutputPath("dir/looping_sym")
+        val danglingLinkPath: PathFragment = getOutputPath("dir/dangling_sym")
+
+        fromFs.getPath(dirPath).createDirectory()
+        fromFs
+            .getPath(fileLinkPath)
+            .createSymbolicLink(execRoot.getRelative(fileTargetPath).asFragment())
+        fromFs
+            .getPath(dirLinkPath)
+            .createSymbolicLink(execRoot.getRelative(dirTargetPath).asFragment())
+        fromFs
+            .getPath(loopingLinkPath)
+            .createSymbolicLink(execRoot.getRelative(loopingLinkPath).asFragment())
+        fromFs.getPath(danglingLinkPath).createSymbolicLink(PathFragment.create("/does_not_exist"))
+
+        if (toFs.equals(actionFs.getLocalFileSystem())) {
+            writeLocalFile(actionFs, fileTargetPath, "content")
+            actionFs.getLocalFileSystem().getPath(dirTargetPath).createDirectoryAndParents()
+        } else {
+            injectRemoteFile(actionFs, fileTargetPath, "content")
+            actionFs.getRemoteOutputTree().createDirectoryAndParents(dirTargetPath)
+        }
+
+        assertReaddir(
+            actionFs,
+            dirPath,  /* followSymlinks= */
+            false,
+            Dirent("file_sym", Dirent.Type.SYMLINK),
+            Dirent("dir_sym", Dirent.Type.SYMLINK),
+            Dirent("looping_sym", Dirent.Type.SYMLINK),
+            Dirent("dangling_sym", Dirent.Type.SYMLINK)
+        )
+        assertReaddir(
+            actionFs,
+            dirPath,  /* followSymlinks= */
+            true,
+            Dirent("file_sym", Dirent.Type.FILE),
+            Dirent("dir_sym", Dirent.Type.DIRECTORY),
+            Dirent("looping_sym", Dirent.Type.UNKNOWN),
+            Dirent("dangling_sym", Dirent.Type.UNKNOWN)
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun readdir_nonDirectory() {
+        val actionFs: RemoteActionFileSystem = createActionFileSystem() as RemoteActionFileSystem
+        val artifact: Artifact = ActionsTestUtil.createArtifact(outputRoot, "dir/out")
+        val path: PathFragment? = artifact.getPath().getParentDirectory().asFragment()
+
+        writeLocalFile(actionFs, path, "content")
+
+        assertReaddirThrows(actionFs, path,  /* followSymlinks= */true)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun readdir_notFound() {
+        val actionFs: RemoteActionFileSystem = createActionFileSystem() as RemoteActionFileSystem
+        val artifact: Artifact = ActionsTestUtil.createArtifact(outputRoot, "dir/out")
+        val path: PathFragment? = artifact.getPath().getParentDirectory().asFragment()
+
+        assertReaddirThrows(actionFs, path,  /* followSymlinks= */true)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun permissions_followSymlinks(
+        @TestParameter from: FilesystemTestParam, @TestParameter to: FilesystemTestParam
+    ) {
+        val actionFs: RemoteActionFileSystem = createActionFileSystem() as RemoteActionFileSystem
+        val fromFs: FileSystem = from.getFilesystem(actionFs)
+        val toFs: FileSystem = to.getFilesystem(actionFs)
+
+        val linkPath: PathFragment = getOutputPath("sym")
+        val targetPath: PathFragment = getOutputPath("target")
+        fromFs.getPath(linkPath).createSymbolicLink(execRoot.getRelative(targetPath).asFragment())
+
+        org.junit.Assert.assertThrows<FileNotFoundException?>(
+            FileNotFoundException::class.java,
+            org.junit.function.ThrowingRunnable { actionFs.chmod(linkPath, 511) })
+
+        if (toFs.equals(actionFs.getLocalFileSystem())) {
+            writeLocalFile(actionFs, targetPath, "content")
+        } else {
+            injectRemoteFile(actionFs, targetPath, "content")
+        }
+
+        // For a remote file, permissions are always 0777.
+        val isRemote: Boolean = toFs.equals(actionFs.getRemoteOutputTree())
+
+        assertThat(actionFs.getPath(linkPath).isReadable()).isTrue()
+        assertThat(actionFs.getPath(linkPath).isWritable()).isTrue()
+        assertThat(actionFs.getPath(linkPath).isExecutable()).isEqualTo(isRemote)
+
+        actionFs.getPath(linkPath).chmod(73)
+        assertThat(actionFs.getPath(linkPath).isReadable()).isEqualTo(isRemote)
+        assertThat(actionFs.getPath(linkPath).isWritable()).isEqualTo(isRemote)
+        assertThat(actionFs.getPath(linkPath).isExecutable()).isTrue()
+
+        actionFs.getPath(linkPath).setReadable(true)
+        actionFs.getPath(linkPath).setWritable(true)
+        actionFs.getPath(linkPath).setExecutable(false)
+        assertThat(actionFs.getPath(linkPath).isReadable()).isTrue()
+        assertThat(actionFs.getPath(linkPath).isWritable()).isTrue()
+        assertThat(actionFs.getPath(linkPath).isExecutable()).isEqualTo(isRemote)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun readSymbolicLink_fromLocalFilesystem() {
+        val actionFs: RemoteActionFileSystem = createActionFileSystem() as RemoteActionFileSystem
+        val filePath: PathFragment = getOutputPath("file")
+        val linkPath: PathFragment = getOutputPath("sym")
+        val targetPath: PathFragment? = PathFragment.create("/some/path")
+        actionFs.getLocalFileSystem().getPath(linkPath).createSymbolicLink(targetPath)
+        writeLocalFile(actionFs, filePath, "contents")
+
+        assertThat(actionFs.readSymbolicLink(linkPath)).isEqualTo(targetPath)
+
+        org.junit.Assert.assertThrows<T?>(
+            NotASymlinkException::class.java,
+            org.junit.function.ThrowingRunnable { actionFs.readSymbolicLink(filePath) })
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun readSymbolicLink_fromRemoteFilesystem() {
+        val actionFs: RemoteActionFileSystem = createActionFileSystem() as RemoteActionFileSystem
+        val filePath: PathFragment = getOutputPath("file")
+        val linkPath: PathFragment = getOutputPath("sym")
+        val targetPath: PathFragment? = PathFragment.create("/some/path")
+        actionFs.getRemoteOutputTree().getPath(linkPath).createSymbolicLink(targetPath)
+        injectRemoteFile(actionFs, filePath, "contents")
+
+        assertThat(actionFs.readSymbolicLink(linkPath)).isEqualTo(targetPath)
+
+        org.junit.Assert.assertThrows<T?>(
+            NotASymlinkException::class.java,
+            org.junit.function.ThrowingRunnable { actionFs.readSymbolicLink(filePath) })
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun readSymbolicLink_fromInputArtifactData_regularFile() {
+        val inputs: ActionInputMap = ActionInputMap(1)
+        val artifact: Artifact = createRemoteArtifact("file", "contents", inputs)
+        val actionFs: RemoteActionFileSystem = createActionFileSystem(inputs) as RemoteActionFileSystem
+
+        org.junit.Assert.assertThrows<T?>(
+            NotASymlinkException::class.java,
+            org.junit.function.ThrowingRunnable { actionFs.readSymbolicLink(artifact.getPath().asFragment()) })
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun readSymbolicLink_fromInputArtifactData_treeSubDir() {
+        val inputs: ActionInputMap = ActionInputMap(1)
+        val tree: SpecialArtifact =
+            createRemoteTreeArtifact(
+                "tree",
+                com.google.common.collect.ImmutableMap.of<String?, String?>("subdir/file", ""),
+                inputs
+            )
+        val actionFs: RemoteActionFileSystem = createActionFileSystem(inputs) as RemoteActionFileSystem
+
+        org.junit.Assert.assertThrows<T?>(
+            NotASymlinkException::class.java,
+            org.junit.function.ThrowingRunnable { actionFs.readSymbolicLink(tree.getPath().asFragment()) })
+
+        org.junit.Assert.assertThrows<T?>(
+            NotASymlinkException::class.java,
+            org.junit.function.ThrowingRunnable {
+                actionFs.readSymbolicLink(
+                    tree.getPath().getRelative("subdir").asFragment()
+                )
+            })
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun readSymbolicLink_fromInputArtifactData_unresolvedSymlink() {
+        val inputs: ActionInputMap = ActionInputMap(1)
+        val actionFs: RemoteActionFileSystem = createActionFileSystem(inputs) as RemoteActionFileSystem
+
+        val symlink: Artifact = ActionsTestUtil.createUnresolvedSymlinkArtifact(outputRoot, "symlink")
+        val targetPath: PathFragment? = PathFragment.create("/some/path")
+        // Create symlink on the filesystem so we can digest it, then delete it to verify that its
+        // presence in the ActionInputMap is sufficient for readSymbolicLink to work. Note that this is
+        // an unrealistic scenario, as symlinks are always materialized even when produced remotely.
+        val symlinkPath: Path = getLocalFileSystem(actionFs).getPath(symlink.getPath().getPathString())
+        symlinkPath.createSymbolicLink(targetPath)
+        inputs.put(symlink, FileArtifactValue.createForUnresolvedSymlink(symlinkPath))
+        symlinkPath.delete()
+
+        assertThat(actionFs.readSymbolicLink(getOutputPath("symlink"))).isEqualTo(targetPath)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun readSymbolicLink_notFound() {
+        val actionFs: RemoteActionFileSystem = createActionFileSystem() as RemoteActionFileSystem
+        val linkPath: PathFragment = getOutputPath("sym")
+
+        org.junit.Assert.assertThrows<FileNotFoundException?>(
+            FileNotFoundException::class.java,
+            org.junit.function.ThrowingRunnable { actionFs.readSymbolicLink(linkPath) })
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun createSymbolicLink_localFileArtifact() {
+        // arrange
+        val inputs: ActionInputMap = ActionInputMap(1)
+        val localArtifact: Artifact = createLocalArtifact("local-file", "local contents", inputs)
+        val outputArtifact: Artifact = ActionsTestUtil.createArtifact(outputRoot, "out")
+        val actionFs: FileSystem = createActionFileSystem(inputs)
+
+        // act
+        val linkPath: PathFragment? = outputArtifact.getPath().asFragment()
+        val targetPath: PathFragment? = localArtifact.getPath().asFragment()
+        val symlinkActionFs: Path = actionFs.getPath(linkPath)
+        symlinkActionFs.createSymbolicLink(actionFs.getPath(targetPath))
+
+        // assert
+        assertThat(symlinkActionFs.getFileSystem()).isSameInstanceAs(actionFs)
+        assertThat(symlinkActionFs.readSymbolicLink()).isEqualTo(targetPath)
+        assertThat(getLocalFileSystem(actionFs).getPath(linkPath).readSymbolicLink())
+            .isEqualTo(targetPath)
+        assertThat(getLocalFileSystem(actionFs).getPath(linkPath).readSymbolicLink())
+            .isEqualTo(targetPath)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun createSymbolicLink_remoteFileArtifact() {
+        // arrange
+        val inputs: ActionInputMap = ActionInputMap(1)
+        val remoteArtifact: Artifact = createRemoteArtifact("remote-file", "remote contents", inputs)
+        val outputArtifact: Artifact = ActionsTestUtil.createArtifact(outputRoot, "out")
+        val actionFs: FileSystem = createActionFileSystem(inputs)
+
+        // act
+        val linkPath: PathFragment? = outputArtifact.getPath().asFragment()
+        val targetPath: PathFragment? = remoteArtifact.getPath().asFragment()
+        val symlinkActionFs: Path = actionFs.getPath(linkPath)
+        symlinkActionFs.createSymbolicLink(actionFs.getPath(targetPath))
+
+        // assert
+        assertThat(symlinkActionFs.getFileSystem()).isSameInstanceAs(actionFs)
+        assertThat(symlinkActionFs.readSymbolicLink()).isEqualTo(targetPath)
+        assertThat(outputArtifact.getPath().readSymbolicLink()).isEqualTo(targetPath)
+        assertThat(getLocalFileSystem(actionFs).getPath(linkPath).readSymbolicLink())
+            .isEqualTo(targetPath)
+        assertThat(getLocalFileSystem(actionFs).getPath(linkPath).readSymbolicLink())
+            .isEqualTo(targetPath)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun createSymbolicLink_localTreeArtifact() {
+        // arrange
+        val inputs: ActionInputMap = ActionInputMap(1)
+        val contentMap: com.google.common.collect.ImmutableMap<String?, String?> =
+            com.google.common.collect.ImmutableMap.of<String?, String?>("foo", "foo contents", "bar", "bar contents")
+        val localArtifact: Artifact = createLocalTreeArtifact("remote-dir", contentMap, inputs)
+        val outputArtifact: SpecialArtifact =
+            ActionsTestUtil.createTreeArtifactWithGeneratingAction(outputRoot, "out")
+        val actionFs: FileSystem = createActionFileSystem(inputs)
+
+        // act
+        val linkPath: PathFragment? = outputArtifact.getPath().asFragment()
+        val targetPath: PathFragment? = localArtifact.getPath().asFragment()
+        val symlinkActionFs: Path = actionFs.getPath(linkPath)
+        symlinkActionFs.createSymbolicLink(actionFs.getPath(targetPath))
+
+        // assert
+        assertThat(symlinkActionFs.getFileSystem()).isSameInstanceAs(actionFs)
+        assertThat(symlinkActionFs.readSymbolicLink()).isEqualTo(targetPath)
+        assertThat(getLocalFileSystem(actionFs).getPath(linkPath).readSymbolicLink())
+            .isEqualTo(targetPath)
+        assertThat(getLocalFileSystem(actionFs).getPath(linkPath).readSymbolicLink())
+            .isEqualTo(targetPath)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun createSymbolicLink_remoteTreeArtifact() {
+        // arrange
+        val inputs: ActionInputMap = ActionInputMap(1)
+        val contentMap: com.google.common.collect.ImmutableMap<String?, String?> =
+            com.google.common.collect.ImmutableMap.of<String?, String?>("foo", "foo contents", "bar", "bar contents")
+        val remoteArtifact: Artifact = createRemoteTreeArtifact("remote-dir", contentMap, inputs)
+        val outputArtifact: SpecialArtifact =
+            ActionsTestUtil.createTreeArtifactWithGeneratingAction(outputRoot, "out")
+        val actionFs: FileSystem = createActionFileSystem(inputs)
+
+        // act
+        val linkPath: PathFragment? = outputArtifact.getPath().asFragment()
+        val targetPath: PathFragment? = remoteArtifact.getPath().asFragment()
+        val symlinkActionFs: Path = actionFs.getPath(linkPath)
+        symlinkActionFs.createSymbolicLink(actionFs.getPath(targetPath))
+
+        // assert
+        assertThat(symlinkActionFs.getFileSystem()).isSameInstanceAs(actionFs)
+        assertThat(symlinkActionFs.readSymbolicLink()).isEqualTo(targetPath)
+        assertThat(getLocalFileSystem(actionFs).getPath(linkPath).readSymbolicLink())
+            .isEqualTo(targetPath)
+        assertThat(getLocalFileSystem(actionFs).getPath(linkPath).readSymbolicLink())
+            .isEqualTo(targetPath)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun createSymbolicLink_unresolvedSymlink() {
+        // arrange
+        val inputs: ActionInputMap = ActionInputMap(1)
+        val outputArtifact: SpecialArtifact =
+            ActionsTestUtil.createUnresolvedSymlinkArtifact(outputRoot, "out")
+        val actionFs: FileSystem = createActionFileSystem(inputs)
+        val targetPath: PathFragment? = PathFragment.create("some/path")
+
+        // act
+        val linkPath: PathFragment? = outputArtifact.getPath().asFragment()
+        val symlinkActionFs: Path = actionFs.getPath(linkPath)
+        symlinkActionFs.createSymbolicLink(targetPath)
+
+        // assert
+        assertThat(symlinkActionFs.getFileSystem()).isSameInstanceAs(actionFs)
+        assertThat(symlinkActionFs.readSymbolicLink()).isEqualTo(targetPath)
+        assertThat(getLocalFileSystem(actionFs).getPath(linkPath).readSymbolicLink())
+            .isEqualTo(targetPath)
+        assertThat(getLocalFileSystem(actionFs).getPath(linkPath).readSymbolicLink())
+            .isEqualTo(targetPath)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun createAndReadSymbolicLink_followSymlinks(@TestParameter from: FilesystemTestParam) {
+        // createSymbolicLink writes to both the local and remote filesystem, so it makes no sense to
+        // parameterize on the symlink's destination filesystem.
+        val actionFs: RemoteActionFileSystem = createActionFileSystem() as RemoteActionFileSystem
+        val fromFs: FileSystem = from.getFilesystem(actionFs)
+
+        val parentLinkPath: PathFragment = getOutputPath("parent_link")
+        val parentTargetPath: PathFragment = getOutputPath("parent_target")
+        fromFs
+            .getPath(parentLinkPath)
+            .createSymbolicLink(execRoot.getRelative(parentTargetPath).asFragment())
+        actionFs.getPath(parentTargetPath).createDirectoryAndParents()
+
+        val linkPath: PathFragment = getOutputPath("parent_target/link")
+        val targetPath: PathFragment? = PathFragment.create("/some/path")
+        actionFs.getPath(linkPath).createSymbolicLink(targetPath)
+
+        assertThat(actionFs.getPath(linkPath).readSymbolicLink()).isEqualTo(targetPath)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolveSymbolicLinks(
+        @TestParameter a: FilesystemTestParam, @TestParameter b: FilesystemTestParam
+    ) {
+        val actionFs: RemoteActionFileSystem = createActionFileSystem() as RemoteActionFileSystem
+        val aFs: FileSystem = a.getFilesystem(actionFs)
+        val bFs: FileSystem = b.getFilesystem(actionFs)
+
+        // /a
+        //  |- asub
+        //  |  `- afile
+        //  `- abssym -> /b/bsub
+        //  `- relsym -> asub
+        // /b
+        //  `- bsub
+        //     `- bfile
+        aFs.getPath(getOutputPath("a/asub")).createDirectoryAndParents()
+        aFs.getPath(getOutputPath("a/abssym")).createSymbolicLink(getOutputPath("b/bsub"))
+        aFs.getPath(getOutputPath("a/relsym")).createSymbolicLink(PathFragment.create("asub"))
+        if (aFs.equals(actionFs.getLocalFileSystem())) {
+            writeLocalFile(actionFs, getOutputPath("a/asub/afile"), "content")
+        } else {
+            injectRemoteFile(actionFs, getOutputPath("a/asub/afile"), "content")
+        }
+
+        bFs.getPath(getOutputPath("b/bsub")).createDirectoryAndParents()
+        if (bFs.equals(actionFs.getLocalFileSystem())) {
+            writeLocalFile(actionFs, getOutputPath("b/bsub/bfile"), "content")
+        } else {
+            injectRemoteFile(actionFs, getOutputPath("b/bsub/bfile"), "content")
+        }
+
+        assertThat(actionFs.getPath(getOutputPath("a/relsym/afile")).resolveSymbolicLinks())
+            .isEqualTo(actionFs.getPath(getOutputPath("a/asub/afile")))
+
+        org.junit.Assert.assertThrows<FileNotFoundException?>(
+            FileNotFoundException::class.java,
+            org.junit.function.ThrowingRunnable {
+                actionFs.getPath(getOutputPath("a/bsub/nofile")).resolveSymbolicLinks()
+            })
+
+        assertThat(actionFs.getPath(getOutputPath("a/abssym/bfile")).resolveSymbolicLinks())
+            .isEqualTo(actionFs.getPath(getOutputPath("b/bsub/bfile")))
+
+        org.junit.Assert.assertThrows<FileNotFoundException?>(
+            FileNotFoundException::class.java,
+            org.junit.function.ThrowingRunnable {
+                actionFs.getPath(getOutputPath("b/bsub/nofile")).resolveSymbolicLinks()
+            })
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun renameTo_onlyLocalFile_renameLocalFile() {
+        val actionFs: FileSystem = createActionFileSystem()
+        val path: PathFragment = getOutputPath("file")
+        writeLocalFile(actionFs, path, "local-content")
+        val newPath: PathFragment = getOutputPath("file-new")
+
+        actionFs.renameTo(path, newPath)
+
+        assertThat(actionFs.exists(path)).isFalse()
+        assertThat(actionFs.exists(newPath)).isTrue()
+        assertThat(getLocalFileSystem(actionFs).exists(path)).isFalse()
+        assertThat(getLocalFileSystem(actionFs).exists(newPath)).isTrue()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun renameTo_moveSymlink() {
+        val actionFs: FileSystem = createActionFileSystem()
+        val oldLinkPath: PathFragment = getOutputPath("oldLink")
+        val newLinkPath: PathFragment = getOutputPath("newLink")
+        val targetPath: PathFragment = getOutputPath("target")
+        actionFs.getPath(oldLinkPath).createSymbolicLink(execRoot.getRelative(targetPath).asFragment())
+        writeLocalFile(actionFs, targetPath, "content")
+
+        actionFs.renameTo(oldLinkPath, newLinkPath)
+
+        assertThat(actionFs.getPath(oldLinkPath).exists(Symlinks.NOFOLLOW)).isFalse()
+        assertThat(actionFs.getPath(newLinkPath).exists(Symlinks.NOFOLLOW)).isTrue()
+        assertThat(actionFs.getPath(newLinkPath).readSymbolicLink()).isEqualTo(targetPath)
+        assertThat(actionFs.getPath(targetPath).exists()).isTrue()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun renameTo_followSymlinks(
+        @TestParameter from: FilesystemTestParam, @TestParameter to: FilesystemTestParam
+    ) {
+        val actionFs: RemoteActionFileSystem = createActionFileSystem() as RemoteActionFileSystem
+        val fromFs: FileSystem = from.getFilesystem(actionFs)
+        val toFs: FileSystem = to.getFilesystem(actionFs)
+
+        val srcDirLinkPath: PathFragment = getOutputPath("srcDirLink")
+        val srcDirTargetPath: PathFragment = getOutputPath("srcDirTarget")
+        val naiveSrcPath: PathFragment? = srcDirLinkPath.getChild("oldFile")
+        val canonicalSrcPath: PathFragment? = srcDirTargetPath.getChild("oldFile")
+
+        val dstDirLinkPath: PathFragment = getOutputPath("dstDirLink")
+        val dstDirTargetPath: PathFragment = getOutputPath("dstDirTarget")
+        val naiveDstPath: PathFragment? = dstDirLinkPath.getChild("newFile")
+        val canonicalDstPath: PathFragment? = dstDirTargetPath.getChild("newFile")
+
+        actionFs.getPath(srcDirTargetPath).createDirectoryAndParents()
+        actionFs.getPath(dstDirTargetPath).createDirectoryAndParents()
+
+        fromFs
+            .getPath(srcDirLinkPath)
+            .createSymbolicLink(execRoot.getRelative(srcDirTargetPath).asFragment())
+        fromFs
+            .getPath(dstDirLinkPath)
+            .createSymbolicLink(execRoot.getRelative(dstDirTargetPath).asFragment())
+
+        if (toFs.equals(actionFs.getLocalFileSystem())) {
+            writeLocalFile(actionFs, canonicalSrcPath, "content")
+        } else {
+            injectRemoteFile(actionFs, canonicalSrcPath, "content")
+        }
+
+        actionFs.renameTo(naiveSrcPath, naiveDstPath)
+
+        assertThat(actionFs.exists(naiveSrcPath)).isFalse()
+        assertThat(actionFs.exists(canonicalSrcPath)).isFalse()
+        assertThat(actionFs.exists(naiveDstPath)).isTrue()
+        assertThat(actionFs.exists(canonicalDstPath)).isTrue()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun renameTo_invalidatesResolveSymbolicLinksCache() {
+        val actionFs: RemoteActionFileSystem = createActionFileSystem() as RemoteActionFileSystem
+        val linkPath: PathFragment = getOutputPath("sym")
+        val targetPath: PathFragment = getOutputPath("target")
+        val renamedPath: PathFragment = getOutputPath("renamed")
+
+        actionFs.getPath(linkPath).getParentDirectory().createDirectoryAndParents()
+        actionFs.getPath(linkPath).createSymbolicLink(targetPath)
+        writeLocalFile(actionFs, targetPath, "content")
+
+        assertThat(actionFs.getPath(linkPath).resolveSymbolicLinks())
+            .isEqualTo(actionFs.getPath(targetPath))
+
+        actionFs.renameTo(linkPath, renamedPath)
+        writeLocalFile(actionFs, linkPath, "content")
+
+        assertThat(actionFs.getPath(linkPath).resolveSymbolicLinks())
+            .isEqualTo(actionFs.getPath(linkPath))
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    @Throws(IOException::class)
+    override fun injectRemoteFile(
+        actionFs: FileSystem, path: PathFragment?, content: String
+    ): FileArtifactValue {
+        val digest = getDigest(content)
+        val size: Int = com.google.common.base.Utf8.encodedLength(content)
+        (actionFs as RemoteActionFileSystem)
+            .injectRemoteFile(path, digest, size,  /* expirationTime= */null)
+        return FileArtifactValue.createForRemoteFileWithMaterializationData(
+            digest, size,  /* locationIndex= */1,  /* expirationTime= */null
+        )
+    }
+
+    @Throws(IOException::class)
+    override fun writeLocalFile(actionFs: FileSystem, path: PathFragment?, content: String?) {
+        val localFs: FileSystem = getLocalFileSystem(actionFs)
+        localFs.getPath(path).getParentDirectory().createDirectoryAndParents()
+        FileSystemUtils.writeContent(localFs.getPath(path), java.nio.charset.StandardCharsets.UTF_8, content)
+    }
+
+    /** Returns a remote artifact and puts its metadata into the action input map.  */
+    private fun createRemoteArtifact(
+        pathFragment: String?, content: String, inputs: ActionInputMap
+    ): Artifact {
+        val a: Artifact = ActionsTestUtil.createArtifact(outputRoot, pathFragment)
+        val f: FileArtifactValue? =
+            FileArtifactValue.createForRemoteFileWithMaterializationData(
+                getDigest(content),
+                com.google.common.base.Utf8.encodedLength(content),  /* locationIndex= */
+                1,  /* expirationTime= */
+                null
+            )
+        inputs.put(a, f)
+        return a
+    }
+
+    /** Returns a remote tree artifact and puts its metadata into the action input map.  */
+    private fun createRemoteTreeArtifact(
+        pathFragment: String?, contentMap: MutableMap<String?, String?>, inputs: ActionInputMap
+    ): SpecialArtifact {
+        val a: SpecialArtifact =
+            ActionsTestUtil.createTreeArtifactWithGeneratingAction(outputRoot, pathFragment)
+        inputs.putTreeArtifact(a, createRemoteTreeArtifactValue(a, contentMap))
+        return a
+    }
+
+    private fun createRemoteTreeArtifactValue(
+        a: SpecialArtifact?, contentMap: MutableMap<String?, String?>
+    ): TreeArtifactValue {
+        val builder: TreeArtifactValue.Builder = TreeArtifactValue.newBuilder(a)
+        for (entry in contentMap.entries) {
+            val child: TreeFileArtifact? = TreeFileArtifact.createTreeOutput(a, entry.key)
+            val content: String = entry.value!!
+            val childMeta: FileArtifactValue? =
+                FileArtifactValue.createForRemoteFileWithMaterializationData(
+                    getDigest(content),
+                    com.google.common.base.Utf8.encodedLength(content),  /* locationIndex= */
+                    0,  /* expirationTime= */
+                    null
+                )
+            builder.putChild(child, childMeta)
+        }
+        return builder.build()
+    }
+
+    /** Returns a local artifact and puts its metadata into the action input map.  */
+    @Throws(IOException::class)
+    private fun createLocalArtifact(pathFragment: String?, contents: String?, inputs: ActionInputMap): Artifact {
+        val p: Path? = outputRoot.getRoot().asPath().getRelative(pathFragment)
+        FileSystemUtils.writeContent(p, java.nio.charset.StandardCharsets.UTF_8, contents)
+        val a: Artifact = ActionsTestUtil.createArtifact(outputRoot, p)
+        val path: Path = a.getPath()
+        // Caution: there's a race condition between stating the file and computing the
+        // digest. We need to stat first, since we're using the stat to detect changes.
+        // We follow symlinks here to be consistent with getDigest.
+        inputs.put(
+            a,
+            FileArtifactValue.createFromStat(path, path.stat(Symlinks.FOLLOW), SyscallCache.NO_CACHE)
+        )
+        return a
+    }
+
+    /** Returns a local tree artifact and puts its metadata into the action input map.  */
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    @Throws(IOException::class)
+    private fun createLocalTreeArtifact(
+        pathFragment: String?, contentMap: MutableMap<String?, String?>, inputs: ActionInputMap
+    ): SpecialArtifact {
+        val dir: Path = outputRoot.getRoot().asPath().getRelative(pathFragment)
+        dir.createDirectoryAndParents()
+        for (entry in contentMap.entries) {
+            val child: Path = dir.getRelative(entry.key)
+            child.getParentDirectory().createDirectoryAndParents()
+            FileSystemUtils.writeContent(child, entry.value.toByteArray(java.nio.charset.StandardCharsets.UTF_8))
+        }
+        val a: SpecialArtifact =
+            ActionsTestUtil.createTreeArtifactWithGeneratingAction(outputRoot, pathFragment)
+        inputs.putTreeArtifact(a, createLocalTreeArtifactValue(a, contentMap))
+        return a
+    }
+
+    private fun getDigest(content: String?): ByteArray {
+        return fs.getDigestFunction().getHashFunction().hashString(content, java.nio.charset.StandardCharsets.UTF_8)
+            .asBytes()
+    }
+
+    companion object {
+        private val DUMMY_REMOTE_OUTPUT_CHECKER: RemoteOutputChecker =
+            RemoteOutputChecker("build", RemoteOutputsMode.MINIMAL, com.google.common.collect.ImmutableList.of<E?>())
+
+        private const val RELATIVE_OUTPUT_PATH = "out"
+
+        private fun mockPrefetchFile(
+            path: Path?,
+            contents: String?
+        ): Answer<com.google.common.util.concurrent.ListenableFuture<java.lang.Void?>?> {
+            return Answer { invocationOnMock: InvocationOnMock? ->
+                FileSystemUtils.writeContent(path, java.nio.charset.StandardCharsets.UTF_8, contents)
+                com.google.common.util.concurrent.Futures.immediateVoidFuture()
+            }
+        }
+
+        @Throws(java.lang.Exception::class)
+        private fun assertReaddir(
+            actionFs: RemoteActionFileSystem,
+            dirPath: PathFragment?,
+            followSymlinks: Boolean,
+            vararg expected: Dirent?
+        ) {
+            assertThat(actionFs.readdir(dirPath, followSymlinks)).containsExactlyElementsIn(expected)
+            assertThat(actionFs.getDirectoryEntries(dirPath))
+                .containsExactlyElementsIn(
+                    java.util.Arrays.stream<Dirent?>(expected).map<Any?>(Dirent::getName)
+                        .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
+                )
+        }
+
+        private fun assertReaddirThrows(
+            actionFs: RemoteActionFileSystem, dirPath: PathFragment?, followSymlinks: Boolean
+        ) {
+            org.junit.Assert.assertThrows<IOException?>(
+                IOException::class.java,
+                org.junit.function.ThrowingRunnable { actionFs.readdir(dirPath, followSymlinks) })
+            org.junit.Assert.assertThrows<IOException?>(
+                IOException::class.java,
+                org.junit.function.ThrowingRunnable { actionFs.getDirectoryEntries(dirPath) })
+        }
+
+        @Throws(IOException::class)
+        private fun createLocalTreeArtifactValue(
+            a: SpecialArtifact, contentMap: MutableMap<String?, String?>
+        ): TreeArtifactValue {
+            val builder: TreeArtifactValue.Builder = TreeArtifactValue.newBuilder(a)
+            for (name in contentMap.keys) {
+                val path: Path = a.getPath().getRelative(name)
+                val child: TreeFileArtifact? = TreeFileArtifact.createTreeOutput(a, name)
+                val childMeta: FileArtifactValue? =
+                    FileArtifactValue.createFromStat(path, path.stat(Symlinks.FOLLOW), SyscallCache.NO_CACHE)
+                builder.putChild(child, childMeta)
+            }
+            return builder.build()
+        }
+    }
 }

@@ -11,32 +11,29 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.concurrent;
+package com.google.devtools.build.lib.concurrent
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.concurrent.ErrorClassifier.ErrorClassification
+import org.junit.Test
+import java.util.*
 
-import com.google.devtools.build.lib.concurrent.ErrorClassifier.ErrorClassification;
-import java.util.Arrays;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link ErrorClassifier}. */
-@RunWith(JUnit4.class)
-public class ErrorClassifierTest {
-  @Test
-  public void testErrorClassificationNaturalOrder() {
-    ErrorClassification[] values = ErrorClassification.values();
-    Arrays.sort(values);
-    assertThat(values)
-        .asList()
-        .containsExactly(
-            ErrorClassification.NOT_CRITICAL,
-            ErrorClassification.NOT_CRITICAL_HIGHER_PRIORITY,
-            ErrorClassification.CRITICAL,
-            ErrorClassification.CRITICAL_AND_LOG,
-            ErrorClassification.AS_CRITICAL_AS_POSSIBLE)
-        .inOrder();
-  }
+/** Tests for [ErrorClassifier].  */
+@RunWith(JUnit4::class)
+class ErrorClassifierTest {
+    @Test
+    fun testErrorClassificationNaturalOrder() {
+        val values: Array<ErrorClassification?> = ErrorClassification.values()
+        Arrays.sort(values)
+        Truth.assertThat<ErrorClassification?>(values)
+            .asList()
+            .containsExactly(
+                ErrorClassification.NOT_CRITICAL,
+                ErrorClassification.NOT_CRITICAL_HIGHER_PRIORITY,
+                ErrorClassification.CRITICAL,
+                ErrorClassification.CRITICAL_AND_LOG,
+                ErrorClassification.AS_CRITICAL_AS_POSSIBLE
+            )
+            .inOrder()
+    }
 }
 

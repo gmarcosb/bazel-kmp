@@ -11,19 +11,20 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.common.options.processor.optiontestsources;
+package com.google.devtools.common.options.processor.optiontestsources
 
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsBase;
+import OptionFilters.OptionEffectTag
+import com.google.devtools.common.options.OptionDocumentationCategory
+import com.google.devtools.common.options.OptionEffectTag
+import com.google.devtools.common.options.OptionsBase
 
-/** This example options class uses a field option, which is no longer supported. */
-public class FieldOption extends OptionsBase {
-  @Option(
-      name = "bad_option",
-      defaultValue = "true",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS})
-  public boolean badOption;
+/** This example options class uses a field option, which is no longer supported.  */
+class FieldOption : OptionsBase() {
+    @com.google.devtools.common.options.Option(
+        name = "bad_option",
+        defaultValue = "true",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.AFFECTS_OUTPUTS]
+    )
+    var badOption: Boolean = false
 }

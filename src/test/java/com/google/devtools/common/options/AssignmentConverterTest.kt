@@ -11,54 +11,62 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.common.options
 
-package com.google.devtools.common.options;
+import com.google.common.truth.Truth
+import com.google.devtools.common.options.Converters.AssignmentConverter
+import com.google.devtools.common.options.OptionsParsingException
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+/** Tests for [Converters.AssignmentConverter].  */
+@RunWith(JUnit4::class)
+class AssignmentConverterTest {
+    private val converter: AssignmentConverter = AssignmentConverter()
 
-import com.google.common.collect.Maps;
-import com.google.devtools.common.options.Converters.AssignmentConverter;
-import java.util.Map;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @Throws(java.lang.Exception::class)
+    private fun convert(input: String?): MutableMap.MutableEntry<String?, String?>? {
+        return converter.convert(input)
+    }
 
-/** Tests for {@link Converters.AssignmentConverter}. */
-@RunWith(JUnit4.class)
-public class AssignmentConverterTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun assignment() {
+        Truth.assertThat(convert("A=1"))
+            .isEqualTo(com.google.common.collect.Maps.immutableEntry<String?, String?>("A", "1"))
+        Truth.assertThat(convert("A=ABC"))
+            .isEqualTo(com.google.common.collect.Maps.immutableEntry<String?, String?>("A", "ABC"))
+        Truth.assertThat(convert("A="))
+            .isEqualTo(com.google.common.collect.Maps.immutableEntry<String?, String?>("A", ""))
+        Truth.assertThat(convert("A=B,C=D"))
+            .isEqualTo(com.google.common.collect.Maps.immutableEntry<String?, String?>("A", "B,C=D"))
+    }
 
-  private AssignmentConverter converter = new AssignmentConverter();
+    @org.junit.Test
+    fun missingName() {
+        org.junit.Assert.assertThrows<OptionsParsingException?>(
+            OptionsParsingException::class.java,
+            org.junit.function.ThrowingRunnable { convert("=VALUE") })
+    }
 
-  private Map.Entry<String, String> convert(String input) throws Exception {
-    return converter.convert(input);
-  }
+    @org.junit.Test
+    fun missingValue() {
+        org.junit.Assert.assertThrows<OptionsParsingException?>(
+            OptionsParsingException::class.java,
+            org.junit.function.ThrowingRunnable { convert("NAME") })
+    }
 
-  @Test
-  public void assignment() throws Exception {
-    assertThat(convert("A=1")).isEqualTo(Maps.immutableEntry("A", "1"));
-    assertThat(convert("A=ABC")).isEqualTo(Maps.immutableEntry("A", "ABC"));
-    assertThat(convert("A=")).isEqualTo(Maps.immutableEntry("A", ""));
-    assertThat(convert("A=B,C=D")).isEqualTo(Maps.immutableEntry("A", "B,C=D"));
-  }
+    @org.junit.Test
+    fun immutability() {
+        org.junit.Assert.assertThrows<java.lang.UnsupportedOperationException?>(
+            java.lang.UnsupportedOperationException::class.java,
+            org.junit.function.ThrowingRunnable { convert("A=B")!!.setValue("C") })
+    }
 
-  @Test
-  public void missingName() {
-    assertThrows(OptionsParsingException.class, () -> convert("=VALUE"));
-  }
-
-  @Test
-  public void missingValue() {
-    assertThrows(OptionsParsingException.class, () -> convert("NAME"));
-  }
-
-  @Test
-  public void immutability() {
-    assertThrows(UnsupportedOperationException.class, () -> convert("A=B").setValue("C"));
-  }
-
-  @Test
-  public void emptyString() {
-    assertThrows(OptionsParsingException.class, () -> convert(""));
-  }
+    @org.junit.Test
+    fun emptyString() {
+        org.junit.Assert.assertThrows<OptionsParsingException?>(
+            OptionsParsingException::class.java,
+            org.junit.function.ThrowingRunnable { convert("") })
+    }
 }

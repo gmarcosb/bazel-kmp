@@ -11,42 +11,49 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.java
 
-package com.google.devtools.build.lib.rules.java;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.rules.java.JavaInfo
+import com.google.devtools.build.lib.starlarkbuildapi.java.JavaInfoApi.compileTimeJars
+import com.google.devtools.build.lib.starlarkbuildapi.java.JavaInfoApi.fullCompileTimeJars
+import com.google.devtools.build.lib.starlarkbuildapi.java.JavaInfoApi.sourceJars
+import com.google.devtools.build.lib.starlarkbuildapi.java.JavaInfoApi.transitiveCompileTimeJars
+import com.google.devtools.build.lib.starlarkbuildapi.java.JavaInfoApi.transitiveRuntimeJars
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import static com.google.common.truth.Truth.assertThat;
+/** Unit tests for [JavaInfo].  */
+@RunWith(JUnit4::class)
+class JavaInfoTest {
+    @get:org.junit.Test
+    val transitiveRuntimeJars_noJavaCompilationArgsProvider: Unit
+        get() {
+            assertThat(JavaInfo.Companion.EMPTY_JAVA_INFO_FOR_TESTING.transitiveRuntimeJars.isEmpty()).isTrue()
+        }
 
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @get:org.junit.Test
+    val transitiveCompileTimeJarsJars_noJavaCompilationArgsProvider: Unit
+        get() {
+            assertThat(JavaInfo.Companion.EMPTY_JAVA_INFO_FOR_TESTING.transitiveCompileTimeJars.isEmpty())
+                .isTrue()
+        }
 
-/** Unit tests for {@link JavaInfo}. */
-@RunWith(JUnit4.class)
-public class JavaInfoTest {
+    @get:org.junit.Test
+    val compileTimeJarsJars_noJavaCompilationArgsProvider: Unit
+        get() {
+            assertThat(JavaInfo.Companion.EMPTY_JAVA_INFO_FOR_TESTING.compileTimeJars.isEmpty()).isTrue()
+        }
 
-  @Test
-  public void getTransitiveRuntimeJars_noJavaCompilationArgsProvider() {
-    assertThat(JavaInfo.EMPTY_JAVA_INFO_FOR_TESTING.getTransitiveRuntimeJars().isEmpty()).isTrue();
-  }
+    @get:org.junit.Test
+    val fullCompileTimeJarsJars_noJavaCompilationArgsProvider: Unit
+        get() {
+            assertThat(JavaInfo.Companion.EMPTY_JAVA_INFO_FOR_TESTING.fullCompileTimeJars.isEmpty()).isTrue()
+        }
 
-  @Test
-  public void getTransitiveCompileTimeJarsJars_noJavaCompilationArgsProvider() {
-    assertThat(JavaInfo.EMPTY_JAVA_INFO_FOR_TESTING.getTransitiveCompileTimeJars().isEmpty())
-        .isTrue();
-  }
-
-  @Test
-  public void getCompileTimeJarsJars_noJavaCompilationArgsProvider() {
-    assertThat(JavaInfo.EMPTY_JAVA_INFO_FOR_TESTING.getCompileTimeJars().isEmpty()).isTrue();
-  }
-
-  @Test
-  public void getFullCompileTimeJarsJars_noJavaCompilationArgsProvider() {
-    assertThat(JavaInfo.EMPTY_JAVA_INFO_FOR_TESTING.getFullCompileTimeJars().isEmpty()).isTrue();
-  }
-
-  @Test
-  public void getSourceJars_noJavaSourceJarsProvider() {
-    assertThat(JavaInfo.EMPTY_JAVA_INFO_FOR_TESTING.getSourceJars()).isEmpty();
-  }
+    @get:org.junit.Test
+    val sourceJars_noJavaSourceJarsProvider: Unit
+        get() {
+            Truth.assertThat(JavaInfo.Companion.EMPTY_JAVA_INFO_FOR_TESTING.sourceJars).isEmpty()
+        }
 }

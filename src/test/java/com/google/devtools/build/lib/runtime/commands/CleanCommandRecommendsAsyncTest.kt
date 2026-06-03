@@ -11,78 +11,78 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime.commands;
+package com.google.devtools.build.lib.runtime.commands
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.events.EventBusEventHandler
 
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.EventBusEventHandler;
-import com.google.devtools.build.lib.events.Reporter;
-import com.google.devtools.build.lib.events.StoredEventHandler;
-import com.google.devtools.build.lib.util.OS;
-import java.util.Arrays;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
-import org.junit.runners.Parameterized.Parameters;
+/** Tests [CleanCommand]'s recommendation of the --async flag.  */
+@RunWith(org.junit.runners.Parameterized::class)
+class CleanCommandRecommendsAsyncTest(
+    private val asyncOnCommandLine: Boolean,
+    os: com.google.devtools.build.lib.util.OS?,
+    expectSuggestion: Boolean
+) {
+    private val os: com.google.devtools.build.lib.util.OS?
+    private val expectSuggestion: Boolean
 
-/** Tests {@link CleanCommand}'s recommendation of the --async flag. */
-@RunWith(Parameterized.class)
-public class CleanCommandRecommendsAsyncTest {
-
-  private final boolean asyncOnCommandLine;
-  private final OS os;
-  private final boolean expectSuggestion;
-  private static final String EXPECTED_SUGGESTION = "Use --async";
-
-  public CleanCommandRecommendsAsyncTest(
-      boolean asyncOnCommandLine, OS os, boolean expectSuggestion) throws Exception {
-    this.asyncOnCommandLine = asyncOnCommandLine;
-    this.os = os;
-    this.expectSuggestion = expectSuggestion;
-  }
-
-  @Parameters(name = "async={0} on OS {1}")
-  public static Iterable<Object[]> data() {
-    return Arrays.asList(
-        new Object[][] {
-          // When --async is provided, don't expect --async to be suggested.
-          {/* asyncOnCommandLine= */ true, OS.LINUX, false},
-          {/* asyncOnCommandLine= */ true, OS.WINDOWS, false},
-          {/* asyncOnCommandLine= */ true, OS.DARWIN, false},
-          {/* asyncOnCommandLine= */ true, OS.FREEBSD, false},
-          {/* asyncOnCommandLine= */ true, OS.OPENBSD, false},
-          {/* asyncOnCommandLine= */ true, OS.UNKNOWN, false},
-
-          // When --async is not provided, expect the suggestion on platforms that support it.
-          {/* asyncOnCommandLine= */ false, OS.LINUX, true},
-          {/* asyncOnCommandLine= */ false, OS.WINDOWS, false},
-          {/* asyncOnCommandLine= */ false, OS.DARWIN, true},
-          {/* asyncOnCommandLine= */ false, OS.FREEBSD, true},
-          {/* asyncOnCommandLine= */ false, OS.OPENBSD, true},
-          {/* asyncOnCommandLine= */ false, OS.UNKNOWN, false},
-        });
-  }
-
-  @Test
-  public void testCleanProvidesExpectedSuggestion() throws Exception {
-    Reporter reporter = new Reporter(EventBusEventHandler.createWithNewEventBus());
-    StoredEventHandler storedEventHandler = new StoredEventHandler();
-    reporter.addHandler(storedEventHandler);
-
-    boolean async =
-        CleanCommand.canUseAsync(this.asyncOnCommandLine, /* expunge= */ false, os, reporter);
-    if (os == OS.WINDOWS || os == OS.UNKNOWN) {
-      assertThat(async).isFalse();
+    init {
+        this.os = os
+        this.expectSuggestion = expectSuggestion
     }
 
-    boolean matches =
-        storedEventHandler.getEvents().stream()
-            .map(Event::getMessage)
-            .anyMatch(
-                event -> {
-                  return event.contains(EXPECTED_SUGGESTION);
-                });
-    assertThat(matches).isEqualTo(expectSuggestion);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCleanProvidesExpectedSuggestion() {
+        val reporter: com.google.devtools.build.lib.events.Reporter =
+            com.google.devtools.build.lib.events.Reporter(EventBusEventHandler.createWithNewEventBus())
+        val storedEventHandler: StoredEventHandler = StoredEventHandler()
+        reporter.addHandler(storedEventHandler)
+
+        val async: Boolean =
+            CleanCommand.canUseAsync(this.asyncOnCommandLine,  /* expunge= */false, os, reporter)
+        if (os == com.google.devtools.build.lib.util.OS.WINDOWS || os == com.google.devtools.build.lib.util.OS.UNKNOWN) {
+            Truth.assertThat(async).isFalse()
+        }
+
+        val matches: Boolean =
+            storedEventHandler.getEvents().stream()
+                .map<String?> { obj: com.google.devtools.build.lib.events.Event? -> obj.getMessage() }
+                .anyMatch { event: String? -> event.contains(EXPECTED_SUGGESTION) }
+        Truth.assertThat(matches).isEqualTo(expectSuggestion)
+    }
+
+    companion object {
+        private const val EXPECTED_SUGGESTION = "Use --async"
+
+        @org.junit.runners.Parameterized.Parameters(name = "async={0} on OS {1}")
+        fun data(): Iterable<Array<Any?>?> {
+            return java.util.Arrays.asList<Array<Any?>?>(
+                *arrayOf<Array<Any?>?>(
+                    // When --async is provided, don't expect --async to be suggested.
+                    arrayOf<Any?>( /* asyncOnCommandLine= */true, com.google.devtools.build.lib.util.OS.LINUX, false),
+                    arrayOf<Any?>( /* asyncOnCommandLine= */true, com.google.devtools.build.lib.util.OS.WINDOWS, false),
+                    arrayOf<Any?>( /* asyncOnCommandLine= */true, com.google.devtools.build.lib.util.OS.DARWIN, false),
+                    arrayOf<Any?>( /* asyncOnCommandLine= */true, com.google.devtools.build.lib.util.OS.FREEBSD, false),
+                    arrayOf<Any?>( /* asyncOnCommandLine= */true, com.google.devtools.build.lib.util.OS.OPENBSD, false),
+                    arrayOf<Any?>( /* asyncOnCommandLine= */true,
+                        com.google.devtools.build.lib.util.OS.UNKNOWN,
+                        false
+                    ),  // When --async is not provided, expect the suggestion on platforms that support it.
+
+                    arrayOf<Any?>( /* asyncOnCommandLine= */false, com.google.devtools.build.lib.util.OS.LINUX, true),
+                    arrayOf<Any?>( /* asyncOnCommandLine= */false,
+                        com.google.devtools.build.lib.util.OS.WINDOWS,
+                        false
+                    ),
+                    arrayOf<Any?>( /* asyncOnCommandLine= */false, com.google.devtools.build.lib.util.OS.DARWIN, true),
+                    arrayOf<Any?>( /* asyncOnCommandLine= */false, com.google.devtools.build.lib.util.OS.FREEBSD, true),
+                    arrayOf<Any?>( /* asyncOnCommandLine= */false, com.google.devtools.build.lib.util.OS.OPENBSD, true),
+                    arrayOf<Any?>( /* asyncOnCommandLine= */false,
+                        com.google.devtools.build.lib.util.OS.UNKNOWN,
+                        false
+                    ),
+                )
+            )
+        }
+    }
 }

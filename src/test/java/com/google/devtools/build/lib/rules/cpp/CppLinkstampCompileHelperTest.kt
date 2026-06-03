@@ -11,45 +11,27 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.cpp
 
-package com.google.devtools.build.lib.rules.cpp;
+import com.google.devtools.build.lib.actions.Artifact
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.truth.Truth.assertWithMessage;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.actions.SpawnAction;
-import com.google.devtools.build.lib.analysis.util.AnalysisMock;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.packages.util.Crosstool.CcToolchainConfig;
-import com.google.devtools.build.lib.rules.cpp.CcCommon.Language;
-import com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.FeatureConfiguration;
-import java.util.List;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests that {@link CppLinkstampCompileHelper} creates sane compile actions for linkstamps */
-@RunWith(JUnit4.class)
-public class CppLinkstampCompileHelperTest extends BuildViewTestCase {
-
-  /** Tests that linkstamp compilation applies expected command line options. */
-  @Test
-  public void testLinkstampCompileOptionsForExecutable() throws Exception {
-    AnalysisMock.get()
-        .ccSupport()
-        .setupCcToolchainConfig(
-            mockToolsConfig, CcToolchainConfig.builder().withSysroot("/usr/local/custom-sysroot"));
-    setBuildLanguageOptions("--noincompatible_unambiguous_label_stringification");
-    useConfiguration();
-    scratch.file(
-        "x/BUILD",
-        """
+/** Tests that [CppLinkstampCompileHelper] creates sane compile actions for linkstamps  */
+@RunWith(JUnit4::class)
+class CppLinkstampCompileHelperTest : BuildViewTestCase() {
+    /** Tests that linkstamp compilation applies expected command line options.  */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLinkstampCompileOptionsForExecutable() {
+        AnalysisMock.get()
+            .ccSupport()
+            .setupCcToolchainConfig(
+                mockToolsConfig, CcToolchainConfig.builder().withSysroot("/usr/local/custom-sysroot")
+            )
+        setBuildLanguageOptions("--noincompatible_unambiguous_label_stringification")
+        useConfiguration()
+        scratch.file(
+            "x/BUILD",
+            """
         load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_binary(
@@ -62,59 +44,75 @@ public class CppLinkstampCompileHelperTest extends BuildViewTestCase {
             srcs = ["a.cc"],
             linkstamp = "ls.cc",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget target = getConfiguredTarget("//x:foo");
-    Artifact executable = getExecutable(target);
-    SpawnAction generatingAction = (SpawnAction) getGeneratingAction(executable);
+        val target: ConfiguredTarget = getConfiguredTarget("//x:foo")
+        val executable: Artifact = getExecutable(target)
+        val generatingAction: SpawnAction = getGeneratingAction(executable) as SpawnAction
 
-    Artifact compiledLinkstamp =
-        ActionsTestUtil.getFirstArtifactEndingWith(generatingAction.getInputs(), "ls.o");
-    CppCompileAction linkstampCompileAction =
-        (CppCompileAction) getGeneratingAction(compiledLinkstamp);
+        val compiledLinkstamp: Artifact =
+            ActionsTestUtil.getFirstArtifactEndingWith(generatingAction.getInputs(), "ls.o")
+        val linkstampCompileAction: CppCompileAction =
+            getGeneratingAction(compiledLinkstamp) as CppCompileAction
 
-    CcToolchainProvider ccToolchainProvider =
-        CcToolchainProvider.getFromTarget(
-            getConfiguredTarget(
-                ruleClassProvider.getToolsRepository() + "//tools/cpp:current_cc_toolchain"));
+        val ccToolchainProvider: CcToolchainProvider =
+            CcToolchainProvider.getFromTarget(
+                getConfiguredTarget(
+                    ruleClassProvider.getToolsRepository() + "//tools/cpp:current_cc_toolchain"
+                )
+            )
 
-    List<String> arguments = linkstampCompileAction.getArguments();
-    assertThatArgumentsAreValid(
-        arguments,
-        ccToolchainProvider.getToolchainIdentifier(),
-        target.getLabel().getCanonicalForm(),
-        executable.getFilename());
-  }
+        val arguments: MutableList<String?>? = linkstampCompileAction.getArguments()
+        assertThatArgumentsAreValid(
+            arguments,
+            ccToolchainProvider.getToolchainIdentifier(),
+            target.getLabel().getCanonicalForm(),
+            executable.getFilename()
+        )
+    }
 
-  private void assertThatArgumentsAreValid(
-      List<String> arguments, String platform, String targetName, String buildTargetNameSuffix) {
-    assertThat(arguments).contains("--sysroot=/usr/local/custom-sysroot");
-    assertThat(arguments).contains("-include");
-    assertThat(arguments).contains("-DG3_TARGET_NAME=\"" + targetName + "\"");
-    assertThat(arguments).contains("-DGPLATFORM=\"" + platform + "\"");
-    assertThat(arguments).contains("-I.");
-    String correctG3BuildTargetPattern = "-DG3_BUILD_TARGET=\".*" + buildTargetNameSuffix + "\"";
-    assertWithMessage("in %s flag matching %s", arguments, correctG3BuildTargetPattern)
-        .that(Iterables.tryFind(arguments, (arg) -> arg.matches(correctG3BuildTargetPattern)))
-        .isPresent();
-    String fdoStampPattern = "-D" + CppConfiguration.FDO_STAMP_MACRO + "=\".*\"";
-    assertWithMessage("in %s flag matching %s", arguments, fdoStampPattern)
-        .that(Iterables.tryFind(arguments, (arg) -> arg.matches(fdoStampPattern)))
-        .isAbsent();
-  }
+    private fun assertThatArgumentsAreValid(
+        arguments: MutableList<String?>?, platform: String?, targetName: String?, buildTargetNameSuffix: String
+    ) {
+        Truth.assertThat(arguments).contains("--sysroot=/usr/local/custom-sysroot")
+        Truth.assertThat(arguments).contains("-include")
+        Truth.assertThat(arguments).contains("-DG3_TARGET_NAME=\"" + targetName + "\"")
+        Truth.assertThat(arguments).contains("-DGPLATFORM=\"" + platform + "\"")
+        Truth.assertThat(arguments).contains("-I.")
+        val correctG3BuildTargetPattern = "-DG3_BUILD_TARGET=\".*" + buildTargetNameSuffix + "\""
+        Truth.assertWithMessage("in %s flag matching %s", arguments, correctG3BuildTargetPattern)
+            .that(
+                com.google.common.collect.Iterables.tryFind<String?>(
+                    arguments,
+                    com.google.common.base.Predicate { arg: String? -> arg.matches(correctG3BuildTargetPattern.toRegex()) })
+            )
+            .isPresent()
+        val fdoStampPattern = "-D" + CppConfiguration.FDO_STAMP_MACRO + "=\".*\""
+        Truth.assertWithMessage("in %s flag matching %s", arguments, fdoStampPattern)
+            .that(
+                com.google.common.collect.Iterables.tryFind<String?>(
+                    arguments,
+                    com.google.common.base.Predicate { arg: String? -> arg.matches(fdoStampPattern.toRegex()) })
+            )
+            .isAbsent()
+    }
 
-  /** Tests that linkstamp compilation applies expected command line options. */
-  @Test
-  public void testLinkstampCompileOptionsForSharedLibrary() throws Exception {
-    AnalysisMock.get()
-        .ccSupport()
-        .setupCcToolchainConfig(
-            mockToolsConfig, CcToolchainConfig.builder().withSysroot("/usr/local/custom-sysroot"));
-    setBuildLanguageOptions("--noincompatible_unambiguous_label_stringification");
-    useConfiguration();
-    scratch.file(
-        "x/BUILD",
-        """
+    /** Tests that linkstamp compilation applies expected command line options.  */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLinkstampCompileOptionsForSharedLibrary() {
+        AnalysisMock.get()
+            .ccSupport()
+            .setupCcToolchainConfig(
+                mockToolsConfig, CcToolchainConfig.builder().withSysroot("/usr/local/custom-sysroot")
+            )
+        setBuildLanguageOptions("--noincompatible_unambiguous_label_stringification")
+        useConfiguration()
+        scratch.file(
+            "x/BUILD",
+            """
         load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_binary(
@@ -128,43 +126,50 @@ public class CppLinkstampCompileHelperTest extends BuildViewTestCase {
             srcs = ["a.cc"],
             linkstamp = "ls.cc",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget target = getConfiguredTarget("//x:libfoo.so");
-    Artifact executable = getExecutable(target);
-    SpawnAction generatingAction = (SpawnAction) getGeneratingAction(executable);
-    Artifact compiledLinkstamp =
-        ActionsTestUtil.getFirstArtifactEndingWith(generatingAction.getInputs(), "ls.o");
-    assertThat(generatingAction.getInputs().toList()).contains(compiledLinkstamp);
+        val target: ConfiguredTarget = getConfiguredTarget("//x:libfoo.so")
+        val executable: Artifact = getExecutable(target)
+        val generatingAction: SpawnAction = getGeneratingAction(executable) as SpawnAction
+        val compiledLinkstamp: Artifact =
+            ActionsTestUtil.getFirstArtifactEndingWith(generatingAction.getInputs(), "ls.o")
+        com.google.common.truth.Subject.contains(compiledLinkstamp)
 
-    CppCompileAction linkstampCompileAction =
-        (CppCompileAction) getGeneratingAction(compiledLinkstamp);
-    CcToolchainProvider ccToolchainProvider =
-        CcToolchainProvider.getFromTarget(
-            getConfiguredTarget(
-                ruleClassProvider.getToolsRepository() + "//tools/cpp:current_cc_toolchain"));
+        val linkstampCompileAction: CppCompileAction =
+            getGeneratingAction(compiledLinkstamp) as CppCompileAction
+        val ccToolchainProvider: CcToolchainProvider =
+            CcToolchainProvider.getFromTarget(
+                getConfiguredTarget(
+                    ruleClassProvider.getToolsRepository() + "//tools/cpp:current_cc_toolchain"
+                )
+            )
 
-    List<String> arguments = linkstampCompileAction.getArguments();
-    assertThatArgumentsAreValid(
-        arguments,
-        ccToolchainProvider.getToolchainIdentifier(),
-        target.getLabel().getCanonicalForm(),
-        executable.getFilename());
-  }
+        val arguments: MutableList<String?>? = linkstampCompileAction.getArguments()
+        assertThatArgumentsAreValid(
+            arguments,
+            ccToolchainProvider.getToolchainIdentifier(),
+            target.getLabel().getCanonicalForm(),
+            executable.getFilename()
+        )
+    }
 
-  @Test
-  public void testLinkstampRespectsPicnessFromConfiguration() throws Exception {
-    getAnalysisMock()
-        .ccSupport()
-        .setupCcToolchainConfig(
-            mockToolsConfig,
-            CcToolchainConfig.builder()
-                .withFeatures(CppRuleClasses.SUPPORTS_PIC, CppRuleClasses.PIC));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLinkstampRespectsPicnessFromConfiguration() {
+        getAnalysisMock()
+            .ccSupport()
+            .setupCcToolchainConfig(
+                mockToolsConfig,
+                CcToolchainConfig.builder()
+                    .withFeatures(CppRuleClasses.SUPPORTS_PIC, CppRuleClasses.PIC)
+            )
 
-    useConfiguration("--force_pic");
-    scratch.file(
-        "x/BUILD",
-        """
+        useConfiguration("--force_pic")
+        scratch.file(
+            "x/BUILD",
+            """
         load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_binary(
@@ -177,25 +182,28 @@ public class CppLinkstampCompileHelperTest extends BuildViewTestCase {
             srcs = ["a.cc"],
             linkstamp = "ls.cc",
         )
-        """);
-    ConfiguredTarget target = getConfiguredTarget("//x:foo");
-    Artifact executable = getExecutable(target);
-    SpawnAction generatingAction = (SpawnAction) getGeneratingAction(executable);
-    Artifact compiledLinkstamp =
-        ActionsTestUtil.getFirstArtifactEndingWith(generatingAction.getInputs(), "ls.o");
-    assertThat(generatingAction.getInputs().toList()).contains(compiledLinkstamp);
+        
+        """.trimIndent()
+        )
+        val target: ConfiguredTarget = getConfiguredTarget("//x:foo")
+        val executable: Artifact = getExecutable(target)
+        val generatingAction: SpawnAction = getGeneratingAction(executable) as SpawnAction
+        val compiledLinkstamp: Artifact =
+            ActionsTestUtil.getFirstArtifactEndingWith(generatingAction.getInputs(), "ls.o")
+        com.google.common.truth.Subject.contains(compiledLinkstamp)
 
-    CppCompileAction linkstampCompileAction =
-        (CppCompileAction) getGeneratingAction(compiledLinkstamp);
-    assertThat(linkstampCompileAction.getArguments()).contains("-fPIC");
-  }
+        val linkstampCompileAction: CppCompileAction =
+            getGeneratingAction(compiledLinkstamp) as CppCompileAction
+        com.google.common.truth.Subject.contains("-fPIC")
+    }
 
-  @Test
-  public void testLinkstampRespectsFdoFromConfiguration() throws Exception {
-    useConfiguration("--fdo_instrument=foo");
-    scratch.file(
-        "x/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLinkstampRespectsFdoFromConfiguration() {
+        useConfiguration("--fdo_instrument=foo")
+        scratch.file(
+            "x/BUILD",
+            """
         load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_binary(
@@ -208,32 +216,34 @@ public class CppLinkstampCompileHelperTest extends BuildViewTestCase {
             srcs = ["a.cc"],
             linkstamp = "ls.cc",
         )
-        """);
-    ConfiguredTarget target = getConfiguredTarget("//x:foo");
-    Artifact executable = getExecutable(target);
-    SpawnAction generatingAction = (SpawnAction) getGeneratingAction(executable);
-    Artifact compiledLinkstamp =
-        ActionsTestUtil.getFirstArtifactEndingWith(generatingAction.getInputs(), "ls.o");
-    assertThat(generatingAction.getInputs().toList()).contains(compiledLinkstamp);
+        
+        """.trimIndent()
+        )
+        val target: ConfiguredTarget = getConfiguredTarget("//x:foo")
+        val executable: Artifact = getExecutable(target)
+        val generatingAction: SpawnAction = getGeneratingAction(executable) as SpawnAction
+        val compiledLinkstamp: Artifact =
+            ActionsTestUtil.getFirstArtifactEndingWith(generatingAction.getInputs(), "ls.o")
+        com.google.common.truth.Subject.contains(compiledLinkstamp)
 
-    CppCompileAction linkstampCompileAction =
-        (CppCompileAction) getGeneratingAction(compiledLinkstamp);
-    assertThat(linkstampCompileAction.getArguments())
-        .contains("-D" + CppConfiguration.FDO_STAMP_MACRO + "=\"FDO\"");
-  }
+        val linkstampCompileAction: CppCompileAction =
+            getGeneratingAction(compiledLinkstamp) as CppCompileAction
+        com.google.common.truth.Subject.contains("-D" + CppConfiguration.FDO_STAMP_MACRO + "=\"FDO\"")
+    }
 
-  /**
-   * Regression test for b/73447914: Linkstamps were not re-built when only volatile data changed,
-   * i.e. when we modified cc_binary source, linkstamp was not recompiled so we got old timestamps.
-   * The proper behavior is to recompile linkstamp whenever any input to cc_binary action changes.
-   * And the current implementation solves this by adding all linking inputs as
-   * inputsForInvalidation to linkstamp compile action.
-   */
-  @Test
-  public void testLinkstampCompileDependsOnAllCcBinaryLinkingInputs() throws Exception {
-    scratch.file(
-        "x/BUILD",
-        """
+    /**
+     * Regression test for b/73447914: Linkstamps were not re-built when only volatile data changed,
+     * i.e. when we modified cc_binary source, linkstamp was not recompiled so we got old timestamps.
+     * The proper behavior is to recompile linkstamp whenever any input to cc_binary action changes.
+     * And the current implementation solves this by adding all linking inputs as
+     * inputsForInvalidation to linkstamp compile action.
+     */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLinkstampCompileDependsOnAllCcBinaryLinkingInputs() {
+        scratch.file(
+            "x/BUILD",
+            """
         load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_binary(
@@ -247,47 +257,53 @@ public class CppLinkstampCompileHelperTest extends BuildViewTestCase {
             srcs = ["bar.cc"],
             linkstamp = "ls.cc",
         )
-        """);
-    useConfiguration();
+        
+        """.trimIndent()
+        )
+        useConfiguration()
 
-    ConfiguredTarget target = getConfiguredTarget("//x:foo");
-    Artifact executable = getExecutable(target);
-    CcToolchainProvider toolchain = CppHelper.getToolchain(getRuleContext(target));
-    CppConfiguration cppConfiguration = getRuleContext(target).getFragment(CppConfiguration.class);
-    FeatureConfiguration featureConfiguration =
-        CcCommon.configureFeaturesOrThrowEvalException(
-            /* requestedFeatures= */ ImmutableSet.of(),
-            /* unsupportedFeatures= */ ImmutableSet.of(),
-            Language.CPP,
-            toolchain,
-            cppConfiguration);
-    boolean usePic = CppHelper.usePicForBinaries(cppConfiguration, featureConfiguration);
+        val target: ConfiguredTarget = getConfiguredTarget("//x:foo")
+        val executable: Artifact = getExecutable(target)
+        val toolchain: CcToolchainProvider? = CppHelper.getToolchain(getRuleContext(target))
+        val cppConfiguration: CppConfiguration? = getRuleContext(target).getFragment(CppConfiguration::class.java)
+        val featureConfiguration: FeatureConfiguration? =
+            CcCommon.configureFeaturesOrThrowEvalException( /* requestedFeatures= */
+                com.google.common.collect.ImmutableSet.of<E?>(),  /* unsupportedFeatures= */
+                com.google.common.collect.ImmutableSet.of<E?>(),
+                Language.CPP,
+                toolchain,
+                cppConfiguration
+            )
+        val usePic: Boolean = CppHelper.usePicForBinaries(cppConfiguration, featureConfiguration)
 
-    SpawnAction generatingAction = (SpawnAction) getGeneratingAction(executable);
+        val generatingAction: SpawnAction = getGeneratingAction(executable) as SpawnAction
 
-    Artifact compiledLinkstamp =
-        ActionsTestUtil.getFirstArtifactEndingWith(generatingAction.getInputs(), "ls.o");
-    CppCompileAction linkstampCompileAction =
-        (CppCompileAction) getGeneratingAction(compiledLinkstamp);
+        val compiledLinkstamp: Artifact =
+            ActionsTestUtil.getFirstArtifactEndingWith(generatingAction.getInputs(), "ls.o")
+        val linkstampCompileAction: CppCompileAction =
+            getGeneratingAction(compiledLinkstamp) as CppCompileAction
 
-    Artifact mainObject =
-        ActionsTestUtil.getFirstArtifactEndingWith(
-            generatingAction.getInputs(), usePic ? "main.pic.o" : "main.o");
-    Artifact bar =
-        generatingAction.getInputs().toList().stream()
-            .filter(a -> a.getExecPath().getBaseName().contains("bar"))
-            .findFirst()
-            .get();
-    ImmutableList<Artifact> linkstampInputs = linkstampCompileAction.getInputs().toList();
-    assertThat(linkstampInputs).containsAtLeast(mainObject, bar);
-  }
+        val mainObject: Artifact? =
+            ActionsTestUtil.getFirstArtifactEndingWith(
+                generatingAction.getInputs(), if (usePic) "main.pic.o" else "main.o"
+            )
+        val bar: Artifact? =
+            generatingAction.getInputs().toList().stream()
+                .filter({ a -> a.getExecPath().getBaseName().contains("bar") })
+                .findFirst()
+                .get()
+        val linkstampInputs: com.google.common.collect.ImmutableList<Artifact?>? =
+            linkstampCompileAction.getInputs().toList()
+        Truth.assertThat(linkstampInputs).containsAtLeast(mainObject, bar)
+    }
 
-  @Test
-  public void testLinkstampGetsCoptsFromOptions() throws Exception {
-    useConfiguration("--copt=-foo_copt_from_option");
-    scratch.file(
-        "x/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLinkstampGetsCoptsFromOptions() {
+        useConfiguration("--copt=-foo_copt_from_option")
+        scratch.file(
+            "x/BUILD",
+            """
         load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_binary(
@@ -301,25 +317,28 @@ public class CppLinkstampCompileHelperTest extends BuildViewTestCase {
             srcs = ["a.cc"],
             linkstamp = "ls.cc",
         )
-        """);
-    ConfiguredTarget target = getConfiguredTarget("//x:foo");
-    Artifact executable = getExecutable(target);
-    SpawnAction generatingAction = (SpawnAction) getGeneratingAction(executable);
-    Artifact compiledLinkstamp =
-        ActionsTestUtil.getFirstArtifactEndingWith(generatingAction.getInputs(), "ls.o");
-    assertThat(generatingAction.getInputs().toList()).contains(compiledLinkstamp);
+        
+        """.trimIndent()
+        )
+        val target: ConfiguredTarget = getConfiguredTarget("//x:foo")
+        val executable: Artifact = getExecutable(target)
+        val generatingAction: SpawnAction = getGeneratingAction(executable) as SpawnAction
+        val compiledLinkstamp: Artifact =
+            ActionsTestUtil.getFirstArtifactEndingWith(generatingAction.getInputs(), "ls.o")
+        com.google.common.truth.Subject.contains(compiledLinkstamp)
 
-    CppCompileAction linkstampCompileAction =
-        (CppCompileAction) getGeneratingAction(compiledLinkstamp);
-    assertThat(linkstampCompileAction.getArguments()).contains("-foo_copt_from_option");
-  }
+        val linkstampCompileAction: CppCompileAction =
+            getGeneratingAction(compiledLinkstamp) as CppCompileAction
+        com.google.common.truth.Subject.contains("-foo_copt_from_option")
+    }
 
-  @Test
-  public void testLinkstampDoesNotGetCoptsFromAttribute() throws Exception {
-    useConfiguration("--copt=-foo_copt_from_option");
-    scratch.file(
-        "x/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLinkstampDoesNotGetCoptsFromAttribute() {
+        useConfiguration("--copt=-foo_copt_from_option")
+        scratch.file(
+            "x/BUILD",
+            """
         load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_binary(
@@ -334,27 +353,31 @@ public class CppLinkstampCompileHelperTest extends BuildViewTestCase {
             copts = ["-baz_copt_from_attribute"],
             linkstamp = "ls.cc",
         )
-        """);
-    ConfiguredTarget target = getConfiguredTarget("//x:foo");
-    Artifact executable = getExecutable(target);
-    SpawnAction generatingAction = (SpawnAction) getGeneratingAction(executable);
-    Artifact compiledLinkstamp =
-        ActionsTestUtil.getFirstArtifactEndingWith(generatingAction.getInputs(), "ls.o");
-    assertThat(generatingAction.getInputs().toList()).contains(compiledLinkstamp);
+        
+        """.trimIndent()
+        )
+        val target: ConfiguredTarget = getConfiguredTarget("//x:foo")
+        val executable: Artifact = getExecutable(target)
+        val generatingAction: SpawnAction = getGeneratingAction(executable) as SpawnAction
+        val compiledLinkstamp: Artifact =
+            ActionsTestUtil.getFirstArtifactEndingWith(generatingAction.getInputs(), "ls.o")
+        com.google.common.truth.Subject.contains(compiledLinkstamp)
 
-    CppCompileAction linkstampCompileAction =
-        (CppCompileAction) getGeneratingAction(compiledLinkstamp);
-    assertThat(linkstampCompileAction.getArguments()).doesNotContain("-bar_copt_from_attribute");
-    assertThat(linkstampCompileAction.getArguments()).doesNotContain("-baz_copt_from_attribute");
-  }
+        val linkstampCompileAction: CppCompileAction =
+            getGeneratingAction(compiledLinkstamp) as CppCompileAction
+        assertThat(linkstampCompileAction.getArguments()).doesNotContain("-bar_copt_from_attribute")
+        assertThat(linkstampCompileAction.getArguments()).doesNotContain("-baz_copt_from_attribute")
+    }
 
-  @Test
-  public void testLinkstampCompileIsUsingMemProf() throws Exception {
-    useConfiguration(
-        "--compilation_mode=opt", "--features=memprof_optimize", "--fdo_profile=//x:prof");
-    scratch.file(
-        "x/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLinkstampCompileIsUsingMemProf() {
+        useConfiguration(
+            "--compilation_mode=opt", "--features=memprof_optimize", "--fdo_profile=//x:prof"
+        )
+        scratch.file(
+            "x/BUILD",
+            """
         load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         load("@rules_cc//cc/toolchains:fdo_profile.bzl", "fdo_profile")
@@ -374,18 +397,20 @@ public class CppLinkstampCompileHelperTest extends BuildViewTestCase {
           profile = "out.afdo",
           memprof_profile = "memprof.zip",
         )
-        """);
-    ConfiguredTarget target = getConfiguredTarget("//x:foo");
-    Artifact executable = getExecutable(target);
-    SpawnAction generatingAction = (SpawnAction) getGeneratingAction(executable);
-    Artifact compiledLinkstamp =
-        ActionsTestUtil.getFirstArtifactEndingWith(generatingAction.getInputs(), "ls.o");
-    assertThat(generatingAction.getInputs().toList()).contains(compiledLinkstamp);
+        
+        """.trimIndent()
+        )
+        val target: ConfiguredTarget = getConfiguredTarget("//x:foo")
+        val executable: Artifact = getExecutable(target)
+        val generatingAction: SpawnAction = getGeneratingAction(executable) as SpawnAction
+        val compiledLinkstamp: Artifact =
+            ActionsTestUtil.getFirstArtifactEndingWith(generatingAction.getInputs(), "ls.o")
+        com.google.common.truth.Subject.contains(compiledLinkstamp)
 
-    CppCompileAction linkstampCompileAction =
-        (CppCompileAction) getGeneratingAction(compiledLinkstamp);
-    CompileCommandLine cmdline = linkstampCompileAction.getCompileCommandLine();
-    CcToolchainVariables variables = cmdline.getVariables();
-    assertThat(variables.isAvailable("is_using_memprof")).isTrue();
-  }
+        val linkstampCompileAction: CppCompileAction =
+            getGeneratingAction(compiledLinkstamp) as CppCompileAction
+        val cmdline: CompileCommandLine = linkstampCompileAction.getCompileCommandLine()
+        val variables: CcToolchainVariables = cmdline.getVariables()
+        assertThat(variables.isAvailable("is_using_memprof")).isTrue()
+    }
 }

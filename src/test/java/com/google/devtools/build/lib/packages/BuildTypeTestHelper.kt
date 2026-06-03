@@ -11,43 +11,39 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
-
-import com.google.common.collect.ImmutableList;
-import java.lang.reflect.Field;
-import java.lang.reflect.Modifier;
-
-/** Utils for testing {@link Type}, {@link Types}, and {@link BuildType}. */
-// Must live in the same package as BuildType to access non-public fields.
-public final class BuildTypeTestHelper {
-
-  /**
-   * Returns all build types defined in {@link Type}, {@link Types}, and {@link BuildType}.
-   *
-   * @param publicOnly if true, only returns public types; otherwise, returns both public and
-   *     internal package-private ones.
-   */
-  public static ImmutableList<Type<?>> getAllBuildTypes(boolean publicOnly)
-      throws IllegalAccessException {
-    ImmutableList.Builder<Type<?>> builder = ImmutableList.builder();
-    collectBuildTypeStaticFields(builder, Type.class, publicOnly);
-    collectBuildTypeStaticFields(builder, Types.class, publicOnly);
-    collectBuildTypeStaticFields(builder, BuildType.class, publicOnly);
-    return builder.build();
-  }
-
-  private static void collectBuildTypeStaticFields(
-      ImmutableList.Builder<Type<?>> builder, Class<?> clazz, boolean publicOnly)
-      throws IllegalAccessException {
-    for (Field field : clazz.getDeclaredFields()) {
-      if (Modifier.isStatic(field.getModifiers())
-          && (Modifier.isPublic(field.getModifiers()) || !publicOnly)
-          && Type.class.isAssignableFrom(field.getType())) {
-        builder.add((Type<?>) field.get(null));
-      }
+/** Utils for testing [Type], [Types], and [BuildType].  */ // Must live in the same package as BuildType to access non-public fields.
+object BuildTypeTestHelper {
+    /**
+     * Returns all build types defined in [Type], [Types], and [BuildType].
+     * 
+     * @param publicOnly if true, only returns public types; otherwise, returns both public and
+     * internal package-private ones.
+     */
+    @Throws(java.lang.IllegalAccessException::class)
+    fun getAllBuildTypes(publicOnly: Boolean): com.google.common.collect.ImmutableList<Type<*>?> {
+        val builder: com.google.common.collect.ImmutableList.Builder<Type<*>?> =
+            com.google.common.collect.ImmutableList.builder<Type<*>?>()
+        collectBuildTypeStaticFields(builder, Type::class.java, publicOnly)
+        collectBuildTypeStaticFields(builder, Types::class.java, publicOnly)
+        collectBuildTypeStaticFields(builder, BuildType::class.java, publicOnly)
+        return builder.build()
     }
-  }
 
-  private BuildTypeTestHelper() {}
+    @Throws(java.lang.IllegalAccessException::class)
+    private fun collectBuildTypeStaticFields(
+        builder: com.google.common.collect.ImmutableList.Builder<Type<*>?>,
+        clazz: java.lang.Class<*>,
+        publicOnly: Boolean
+    ) {
+        for (field in clazz.getDeclaredFields()) {
+            if (java.lang.reflect.Modifier.isStatic(field.getModifiers())
+                && (java.lang.reflect.Modifier.isPublic(field.getModifiers()) || !publicOnly)
+                && Type::class.java.isAssignableFrom(field.getType())
+            ) {
+                builder.add(field.get(null) as Type<*>?)
+            }
+        }
+    }
 }

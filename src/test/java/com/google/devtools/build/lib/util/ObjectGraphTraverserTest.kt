@@ -11,346 +11,386 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.util
 
-package com.google.devtools.build.lib.util;
+import com.google.devtools.build.lib.util.ObjectGraphTraverser.DomainSpecificTraverser
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.refEq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+@RunWith(JUnit4::class)
+class ObjectGraphTraverserTest {
+    private class Edge(private val from: Any?, private val to: Any?, type: EdgeType?) {
+        private val type: EdgeType?
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.collect.ConcurrentIdentitySet;
-import com.google.devtools.build.lib.util.ObjectGraphTraverser.DomainSpecificTraverser;
-import com.google.devtools.build.lib.util.ObjectGraphTraverser.EdgeType;
-import com.google.devtools.build.lib.util.ObjectGraphTraverser.FieldCache;
-import com.google.devtools.build.lib.util.ObjectGraphTraverser.Traversal;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.function.Function;
-import java.util.function.Supplier;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+        init {
+            this.type = type
+        }
 
-@RunWith(JUnit4.class)
-public class ObjectGraphTraverserTest {
-  private static final class Edge {
-    private final Object from;
-    private final Object to;
-    private final EdgeType type;
+        override fun equals(o: Any?): Boolean {
+            if (o !is Edge) {
+                return false
+            }
 
-    private Edge(Object from, Object to, EdgeType type) {
-      this.from = from;
-      this.to = to;
-      this.type = type;
+            return o.from === from && o.to === to && o.type === type
+        }
+
+        override fun hashCode(): Int {
+            return java.util.Objects.hash(
+                java.lang.System.identityHashCode(from),
+                java.lang.System.identityHashCode(to),
+                type
+            )
+        }
+
+        companion object {
+            private fun of(from: Any?, to: Any?, type: EdgeType?): Edge {
+                return com.google.devtools.build.lib.util.ObjectGraphTraverserTest.Edge(from, to, type)
+            }
+        }
     }
 
-    private static Edge of(Object from, Object to, EdgeType type) {
-      return new Edge(from, to, type);
+    private class LoggingObjectReceiver : ObjectGraphTraverser.ObjectReceiver {
+        private val objects: MutableList<Any?> = java.util.ArrayList<Any?>()
+        private val objectContexts: MutableMap<Any?, String?> = HashMap<Any?, String?>()
+        private val edges: MutableList<Edge?> = java.util.ArrayList<Edge?>()
+        private val edgeContexts: MutableMap<Edge?, String?> = HashMap<Edge?, String?>()
+
+        public override fun objectFound(o: Any?, context: String?) {
+            objects.add(o)
+            if (context != null) {
+                objectContexts.put(o, context)
+            }
+        }
+
+        public override fun edgeFound(from: Any?, to: Any?, toContext: String?, edgeType: EdgeType?) {
+            val edge: Edge =
+                com.google.devtools.build.lib.util.ObjectGraphTraverserTest.Edge.Companion.of(from, to, edgeType)
+
+            edges.add(edge)
+            if (toContext != null) {
+                edgeContexts.put(edge, toContext)
+            }
+        }
     }
 
-    @Override
-    public boolean equals(Object o) {
-      if (!(o instanceof Edge that)) {
-        return false;
-      }
-
-      return that.from == from && that.to == to && that.type == type;
+    private fun createObjectGraphTraverser(
+        domainSpecific: DomainSpecificTraverser?,
+        seen: ConcurrentIdentitySet?,
+        receiver: LoggingObjectReceiver?,
+        collectContext: Boolean
+    ): ObjectGraphTraverser {
+        val traversers: com.google.common.collect.ImmutableList<DomainSpecificTraverser?> =
+            if (domainSpecific == null) com.google.common.collect.ImmutableList.of<DomainSpecificTraverser?>() else com.google.common.collect.ImmutableList.of<DomainSpecificTraverser?>(
+                domainSpecific
+            )
+        return ObjectGraphTraverser(
+            FieldCache(traversers), false, true, seen, collectContext, receiver, null
+        )
     }
 
-    @Override
-    public int hashCode() {
-      return Objects.hash(System.identityHashCode(from), System.identityHashCode(to), type);
-    }
-  }
+    @org.junit.Test
+    fun smoke() {
+        val o1 = Any()
+        val o2 = Any()
+        val array: Any = arrayOf<Any>(o2)
+        val pair: Any? = Pair.of(o1, array)
 
-  private static final class LoggingObjectReceiver implements ObjectGraphTraverser.ObjectReceiver {
-    private List<Object> objects = new ArrayList<>();
-    private Map<Object, String> objectContexts = new HashMap<>();
-    private List<Edge> edges = new ArrayList<>();
-    private Map<Edge, String> edgeContexts = new HashMap<>();
+        val seen: ConcurrentIdentitySet = ConcurrentIdentitySet(1)
+        val receiver = LoggingObjectReceiver()
+        val cut: ObjectGraphTraverser = createObjectGraphTraverser(null, seen, receiver, false)
+        cut.traverse(pair)
 
-    @Override
-    public void objectFound(Object o, String context) {
-      objects.add(o);
-      if (context != null) {
-        objectContexts.put(o, context);
-      }
+        Truth.assertThat(receiver.objects).containsExactly(o1, o2, array, pair)
+        Truth.assertThat(receiver.edges).hasSize(3)
     }
 
-    @Override
-    public void edgeFound(Object from, Object to, String toContext, EdgeType edgeType) {
-      Edge edge = Edge.of(from, to, edgeType);
+    @org.junit.Test
+    fun testAdmit() {
+        val o1 = Any()
+        val o2 = Any()
+        val pair1: Any? = Pair.of(o1, o1)
+        val pair2: Any? = Pair.of(o2, o2)
+        val pair3: Any? = Pair.of(pair1, pair2)
 
-      edges.add(edge);
-      if (toContext != null) {
-        edgeContexts.put(edge, toContext);
-      }
-    }
-  }
+        val domainSpecific: DomainSpecificTraverser =
+            Mockito.mock<DomainSpecificTraverser>(DomainSpecificTraverser::class.java)
+        Mockito.`when`<T?>(domainSpecific.admit(ArgumentMatchers.any<T?>()))
+            .thenAnswer(Answer { i: InvocationOnMock? -> i.getArgument<Any?>(0) !== pair2 })
 
-  private ObjectGraphTraverser createObjectGraphTraverser(
-      DomainSpecificTraverser domainSpecific,
-      ConcurrentIdentitySet seen,
-      LoggingObjectReceiver receiver,
-      boolean collectContext) {
-    ImmutableList<DomainSpecificTraverser> traversers =
-        domainSpecific == null ? ImmutableList.of() : ImmutableList.of(domainSpecific);
-    return new ObjectGraphTraverser(
-        new FieldCache(traversers), false, true, seen, collectContext, receiver, null);
-  }
+        val seen: ConcurrentIdentitySet = ConcurrentIdentitySet(1)
+        val receiver = LoggingObjectReceiver()
+        val cut: ObjectGraphTraverser = createObjectGraphTraverser(domainSpecific, seen, receiver, false)
+        cut.traverse(pair3)
 
-  @Test
-  public void smoke() {
-    Object o1 = new Object();
-    Object o2 = new Object();
-    Object array = new Object[] {o2};
-    Object pair = Pair.of(o1, array);
-
-    ConcurrentIdentitySet seen = new ConcurrentIdentitySet(1);
-    LoggingObjectReceiver receiver = new LoggingObjectReceiver();
-    ObjectGraphTraverser cut = createObjectGraphTraverser(null, seen, receiver, false);
-    cut.traverse(pair);
-
-    assertThat(receiver.objects).containsExactly(o1, o2, array, pair);
-    assertThat(receiver.edges).hasSize(3);
-  }
-
-  @Test
-  public void testAdmit() {
-    Object o1 = new Object();
-    Object o2 = new Object();
-    Object pair1 = Pair.of(o1, o1);
-    Object pair2 = Pair.of(o2, o2);
-    Object pair3 = Pair.of(pair1, pair2);
-
-    DomainSpecificTraverser domainSpecific = mock(DomainSpecificTraverser.class);
-    when(domainSpecific.admit(any())).thenAnswer(i -> i.getArgument(0) != pair2);
-
-    ConcurrentIdentitySet seen = new ConcurrentIdentitySet(1);
-    LoggingObjectReceiver receiver = new LoggingObjectReceiver();
-    ObjectGraphTraverser cut = createObjectGraphTraverser(domainSpecific, seen, receiver, false);
-    cut.traverse(pair3);
-
-    assertThat(receiver.objects).containsExactly(o1, pair1, pair3);
-    assertThat(receiver.edges).hasSize(3);
-  }
-
-  @Test
-  public void testCustomTraversal() {
-    Object o1 = new Object();
-    Object o2 = new Object();
-
-    DomainSpecificTraverser domainSpecific = mock(DomainSpecificTraverser.class);
-    when(domainSpecific.admit(any())).thenReturn(true);
-    when(domainSpecific.maybeTraverse(any(), any()))
-        .thenAnswer(
-            i -> {
-              Object arg = i.getArgument(0);
-              Traversal traversal = i.getArgument(1);
-
-              if (arg != o1) {
-                return false;
-              }
-
-              traversal.objectFound(o1, null);
-              traversal.edgeFound(o2, null);
-              return true;
-            });
-
-    ConcurrentIdentitySet seen = new ConcurrentIdentitySet(1);
-    LoggingObjectReceiver receiver = new LoggingObjectReceiver();
-    ObjectGraphTraverser cut = createObjectGraphTraverser(domainSpecific, seen, receiver, false);
-    cut.traverse(o1);
-
-    assertThat(receiver.objects).containsExactly(o1, o2);
-    assertThat(receiver.edges).containsExactly(Edge.of(o1, o2, EdgeType.CURRENT_TRAVERSAL));
-  }
-
-  @Test
-  public void testIgnoredFields() {
-    Object o1 = new Object();
-    Object o2 = new Object();
-    Object pair = Pair.of(o1, o2);
-
-    DomainSpecificTraverser domainSpecific = mock(DomainSpecificTraverser.class);
-    when(domainSpecific.ignoredFields(Pair.class)).thenReturn(ImmutableSet.of("second"));
-    when(domainSpecific.admit(any())).thenReturn(true);
-
-    ConcurrentIdentitySet seen = new ConcurrentIdentitySet(1);
-    LoggingObjectReceiver receiver = new LoggingObjectReceiver();
-    ObjectGraphTraverser cut = createObjectGraphTraverser(domainSpecific, seen, receiver, false);
-    cut.traverse(pair);
-
-    assertThat(receiver.objects).containsExactly(o1, pair);
-    assertThat(receiver.edges).containsExactly(Edge.of(pair, o1, EdgeType.CURRENT_TRAVERSAL));
-  }
-
-  @Test
-  public void testSeenObjects() {
-    Object o1 = new Object();
-    Object o2 = new Object();
-    Object pair = Pair.of(o1, o2);
-
-    ConcurrentIdentitySet seen = new ConcurrentIdentitySet(1);
-    var unused = seen.add(o2);
-    LoggingObjectReceiver receiver = new LoggingObjectReceiver();
-    ObjectGraphTraverser cut = createObjectGraphTraverser(null, seen, receiver, false);
-    cut.traverse(pair);
-
-    assertThat(receiver.objects).containsExactly(o1, pair);
-    assertThat(receiver.edges)
-        .containsExactly(
-            Edge.of(pair, o1, EdgeType.CURRENT_TRAVERSAL),
-            Edge.of(pair, o2, EdgeType.ALREADY_SEEN));
-  }
-
-  private static final class Outer {
-    private Inner createInner() {
-      return new Inner();
+        Truth.assertThat(receiver.objects).containsExactly(o1, pair1, pair3)
+        Truth.assertThat(receiver.edges).hasSize(3)
     }
 
-    private class Inner {
-      // Java is clever and will optimize out the reference to Outer without this
-      @SuppressWarnings("unused")
-      private Outer getOuter() {
-        return Outer.this;
-      }
+    @org.junit.Test
+    fun testCustomTraversal() {
+        val o1 = Any()
+        val o2 = Any()
+
+        val domainSpecific: DomainSpecificTraverser =
+            Mockito.mock<DomainSpecificTraverser>(DomainSpecificTraverser::class.java)
+        Mockito.`when`<T?>(domainSpecific.admit(ArgumentMatchers.any<T?>())).thenReturn(true)
+        Mockito.`when`<T?>(domainSpecific.maybeTraverse(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>()))
+            .thenAnswer(
+                Answer { i: InvocationOnMock? ->
+                    val arg: Any? = i.getArgument<Any?>(0)
+                    val traversal: Traversal = i.getArgument<Traversal>(1)
+
+                    if (arg !== o1) {
+                        return@thenAnswer false
+                    }
+
+                    traversal.objectFound(o1, null)
+                    traversal.edgeFound(o2, null)
+                    true
+                })
+
+        val seen: ConcurrentIdentitySet = ConcurrentIdentitySet(1)
+        val receiver = LoggingObjectReceiver()
+        val cut: ObjectGraphTraverser = createObjectGraphTraverser(domainSpecific, seen, receiver, false)
+        cut.traverse(o1)
+
+        Truth.assertThat(receiver.objects).containsExactly(o1, o2)
+        Truth.assertThat(receiver.edges).containsExactly(
+            com.google.devtools.build.lib.util.ObjectGraphTraverserTest.Edge.Companion.of(
+                o1,
+                o2,
+                EdgeType.CURRENT_TRAVERSAL
+            )
+        )
     }
-  }
 
-  @Test
-  public void testNonStaticClassTraversesEnclosingClass() {
-    Outer outer = new Outer();
-    Outer.Inner inner = outer.createInner();
+    @org.junit.Test
+    fun testIgnoredFields() {
+        val o1 = Any()
+        val o2 = Any()
+        val pair: Any? = Pair.of(o1, o2)
 
-    ConcurrentIdentitySet seen = new ConcurrentIdentitySet(1);
-    LoggingObjectReceiver receiver = new LoggingObjectReceiver();
-    ObjectGraphTraverser cut = createObjectGraphTraverser(null, seen, receiver, false);
+        val domainSpecific: DomainSpecificTraverser =
+            Mockito.mock<DomainSpecificTraverser>(DomainSpecificTraverser::class.java)
+        Mockito.`when`<T?>(domainSpecific.ignoredFields(Pair::class.java))
+            .thenReturn(com.google.common.collect.ImmutableSet.of<E?>("second"))
+        Mockito.`when`<T?>(domainSpecific.admit(ArgumentMatchers.any<T?>())).thenReturn(true)
 
-    cut.traverse(inner);
-    assertThat(receiver.objects).containsExactly(outer, inner);
-  }
+        val seen: ConcurrentIdentitySet = ConcurrentIdentitySet(1)
+        val receiver = LoggingObjectReceiver()
+        val cut: ObjectGraphTraverser = createObjectGraphTraverser(domainSpecific, seen, receiver, false)
+        cut.traverse(pair)
 
-  @Test
-  public void testLambdaClosingOverNothingReported() {
-    Object o1 = new Object();
-    Supplier<Object> lambda = () -> 3;
-    Object pair = Pair.of(o1, lambda);
+        Truth.assertThat(receiver.objects).containsExactly(o1, pair)
+        Truth.assertThat(receiver.edges).containsExactly(
+            com.google.devtools.build.lib.util.ObjectGraphTraverserTest.Edge.Companion.of(
+                pair,
+                o1,
+                EdgeType.CURRENT_TRAVERSAL
+            )
+        )
+    }
 
-    ConcurrentIdentitySet seen = new ConcurrentIdentitySet(1);
-    LoggingObjectReceiver receiver = new LoggingObjectReceiver();
-    ObjectGraphTraverser cut = createObjectGraphTraverser(null, seen, receiver, false);
+    @org.junit.Test
+    fun testSeenObjects() {
+        val o1 = Any()
+        val o2 = Any()
+        val pair: Any? = Pair.of(o1, o2)
 
-    cut.traverse(pair);
-    assertThat(receiver.objects).containsExactly(pair, o1, lambda);
-  }
+        val seen: ConcurrentIdentitySet = ConcurrentIdentitySet(1)
+        val unused: Boolean = seen.add(o2)
+        val receiver = LoggingObjectReceiver()
+        val cut: ObjectGraphTraverser = createObjectGraphTraverser(null, seen, receiver, false)
+        cut.traverse(pair)
 
-  @Test
-  public void testLambdaClosingOverNothingReportedWhenReferencedTwice() {
-    Supplier<Object> lambda = () -> 3;
-    Object pair = Pair.of(lambda, lambda);
+        Truth.assertThat(receiver.objects).containsExactly(o1, pair)
+        Truth.assertThat(receiver.edges)
+            .containsExactly(
+                com.google.devtools.build.lib.util.ObjectGraphTraverserTest.Edge.Companion.of(
+                    pair,
+                    o1,
+                    EdgeType.CURRENT_TRAVERSAL
+                ),
+                com.google.devtools.build.lib.util.ObjectGraphTraverserTest.Edge.Companion.of(
+                    pair,
+                    o2,
+                    EdgeType.ALREADY_SEEN
+                )
+            )
+    }
 
-    ConcurrentIdentitySet seen = new ConcurrentIdentitySet(1);
-    LoggingObjectReceiver receiver = new LoggingObjectReceiver();
-    ObjectGraphTraverser cut = createObjectGraphTraverser(null, seen, receiver, false);
+    private class Outer {
+        fun createInner(): Inner {
+            return Inner()
+        }
 
-    cut.traverse(pair);
-    assertThat(receiver.objects).containsExactly(pair, lambda);
-  }
+        private inner class Inner {
+            @get:Suppress("unused")
+            val outer: Outer
+                // Java is clever and will optimize out the reference to Outer without this
+                get() = this@Outer
+        }
+    }
 
-  @Test
-  public void testValuesClosedOverReported() {
-    Object o1 = new Object();
-    Supplier<Object> lambda = () -> o1;
+    @org.junit.Test
+    fun testNonStaticClassTraversesEnclosingClass() {
+        val outer = Outer()
+        val inner: Inner = outer.createInner()
 
-    ConcurrentIdentitySet seen = new ConcurrentIdentitySet(1);
-    LoggingObjectReceiver receiver = new LoggingObjectReceiver();
-    ObjectGraphTraverser cut = createObjectGraphTraverser(null, seen, receiver, false);
+        val seen: ConcurrentIdentitySet = ConcurrentIdentitySet(1)
+        val receiver = LoggingObjectReceiver()
+        val cut: ObjectGraphTraverser = createObjectGraphTraverser(null, seen, receiver, false)
 
-    cut.traverse(lambda);
-    assertThat(receiver.objects).containsExactly(lambda, o1);
-  }
+        cut.traverse(inner)
+        Truth.assertThat(receiver.objects).containsExactly(outer, inner)
+    }
 
-  @Test
-  public void testMultipleClosuresWithSameCodeReported() {
-    Object o1 = new Object();
-    Object o2 = new Object();
-    Function<Object, Supplier<Object>> generator = o -> () -> o;
-    Object l1 = generator.apply(o1);
-    Object l2 = generator.apply(o2);
-    Object pair = Pair.of(l1, l2);
+    @org.junit.Test
+    fun testLambdaClosingOverNothingReported() {
+        val o1 = Any()
+        val lambda: java.util.function.Supplier<Any?> = java.util.function.Supplier { 3 }
+        val pair: Any? = Pair.of(o1, lambda)
 
-    ConcurrentIdentitySet seen = new ConcurrentIdentitySet(1);
-    LoggingObjectReceiver receiver = new LoggingObjectReceiver();
-    ObjectGraphTraverser cut = createObjectGraphTraverser(null, seen, receiver, false);
+        val seen: ConcurrentIdentitySet = ConcurrentIdentitySet(1)
+        val receiver = LoggingObjectReceiver()
+        val cut: ObjectGraphTraverser = createObjectGraphTraverser(null, seen, receiver, false)
 
-    cut.traverse(pair);
-    assertThat(receiver.objects).containsExactly(pair, l1, l2, o1, o2);
-  }
+        cut.traverse(pair)
+        Truth.assertThat(receiver.objects).containsExactly(pair, o1, lambda)
+    }
 
-  @Test
-  public void testEdgeContexts() {
-    Object o1 = new Object();
-    Object o2 = new Object();
-    Object array = new Object[] {o2};
-    Object pair = Pair.of(o1, array);
+    @org.junit.Test
+    fun testLambdaClosingOverNothingReportedWhenReferencedTwice() {
+        val lambda: java.util.function.Supplier<Any?> = java.util.function.Supplier { 3 }
+        val pair: Any? = Pair.of(lambda, lambda)
 
-    ConcurrentIdentitySet seen = new ConcurrentIdentitySet(1);
-    LoggingObjectReceiver receiver = new LoggingObjectReceiver();
-    DomainSpecificTraverser domainSpecific = mock(DomainSpecificTraverser.class);
-    when(domainSpecific.admit(any())).thenReturn(true);
-    when(domainSpecific.contextForField(refEq(pair), any(), any(), refEq(o1)))
-        .thenReturn("o1context");
-    when(domainSpecific.contextForArrayItem(refEq(array), any(), refEq(o2)))
-        .thenReturn("o2context");
-    ObjectGraphTraverser cut = createObjectGraphTraverser(domainSpecific, seen, receiver, true);
+        val seen: ConcurrentIdentitySet = ConcurrentIdentitySet(1)
+        val receiver = LoggingObjectReceiver()
+        val cut: ObjectGraphTraverser = createObjectGraphTraverser(null, seen, receiver, false)
 
-    cut.traverse(pair);
-    assertThat(receiver.edgeContexts)
-        .containsEntry(Edge.of(pair, o1, EdgeType.CURRENT_TRAVERSAL), "o1context");
-    assertThat(receiver.edgeContexts)
-        .containsEntry(Edge.of(array, o2, EdgeType.CURRENT_TRAVERSAL), "o2context");
-    assertThat(receiver.objectContexts).containsEntry(o1, "o1context");
-    assertThat(receiver.objectContexts).containsEntry(o2, "o2context");
-  }
+        cut.traverse(pair)
+        Truth.assertThat(receiver.objects).containsExactly(pair, lambda)
+    }
 
-  @Test
-  public void testObjectContexts() {
-    Object o1 = new Object();
-    Object o2 = new Object();
-    Object pair = Pair.of(o1, o2);
+    @org.junit.Test
+    fun testValuesClosedOverReported() {
+        val o1 = Any()
+        val lambda: java.util.function.Supplier<Any?> = java.util.function.Supplier { o1 }
 
-    ConcurrentIdentitySet seen = new ConcurrentIdentitySet(1);
-    LoggingObjectReceiver receiver = new LoggingObjectReceiver();
-    DomainSpecificTraverser domainSpecific = mock(DomainSpecificTraverser.class);
-    when(domainSpecific.admit(any())).thenReturn(true);
-    when(domainSpecific.contextForField(refEq(pair), any(), any(), refEq(o1))).thenReturn("bad");
-    when(domainSpecific.maybeTraverse(any(), any()))
-        .thenAnswer(
-            i -> {
-              Object o = i.getArgument(0);
-              Traversal traversal = i.getArgument(1);
-              if (o == o1) {
-                traversal.objectFound(o, "o1context");
-                return true;
-              } else if (o == o2) {
-                traversal.objectFound(o, "o2context");
-                return true;
-              } else {
-                return false;
-              }
-            });
-    ObjectGraphTraverser cut = createObjectGraphTraverser(domainSpecific, seen, receiver, true);
+        val seen: ConcurrentIdentitySet = ConcurrentIdentitySet(1)
+        val receiver = LoggingObjectReceiver()
+        val cut: ObjectGraphTraverser = createObjectGraphTraverser(null, seen, receiver, false)
 
-    cut.traverse(pair);
-    assertThat(receiver.objectContexts).containsEntry(o1, "o1context"); // overrides edge context
-    assertThat(receiver.objectContexts).containsEntry(o2, "o2context");
-  }
+        cut.traverse(lambda)
+        Truth.assertThat(receiver.objects).containsExactly(lambda, o1)
+    }
+
+    @org.junit.Test
+    fun testMultipleClosuresWithSameCodeReported() {
+        val o1 = Any()
+        val o2 = Any()
+        val generator: java.util.function.Function<Any?, java.util.function.Supplier<Any?>?> =
+            java.util.function.Function { o: Any? -> java.util.function.Supplier { o } }
+        val l1: Any? = generator.apply(o1)
+        val l2: Any? = generator.apply(o2)
+        val pair: Any? = Pair.of(l1, l2)
+
+        val seen: ConcurrentIdentitySet = ConcurrentIdentitySet(1)
+        val receiver = LoggingObjectReceiver()
+        val cut: ObjectGraphTraverser = createObjectGraphTraverser(null, seen, receiver, false)
+
+        cut.traverse(pair)
+        Truth.assertThat(receiver.objects).containsExactly(pair, l1, l2, o1, o2)
+    }
+
+    @org.junit.Test
+    fun testEdgeContexts() {
+        val o1 = Any()
+        val o2 = Any()
+        val array: Any = arrayOf<Any>(o2)
+        val pair: Any? = Pair.of(o1, array)
+
+        val seen: ConcurrentIdentitySet = ConcurrentIdentitySet(1)
+        val receiver = LoggingObjectReceiver()
+        val domainSpecific: DomainSpecificTraverser =
+            Mockito.mock<DomainSpecificTraverser>(DomainSpecificTraverser::class.java)
+        Mockito.`when`<T?>(domainSpecific.admit(ArgumentMatchers.any<T?>())).thenReturn(true)
+        Mockito.`when`<T?>(
+            domainSpecific.contextForField(
+                ArgumentMatchers.refEq<T?>(pair),
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.refEq<T?>(o1)
+            )
+        )
+            .thenReturn("o1context")
+        Mockito.`when`<T?>(
+            domainSpecific.contextForArrayItem(
+                ArgumentMatchers.refEq<T?>(array),
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.refEq<T?>(o2)
+            )
+        )
+            .thenReturn("o2context")
+        val cut: ObjectGraphTraverser = createObjectGraphTraverser(domainSpecific, seen, receiver, true)
+
+        cut.traverse(pair)
+        Truth.assertThat(receiver.edgeContexts)
+            .containsEntry(
+                com.google.devtools.build.lib.util.ObjectGraphTraverserTest.Edge.Companion.of(
+                    pair,
+                    o1,
+                    EdgeType.CURRENT_TRAVERSAL
+                ), "o1context"
+            )
+        Truth.assertThat(receiver.edgeContexts)
+            .containsEntry(
+                com.google.devtools.build.lib.util.ObjectGraphTraverserTest.Edge.Companion.of(
+                    array,
+                    o2,
+                    EdgeType.CURRENT_TRAVERSAL
+                ), "o2context"
+            )
+        Truth.assertThat(receiver.objectContexts).containsEntry(o1, "o1context")
+        Truth.assertThat(receiver.objectContexts).containsEntry(o2, "o2context")
+    }
+
+    @org.junit.Test
+    fun testObjectContexts() {
+        val o1 = Any()
+        val o2 = Any()
+        val pair: Any? = Pair.of(o1, o2)
+
+        val seen: ConcurrentIdentitySet = ConcurrentIdentitySet(1)
+        val receiver = LoggingObjectReceiver()
+        val domainSpecific: DomainSpecificTraverser =
+            Mockito.mock<DomainSpecificTraverser>(DomainSpecificTraverser::class.java)
+        Mockito.`when`<T?>(domainSpecific.admit(ArgumentMatchers.any<T?>())).thenReturn(true)
+        Mockito.`when`<T?>(
+            domainSpecific.contextForField(
+                ArgumentMatchers.refEq<T?>(pair),
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.refEq<T?>(o1)
+            )
+        ).thenReturn("bad")
+        Mockito.`when`<T?>(domainSpecific.maybeTraverse(ArgumentMatchers.any<T?>(), ArgumentMatchers.any<T?>()))
+            .thenAnswer(
+                Answer { i: InvocationOnMock? ->
+                    val o: Any? = i.getArgument<Any?>(0)
+                    val traversal: Traversal = i.getArgument<Traversal>(1)
+                    if (o === o1) {
+                        traversal.objectFound(o, "o1context")
+                        return@thenAnswer true
+                    } else if (o === o2) {
+                        traversal.objectFound(o, "o2context")
+                        return@thenAnswer true
+                    } else {
+                        return@thenAnswer false
+                    }
+                })
+        val cut: ObjectGraphTraverser = createObjectGraphTraverser(domainSpecific, seen, receiver, true)
+
+        cut.traverse(pair)
+        Truth.assertThat(receiver.objectContexts).containsEntry(o1, "o1context") // overrides edge context
+        Truth.assertThat(receiver.objectContexts).containsEntry(o2, "o2context")
+    }
 }

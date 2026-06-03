@@ -11,15 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.annot.processor.testsources
 
-package net.starlark.java.annot.processor.testsources;
+import net.starlark.java.annot.StarlarkMethod
 
-import net.starlark.java.annot.StarlarkMethod;
-
-/** A StarlarkCallable-annotated method whose class doesn't implement StarlarkValue. */
-class DoesntImplementStarlarkValue {
-  @StarlarkMethod(name = "x", documented = false)
-  public Object x() {
-    return null;
-  }
+/** A StarlarkCallable-annotated method whose class doesn't implement StarlarkValue.  */
+internal class DoesntImplementStarlarkValue {
+    @StarlarkMethod(name = "x", documented = false)
+    fun x(): Any? {
+        return null
+    }
 }

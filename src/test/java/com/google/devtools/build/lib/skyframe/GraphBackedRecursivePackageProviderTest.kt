@@ -11,83 +11,72 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.cmdline.PackageIdentifier
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.packages.InputFile;
-import com.google.devtools.build.lib.packages.Package;
-import com.google.devtools.build.lib.packages.PackagePiece;
-import com.google.devtools.build.lib.packages.PackagePieceIdentifier;
-import com.google.devtools.build.lib.skyframe.GraphBackedRecursivePackageProvider.UniverseTargetPattern;
-import com.google.devtools.build.skyframe.EvaluationResult;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.WalkableGraph;
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-
-/** Tests for {@link GraphBackedRecursivePackageProvider}. */
-@RunWith(TestParameterInjector.class)
-public final class GraphBackedRecursivePackageProviderTest extends BuildViewTestCase {
-
-  private WalkableGraph makeWalkableGraph(SkyKey... roots) throws InterruptedException {
-    EvaluationResult<?> result =
-        getSkyframeExecutor()
-            .evaluate(
-                ImmutableList.copyOf(roots),
-                /* keepGoing= */ true,
-                /* numThreads= */ SkyframeExecutor.DEFAULT_THREAD_COUNT,
-                reporter);
-    return result.getWalkableGraph();
-  }
-
-  private GraphBackedRecursivePackageProvider makeGraphBackedRecursivePackageProvider(
-      WalkableGraph walkableGraph) throws InterruptedException {
-    return new GraphBackedRecursivePackageProvider(
-        walkableGraph,
-        UniverseTargetPattern.all(),
-        getSkyframeExecutor().getPackageManager().getPackagePath(),
-        new RecursivePkgValueRootPackageExtractor());
-  }
-
-  @Test
-  public void getBuildFile_eagerMacroExpansion() throws Exception {
-    scratch.file("pkg1/BUILD", "filegroup(name = 'foo')");
-
-    PackageIdentifier pkgId = PackageIdentifier.createInMainRepo("pkg1");
-    GraphBackedRecursivePackageProvider packageProvider =
-        makeGraphBackedRecursivePackageProvider(makeWalkableGraph(pkgId));
-    InputFile buildFile =
-        packageProvider.getBuildFile(reporter, PackageIdentifier.createInMainRepo("pkg1"));
-    assertThat(buildFile.getName()).isEqualTo("BUILD");
-    assertThat(buildFile.getPackageoid()).isInstanceOf(Package.class);
-  }
-
-  @Test
-  public void getBuildFile_lazyMacroExpansion(@TestParameter boolean graphContainsFullPackage)
-      throws Exception {
-    setPackageOptions("--experimental_lazy_macro_expansion_packages=*");
-    scratch.file("pkg1/BUILD", "filegroup(name = 'foo')");
-
-    PackageIdentifier pkgId = PackageIdentifier.createInMainRepo("pkg1");
-    PackagePieceIdentifier.ForBuildFile packagePieceId =
-        new PackagePieceIdentifier.ForBuildFile(pkgId);
-    WalkableGraph graph = makeWalkableGraph(graphContainsFullPackage ? pkgId : packagePieceId);
-    if (graphContainsFullPackage) {
-      assertThat(graph.getValue(pkgId)).isNotNull();
-    } else {
-      assertThat(graph.getValue(pkgId)).isNull();
+/** Tests for [GraphBackedRecursivePackageProvider].  */
+@RunWith(TestParameterInjector::class)
+class GraphBackedRecursivePackageProviderTest : BuildViewTestCase() {
+    @Throws(java.lang.InterruptedException::class)
+    private fun makeWalkableGraph(vararg roots: SkyKey?): WalkableGraph {
+        val result: EvaluationResult<*> =
+            getSkyframeExecutor()
+                .evaluate(
+                    com.google.common.collect.ImmutableList.< E > copyOf < E ? > (roots),  /* keepGoing= */
+                    true,  /* numThreads= */
+                    SkyframeExecutor.DEFAULT_THREAD_COUNT,
+                    reporter
+                )
+        return result.getWalkableGraph()
     }
-    GraphBackedRecursivePackageProvider packageProvider =
-        makeGraphBackedRecursivePackageProvider(graph);
-    InputFile buildFile =
-        packageProvider.getBuildFile(reporter, PackageIdentifier.createInMainRepo("pkg1"));
-    assertThat(buildFile.getName()).isEqualTo("BUILD");
-    assertThat(buildFile.getPackageoid()).isInstanceOf(PackagePiece.ForBuildFile.class);
-  }
+
+    @Throws(java.lang.InterruptedException::class)
+    private fun makeGraphBackedRecursivePackageProvider(
+        walkableGraph: WalkableGraph?
+    ): GraphBackedRecursivePackageProvider {
+        return GraphBackedRecursivePackageProvider(
+            walkableGraph,
+            UniverseTargetPattern.all(),
+            getSkyframeExecutor().getPackageManager().getPackagePath(),
+            RecursivePkgValueRootPackageExtractor()
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun getBuildFile_eagerMacroExpansion() {
+        scratch.file("pkg1/BUILD", "filegroup(name = 'foo')")
+
+        val pkgId: PackageIdentifier? = PackageIdentifier.createInMainRepo("pkg1")
+        val packageProvider: GraphBackedRecursivePackageProvider =
+            makeGraphBackedRecursivePackageProvider(makeWalkableGraph(pkgId))
+        val buildFile: InputFile =
+            packageProvider.getBuildFile(reporter, PackageIdentifier.createInMainRepo("pkg1"))
+        assertThat(buildFile.getName()).isEqualTo("BUILD")
+        assertThat(buildFile.getPackageoid()).isInstanceOf(Package::class.java)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun getBuildFile_lazyMacroExpansion(@TestParameter graphContainsFullPackage: Boolean) {
+        setPackageOptions("--experimental_lazy_macro_expansion_packages=*")
+        scratch.file("pkg1/BUILD", "filegroup(name = 'foo')")
+
+        val pkgId: PackageIdentifier? = PackageIdentifier.createInMainRepo("pkg1")
+        val packagePieceId: PackagePieceIdentifier.ForBuildFile =
+            ForBuildFile(pkgId)
+        val graph: WalkableGraph = makeWalkableGraph(if (graphContainsFullPackage) pkgId else packagePieceId)
+        if (graphContainsFullPackage) {
+            assertThat(graph.getValue(pkgId)).isNotNull()
+        } else {
+            assertThat(graph.getValue(pkgId)).isNull()
+        }
+        val packageProvider: GraphBackedRecursivePackageProvider =
+            makeGraphBackedRecursivePackageProvider(graph)
+        val buildFile: InputFile =
+            packageProvider.getBuildFile(reporter, PackageIdentifier.createInMainRepo("pkg1"))
+        assertThat(buildFile.getName()).isEqualTo("BUILD")
+        assertThat(buildFile.getPackageoid()).isInstanceOf(PackagePiece.ForBuildFile::class.java)
+    }
 }

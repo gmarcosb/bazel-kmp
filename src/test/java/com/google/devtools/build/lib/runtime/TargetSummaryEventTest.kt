@@ -11,134 +11,143 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime
 
-package com.google.devtools.build.lib.runtime;
+import com.google.devtools.build.lib.analysis.ConfiguredTarget
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+/** Unit tests for [TargetSummaryPublisher].  */
+@RunWith(JUnit4::class)
+class TargetSummaryEventTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGetEventId() {
+        val event: TargetSummaryEvent =
+            TargetSummaryEvent.create(target(PATH, TARGET_NAME, CONFIGURATION_KEY), false, false, null)
+        assertThat(event.getEventId())
+            .isEqualTo(
+                BuildEventIdUtil.targetSummary(
+                    Label.create(PATH, TARGET_NAME), BuildEventIdUtil.configurationId(CHECKSUM)
+                )
+            )
+    }
 
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.buildeventstream.BuildEventIdUtil;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEvent;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.TestStatus;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetKey;
-import com.google.devtools.build.lib.skyframe.config.BuildConfigurationKey;
-import com.google.devtools.build.lib.view.test.TestStatus.BlazeTestStatus;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGetEventId_nullConfig() {
+        val event: TargetSummaryEvent =
+            TargetSummaryEvent.create(target(PATH, TARGET_NAME, null), false, false, null)
+        assertThat(event.getEventId())
+            .isEqualTo(
+                BuildEventIdUtil.targetSummary(
+                    Label.create(PATH, TARGET_NAME), BuildEventIdUtil.nullConfigurationId()
+                )
+            )
+    }
 
-/** Unit tests for {@link TargetSummaryPublisher}. */
-@RunWith(JUnit4.class)
-public final class TargetSummaryEventTest {
-  private static final String PATH = "package";
-  private static final String TARGET_NAME = "name";
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testPostedAfter_noTestSummary() {
+        val event: TargetSummaryEvent = TargetSummaryEvent.create(stubTarget(), false, false, null)
+        assertThat(event.postedAfter())
+            .containsExactly(
+                BuildEventIdUtil.targetCompleted(
+                    Label.create(PATH, TARGET_NAME), BuildEventIdUtil.configurationId(CHECKSUM)
+                )
+            )
+    }
 
-  private static final BuildConfigurationKey CONFIGURATION_KEY =
-      BuildConfigurationKey.create(BuildOptions.builder().build());
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testPostedAfter_expectTestSummary() {
+        val event: TargetSummaryEvent = TargetSummaryEvent.create(stubTarget(), false, true, null)
+        assertThat(event.postedAfter())
+            .containsExactly(
+                BuildEventIdUtil.targetCompleted(
+                    Label.create(PATH, TARGET_NAME), BuildEventIdUtil.configurationId(CHECKSUM)
+                ),
+                BuildEventIdUtil.testSummary(
+                    Label.create(PATH, TARGET_NAME), BuildEventIdUtil.configurationId(CHECKSUM)
+                )
+            )
+    }
 
-  private static final String CHECKSUM = CONFIGURATION_KEY.getOptions().checksum();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testPostedAfter_nullConfig() {
+        val event: TargetSummaryEvent =
+            TargetSummaryEvent.create(target(PATH, TARGET_NAME, null), false, true, null)
+        assertThat(event.postedAfter())
+            .containsExactly(
+                BuildEventIdUtil.targetCompleted(
+                    Label.create(PATH, TARGET_NAME), BuildEventIdUtil.nullConfigurationId()
+                ),
+                BuildEventIdUtil.testSummary(
+                    Label.create(PATH, TARGET_NAME), BuildEventIdUtil.nullConfigurationId()
+                )
+            )
+    }
 
-  @Test
-  public void testGetEventId() throws Exception {
-    TargetSummaryEvent event =
-        TargetSummaryEvent.create(target(PATH, TARGET_NAME, CONFIGURATION_KEY), false, false, null);
-    assertThat(event.getEventId())
-        .isEqualTo(
-            BuildEventIdUtil.targetSummary(
-                Label.create(PATH, TARGET_NAME), BuildEventIdUtil.configurationId(CHECKSUM)));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAsStreamProto_forTest() {
+        val event: TargetSummaryEvent =
+            TargetSummaryEvent.create(stubTarget(), true, true, BlazeTestStatus.FLAKY)
+        val proto: BuildEvent = event.asStreamProto(null)
+        assertThat(proto.getId()).isEqualTo(event.getEventId())
+        assertThat(proto.getTargetSummary().getOverallBuildSuccess()).isTrue()
+        assertThat(proto.getTargetSummary().getOverallTestStatus()).isEqualTo(TestStatus.FLAKY)
+    }
 
-  @Test
-  public void testGetEventId_nullConfig() throws Exception {
-    TargetSummaryEvent event =
-        TargetSummaryEvent.create(target(PATH, TARGET_NAME, null), false, false, null);
-    assertThat(event.getEventId())
-        .isEqualTo(
-            BuildEventIdUtil.targetSummary(
-                Label.create(PATH, TARGET_NAME), BuildEventIdUtil.nullConfigurationId()));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAsStreamProto_forBuildSuccess() {
+        val event: TargetSummaryEvent = TargetSummaryEvent.create(stubTarget(), true, false, null)
+        val proto: BuildEvent = event.asStreamProto(null)
+        assertThat(proto.getId()).isEqualTo(event.getEventId())
+        assertThat(proto.getTargetSummary().getOverallBuildSuccess()).isTrue()
+        assertThat(proto.getTargetSummary().getOverallTestStatus()).isEqualTo(TestStatus.NO_STATUS)
+    }
 
-  @Test
-  public void testPostedAfter_noTestSummary() throws Exception {
-    TargetSummaryEvent event = TargetSummaryEvent.create(stubTarget(), false, false, null);
-    assertThat(event.postedAfter())
-        .containsExactly(
-            BuildEventIdUtil.targetCompleted(
-                Label.create(PATH, TARGET_NAME), BuildEventIdUtil.configurationId(CHECKSUM)));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAsStreamProto_failedBuildIgnoresTestResult() {
+        val event: TargetSummaryEvent =
+            TargetSummaryEvent.create(stubTarget(), false, true, BlazeTestStatus.PASSED)
+        val proto: BuildEvent = event.asStreamProto(null)
+        assertThat(proto.getId()).isEqualTo(event.getEventId())
+        assertThat(proto.getTargetSummary().getOverallBuildSuccess()).isFalse()
+        assertThat(proto.getTargetSummary().getOverallTestStatus()).isEqualTo(TestStatus.NO_STATUS)
+    }
 
-  @Test
-  public void testPostedAfter_expectTestSummary() throws Exception {
-    TargetSummaryEvent event = TargetSummaryEvent.create(stubTarget(), false, true, null);
-    assertThat(event.postedAfter())
-        .containsExactly(
-            BuildEventIdUtil.targetCompleted(
-                Label.create(PATH, TARGET_NAME), BuildEventIdUtil.configurationId(CHECKSUM)),
-            BuildEventIdUtil.testSummary(
-                Label.create(PATH, TARGET_NAME), BuildEventIdUtil.configurationId(CHECKSUM)));
-  }
+    companion object {
+        private const val PATH = "package"
+        private const val TARGET_NAME = "name"
 
-  @Test
-  public void testPostedAfter_nullConfig() throws Exception {
-    TargetSummaryEvent event =
-        TargetSummaryEvent.create(target(PATH, TARGET_NAME, null), false, true, null);
-    assertThat(event.postedAfter())
-        .containsExactly(
-            BuildEventIdUtil.targetCompleted(
-                Label.create(PATH, TARGET_NAME), BuildEventIdUtil.nullConfigurationId()),
-            BuildEventIdUtil.testSummary(
-                Label.create(PATH, TARGET_NAME), BuildEventIdUtil.nullConfigurationId()));
-  }
+        private val CONFIGURATION_KEY: BuildConfigurationKey =
+            BuildConfigurationKey.create(BuildOptions.builder().build())
 
-  @Test
-  public void testAsStreamProto_forTest() throws Exception {
-    TargetSummaryEvent event =
-        TargetSummaryEvent.create(stubTarget(), true, true, BlazeTestStatus.FLAKY);
-    BuildEvent proto = event.asStreamProto(null);
-    assertThat(proto.getId()).isEqualTo(event.getEventId());
-    assertThat(proto.getTargetSummary().getOverallBuildSuccess()).isTrue();
-    assertThat(proto.getTargetSummary().getOverallTestStatus()).isEqualTo(TestStatus.FLAKY);
-  }
+        private val CHECKSUM: String? = CONFIGURATION_KEY.getOptions().checksum()
 
-  @Test
-  public void testAsStreamProto_forBuildSuccess() throws Exception {
-    TargetSummaryEvent event = TargetSummaryEvent.create(stubTarget(), true, false, null);
-    BuildEvent proto = event.asStreamProto(null);
-    assertThat(proto.getId()).isEqualTo(event.getEventId());
-    assertThat(proto.getTargetSummary().getOverallBuildSuccess()).isTrue();
-    assertThat(proto.getTargetSummary().getOverallTestStatus()).isEqualTo(TestStatus.NO_STATUS);
-  }
+        @Throws(java.lang.Exception::class)
+        private fun stubTarget(): ConfiguredTarget {
+            return target(PATH, TARGET_NAME, CONFIGURATION_KEY)
+        }
 
-  @Test
-  public void testAsStreamProto_failedBuildIgnoresTestResult() throws Exception {
-    TargetSummaryEvent event =
-        TargetSummaryEvent.create(stubTarget(), false, true, BlazeTestStatus.PASSED);
-    BuildEvent proto = event.asStreamProto(null);
-    assertThat(proto.getId()).isEqualTo(event.getEventId());
-    assertThat(proto.getTargetSummary().getOverallBuildSuccess()).isFalse();
-    assertThat(proto.getTargetSummary().getOverallTestStatus()).isEqualTo(TestStatus.NO_STATUS);
-  }
-
-  private static ConfiguredTarget stubTarget() throws Exception {
-    return target(PATH, TARGET_NAME, CONFIGURATION_KEY);
-  }
-
-  private static ConfiguredTarget target(
-      String path, String targetName, BuildConfigurationKey configurationKey) throws Exception {
-    ConfiguredTarget target = mock(ConfiguredTarget.class);
-    when(target.getOriginalLabel()).thenReturn(Label.create(path, targetName));
-    when(target.getConfigurationChecksum())
-        .thenReturn(configurationKey == null ? null : configurationKey.getOptions().checksum());
-    ConfiguredTargetKey key =
-        ConfiguredTargetKey.builder()
-            .setLabel(Label.create(path, targetName))
-            .setConfigurationKey(configurationKey)
-            .build();
-    when(target.getLookupKey()).thenReturn(key);
-    return target;
-  }
+        @Throws(java.lang.Exception::class)
+        private fun target(
+            path: String?, targetName: String?, configurationKey: BuildConfigurationKey?
+        ): ConfiguredTarget {
+            val target: ConfiguredTarget = Mockito.mock<ConfiguredTarget>(ConfiguredTarget::class.java)
+            Mockito.`when`<T?>(target.getOriginalLabel()).thenReturn(Label.create(path, targetName))
+            Mockito.`when`<T?>(target.getConfigurationChecksum())
+                .thenReturn(if (configurationKey == null) null else configurationKey.getOptions().checksum())
+            val key: ConfiguredTargetKey? =
+                ConfiguredTargetKey.builder()
+                    .setLabel(Label.create(path, targetName))
+                    .setConfigurationKey(configurationKey)
+                    .build()
+            Mockito.`when`<T?>(target.getLookupKey()).thenReturn(key)
+            return target
+        }
+    }
 }

@@ -11,218 +11,244 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
-
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.BuildFailedException;
-import com.google.devtools.build.lib.analysis.FileProvider;
-import com.google.devtools.build.lib.buildtool.util.BuildIntegrationTestCase;
-import com.google.devtools.build.lib.events.EventKind;
-import com.google.devtools.build.lib.runtime.BlazeModule;
-import com.google.devtools.build.lib.runtime.BlazeRuntime;
-import com.google.devtools.build.lib.testutil.MoreAsserts;
-import com.google.devtools.build.lib.util.AbruptExitException;
-import com.google.devtools.build.lib.vfs.ModifiedFileSet;
-import com.google.devtools.build.lib.vfs.OutputService;
-import com.google.devtools.build.lib.vfs.OutputService.ActionFileSystemType;
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import com.google.testing.junit.testparameterinjector.TestParameters;
-import java.io.IOException;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+import com.google.devtools.build.lib.actions.Artifact
 
 /**
- * Integration test for action invalidation based on output modifications returned by {@link
- * OutputService#startBuild}.
+ * Integration test for action invalidation based on output modifications returned by [ ][OutputService.startBuild].
  */
-@RunWith(TestParameterInjector.class)
-public final class OutputsInvalidationIntegrationTest extends BuildIntegrationTestCase {
+@RunWith(TestParameterInjector::class)
+class OutputsInvalidationIntegrationTest : BuildIntegrationTestCase() {
+    private val outputService: OutputService = Mockito.mock<OutputService>(OutputService::class.java)
 
-  private final OutputService outputService = mock(OutputService.class);
-
-  @Before
-  public void prepareOutputServiceMock()
-      throws BuildFailedException, AbruptExitException, InterruptedException {
-    when(outputService.actionFileSystemType()).thenReturn(ActionFileSystemType.DISABLED);
-    when(outputService.getFileSystemName(any())).thenReturn("fileSystemName");
-    when(outputService.startBuild(any(), any(), any(), anyBoolean()))
-        .thenReturn(ModifiedFileSet.EVERYTHING_MODIFIED);
-    when(outputService.getXattrProvider(any())).thenAnswer(i -> i.getArgument(0));
-    when(outputService.getRewoundActionSynchronizer())
-        .thenReturn(OutputService.RewoundActionSynchronizer.NOOP);
-  }
-
-  @Override
-  protected BlazeRuntime.Builder getRuntimeBuilder() throws Exception {
-    return super.getRuntimeBuilder()
-        .addBlazeModule(
-            new BlazeModule() {
-              @Override
-              public OutputService getOutputService() {
-                return outputService;
-              }
-            });
-  }
-
-  @Override
-  protected ImmutableSet<EventKind> additionalEventsToCollect() {
-    return ImmutableSet.of(EventKind.FINISH);
-  }
-
-  @Test
-  public void nothingModified_doesntInvalidateAnyActions(@TestParameter boolean deleteOutput)
-      throws Exception {
-    write("foo/BUILD", "genrule(name='foo', outs=['foo.out'], cmd='touch $@')");
-    buildTarget("//foo");
-    MoreAsserts.assertContainsEvent(events.collector(), "Executing genrule //foo:foo");
-    if (deleteOutput) {
-      delete(getOnlyOutput("//foo"));
+    @Before
+    @Throws(BuildFailedException::class, AbruptExitException::class, java.lang.InterruptedException::class)
+    fun prepareOutputServiceMock() {
+        Mockito.`when`<T?>(outputService.actionFileSystemType()).thenReturn(ActionFileSystemType.DISABLED)
+        Mockito.`when`<T?>(outputService.getFileSystemName(ArgumentMatchers.any<T?>())).thenReturn("fileSystemName")
+        Mockito.`when`<T?>(
+            outputService.startBuild(
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.anyBoolean()
+            )
+        )
+            .thenReturn(ModifiedFileSet.EVERYTHING_MODIFIED)
+        Mockito.`when`<T?>(outputService.getXattrProvider(ArgumentMatchers.any<T?>()))
+            .thenAnswer(Answer { i: InvocationOnMock? -> i.getArgument<Any?>(0) })
+        Mockito.`when`<T?>(outputService.getRewoundActionSynchronizer())
+            .thenReturn(OutputService.RewoundActionSynchronizer.NOOP)
     }
 
-    when(outputService.startBuild(any(), any(), any(), anyBoolean()))
-        .thenReturn(ModifiedFileSet.NOTHING_MODIFIED);
-    events.collector().clear();
-    buildTarget("//foo");
+    @Throws(java.lang.Exception::class)
+    override fun getRuntimeBuilder(): BlazeRuntime.Builder {
+        return super.runtimeBuilder
+            .addBlazeModule(
+                object : BlazeModule() {
+                    public override fun getOutputService(): OutputService {
+                        return outputService
+                    }
+                })
+    }
 
-    MoreAsserts.assertDoesNotContainEvent(events.collector(), "Executing genrule //foo:foo");
-  }
+    override fun additionalEventsToCollect(): com.google.common.collect.ImmutableSet<com.google.devtools.build.lib.events.EventKind?> {
+        return com.google.common.collect.ImmutableSet.of<com.google.devtools.build.lib.events.EventKind?>(com.google.devtools.build.lib.events.EventKind.FINISH)
+    }
 
-  private enum ReportedModification {
-    EVERYTHING_MODIFIED {
-      @Override
-      ModifiedFileSet modifiedFileSet(Artifact artifact) {
-        return ModifiedFileSet.EVERYTHING_MODIFIED;
-      }
-    },
-    EVERYTHING_DELETED {
-      @Override
-      ModifiedFileSet modifiedFileSet(Artifact artifact) {
-        return ModifiedFileSet.EVERYTHING_DELETED;
-      }
-    },
-    SINGLE_FILE {
-      @Override
-      ModifiedFileSet modifiedFileSet(Artifact artifact) {
-        return ModifiedFileSet.builder().modify(artifact.getExecPath()).build();
-      }
-    };
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun nothingModified_doesntInvalidateAnyActions(@TestParameter deleteOutput: Boolean) {
+        write("foo/BUILD", "genrule(name='foo', outs=['foo.out'], cmd='touch $@')")
+        buildTarget("//foo")
+        MoreAsserts.assertContainsEvent(events.collector(), "Executing genrule //foo:foo")
+        if (deleteOutput) {
+            delete(getOnlyOutput("//foo"))
+        }
 
-    abstract ModifiedFileSet modifiedFileSet(Artifact artifact);
-  }
+        Mockito.`when`<T?>(
+            outputService.startBuild(
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.anyBoolean()
+            )
+        )
+            .thenReturn(ModifiedFileSet.NOTHING_MODIFIED)
+        events.collector().clear()
+        buildTarget("//foo")
 
-  @Test
-  public void identicalOutputs_doesntInvalidateAnyActions(
-      @TestParameter ReportedModification modification) throws Exception {
-    write("foo/BUILD", "genrule(name='foo', outs=['foo.out'], cmd='touch $@')");
-    buildTarget("//foo");
-    MoreAsserts.assertContainsEvent(events.collector(), "Executing genrule //foo:foo");
+        MoreAsserts.assertDoesNotContainEvent(events.collector(), "Executing genrule //foo:foo")
+    }
 
-    when(outputService.startBuild(any(), any(), any(), anyBoolean()))
-        .thenReturn(modification.modifiedFileSet(getOnlyOutput("//foo")));
-    events.collector().clear();
-    buildTarget("//foo");
+    private enum class ReportedModification {
+        EVERYTHING_MODIFIED {
+            override fun modifiedFileSet(artifact: Artifact?): ModifiedFileSet {
+                return ModifiedFileSet.EVERYTHING_MODIFIED
+            }
+        },
+        EVERYTHING_DELETED {
+            override fun modifiedFileSet(artifact: Artifact?): ModifiedFileSet {
+                return ModifiedFileSet.EVERYTHING_DELETED
+            }
+        },
+        SINGLE_FILE {
+            override fun modifiedFileSet(artifact: Artifact): ModifiedFileSet {
+                return ModifiedFileSet.builder().modify(artifact.getExecPath()).build()
+            }
+        };
 
-    MoreAsserts.assertDoesNotContainEvent(events.collector(), "Executing genrule //foo:foo");
-  }
+        abstract fun modifiedFileSet(artifact: Artifact?): ModifiedFileSet?
+    }
 
-  @Test
-  public void noCheckOutputFiles_ignoresModifiedFiles(
-      @TestParameter ReportedModification modification) throws Exception {
-    addOptions("--experimental_check_output_files");
-    write("foo/BUILD", "genrule(name='foo', outs=['foo.out'], cmd='touch $@')");
-    buildTarget("//foo");
-    MoreAsserts.assertContainsEvent(events.collector(), "Executing genrule //foo:foo");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun identicalOutputs_doesntInvalidateAnyActions(
+        @TestParameter modification: ReportedModification
+    ) {
+        write("foo/BUILD", "genrule(name='foo', outs=['foo.out'], cmd='touch $@')")
+        buildTarget("//foo")
+        MoreAsserts.assertContainsEvent(events.collector(), "Executing genrule //foo:foo")
 
-    when(outputService.startBuild(any(), any(), any(), anyBoolean()))
-        .thenReturn(modification.modifiedFileSet(getOnlyOutput("//foo")));
-    events.collector().clear();
-    buildTarget("//foo");
+        Mockito.`when`<T?>(
+            outputService.startBuild(
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.anyBoolean()
+            )
+        )
+            .thenReturn(modification.modifiedFileSet(getOnlyOutput("//foo")))
+        events.collector().clear()
+        buildTarget("//foo")
 
-    MoreAsserts.assertDoesNotContainEvent(events.collector(), "Executing genrule //foo:foo");
-  }
+        MoreAsserts.assertDoesNotContainEvent(events.collector(), "Executing genrule //foo:foo")
+    }
 
-  @TestParameters({
-    "{everythingDeleted: false, checkOutputFiles: true}",
-    "{everythingDeleted: true, checkOutputFiles: false}",
-    "{everythingDeleted: true, checkOutputFiles: true}",
-  })
-  @Test
-  public void everythingModified_invalidatesAllActions(
-      boolean everythingDeleted, boolean checkOutputFiles) throws Exception {
-    addOptions("--experimental_check_output_files=" + checkOutputFiles);
-    write("foo/BUILD", "genrule(name='foo', outs=['foo.out'], cmd='touch $@')");
-    buildTarget("//foo");
-    MoreAsserts.assertContainsEvent(events.collector(), "Executing genrule //foo:foo");
-    delete(getOnlyOutput("//foo"));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun noCheckOutputFiles_ignoresModifiedFiles(
+        @TestParameter modification: ReportedModification
+    ) {
+        addOptions("--experimental_check_output_files")
+        write("foo/BUILD", "genrule(name='foo', outs=['foo.out'], cmd='touch $@')")
+        buildTarget("//foo")
+        MoreAsserts.assertContainsEvent(events.collector(), "Executing genrule //foo:foo")
 
-    when(outputService.startBuild(any(), any(), any(), anyBoolean()))
-        .thenReturn(
-            everythingDeleted
-                ? ModifiedFileSet.EVERYTHING_DELETED
-                : ModifiedFileSet.EVERYTHING_MODIFIED);
-    events.collector().clear();
-    buildTarget("//foo");
+        Mockito.`when`<T?>(
+            outputService.startBuild(
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.anyBoolean()
+            )
+        )
+            .thenReturn(modification.modifiedFileSet(getOnlyOutput("//foo")))
+        events.collector().clear()
+        buildTarget("//foo")
 
-    MoreAsserts.assertContainsEvent(events.collector(), "Executing genrule //foo:foo");
-  }
+        MoreAsserts.assertDoesNotContainEvent(events.collector(), "Executing genrule //foo:foo")
+    }
 
-  @Test
-  public void outputFileModified_invalidatesOnlyAffectedAction() throws Exception {
-    write(
-        "foo/BUILD",
-        """
+    @TestParameters(
+        "{everythingDeleted: false, checkOutputFiles: true}",
+        "{everythingDeleted: true, checkOutputFiles: false}",
+        "{everythingDeleted: true, checkOutputFiles: true}"
+    )
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun everythingModified_invalidatesAllActions(
+        everythingDeleted: Boolean, checkOutputFiles: Boolean
+    ) {
+        addOptions("--experimental_check_output_files=" + checkOutputFiles)
+        write("foo/BUILD", "genrule(name='foo', outs=['foo.out'], cmd='touch $@')")
+        buildTarget("//foo")
+        MoreAsserts.assertContainsEvent(events.collector(), "Executing genrule //foo:foo")
+        delete(getOnlyOutput("//foo"))
+
+        Mockito.`when`<T?>(
+            outputService.startBuild(
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.anyBoolean()
+            )
+        )
+            .thenReturn(
+                if (everythingDeleted)
+                    ModifiedFileSet.EVERYTHING_DELETED
+                else
+                    ModifiedFileSet.EVERYTHING_MODIFIED
+            )
+        events.collector().clear()
+        buildTarget("//foo")
+
+        MoreAsserts.assertContainsEvent(events.collector(), "Executing genrule //foo:foo")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun outputFileModified_invalidatesOnlyAffectedAction() {
+        write(
+            "foo/BUILD",
+            """
         genrule(
             name = "foo",
             outs = ["foo.out"],
-            cmd = "touch $@",
+            cmd = "touch ${'$'}@",
         )
 
         genrule(
             name = "bar",
             outs = ["bar.out"],
-            cmd = "touch $@",
+            cmd = "touch ${'$'}@",
         )
-        """);
-    buildTarget("//foo:all");
-    MoreAsserts.assertContainsEvent(events.collector(), "Executing genrule //foo:foo");
-    MoreAsserts.assertContainsEvent(events.collector(), "Executing genrule //foo:bar");
-    Artifact fooOut = getOnlyOutput("//foo");
-    delete(fooOut);
+        
+        """.trimIndent()
+        )
+        buildTarget("//foo:all")
+        MoreAsserts.assertContainsEvent(events.collector(), "Executing genrule //foo:foo")
+        MoreAsserts.assertContainsEvent(events.collector(), "Executing genrule //foo:bar")
+        val fooOut: Artifact = getOnlyOutput("//foo")
+        delete(fooOut)
 
-    when(outputService.startBuild(any(), any(), any(), anyBoolean()))
-        .thenReturn(modifiedFileSet(fooOut));
-    events.collector().clear();
-    buildTarget("//foo:all");
+        Mockito.`when`<T?>(
+            outputService.startBuild(
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.anyBoolean()
+            )
+        )
+            .thenReturn(modifiedFileSet(fooOut))
+        events.collector().clear()
+        buildTarget("//foo:all")
 
-    MoreAsserts.assertContainsEvent(events.collector(), "Executing genrule //foo:foo");
-    MoreAsserts.assertDoesNotContainEvent(events.collector(), "Executing genrule //foo:bar");
-  }
-
-  private static void delete(Artifact artifact) throws IOException {
-    assertThat(artifact.getPath().delete()).isTrue();
-  }
-
-  private Artifact getOnlyOutput(String label) throws Exception {
-    return getConfiguredTarget(label)
-        .getProvider(FileProvider.class)
-        .getFilesToBuild()
-        .getSingleton();
-  }
-
-  private static ModifiedFileSet modifiedFileSet(Artifact... artifacts) {
-    ModifiedFileSet.Builder modifiedFileSet = ModifiedFileSet.builder();
-    for (Artifact artifact : artifacts) {
-      modifiedFileSet.modify(artifact.getExecPath());
+        MoreAsserts.assertContainsEvent(events.collector(), "Executing genrule //foo:foo")
+        MoreAsserts.assertDoesNotContainEvent(events.collector(), "Executing genrule //foo:bar")
     }
-    return modifiedFileSet.build();
-  }
+
+    @Throws(java.lang.Exception::class)
+    private fun getOnlyOutput(label: String?): Artifact {
+        return getConfiguredTarget(label)
+            .getProvider(FileProvider::class.java)
+            .getFilesToBuild()
+            .getSingleton()
+    }
+
+    companion object {
+        @Throws(IOException::class)
+        private fun delete(artifact: Artifact) {
+            assertThat(artifact.getPath().delete()).isTrue()
+        }
+
+        private fun modifiedFileSet(vararg artifacts: Artifact): ModifiedFileSet {
+            val modifiedFileSet: ModifiedFileSet.Builder = ModifiedFileSet.builder()
+            for (artifact in artifacts) {
+                modifiedFileSet.modify(artifact.getExecPath())
+            }
+            return modifiedFileSet.build()
+        }
+    }
 }

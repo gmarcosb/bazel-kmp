@@ -11,233 +11,217 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.concurrent;
+package com.google.devtools.build.lib.concurrent
 
-import static com.google.common.util.concurrent.MoreExecutors.shutdownAndAwaitTermination;
-import static java.util.concurrent.Executors.newSingleThreadExecutor;
-import static java.util.concurrent.TimeUnit.MILLISECONDS;
-import static java.util.concurrent.TimeUnit.SECONDS;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertThrows;
-import static org.junit.Assert.assertTrue;
-
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.common.util.concurrent.MoreExecutors
+import org.junit.After
+import org.junit.Assert
+import org.junit.Before
+import org.junit.Test
+import org.junit.function.ThrowingRunnable
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.util.concurrent.*
 
 /**
- * Test cases for {@link IncrementableCountDownLatch}
- *
+ * Test cases for [IncrementableCountDownLatch]
+ * 
  * @author Shay Raz
  * @author Martin Buchholz
  */
-@RunWith(JUnit4.class)
-public class IncrementableCountDownLatchTest {
-  private ExecutorService executor;
+@RunWith(JUnit4::class)
+class IncrementableCountDownLatchTest {
+    private var executor: ExecutorService? = null
 
-  @Before
-  public void setUp() {
-    executor = newSingleThreadExecutor();
-  }
-
-  @After
-  public void tearDown() {
-    assertTrue(shutdownAndAwaitTermination(executor, 10, SECONDS));
-  }
-
-  @Test
-  public void testIncrementableCountDownLatch() throws Exception {
-    CountingIncrementableCountDownLatch icdl = new CountingIncrementableCountDownLatch(2, 2);
-
-    Future<?> result = executor.submit(new WaitSuccessfully(icdl));
-    icdl.countDown();
-    icdl.countDown();
-
-    assertTrue(icdl.match());
-    result.get();
-
-    // increment by one
-    icdl = new CountingIncrementableCountDownLatch(2, 3);
-
-    result = executor.submit(new WaitSuccessfully(icdl));
-    icdl.countDown();
-    icdl.increment(1);
-    icdl.countDown();
-    icdl.countDown();
-
-    assertTrue(icdl.match());
-    result.get();
-  }
-
-  @Test
-  public void testIncrementableCountDownLatchTooLate() throws Exception {
-    CountingIncrementableCountDownLatch icdl = new CountingIncrementableCountDownLatch(2, 2);
-
-    Future<?> result = executor.submit(new WaitSuccessfully(icdl));
-    icdl.countDown();
-    icdl.countDown();
-    assertThrows(IllegalStateException.class, () -> icdl.increment(1));
-    assertTrue(icdl.match());
-    result.get();
-  }
-
-  @Test
-  public void testIncrementableCountDownLatchWithTimeout() throws Exception {
-    CountingIncrementableCountDownLatch icdl = new CountingIncrementableCountDownLatch(2, 2);
-
-    Future<?> result = executor.submit(new WaitSuccessfullyWithTimeout(icdl));
-    icdl.countDown();
-    icdl.countDown();
-    assertTrue(icdl.match());
-    result.get();
-
-    // increment by one
-    icdl = new CountingIncrementableCountDownLatch(2, 3);
-
-    result = executor.submit(new WaitSuccessfullyWithTimeout(icdl));
-    icdl.countDown();
-    icdl.increment(1);
-    icdl.countDown();
-    icdl.countDown();
-
-    assertTrue(icdl.match());
-    result.get();
-  }
-
-  @Test
-  public void testIncrementableCountDownLatchWithTimeoutTimedOut() throws Exception {
-    CountingIncrementableCountDownLatch icdl = new CountingIncrementableCountDownLatch(2, 1);
-
-    Future<?> result = executor.submit(new WaitUnsuccessfullyWithTimeout(icdl));
-    icdl.countDown();
-    assertTrue(icdl.match());
-    result.get();
-
-    // increment by one
-    icdl = new CountingIncrementableCountDownLatch(2, 2);
-
-    result = executor.submit(new WaitUnsuccessfullyWithTimeout(icdl));
-    icdl.countDown();
-    icdl.increment(1);
-    icdl.countDown();
-
-    assertTrue(icdl.match());
-    result.get();
-  }
-
-  /** increment() is equivalent to increment(1) */
-  @Test
-  public void testNullaryIncrement() throws InterruptedException {
-    IncrementableCountDownLatch icdl = new IncrementableCountDownLatch(1);
-    assertEquals(1, icdl.getCount());
-    icdl.increment();
-    assertEquals(2, icdl.getCount());
-    icdl.increment();
-    assertEquals(3, icdl.getCount());
-    icdl.countDown();
-    icdl.countDown();
-    icdl.countDown();
-    assertEquals(0, icdl.getCount());
-    icdl.await();
-  }
-
-  /**
-   * Incrementing past Integer.MAX_VALUE throws IllegalStateException, and leaves count unchanged.
-   */
-  @Test
-  public void testCountOverflow() {
-    IncrementableCountDownLatch icdl = new IncrementableCountDownLatch(1);
-    assertThrows(IllegalArgumentException.class, () -> icdl.increment(Integer.MAX_VALUE));
-    assertEquals(1, icdl.getCount());
-  }
-
-  /** Incrementing the count to Integer.MAX_VALUE succeeds. */
-  @Test
-  public void testIncrementCountToMaxValue() {
-    IncrementableCountDownLatch icdl = new IncrementableCountDownLatch(42);
-
-    icdl.increment(Integer.MAX_VALUE - 42);
-    assertEquals(Integer.MAX_VALUE, icdl.getCount());
-  }
-
-  private static class WaitSuccessfully implements Callable<Void> {
-    final CountingIncrementableCountDownLatch icdl;
-
-    WaitSuccessfully(CountingIncrementableCountDownLatch icdl) {
-      this.icdl = icdl;
+    @Before
+    fun setUp() {
+        executor = Executors.newSingleThreadExecutor()
     }
 
-    @Override
-    public Void call() throws Exception {
-      icdl.await();
-      return null;
-    }
-  }
-
-  private static class WaitSuccessfullyWithTimeout implements Callable<Void> {
-    final CountingIncrementableCountDownLatch icdl;
-
-    WaitSuccessfullyWithTimeout(CountingIncrementableCountDownLatch icdl) {
-      this.icdl = icdl;
+    @After
+    fun tearDown() {
+        Assert.assertTrue(MoreExecutors.shutdownAndAwaitTermination(executor, 10, TimeUnit.SECONDS))
     }
 
-    @Override
-    public Void call() throws Exception {
-      assertTrue(icdl.await(10, SECONDS));
-      return null;
-    }
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testIncrementableCountDownLatch() {
+        var icdl = CountingIncrementableCountDownLatch(2, 2)
 
-  private static class WaitUnsuccessfullyWithTimeout implements Callable<Void> {
-    final CountingIncrementableCountDownLatch icdl;
+        var result: Future<*> = executor!!.submit<Void?>(WaitSuccessfully(icdl))
+        icdl.countDown()
+        icdl.countDown()
 
-    WaitUnsuccessfullyWithTimeout(CountingIncrementableCountDownLatch icdl) {
-      this.icdl = icdl;
-    }
+        Assert.assertTrue(icdl.match())
+        result.get()
 
-    @Override
-    public Void call() throws Exception {
-      assertFalse(icdl.await(12, MILLISECONDS));
-      return null;
-    }
-  }
+        // increment by one
+        icdl = CountingIncrementableCountDownLatch(2, 3)
 
-  private static class CountingIncrementableCountDownLatch {
-    final int expected;
-    int actual = 0;
-    final IncrementableCountDownLatch latch;
+        result = executor!!.submit<Void?>(WaitSuccessfully(icdl))
+        icdl.countDown()
+        icdl.increment(1)
+        icdl.countDown()
+        icdl.countDown()
 
-    CountingIncrementableCountDownLatch(int count, int expected) {
-      latch = new IncrementableCountDownLatch(count);
-      this.expected = expected;
+        Assert.assertTrue(icdl.match())
+        result.get()
     }
 
-    boolean await(int timeout, TimeUnit unit) throws InterruptedException {
-      return latch.await(timeout, unit);
+    @Test
+    @Throws(Exception::class)
+    fun testIncrementableCountDownLatchTooLate() {
+        val icdl = CountingIncrementableCountDownLatch(2, 2)
+
+        val result: Future<*> = executor!!.submit<Void?>(WaitSuccessfully(icdl))
+        icdl.countDown()
+        icdl.countDown()
+        Assert.assertThrows<IllegalStateException?>(
+            IllegalStateException::class.java,
+            ThrowingRunnable { icdl.increment(1) })
+        Assert.assertTrue(icdl.match())
+        result.get()
     }
 
-    void await() throws InterruptedException {
-      latch.await();
+    @Test
+    @Throws(Exception::class)
+    fun testIncrementableCountDownLatchWithTimeout() {
+        var icdl = CountingIncrementableCountDownLatch(2, 2)
+
+        var result: Future<*> = executor!!.submit<Void?>(WaitSuccessfullyWithTimeout(icdl))
+        icdl.countDown()
+        icdl.countDown()
+        Assert.assertTrue(icdl.match())
+        result.get()
+
+        // increment by one
+        icdl = CountingIncrementableCountDownLatch(2, 3)
+
+        result = executor!!.submit<Void?>(WaitSuccessfullyWithTimeout(icdl))
+        icdl.countDown()
+        icdl.increment(1)
+        icdl.countDown()
+        icdl.countDown()
+
+        Assert.assertTrue(icdl.match())
+        result.get()
     }
 
-    void increment(int i) {
-      latch.increment(i);
+    @Test
+    @Throws(Exception::class)
+    fun testIncrementableCountDownLatchWithTimeoutTimedOut() {
+        var icdl = CountingIncrementableCountDownLatch(2, 1)
+
+        var result: Future<*> = executor!!.submit<Void?>(WaitUnsuccessfullyWithTimeout(icdl))
+        icdl.countDown()
+        Assert.assertTrue(icdl.match())
+        result.get()
+
+        // increment by one
+        icdl = CountingIncrementableCountDownLatch(2, 2)
+
+        result = executor!!.submit<Void?>(WaitUnsuccessfullyWithTimeout(icdl))
+        icdl.countDown()
+        icdl.increment(1)
+        icdl.countDown()
+
+        Assert.assertTrue(icdl.match())
+        result.get()
     }
 
-    void countDown() {
-      actual++;
-      latch.countDown();
+    /** increment() is equivalent to increment(1)  */
+    @Test
+    @Throws(InterruptedException::class)
+    fun testNullaryIncrement() {
+        val icdl: IncrementableCountDownLatch = IncrementableCountDownLatch(1)
+        assertEquals(1, icdl.getCount())
+        icdl.increment()
+        assertEquals(2, icdl.getCount())
+        icdl.increment()
+        assertEquals(3, icdl.getCount())
+        icdl.countDown()
+        icdl.countDown()
+        icdl.countDown()
+        assertEquals(0, icdl.getCount())
+        icdl.await()
     }
 
-    boolean match() {
-      return expected == actual;
+    /**
+     * Incrementing past Integer.MAX_VALUE throws IllegalStateException, and leaves count unchanged.
+     */
+    @Test
+    fun testCountOverflow() {
+        val icdl: IncrementableCountDownLatch = IncrementableCountDownLatch(1)
+        Assert.assertThrows<IllegalArgumentException?>(
+            IllegalArgumentException::class.java,
+            ThrowingRunnable { icdl.increment(Int.Companion.MAX_VALUE) })
+        assertEquals(1, icdl.getCount())
     }
-  }
+
+    /** Incrementing the count to Integer.MAX_VALUE succeeds.  */
+    @Test
+    fun testIncrementCountToMaxValue() {
+        val icdl: IncrementableCountDownLatch = IncrementableCountDownLatch(42)
+
+        icdl.increment(Int.Companion.MAX_VALUE - 42)
+        assertEquals(Int.Companion.MAX_VALUE, icdl.getCount())
+    }
+
+    private class WaitSuccessfully(val icdl: CountingIncrementableCountDownLatch) : Callable<Void?> {
+        @Throws(Exception::class)
+        override fun call(): Void? {
+            icdl.await()
+            return null
+        }
+    }
+
+    private class WaitSuccessfullyWithTimeout(val icdl: CountingIncrementableCountDownLatch) : Callable<Void?> {
+        @Throws(Exception::class)
+        override fun call(): Void? {
+            Assert.assertTrue(icdl.await(10, TimeUnit.SECONDS))
+            return null
+        }
+    }
+
+    private class WaitUnsuccessfullyWithTimeout(val icdl: CountingIncrementableCountDownLatch) : Callable<Void?> {
+        @Throws(Exception::class)
+        override fun call(): Void? {
+            Assert.assertFalse(icdl.await(12, TimeUnit.MILLISECONDS))
+            return null
+        }
+    }
+
+    private class CountingIncrementableCountDownLatch(count: Int, expected: Int) {
+        val expected: Int
+        var actual: Int = 0
+        val latch: IncrementableCountDownLatch
+
+        init {
+            latch = IncrementableCountDownLatch(count)
+            this.expected = expected
+        }
+
+        @Throws(InterruptedException::class)
+        fun await(timeout: Int, unit: TimeUnit?): Boolean {
+            return latch.await(timeout, unit)
+        }
+
+        @Throws(InterruptedException::class)
+        fun await() {
+            latch.await()
+        }
+
+        fun increment(i: Int) {
+            latch.increment(i)
+        }
+
+        fun countDown() {
+            actual++
+            latch.countDown()
+        }
+
+        fun match(): Boolean {
+            return expected == actual
+        }
+    }
 }

@@ -11,327 +11,378 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.annot.processor
 
-package net.starlark.java.annot.processor;
+import com.google.common.truth.Truth
+import com.google.testing.compile.JavaFileObjects
+import com.google.testing.compile.JavaSourceSubjectFactory
+import com.google.testing.compile.JavaSourcesSubject.SingleSourceAdapter
+import net.starlark.java.annot.processor.StarlarkMethodProcessor
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import javax.tools.JavaFileObject
 
-import static com.google.common.truth.Truth.assertAbout;
-import static com.google.testing.compile.JavaSourceSubjectFactory.javaSource;
+/** Unit tests for StarlarkMethodProcessor.  */
+@RunWith(JUnit4::class)
+class StarlarkMethodProcessorTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGoldenCase() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("GoldenCase.java"))
+            .processedWith(StarlarkMethodProcessor())
+            .compilesWithoutError()
+    }
 
-import com.google.common.io.Resources;
-import com.google.testing.compile.JavaFileObjects;
-import javax.tools.JavaFileObject;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testPrivateMethod() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("PrivateMethod.java"))
+            .processedWith(StarlarkMethodProcessor())
+            .failsToCompile()
+            .withErrorContaining("StarlarkMethod-annotated methods must be public.")
+    }
 
-/** Unit tests for StarlarkMethodProcessor. */
-@RunWith(JUnit4.class)
-public final class StarlarkMethodProcessorTest {
-
-  private static JavaFileObject getFile(String pathToFile) {
-    return JavaFileObjects.forResource(Resources.getResource(
-        StarlarkMethodProcessorTest.class, "testsources/" + pathToFile));
-  }
-
-  @Test
-  public void testGoldenCase() throws Exception {
-    assertAbout(javaSource())
-        .that(getFile("GoldenCase.java"))
-        .processedWith(new StarlarkMethodProcessor())
-        .compilesWithoutError();
-  }
-
-  @Test
-  public void testPrivateMethod() throws Exception {
-    assertAbout(javaSource())
-        .that(getFile("PrivateMethod.java"))
-        .processedWith(new StarlarkMethodProcessor())
-        .failsToCompile()
-        .withErrorContaining("StarlarkMethod-annotated methods must be public.");
-  }
-
-  @Test
-  public void testStaticMethod() throws Exception {
-    assertAbout(javaSource())
-        .that(getFile("StaticMethod.java"))
-        .processedWith(new StarlarkMethodProcessor())
-        .failsToCompile()
-        .withErrorContaining("StarlarkMethod-annotated methods cannot be static.");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStaticMethod() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("StaticMethod.java"))
+            .processedWith(StarlarkMethodProcessor())
+            .failsToCompile()
+            .withErrorContaining("StarlarkMethod-annotated methods cannot be static.")
+    }
 
 
-  @Test
-  public void testStructFieldWithArguments() throws Exception {
-    assertAbout(javaSource())
-        .that(getFile("StructFieldWithArguments.java"))
-        .processedWith(new StarlarkMethodProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "method structFieldMethod is annotated structField=true but also has 1 Param"
-                + " annotations");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStructFieldWithArguments() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("StructFieldWithArguments.java"))
+            .processedWith(StarlarkMethodProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "method structFieldMethod is annotated structField=true but also has 1 Param"
+                        + " annotations"
+            )
+    }
 
-  @Test
-  public void testStructFieldWithInvalidInfo() throws Exception {
-    assertAbout(javaSource())
-        .that(getFile("StructFieldWithInvalidInfo.java"))
-        .processedWith(new StarlarkMethodProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "a StarlarkMethod-annotated method with structField=true may not also specify"
-                + " useStarlarkThread");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStructFieldWithInvalidInfo() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("StructFieldWithInvalidInfo.java"))
+            .processedWith(StarlarkMethodProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "a StarlarkMethod-annotated method with structField=true may not also specify"
+                        + " useStarlarkThread"
+            )
+    }
 
-  @Test
-  public void testStructFieldWithExtraArgs() throws Exception {
-    assertAbout(javaSource())
-        .that(getFile("StructFieldWithExtraArgs.java"))
-        .processedWith(new StarlarkMethodProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "a StarlarkMethod-annotated method with structField=true may not also specify"
-                + " extraPositionals");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStructFieldWithExtraArgs() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("StructFieldWithExtraArgs.java"))
+            .processedWith(StarlarkMethodProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "a StarlarkMethod-annotated method with structField=true may not also specify"
+                        + " extraPositionals"
+            )
+    }
 
-  @Test
-  public void testStructFieldWithExtraKeywords() throws Exception {
-    assertAbout(javaSource())
-        .that(getFile("StructFieldWithExtraKeywords.java"))
-        .processedWith(new StarlarkMethodProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "a StarlarkMethod-annotated method with structField=true may not also specify"
-                + " extraKeywords");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStructFieldWithExtraKeywords() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("StructFieldWithExtraKeywords.java"))
+            .processedWith(StarlarkMethodProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "a StarlarkMethod-annotated method with structField=true may not also specify"
+                        + " extraKeywords"
+            )
+    }
 
-  @Test
-  public void testDocumentationMissing() throws Exception {
-    assertAbout(javaSource())
-        .that(getFile("DocumentationMissing.java"))
-        .processedWith(new StarlarkMethodProcessor())
-        .failsToCompile()
-        .withErrorContaining("The 'doc' string must be non-empty if 'documented' is true.");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDocumentationMissing() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("DocumentationMissing.java"))
+            .processedWith(StarlarkMethodProcessor())
+            .failsToCompile()
+            .withErrorContaining("The 'doc' string must be non-empty if 'documented' is true.")
+    }
 
-  @Test
-  public void testArgumentMissing() throws Exception {
-    assertAbout(javaSource())
-        .that(getFile("ArgumentMissing.java"))
-        .processedWith(new StarlarkMethodProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "method methodWithParams has 1 Param annotations but only 0 parameters");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testArgumentMissing() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("ArgumentMissing.java"))
+            .processedWith(StarlarkMethodProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "method methodWithParams has 1 Param annotations but only 0 parameters"
+            )
+    }
 
-  @Test
-  public void testStarlarkThreadMissing() throws Exception {
-    assertAbout(javaSource())
-        .that(getFile("StarlarkThreadMissing.java"))
-        .processedWith(new StarlarkMethodProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "for useStarlarkThread special parameter 'shouldBeThread', got type java.lang.String,"
-                + " want StarlarkThread");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStarlarkThreadMissing() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("StarlarkThreadMissing.java"))
+            .processedWith(StarlarkMethodProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "for useStarlarkThread special parameter 'shouldBeThread', got type java.lang.String,"
+                        + " want StarlarkThread"
+            )
+    }
 
-  @Test
-  public void testStarlarkInfoBeforeParams() throws Exception {
-    assertAbout(javaSource())
-        .that(getFile("StarlarkInfoBeforeParams.java"))
-        .processedWith(new StarlarkMethodProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "for useStarlarkThread special parameter 'three', got type java.lang.String, want"
-                + " StarlarkThread");
-    // Also reports:
-    // - annotated type java.lang.String of parameter 'one' is not assignable
-    //   to variable of type net.starlark.java.eval.StarlarkThread
-    // - annotated type java.lang.Integer of parameter 'two' is not assignable
-    //   to variable of type java.lang.String
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStarlarkInfoBeforeParams() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("StarlarkInfoBeforeParams.java"))
+            .processedWith(StarlarkMethodProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "for useStarlarkThread special parameter 'three', got type java.lang.String, want"
+                        + " StarlarkThread"
+            )
+        // Also reports:
+        // - annotated type java.lang.String of parameter 'one' is not assignable
+        //   to variable of type net.starlark.java.eval.StarlarkThread
+        // - annotated type java.lang.Integer of parameter 'two' is not assignable
+        //   to variable of type java.lang.String
+    }
 
-  @Test
-  public void testTooManyArguments() throws Exception {
-    assertAbout(javaSource())
-        .that(getFile("TooManyArguments.java"))
-        .processedWith(new StarlarkMethodProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "method methodWithTooManyArguments is annotated with 1 Params plus 0 special"
-                + " parameters, yet has 2 parameter variables");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTooManyArguments() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("TooManyArguments.java"))
+            .processedWith(StarlarkMethodProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "method methodWithTooManyArguments is annotated with 1 Params plus 0 special"
+                        + " parameters, yet has 2 parameter variables"
+            )
+    }
 
-  @Test
-  public void testParamNeitherNamedNorPositional() throws Exception {
-    assertAbout(javaSource())
-        .that(getFile("ParamNeitherNamedNorPositional.java"))
-        .processedWith(new StarlarkMethodProcessor())
-        .failsToCompile()
-        .withErrorContaining("Parameter 'a_parameter' must be either positional or named");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testParamNeitherNamedNorPositional() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("ParamNeitherNamedNorPositional.java"))
+            .processedWith(StarlarkMethodProcessor())
+            .failsToCompile()
+            .withErrorContaining("Parameter 'a_parameter' must be either positional or named")
+    }
 
-  @Test
-  public void testNonDefaultParamAfterDefault() throws Exception {
-    assertAbout(javaSource())
-        .that(getFile("NonDefaultParamAfterDefault.java"))
-        .processedWith(new StarlarkMethodProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "Positional parameter 'two' has no default value but is specified "
-                + "after one or more positional parameters with default values");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNonDefaultParamAfterDefault() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("NonDefaultParamAfterDefault.java"))
+            .processedWith(StarlarkMethodProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "Positional parameter 'two' has no default value but is specified "
+                        + "after one or more positional parameters with default values"
+            )
+    }
 
-  @Test
-  public void testPositionalParamAfterNonPositional() throws Exception {
-    assertAbout(javaSource())
-        .that(getFile("PositionalParamAfterNonPositional.java"))
-        .processedWith(new StarlarkMethodProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "Positional parameter 'two' is specified after one or more non-positional parameters");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testPositionalParamAfterNonPositional() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("PositionalParamAfterNonPositional.java"))
+            .processedWith(StarlarkMethodProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "Positional parameter 'two' is specified after one or more non-positional parameters"
+            )
+    }
 
-  @Test
-  public void testPositionalOnlyParamAfterNamed() throws Exception {
-    assertAbout(javaSource())
-        .that(getFile("PositionalOnlyParamAfterNamed.java"))
-        .processedWith(new StarlarkMethodProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "Positional-only parameter 'two' is specified after one or more named or undocumented"
-                + " parameters");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testPositionalOnlyParamAfterNamed() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("PositionalOnlyParamAfterNamed.java"))
+            .processedWith(StarlarkMethodProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "Positional-only parameter 'two' is specified after one or more named or undocumented"
+                        + " parameters"
+            )
+    }
 
-  @Test
-  public void testExtraKeywordsOutOfOrder() throws Exception {
-    assertAbout(javaSource())
-        .that(getFile("ExtraKeywordsOutOfOrder.java"))
-        .processedWith(new StarlarkMethodProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "extraKeywords special parameter 'one' has type java.lang.String, to which"
-                + " Dict<String, Object> cannot be assigned");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExtraKeywordsOutOfOrder() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("ExtraKeywordsOutOfOrder.java"))
+            .processedWith(StarlarkMethodProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "extraKeywords special parameter 'one' has type java.lang.String, to which"
+                        + " Dict<String, Object> cannot be assigned"
+            )
+    }
 
-  @Test
-  public void testExtraPositionalsMissing() throws Exception {
-    assertAbout(javaSource())
-        .that(getFile("ExtraPositionalsMissing.java"))
-        .processedWith(new StarlarkMethodProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "method threeArgMethod is annotated with 1 Params plus 2 special parameters, but has"
-                + " only 2 parameter variables");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExtraPositionalsMissing() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("ExtraPositionalsMissing.java"))
+            .processedWith(StarlarkMethodProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "method threeArgMethod is annotated with 1 Params plus 2 special parameters, but has"
+                        + " only 2 parameter variables"
+            )
+    }
 
-  @Test
-  public void testSelfCallWithNoName() throws Exception {
-    assertAbout(javaSource())
-        .that(getFile("SelfCallWithNoName.java"))
-        .processedWith(new StarlarkMethodProcessor())
-        .failsToCompile()
-        .withErrorContaining("StarlarkMethod.name must be non-empty.");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSelfCallWithNoName() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("SelfCallWithNoName.java"))
+            .processedWith(StarlarkMethodProcessor())
+            .failsToCompile()
+            .withErrorContaining("StarlarkMethod.name must be non-empty.")
+    }
 
-  @Test
-  public void testSelfCallWithStructField() throws Exception {
-    assertAbout(javaSource())
-        .that(getFile("SelfCallWithStructField.java"))
-        .processedWith(new StarlarkMethodProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "a StarlarkMethod-annotated method with structField=true may not also specify"
-                + " selfCall=true");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSelfCallWithStructField() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("SelfCallWithStructField.java"))
+            .processedWith(StarlarkMethodProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "a StarlarkMethod-annotated method with structField=true may not also specify"
+                        + " selfCall=true"
+            )
+    }
 
-  @Test
-  public void testMultipleSelfCallMethods() throws Exception {
-    assertAbout(javaSource())
-        .that(getFile("MultipleSelfCallMethods.java"))
-        .processedWith(new StarlarkMethodProcessor())
-        .failsToCompile()
-        .withErrorContaining("Containing class has more than one selfCall method defined.");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMultipleSelfCallMethods() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("MultipleSelfCallMethods.java"))
+            .processedWith(StarlarkMethodProcessor())
+            .failsToCompile()
+            .withErrorContaining("Containing class has more than one selfCall method defined.")
+    }
 
-  @Test
-  public void testEnablingAndDisablingFlag() throws Exception {
-    assertAbout(javaSource())
-        .that(getFile("EnablingAndDisablingFlag.java"))
-        .processedWith(new StarlarkMethodProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "Only one of StarlarkMethod.enableOnlyWithFlag and StarlarkMethod.disableWithFlag may"
-                + " be specified.");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEnablingAndDisablingFlag() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("EnablingAndDisablingFlag.java"))
+            .processedWith(StarlarkMethodProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "Only one of StarlarkMethod.enableOnlyWithFlag and StarlarkMethod.disableWithFlag may"
+                        + " be specified."
+            )
+    }
 
-  @Test
-  public void testEnablingAndDisablingFlag_param() throws Exception {
-    assertAbout(javaSource())
-        .that(getFile("EnablingAndDisablingFlagParam.java"))
-        .processedWith(new StarlarkMethodProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "Parameter 'two' has enableOnlyWithFlag and disableWithFlag set. "
-                + "At most one may be set");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEnablingAndDisablingFlag_param() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("EnablingAndDisablingFlagParam.java"))
+            .processedWith(StarlarkMethodProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "Parameter 'two' has enableOnlyWithFlag and disableWithFlag set. "
+                        + "At most one may be set"
+            )
+    }
 
-  @Test
-  public void testConflictingMethodNames() throws Exception {
-    assertAbout(javaSource())
-        .that(getFile("ConflictingMethodNames.java"))
-        .processedWith(new StarlarkMethodProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "Containing class defines more than one method named 'conflicting_method'");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testConflictingMethodNames() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("ConflictingMethodNames.java"))
+            .processedWith(StarlarkMethodProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "Containing class defines more than one method named 'conflicting_method'"
+            )
+    }
 
-  @Test
-  public void testToggledKwargsParam() throws Exception {
-    assertAbout(javaSource())
-        .that(getFile("ToggledKwargsParam.java"))
-        .processedWith(new StarlarkMethodProcessor())
-        .failsToCompile()
-        .withErrorContaining("The extraKeywords parameter may not be toggled by semantic flag");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testToggledKwargsParam() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("ToggledKwargsParam.java"))
+            .processedWith(StarlarkMethodProcessor())
+            .failsToCompile()
+            .withErrorContaining("The extraKeywords parameter may not be toggled by semantic flag")
+    }
 
-  @Test
-  public void testToggledParamNoDefaultValue() throws Exception {
-    assertAbout(javaSource())
-        .that(getFile("ToggledParamNoDefaultValue.java"))
-        .processedWith(new StarlarkMethodProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "Parameter 'two' may be disabled by semantic flag, thus defaultValue must be set");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testToggledParamNoDefaultValue() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("ToggledParamNoDefaultValue.java"))
+            .processedWith(StarlarkMethodProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "Parameter 'two' may be disabled by semantic flag, thus defaultValue must be set"
+            )
+    }
 
-  @Test
-  public void testSpecifiedGenericType() throws Exception {
-    assertAbout(javaSource())
-        .that(getFile("SpecifiedGenericType.java"))
-        .processedWith(new StarlarkMethodProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "parameter 'one' has generic type "
-                + "net.starlark.java.eval.Sequence<java.lang.String>");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSpecifiedGenericType() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("SpecifiedGenericType.java"))
+            .processedWith(StarlarkMethodProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "parameter 'one' has generic type "
+                        + "net.starlark.java.eval.Sequence<java.lang.String>"
+            )
+    }
 
-  @Test
-  public void testKwargsWithUndocumentedParam() throws Exception {
-    assertAbout(javaSource())
-        .that(getFile("KwargsWithUndocumentedParams.java"))
-        .processedWith(new StarlarkMethodProcessor())
-        .failsToCompile()
-        .withErrorContaining(
-            "Method 'undocumented_with_kwargs' has undocumented parameters but also allows extra"
-                + " keyword parameters");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testKwargsWithUndocumentedParam() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("KwargsWithUndocumentedParams.java"))
+            .processedWith(StarlarkMethodProcessor())
+            .failsToCompile()
+            .withErrorContaining(
+                "Method 'undocumented_with_kwargs' has undocumented parameters but also allows extra"
+                        + " keyword parameters"
+            )
+    }
 
-  @Test
-  public void testUndocumentedPositionalParam() throws Exception {
-    assertAbout(javaSource())
-        .that(getFile("UndocumentedPositionalParam.java"))
-        .processedWith(new StarlarkMethodProcessor())
-        .failsToCompile()
-        .withErrorContaining("Parameter 'one' must be documented because it is positional");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testUndocumentedPositionalParam() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("UndocumentedPositionalParam.java"))
+            .processedWith(StarlarkMethodProcessor())
+            .failsToCompile()
+            .withErrorContaining("Parameter 'one' must be documented because it is positional")
+    }
+
+    companion object {
+        private fun getFile(pathToFile: String?): JavaFileObject {
+            return JavaFileObjects.forResource(
+                com.google.common.io.Resources.getResource(
+                    StarlarkMethodProcessorTest::class.java, "testsources/" + pathToFile
+                )
+            )
+        }
+    }
 }

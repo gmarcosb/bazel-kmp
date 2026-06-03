@@ -11,80 +11,71 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.zstd;
+package com.google.devtools.build.lib.remote.zstd
 
-import static com.google.common.truth.Truth.assertThat;
-import static java.nio.charset.StandardCharsets.UTF_8;
+import com.github.luben.zstd.Zstd
 
-import com.github.luben.zstd.Zstd;
-import com.github.luben.zstd.ZstdOutputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.util.Random;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [ZstdDecompressingOutputStream].  */
+@RunWith(JUnit4::class)
+class ZstdDecompressingOutputStreamTest {
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun decompressionWorks() {
+        val rand: Random = Random()
+        val data = ByteArray(50)
+        rand.nextBytes(data)
+        val compressed: ByteArray = Zstd.compress(data)
 
-/** Tests for {@link ZstdDecompressingOutputStream}. */
-@RunWith(JUnit4.class)
-public class ZstdDecompressingOutputStreamTest {
-  @Test
-  public void decompressionWorks() throws IOException {
-    Random rand = new Random();
-    byte[] data = new byte[50];
-    rand.nextBytes(data);
-    byte[] compressed = Zstd.compress(data);
-
-    ByteArrayOutputStream baos = new ByteArrayOutputStream();
-    try (ZstdDecompressingOutputStream zdos = new ZstdDecompressingOutputStream(baos)) {
-      zdos.write(compressed);
-      zdos.flush();
-    }
-
-    assertThat(baos.toByteArray()).isEqualTo(data);
-  }
-
-  @Test
-  public void streamCanBeDecompressedOneByteAtATime() throws IOException {
-    Random rand = new Random();
-    byte[] data = new byte[50];
-    rand.nextBytes(data);
-    byte[] compressed = Zstd.compress(data);
-
-    ByteArrayOutputStream baos = new ByteArrayOutputStream();
-    try (ZstdDecompressingOutputStream zdos = new ZstdDecompressingOutputStream(baos)) {
-      for (byte b : compressed) {
-        zdos.write(b);
-      }
-      zdos.flush();
-    }
-
-    assertThat(baos.toByteArray()).isEqualTo(data);
-  }
-
-  @Test
-  public void bytesWrittenMatchesDecompressedBytes() throws IOException {
-    byte[] data = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".getBytes(UTF_8);
-
-    ByteArrayOutputStream compressed = new ByteArrayOutputStream();
-    try (ZstdOutputStream zos = new ZstdOutputStream(compressed)) {
-      zos.setCloseFrameOnFlush(true);
-      for (int i = 0; i < data.length; i++) {
-        zos.write(data[i]);
-        if (i % 5 == 0) {
-          // Create multiple frames of 5 bytes each.
-          zos.flush();
+        val baos: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        ZstdDecompressingOutputStream(baos).use { zdos ->
+            zdos.write(compressed)
+            zdos.flush()
         }
-      }
+        Truth.assertThat(baos.toByteArray()).isEqualTo(data)
     }
 
-    ByteArrayOutputStream decompressed = new ByteArrayOutputStream();
-    try (ZstdDecompressingOutputStream zdos = new ZstdDecompressingOutputStream(decompressed)) {
-      for (byte b : compressed.toByteArray()) {
-        zdos.write(b);
-        zdos.flush();
-      }
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun streamCanBeDecompressedOneByteAtATime() {
+        val rand: Random = Random()
+        val data = ByteArray(50)
+        rand.nextBytes(data)
+        val compressed: ByteArray = Zstd.compress(data)
+
+        val baos: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        ZstdDecompressingOutputStream(baos).use { zdos ->
+            for (b in compressed) {
+                zdos.write(b.toInt())
+            }
+            zdos.flush()
+        }
+        Truth.assertThat(baos.toByteArray()).isEqualTo(data)
     }
-    assertThat(decompressed.toByteArray()).isEqualTo(data);
-  }
+
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun bytesWrittenMatchesDecompressedBytes() {
+        val data: ByteArray =
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".getBytes(java.nio.charset.StandardCharsets.UTF_8)
+
+        val compressed: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        ZstdOutputStream(compressed).use { zos ->
+            zos.setCloseFrameOnFlush(true)
+            for (i in data.indices) {
+                zos.write(data[i])
+                if (i % 5 == 0) {
+                    // Create multiple frames of 5 bytes each.
+                    zos.flush()
+                }
+            }
+        }
+        val decompressed: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        ZstdDecompressingOutputStream(decompressed).use { zdos ->
+            for (b in compressed.toByteArray()) {
+                zdos.write(b.toInt())
+                zdos.flush()
+            }
+        }
+        Truth.assertThat(decompressed.toByteArray()).isEqualTo(data)
+    }
 }

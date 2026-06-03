@@ -11,87 +11,83 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.errorprone.annotations.ForOverride;
-import java.util.Map;
-import java.util.function.Supplier;
-import javax.annotation.Nullable;
+import com.google.devtools.build.skyframe.SimpleSkyframeLookupResult
+import com.google.devtools.build.skyframe.ValueOrUntypedException
 
 /**
- * Partial {@link SkyFunction.Environment} implementation that allows tests to deal with simple
- * types like {@link ValueOrUntypedException} and {@link ImmutableMap}.
+ * Partial [SkyFunction.Environment] implementation that allows tests to deal with simple
+ * types like [ValueOrUntypedException] and [ImmutableMap].
  */
-public abstract class AbstractSkyFunctionEnvironmentForTesting
-    extends AbstractSkyFunctionEnvironment {
+abstract class AbstractSkyFunctionEnvironmentForTesting
 
-  /**
-   * Gets a map of values or exceptions.
-   *
-   * <p>Implementations should set {@link #valuesMissing} as necessary.
-   */
-  @ForOverride
-  protected abstract ImmutableMap<SkyKey, ValueOrUntypedException> getValueOrUntypedExceptions(
-      Iterable<? extends SkyKey> depKeys) throws InterruptedException;
+    : AbstractSkyFunctionEnvironment() {
+    /**
+     * Gets a map of values or exceptions.
+     * 
+     * 
+     * Implementations should set [.valuesMissing] as necessary.
+     */
+    @com.google.errorprone.annotations.ForOverride
+    @Throws(java.lang.InterruptedException::class)
+    protected abstract fun getValueOrUntypedExceptions(
+        depKeys: Iterable<out SkyKey?>?
+    ): com.google.common.collect.ImmutableMap<SkyKey?, ValueOrUntypedException?>
 
-  @Nullable
-  @Override
-  final <E1 extends Exception, E2 extends Exception, E3 extends Exception, E4 extends Exception>
-      SkyValue getValueOrThrowInternal(
-          SkyKey depKey,
-          @Nullable Class<E1> exceptionClass1,
-          @Nullable Class<E2> exceptionClass2,
-          @Nullable Class<E3> exceptionClass3,
-          @Nullable Class<E4> exceptionClass4)
-          throws E1, E2, E3, E4, InterruptedException {
-    ValueOrUntypedException voe = getValueOrUntypedExceptions(ImmutableList.of(depKey)).get(depKey);
-    SkyValue value = voe.getValue();
-    if (value != null) {
-      return value;
+    @Throws(E1::class, E2::class, E3::class, E4::class, java.lang.InterruptedException::class)
+    public override fun <E1 : java.lang.Exception?, E2 : java.lang.Exception?, E3 : java.lang.Exception?, E4 : java.lang.Exception?>
+            getValueOrThrowInternal(
+        depKey: SkyKey,
+        exceptionClass1: java.lang.Class<E1?>?,
+        exceptionClass2: java.lang.Class<E2?>?,
+        exceptionClass3: java.lang.Class<E3?>?,
+        exceptionClass4: java.lang.Class<E4?>?
+    ): SkyValue? {
+        val voe: ValueOrUntypedException? =
+            getValueOrUntypedExceptions(com.google.common.collect.ImmutableList.of<SkyKey?>(depKey)).get(depKey)
+        val value: SkyValue? = voe.getValue()
+        if (value != null) {
+            return value
+        }
+        SkyFunctionException.throwIfInstanceOf(
+            voe.getException(), exceptionClass1, exceptionClass2, exceptionClass3, exceptionClass4
+        )
+        valuesMissing = true
+        return null
     }
-    SkyFunctionException.throwIfInstanceOf(
-        voe.getException(), exceptionClass1, exceptionClass2, exceptionClass3, exceptionClass4);
-    valuesMissing = true;
-    return null;
-  }
 
-  @Override
-  public final SkyframeLookupResult getValuesAndExceptions(Iterable<? extends SkyKey> depKeys)
-      throws InterruptedException {
-    Map<SkyKey, ValueOrUntypedException> valuesOrExceptions = getValueOrUntypedExceptions(depKeys);
-    return new SimpleSkyframeLookupResult(() -> valuesMissing = true, valuesOrExceptions::get);
-  }
+    @Throws(java.lang.InterruptedException::class)
+    public override fun getValuesAndExceptions(depKeys: Iterable<out SkyKey?>?): SkyframeLookupResult {
+        val valuesOrExceptions: MutableMap<SkyKey?, ValueOrUntypedException?> = getValueOrUntypedExceptions(depKeys)
+        return SimpleSkyframeLookupResult(
+            java.lang.Runnable { valuesMissing = true },
+            java.util.function.Function { key: SkyKey? -> valuesOrExceptions.get(key) })
+    }
 
-  @Override
-  public SkyframeLookupResult getLookupHandleForPreviouslyRequestedDeps() {
-    throw new UnsupportedOperationException();
-  }
+    val lookupHandleForPreviouslyRequestedDeps: SkyframeLookupResult?
+        get() {
+            throw java.lang.UnsupportedOperationException()
+        }
 
-  @Override
-  public void registerDependencies(Iterable<SkyKey> keys) {
-    throw new UnsupportedOperationException();
-  }
+    public override fun registerDependencies(keys: Iterable<SkyKey?>?) {
+        throw java.lang.UnsupportedOperationException()
+    }
 
-  @Override
-  public void dependOnFuture(ListenableFuture<?> future) {
-    throw new UnsupportedOperationException();
-  }
+    public override fun dependOnFuture(future: com.google.common.util.concurrent.ListenableFuture<*>?) {
+        throw java.lang.UnsupportedOperationException()
+    }
 
-  @Override
-  public Version getMaxTransitiveSourceVersionSoFar() {
-    throw new UnsupportedOperationException();
-  }
+    val maxTransitiveSourceVersionSoFar: Version?
+        get() {
+            throw java.lang.UnsupportedOperationException()
+        }
 
-  @Override
-  public boolean inErrorBubbling() {
-    return false;
-  }
+    public override fun inErrorBubbling(): Boolean {
+        return false
+    }
 
-  @Override
-  public <T extends SkyKeyComputeState> T getState(Supplier<T> stateSupplier) {
-    return stateSupplier.get();
-  }
+    public override fun <T : SkyKeyComputeState?> getState(stateSupplier: java.util.function.Supplier<T?>): T? {
+        return stateSupplier.get()
+    }
 }

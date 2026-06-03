@@ -11,146 +11,75 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlark
 
-package com.google.devtools.build.lib.starlark;
+import com.google.devtools.build.lib.bazel.bzlmod.BzlmodTestUtil.createModuleKey
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.truth.Truth.assertWithMessage;
-import static com.google.devtools.build.lib.bazel.bzlmod.BzlmodTestUtil.createModuleKey;
-import static com.google.devtools.build.lib.skyframe.BzlLoadValue.keyForBuild;
-import static java.nio.charset.StandardCharsets.ISO_8859_1;
-import static org.junit.Assert.assertThrows;
-import static org.junit.Assert.fail;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
+/** Tests for Starlark functions relating to rule implementation.  */
+@RunWith(TestParameterInjector::class)
+class StarlarkRuleImplementationFunctionsTest : BuildViewTestCase() {
+    private val ev: BazelEvaluationTestCase = BazelEvaluationTestCase()
 
-import com.google.common.base.Joiner;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Lists;
-import com.google.devtools.build.lib.actions.Action;
-import com.google.devtools.build.lib.actions.ActionAnalysisMetadata;
-import com.google.devtools.build.lib.actions.ActionLookupData;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.Artifact.SpecialArtifact;
-import com.google.devtools.build.lib.actions.Artifact.TreeFileArtifact;
-import com.google.devtools.build.lib.actions.CommandLine;
-import com.google.devtools.build.lib.actions.CommandLineExpansionException;
-import com.google.devtools.build.lib.actions.FileArtifactValue;
-import com.google.devtools.build.lib.actions.InputMetadataProvider;
-import com.google.devtools.build.lib.actions.PathMapper;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
-import com.google.devtools.build.lib.analysis.CommandHelper;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.DefaultInfo;
-import com.google.devtools.build.lib.analysis.FileProvider;
-import com.google.devtools.build.lib.analysis.FilesToRunProvider;
-import com.google.devtools.build.lib.analysis.Runfiles;
-import com.google.devtools.build.lib.analysis.TransitiveInfoCollection;
-import com.google.devtools.build.lib.analysis.actions.FileWriteAction;
-import com.google.devtools.build.lib.analysis.actions.ParameterFileWriteAction;
-import com.google.devtools.build.lib.analysis.actions.SpawnAction;
-import com.google.devtools.build.lib.analysis.actions.Substitution;
-import com.google.devtools.build.lib.analysis.actions.TemplateExpansionAction;
-import com.google.devtools.build.lib.analysis.config.CoreOptions.OutputPathsMode;
-import com.google.devtools.build.lib.analysis.configuredtargets.RuleConfiguredTarget;
-import com.google.devtools.build.lib.analysis.starlark.Args;
-import com.google.devtools.build.lib.analysis.starlark.StarlarkRuleContext;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.RepositoryMapping;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.collect.nestedset.Depset;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.packages.Provider;
-import com.google.devtools.build.lib.packages.StarlarkProvider;
-import com.google.devtools.build.lib.packages.StructImpl;
-import com.google.devtools.build.lib.skyframe.TreeArtifactValue;
-import com.google.devtools.build.lib.starlark.util.BazelEvaluationTestCase;
-import com.google.devtools.build.lib.testutil.MoreAsserts;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import com.google.devtools.build.lib.util.Fingerprint;
-import com.google.devtools.build.lib.util.OS;
-import com.google.devtools.build.lib.util.OsUtils;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.regex.Pattern;
-import net.starlark.java.annot.Param;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.Dict;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.Mutability;
-import net.starlark.java.eval.Printer;
-import net.starlark.java.eval.Sequence;
-import net.starlark.java.eval.Starlark;
-import net.starlark.java.eval.StarlarkInt;
-import net.starlark.java.eval.StarlarkList;
-import net.starlark.java.eval.StarlarkThread;
-import net.starlark.java.syntax.Location;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.ExpectedException;
-import org.junit.runner.RunWith;
-import org.mockito.Mockito;
+    @Throws(java.lang.Exception::class)
+    private fun createRuleContext(label: String?): StarlarkRuleContext {
+        return StarlarkRuleContext(getRuleContextForStarlark(getConfiguredTarget(label)), null)
+    }
 
-/** Tests for Starlark functions relating to rule implementation. */
-@RunWith(TestParameterInjector.class)
-public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTestCase {
+    @org.junit.Rule
+    var thrown: org.junit.rules.ExpectedException = org.junit.rules.ExpectedException.none()
 
-  private final BazelEvaluationTestCase ev = new BazelEvaluationTestCase();
-
-  private StarlarkRuleContext createRuleContext(String label) throws Exception {
-    return new StarlarkRuleContext(getRuleContextForStarlark(getConfiguredTarget(label)), null);
-  }
-
-  @Rule public ExpectedException thrown = ExpectedException.none();
-
-  // def mock(mandatory, optional=None, *, mandatory_key, optional_key='x')
-  @StarlarkMethod(
-      name = "mock",
-      documented = false,
-      parameters = {
-        @Param(name = "mandatory", doc = "", named = true),
-        @Param(name = "optional", doc = "", defaultValue = "None", named = true),
-        @Param(name = "mandatory_key", doc = "", positional = false, named = true),
-        @Param(
+    // def mock(mandatory, optional=None, *, mandatory_key, optional_key='x')
+    @StarlarkMethod(
+        name = "mock",
+        documented = false,
+        parameters = [net.starlark.java.annot.Param(
+            name = "mandatory",
+            doc = "",
+            named = true
+        ), net.starlark.java.annot.Param(
+            name = "optional",
+            doc = "",
+            defaultValue = "None",
+            named = true
+        ), net.starlark.java.annot.Param(
+            name = "mandatory_key",
+            doc = "",
+            positional = false,
+            named = true
+        ), net.starlark.java.annot.Param(
             name = "optional_key",
             doc = "",
             defaultValue = "'x'",
             positional = false,
-            named = true)
-      },
-      useStarlarkThread = true)
-  public Object mock(
-      Object mandatory,
-      Object optional,
-      Object mandatoryKey,
-      Object optionalKey,
-      StarlarkThread thread) {
-    Map<String, Object> m = new HashMap<>();
-    m.put("mandatory", mandatory);
-    m.put("optional", optional);
-    m.put("mandatory_key", mandatoryKey);
-    m.put("optional_key", optionalKey);
-    return m;
-  }
+            named = true
+        )],
+        useStarlarkThread = true
+    )
+    fun mock(
+        mandatory: Any?,
+        optional: Any?,
+        mandatoryKey: Any?,
+        optionalKey: Any?,
+        thread: StarlarkThread?
+    ): Any {
+        val m: MutableMap<String?, Any?> = HashMap<String?, Any?>()
+        m.put("mandatory", mandatory)
+        m.put("optional", optional)
+        m.put("mandatory_key", mandatoryKey)
+        m.put("optional_key", optionalKey)
+        return m
+    }
 
-  @Before
-  public void createBuildFilesAndHostPlatform() throws Exception {
-    scratch.file("myinfo/myinfo.bzl", "MyInfo = provider()");
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun createBuildFilesAndHostPlatform() {
+        scratch.file("myinfo/myinfo.bzl", "MyInfo = provider()")
 
-    scratch.file("myinfo/BUILD");
+        scratch.file("myinfo/BUILD")
 
-    scratch.file(
-        "foo/BUILD",
-        """
+        scratch.file(
+            "foo/BUILD",
+            """
         load("@rules_java//java:defs.bzl", "java_library")
         load('//test_defs:foo_binary.bzl', 'foo_binary')
         genrule(name = 'foo',
@@ -168,7 +97,7 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
         java_library(name = 'jl',
           srcs = ['a.java'])
         genrule(name = 'gl',
-          cmd = 'touch $(OUTS)',
+          cmd = 'touch ${'$'}(OUTS)',
           srcs = ['a.go'],
           outs = [ 'gl.a', 'gl.gcgox', ],
           output_to_bindir = 1,
@@ -191,13 +120,15 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
           tools = ['r1.txt'],
           outs = ['out.txt'],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    // Tests below assume that the actual host OS is reflected in the host platform, but Bazel's
-    // test setup forces the host platform to be "linux-x86_64".
-    scratch.file(
-        "platforms/BUILD",
-        """
+        // Tests below assume that the actual host OS is reflected in the host platform, but Bazel's
+        // test setup forces the host platform to be "linux-x86_64".
+        scratch.file(
+            "platforms/BUILD",
+            """
         platform(
             name = "host_platform",
              constraint_values = [
@@ -205,347 +136,390 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
                  "%scpu:x86_64",
              ],
         )
+        
         """
-            .formatted(
-                TestConstants.CONSTRAINTS_PACKAGE_ROOT,
-                switch (OS.getCurrent()) {
-                  case LINUX -> "linux";
-                  case DARWIN -> "macos";
-                  case FREEBSD -> "freebsd";
-                  case OPENBSD -> "openbsd";
-                  case WINDOWS -> "windows";
-                  case UNKNOWN -> "none";
-                },
-                TestConstants.CONSTRAINTS_PACKAGE_ROOT));
-    useConfiguration("--host_platform=//platforms:host_platform");
-  }
-
-  private void setRuleContext(StarlarkRuleContext ctx) throws Exception {
-    ev.update("ruleContext", ctx);
-  }
-
-  private static void assertArtifactFilenames(Iterable<Artifact> artifacts, String... expected) {
-    ImmutableList.Builder<String> filenames = ImmutableList.builder();
-    for (Artifact a : artifacts) {
-      filenames.add(a.getFilename());
+                .trimIndent()
+                .formatted(
+                    TestConstants.CONSTRAINTS_PACKAGE_ROOT,
+                    when (com.google.devtools.build.lib.util.OS.getCurrent()) {
+                        com.google.devtools.build.lib.util.OS.LINUX -> "linux"
+                        com.google.devtools.build.lib.util.OS.DARWIN -> "macos"
+                        com.google.devtools.build.lib.util.OS.FREEBSD -> "freebsd"
+                        com.google.devtools.build.lib.util.OS.OPENBSD -> "openbsd"
+                        com.google.devtools.build.lib.util.OS.WINDOWS -> "windows"
+                        com.google.devtools.build.lib.util.OS.UNKNOWN -> "none"
+                    },
+                    TestConstants.CONSTRAINTS_PACKAGE_ROOT
+                )
+        )
+        useConfiguration("--host_platform=//platforms:host_platform")
     }
-    assertThat(filenames.build()).containsAtLeastElementsIn(Lists.newArrayList(expected));
-  }
 
-  private StructImpl getMyInfoFromTarget(ConfiguredTarget configuredTarget) throws Exception {
-    Provider.Key key =
-        new StarlarkProvider.Key(
-            keyForBuild(Label.parseCanonical("//myinfo:myinfo.bzl")), "MyInfo");
-    return (StructImpl) configuredTarget.get(key);
-  }
-
-  // Defines all @StarlarkCallable-annotated methods (mock, throw, ...) in the environment.
-  private void defineTestMethods() throws Exception {
-    ImmutableMap.Builder<String, Object> env = ImmutableMap.builder();
-    Starlark.addMethods(env, this);
-    for (Map.Entry<String, Object> entry : env.buildOrThrow().entrySet()) {
-      ev.update(entry.getKey(), entry.getValue());
+    @Throws(java.lang.Exception::class)
+    private fun setRuleContext(ctx: StarlarkRuleContext?) {
+        ev.update("ruleContext", ctx)
     }
-  }
 
-  private void checkStarlarkFunctionError(String errorSubstring, String line) throws Exception {
-    defineTestMethods();
-    EvalException e = assertThrows(EvalException.class, () -> ev.exec(line));
-    assertThat(e).hasMessageThat().contains(errorSubstring);
-  }
-
-  // TODO(adonovan): move these tests of Starlark interpreter core into net/starlark/java.
-
-  @Test
-  public void testStarlarkFunctionPosArgs() throws Exception {
-    defineTestMethods();
-    ev.exec("a = mock('a', 'b', mandatory_key='c')");
-    Map<?, ?> params = (Map<?, ?>) ev.lookup("a");
-    assertThat(params.get("mandatory")).isEqualTo("a");
-    assertThat(params.get("optional")).isEqualTo("b");
-    assertThat(params.get("mandatory_key")).isEqualTo("c");
-    assertThat(params.get("optional_key")).isEqualTo("x");
-  }
-
-  @Test
-  public void testStarlarkFunctionKwArgs() throws Exception {
-    defineTestMethods();
-    ev.exec("a = mock(optional='b', mandatory='a', mandatory_key='c')");
-    Map<?, ?> params = (Map<?, ?>) ev.lookup("a");
-    assertThat(params.get("mandatory")).isEqualTo("a");
-    assertThat(params.get("optional")).isEqualTo("b");
-    assertThat(params.get("mandatory_key")).isEqualTo("c");
-    assertThat(params.get("optional_key")).isEqualTo("x");
-  }
-
-  @Test
-  public void testStarlarkFunctionTooFewArguments() throws Exception {
-    checkStarlarkFunctionError(
-        "missing 1 required positional argument: mandatory", "mock(mandatory_key='y')");
-  }
-
-  @Test
-  public void testStarlarkFunctionTooManyArguments() throws Exception {
-    checkStarlarkFunctionError(
-        "mock() accepts no more than 2 positional arguments but got 3",
-        "mock('a', 'b', 'c', mandatory_key='y')");
-  }
-
-  @Test
-  public void testStarlarkFunctionAmbiguousArguments() throws Exception {
-    checkStarlarkFunctionError(
-        "mock() got multiple values for argument 'mandatory'",
-        "mock('by position', mandatory='by_key', mandatory_key='c')");
-  }
-
-  @Test
-  public void testCreateSpawnActionCreatesSpawnAction() throws Exception {
-    StarlarkRuleContext ruleContext = createRuleContext("//foo:foo");
-    setRuleContext(ruleContext);
-    createTestSpawnAction(ruleContext);
-    ActionAnalysisMetadata action =
-        Iterables.getOnlyElement(
-            ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions());
-    assertThat(action).isInstanceOf(SpawnAction.class);
-  }
-
-  @Test
-  public void testArtifactPath() throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
-    String result = (String) ev.eval("ruleContext.files.tools[0].path");
-    assertThat(result).isEqualTo("foo/t.exe");
-  }
-
-  @Test
-  public void testArtifactShortPath() throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
-    String result = (String) ev.eval("ruleContext.files.tools[0].short_path");
-    assertThat(result).isEqualTo("foo/t.exe");
-  }
-
-  @Test
-  public void testCreateSpawnActionArgumentsWithCommand() throws Exception {
-    StarlarkRuleContext ruleContext = createRuleContext("//foo:foo");
-    setRuleContext(ruleContext);
-    createTestSpawnAction(ruleContext);
-    SpawnAction action =
-        (SpawnAction)
-            Iterables.getOnlyElement(
-                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions());
-    assertArtifactFilenames(action.getInputs().toList(), "a.txt", "b.img");
-    assertArtifactFilenames(action.getOutputs(), "a.txt", "b.img");
-    MoreAsserts.assertContainsSublist(
-        action.getArguments(), "-c", "dummy_command", "", "--a", "--b");
-    assertThat(action.getMnemonic()).isEqualTo("DummyMnemonic");
-    assertThat(action.getProgressMessage()).isEqualTo("dummy_message");
-    assertThat(action.getIncompleteEnvironmentForTesting())
-        .isEqualTo(targetConfig.getLocalShellEnvironment());
-  }
-
-  @Test
-  public void testCreateSpawnActionArgumentsWithExecutable() throws Exception {
-    StarlarkRuleContext ruleContext = createRuleContext("//foo:foo");
-    setRuleContext(ruleContext);
-    ev.exec(
-        "ruleContext.actions.run(",
-        "  inputs = ruleContext.files.srcs,",
-        "  outputs = ruleContext.files.srcs,",
-        "  arguments = ['--a','--b'],",
-        "  executable = ruleContext.files.tools[0],",
-        "  toolchain = None",
-        ")");
-    SpawnAction action =
-        (SpawnAction)
-            Iterables.getOnlyElement(
-                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions());
-    assertArtifactFilenames(action.getInputs().toList(), "a.txt", "b.img", "t.exe");
-    assertArtifactFilenames(action.getOutputs(), "a.txt", "b.img");
-    MoreAsserts.assertContainsSublist(action.getArguments(), "foo/t.exe", "--a", "--b");
-  }
-
-  @Test
-  public void createSpawnAction_progressMessageWithSubstitutions() throws Exception {
-    StarlarkRuleContext ruleContext = createRuleContext("//foo:foo");
-    setRuleContext(ruleContext);
-    ev.exec(
-        "ruleContext.actions.run(",
-        "  inputs = ruleContext.files.srcs,",
-        "  outputs = ruleContext.files.srcs[1:],",
-        "  executable = ruleContext.files.tools[0],",
-        "  toolchain = None,",
-        "  mnemonic = 'DummyMnemonic',",
-        "  progress_message = 'message %{label} %{input} %{output}')");
-
-    SpawnAction action =
-        (SpawnAction)
-            Iterables.getOnlyElement(
-                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions());
-
-    assertThat(action.getProgressMessage()).isEqualTo("message //foo:foo foo/a.txt foo/b.img");
-  }
-
-  @Test
-  public void testCreateActionWithDepsetInput() throws Exception {
-    // Same test as above, with depset as inputs.
-    StarlarkRuleContext ruleContext = createRuleContext("//foo:foo");
-    setRuleContext(ruleContext);
-    ev.exec(
-        "ruleContext.actions.run(",
-        "  inputs = depset(ruleContext.files.srcs),",
-        "  outputs = ruleContext.files.srcs,",
-        "  arguments = ['--a','--b'],",
-        "  executable = ruleContext.files.tools[0],",
-        "  toolchain = None",
-        ")");
-    SpawnAction action =
-        (SpawnAction)
-            Iterables.getOnlyElement(
-                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions());
-    assertArtifactFilenames(action.getInputs().toList(), "a.txt", "b.img", "t.exe");
-    assertArtifactFilenames(action.getOutputs(), "a.txt", "b.img");
-    MoreAsserts.assertContainsSublist(action.getArguments(), "foo/t.exe", "--a", "--b");
-  }
-
-  @Test
-  public void testCreateSpawnActionArgumentsBadExecutable() throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
-    ev.checkEvalErrorContains(
-        "got value of type 'int', want 'File, string, or FilesToRunProvider'",
-        "ruleContext.actions.run(",
-        "  inputs = ruleContext.files.srcs,",
-        "  outputs = ruleContext.files.srcs,",
-        "  arguments = ['--a','--b'],",
-        "  executable = 123)");
-  }
-
-  @Test
-  public void testCreateSpawnActionShellCommandList() throws Exception {
-    setBuildLanguageOptions("--incompatible_run_shell_command_string=false");
-    StarlarkRuleContext ruleContext = createRuleContext("//foo:foo");
-    setRuleContext(ruleContext);
-    ev.exec(
-        "ruleContext.actions.run_shell(",
-        "  inputs = ruleContext.files.srcs,",
-        "  outputs = ruleContext.files.srcs,",
-        "  mnemonic = 'DummyMnemonic',",
-        "  command = ['dummy_command', '--arg1', '--arg2'],",
-        "  progress_message = 'dummy_message')");
-    SpawnAction action =
-        (SpawnAction)
-            Iterables.getOnlyElement(
-                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions());
-    assertThat(action.getArguments())
-        .containsExactly("dummy_command", "--arg1", "--arg2")
-        .inOrder();
-  }
-
-  @Test
-  public void testCreateSpawnActionEnvAndExecInfo() throws Exception {
-    StarlarkRuleContext ruleContext = createRuleContext("//foo:foo");
-    setRuleContext(ruleContext);
-    ev.exec(
-        "ruleContext.actions.run_shell(",
-        "  inputs = ruleContext.files.srcs,",
-        "  outputs = ruleContext.files.srcs,",
-        "  env = {'a' : 'b'},",
-        "  execution_requirements = {'timeout' : '10', 'block-network' : 'foo'},",
-        "  mnemonic = 'DummyMnemonic',",
-        "  command = 'dummy_command',",
-        "  progress_message = 'dummy_message')");
-    SpawnAction action =
-        (SpawnAction)
-            Iterables.getOnlyElement(
-                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions());
-    assertThat(action.getIncompleteEnvironmentForTesting()).containsExactly("a", "b");
-    // We expect "timeout" to be filtered by TargetUtils.
-    assertThat(action.getExecutionInfo()).containsExactly("block-network", "foo");
-  }
-
-  @Test
-  public void testCreateSpawnActionEnvAndExecInfo_withWorkerKeyMnemonic() throws Exception {
-    StarlarkRuleContext ruleContext = createRuleContext("//foo:foo");
-    setRuleContext(ruleContext);
-    ev.exec(
-        "ruleContext.actions.run_shell(",
-        "  inputs = ruleContext.files.srcs,",
-        "  outputs = ruleContext.files.srcs,",
-        "  env = {'a' : 'b'},",
-        "  execution_requirements = {",
-        "    'supports-workers': '1',",
-        "    'worker-key-mnemonic': 'MyMnemonic',",
-        "  },",
-        "  mnemonic = 'DummyMnemonic',",
-        "  command = 'dummy_command',",
-        "  progress_message = 'dummy_message')");
-    SpawnAction action =
-        (SpawnAction)
-            Iterables.getOnlyElement(
-                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions());
-    assertThat(action.getExecutionInfo())
-        .containsExactly("supports-workers", "1", "worker-key-mnemonic", "MyMnemonic");
-  }
-
-  @Test
-  public void testCreateSpawnActionUnknownParam() throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
-    ev.checkEvalErrorContains(
-        "run() got unexpected keyword argument 'bad_param'",
-        "f = ruleContext.actions.declare_file('foo.sh')",
-        "ruleContext.actions.run(outputs=[], bad_param = 'some text', executable = f)");
-  }
-
-  private Object createTestSpawnAction(StarlarkRuleContext ruleContext) throws Exception {
-    setRuleContext(ruleContext);
-    return ev.eval(
-        "ruleContext.actions.run_shell(",
-        "  inputs = ruleContext.files.srcs,",
-        "  outputs = ruleContext.files.srcs,",
-        "  arguments = ['--a','--b'],",
-        "  mnemonic = 'DummyMnemonic',",
-        "  command = 'dummy_command',",
-        "  progress_message = 'dummy_message',",
-        "  use_default_shell_env = True)");
-  }
-
-  @Test
-  public void testCreateSpawnActionBadGenericArg() throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
-    ev.checkEvalErrorContains(
-        "at index 0 of outputs, got element of type string, want File",
-        "l = ['a', 'b']",
-        "ruleContext.actions.run_shell(",
-        "  outputs = l,",
-        "  command = 'dummy_command')");
-  }
-
-  @Test
-  public void testRunShellArgumentsWithCommandSequence() throws Exception {
-    setBuildLanguageOptions("--incompatible_run_shell_command_string=false");
-    setRuleContext(createRuleContext("//foo:foo"));
-    ev.checkEvalErrorContains(
-        "'arguments' must be empty if 'command' is a sequence of strings",
-        "ruleContext.actions.run_shell(outputs = ruleContext.files.srcs,",
-        "  command = [\"echo\", \"'hello world'\", \"&&\", \"touch\"],",
-        "  arguments = [ruleContext.files.srcs[0].path])");
-  }
-
-  private void setupToolInInputsTest(String... ruleImpl) throws Exception {
-    ImmutableList.Builder<String> lines = ImmutableList.builder();
-    lines.add("def _main_rule_impl(ctx):");
-    for (String line : ruleImpl) {
-      lines.add("  " + line);
+    @Throws(java.lang.Exception::class)
+    private fun getMyInfoFromTarget(configuredTarget: ConfiguredTarget): StructImpl {
+        val key: Provider.Key =
+            Key(
+                keyForBuild(Label.parseCanonical("//myinfo:myinfo.bzl")), "MyInfo"
+            )
+        return configuredTarget.get(key) as StructImpl
     }
-    lines.add(
-        "my_rule = rule(",
-        "  _main_rule_impl,",
-        "  attrs = { ",
-        "    'exe' : attr.label(executable = True, allow_files = True, cfg='exec'),",
-        "  },",
-        ")");
-    scratch.file("bar/bar.bzl", lines.build().toArray(new String[] {}));
-    scratch.file(
-        "bar/BUILD",
-        """
+
+    // Defines all @StarlarkCallable-annotated methods (mock, throw, ...) in the environment.
+    @Throws(java.lang.Exception::class)
+    private fun defineTestMethods() {
+        val env: com.google.common.collect.ImmutableMap.Builder<String?, Any?> =
+            com.google.common.collect.ImmutableMap.builder<String?, Any?>()
+        Starlark.addMethods(env, this)
+        for (entry in env.buildOrThrow().entries) {
+            ev.update(entry.key, entry.value)
+        }
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun checkStarlarkFunctionError(errorSubstring: String?, line: String?) {
+        defineTestMethods()
+        val e: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable { ev.exec(line) })
+        Truth.assertThat(e).hasMessageThat().contains(errorSubstring)
+    }
+
+    // TODO(adonovan): move these tests of Starlark interpreter core into net/starlark/java.
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStarlarkFunctionPosArgs() {
+        defineTestMethods()
+        ev.exec("a = mock('a', 'b', mandatory_key='c')")
+        val params = ev.lookup("a") as MutableMap<*, *>
+        Truth.assertThat(params.get("mandatory")).isEqualTo("a")
+        Truth.assertThat(params.get("optional")).isEqualTo("b")
+        Truth.assertThat(params.get("mandatory_key")).isEqualTo("c")
+        Truth.assertThat(params.get("optional_key")).isEqualTo("x")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStarlarkFunctionKwArgs() {
+        defineTestMethods()
+        ev.exec("a = mock(optional='b', mandatory='a', mandatory_key='c')")
+        val params = ev.lookup("a") as MutableMap<*, *>
+        Truth.assertThat(params.get("mandatory")).isEqualTo("a")
+        Truth.assertThat(params.get("optional")).isEqualTo("b")
+        Truth.assertThat(params.get("mandatory_key")).isEqualTo("c")
+        Truth.assertThat(params.get("optional_key")).isEqualTo("x")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStarlarkFunctionTooFewArguments() {
+        checkStarlarkFunctionError(
+            "missing 1 required positional argument: mandatory", "mock(mandatory_key='y')"
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStarlarkFunctionTooManyArguments() {
+        checkStarlarkFunctionError(
+            "mock() accepts no more than 2 positional arguments but got 3",
+            "mock('a', 'b', 'c', mandatory_key='y')"
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStarlarkFunctionAmbiguousArguments() {
+        checkStarlarkFunctionError(
+            "mock() got multiple values for argument 'mandatory'",
+            "mock('by position', mandatory='by_key', mandatory_key='c')"
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCreateSpawnActionCreatesSpawnAction() {
+        val ruleContext: StarlarkRuleContext = createRuleContext("//foo:foo")
+        setRuleContext(ruleContext)
+        createTestSpawnAction(ruleContext)
+        val action: ActionAnalysisMetadata? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(
+                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions()
+            )
+        assertThat(action).isInstanceOf(SpawnAction::class.java)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testArtifactPath() {
+        setRuleContext(createRuleContext("//foo:foo"))
+        val result = ev.eval("ruleContext.files.tools[0].path") as String
+        Truth.assertThat(result).isEqualTo("foo/t.exe")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testArtifactShortPath() {
+        setRuleContext(createRuleContext("//foo:foo"))
+        val result = ev.eval("ruleContext.files.tools[0].short_path") as String
+        Truth.assertThat(result).isEqualTo("foo/t.exe")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCreateSpawnActionArgumentsWithCommand() {
+        val ruleContext: StarlarkRuleContext = createRuleContext("//foo:foo")
+        setRuleContext(ruleContext)
+        createTestSpawnAction(ruleContext)
+        val action: SpawnAction? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(
+                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions()
+            ) as SpawnAction?
+        assertArtifactFilenames(action.getInputs().toList(), "a.txt", "b.img")
+        assertArtifactFilenames(action.getOutputs(), "a.txt", "b.img")
+        MoreAsserts.assertContainsSublist<T?>(
+            action.getArguments(), "-c", "dummy_command", "", "--a", "--b"
+        )
+        assertThat(action.getMnemonic()).isEqualTo("DummyMnemonic")
+        assertThat(action.getProgressMessage()).isEqualTo("dummy_message")
+        assertThat(action.getIncompleteEnvironmentForTesting())
+            .isEqualTo(targetConfig.getLocalShellEnvironment())
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCreateSpawnActionArgumentsWithExecutable() {
+        val ruleContext: StarlarkRuleContext = createRuleContext("//foo:foo")
+        setRuleContext(ruleContext)
+        ev.exec(
+            "ruleContext.actions.run(",
+            "  inputs = ruleContext.files.srcs,",
+            "  outputs = ruleContext.files.srcs,",
+            "  arguments = ['--a','--b'],",
+            "  executable = ruleContext.files.tools[0],",
+            "  toolchain = None",
+            ")"
+        )
+        val action: SpawnAction? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(
+                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions()
+            ) as SpawnAction?
+        assertArtifactFilenames(action.getInputs().toList(), "a.txt", "b.img", "t.exe")
+        assertArtifactFilenames(action.getOutputs(), "a.txt", "b.img")
+        MoreAsserts.assertContainsSublist<T?>(action.getArguments(), "foo/t.exe", "--a", "--b")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun createSpawnAction_progressMessageWithSubstitutions() {
+        val ruleContext: StarlarkRuleContext = createRuleContext("//foo:foo")
+        setRuleContext(ruleContext)
+        ev.exec(
+            "ruleContext.actions.run(",
+            "  inputs = ruleContext.files.srcs,",
+            "  outputs = ruleContext.files.srcs[1:],",
+            "  executable = ruleContext.files.tools[0],",
+            "  toolchain = None,",
+            "  mnemonic = 'DummyMnemonic',",
+            "  progress_message = 'message %{label} %{input} %{output}')"
+        )
+
+        val action: SpawnAction? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(
+                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions()
+            ) as SpawnAction?
+
+        assertThat(action.getProgressMessage()).isEqualTo("message //foo:foo foo/a.txt foo/b.img")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCreateActionWithDepsetInput() {
+        // Same test as above, with depset as inputs.
+        val ruleContext: StarlarkRuleContext = createRuleContext("//foo:foo")
+        setRuleContext(ruleContext)
+        ev.exec(
+            "ruleContext.actions.run(",
+            "  inputs = depset(ruleContext.files.srcs),",
+            "  outputs = ruleContext.files.srcs,",
+            "  arguments = ['--a','--b'],",
+            "  executable = ruleContext.files.tools[0],",
+            "  toolchain = None",
+            ")"
+        )
+        val action: SpawnAction? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(
+                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions()
+            ) as SpawnAction?
+        assertArtifactFilenames(action.getInputs().toList(), "a.txt", "b.img", "t.exe")
+        assertArtifactFilenames(action.getOutputs(), "a.txt", "b.img")
+        MoreAsserts.assertContainsSublist<T?>(action.getArguments(), "foo/t.exe", "--a", "--b")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCreateSpawnActionArgumentsBadExecutable() {
+        setRuleContext(createRuleContext("//foo:foo"))
+        ev.checkEvalErrorContains(
+            "got value of type 'int', want 'File, string, or FilesToRunProvider'",
+            "ruleContext.actions.run(",
+            "  inputs = ruleContext.files.srcs,",
+            "  outputs = ruleContext.files.srcs,",
+            "  arguments = ['--a','--b'],",
+            "  executable = 123)"
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCreateSpawnActionShellCommandList() {
+        setBuildLanguageOptions("--incompatible_run_shell_command_string=false")
+        val ruleContext: StarlarkRuleContext = createRuleContext("//foo:foo")
+        setRuleContext(ruleContext)
+        ev.exec(
+            "ruleContext.actions.run_shell(",
+            "  inputs = ruleContext.files.srcs,",
+            "  outputs = ruleContext.files.srcs,",
+            "  mnemonic = 'DummyMnemonic',",
+            "  command = ['dummy_command', '--arg1', '--arg2'],",
+            "  progress_message = 'dummy_message')"
+        )
+        val action: SpawnAction? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(
+                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions()
+            ) as SpawnAction?
+        assertThat(action.getArguments())
+            .containsExactly("dummy_command", "--arg1", "--arg2")
+            .inOrder()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCreateSpawnActionEnvAndExecInfo() {
+        val ruleContext: StarlarkRuleContext = createRuleContext("//foo:foo")
+        setRuleContext(ruleContext)
+        ev.exec(
+            "ruleContext.actions.run_shell(",
+            "  inputs = ruleContext.files.srcs,",
+            "  outputs = ruleContext.files.srcs,",
+            "  env = {'a' : 'b'},",
+            "  execution_requirements = {'timeout' : '10', 'block-network' : 'foo'},",
+            "  mnemonic = 'DummyMnemonic',",
+            "  command = 'dummy_command',",
+            "  progress_message = 'dummy_message')"
+        )
+        val action: SpawnAction? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(
+                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions()
+            ) as SpawnAction?
+        assertThat(action.getIncompleteEnvironmentForTesting()).containsExactly("a", "b")
+        // We expect "timeout" to be filtered by TargetUtils.
+        assertThat(action.getExecutionInfo()).containsExactly("block-network", "foo")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCreateSpawnActionEnvAndExecInfo_withWorkerKeyMnemonic() {
+        val ruleContext: StarlarkRuleContext = createRuleContext("//foo:foo")
+        setRuleContext(ruleContext)
+        ev.exec(
+            "ruleContext.actions.run_shell(",
+            "  inputs = ruleContext.files.srcs,",
+            "  outputs = ruleContext.files.srcs,",
+            "  env = {'a' : 'b'},",
+            "  execution_requirements = {",
+            "    'supports-workers': '1',",
+            "    'worker-key-mnemonic': 'MyMnemonic',",
+            "  },",
+            "  mnemonic = 'DummyMnemonic',",
+            "  command = 'dummy_command',",
+            "  progress_message = 'dummy_message')"
+        )
+        val action: SpawnAction? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(
+                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions()
+            ) as SpawnAction?
+        assertThat(action.getExecutionInfo())
+            .containsExactly("supports-workers", "1", "worker-key-mnemonic", "MyMnemonic")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCreateSpawnActionUnknownParam() {
+        setRuleContext(createRuleContext("//foo:foo"))
+        ev.checkEvalErrorContains(
+            "run() got unexpected keyword argument 'bad_param'",
+            "f = ruleContext.actions.declare_file('foo.sh')",
+            "ruleContext.actions.run(outputs=[], bad_param = 'some text', executable = f)"
+        )
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun createTestSpawnAction(ruleContext: StarlarkRuleContext?): Any {
+        setRuleContext(ruleContext)
+        return ev.eval(
+            "ruleContext.actions.run_shell(",
+            "  inputs = ruleContext.files.srcs,",
+            "  outputs = ruleContext.files.srcs,",
+            "  arguments = ['--a','--b'],",
+            "  mnemonic = 'DummyMnemonic',",
+            "  command = 'dummy_command',",
+            "  progress_message = 'dummy_message',",
+            "  use_default_shell_env = True)"
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCreateSpawnActionBadGenericArg() {
+        setRuleContext(createRuleContext("//foo:foo"))
+        ev.checkEvalErrorContains(
+            "at index 0 of outputs, got element of type string, want File",
+            "l = ['a', 'b']",
+            "ruleContext.actions.run_shell(",
+            "  outputs = l,",
+            "  command = 'dummy_command')"
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRunShellArgumentsWithCommandSequence() {
+        setBuildLanguageOptions("--incompatible_run_shell_command_string=false")
+        setRuleContext(createRuleContext("//foo:foo"))
+        ev.checkEvalErrorContains(
+            "'arguments' must be empty if 'command' is a sequence of strings",
+            "ruleContext.actions.run_shell(outputs = ruleContext.files.srcs,",
+            "  command = [\"echo\", \"'hello world'\", \"&&\", \"touch\"],",
+            "  arguments = [ruleContext.files.srcs[0].path])"
+        )
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun setupToolInInputsTest(vararg ruleImpl: String?) {
+        val lines: com.google.common.collect.ImmutableList.Builder<String?> =
+            com.google.common.collect.ImmutableList.builder<String?>()
+        lines.add("def _main_rule_impl(ctx):")
+        for (line in ruleImpl) {
+            lines.add("  " + line)
+        }
+        lines.add(
+            "my_rule = rule(",
+            "  _main_rule_impl,",
+            "  attrs = { ",
+            "    'exe' : attr.label(executable = True, allow_files = True, cfg='exec'),",
+            "  },",
+            ")"
+        )
+        scratch.file("bar/bar.bzl", lines.build().< T > toArray < T ? > (arrayOf<String?>()))
+        scratch.file(
+            "bar/BUILD",
+            """
         load('//test_defs:foo_binary.bzl', 'foo_binary')
         load('//bar:bar.bzl', 'my_rule')
         foo_binary(
@@ -557,82 +531,96 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
           name = 'my_rule',
           exe = ':mytool',
         )
-        """);
-  }
+        
+        """.trimIndent()
+        )
+    }
 
-  @Test
-  public void testCreateSpawnActionWithToolAttribute() throws Exception {
-    setupToolInInputsTest(
-        "output = ctx.actions.declare_file('bar.out')",
-        "ctx.actions.run_shell(",
-        "  inputs = [],",
-        "  tools = ctx.attr.exe.files,",
-        "  outputs = [output],",
-        "  command = 'boo bar baz',",
-        "  toolchain = None",
-        ")");
-    RuleConfiguredTarget target = (RuleConfiguredTarget) getConfiguredTarget("//bar:my_rule");
-    SpawnAction action = (SpawnAction) Iterables.getOnlyElement(target.getActions());
-    assertThat(action.getTools().toList()).isNotEmpty();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCreateSpawnActionWithToolAttribute() {
+        setupToolInInputsTest(
+            "output = ctx.actions.declare_file('bar.out')",
+            "ctx.actions.run_shell(",
+            "  inputs = [],",
+            "  tools = ctx.attr.exe.files,",
+            "  outputs = [output],",
+            "  command = 'boo bar baz',",
+            "  toolchain = None",
+            ")"
+        )
+        val target: RuleConfiguredTarget = getConfiguredTarget("//bar:my_rule") as RuleConfiguredTarget
+        val action: SpawnAction? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(target.getActions()) as SpawnAction?
+        assertThat(action.getTools().toList()).isNotEmpty()
+    }
 
-  @Test
-  public void testCreateSpawnActionWithToolAttributeIgnoresToolsInInputs() throws Exception {
-    setupToolInInputsTest(
-        "output = ctx.actions.declare_file('bar.out')",
-        "ctx.actions.run_shell(",
-        "  inputs = ctx.attr.exe.files,",
-        "  tools = ctx.attr.exe.files,",
-        "  outputs = [output],",
-        "  command = 'boo bar baz',",
-        "  toolchain = None",
-        ")");
-    RuleConfiguredTarget target = (RuleConfiguredTarget) getConfiguredTarget("//bar:my_rule");
-    SpawnAction action = (SpawnAction) Iterables.getOnlyElement(target.getActions());
-    assertThat(action.getTools().toList()).isNotEmpty();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCreateSpawnActionWithToolAttributeIgnoresToolsInInputs() {
+        setupToolInInputsTest(
+            "output = ctx.actions.declare_file('bar.out')",
+            "ctx.actions.run_shell(",
+            "  inputs = ctx.attr.exe.files,",
+            "  tools = ctx.attr.exe.files,",
+            "  outputs = [output],",
+            "  command = 'boo bar baz',",
+            "  toolchain = None",
+            ")"
+        )
+        val target: RuleConfiguredTarget = getConfiguredTarget("//bar:my_rule") as RuleConfiguredTarget
+        val action: SpawnAction? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(target.getActions()) as SpawnAction?
+        assertThat(action.getTools().toList()).isNotEmpty()
+    }
 
-  @Test
-  public void testCreateFileAction() throws Exception {
-    StarlarkRuleContext ruleContext = createRuleContext("//foo:foo");
-    setRuleContext(ruleContext);
-    ev.exec(
-        "ruleContext.actions.write(",
-        "  output = ruleContext.files.srcs[0],",
-        "  content = 'hello world',",
-        "  is_executable = False)");
-    FileWriteAction action =
-        (FileWriteAction)
-            Iterables.getOnlyElement(
-                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions());
-    assertThat(Iterables.getOnlyElement(action.getOutputs()).getExecPathString())
-        .isEqualTo("foo/a.txt");
-    assertThat(action.getFileContents()).isEqualTo("hello world");
-    assertThat(action.makeExecutable()).isFalse();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCreateFileAction() {
+        val ruleContext: StarlarkRuleContext = createRuleContext("//foo:foo")
+        setRuleContext(ruleContext)
+        ev.exec(
+            "ruleContext.actions.write(",
+            "  output = ruleContext.files.srcs[0],",
+            "  content = 'hello world',",
+            "  is_executable = False)"
+        )
+        val action: FileWriteAction? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(
+                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions()
+            ) as FileWriteAction?
+        assertThat(com.google.common.collect.Iterables.getOnlyElement<T?>(action.getOutputs()).getExecPathString())
+            .isEqualTo("foo/a.txt")
+        assertThat(action.getFileContents()).isEqualTo("hello world")
+        assertThat(action.makeExecutable()).isFalse()
+    }
 
-  @Test
-  public void testEmptyAction() throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
-    checkEmptyAction("mnemonic = 'test'");
-    checkEmptyAction("mnemonic = 'test', inputs = ruleContext.files.srcs");
-    checkEmptyAction("mnemonic = 'test', inputs = depset(ruleContext.files.srcs)");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEmptyAction() {
+        setRuleContext(createRuleContext("//foo:foo"))
+        checkEmptyAction("mnemonic = 'test'")
+        checkEmptyAction("mnemonic = 'test', inputs = ruleContext.files.srcs")
+        checkEmptyAction("mnemonic = 'test', inputs = depset(ruleContext.files.srcs)")
 
-    ev.checkEvalErrorContains(
-        "do_nothing() missing 1 required named argument: mnemonic",
-        "ruleContext.actions.do_nothing(inputs = ruleContext.files.srcs)");
-  }
+        ev.checkEvalErrorContains(
+            "do_nothing() missing 1 required named argument: mnemonic",
+            "ruleContext.actions.do_nothing(inputs = ruleContext.files.srcs)"
+        )
+    }
 
-  private void checkEmptyAction(String namedArgs) throws Exception {
-    assertThat(ev.eval(String.format("ruleContext.actions.do_nothing(%s)", namedArgs)))
-        .isEqualTo(Starlark.NONE);
-  }
+    @Throws(java.lang.Exception::class)
+    private fun checkEmptyAction(namedArgs: String?) {
+        Truth.assertThat(ev.eval(String.format("ruleContext.actions.do_nothing(%s)", namedArgs)))
+            .isEqualTo(Starlark.NONE)
+    }
 
-  @Test
-  public void testEmptyActionWithExtraAction() throws Exception {
-    scratch.file(
-        "test/empty.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEmptyActionWithExtraAction() {
+        scratch.file(
+            "test/empty.bzl",
+            """
         def _impl(ctx):
           ctx.actions.do_nothing(
               inputs = ctx.files.srcs,
@@ -644,11 +632,13 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
                "srcs": attr.label_list(allow_files=True),
             }
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "test/BUILD",
-        """
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:empty.bzl', 'empty_action_rule')
         empty_action_rule(name = 'my_empty_action',
                         srcs = ['foo.in', 'other_foo.in'])
@@ -657,597 +647,665 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
                         extra_actions = [':extra'])
         extra_action(name = 'extra',
                      cmd='')
-        """);
+        
+        """.trimIndent()
+        )
 
-    getPseudoActionViaExtraAction("//test:my_empty_action", "//test:listener");
-  }
+        getPseudoActionViaExtraAction("//test:my_empty_action", "//test:listener")
+    }
 
-  @Test
-  public void testExpandLocation() throws Exception {
-    StarlarkRuleContext ruleContext = createRuleContext("//foo:bar");
-    setRuleContext(ruleContext);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExpandLocation() {
+        val ruleContext: StarlarkRuleContext = createRuleContext("//foo:bar")
+        setRuleContext(ruleContext)
 
-    // If there is only a single target, both "location" and "locations" should work
-    runExpansion("location :jl", "[blaze]*-out/.*/bin/foo/libjl.jar");
-    runExpansion("locations :jl", "[blaze]*-out/.*/bin/foo/libjl.jar");
+        // If there is only a single target, both "location" and "locations" should work
+        runExpansion("location :jl", "[blaze]*-out/.*/bin/foo/libjl.jar")
+        runExpansion("locations :jl", "[blaze]*-out/.*/bin/foo/libjl.jar")
 
-    runExpansion("location //foo:jl", "[blaze]*-out/.*/bin/foo/libjl.jar");
+        runExpansion("location //foo:jl", "[blaze]*-out/.*/bin/foo/libjl.jar")
 
-    // Multiple targets and "location" should result in an error
-    checkReportedErrorStartsWith(
-        "in genrule rule //foo:bar: label '//foo:gl' "
-            + "in $(location) expression expands to more than one file, please use $(locations "
-            + "//foo:gl) instead.",
-        "ruleContext.expand_location('$(location :gl)')");
+        // Multiple targets and "location" should result in an error
+        checkReportedErrorStartsWith(
+            ("in genrule rule //foo:bar: label '//foo:gl' "
+                    + "in $(location) expression expands to more than one file, please use $(locations "
+                    + "//foo:gl) instead."),
+            "ruleContext.expand_location('$(location :gl)')"
+        )
 
-    // We have to use "locations" for multiple targets
-    runExpansion("locations :gl", "[blaze]*-out/.*/bin/foo/gl.a [blaze]*-out/.*/bin/foo/gl.gcgox");
+        // We have to use "locations" for multiple targets
+        runExpansion("locations :gl", "[blaze]*-out/.*/bin/foo/gl.a [blaze]*-out/.*/bin/foo/gl.gcgox")
 
-    // LocationExpander just returns the input string if there is no label
-    runExpansion("location", "\\$\\(location\\)");
+        // LocationExpander just returns the input string if there is no label
+        runExpansion("location", "\\$\\(location\\)")
 
-    checkReportedErrorStartsWith(
-        "in genrule rule //foo:bar: label '//foo:abc' in $(locations) expression "
-            + "is not a declared prerequisite of this rule",
-        "ruleContext.expand_location('$(locations :abc)')");
-  }
+        checkReportedErrorStartsWith(
+            "in genrule rule //foo:bar: label '//foo:abc' in $(locations) expression "
+                    + "is not a declared prerequisite of this rule",
+            "ruleContext.expand_location('$(locations :abc)')"
+        )
+    }
 
-  @Test
-  public void testExpandLocationWithShortPathsIsPrivateAPI() throws Exception {
-    scratch.file(
-        "abc/rule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExpandLocationWithShortPathsIsPrivateAPI() {
+        scratch.file(
+            "abc/rule.bzl",
+            """
         def _impl(ctx):
          ctx.expand_location('', short_paths = True)
          return []
 
         r = rule(implementation = _impl)
-        """);
-    scratch.file(
-        "abc/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "abc/BUILD",
+            """
         load(':rule.bzl', 'r')
 
         r(name = 'foo')
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError error =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//abc:foo"));
+        val error: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//abc:foo") })
 
-    assertThat(error).hasMessageThat().contains("file '//abc:rule.bzl' cannot use private API");
-  }
-
-  @Test
-  public void testExpandLocationWithShortPaths() throws Exception {
-    StarlarkRuleContext ruleContext = createRuleContext("//foo:bar");
-    setRuleContext(ruleContext);
-
-    Object loc = ev.eval("ruleContext.expand_location('$(location :jl)', short_paths = True)");
-
-    assertThat(loc).isEqualTo("foo/libjl.jar");
-  }
-
-  /** Regression test to check that expand_location allows ${var} and $$. */
-  @Test
-  public void testExpandLocationWithDollarSignsAndCurlys() throws Exception {
-    StarlarkRuleContext ruleContext = createRuleContext("//foo:bar");
-    setRuleContext(ruleContext);
-    assertThat((String) ev.eval("ruleContext.expand_location('${abc} $(echo) $$ $')"))
-        .isEqualTo("${abc} $(echo) $$ $");
-  }
-
-  @Test
-  public void testExpandedLocationWithSingleFileDifferentFromExecutable(
-      @TestParameter boolean locationsPrefersExecutable) throws Exception {
-    setBuildLanguageOptions(
-        "--incompatible_locations_prefers_executable=" + locationsPrefersExecutable);
-
-    scratch.file(
-        "test/defs.bzl",
-        "def _my_binary_impl(ctx):",
-        "  executable = ctx.actions.declare_file(ctx.attr.name + '_executable')",
-        "  ctx.actions.write(executable, '', is_executable = True)",
-        "  file = ctx.actions.declare_file(ctx.attr.name + '_file')",
-        "  ctx.actions.write(file, '')",
-        "  return [DefaultInfo(executable = executable, files = depset([file]))]",
-        "my_binary = rule(",
-        "    implementation = _my_binary_impl,",
-        "    executable = True,",
-        ")",
-        "def _expand_location_rule_impl(ctx):",
-        "  expansions = []",
-        "  for data in ctx.attr.data:",
-        "    expansions.append(",
-        "        ctx.expand_location('$(location ' + str(data.label) + ')', ctx.attr.data),",
-        "    )",
-        "    expansions.append(",
-        "        ctx.expand_location('$(locations ' + str(data.label) + ')', ctx.attr.data)",
-        "    )",
-        "  file = ctx.actions.declare_file(ctx.attr.name)",
-        "  ctx.actions.write(file, '\\n'.join(expansions))",
-        "  return [DefaultInfo(files = depset([file]))]",
-        "expand_location_rule = rule(",
-        "    implementation = _expand_location_rule_impl,",
-        "    attrs = {",
-        "       'data': attr.label_list(),",
-        "    },",
-        ")");
-
-    scratch.file(
-        "test/BUILD",
-        "load('//test:defs.bzl', 'expand_location_rule', 'my_binary')",
-        "my_binary(name = 'main')",
-        "expand_location_rule(",
-        "  name = 'expand',",
-        "  data = [':main'],",
-        ")");
-
-    TransitiveInfoCollection expandTarget = getConfiguredTarget("//test:expand");
-    Artifact artifact =
-        Iterables.getOnlyElement(
-            expandTarget.getProvider(FileProvider.class).getFilesToBuild().toList());
-    FileWriteAction action = (FileWriteAction) getGeneratingAction(artifact);
-    assertThat(action.getFileContents())
-        .matches(
-            """
-            ^\\S*/bin/test/main_file
-            \\S*/bin/test/main_file$\
-            """);
-  }
-
-  @Test
-  public void testExpandedLocationsWithMultipleFilesAndExecutable(
-      @TestParameter boolean locationsPrefersExecutable) throws Exception {
-    setBuildLanguageOptions(
-        "--incompatible_locations_prefers_executable=" + locationsPrefersExecutable);
-
-    scratch.file(
-        "test/defs.bzl",
-        "def _my_binary_impl(ctx):",
-        "  executable = ctx.actions.declare_file(ctx.attr.name + '_executable')",
-        "  ctx.actions.write(executable, '', is_executable = True)",
-        "  file1 = ctx.actions.declare_file(ctx.attr.name + '_file1')",
-        "  file2 = ctx.actions.declare_file(ctx.attr.name + '_file2')",
-        "  ctx.actions.write(file1, '')",
-        "  ctx.actions.write(file2, '')",
-        "  return [DefaultInfo(executable = executable, files = depset([file1, file2]))]",
-        "my_binary = rule(",
-        "    implementation = _my_binary_impl,",
-        "    executable = True,",
-        ")",
-        "def _expand_location_rule_impl(ctx):",
-        "  expansions = []",
-        "  for data in ctx.attr.data:",
-        "    expansions.append(",
-        "        ctx.expand_location('$(location ' + str(data.label) + ')', ctx.attr.data),",
-        "    )",
-        "    expansions.append(",
-        "        ctx.expand_location('$(locations ' + str(data.label) + ')', ctx.attr.data)",
-        "    )",
-        "  file = ctx.actions.declare_file(ctx.attr.name)",
-        "  ctx.actions.write(file, '\\n'.join(expansions))",
-        "  return [DefaultInfo(files = depset([file]))]",
-        "expand_location_rule = rule(",
-        "    implementation = _expand_location_rule_impl,",
-        "    attrs = {",
-        "       'data': attr.label_list(),",
-        "    },",
-        ")");
-
-    scratch.file(
-        "test/BUILD",
-        "load('//test:defs.bzl', 'expand_location_rule', 'my_binary')",
-        "my_binary(name = 'main')",
-        "expand_location_rule(",
-        "  name = 'expand',",
-        "  data = [':main'],",
-        ")");
-
-    reporter.removeHandler(failFastHandler);
-    TransitiveInfoCollection expandTarget = getConfiguredTarget("//test:expand");
-    if (locationsPrefersExecutable) {
-      Artifact artifact =
-          Iterables.getOnlyElement(
-              expandTarget.getProvider(FileProvider.class).getFilesToBuild().toList());
-      FileWriteAction action = (FileWriteAction) getGeneratingAction(artifact);
-      assertThat(action.getFileContents())
-          .matches(
-              """
-              ^\\S*/bin/test/main_executable
-              \\S*/bin/test/main_executable$\
-              """);
-    } else {
-      assertContainsEvent(
-          "label '//test:main' in $(location) expression expands to more than one file");
-      assertContainsEvent("/bin/test/main_file1,");
-      assertContainsEvent("/bin/test/main_file2]");
+        Truth.assertThat(error).hasMessageThat().contains("file '//abc:rule.bzl' cannot use private API")
     }
-  }
 
-  /**
-   * Invokes ctx.expand_location() with the given parameters and checks whether this led to the
-   * expected result
-   *
-   * @param command Either "location" or "locations". This only matters when the label has multiple
-   *     targets
-   * @param expectedPattern Regex pattern that matches the expected result
-   */
-  private void runExpansion(String command, String expectedPattern) throws Exception {
-    assertMatches(
-        "Expanded string",
-        expectedPattern,
-        (String) ev.eval(String.format("ruleContext.expand_location('$(%s)')", command)));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExpandLocationWithShortPaths() {
+        val ruleContext: StarlarkRuleContext = createRuleContext("//foo:bar")
+        setRuleContext(ruleContext)
 
-  private static void assertMatches(
-      String description, String expectedPattern, String computedValue) {
-    assertWithMessage(
-            "%s '%s' did not match pattern '%s'", description, computedValue, expectedPattern)
-        .that(Pattern.matches(expectedPattern, computedValue))
-        .isTrue();
-  }
+        val loc: Any = ev.eval("ruleContext.expand_location('$(location :jl)', short_paths = True)")
 
-  @Test
-  public void testResolveCommandMakeVariables() throws Exception {
-    setRuleContext(createRuleContext("//foo:resolve_me"));
-    ev.exec(
-        "inputs, argv, manifests = ruleContext.resolve_command(",
-        "  command='I got the $(HELLO) on a $(DAVE)', ",
-        "  make_variables={'HELLO': 'World', 'DAVE': type('')})");
-    @SuppressWarnings("unchecked")
-    List<String> argv = (List<String>) (List<?>) (StarlarkList) ev.lookup("argv");
-    assertThat(argv).hasSize(3);
-    assertMatches("argv[0]", "^.*/bash" + OsUtils.executableExtension() + "$", argv.get(0));
-    assertThat(argv.get(1)).isEqualTo("-c");
-    assertThat(argv.get(2)).isEqualTo("I got the World on a string");
-  }
+        Truth.assertThat(loc).isEqualTo("foo/libjl.jar")
+    }
 
-  @Test
-  public void testResolveCommandInputs() throws Exception {
-    setRuleContext(createRuleContext("//foo:resolve_me"));
-    ev.exec(
-        "inputs, argv, input_manifests = ruleContext.resolve_command(",
-        "   tools=ruleContext.attr.tools)");
-    @SuppressWarnings("unchecked")
-    List<Artifact> inputs = (List<Artifact>) (List<?>) (StarlarkList) ev.lookup("inputs");
-    assertArtifactFilenames(inputs, "mytool.sh", "mytool", "mytool.runfiles", "t.exe");
-  }
+    /** Regression test to check that expand_location allows ${var} and $$.  */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExpandLocationWithDollarSignsAndCurlys() {
+        val ruleContext: StarlarkRuleContext = createRuleContext("//foo:bar")
+        setRuleContext(ruleContext)
+        Truth.assertThat(ev.eval("ruleContext.expand_location('\${abc} $(echo) $$ $')") as String?)
+            .isEqualTo("\${abc} $(echo) $$ $")
+    }
 
-  @Test
-  public void testResolveCommandExpandLocations() throws Exception {
-    setRuleContext(createRuleContext("//foo:resolve_me"));
-    ev.exec(
-        "def foo():", // no for loops at top-level
-        "  label_dict = {}",
-        "  all = []",
-        "  for dep in ruleContext.attr.srcs + ruleContext.attr.tools:",
-        "    all.extend(dep[DefaultInfo].files.to_list())",
-        "    label_dict[dep.label] = dep[DefaultInfo].files.to_list()",
-        "  return ruleContext.resolve_command(",
-        "    command='A$(locations //foo:mytool) B$(location //foo:file3.dat)',",
-        "    attribute='cmd', expand_locations=True, label_dict=label_dict)",
-        "inputs, argv, manifests = foo()");
-    @SuppressWarnings("unchecked")
-    List<String> argv = (List<String>) (List<?>) (StarlarkList) ev.lookup("argv");
-    assertThat(argv).hasSize(3);
-    assertMatches("argv[0]", "^.*/bash" + OsUtils.executableExtension() + "$", argv.get(0));
-    assertThat(argv.get(1)).isEqualTo("-c");
-    assertMatches("argv[2]", "A.*/mytool .*/mytool.sh B.*file3.dat", argv.get(2));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExpandedLocationWithSingleFileDifferentFromExecutable(
+        @TestParameter locationsPrefersExecutable: Boolean
+    ) {
+        setBuildLanguageOptions(
+            "--incompatible_locations_prefers_executable=" + locationsPrefersExecutable
+        )
 
-  @Test
-  public void testResolveCommandExecutionRequirements() throws Exception {
-    // Tests that requires-darwin execution requirements result in the usage of /bin/bash.
-    setRuleContext(createRuleContext("//foo:resolve_me"));
-    ev.exec(
-        "inputs, argv, manifests = ruleContext.resolve_command(",
-        "  execution_requirements={'requires-darwin': ''})");
-    @SuppressWarnings("unchecked")
-    List<String> argv = (List<String>) (List<?>) (StarlarkList) ev.lookup("argv");
-    assertMatches("argv[0]", "^/bin/bash$", argv.get(0));
-  }
+        scratch.file(
+            "test/defs.bzl",
+            "def _my_binary_impl(ctx):",
+            "  executable = ctx.actions.declare_file(ctx.attr.name + '_executable')",
+            "  ctx.actions.write(executable, '', is_executable = True)",
+            "  file = ctx.actions.declare_file(ctx.attr.name + '_file')",
+            "  ctx.actions.write(file, '')",
+            "  return [DefaultInfo(executable = executable, files = depset([file]))]",
+            "my_binary = rule(",
+            "    implementation = _my_binary_impl,",
+            "    executable = True,",
+            ")",
+            "def _expand_location_rule_impl(ctx):",
+            "  expansions = []",
+            "  for data in ctx.attr.data:",
+            "    expansions.append(",
+            "        ctx.expand_location('$(location ' + str(data.label) + ')', ctx.attr.data),",
+            "    )",
+            "    expansions.append(",
+            "        ctx.expand_location('$(locations ' + str(data.label) + ')', ctx.attr.data)",
+            "    )",
+            "  file = ctx.actions.declare_file(ctx.attr.name)",
+            "  ctx.actions.write(file, '\\n'.join(expansions))",
+            "  return [DefaultInfo(files = depset([file]))]",
+            "expand_location_rule = rule(",
+            "    implementation = _expand_location_rule_impl,",
+            "    attrs = {",
+            "       'data': attr.label_list(),",
+            "    },",
+            ")"
+        )
 
-  @Test
-  public void resolveCommandScript() throws Exception {
-    setRuleContext(createRuleContext("//foo:resolve_me"));
-    ev.exec(
-        "s = 'a' * " + CommandHelper.maxCommandLength(OS.getCurrent()) + 1,
-        "inputs, argv, _ = ruleContext.resolve_command(command = s)");
+        scratch.file(
+            "test/BUILD",
+            "load('//test:defs.bzl', 'expand_location_rule', 'my_binary')",
+            "my_binary(name = 'main')",
+            "expand_location_rule(",
+            "  name = 'expand',",
+            "  data = [':main'],",
+            ")"
+        )
 
-    @SuppressWarnings("unchecked")
-    List<Artifact> inputs = (List<Artifact>) ev.lookup("inputs");
-    @SuppressWarnings("unchecked")
-    List<String> argv = (List<String>) ev.lookup("argv");
+        val expandTarget: TransitiveInfoCollection = getConfiguredTarget("//test:expand")
+        val artifact: Artifact? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(
+                expandTarget.getProvider(FileProvider::class.java).getFilesToBuild().toList()
+            )
+        val action: FileWriteAction = getGeneratingAction(artifact) as FileWriteAction
+        assertThat(action.getFileContents())
+            .matches(
+                """
+            ^\S*/bin/test/main_file
+            \S*/bin/test/main_file${'$'}
+            """.trimIndent()
+            )
+    }
 
-    assertThat(inputs).hasSize(1);
-    assertThat(argv).hasSize(2);
-    assertThat(argv.get(0)).endsWith("/bash" + OsUtils.executableExtension());
-    assertThat(argv.get(1)).isEqualTo(inputs.get(0).getExecPathString());
-    assertThat(inputs.get(0).getExecPathString()).endsWith(".script.sh");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExpandedLocationsWithMultipleFilesAndExecutable(
+        @TestParameter locationsPrefersExecutable: Boolean
+    ) {
+        setBuildLanguageOptions(
+            "--incompatible_locations_prefers_executable=" + locationsPrefersExecutable
+        )
 
-  @Test
-  public void multipleResolveCommandScripts_noConflict() throws Exception {
-    setRuleContext(createRuleContext("//foo:resolve_me"));
-    ev.exec(
-        "s1 = '1' * " + CommandHelper.maxCommandLength(OS.getCurrent()) + 1,
-        "s2 = '2' * " + CommandHelper.maxCommandLength(OS.getCurrent()) + 1,
-        "inputs1, argv1, _ = ruleContext.resolve_command(command = s1)",
-        "inputs2, argv2, __ = ruleContext.resolve_command(command = s2)");
+        scratch.file(
+            "test/defs.bzl",
+            "def _my_binary_impl(ctx):",
+            "  executable = ctx.actions.declare_file(ctx.attr.name + '_executable')",
+            "  ctx.actions.write(executable, '', is_executable = True)",
+            "  file1 = ctx.actions.declare_file(ctx.attr.name + '_file1')",
+            "  file2 = ctx.actions.declare_file(ctx.attr.name + '_file2')",
+            "  ctx.actions.write(file1, '')",
+            "  ctx.actions.write(file2, '')",
+            "  return [DefaultInfo(executable = executable, files = depset([file1, file2]))]",
+            "my_binary = rule(",
+            "    implementation = _my_binary_impl,",
+            "    executable = True,",
+            ")",
+            "def _expand_location_rule_impl(ctx):",
+            "  expansions = []",
+            "  for data in ctx.attr.data:",
+            "    expansions.append(",
+            "        ctx.expand_location('$(location ' + str(data.label) + ')', ctx.attr.data),",
+            "    )",
+            "    expansions.append(",
+            "        ctx.expand_location('$(locations ' + str(data.label) + ')', ctx.attr.data)",
+            "    )",
+            "  file = ctx.actions.declare_file(ctx.attr.name)",
+            "  ctx.actions.write(file, '\\n'.join(expansions))",
+            "  return [DefaultInfo(files = depset([file]))]",
+            "expand_location_rule = rule(",
+            "    implementation = _expand_location_rule_impl,",
+            "    attrs = {",
+            "       'data': attr.label_list(),",
+            "    },",
+            ")"
+        )
 
-    @SuppressWarnings("unchecked")
-    List<Artifact> inputs1 = (List<Artifact>) ev.lookup("inputs1");
-    @SuppressWarnings("unchecked")
-    List<String> argv1 = (List<String>) ev.lookup("argv1");
-    @SuppressWarnings("unchecked")
-    List<Artifact> inputs2 = (List<Artifact>) ev.lookup("inputs2");
-    @SuppressWarnings("unchecked")
-    List<String> argv2 = (List<String>) ev.lookup("argv2");
+        scratch.file(
+            "test/BUILD",
+            "load('//test:defs.bzl', 'expand_location_rule', 'my_binary')",
+            "my_binary(name = 'main')",
+            "expand_location_rule(",
+            "  name = 'expand',",
+            "  data = [':main'],",
+            ")"
+        )
 
-    assertThat(inputs1).hasSize(1);
-    assertThat(inputs2).hasSize(1);
-    assertThat(inputs1.get(0).getExecPathString()).isNotEqualTo(inputs2.get(0).getExecPathString());
-    assertThat(argv1).hasSize(2);
-    assertThat(argv2).hasSize(2);
-    assertThat(argv1.get(0)).endsWith("/bash" + OsUtils.executableExtension());
-    assertThat(argv2.get(0)).endsWith("/bash" + OsUtils.executableExtension());
-    assertThat(argv1.get(1)).isEqualTo(inputs1.get(0).getExecPathString());
-    assertThat(argv2.get(1)).isEqualTo(inputs2.get(0).getExecPathString());
-  }
+        reporter.removeHandler(failFastHandler)
+        val expandTarget: TransitiveInfoCollection = getConfiguredTarget("//test:expand")
+        if (locationsPrefersExecutable) {
+            val artifact: Artifact? =
+                com.google.common.collect.Iterables.getOnlyElement<T?>(
+                    expandTarget.getProvider(FileProvider::class.java).getFilesToBuild().toList()
+                )
+            val action: FileWriteAction = getGeneratingAction(artifact) as FileWriteAction
+            assertThat(action.getFileContents())
+                .matches(
+                    """
+              ^\S*/bin/test/main_executable
+              \S*/bin/test/main_executable${'$'}
+              """.trimIndent()
+                )
+        } else {
+            assertContainsEvent(
+                "label '//test:main' in $(location) expression expands to more than one file"
+            )
+            assertContainsEvent("/bin/test/main_file1,")
+            assertContainsEvent("/bin/test/main_file2]")
+        }
+    }
 
-  @Test
-  public void resolveCommandScript_namingNotDependantOnCommand() throws Exception {
-    setRuleContext(createRuleContext("//foo:resolve_me"));
-    ev.exec(
-        "s = '1' * " + CommandHelper.maxCommandLength(OS.getCurrent()) + 1,
-        "result1 = ruleContext.resolve_command(command = s)");
-    var result1 = ev.lookup("result1");
+    /**
+     * Invokes ctx.expand_location() with the given parameters and checks whether this led to the
+     * expected result
+     * 
+     * @param command Either "location" or "locations". This only matters when the label has multiple
+     * targets
+     * @param expectedPattern Regex pattern that matches the expected result
+     */
+    @Throws(java.lang.Exception::class)
+    private fun runExpansion(command: String?, expectedPattern: String?) {
+        assertMatches(
+            "Expanded string",
+            expectedPattern,
+            ev.eval(String.format("ruleContext.expand_location('$(%s)')", command)) as String?
+        )
+    }
 
-    // Reset the rule context to simulate a build in a different configuration that results in a
-    // different command.
-    setRuleContext(createRuleContext("//foo:resolve_me"));
-    ev.exec(
-        "s = '2' * " + CommandHelper.maxCommandLength(OS.getCurrent()) + 1,
-        "result2 = ruleContext.resolve_command(command = s)");
-    var result2 = ev.lookup("result2");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testResolveCommandMakeVariables() {
+        setRuleContext(createRuleContext("//foo:resolve_me"))
+        ev.exec(
+            "inputs, argv, manifests = ruleContext.resolve_command(",
+            "  command='I got the $(HELLO) on a $(DAVE)', ",
+            "  make_variables={'HELLO': 'World', 'DAVE': type('')})"
+        )
+        val argv = ev.lookup("argv") as StarlarkList<*>? as MutableList<*>? as MutableList<String?>?
+        Truth.assertThat(argv).hasSize(3)
+        assertMatches("argv[0]", "^.*/bash" + OsUtils.executableExtension() + "$", argv!!.get(0))
+        Truth.assertThat(argv.get(1)).isEqualTo("-c")
+        Truth.assertThat(argv.get(2)).isEqualTo("I got the World on a string")
+    }
 
-    assertThat(result1).isEqualTo(result2);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testResolveCommandInputs() {
+        setRuleContext(createRuleContext("//foo:resolve_me"))
+        ev.exec(
+            "inputs, argv, input_manifests = ruleContext.resolve_command(",
+            "   tools=ruleContext.attr.tools)"
+        )
+        val inputs: MutableList<Artifact> =
+            ev.lookup("inputs") as StarlarkList<*>? as MutableList<*>? as MutableList<Artifact>
+        assertArtifactFilenames(inputs, "mytool.sh", "mytool", "mytool.runfiles", "t.exe")
+    }
 
-  @Test
-  public void testResolveTools() throws Exception {
-    setBuildLanguageOptions("--incompatible_disallow_ctx_resolve_tools=false");
-    StarlarkRuleContext ruleContext = createRuleContext("//foo:resolve_me");
-    setRuleContext(ruleContext);
-    ev.exec(
-        "inputs, input_manifests = ruleContext.resolve_tools(tools=ruleContext.attr.tools)",
-        "ruleContext.actions.run(",
-        "    outputs = [ruleContext.actions.declare_file('x.out')],",
-        "    inputs = inputs,",
-        "    executable = 'dummy',",
-        ")");
-    assertArtifactFilenames(
-        ((Depset) ev.lookup("inputs")).getSet(Artifact.class).toList(),
-        "mytool.sh",
-        "mytool",
-        "mytool.runfiles",
-        "t.exe");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testResolveCommandExpandLocations() {
+        setRuleContext(createRuleContext("//foo:resolve_me"))
+        ev.exec(
+            "def foo():",  // no for loops at top-level
+            "  label_dict = {}",
+            "  all = []",
+            "  for dep in ruleContext.attr.srcs + ruleContext.attr.tools:",
+            "    all.extend(dep[DefaultInfo].files.to_list())",
+            "    label_dict[dep.label] = dep[DefaultInfo].files.to_list()",
+            "  return ruleContext.resolve_command(",
+            "    command='A$(locations //foo:mytool) B$(location //foo:file3.dat)',",
+            "    attribute='cmd', expand_locations=True, label_dict=label_dict)",
+            "inputs, argv, manifests = foo()"
+        )
+        val argv = ev.lookup("argv") as StarlarkList<*>? as MutableList<*>? as MutableList<String?>?
+        Truth.assertThat(argv).hasSize(3)
+        assertMatches("argv[0]", "^.*/bash" + OsUtils.executableExtension() + "$", argv!!.get(0))
+        Truth.assertThat(argv.get(1)).isEqualTo("-c")
+        assertMatches("argv[2]", "A.*/mytool .*/mytool.sh B.*file3.dat", argv.get(2))
+    }
 
-    SpawnAction action =
-        (SpawnAction)
-            Iterables.getOnlyElement(
-                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions());
-    assertThat(ActionsTestUtil.baseArtifactNames(action.getInputs()))
-        .containsAtLeast("mytool.sh", "mytool", "mytool.runfiles", "t.exe");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testResolveCommandExecutionRequirements() {
+        // Tests that requires-darwin execution requirements result in the usage of /bin/bash.
+        setRuleContext(createRuleContext("//foo:resolve_me"))
+        ev.exec(
+            "inputs, argv, manifests = ruleContext.resolve_command(",
+            "  execution_requirements={'requires-darwin': ''})"
+        )
+        val argv = ev.lookup("argv") as StarlarkList<*>? as MutableList<*>? as MutableList<String?>
+        assertMatches("argv[0]", "^/bin/bash$", argv.get(0))
+    }
 
-  @Test
-  public void testBadParamTypeErrorMessage() throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
-    ev.checkEvalErrorContains(
-        "got value of type 'int', want 'string or Args'",
-        "ruleContext.actions.write(",
-        "  output = ruleContext.files.srcs[0],",
-        "  content = 1,",
-        "  is_executable = False)");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolveCommandScript() {
+        setRuleContext(createRuleContext("//foo:resolve_me"))
+        ev.exec(
+            "s = 'a' * " + CommandHelper.maxCommandLength(com.google.devtools.build.lib.util.OS.getCurrent()) + 1,
+            "inputs, argv, _ = ruleContext.resolve_command(command = s)"
+        )
 
-  @Test
-  public void testCreateTemplateAction() throws Exception {
-    StarlarkRuleContext ruleContext = createRuleContext("//foo:foo");
-    setRuleContext(ruleContext);
-    ev.exec(
-        "ruleContext.actions.expand_template(",
-        "  template = ruleContext.files.srcs[0],",
-        "  output = ruleContext.files.srcs[1],",
-        "  substitutions = {'a': 'b'},",
-        "  is_executable = False)");
+        val inputs: MutableList<Artifact?>? = ev.lookup("inputs") as MutableList<Artifact?>?
+        val argv = ev.lookup("argv") as MutableList<String?>?
 
-    TemplateExpansionAction action =
-        (TemplateExpansionAction)
-            Iterables.getOnlyElement(
-                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions());
-    assertThat(action.getInputs().getSingleton().getExecPathString()).isEqualTo("foo/a.txt");
-    assertThat(Iterables.getOnlyElement(action.getOutputs()).getExecPathString())
-        .isEqualTo("foo/b.img");
-    assertThat(Iterables.getOnlyElement(action.getSubstitutions()).getKey()).isEqualTo("a");
-    assertThat(Iterables.getOnlyElement(action.getSubstitutions()).getValue()).isEqualTo("b");
-    assertThat(action.makeExecutable()).isFalse();
-  }
+        Truth.assertThat(inputs).hasSize(1)
+        Truth.assertThat(argv).hasSize(2)
+        Truth.assertThat(argv!!.get(0)).endsWith("/bash" + OsUtils.executableExtension())
+        Truth.assertThat(argv.get(1)).isEqualTo(inputs!!.get(0).getExecPathString())
+        assertThat(inputs.get(0).getExecPathString()).endsWith(".script.sh")
+    }
 
-  @Test
-  public void testCreateTemplateActionUnicode() throws Exception {
-    // The following array contains bytes that represent a string of length two when treated as
-    // UTF-8 and a string of length four when treated as ISO-8859-1 (a.k.a. Latin 1).
-    String internalString =
-        new String(new byte[] {(byte) 0xC2, (byte) 0xA2, (byte) 0xC2, (byte) 0xA2}, ISO_8859_1);
-    StarlarkRuleContext ruleContext = createRuleContext("//foo:foo");
-    setRuleContext(ruleContext);
-    // In production, Bazel parses Starlark as raw bytes encoded as Latin-1.
-    ev.exec(
-        "ruleContext.actions.expand_template(",
-        "  template = ruleContext.files.srcs[0],",
-        "  output = ruleContext.files.srcs[1],",
-        "  substitutions = {'a" + internalString + "': '" + internalString + "'},",
-        "  is_executable = False)");
-    TemplateExpansionAction action =
-        (TemplateExpansionAction)
-            Iterables.getOnlyElement(
-                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions());
-    List<Substitution> substitutions = action.getSubstitutions();
-    assertThat(substitutions).hasSize(1);
-    assertThat(substitutions.get(0).getKey()).isEqualTo("a" + internalString);
-    assertThat(substitutions.get(0).getValue()).isEqualTo(internalString);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun multipleResolveCommandScripts_noConflict() {
+        setRuleContext(createRuleContext("//foo:resolve_me"))
+        ev.exec(
+            "s1 = '1' * " + CommandHelper.maxCommandLength(com.google.devtools.build.lib.util.OS.getCurrent()) + 1,
+            "s2 = '2' * " + CommandHelper.maxCommandLength(com.google.devtools.build.lib.util.OS.getCurrent()) + 1,
+            "inputs1, argv1, _ = ruleContext.resolve_command(command = s1)",
+            "inputs2, argv2, __ = ruleContext.resolve_command(command = s2)"
+        )
 
-  @Test
-  public void testRunfilesAddFromDependencies() throws Exception {
-    setRuleContext(createRuleContext("//foo:bar"));
-    Object result = ev.eval("ruleContext.runfiles(collect_default = True)");
-    assertThat(ActionsTestUtil.baseArtifactNames(getRunfileArtifacts(result)))
-        .contains("libjl.jar");
-  }
+        val inputs1: MutableList<Artifact?>? = ev.lookup("inputs1") as MutableList<Artifact?>?
+        val argv1 = ev.lookup("argv1") as MutableList<String?>?
+        val inputs2: MutableList<Artifact?>? = ev.lookup("inputs2") as MutableList<Artifact?>?
+        val argv2 = ev.lookup("argv2") as MutableList<String?>?
 
-  @Test
-  public void testRunfilesBadListGenericType() throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
-    ev.checkEvalErrorContains(
-        "at index 0 of files, got element of type string, want File",
-        "ruleContext.runfiles(files = ['some string'])");
-  }
+        Truth.assertThat(inputs1).hasSize(1)
+        Truth.assertThat(inputs2).hasSize(1)
+        assertThat(inputs1!!.get(0).getExecPathString()).isNotEqualTo(inputs2!!.get(0).getExecPathString())
+        Truth.assertThat(argv1).hasSize(2)
+        Truth.assertThat(argv2).hasSize(2)
+        Truth.assertThat(argv1!!.get(0)).endsWith("/bash" + OsUtils.executableExtension())
+        Truth.assertThat(argv2!!.get(0)).endsWith("/bash" + OsUtils.executableExtension())
+        Truth.assertThat(argv1.get(1)).isEqualTo(inputs1.get(0).getExecPathString())
+        Truth.assertThat(argv2.get(1)).isEqualTo(inputs2.get(0).getExecPathString())
+    }
 
-  @Test
-  public void testRunfilesBadSetGenericType() throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
-    ev.checkEvalErrorContains(
-        "got a depset of 'int', expected a depset of 'File'",
-        "ruleContext.runfiles(transitive_files=depset([1, 2, 3]))");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolveCommandScript_namingNotDependantOnCommand() {
+        setRuleContext(createRuleContext("//foo:resolve_me"))
+        ev.exec(
+            "s = '1' * " + CommandHelper.maxCommandLength(com.google.devtools.build.lib.util.OS.getCurrent()) + 1,
+            "result1 = ruleContext.resolve_command(command = s)"
+        )
+        val result1: Any? = ev.lookup("result1")
 
-  @Test
-  public void testRunfilesBadMapGenericType() throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
-    ev.checkEvalErrorContains(
-        "got dict<int, File> for 'symlinks', want dict<string, File>",
-        "ruleContext.runfiles(symlinks = {123: ruleContext.files.srcs[0]})");
-    ev.checkEvalErrorContains(
-        "got dict<string, int> for 'symlinks', want dict<string, File>",
-        "ruleContext.runfiles(symlinks = {'some string': 123})");
-    ev.checkEvalErrorContains(
-        "got dict<int, File> for 'root_symlinks', want dict<string, File>",
-        "ruleContext.runfiles(root_symlinks = {123: ruleContext.files.srcs[0]})");
-    ev.checkEvalErrorContains(
-        "got dict<string, int> for 'root_symlinks', want dict<string, File>",
-        "ruleContext.runfiles(root_symlinks = {'some string': 123})");
-  }
+        // Reset the rule context to simulate a build in a different configuration that results in a
+        // different command.
+        setRuleContext(createRuleContext("//foo:resolve_me"))
+        ev.exec(
+            "s = '2' * " + CommandHelper.maxCommandLength(com.google.devtools.build.lib.util.OS.getCurrent()) + 1,
+            "result2 = ruleContext.resolve_command(command = s)"
+        )
+        val result2: Any? = ev.lookup("result2")
 
-  @Test
-  public void testRunfilesArtifactsFromArtifact() throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
-    Object result = ev.eval("ruleContext.runfiles(files = ruleContext.files.tools)");
-    assertThat(ActionsTestUtil.baseArtifactNames(getRunfileArtifacts(result))).contains("t.exe");
-  }
+        Truth.assertThat(result1).isEqualTo(result2)
+    }
 
-  @Test
-  public void testRunfilesArtifactsFromIterableArtifacts() throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
-    Object result = ev.eval("ruleContext.runfiles(files = ruleContext.files.srcs)");
-    assertThat(ImmutableList.of("a.txt", "b.img"))
-        .isEqualTo(ActionsTestUtil.baseArtifactNames(getRunfileArtifacts(result)));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testResolveTools() {
+        setBuildLanguageOptions("--incompatible_disallow_ctx_resolve_tools=false")
+        val ruleContext: StarlarkRuleContext = createRuleContext("//foo:resolve_me")
+        setRuleContext(ruleContext)
+        ev.exec(
+            "inputs, input_manifests = ruleContext.resolve_tools(tools=ruleContext.attr.tools)",
+            "ruleContext.actions.run(",
+            "    outputs = [ruleContext.actions.declare_file('x.out')],",
+            "    inputs = inputs,",
+            "    executable = 'dummy',",
+            ")"
+        )
+        assertArtifactFilenames(
+            (ev.lookup("inputs") as Depset).getSet(Artifact::class.java).toList(),
+            "mytool.sh",
+            "mytool",
+            "mytool.runfiles",
+            "t.exe"
+        )
 
-  @Test
-  public void testRunfilesArtifactsFromNestedSetArtifacts() throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
-    Object result =
-        ev.eval("ruleContext.runfiles(transitive_files = depset(ruleContext.files.srcs))");
-    assertThat(ImmutableList.of("a.txt", "b.img"))
-        .isEqualTo(ActionsTestUtil.baseArtifactNames(getRunfileArtifacts(result)));
-  }
+        val action: SpawnAction? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(
+                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions()
+            ) as SpawnAction?
+        assertThat(ActionsTestUtil.baseArtifactNames(action.getInputs()))
+            .containsAtLeast("mytool.sh", "mytool", "mytool.runfiles", "t.exe")
+    }
 
-  @Test
-  public void testRunfilesArtifactsFromDefaultAndFiles() throws Exception {
-    setRuleContext(createRuleContext("//foo:bar"));
-    // It would be nice to write [DEFAULT] + ruleContext.files.srcs, but artifacts
-    // is an ImmutableList and Starlark interprets it as a tuple.
-    Object result =
-        ev.eval("ruleContext.runfiles(collect_default = True, files = ruleContext.files.srcs)");
-    // From DEFAULT only libjl.jar comes, see testRunfilesAddFromDependencies().
-    assertThat(ImmutableList.of("libjl.jar", "gl.a", "gl.gcgox"))
-        .isEqualTo(ActionsTestUtil.baseArtifactNames(getRunfileArtifacts(result)));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBadParamTypeErrorMessage() {
+        setRuleContext(createRuleContext("//foo:foo"))
+        ev.checkEvalErrorContains(
+            "got value of type 'int', want 'string or Args'",
+            "ruleContext.actions.write(",
+            "  output = ruleContext.files.srcs[0],",
+            "  content = 1,",
+            "  is_executable = False)"
+        )
+    }
 
-  @Test
-  public void testRunfilesArtifactsFromSymlink() throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
-    Object result = ev.eval("ruleContext.runfiles(symlinks = {'sym1': ruleContext.files.srcs[0]})");
-    assertThat(ImmutableList.of("a.txt"))
-        .isEqualTo(ActionsTestUtil.baseArtifactNames(getRunfileArtifacts(result)));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCreateTemplateAction() {
+        val ruleContext: StarlarkRuleContext = createRuleContext("//foo:foo")
+        setRuleContext(ruleContext)
+        ev.exec(
+            "ruleContext.actions.expand_template(",
+            "  template = ruleContext.files.srcs[0],",
+            "  output = ruleContext.files.srcs[1],",
+            "  substitutions = {'a': 'b'},",
+            "  is_executable = False)"
+        )
 
-  @Test
-  public void testRunfilesArtifactsFromRootSymlink() throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
-    Object result =
-        ev.eval("ruleContext.runfiles(root_symlinks = {'sym1': ruleContext.files.srcs[0]})");
-    assertThat(ImmutableList.of("a.txt"))
-        .isEqualTo(ActionsTestUtil.baseArtifactNames(getRunfileArtifacts(result)));
-  }
+        val action: TemplateExpansionAction? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(
+                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions()
+            ) as TemplateExpansionAction?
+        assertThat(action.getInputs().getSingleton().getExecPathString()).isEqualTo("foo/a.txt")
+        assertThat(com.google.common.collect.Iterables.getOnlyElement<T?>(action.getOutputs()).getExecPathString())
+            .isEqualTo("foo/b.img")
+        assertThat(
+            com.google.common.collect.Iterables.getOnlyElement<T?>(action.getSubstitutions()).getKey()
+        ).isEqualTo("a")
+        assertThat(
+            com.google.common.collect.Iterables.getOnlyElement<T?>(action.getSubstitutions()).getValue()
+        ).isEqualTo("b")
+        assertThat(action.makeExecutable()).isFalse()
+    }
 
-  private static Iterable<Artifact> getRunfileArtifacts(Object runfiles) {
-    return ((Runfiles) runfiles).getAllArtifacts().toList();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCreateTemplateActionUnicode() {
+        // The following array contains bytes that represent a string of length two when treated as
+        // UTF-8 and a string of length four when treated as ISO-8859-1 (a.k.a. Latin 1).
+        val internalString = String(
+            byteArrayOf(0xC2.toByte(), 0xA2.toByte(), 0xC2.toByte(), 0xA2.toByte()),
+            java.nio.charset.StandardCharsets.ISO_8859_1
+        )
+        val ruleContext: StarlarkRuleContext = createRuleContext("//foo:foo")
+        setRuleContext(ruleContext)
+        // In production, Bazel parses Starlark as raw bytes encoded as Latin-1.
+        ev.exec(
+            "ruleContext.actions.expand_template(",
+            "  template = ruleContext.files.srcs[0],",
+            "  output = ruleContext.files.srcs[1],",
+            "  substitutions = {'a" + internalString + "': '" + internalString + "'},",
+            "  is_executable = False)"
+        )
+        val action: TemplateExpansionAction? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(
+                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions()
+            ) as TemplateExpansionAction?
+        val substitutions: MutableList<Substitution?>? = action.getSubstitutions()
+        Truth.assertThat(substitutions).hasSize(1)
+        assertThat(substitutions!!.get(0).getKey()).isEqualTo("a" + internalString)
+        assertThat(substitutions.get(0).getValue()).isEqualTo(internalString)
+    }
 
-  @Test
-  public void testRunfilesBadKeywordArguments() throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
-    ev.checkEvalErrorContains(
-        "runfiles() got unexpected keyword argument 'bad_keyword'",
-        "ruleContext.runfiles(bad_keyword = '')");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRunfilesAddFromDependencies() {
+        setRuleContext(createRuleContext("//foo:bar"))
+        val result: Any = ev.eval("ruleContext.runfiles(collect_default = True)")
+        com.google.common.truth.Subject.contains("libjl.jar")
+    }
 
-  @Test
-  public void testNsetContainsList() throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
-    ev.checkEvalErrorContains(
-        "depset elements must not be mutable values", "depset([[ruleContext.files.srcs]])");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRunfilesBadListGenericType() {
+        setRuleContext(createRuleContext("//foo:foo"))
+        ev.checkEvalErrorContains(
+            "at index 0 of files, got element of type string, want File",
+            "ruleContext.runfiles(files = ['some string'])"
+        )
+    }
 
-  @Test
-  public void testStructPlusArtifactErrorMessage() throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
-    ev.checkEvalErrorContains(
-        "unsupported binary operation: File + struct",
-        "ruleContext.files.tools[0] + struct(a = 1)");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRunfilesBadSetGenericType() {
+        setRuleContext(createRuleContext("//foo:foo"))
+        ev.checkEvalErrorContains(
+            "got a depset of 'int', expected a depset of 'File'",
+            "ruleContext.runfiles(transitive_files=depset([1, 2, 3]))"
+        )
+    }
 
-  @Test
-  public void testNoSuchProviderErrorMessage() throws Exception {
-    setRuleContext(createRuleContext("//foo:bar"));
-    ev.update(
-        "MyInfo",
-        StarlarkProvider.builder(Location.BUILTIN)
-            .buildExported(
-                new StarlarkProvider.Key(
-                    keyForBuild(Label.parseCanonicalUnchecked("//myinfo:myinfo.bzl")), "MyInfo")));
-    ev.checkEvalErrorContains(
-        "<target //foo:jl> (rule 'java_library') doesn't contain declared provider 'MyInfo'",
-        "ruleContext.attr.srcs[0][MyInfo]");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRunfilesBadMapGenericType() {
+        setRuleContext(createRuleContext("//foo:foo"))
+        ev.checkEvalErrorContains(
+            "got dict<int, File> for 'symlinks', want dict<string, File>",
+            "ruleContext.runfiles(symlinks = {123: ruleContext.files.srcs[0]})"
+        )
+        ev.checkEvalErrorContains(
+            "got dict<string, int> for 'symlinks', want dict<string, File>",
+            "ruleContext.runfiles(symlinks = {'some string': 123})"
+        )
+        ev.checkEvalErrorContains(
+            "got dict<int, File> for 'root_symlinks', want dict<string, File>",
+            "ruleContext.runfiles(root_symlinks = {123: ruleContext.files.srcs[0]})"
+        )
+        ev.checkEvalErrorContains(
+            "got dict<string, int> for 'root_symlinks', want dict<string, File>",
+            "ruleContext.runfiles(root_symlinks = {'some string': 123})"
+        )
+    }
 
-  @Test
-  public void testFilesForRuleConfiguredTarget() throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
-    Object result = ev.eval("ruleContext.attr.srcs[0].files");
-    assertThat(ActionsTestUtil.baseNamesOf(((Depset) result).getSet(Artifact.class)))
-        .isEqualTo("a.txt");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRunfilesArtifactsFromArtifact() {
+        setRuleContext(createRuleContext("//foo:foo"))
+        val result: Any = ev.eval("ruleContext.runfiles(files = ruleContext.files.tools)")
+        com.google.common.truth.Subject.contains("t.exe")
+    }
 
-  @Test
-  public void testDefaultProvider() throws Exception {
-    scratch.file(
-        "test/foo.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRunfilesArtifactsFromIterableArtifacts() {
+        setRuleContext(createRuleContext("//foo:foo"))
+        val result: Any = ev.eval("ruleContext.runfiles(files = ruleContext.files.srcs)")
+        Truth.assertThat(com.google.common.collect.ImmutableList.of<String?>("a.txt", "b.img"))
+            .isEqualTo(ActionsTestUtil.baseArtifactNames(getRunfileArtifacts(result)))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRunfilesArtifactsFromNestedSetArtifacts() {
+        setRuleContext(createRuleContext("//foo:foo"))
+        val result: Any =
+            ev.eval("ruleContext.runfiles(transitive_files = depset(ruleContext.files.srcs))")
+        Truth.assertThat(com.google.common.collect.ImmutableList.of<String?>("a.txt", "b.img"))
+            .isEqualTo(ActionsTestUtil.baseArtifactNames(getRunfileArtifacts(result)))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRunfilesArtifactsFromDefaultAndFiles() {
+        setRuleContext(createRuleContext("//foo:bar"))
+        // It would be nice to write [DEFAULT] + ruleContext.files.srcs, but artifacts
+        // is an ImmutableList and Starlark interprets it as a tuple.
+        val result: Any =
+            ev.eval("ruleContext.runfiles(collect_default = True, files = ruleContext.files.srcs)")
+        // From DEFAULT only libjl.jar comes, see testRunfilesAddFromDependencies().
+        Truth.assertThat(com.google.common.collect.ImmutableList.of<String?>("libjl.jar", "gl.a", "gl.gcgox"))
+            .isEqualTo(ActionsTestUtil.baseArtifactNames(getRunfileArtifacts(result)))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRunfilesArtifactsFromSymlink() {
+        setRuleContext(createRuleContext("//foo:foo"))
+        val result: Any = ev.eval("ruleContext.runfiles(symlinks = {'sym1': ruleContext.files.srcs[0]})")
+        Truth.assertThat(com.google.common.collect.ImmutableList.of<String?>("a.txt"))
+            .isEqualTo(ActionsTestUtil.baseArtifactNames(getRunfileArtifacts(result)))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRunfilesArtifactsFromRootSymlink() {
+        setRuleContext(createRuleContext("//foo:foo"))
+        val result: Any =
+            ev.eval("ruleContext.runfiles(root_symlinks = {'sym1': ruleContext.files.srcs[0]})")
+        Truth.assertThat(com.google.common.collect.ImmutableList.of<String?>("a.txt"))
+            .isEqualTo(ActionsTestUtil.baseArtifactNames(getRunfileArtifacts(result)))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRunfilesBadKeywordArguments() {
+        setRuleContext(createRuleContext("//foo:foo"))
+        ev.checkEvalErrorContains(
+            "runfiles() got unexpected keyword argument 'bad_keyword'",
+            "ruleContext.runfiles(bad_keyword = '')"
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNsetContainsList() {
+        setRuleContext(createRuleContext("//foo:foo"))
+        ev.checkEvalErrorContains(
+            "depset elements must not be mutable values", "depset([[ruleContext.files.srcs]])"
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStructPlusArtifactErrorMessage() {
+        setRuleContext(createRuleContext("//foo:foo"))
+        ev.checkEvalErrorContains(
+            "unsupported binary operation: File + struct",
+            "ruleContext.files.tools[0] + struct(a = 1)"
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNoSuchProviderErrorMessage() {
+        setRuleContext(createRuleContext("//foo:bar"))
+        ev.update(
+            "MyInfo",
+            StarlarkProvider.builder(net.starlark.java.syntax.Location.BUILTIN)
+                .buildExported(
+                    Key(
+                        keyForBuild(Label.parseCanonicalUnchecked("//myinfo:myinfo.bzl")), "MyInfo"
+                    )
+                )
+        )
+        ev.checkEvalErrorContains(
+            "<target //foo:jl> (rule 'java_library') doesn't contain declared provider 'MyInfo'",
+            "ruleContext.attr.srcs[0][MyInfo]"
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFilesForRuleConfiguredTarget() {
+        setRuleContext(createRuleContext("//foo:foo"))
+        val result: Any = ev.eval("ruleContext.attr.srcs[0].files")
+        assertThat(ActionsTestUtil.baseNamesOf((result as Depset).getSet(Artifact::class.java)))
+            .isEqualTo("a.txt")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDefaultProvider() {
+        scratch.file(
+            "test/foo.bzl",
+            """
         foo_provider = provider()
         def _impl(ctx):
             default = DefaultInfo(
@@ -1261,10 +1319,12 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
                'runs': attr.label_list(allow_files=True),
             }
         )
-        """);
-    scratch.file(
-        "test/bar.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/bar.bzl",
+            """
         load(':foo.bzl', 'foo_provider')
         load('//myinfo:myinfo.bzl', 'MyInfo')
         def _impl(ctx):
@@ -1285,53 +1345,62 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
                'deps': attr.label_list(allow_files=True),
             }
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load(':foo.bzl', 'foo_rule')
         load(':bar.bzl', 'bar_rule')
         foo_rule(name = 'dep_rule', runs = ['run.file', 'run2.file'])
         bar_rule(name = 'my_rule', deps = [':dep_rule', 'file.txt'])
-        """);
-    ConfiguredTarget configuredTarget = getConfiguredTarget("//test:my_rule");
-    StructImpl myInfo = getMyInfoFromTarget(configuredTarget);
-    assertThat((Boolean) myInfo.getValue("is_provided")).isTrue();
+        
+        """.trimIndent()
+        )
+        val configuredTarget: ConfiguredTarget = getConfiguredTarget("//test:my_rule")
+        val myInfo: StructImpl = getMyInfoFromTarget(configuredTarget)
+        Truth.assertThat(myInfo.getValue("is_provided") as Boolean?).isTrue()
 
-    Object provider = myInfo.getValue("provider");
-    assertThat(provider).isInstanceOf(DefaultInfo.class);
-    assertThat(((DefaultInfo) provider).getProvider().getKey())
-        .isEqualTo(DefaultInfo.PROVIDER.getKey());
+        val provider: Any = myInfo.getValue("provider")
+        Truth.assertThat(provider).isInstanceOf(DefaultInfo::class.java)
+        assertThat((provider as DefaultInfo).getProvider().getKey())
+            .isEqualTo(DefaultInfo.PROVIDER.getKey())
 
-    assertThat(myInfo.getValue("dir"))
-        .isEqualTo("[\"data_runfiles\", \"default_runfiles\", \"files\", \"files_to_run\"]");
+        assertThat(myInfo.getValue("dir"))
+            .isEqualTo("[\"data_runfiles\", \"default_runfiles\", \"files\", \"files_to_run\"]")
 
-    assertThat(myInfo.getValue("rule_data_runfiles")).isInstanceOf(Runfiles.class);
-    assertThat(
-            Iterables.transform(
-                ((Runfiles) myInfo.getValue("rule_data_runfiles")).getAllArtifacts().toList(),
-                String::valueOf))
-        .containsExactly(
-            "File:[/workspace[source]]test/run.file", "File:[/workspace[source]]test/run2.file");
+        assertThat(myInfo.getValue("rule_data_runfiles")).isInstanceOf(Runfiles::class.java)
+        Truth.assertThat(
+            com.google.common.collect.Iterables.transform<F?, T?>(
+                (myInfo.getValue("rule_data_runfiles") as Runfiles).getAllArtifacts().toList(),
+                com.google.common.base.Function { obj: F? -> java.lang.String.valueOf(obj) })
+        )
+            .containsExactly(
+                "File:[/workspace[source]]test/run.file", "File:[/workspace[source]]test/run2.file"
+            )
 
-    assertThat(myInfo.getValue("rule_default_runfiles")).isInstanceOf(Runfiles.class);
-    assertThat(
-            Iterables.transform(
-                ((Runfiles) myInfo.getValue("rule_default_runfiles")).getAllArtifacts().toList(),
-                String::valueOf))
-        .containsExactly(
-            "File:[/workspace[source]]test/run.file", "File:[/workspace[source]]test/run2.file");
+        assertThat(myInfo.getValue("rule_default_runfiles")).isInstanceOf(Runfiles::class.java)
+        Truth.assertThat(
+            com.google.common.collect.Iterables.transform<F?, T?>(
+                (myInfo.getValue("rule_default_runfiles") as Runfiles).getAllArtifacts().toList(),
+                com.google.common.base.Function { obj: F? -> java.lang.String.valueOf(obj) })
+        )
+            .containsExactly(
+                "File:[/workspace[source]]test/run.file", "File:[/workspace[source]]test/run2.file"
+            )
 
-    assertThat(myInfo.getValue("rule_files")).isInstanceOf(Depset.class);
-    assertThat(myInfo.getValue("rule_files_to_run")).isInstanceOf(FilesToRunProvider.class);
-    assertThat(myInfo.getValue("rule_file_executable")).isEqualTo(Starlark.NONE);
-  }
+        assertThat(myInfo.getValue("rule_files")).isInstanceOf(Depset::class.java)
+        assertThat(myInfo.getValue("rule_files_to_run")).isInstanceOf(FilesToRunProvider::class.java)
+        assertThat(myInfo.getValue("rule_file_executable")).isEqualTo(Starlark.NONE)
+    }
 
-  @Test
-  public void testDefaultProviderInStruct() throws Exception {
-    scratch.file(
-        "test/foo.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDefaultProviderInStruct() {
+        scratch.file(
+            "test/foo.bzl",
+            """
         foo_provider = provider()
         def _impl(ctx):
             default = DefaultInfo(
@@ -1345,10 +1414,12 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
                'runs': attr.label_list(allow_files=True),
             }
         )
-        """);
-    scratch.file(
-        "test/bar.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/bar.bzl",
+            """
         load(':foo.bzl', 'foo_provider')
         load('//myinfo:myinfo.bzl', 'MyInfo')
         def _impl(ctx):
@@ -1368,53 +1439,62 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
                'deps': attr.label_list(allow_files=True),
             }
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load(':foo.bzl', 'foo_rule')
         load(':bar.bzl', 'bar_rule')
         foo_rule(name = 'dep_rule', runs = ['run.file', 'run2.file'])
         bar_rule(name = 'my_rule', deps = [':dep_rule', 'file.txt'])
-        """);
-    ConfiguredTarget configuredTarget = getConfiguredTarget("//test:my_rule");
-    StructImpl myInfo = getMyInfoFromTarget(configuredTarget);
+        
+        """.trimIndent()
+        )
+        val configuredTarget: ConfiguredTarget = getConfiguredTarget("//test:my_rule")
+        val myInfo: StructImpl = getMyInfoFromTarget(configuredTarget)
 
-    assertThat((Boolean) myInfo.getValue("is_provided")).isTrue();
+        Truth.assertThat(myInfo.getValue("is_provided") as Boolean?).isTrue()
 
-    Object provider = myInfo.getValue("provider");
-    assertThat(provider).isInstanceOf(DefaultInfo.class);
-    assertThat(((DefaultInfo) provider).getProvider().getKey())
-        .isEqualTo(DefaultInfo.PROVIDER.getKey());
+        val provider: Any = myInfo.getValue("provider")
+        Truth.assertThat(provider).isInstanceOf(DefaultInfo::class.java)
+        assertThat((provider as DefaultInfo).getProvider().getKey())
+            .isEqualTo(DefaultInfo.PROVIDER.getKey())
 
-    assertThat(myInfo.getValue("dir"))
-        .isEqualTo("[\"data_runfiles\", \"default_runfiles\", \"files\", \"files_to_run\"]");
+        assertThat(myInfo.getValue("dir"))
+            .isEqualTo("[\"data_runfiles\", \"default_runfiles\", \"files\", \"files_to_run\"]")
 
-    assertThat(myInfo.getValue("rule_data_runfiles")).isInstanceOf(Runfiles.class);
-    assertThat(
-            Iterables.transform(
-                ((Runfiles) myInfo.getValue("rule_data_runfiles")).getAllArtifacts().toList(),
-                String::valueOf))
-        .containsExactly(
-            "File:[/workspace[source]]test/run.file", "File:[/workspace[source]]test/run2.file");
+        assertThat(myInfo.getValue("rule_data_runfiles")).isInstanceOf(Runfiles::class.java)
+        Truth.assertThat(
+            com.google.common.collect.Iterables.transform<F?, T?>(
+                (myInfo.getValue("rule_data_runfiles") as Runfiles).getAllArtifacts().toList(),
+                com.google.common.base.Function { obj: F? -> java.lang.String.valueOf(obj) })
+        )
+            .containsExactly(
+                "File:[/workspace[source]]test/run.file", "File:[/workspace[source]]test/run2.file"
+            )
 
-    assertThat(myInfo.getValue("rule_default_runfiles")).isInstanceOf(Runfiles.class);
-    assertThat(
-            Iterables.transform(
-                ((Runfiles) myInfo.getValue("rule_default_runfiles")).getAllArtifacts().toList(),
-                String::valueOf))
-        .containsExactly(
-            "File:[/workspace[source]]test/run.file", "File:[/workspace[source]]test/run2.file");
+        assertThat(myInfo.getValue("rule_default_runfiles")).isInstanceOf(Runfiles::class.java)
+        Truth.assertThat(
+            com.google.common.collect.Iterables.transform<F?, T?>(
+                (myInfo.getValue("rule_default_runfiles") as Runfiles).getAllArtifacts().toList(),
+                com.google.common.base.Function { obj: F? -> java.lang.String.valueOf(obj) })
+        )
+            .containsExactly(
+                "File:[/workspace[source]]test/run.file", "File:[/workspace[source]]test/run2.file"
+            )
 
-    assertThat(myInfo.getValue("rule_files")).isInstanceOf(Depset.class);
-    assertThat(myInfo.getValue("rule_files_to_run")).isInstanceOf(FilesToRunProvider.class);
-  }
+        assertThat(myInfo.getValue("rule_files")).isInstanceOf(Depset::class.java)
+        assertThat(myInfo.getValue("rule_files_to_run")).isInstanceOf(FilesToRunProvider::class.java)
+    }
 
-  @Test
-  public void testDefaultProviderOnFileTarget() throws Exception {
-    scratch.file(
-        "test/bar.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDefaultProviderOnFileTarget() {
+        scratch.file(
+            "test/bar.bzl",
+            """
         load('//myinfo:myinfo.bzl', 'MyInfo')
         def _impl(ctx):
             provider = ctx.attr.deps[0][DefaultInfo]
@@ -1433,49 +1513,56 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
                'deps': attr.label_list(allow_files=True),
             }
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load(':bar.bzl', 'bar_rule')
         bar_rule(name = 'my_rule', deps = ['file.txt'])
-        """);
-    ConfiguredTarget configuredTarget = getConfiguredTarget("//test:my_rule");
-    StructImpl myInfo = getMyInfoFromTarget(configuredTarget);
+        
+        """.trimIndent()
+        )
+        val configuredTarget: ConfiguredTarget = getConfiguredTarget("//test:my_rule")
+        val myInfo: StructImpl = getMyInfoFromTarget(configuredTarget)
 
-    assertThat((Boolean) myInfo.getValue("is_provided")).isTrue();
+        Truth.assertThat(myInfo.getValue("is_provided") as Boolean?).isTrue()
 
-    Object provider = myInfo.getValue("provider");
-    assertThat(provider).isInstanceOf(DefaultInfo.class);
-    assertThat(((DefaultInfo) provider).getProvider().getKey())
-        .isEqualTo(DefaultInfo.PROVIDER.getKey());
+        val provider: Any = myInfo.getValue("provider")
+        Truth.assertThat(provider).isInstanceOf(DefaultInfo::class.java)
+        assertThat((provider as DefaultInfo).getProvider().getKey())
+            .isEqualTo(DefaultInfo.PROVIDER.getKey())
 
-    assertThat(myInfo.getValue("dir"))
-        .isEqualTo("[\"data_runfiles\", \"default_runfiles\", \"files\", \"files_to_run\"]");
+        assertThat(myInfo.getValue("dir"))
+            .isEqualTo("[\"data_runfiles\", \"default_runfiles\", \"files\", \"files_to_run\"]")
 
-    assertThat(myInfo.getValue("file_data_runfiles")).isInstanceOf(Runfiles.class);
-    assertThat(
-            Iterables.transform(
-                ((Runfiles) myInfo.getValue("file_data_runfiles")).getAllArtifacts().toList(),
-                String::valueOf))
-        .isEmpty();
+        assertThat(myInfo.getValue("file_data_runfiles")).isInstanceOf(Runfiles::class.java)
+        Truth.assertThat(
+            com.google.common.collect.Iterables.transform<F?, T?>(
+                (myInfo.getValue("file_data_runfiles") as Runfiles).getAllArtifacts().toList(),
+                com.google.common.base.Function { obj: F? -> java.lang.String.valueOf(obj) })
+        )
+            .isEmpty()
 
-    assertThat(myInfo.getValue("file_default_runfiles")).isInstanceOf(Runfiles.class);
-    assertThat(
-            Iterables.transform(
-                ((Runfiles) myInfo.getValue("file_default_runfiles")).getAllArtifacts().toList(),
-                String::valueOf))
-        .isEmpty();
+        assertThat(myInfo.getValue("file_default_runfiles")).isInstanceOf(Runfiles::class.java)
+        Truth.assertThat(
+            com.google.common.collect.Iterables.transform<F?, T?>(
+                (myInfo.getValue("file_default_runfiles") as Runfiles).getAllArtifacts().toList(),
+                com.google.common.base.Function { obj: F? -> java.lang.String.valueOf(obj) })
+        )
+            .isEmpty()
 
-    assertThat(myInfo.getValue("file_files")).isInstanceOf(Depset.class);
-    assertThat(myInfo.getValue("file_files_to_run")).isInstanceOf(FilesToRunProvider.class);
-  }
+        assertThat(myInfo.getValue("file_files")).isInstanceOf(Depset::class.java)
+        assertThat(myInfo.getValue("file_files_to_run")).isInstanceOf(FilesToRunProvider::class.java)
+    }
 
-  @Test
-  public void testDefaultProviderProvidedImplicitly() throws Exception {
-    scratch.file(
-        "test/foo.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDefaultProviderProvidedImplicitly() {
+        scratch.file(
+            "test/foo.bzl",
+            """
         foo_provider = provider()
         def _impl(ctx):
             foo = foo_provider()
@@ -1483,10 +1570,12 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
         foo_rule = rule(
             implementation = _impl,
         )
-        """);
-    scratch.file(
-        "test/bar.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/bar.bzl",
+            """
         load(':foo.bzl', 'foo_provider')
         load('//myinfo:myinfo.bzl', 'MyInfo')
         def _impl(ctx):
@@ -1501,27 +1590,32 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
                'deps': attr.label_list(allow_files=True),
             }
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load(':foo.bzl', 'foo_rule')
         load(':bar.bzl', 'bar_rule')
         foo_rule(name = 'dep_rule')
         bar_rule(name = 'my_rule', deps = [':dep_rule'])
-        """);
-    ConfiguredTarget configuredTarget = getConfiguredTarget("//test:my_rule");
-    Object provider = getMyInfoFromTarget(configuredTarget).getValue("default");
-    assertThat(provider).isInstanceOf(DefaultInfo.class);
-    assertThat(((DefaultInfo) provider).getProvider().getKey())
-        .isEqualTo(DefaultInfo.PROVIDER.getKey());
-  }
+        
+        """.trimIndent()
+        )
+        val configuredTarget: ConfiguredTarget = getConfiguredTarget("//test:my_rule")
+        val provider: Any = getMyInfoFromTarget(configuredTarget).getValue("default")
+        Truth.assertThat(provider).isInstanceOf(DefaultInfo::class.java)
+        assertThat((provider as DefaultInfo).getProvider().getKey())
+            .isEqualTo(DefaultInfo.PROVIDER.getKey())
+    }
 
-  @Test
-  public void testDefaultProviderUnknownFields() throws Exception {
-    scratch.file(
-        "test/foo.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDefaultProviderUnknownFields() {
+        scratch.file(
+            "test/foo.bzl",
+            """
         foo_provider = provider()
         def _impl(ctx):
             default = DefaultInfo(
@@ -1531,25 +1625,32 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
         foo_rule = rule(
             implementation = _impl,
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load(':foo.bzl', 'foo_rule')
         foo_rule(name = 'my_rule')
-        """);
-    AssertionError expected =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//test:my_rule"));
-    assertThat(expected)
-        .hasMessageThat()
-        .contains("DefaultInfo() got unexpected keyword argument 'foo'");
-  }
+        
+        """.trimIndent()
+        )
+        val expected: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//test:my_rule") })
+        Truth.assertThat(expected)
+            .hasMessageThat()
+            .contains("DefaultInfo() got unexpected keyword argument 'foo'")
+    }
 
-  @Test
-  public void testDeclaredProviders() throws Exception {
-    scratch.file(
-        "test/foo.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDeclaredProviders() {
+        scratch.file(
+            "test/foo.bzl",
+            """
         foo_provider = provider()
         foobar_provider = provider()
         def _impl(ctx):
@@ -1562,10 +1663,12 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
                "srcs": attr.label_list(allow_files=True),
             }
         )
-        """);
-    scratch.file(
-        "test/bar.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/bar.bzl",
+            """
         load(':foo.bzl', 'foo_provider')
         load('//myinfo:myinfo.bzl', 'MyInfo')
         def _impl(ctx):
@@ -1579,29 +1682,36 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
                'deps': attr.label_list(allow_files=True),
             }
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load(':foo.bzl', 'foo_rule')
         load(':bar.bzl', 'bar_rule')
         foo_rule(name = 'dep_rule')
         bar_rule(name = 'my_rule', deps = [':dep_rule'])
-        """);
-    ConfiguredTarget configuredTarget = getConfiguredTarget("//test:my_rule");
-    Object provider = getMyInfoFromTarget(configuredTarget).getValue("proxy");
-    assertThat(provider).isInstanceOf(StructImpl.class);
-    assertThat(((StructImpl) provider).getProvider().getKey())
-        .isEqualTo(
-            new StarlarkProvider.Key(
-                keyForBuild(Label.parseCanonical("//test:foo.bzl")), "foo_provider"));
-  }
+        
+        """.trimIndent()
+        )
+        val configuredTarget: ConfiguredTarget = getConfiguredTarget("//test:my_rule")
+        val provider: Any = getMyInfoFromTarget(configuredTarget).getValue("proxy")
+        Truth.assertThat(provider).isInstanceOf(StructImpl::class.java)
+        assertThat((provider as StructImpl).getProvider().getKey())
+            .isEqualTo(
+                Key(
+                    keyForBuild(Label.parseCanonical("//test:foo.bzl")), "foo_provider"
+                )
+            )
+    }
 
-  @Test
-  public void testAdvertisedProviders() throws Exception {
-    scratch.file(
-        "test/foo.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAdvertisedProviders() {
+        scratch.file(
+            "test/foo.bzl",
+            """
         FooInfo = provider()
         BarInfo = provider()
         def _impl(ctx):
@@ -1612,10 +1722,12 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
             implementation = _impl,
             provides = [FooInfo, BarInfo]
         )
-        """);
-    scratch.file(
-        "test/bar.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/bar.bzl",
+            """
         load(':foo.bzl', 'FooInfo')
         load('//myinfo:myinfo.bzl', 'MyInfo')
         def _impl(ctx):
@@ -1628,29 +1740,36 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
                'deps': attr.label_list(allow_files=True),
             }
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load(':foo.bzl', 'foo_rule')
         load(':bar.bzl', 'bar_rule')
         foo_rule(name = 'dep_rule')
         bar_rule(name = 'my_rule', deps = [':dep_rule'])
-        """);
-    ConfiguredTarget configuredTarget = getConfiguredTarget("//test:my_rule");
-    Object provider = getMyInfoFromTarget(configuredTarget).getValue("proxy");
-    assertThat(provider).isInstanceOf(StructImpl.class);
-    assertThat(((StructImpl) provider).getProvider().getKey())
-        .isEqualTo(
-            new StarlarkProvider.Key(
-                keyForBuild(Label.parseCanonical("//test:foo.bzl")), "FooInfo"));
-  }
+        
+        """.trimIndent()
+        )
+        val configuredTarget: ConfiguredTarget = getConfiguredTarget("//test:my_rule")
+        val provider: Any = getMyInfoFromTarget(configuredTarget).getValue("proxy")
+        Truth.assertThat(provider).isInstanceOf(StructImpl::class.java)
+        assertThat((provider as StructImpl).getProvider().getKey())
+            .isEqualTo(
+                Key(
+                    keyForBuild(Label.parseCanonical("//test:foo.bzl")), "FooInfo"
+                )
+            )
+    }
 
-  @Test
-  public void testLacksAdvertisedDeclaredProvider() throws Exception {
-    scratch.file(
-        "test/foo.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLacksAdvertisedDeclaredProvider() {
+        scratch.file(
+            "test/foo.bzl",
+            """
         FooInfo = provider()
         def _impl(ctx):
             default = DefaultInfo(
@@ -1664,28 +1783,36 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
             },
             provides = [FooInfo, DefaultInfo]
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load(':foo.bzl', 'foo_rule')
         foo_rule(name = 'my_rule', runs = ['run.file', 'run2.file'])
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError expected =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//test:my_rule"));
-    assertThat(expected)
-        .hasMessageThat()
-        .contains(
-            "rule advertised the 'FooInfo' provider, "
-                + "but this provider was not among those returned");
-  }
+        val expected: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//test:my_rule") })
+        Truth.assertThat(expected)
+            .hasMessageThat()
+            .contains(
+                "rule advertised the 'FooInfo' provider, "
+                        + "but this provider was not among those returned"
+            )
+    }
 
-  @Test
-  public void testLacksAdvertisedBuiltinProvider() throws Exception {
-    scratch.file(
-        "test/foo.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLacksAdvertisedBuiltinProvider() {
+        scratch.file(
+            "test/foo.bzl",
+            """
         load("@rules_java//java/common:java_info.bzl", "JavaInfo")
         FooInfo = provider()
         def _impl(ctx):
@@ -1695,54 +1822,69 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
             implementation = _impl,
             provides = [FooInfo, JavaInfo]
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load(':foo.bzl', 'foo_rule')
         foo_rule(name = 'my_rule')
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError expected =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//test:my_rule"));
-    assertThat(expected)
-        .hasMessageThat()
-        .contains(
-            "rule advertised the 'JavaInfo' provider, "
-                + "but this provider was not among those returned");
-  }
+        val expected: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//test:my_rule") })
+        Truth.assertThat(expected)
+            .hasMessageThat()
+            .contains(
+                "rule advertised the 'JavaInfo' provider, "
+                        + "but this provider was not among those returned"
+            )
+    }
 
-  @Test
-  public void testBadlySpecifiedProvides() throws Exception {
-    scratch.file(
-        "test/foo.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBadlySpecifiedProvides() {
+        scratch.file(
+            "test/foo.bzl",
+            """
         def _impl(ctx):
             return []
         foo_rule = rule(
             implementation = _impl,
             provides = [1]
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load(':foo.bzl', 'foo_rule')
         foo_rule(name = 'my_rule')
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError expected =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//test:my_rule"));
-    assertThat(expected)
-        .hasMessageThat()
-        .contains("Error in rule: at index 0 of provides, got element of type int, want Provider");
-  }
+        val expected: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//test:my_rule") })
+        Truth.assertThat(expected)
+            .hasMessageThat()
+            .contains("Error in rule: at index 0 of provides, got element of type int, want Provider")
+    }
 
-  @Test
-  public void testSingleDeclaredProvider() throws Exception {
-    scratch.file(
-        "test/foo.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSingleDeclaredProvider() {
+        scratch.file(
+            "test/foo.bzl",
+            """
         foo_provider = provider()
         def _impl(ctx):
             return foo_provider(a=123)
@@ -1752,10 +1894,12 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
                "srcs": attr.label_list(allow_files=True),
             }
         )
-        """);
-    scratch.file(
-        "test/bar.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/bar.bzl",
+            """
         load(':foo.bzl', 'foo_provider')
         load('//myinfo:myinfo.bzl', 'MyInfo')
         def _impl(ctx):
@@ -1769,30 +1913,37 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
                'deps': attr.label_list(allow_files=True),
             }
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load(':foo.bzl', 'foo_rule')
         load(':bar.bzl', 'bar_rule')
         foo_rule(name = 'dep_rule')
         bar_rule(name = 'my_rule', deps = [':dep_rule'])
-        """);
-    ConfiguredTarget configuredTarget = getConfiguredTarget("//test:my_rule");
-    Object provider = getMyInfoFromTarget(configuredTarget).getValue("proxy");
-    assertThat(provider).isInstanceOf(StructImpl.class);
-    assertThat(((StructImpl) provider).getProvider().getKey())
-        .isEqualTo(
-            new StarlarkProvider.Key(
-                keyForBuild(Label.parseCanonical("//test:foo.bzl")), "foo_provider"));
-    assertThat(((StructImpl) provider).getValue("a")).isEqualTo(StarlarkInt.of(123));
-  }
+        
+        """.trimIndent()
+        )
+        val configuredTarget: ConfiguredTarget = getConfiguredTarget("//test:my_rule")
+        val provider: Any = getMyInfoFromTarget(configuredTarget).getValue("proxy")
+        Truth.assertThat(provider).isInstanceOf(StructImpl::class.java)
+        assertThat((provider as StructImpl).getProvider().getKey())
+            .isEqualTo(
+                Key(
+                    keyForBuild(Label.parseCanonical("//test:foo.bzl")), "foo_provider"
+                )
+            )
+        assertThat((provider as StructImpl).getValue("a")).isEqualTo(StarlarkInt.of(123))
+    }
 
-  @Test
-  public void testDeclaredProvidersAliasTarget() throws Exception {
-    scratch.file(
-        "test/foo.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDeclaredProvidersAliasTarget() {
+        scratch.file(
+            "test/foo.bzl",
+            """
         foo_provider = provider()
         foobar_provider = provider()
         def _impl(ctx):
@@ -1805,10 +1956,12 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
                "srcs": attr.label_list(allow_files=True),
             }
         )
-        """);
-    scratch.file(
-        "test/bar.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/bar.bzl",
+            """
         load(':foo.bzl', 'foo_provider')
         load('//myinfo:myinfo.bzl', 'MyInfo')
         def _impl(ctx):
@@ -1822,30 +1975,37 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
                'deps': attr.label_list(allow_files=True),
             }
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load(':foo.bzl', 'foo_rule')
         load(':bar.bzl', 'bar_rule')
         foo_rule(name = 'foo_rule')
         alias(name = 'dep_rule', actual=':foo_rule')
         bar_rule(name = 'my_rule', deps = [':dep_rule'])
-        """);
-    ConfiguredTarget configuredTarget = getConfiguredTarget("//test:my_rule");
-    Object provider = getMyInfoFromTarget(configuredTarget).getValue("proxy");
-    assertThat(provider).isInstanceOf(StructImpl.class);
-    assertThat(((StructImpl) provider).getProvider().getKey())
-        .isEqualTo(
-            new StarlarkProvider.Key(
-                keyForBuild(Label.parseCanonical("//test:foo.bzl")), "foo_provider"));
-  }
+        
+        """.trimIndent()
+        )
+        val configuredTarget: ConfiguredTarget = getConfiguredTarget("//test:my_rule")
+        val provider: Any = getMyInfoFromTarget(configuredTarget).getValue("proxy")
+        Truth.assertThat(provider).isInstanceOf(StructImpl::class.java)
+        assertThat((provider as StructImpl).getProvider().getKey())
+            .isEqualTo(
+                Key(
+                    keyForBuild(Label.parseCanonical("//test:foo.bzl")), "foo_provider"
+                )
+            )
+    }
 
-  @Test
-  public void testDeclaredProvidersWrongKey() throws Exception {
-    scratch.file(
-        "test/foo.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDeclaredProvidersWrongKey() {
+        scratch.file(
+            "test/foo.bzl",
+            """
         foo_provider = provider()
         unused_provider = provider()
         def _impl(ctx):
@@ -1857,10 +2017,12 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
                "srcs": attr.label_list(allow_files=True),
             }
         )
-        """);
-    scratch.file(
-        "test/bar.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/bar.bzl",
+            """
         load(':foo.bzl', 'unused_provider')
         def _impl(ctx):
             dep = ctx.attr.deps[0]
@@ -1872,30 +2034,38 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
                'deps': attr.label_list(allow_files=True),
             }
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load(':foo.bzl', 'foo_rule')
         load(':bar.bzl', 'bar_rule')
         foo_rule(name = 'dep_rule')
         bar_rule(name = 'my_rule', deps = [':dep_rule'])
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError expected =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//test:my_rule"));
-    assertThat(expected)
-        .hasMessageThat()
-        .contains(
-            "<target //test:dep_rule> (rule 'foo_rule') doesn't contain "
-                + "declared provider 'unused_provider'");
-  }
+        val expected: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//test:my_rule") })
+        Truth.assertThat(expected)
+            .hasMessageThat()
+            .contains(
+                "<target //test:dep_rule> (rule 'foo_rule') doesn't contain "
+                        + "declared provider 'unused_provider'"
+            )
+    }
 
-  @Test
-  public void testDeclaredProvidersInvalidKey() throws Exception {
-    scratch.file(
-        "test/foo.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDeclaredProvidersInvalidKey() {
+        scratch.file(
+            "test/foo.bzl",
+            """
         foo_provider = provider()
         def _impl(ctx):
             foo = foo_provider()
@@ -1906,10 +2076,12 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
                "srcs": attr.label_list(allow_files=True),
             }
         )
-        """);
-    scratch.file(
-        "test/bar.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/bar.bzl",
+            """
         def _impl(ctx):
             dep = ctx.attr.deps[0]
             provider = dep['foo_provider']  # Should throw an error here
@@ -1920,28 +2092,35 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
                'deps': attr.label_list(allow_files=True),
             }
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load(':foo.bzl', 'foo_rule')
         load(':bar.bzl', 'bar_rule')
         foo_rule(name = 'dep_rule')
         bar_rule(name = 'my_rule', deps = [':dep_rule'])
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError expected =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//test:my_rule"));
-    assertThat(expected)
-        .hasMessageThat()
-        .contains("Type Target only supports indexing by object constructors, got string instead");
-  }
+        val expected: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//test:my_rule") })
+        Truth.assertThat(expected)
+            .hasMessageThat()
+            .contains("Type Target only supports indexing by object constructors, got string instead")
+    }
 
-  @Test
-  public void testDeclaredProvidersFileTarget() throws Exception {
-    scratch.file(
-        "test/bar.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDeclaredProvidersFileTarget() {
+        scratch.file(
+            "test/bar.bzl",
+            """
         unused_provider = provider()
         def _impl(ctx):
             src = ctx.attr.srcs[0]
@@ -1952,28 +2131,36 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
                'srcs': attr.label_list(allow_files=True),
             }
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load(':bar.bzl', 'bar_rule')
         bar_rule(name = 'my_rule', srcs = ['input.txt'])
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError expected =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//test:my_rule"));
-    assertThat(expected)
-        .hasMessageThat()
-        .contains(
-            "<input file target //test:input.txt> doesn't contain "
-                + "declared provider 'unused_provider'");
-  }
+        val expected: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//test:my_rule") })
+        Truth.assertThat(expected)
+            .hasMessageThat()
+            .contains(
+                "<input file target //test:input.txt> doesn't contain "
+                        + "declared provider 'unused_provider'"
+            )
+    }
 
-  @Test
-  public void testDeclaredProvidersInOperator() throws Exception {
-    scratch.file(
-        "test/foo.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDeclaredProvidersInOperator() {
+        scratch.file(
+            "test/foo.bzl",
+            """
         load('//myinfo:myinfo.bzl', 'MyInfo')
         foo_provider = provider()
         bar_provider = provider()
@@ -1997,31 +2184,36 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
                'deps': attr.label_list(),
             }
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load(':foo.bzl', 'inner_rule', 'outer_rule')
         inner_rule(name = 'dep_rule')
         outer_rule(name = 'my_rule', deps = [':dep_rule'])
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget configuredTarget = getConfiguredTarget("//test:my_rule");
-    StructImpl myInfo = getMyInfoFromTarget(configuredTarget);
+        val configuredTarget: ConfiguredTarget = getConfiguredTarget("//test:my_rule")
+        val myInfo: StructImpl = getMyInfoFromTarget(configuredTarget)
 
-    Object foo = myInfo.getValue("foo");
-    assertThat(foo).isInstanceOf(Boolean.class);
-    assertThat((Boolean) foo).isTrue();
-    Object bar = myInfo.getValue("bar");
-    assertThat(bar).isInstanceOf(Boolean.class);
-    assertThat((Boolean) bar).isFalse();
-  }
+        val foo: Any? = myInfo.getValue("foo")
+        Truth.assertThat(foo).isInstanceOf(Boolean::class.java)
+        Truth.assertThat(foo as Boolean?).isTrue()
+        val bar: Any? = myInfo.getValue("bar")
+        Truth.assertThat(bar).isInstanceOf(Boolean::class.java)
+        Truth.assertThat(bar as Boolean?).isFalse()
+    }
 
-  @Test
-  public void testDeclaredProvidersInOperatorInvalidKey() throws Exception {
-    scratch.file(
-        "test/foo.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDeclaredProvidersInOperatorInvalidKey() {
+        scratch.file(
+            "test/foo.bzl",
+            """
         foo_provider = provider()
         bar_provider = provider()
 
@@ -2041,27 +2233,34 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
                'deps': attr.label_list(),
             }
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load(':foo.bzl', 'inner_rule', 'outer_rule')
         inner_rule(name = 'dep_rule')
         outer_rule(name = 'my_rule', deps = [':dep_rule'])
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError expected =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//test:my_rule"));
-    assertThat(expected)
-        .hasMessageThat()
-        .contains("Type Target only supports querying by object constructors, got string instead");
-  }
+        val expected: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//test:my_rule") })
+        Truth.assertThat(expected)
+            .hasMessageThat()
+            .contains("Type Target only supports querying by object constructors, got string instead")
+    }
 
-  @Test
-  public void testReturnNonExportedProvider() throws Exception {
-    scratch.file(
-        "test/my_rule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testReturnNonExportedProvider() {
+        scratch.file(
+            "test/my_rule.bzl",
+            """
         def _rule_impl(ctx):
             foo_provider = provider()
             foo = foo_provider()
@@ -2070,128 +2269,149 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
         my_rule = rule(
             implementation = _rule_impl,
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load(':my_rule.bzl', 'my_rule')
         my_rule(name = 'my_rule')
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError ex =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//test:my_rule"));
-    String msg = ex.getMessage();
-    assertThat(msg)
-        .contains("rule implementation function returned an instance of an unnamed provider");
-    assertThat(msg).contains("Provider defined at /workspace/test/my_rule.bzl:2:28");
-  }
-
-  @Test
-  public void testFilesForFileConfiguredTarget() throws Exception {
-    setRuleContext(createRuleContext("//foo:bar"));
-    Object result = ev.eval("ruleContext.attr.srcs[0].files");
-    assertThat(ActionsTestUtil.baseNamesOf(((Depset) result).getSet(Artifact.class)))
-        .isEqualTo("libjl.jar");
-  }
-
-  @Test
-  public void testCtxStructFieldsCustomErrorMessages() throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
-    ev.checkEvalErrorContains("No attribute 'foo' in attr.", "ruleContext.attr.foo");
-    ev.checkEvalErrorContains("No attribute 'foo' in outputs.", "ruleContext.outputs.foo");
-    ev.checkEvalErrorContains("No attribute 'foo' in files.", "ruleContext.files.foo");
-    ev.checkEvalErrorContains("No attribute 'foo' in file.", "ruleContext.file.foo");
-    ev.checkEvalErrorContains("No attribute 'foo' in executable.", "ruleContext.executable.foo");
-  }
-
-  @Test
-  public void testBinDirPath() throws Exception {
-    StarlarkRuleContext ctx = createRuleContext("//foo:bar");
-    setRuleContext(ctx);
-    Object result = ev.eval("ruleContext.bin_dir.path");
-    assertThat(result)
-        .isEqualTo(ctx.getConfiguration().getBinFragment(RepositoryName.MAIN).getPathString());
-  }
-
-  @Test
-  public void testEmptyLabelListTypeAttrInCtx() throws Exception {
-    setRuleContext(createRuleContext("//foo:baz"));
-    Object result = ev.eval("ruleContext.attr.srcs");
-    assertThat(result).isEqualTo(StarlarkList.empty());
-  }
-
-  @Test
-  public void testDefinedMakeVariable() throws Exception {
-    useConfiguration("--define=FOO=bar");
-    setRuleContext(createRuleContext("//foo:baz"));
-    String foo = (String) ev.eval("ruleContext.var['FOO']");
-    assertThat(foo).isEqualTo("bar");
-  }
-
-  @Test
-  public void testCodeCoverageConfigurationAccess() throws Exception {
-    StarlarkRuleContext ctx = createRuleContext("//foo:baz");
-    setRuleContext(ctx);
-    boolean coverage = (Boolean) ev.eval("ruleContext.configuration.coverage_enabled");
-    assertThat(ctx.getRuleContext().getConfiguration().isCodeCoverageEnabled()).isEqualTo(coverage);
-  }
-
-  /** Checks whether the given (invalid) statement leads to the expected error */
-  private void checkReportedErrorStartsWith(String errorMsg, String... statements)
-      throws Exception {
-    // If the component under test relies on Reporter and EventCollector for error handling, any
-    // error would lead to an asynchronous AssertionFailedError thanks to failFastHandler in
-    // FoundationTestCase.
-    //
-    // Consequently, we disable failFastHandler and check all events for the expected error message
-    reporter.removeHandler(failFastHandler);
-
-    Object result = ev.eval(statements);
-
-    String first = null;
-    int count = 0;
-
-    try {
-      for (Event evt : eventCollector) {
-        if (evt.getMessage().startsWith(errorMsg)) {
-          return;
-        }
-
-        ++count;
-        first = evt.getMessage();
-      }
-
-      if (count == 0) {
-        fail(
-            String.format(
-                "checkReportedErrorStartsWith(): There was no error; the result is '%s'", result));
-      } else {
-        fail(
-            String.format(
-                "Found %d error(s), but none with the expected message '%s'. First error: '%s'",
-                count, errorMsg, first));
-      }
-    } finally {
-      eventCollector.clear();
+        val ex: java.lang.AssertionError =
+            org.junit.Assert.assertThrows<java.lang.AssertionError>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//test:my_rule") })
+        val msg: String? = ex.message
+        Truth.assertThat(msg)
+            .contains("rule implementation function returned an instance of an unnamed provider")
+        Truth.assertThat(msg).contains("Provider defined at /workspace/test/my_rule.bzl:2:28")
     }
-  }
 
-  @StarlarkMethod(name = "throw2", documented = false)
-  public Object throw2() throws Exception {
-    throw new InterruptedException();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFilesForFileConfiguredTarget() {
+        setRuleContext(createRuleContext("//foo:bar"))
+        val result: Any = ev.eval("ruleContext.attr.srcs[0].files")
+        assertThat(ActionsTestUtil.baseNamesOf((result as Depset).getSet(Artifact::class.java)))
+            .isEqualTo("libjl.jar")
+    }
 
-  @Test
-  public void testNoStackTraceOnInterrupt() throws Exception {
-    defineTestMethods();
-    assertThrows(InterruptedException.class, () -> ev.eval("throw2()"));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCtxStructFieldsCustomErrorMessages() {
+        setRuleContext(createRuleContext("//foo:foo"))
+        ev.checkEvalErrorContains("No attribute 'foo' in attr.", "ruleContext.attr.foo")
+        ev.checkEvalErrorContains("No attribute 'foo' in outputs.", "ruleContext.outputs.foo")
+        ev.checkEvalErrorContains("No attribute 'foo' in files.", "ruleContext.files.foo")
+        ev.checkEvalErrorContains("No attribute 'foo' in file.", "ruleContext.file.foo")
+        ev.checkEvalErrorContains("No attribute 'foo' in executable.", "ruleContext.executable.foo")
+    }
 
-  @Test
-  public void testGlobInImplicitOutputs() throws Exception {
-    scratch.file(
-        "test/glob.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBinDirPath() {
+        val ctx: StarlarkRuleContext = createRuleContext("//foo:bar")
+        setRuleContext(ctx)
+        val result: Any = ev.eval("ruleContext.bin_dir.path")
+        Truth.assertThat(result)
+            .isEqualTo(ctx.getConfiguration().getBinFragment(RepositoryName.MAIN).getPathString())
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEmptyLabelListTypeAttrInCtx() {
+        setRuleContext(createRuleContext("//foo:baz"))
+        val result: Any = ev.eval("ruleContext.attr.srcs")
+        Truth.assertThat(result).isEqualTo(StarlarkList.empty<Any?>())
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDefinedMakeVariable() {
+        useConfiguration("--define=FOO=bar")
+        setRuleContext(createRuleContext("//foo:baz"))
+        val foo = ev.eval("ruleContext.var['FOO']") as String
+        Truth.assertThat(foo).isEqualTo("bar")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCodeCoverageConfigurationAccess() {
+        val ctx: StarlarkRuleContext = createRuleContext("//foo:baz")
+        setRuleContext(ctx)
+        val coverage = ev.eval("ruleContext.configuration.coverage_enabled") as Boolean
+        assertThat(ctx.getRuleContext().getConfiguration().isCodeCoverageEnabled()).isEqualTo(coverage)
+    }
+
+    /** Checks whether the given (invalid) statement leads to the expected error  */
+    @Throws(java.lang.Exception::class)
+    private fun checkReportedErrorStartsWith(errorMsg: String?, vararg statements: String?) {
+        // If the component under test relies on Reporter and EventCollector for error handling, any
+        // error would lead to an asynchronous AssertionFailedError thanks to failFastHandler in
+        // FoundationTestCase.
+        //
+        // Consequently, we disable failFastHandler and check all events for the expected error message
+        reporter.removeHandler(failFastHandler)
+
+        val result: Any = ev.eval(*statements)
+
+        var first: String? = null
+        var count = 0
+
+        try {
+            for (evt in eventCollector) {
+                if (evt.getMessage().startsWith(errorMsg)) {
+                    return
+                }
+
+                ++count
+                first = evt.getMessage()
+            }
+
+            if (count == 0) {
+                org.junit.Assert.fail(
+                    String.format(
+                        "checkReportedErrorStartsWith(): There was no error; the result is '%s'", result
+                    )
+                )
+            } else {
+                org.junit.Assert.fail(
+                    String.format(
+                        "Found %d error(s), but none with the expected message '%s'. First error: '%s'",
+                        count, errorMsg, first
+                    )
+                )
+            }
+        } finally {
+            eventCollector.clear()
+        }
+    }
+
+    @StarlarkMethod(name = "throw2", documented = false)
+    @Throws(java.lang.Exception::class)
+    fun throw2(): Any? {
+        throw java.lang.InterruptedException()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNoStackTraceOnInterrupt() {
+        defineTestMethods()
+        org.junit.Assert.assertThrows<java.lang.InterruptedException?>(
+            java.lang.InterruptedException::class.java,
+            org.junit.function.ThrowingRunnable { ev.eval("throw2()") })
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGlobInImplicitOutputs() {
+        scratch.file(
+            "test/glob.bzl",
+            """
         def _impl(ctx):
           ctx.actions.do_nothing(
             inputs = [],
@@ -2202,47 +2422,58 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
           implementation = _impl,
           outputs = _foo,
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:glob.bzl', 'glob_rule')
         glob_rule(name = 'my_glob',
           srcs = ['foo.bar', 'other_foo.bar'])
-        """);
-    reporter.removeHandler(failFastHandler);
-    getConfiguredTarget("//test:my_glob");
-    assertContainsEvent("glob() can only be used while evaluating a BUILD file or a legacy macro");
-  }
+        
+        """.trimIndent()
+        )
+        reporter.removeHandler(failFastHandler)
+        getConfiguredTarget("//test:my_glob")
+        assertContainsEvent("glob() can only be used while evaluating a BUILD file or a legacy macro")
+    }
 
-  @Test
-  public void testRuleFromBzlFile() throws Exception {
-    scratch.file(
-        "test/rule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRuleFromBzlFile() {
+        scratch.file(
+            "test/rule.bzl",
+            """
         def _impl(ctx): return
         foo = rule(implementation = _impl)
-        """);
-    scratch.file(
-        "test/ext.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/ext.bzl",
+            """
         load('//test:rule.bzl', 'foo')
         a = 1
         foo(name = 'x')
-        """);
-    scratch.file("test/BUILD", "load('//test:ext.bzl', 'a')");
-    reporter.removeHandler(failFastHandler);
-    getConfiguredTarget("//test:x");
-    assertContainsEvent(
-        "a rule can only be instantiated while evaluating a BUILD file or a legacy or symbolic"
-            + " macro");
-  }
+        
+        """.trimIndent()
+        )
+        scratch.file("test/BUILD", "load('//test:ext.bzl', 'a')")
+        reporter.removeHandler(failFastHandler)
+        getConfiguredTarget("//test:x")
+        assertContainsEvent(
+            "a rule can only be instantiated while evaluating a BUILD file or a legacy or symbolic"
+                    + " macro"
+        )
+    }
 
-  @Test
-  public void testImplicitOutputsFromGlob() throws Exception {
-    scratch.file(
-        "test/glob.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testImplicitOutputsFromGlob() {
+        scratch.file(
+            "test/glob.bzl",
+            """
         def _impl(ctx):
           outs = ctx.outputs
           for i in ctx.attr.srcs:
@@ -2264,324 +2495,350 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
             outputs = _foo,
             implementation = _impl,
         )
-        """);
-    scratch.file("test/a.bar", "a");
-    scratch.file("test/b.bar", "b");
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file("test/a.bar", "a")
+        scratch.file("test/b.bar", "b")
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:glob.bzl', 'glob_rule')
         glob_rule(name = 'my_glob', srcs = glob(['*.bar']))
-        """);
-    ConfiguredTarget ct = getConfiguredTarget("//test:my_glob");
-    assertThat(ct).isNotNull();
-    assertThat(getGeneratingAction(getBinArtifact("a.bar.out", ct))).isNotNull();
-    assertThat(getGeneratingAction(getBinArtifact("b.bar.out", ct))).isNotNull();
-  }
+        
+        """.trimIndent()
+        )
+        val ct: ConfiguredTarget = getConfiguredTarget("//test:my_glob")
+        assertThat(ct).isNotNull()
+        assertThat(getGeneratingAction(getBinArtifact("a.bar.out", ct))).isNotNull()
+        assertThat(getGeneratingAction(getBinArtifact("b.bar.out", ct))).isNotNull()
+    }
 
-  @Test
-  public void testBuiltInFunctionAsRuleImplementation() throws Exception {
-    // Using built-in functions as rule implementations shouldn't cause runtime errors
-    scratch.file(
-        "test/rule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBuiltInFunctionAsRuleImplementation() {
+        // Using built-in functions as rule implementations shouldn't cause runtime errors
+        scratch.file(
+            "test/rule.bzl",
+            """
         silly_rule = rule(
             implementation = int,
             attrs = {
                "srcs": attr.label_list(allow_files=True),
             }
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:rule.bzl', 'silly_rule')
         silly_rule(name = 'silly')
-        """);
-    thrown.handleAssertionErrors(); // Compatibility with JUnit 4.11
-    thrown.expect(AssertionError.class);
-    thrown.expectMessage(
-        "in call to rule(), parameter 'implementation' got value of type"
-            + " 'builtin_function_or_method', want 'function'");
-    getConfiguredTarget("//test:silly");
-  }
+        
+        """.trimIndent()
+        )
+        thrown.handleAssertionErrors() // Compatibility with JUnit 4.11
+        thrown.expect(java.lang.AssertionError::class.java)
+        thrown.expectMessage(
+            "in call to rule(), parameter 'implementation' got value of type"
+                    + " 'builtin_function_or_method', want 'function'"
+        )
+        getConfiguredTarget("//test:silly")
+    }
 
-  @Test
-  public void testArgsScalarAdd() throws Exception {
-    StarlarkRuleContext ruleContext = createRuleContext("//foo:foo");
-    setRuleContext(ruleContext);
-    ev.exec(
-        "args = ruleContext.actions.args()",
-        "args.add('--foo')",
-        "args.add('-')",
-        "args.add('foo', format='format%s')",
-        "args.add('-')",
-        "args.add('--foo', 'val')",
-        "ruleContext.actions.run(",
-        "  inputs = depset(ruleContext.files.srcs),",
-        "  outputs = ruleContext.files.srcs,",
-        "  arguments = [args],",
-        "  executable = ruleContext.files.tools[0],",
-        "  toolchain = None",
-        ")");
-    SpawnAction action =
-        (SpawnAction)
-            Iterables.getOnlyElement(
-                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions());
-    assertThat(action.getArguments())
-        .containsExactly("foo/t.exe", "--foo", "-", "formatfoo", "-", "--foo", "val")
-        .inOrder();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testArgsScalarAdd() {
+        val ruleContext: StarlarkRuleContext = createRuleContext("//foo:foo")
+        setRuleContext(ruleContext)
+        ev.exec(
+            "args = ruleContext.actions.args()",
+            "args.add('--foo')",
+            "args.add('-')",
+            "args.add('foo', format='format%s')",
+            "args.add('-')",
+            "args.add('--foo', 'val')",
+            "ruleContext.actions.run(",
+            "  inputs = depset(ruleContext.files.srcs),",
+            "  outputs = ruleContext.files.srcs,",
+            "  arguments = [args],",
+            "  executable = ruleContext.files.tools[0],",
+            "  toolchain = None",
+            ")"
+        )
+        val action: SpawnAction? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(
+                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions()
+            ) as SpawnAction?
+        assertThat(action.getArguments())
+            .containsExactly("foo/t.exe", "--foo", "-", "formatfoo", "-", "--foo", "val")
+            .inOrder()
+    }
 
-  @Test
-  public void testArgsScalarAddThrowsWithVectorArg() throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
-    ev.checkEvalErrorContains(
-        "Args.add() doesn't accept vectorized arguments",
-        "args = ruleContext.actions.args()",
-        "args.add([1, 2])",
-        "ruleContext.actions.run(",
-        "  inputs = depset(ruleContext.files.srcs),",
-        "  outputs = ruleContext.files.srcs,",
-        "  arguments = [args],",
-        "  executable = ruleContext.files.tools[0],",
-        "  toolchain = None",
-        ")");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testArgsScalarAddThrowsWithVectorArg() {
+        setRuleContext(createRuleContext("//foo:foo"))
+        ev.checkEvalErrorContains(
+            "Args.add() doesn't accept vectorized arguments",
+            "args = ruleContext.actions.args()",
+            "args.add([1, 2])",
+            "ruleContext.actions.run(",
+            "  inputs = depset(ruleContext.files.srcs),",
+            "  outputs = ruleContext.files.srcs,",
+            "  arguments = [args],",
+            "  executable = ruleContext.files.tools[0],",
+            "  toolchain = None",
+            ")"
+        )
+    }
 
-  @Test
-  public void testArgsAddAll() throws Exception {
-    StarlarkRuleContext ruleContext = createRuleContext("//foo:foo");
-    setRuleContext(ruleContext);
-    ev.exec(
-        "args = ruleContext.actions.args()",
-        "args.add_all([1, 2])",
-        "args.add('-')",
-        "args.add_all('--foo', [1, 2])",
-        "args.add('-')",
-        "args.add_all([1, 2], before_each='-before')",
-        "args.add('-')",
-        "args.add_all([1, 2], format_each='format/%s')",
-        "args.add('-')",
-        "args.add_all(ruleContext.files.srcs)",
-        "args.add('-')",
-        "args.add_all(ruleContext.files.srcs, format_each='format/%s')",
-        "args.add('-')",
-        "args.add_all([1, 2], terminate_with='--terminator')",
-        "ruleContext.actions.run(",
-        "  inputs = depset(ruleContext.files.srcs),",
-        "  outputs = ruleContext.files.srcs,",
-        "  arguments = [args],",
-        "  executable = ruleContext.files.tools[0],",
-        "  toolchain = None",
-        ")");
-    SpawnAction action =
-        (SpawnAction)
-            Iterables.getOnlyElement(
-                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions());
-    assertThat(action.getArguments())
-        .containsExactly(
-            "foo/t.exe",
-            "1",
-            "2",
-            "-",
-            "--foo",
-            "1",
-            "2",
-            "-",
-            "-before",
-            "1",
-            "-before",
-            "2",
-            "-",
-            "format/1",
-            "format/2",
-            "-",
-            "foo/a.txt",
-            "foo/b.img",
-            "-",
-            "format/foo/a.txt",
-            "format/foo/b.img",
-            "-",
-            "1",
-            "2",
-            "--terminator")
-        .inOrder();
-  }
-
-  @Test
-  public void testArgsAddAllWithMapEach() throws Exception {
-    StarlarkRuleContext ruleContext = createRuleContext("//foo:foo");
-    setRuleContext(ruleContext);
-    ev.exec(
-        "def add_one(val): return str(val + 1)",
-        "def expand_to_many(val): return ['hey', 'hey']",
-        "args = ruleContext.actions.args()",
-        "args.add_all([1, 2], map_each=add_one)",
-        "args.add('-')",
-        "args.add_all([1, 2], map_each=expand_to_many)",
-        "ruleContext.actions.run(",
-        "  inputs = depset(ruleContext.files.srcs),",
-        "  outputs = ruleContext.files.srcs,",
-        "  arguments = [args],",
-        "  executable = ruleContext.files.tools[0],",
-        "  toolchain = None",
-        ")");
-    SpawnAction action =
-        (SpawnAction)
-            Iterables.getOnlyElement(
-                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions());
-    assertThat(action.getArguments())
-        .containsExactly("foo/t.exe", "2", "3", "-", "hey", "hey", "hey", "hey")
-        .inOrder();
-  }
-
-  @Test
-  public void testOmitIfEmpty() throws Exception {
-    StarlarkRuleContext ruleContext = createRuleContext("//foo:foo");
-    setRuleContext(ruleContext);
-    ev.exec(
-        "def add_one(val): return str(val + 1)",
-        "def filter(val): return None",
-        "args = ruleContext.actions.args()",
-        "args.add_joined([], join_with=',')",
-        "args.add('-')",
-        "args.add_joined([], join_with=',', omit_if_empty=False)",
-        "args.add('-')",
-        "args.add_all('--foo', [])",
-        "args.add('-')",
-        "args.add_all('--foo', [], omit_if_empty=False)",
-        "args.add('-')",
-        "args.add_all('--foo', [1], map_each=filter, terminate_with='hello')",
-        "ruleContext.actions.run(",
-        "  inputs = depset(ruleContext.files.srcs),",
-        "  outputs = ruleContext.files.srcs,",
-        "  arguments = [args],",
-        "  executable = ruleContext.files.tools[0],",
-        "  toolchain = None",
-        ")");
-    SpawnAction action =
-        (SpawnAction)
-            Iterables.getOnlyElement(
-                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions());
-    assertThat(action.getArguments())
-        .containsExactly(
-            "foo/t.exe",
-            // Nothing
-            "-",
-            "", // Empty string was joined and added
-            "-",
-            // Nothing
-            "-",
-            "--foo", // Arg added regardless
-            "-"
-            // Nothing, all values were filtered
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testArgsAddAll() {
+        val ruleContext: StarlarkRuleContext = createRuleContext("//foo:foo")
+        setRuleContext(ruleContext)
+        ev.exec(
+            "args = ruleContext.actions.args()",
+            "args.add_all([1, 2])",
+            "args.add('-')",
+            "args.add_all('--foo', [1, 2])",
+            "args.add('-')",
+            "args.add_all([1, 2], before_each='-before')",
+            "args.add('-')",
+            "args.add_all([1, 2], format_each='format/%s')",
+            "args.add('-')",
+            "args.add_all(ruleContext.files.srcs)",
+            "args.add('-')",
+            "args.add_all(ruleContext.files.srcs, format_each='format/%s')",
+            "args.add('-')",
+            "args.add_all([1, 2], terminate_with='--terminator')",
+            "ruleContext.actions.run(",
+            "  inputs = depset(ruleContext.files.srcs),",
+            "  outputs = ruleContext.files.srcs,",
+            "  arguments = [args],",
+            "  executable = ruleContext.files.tools[0],",
+            "  toolchain = None",
+            ")"
+        )
+        val action: SpawnAction? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(
+                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions()
+            ) as SpawnAction?
+        assertThat(action.getArguments())
+            .containsExactly(
+                "foo/t.exe",
+                "1",
+                "2",
+                "-",
+                "--foo",
+                "1",
+                "2",
+                "-",
+                "-before",
+                "1",
+                "-before",
+                "2",
+                "-",
+                "format/1",
+                "format/2",
+                "-",
+                "foo/a.txt",
+                "foo/b.img",
+                "-",
+                "format/foo/a.txt",
+                "format/foo/b.img",
+                "-",
+                "1",
+                "2",
+                "--terminator"
             )
-        .inOrder();
-  }
+            .inOrder()
+    }
 
-  @Test
-  public void testUniquify() throws Exception {
-    StarlarkRuleContext ruleContext = createRuleContext("//foo:foo");
-    setRuleContext(ruleContext);
-    ev.exec(
-        "def add_one(val): return str(val + 1)",
-        "args = ruleContext.actions.args()",
-        "args.add_all(['a', 'b', 'a'])",
-        "args.add('-')",
-        "args.add_all(['a', 'b', 'a', 'c', 'b'], uniquify=True)",
-        "ruleContext.actions.run(",
-        "  inputs = depset(ruleContext.files.srcs),",
-        "  outputs = ruleContext.files.srcs,",
-        "  arguments = [args],",
-        "  executable = ruleContext.files.tools[0],",
-        "  toolchain = None",
-        ")");
-    SpawnAction action =
-        (SpawnAction)
-            Iterables.getOnlyElement(
-                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions());
-    assertThat(action.getArguments())
-        .containsExactly("foo/t.exe", "a", "b", "a", "-", "a", "b", "c")
-        .inOrder();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testArgsAddAllWithMapEach() {
+        val ruleContext: StarlarkRuleContext = createRuleContext("//foo:foo")
+        setRuleContext(ruleContext)
+        ev.exec(
+            "def add_one(val): return str(val + 1)",
+            "def expand_to_many(val): return ['hey', 'hey']",
+            "args = ruleContext.actions.args()",
+            "args.add_all([1, 2], map_each=add_one)",
+            "args.add('-')",
+            "args.add_all([1, 2], map_each=expand_to_many)",
+            "ruleContext.actions.run(",
+            "  inputs = depset(ruleContext.files.srcs),",
+            "  outputs = ruleContext.files.srcs,",
+            "  arguments = [args],",
+            "  executable = ruleContext.files.tools[0],",
+            "  toolchain = None",
+            ")"
+        )
+        val action: SpawnAction? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(
+                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions()
+            ) as SpawnAction?
+        assertThat(action.getArguments())
+            .containsExactly("foo/t.exe", "2", "3", "-", "hey", "hey", "hey", "hey")
+            .inOrder()
+    }
 
-  @Test
-  public void testArgsAddJoined() throws Exception {
-    StarlarkRuleContext ruleContext = createRuleContext("//foo:foo");
-    setRuleContext(ruleContext);
-    ev.exec(
-        "def add_one(val): return str(val + 1)",
-        "args = ruleContext.actions.args()",
-        "args.add_joined([1, 2], join_with=':')",
-        "args.add('-')",
-        "args.add_joined([1, 2], join_with=':', format_each='format/%s')",
-        "args.add('-')",
-        "args.add_joined([1, 2], join_with=':', format_each='format/%s', format_joined='--foo=%s')",
-        "args.add('-')",
-        "args.add_joined([1, 2], join_with=':', map_each=add_one)",
-        "args.add('-')",
-        "args.add_joined(ruleContext.files.srcs, join_with=':')",
-        "args.add('-')",
-        "args.add_joined(ruleContext.files.srcs, join_with=':', format_each='format/%s')",
-        "ruleContext.actions.run(",
-        "  inputs = depset(ruleContext.files.srcs),",
-        "  outputs = ruleContext.files.srcs,",
-        "  arguments = [args],",
-        "  executable = ruleContext.files.tools[0],",
-        "  toolchain = None",
-        ")");
-    SpawnAction action =
-        (SpawnAction)
-            Iterables.getOnlyElement(
-                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions());
-    assertThat(action.getArguments())
-        .containsExactly(
-            "foo/t.exe",
-            "1:2",
-            "-",
-            "format/1:format/2",
-            "-",
-            "--foo=format/1:format/2",
-            "-",
-            "2:3",
-            "-",
-            "foo/a.txt:foo/b.img",
-            "-",
-            "format/foo/a.txt:format/foo/b.img")
-        .inOrder();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testOmitIfEmpty() {
+        val ruleContext: StarlarkRuleContext = createRuleContext("//foo:foo")
+        setRuleContext(ruleContext)
+        ev.exec(
+            "def add_one(val): return str(val + 1)",
+            "def filter(val): return None",
+            "args = ruleContext.actions.args()",
+            "args.add_joined([], join_with=',')",
+            "args.add('-')",
+            "args.add_joined([], join_with=',', omit_if_empty=False)",
+            "args.add('-')",
+            "args.add_all('--foo', [])",
+            "args.add('-')",
+            "args.add_all('--foo', [], omit_if_empty=False)",
+            "args.add('-')",
+            "args.add_all('--foo', [1], map_each=filter, terminate_with='hello')",
+            "ruleContext.actions.run(",
+            "  inputs = depset(ruleContext.files.srcs),",
+            "  outputs = ruleContext.files.srcs,",
+            "  arguments = [args],",
+            "  executable = ruleContext.files.tools[0],",
+            "  toolchain = None",
+            ")"
+        )
+        val action: SpawnAction? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(
+                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions()
+            ) as SpawnAction?
+        assertThat(action.getArguments())
+            .containsExactly(
+                "foo/t.exe",  // Nothing
+                "-",
+                "",  // Empty string was joined and added
+                "-",  // Nothing
+                "-",
+                "--foo",  // Arg added regardless
+                "-" // Nothing, all values were filtered
+            )
+            .inOrder()
+    }
 
-  @Test
-  public void testMultipleLazyArgsMixedWithStrings() throws Exception {
-    StarlarkRuleContext ruleContext = createRuleContext("//foo:foo");
-    setRuleContext(ruleContext);
-    ev.exec(
-        "foo_args = ruleContext.actions.args()",
-        "foo_args.add('--foo')",
-        "bar_args = ruleContext.actions.args()",
-        "bar_args.add('--bar')",
-        "ruleContext.actions.run(",
-        "  inputs = depset(ruleContext.files.srcs),",
-        "  outputs = ruleContext.files.srcs,",
-        "  arguments = ['hello', foo_args, 'world', bar_args, 'works'],",
-        "  executable = ruleContext.files.tools[0],",
-        "  toolchain = None",
-        ")");
-    SpawnAction action =
-        (SpawnAction)
-            Iterables.getOnlyElement(
-                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions());
-    assertThat(action.getArguments())
-        .containsExactly("foo/t.exe", "hello", "--foo", "world", "--bar", "works")
-        .inOrder();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testUniquify() {
+        val ruleContext: StarlarkRuleContext = createRuleContext("//foo:foo")
+        setRuleContext(ruleContext)
+        ev.exec(
+            "def add_one(val): return str(val + 1)",
+            "args = ruleContext.actions.args()",
+            "args.add_all(['a', 'b', 'a'])",
+            "args.add('-')",
+            "args.add_all(['a', 'b', 'a', 'c', 'b'], uniquify=True)",
+            "ruleContext.actions.run(",
+            "  inputs = depset(ruleContext.files.srcs),",
+            "  outputs = ruleContext.files.srcs,",
+            "  arguments = [args],",
+            "  executable = ruleContext.files.tools[0],",
+            "  toolchain = None",
+            ")"
+        )
+        val action: SpawnAction? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(
+                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions()
+            ) as SpawnAction?
+        assertThat(action.getArguments())
+            .containsExactly("foo/t.exe", "a", "b", "a", "-", "a", "b", "c")
+            .inOrder()
+    }
 
-  @Test
-  public void testLazyArgsWithParamFile() throws Exception {
-    scratch.file(
-        "test/main_rule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testArgsAddJoined() {
+        val ruleContext: StarlarkRuleContext = createRuleContext("//foo:foo")
+        setRuleContext(ruleContext)
+        ev.exec(
+            "def add_one(val): return str(val + 1)",
+            "args = ruleContext.actions.args()",
+            "args.add_joined([1, 2], join_with=':')",
+            "args.add('-')",
+            "args.add_joined([1, 2], join_with=':', format_each='format/%s')",
+            "args.add('-')",
+            "args.add_joined([1, 2], join_with=':', format_each='format/%s', format_joined='--foo=%s')",
+            "args.add('-')",
+            "args.add_joined([1, 2], join_with=':', map_each=add_one)",
+            "args.add('-')",
+            "args.add_joined(ruleContext.files.srcs, join_with=':')",
+            "args.add('-')",
+            "args.add_joined(ruleContext.files.srcs, join_with=':', format_each='format/%s')",
+            "ruleContext.actions.run(",
+            "  inputs = depset(ruleContext.files.srcs),",
+            "  outputs = ruleContext.files.srcs,",
+            "  arguments = [args],",
+            "  executable = ruleContext.files.tools[0],",
+            "  toolchain = None",
+            ")"
+        )
+        val action: SpawnAction? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(
+                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions()
+            ) as SpawnAction?
+        assertThat(action.getArguments())
+            .containsExactly(
+                "foo/t.exe",
+                "1:2",
+                "-",
+                "format/1:format/2",
+                "-",
+                "--foo=format/1:format/2",
+                "-",
+                "2:3",
+                "-",
+                "foo/a.txt:foo/b.img",
+                "-",
+                "format/foo/a.txt:format/foo/b.img"
+            )
+            .inOrder()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMultipleLazyArgsMixedWithStrings() {
+        val ruleContext: StarlarkRuleContext = createRuleContext("//foo:foo")
+        setRuleContext(ruleContext)
+        ev.exec(
+            "foo_args = ruleContext.actions.args()",
+            "foo_args.add('--foo')",
+            "bar_args = ruleContext.actions.args()",
+            "bar_args.add('--bar')",
+            "ruleContext.actions.run(",
+            "  inputs = depset(ruleContext.files.srcs),",
+            "  outputs = ruleContext.files.srcs,",
+            "  arguments = ['hello', foo_args, 'world', bar_args, 'works'],",
+            "  executable = ruleContext.files.tools[0],",
+            "  toolchain = None",
+            ")"
+        )
+        val action: SpawnAction? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(
+                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions()
+            ) as SpawnAction?
+        assertThat(action.getArguments())
+            .containsExactly("foo/t.exe", "hello", "--foo", "world", "--bar", "works")
+            .inOrder()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLazyArgsWithParamFile() {
+        scratch.file(
+            "test/main_rule.bzl",
+            """
         def _impl(ctx):
           args = ctx.actions.args()
           args.add('--foo')
@@ -2594,216 +2851,249 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
             command = 'touch out',
           )
         main_rule = rule(implementation = _impl)
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:main_rule.bzl', 'main_rule')
         main_rule(name='main')
-        """);
-    ConfiguredTarget ct = getConfiguredTarget("//test:main");
-    Artifact output = getBinArtifact("out", ct);
-    SpawnAction action = (SpawnAction) getGeneratingAction(output);
-    assertThat(paramFileArgsForAction(action)).containsExactly("--foo");
-  }
+        
+        """.trimIndent()
+        )
+        val ct: ConfiguredTarget = getConfiguredTarget("//test:main")
+        val output: Artifact = getBinArtifact("out", ct)
+        val action: SpawnAction = getGeneratingAction(output) as SpawnAction
+        Truth.assertThat(paramFileArgsForAction(action)).containsExactly("--foo")
+    }
 
-  @Test
-  public void testWriteArgsToParamFile() throws Exception {
-    StarlarkRuleContext ruleContext = createRuleContext("//foo:foo");
-    setRuleContext(ruleContext);
-    ev.exec(
-        "args = ruleContext.actions.args()",
-        "args.add('--foo')",
-        "output=ruleContext.actions.declare_file('out')",
-        "ruleContext.actions.write(",
-        "  output=output,",
-        "  content=args,",
-        ")");
-    List<ActionAnalysisMetadata> actions =
-        ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions();
-    Optional<ActionAnalysisMetadata> action =
-        actions.stream().filter(a -> a instanceof ParameterFileWriteAction).findFirst();
-    assertThat(action.isPresent()).isTrue();
-    ParameterFileWriteAction paramAction = (ParameterFileWriteAction) action.get();
-    assertThat(paramAction.getArguments()).containsExactly("--foo");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testWriteArgsToParamFile() {
+        val ruleContext: StarlarkRuleContext = createRuleContext("//foo:foo")
+        setRuleContext(ruleContext)
+        ev.exec(
+            "args = ruleContext.actions.args()",
+            "args.add('--foo')",
+            "output=ruleContext.actions.declare_file('out')",
+            "ruleContext.actions.write(",
+            "  output=output,",
+            "  content=args,",
+            ")"
+        )
+        val actions: MutableList<ActionAnalysisMetadata?> =
+            ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions()
+        val action: java.util.Optional<ActionAnalysisMetadata?> =
+            actions.stream().filter { a: ActionAnalysisMetadata? -> a is ParameterFileWriteAction }.findFirst()
+        Truth.assertThat(action.isPresent()).isTrue()
+        val paramAction: ParameterFileWriteAction = action.get() as ParameterFileWriteAction
+        assertThat(paramAction.getArguments()).containsExactly("--foo")
+    }
 
-  @Test
-  public void testLazyArgsWithParamFileInvalidFormatString() throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
-    ev.checkEvalErrorContains(
-        "Invalid value for parameter \"param_file_arg\": "
-            + "Expected string with a single \"%s\", got \"--file=\"",
-        "args = ruleContext.actions.args()\n" + "args.use_param_file('--file=')");
-    ev.checkEvalErrorContains(
-        "Invalid value for parameter \"param_file_arg\": "
-            + "Expected string with a single \"%s\", got \"--file=%s%s\"",
-        "args = ruleContext.actions.args()\n" + "args.use_param_file('--file=%s%s')");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLazyArgsWithParamFileInvalidFormatString() {
+        setRuleContext(createRuleContext("//foo:foo"))
+        ev.checkEvalErrorContains(
+            "Invalid value for parameter \"param_file_arg\": "
+                    + "Expected string with a single \"%s\", got \"--file=\"",
+            "args = ruleContext.actions.args()\n" + "args.use_param_file('--file=')"
+        )
+        ev.checkEvalErrorContains(
+            "Invalid value for parameter \"param_file_arg\": "
+                    + "Expected string with a single \"%s\", got \"--file=%s%s\"",
+            "args = ruleContext.actions.args()\n" + "args.use_param_file('--file=%s%s')"
+        )
+    }
 
-  @Test
-  public void testLazyArgsWithParamFileInvalidFormat() throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
-    ev.checkEvalErrorContains(
-        "Invalid value for parameter \"format\": Expected one of \"shell\", \"multiline\"",
-        "args = ruleContext.actions.args()\n" + "args.set_param_file_format('illegal')");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLazyArgsWithParamFileInvalidFormat() {
+        setRuleContext(createRuleContext("//foo:foo"))
+        ev.checkEvalErrorContains(
+            "Invalid value for parameter \"format\": Expected one of \"shell\", \"multiline\"",
+            "args = ruleContext.actions.args()\n" + "args.set_param_file_format('illegal')"
+        )
+    }
 
-  @Test
-  public void testArgsAddInvalidTypesForArgAndValues() throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
-    ev.checkEvalErrorContains(
-        "expected value of type 'string' for arg name, got 'int'",
-        "args = ruleContext.actions.args()",
-        "args.add(1, 'value')");
-    ev.checkEvalErrorContains(
-        "expected value of type 'string' for arg name, got 'int'",
-        "args = ruleContext.actions.args()",
-        "args.add_all(1, [1, 2])");
-    ev.checkEvalErrorContains(
-        "expected value of type 'sequence or depset' for values, got 'int'",
-        "args = ruleContext.actions.args()",
-        "args.add_all(1)");
-    ev.checkEvalErrorContains(
-        "in call to add_all(), parameter 'values' got value of type 'int', want 'sequence or"
-            + " depset'",
-        "args = ruleContext.actions.args()",
-        "args.add_all('--foo', 1)");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testArgsAddInvalidTypesForArgAndValues() {
+        setRuleContext(createRuleContext("//foo:foo"))
+        ev.checkEvalErrorContains(
+            "expected value of type 'string' for arg name, got 'int'",
+            "args = ruleContext.actions.args()",
+            "args.add(1, 'value')"
+        )
+        ev.checkEvalErrorContains(
+            "expected value of type 'string' for arg name, got 'int'",
+            "args = ruleContext.actions.args()",
+            "args.add_all(1, [1, 2])"
+        )
+        ev.checkEvalErrorContains(
+            "expected value of type 'sequence or depset' for values, got 'int'",
+            "args = ruleContext.actions.args()",
+            "args.add_all(1)"
+        )
+        ev.checkEvalErrorContains(
+            "in call to add_all(), parameter 'values' got value of type 'int', want 'sequence or"
+                    + " depset'",
+            "args = ruleContext.actions.args()",
+            "args.add_all('--foo', 1)"
+        )
+    }
 
-  @Test
-  public void testLazyArgIllegalFormatString() throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
-    ev.checkEvalErrorContains(
-        "Invalid value for parameter \"format\": Expected string with a single \"%s\"",
-        "args = ruleContext.actions.args()",
-        "args.add('foo', format='illegal_format')", // Expects two args, will only be given one
-        "ruleContext.actions.run(",
-        "  inputs = depset(ruleContext.files.srcs),",
-        "  outputs = ruleContext.files.srcs,",
-        "  arguments = [args],",
-        "  executable = ruleContext.files.tools[0],",
-        "  toolchain = None",
-        ")");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLazyArgIllegalFormatString() {
+        setRuleContext(createRuleContext("//foo:foo"))
+        ev.checkEvalErrorContains(
+            "Invalid value for parameter \"format\": Expected string with a single \"%s\"",
+            "args = ruleContext.actions.args()",
+            "args.add('foo', format='illegal_format')",  // Expects two args, will only be given one
+            "ruleContext.actions.run(",
+            "  inputs = depset(ruleContext.files.srcs),",
+            "  outputs = ruleContext.files.srcs,",
+            "  arguments = [args],",
+            "  executable = ruleContext.files.tools[0],",
+            "  toolchain = None",
+            ")"
+        )
+    }
 
-  @Test
-  public void testMapEachAcceptsBuiltinFunction() throws Exception {
-    StarlarkRuleContext ruleContext = createRuleContext("//foo:foo");
-    setRuleContext(ruleContext);
-    // map_each accepts a non-Starlark built-in function such as str.
-    ev.exec("ruleContext.actions.args().add_all(['foo'], map_each = str)");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMapEachAcceptsBuiltinFunction() {
+        val ruleContext: StarlarkRuleContext = createRuleContext("//foo:foo")
+        setRuleContext(ruleContext)
+        // map_each accepts a non-Starlark built-in function such as str.
+        ev.exec("ruleContext.actions.args().add_all(['foo'], map_each = str)")
+    }
 
-  @Test
-  public void testLazyArgMapEachThrowsError() throws Exception {
-    StarlarkRuleContext ruleContext = createRuleContext("//foo:foo");
-    setRuleContext(ruleContext);
-    ev.exec(
-        "args = ruleContext.actions.args()",
-        "def bad_fn(val): 'hello'.nosuchmethod()",
-        "args.add_all([1, 2], map_each=bad_fn)",
-        "ruleContext.actions.run(",
-        "  inputs = depset(ruleContext.files.srcs),",
-        "  outputs = ruleContext.files.srcs,",
-        "  arguments = [args],",
-        "  executable = ruleContext.files.tools[0],",
-        "  toolchain = None",
-        ")");
-    SpawnAction action =
-        (SpawnAction)
-            Iterables.getOnlyElement(
-                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions());
-    CommandLineExpansionException e =
-        assertThrows(CommandLineExpansionException.class, () -> action.getArguments());
-    assertThat(e).hasMessageThat().contains("'string' value has no field or method 'nosuchmethod'");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLazyArgMapEachThrowsError() {
+        val ruleContext: StarlarkRuleContext = createRuleContext("//foo:foo")
+        setRuleContext(ruleContext)
+        ev.exec(
+            "args = ruleContext.actions.args()",
+            "def bad_fn(val): 'hello'.nosuchmethod()",
+            "args.add_all([1, 2], map_each=bad_fn)",
+            "ruleContext.actions.run(",
+            "  inputs = depset(ruleContext.files.srcs),",
+            "  outputs = ruleContext.files.srcs,",
+            "  arguments = [args],",
+            "  executable = ruleContext.files.tools[0],",
+            "  toolchain = None",
+            ")"
+        )
+        val action: SpawnAction? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(
+                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions()
+            ) as SpawnAction?
+        val e: CommandLineExpansionException? =
+            org.junit.Assert.assertThrows<T?>(
+                CommandLineExpansionException::class.java,
+                org.junit.function.ThrowingRunnable { action.getArguments() })
+        assertThat(e).hasMessageThat().contains("'string' value has no field or method 'nosuchmethod'")
+    }
 
-  @Test
-  public void testLazyArgMapEachReturnsNone() throws Exception {
-    StarlarkRuleContext ruleContext = createRuleContext("//foo:foo");
-    setRuleContext(ruleContext);
-    ev.exec(
-        "args = ruleContext.actions.args()",
-        "def none_fn(val): return None if val == 'nokeep' else val",
-        "args.add_all(['keep', 'nokeep'], map_each=none_fn)",
-        "ruleContext.actions.run(",
-        "  inputs = depset(ruleContext.files.srcs),",
-        "  outputs = ruleContext.files.srcs,",
-        "  arguments = [args],",
-        "  executable = ruleContext.files.tools[0],",
-        "  toolchain = None",
-        ")");
-    SpawnAction action =
-        (SpawnAction)
-            Iterables.getOnlyElement(
-                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions());
-    assertThat(action.getArguments()).containsExactly("foo/t.exe", "keep").inOrder();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLazyArgMapEachReturnsNone() {
+        val ruleContext: StarlarkRuleContext = createRuleContext("//foo:foo")
+        setRuleContext(ruleContext)
+        ev.exec(
+            "args = ruleContext.actions.args()",
+            "def none_fn(val): return None if val == 'nokeep' else val",
+            "args.add_all(['keep', 'nokeep'], map_each=none_fn)",
+            "ruleContext.actions.run(",
+            "  inputs = depset(ruleContext.files.srcs),",
+            "  outputs = ruleContext.files.srcs,",
+            "  arguments = [args],",
+            "  executable = ruleContext.files.tools[0],",
+            "  toolchain = None",
+            ")"
+        )
+        val action: SpawnAction? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(
+                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions()
+            ) as SpawnAction?
+        assertThat(action.getArguments()).containsExactly("foo/t.exe", "keep").inOrder()
+    }
 
-  @Test
-  public void testLazyArgMapEachReturnsWrongType() throws Exception {
-    StarlarkRuleContext ruleContext = createRuleContext("//foo:foo");
-    setRuleContext(ruleContext);
-    ev.exec(
-        "args = ruleContext.actions.args()",
-        "def bad_fn(val): return 1",
-        "args.add_all([1, 2], map_each=bad_fn)",
-        "ruleContext.actions.run(",
-        "  inputs = depset(ruleContext.files.srcs),",
-        "  outputs = ruleContext.files.srcs,",
-        "  arguments = [args],",
-        "  executable = ruleContext.files.tools[0],",
-        "  toolchain = None",
-        ")");
-    SpawnAction action =
-        (SpawnAction)
-            Iterables.getOnlyElement(
-                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions());
-    CommandLineExpansionException e =
-        assertThrows(CommandLineExpansionException.class, () -> action.getArguments());
-    assertThat(e.getMessage())
-        .contains("Expected map_each to return string, None, or list of strings, found int");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLazyArgMapEachReturnsWrongType() {
+        val ruleContext: StarlarkRuleContext = createRuleContext("//foo:foo")
+        setRuleContext(ruleContext)
+        ev.exec(
+            "args = ruleContext.actions.args()",
+            "def bad_fn(val): return 1",
+            "args.add_all([1, 2], map_each=bad_fn)",
+            "ruleContext.actions.run(",
+            "  inputs = depset(ruleContext.files.srcs),",
+            "  outputs = ruleContext.files.srcs,",
+            "  arguments = [args],",
+            "  executable = ruleContext.files.tools[0],",
+            "  toolchain = None",
+            ")"
+        )
+        val action: SpawnAction? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(
+                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions()
+            ) as SpawnAction?
+        val e: CommandLineExpansionException =
+            org.junit.Assert.assertThrows<T>(
+                CommandLineExpansionException::class.java,
+                org.junit.function.ThrowingRunnable { action.getArguments() })
+        com.google.common.truth.Subject.contains("Expected map_each to return string, None, or list of strings, found int")
+    }
 
-  @Test
-  public void createShellWithLazyArgs() throws Exception {
-    StarlarkRuleContext ruleContext = createRuleContext("//foo:foo");
-    setRuleContext(ruleContext);
-    ev.exec(
-        "args = ruleContext.actions.args()",
-        "args.add('--foo')",
-        "ruleContext.actions.run_shell(",
-        "  inputs = ruleContext.files.srcs,",
-        "  outputs = ruleContext.files.srcs,",
-        "  arguments = [args],",
-        "  mnemonic = 'DummyMnemonic',",
-        "  command = 'dummy_command',",
-        "  progress_message = 'dummy_message',",
-        "  use_default_shell_env = True)");
-    SpawnAction action =
-        (SpawnAction)
-            Iterables.getOnlyElement(
-                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions());
-    List<String> args = action.getArguments();
-    // We don't need to assert the entire arg list, just check that
-    // the dummy empty string is inserted followed by '--foo'
-    assertThat(args.get(args.size() - 2)).isEmpty();
-    assertThat(Iterables.getLast(args)).isEqualTo("--foo");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun createShellWithLazyArgs() {
+        val ruleContext: StarlarkRuleContext = createRuleContext("//foo:foo")
+        setRuleContext(ruleContext)
+        ev.exec(
+            "args = ruleContext.actions.args()",
+            "args.add('--foo')",
+            "ruleContext.actions.run_shell(",
+            "  inputs = ruleContext.files.srcs,",
+            "  outputs = ruleContext.files.srcs,",
+            "  arguments = [args],",
+            "  mnemonic = 'DummyMnemonic',",
+            "  command = 'dummy_command',",
+            "  progress_message = 'dummy_message',",
+            "  use_default_shell_env = True)"
+        )
+        val action: SpawnAction? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(
+                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions()
+            ) as SpawnAction?
+        val args: MutableList<String?> = action.getArguments()
+        // We don't need to assert the entire arg list, just check that
+        // the dummy empty string is inserted followed by '--foo'
+        Truth.assertThat(args.get(args.size - 2)).isEmpty()
+        Truth.assertThat(com.google.common.collect.Iterables.getLast<String?>(args)).isEqualTo("--foo")
+    }
 
-  @Test
-  public void testLazyArgsObjectImmutability() throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLazyArgsObjectImmutability() {
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:rules.bzl', 'main_rule', 'dep_rule')
         dep_rule(name = 'dep')
         main_rule(name = 'main', deps = [':dep'])
-        """);
-    scratch.file(
-        "test/rules.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/rules.bzl",
+            """
         load('//myinfo:myinfo.bzl', 'MyInfo')
         def _main_impl(ctx):
           dep = ctx.attr.deps[0]
@@ -2820,177 +3110,195 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
           args = ctx.actions.args()
           return [MyInfo(dep_arg = args)]
         dep_rule = rule(implementation = _dep_impl)
-        """);
-    AssertionError e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//test:main"));
-    assertThat(e).hasMessageThat().contains("trying to mutate a frozen Args value");
-  }
+        
+        """.trimIndent()
+        )
+        val e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//test:main") })
+        Truth.assertThat(e).hasMessageThat().contains("trying to mutate a frozen Args value")
+    }
 
-  @Test
-  public void testArgsMainRepoLabel() throws Exception {
-    StarlarkRuleContext ruleContext = createRuleContext("//foo:foo");
-    setRuleContext(ruleContext);
-    ev.exec(
-        "actions = ruleContext.actions",
-        "a = []",
-        "a.append(actions.args().add(Label('//bar')))",
-        "a.append(actions.args().add('-flag', Label('//bar')))",
-        "a.append(actions.args().add('-flag', Label('//bar'), format = '_%s_'))",
-        "a.append(actions.args().add_all(['foo', Label('//bar')]))",
-        "a.append(actions.args().add_all(depset([Label('//foo'), Label('//bar')])))",
-        "ruleContext.actions.run(",
-        "  inputs = depset(ruleContext.files.srcs),",
-        "  outputs = ruleContext.files.srcs,",
-        "  arguments = a,",
-        "  executable = ruleContext.files.tools[0],",
-        "  toolchain = None",
-        ")");
-    SpawnAction action =
-        (SpawnAction)
-            Iterables.getOnlyElement(
-                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions());
-    assertThat(action.getArguments())
-        .containsExactly(
-            "foo/t.exe",
-            "//bar:bar",
-            "-flag",
-            "//bar:bar",
-            "-flag",
-            "_//bar:bar_",
-            "foo",
-            "//bar:bar",
-            "//foo:foo",
-            "//bar:bar")
-        .inOrder();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testArgsMainRepoLabel() {
+        val ruleContext: StarlarkRuleContext = createRuleContext("//foo:foo")
+        setRuleContext(ruleContext)
+        ev.exec(
+            "actions = ruleContext.actions",
+            "a = []",
+            "a.append(actions.args().add(Label('//bar')))",
+            "a.append(actions.args().add('-flag', Label('//bar')))",
+            "a.append(actions.args().add('-flag', Label('//bar'), format = '_%s_'))",
+            "a.append(actions.args().add_all(['foo', Label('//bar')]))",
+            "a.append(actions.args().add_all(depset([Label('//foo'), Label('//bar')])))",
+            "ruleContext.actions.run(",
+            "  inputs = depset(ruleContext.files.srcs),",
+            "  outputs = ruleContext.files.srcs,",
+            "  arguments = a,",
+            "  executable = ruleContext.files.tools[0],",
+            "  toolchain = None",
+            ")"
+        )
+        val action: SpawnAction? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(
+                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions()
+            ) as SpawnAction?
+        assertThat(action.getArguments())
+            .containsExactly(
+                "foo/t.exe",
+                "//bar:bar",
+                "-flag",
+                "//bar:bar",
+                "-flag",
+                "_//bar:bar_",
+                "foo",
+                "//bar:bar",
+                "//foo:foo",
+                "//bar:bar"
+            )
+            .inOrder()
+    }
 
-  @Test
-  public void testArgsCanonicalRepoLabel() throws Exception {
-    StarlarkRuleContext ruleContext = createRuleContext("//foo:foo");
-    setRuleContext(ruleContext);
-    ev.exec(
-        "actions = ruleContext.actions",
-        "a = []",
-        "a.append(actions.args().add(Label('@@repo+//:foo')))",
-        "a.append(actions.args().add('-flag', Label('@@repo+//:foo')))",
-        "a.append(actions.args().add('-flag', Label('@@repo+//:foo'), format = '_%s_'))",
-        "a.append(actions.args().add_all(['foo', Label('@@repo+//:foo')]))",
-        "a.append(actions.args().add_all(depset([Label('@@other_repo+//:foo'),"
-            + " Label('@@repo+//:foo')])))",
-        "ruleContext.actions.run(",
-        "  inputs = depset(ruleContext.files.srcs),",
-        "  outputs = ruleContext.files.srcs,",
-        "  arguments = a,",
-        "  executable = ruleContext.files.tools[0],",
-        "  toolchain = None",
-        ")");
-    SpawnAction action =
-        (SpawnAction)
-            Iterables.getOnlyElement(
-                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions());
-    assertThat(action.getArguments())
-        .containsExactly(
-            "foo/t.exe",
-            "@@repo+//:foo",
-            "-flag",
-            "@@repo+//:foo",
-            "-flag",
-            "_@@repo+//:foo_",
-            "foo",
-            "@@repo+//:foo",
-            "@@other_repo+//:foo",
-            "@@repo+//:foo")
-        .inOrder();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testArgsCanonicalRepoLabel() {
+        val ruleContext: StarlarkRuleContext = createRuleContext("//foo:foo")
+        setRuleContext(ruleContext)
+        ev.exec(
+            "actions = ruleContext.actions",
+            "a = []",
+            "a.append(actions.args().add(Label('@@repo+//:foo')))",
+            "a.append(actions.args().add('-flag', Label('@@repo+//:foo')))",
+            "a.append(actions.args().add('-flag', Label('@@repo+//:foo'), format = '_%s_'))",
+            "a.append(actions.args().add_all(['foo', Label('@@repo+//:foo')]))",
+            "a.append(actions.args().add_all(depset([Label('@@other_repo+//:foo'),"
+                    + " Label('@@repo+//:foo')])))",
+            "ruleContext.actions.run(",
+            "  inputs = depset(ruleContext.files.srcs),",
+            "  outputs = ruleContext.files.srcs,",
+            "  arguments = a,",
+            "  executable = ruleContext.files.tools[0],",
+            "  toolchain = None",
+            ")"
+        )
+        val action: SpawnAction? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(
+                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions()
+            ) as SpawnAction?
+        assertThat(action.getArguments())
+            .containsExactly(
+                "foo/t.exe",
+                "@@repo+//:foo",
+                "-flag",
+                "@@repo+//:foo",
+                "-flag",
+                "_@@repo+//:foo_",
+                "foo",
+                "@@repo+//:foo",
+                "@@other_repo+//:foo",
+                "@@repo+//:foo"
+            )
+            .inOrder()
+    }
 
-  @Test
-  public void testArgsApparentRepoLabel() throws Exception {
-    scratch.overwriteFile("MODULE.bazel", "bazel_dep(name = 'foo', version = '1.0')");
-    registry.addModule(createModuleKey("foo", "1.0"), "module(name='foo', version='1.0')");
-    invalidatePackages();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testArgsApparentRepoLabel() {
+        scratch.overwriteFile("MODULE.bazel", "bazel_dep(name = 'foo', version = '1.0')")
+        registry.addModule(createModuleKey("foo", "1.0"), "module(name='foo', version='1.0')")
+        invalidatePackages()
 
-    StarlarkRuleContext ruleContext = createRuleContext("//foo:foo");
-    setRuleContext(ruleContext);
-    ev.exec(
-        "actions = ruleContext.actions",
-        "a = []",
-        "a.append(actions.args().add(Label('@@foo+//:foo')))",
-        "a.append(actions.args().add('-flag', Label('@@foo+//:foo')))",
-        "a.append(actions.args().add('-flag', Label('@@foo+//:foo'), format = '_%s_'))",
-        "a.append(actions.args().add_all(['foo', Label('@@foo+//:foo')]))",
-        "a.append(actions.args().add_all(depset([Label('@@repo+//:foo'), Label('@@foo+//:foo')])))",
-        "ruleContext.actions.run(",
-        "  inputs = depset(ruleContext.files.srcs),",
-        "  outputs = ruleContext.files.srcs,",
-        "  arguments = a,",
-        "  executable = ruleContext.files.tools[0],",
-        "  toolchain = None",
-        ")");
-    SpawnAction action =
-        (SpawnAction)
-            Iterables.getOnlyElement(
-                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions());
-    assertThat(action.getArguments())
-        .containsExactly(
-            "foo/t.exe",
-            "@foo//:foo",
-            "-flag",
-            "@foo//:foo",
-            "-flag",
-            "_@foo//:foo_",
-            "foo",
-            "@foo//:foo",
-            "@@repo+//:foo",
-            "@foo//:foo")
-        .inOrder();
-  }
+        val ruleContext: StarlarkRuleContext = createRuleContext("//foo:foo")
+        setRuleContext(ruleContext)
+        ev.exec(
+            "actions = ruleContext.actions",
+            "a = []",
+            "a.append(actions.args().add(Label('@@foo+//:foo')))",
+            "a.append(actions.args().add('-flag', Label('@@foo+//:foo')))",
+            "a.append(actions.args().add('-flag', Label('@@foo+//:foo'), format = '_%s_'))",
+            "a.append(actions.args().add_all(['foo', Label('@@foo+//:foo')]))",
+            "a.append(actions.args().add_all(depset([Label('@@repo+//:foo'), Label('@@foo+//:foo')])))",
+            "ruleContext.actions.run(",
+            "  inputs = depset(ruleContext.files.srcs),",
+            "  outputs = ruleContext.files.srcs,",
+            "  arguments = a,",
+            "  executable = ruleContext.files.tools[0],",
+            "  toolchain = None",
+            ")"
+        )
+        val action: SpawnAction? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(
+                ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions()
+            ) as SpawnAction?
+        assertThat(action.getArguments())
+            .containsExactly(
+                "foo/t.exe",
+                "@foo//:foo",
+                "-flag",
+                "@foo//:foo",
+                "-flag",
+                "_@foo//:foo_",
+                "foo",
+                "@foo//:foo",
+                "@@repo+//:foo",
+                "@foo//:foo"
+            )
+            .inOrder()
+    }
 
-  @Test
-  public void testArgsBuiltTwiceWithExternalLabel() throws Exception {
-    StarlarkRuleContext ruleContext = createRuleContext("//foo:foo");
-    setRuleContext(ruleContext);
-    ev.exec(
-        "args = ruleContext.actions.args()",
-        "args.add(Label('@@foo'))",
-        "ruleContext.actions.run(",
-        "  inputs = depset(ruleContext.files.srcs),",
-        "  outputs = ruleContext.files.srcs,",
-        "  arguments = [args],",
-        "  executable = ruleContext.files.tools[0],",
-        "  toolchain = None",
-        ")",
-        "ruleContext.actions.run(",
-        "  inputs = depset(ruleContext.files.srcs),",
-        "  outputs = ruleContext.files.srcs,",
-        "  arguments = [args],",
-        "  executable = ruleContext.files.tools[0],",
-        "  toolchain = None",
-        ")");
-    List<SpawnAction> actions =
-        ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions().stream()
-            .map(SpawnAction.class::cast)
-            .toList();
-    assertThat(actions).hasSize(2);
-    assertThat(actions.getFirst().getArguments())
-        .containsExactlyElementsIn(actions.getLast().getArguments())
-        .inOrder();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testArgsBuiltTwiceWithExternalLabel() {
+        val ruleContext: StarlarkRuleContext = createRuleContext("//foo:foo")
+        setRuleContext(ruleContext)
+        ev.exec(
+            "args = ruleContext.actions.args()",
+            "args.add(Label('@@foo'))",
+            "ruleContext.actions.run(",
+            "  inputs = depset(ruleContext.files.srcs),",
+            "  outputs = ruleContext.files.srcs,",
+            "  arguments = [args],",
+            "  executable = ruleContext.files.tools[0],",
+            "  toolchain = None",
+            ")",
+            "ruleContext.actions.run(",
+            "  inputs = depset(ruleContext.files.srcs),",
+            "  outputs = ruleContext.files.srcs,",
+            "  arguments = [args],",
+            "  executable = ruleContext.files.tools[0],",
+            "  toolchain = None",
+            ")"
+        )
+        val actions: MutableList<SpawnAction?>? =
+            ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions().stream()
+                .map({ obj: Any? -> SpawnAction::class.java.cast(obj) })
+                .toList()
+        Truth.assertThat(actions).hasSize(2)
+        assertThat(actions.getFirst().getArguments())
+            .containsExactlyElementsIn(actions.getLast().getArguments())
+            .inOrder()
+    }
 
-  @Test
-  public void testConfigurationField_starlarkSplitTransitionProhibited() throws Exception {
-    scratch.overwriteFile(
-        "tools/allowlists/function_transition_allowlist/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testConfigurationField_starlarkSplitTransitionProhibited() {
+        scratch.overwriteFile(
+            "tools/allowlists/function_transition_allowlist/BUILD",
+            """
         package_group(
             name = 'function_transition_allowlist',
             packages = [
                 '//...',
             ],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "test/rule.bzl",
-        """
+        scratch.file(
+            "test/rule.bzl",
+            """
         def _foo_impl(ctx):
           return []
 
@@ -3004,25 +3312,30 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
             '_attr': attr.label(
                 cfg = foo_transition,
                 default = configuration_field(fragment = "coverage", name = "output_generator"))})
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "test/BUILD",
-        """
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:rule.bzl', 'foo')
         foo(name='foo')
-        """);
+        
+        """.trimIndent()
+        )
 
-    reporter.removeHandler(failFastHandler);
-    getConfiguredTarget("//test:foo");
-    assertContainsEvent("late-bound attributes must not have a split configuration transition");
-  }
+        reporter.removeHandler(failFastHandler)
+        getConfiguredTarget("//test:foo")
+        assertContainsEvent("late-bound attributes must not have a split configuration transition")
+    }
 
-  @Test
-  public void testConfigurationField_invalidFragment() throws Exception {
-    scratch.file(
-        "test/main_rule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testConfigurationField_invalidFragment() {
+        scratch.file(
+            "test/main_rule.bzl",
+            """
         def _impl(ctx):
           return []
         main_rule = rule(implementation = _impl,
@@ -3031,27 +3344,34 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
                 fragment = 'notarealfragment', name = 'method_name')),
             },
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "test/BUILD",
-        """
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:main_rule.bzl', 'main_rule')
         main_rule(name='main')
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError expected =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//test:main"));
-    assertThat(expected)
-        .hasMessageThat()
-        .contains("invalid configuration fragment name 'notarealfragment'");
-  }
+        val expected: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//test:main") })
+        Truth.assertThat(expected)
+            .hasMessageThat()
+            .contains("invalid configuration fragment name 'notarealfragment'")
+    }
 
-  @Test
-  public void testConfigurationField_doesNotChangeFragmentAccess() throws Exception {
-    scratch.file(
-        "test/main_rule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testConfigurationField_doesNotChangeFragmentAccess() {
+        scratch.file(
+            "test/main_rule.bzl",
+            """
         load('//myinfo:myinfo.bzl', 'MyInfo')
         def _impl(ctx):
           return [MyInfo(platform = ctx.fragments.apple.single_arch_platform)]
@@ -3062,26 +3382,33 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
             },
             fragments = [],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "test/BUILD",
-        """
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:main_rule.bzl', 'main_rule')
         main_rule(name='main')
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError expected =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//test:main"));
+        val expected: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//test:main") })
 
-    assertThat(expected).hasMessageThat().contains("has to declare 'apple' as a required fragment");
-  }
+        Truth.assertThat(expected).hasMessageThat().contains("has to declare 'apple' as a required fragment")
+    }
 
-  @Test
-  public void testConfigurationField_invalidFieldName() throws Exception {
-    scratch.file(
-        "test/main_rule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testConfigurationField_invalidFieldName() {
+        scratch.file(
+            "test/main_rule.bzl",
+            """
         def _impl(ctx):
           return []
         main_rule = rule(implementation = _impl,
@@ -3091,29 +3418,36 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
             },
             fragments = ['apple'],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "test/BUILD",
-        """
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:main_rule.bzl', 'main_rule')
         main_rule(name='main')
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError expected =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//test:main"));
+        val expected: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//test:main") })
 
-    assertThat(expected)
-        .hasMessageThat()
-        .contains("invalid configuration field name 'notarealfield' on fragment 'apple'");
-  }
+        Truth.assertThat(expected)
+            .hasMessageThat()
+            .contains("invalid configuration field name 'notarealfield' on fragment 'apple'")
+    }
 
-  // Verifies that configuration_field can only be used on 'private' attributes.
-  @Test
-  public void testConfigurationField_invalidVisibility() throws Exception {
-    scratch.file(
-        "test/main_rule.bzl",
-        """
+    // Verifies that configuration_field can only be used on 'private' attributes.
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testConfigurationField_invalidVisibility() {
+        scratch.file(
+            "test/main_rule.bzl",
+            """
         def _impl(ctx):
           return []
         main_rule = rule(implementation = _impl,
@@ -3123,30 +3457,38 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
             },
             fragments = ['apple'],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "test/BUILD",
-        """
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:main_rule.bzl', 'main_rule')
         main_rule(name='main')
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError expected =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//test:main"));
+        val expected: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//test:main") })
 
-    assertThat(expected)
-        .hasMessageThat()
-        .contains(
-            "When an attribute value is a function, "
-                + "the attribute must be private (i.e. start with '_')");
-  }
+        Truth.assertThat(expected)
+            .hasMessageThat()
+            .contains(
+                "When an attribute value is a function, "
+                        + "the attribute must be private (i.e. start with '_')"
+            )
+    }
 
-  @Test
-  public void testFilesToRunInActionsRun() throws Exception {
-    scratch.file(
-        "a/a.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFilesToRunInActionsRun() {
+        scratch.file(
+            "a/a.bzl",
+            """
         def _impl(ctx):
             f = ctx.actions.declare_file('output')
             ctx.actions.run(
@@ -3157,28 +3499,33 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
             )
             return [DefaultInfo(files=depset([f]))]
         r = rule(implementation=_impl, attrs = {'_tool': attr.label(default='//a:tool')})
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "a/BUILD",
-        """
+        scratch.file(
+            "a/BUILD",
+            """
         load(':a.bzl', 'r')
         load('//test_defs:foo_binary.bzl', 'foo_binary')
         r(name='r')
         foo_binary(name='tool', srcs=['tool.sh'], data=['data'])
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget r = getConfiguredTarget("//a:r");
-    Action action =
-        getGeneratingAction(r.getProvider(FileProvider.class).getFilesToBuild().getSingleton());
-    assertThat(ActionsTestUtil.baseArtifactNames(action.getInputs())).contains("tool.runfiles");
-  }
+        val r: ConfiguredTarget = getConfiguredTarget("//a:r")
+        val action: Action =
+            getGeneratingAction(r.getProvider(FileProvider::class.java).getFilesToBuild().getSingleton())
+        com.google.common.truth.Subject.contains("tool.runfiles")
+    }
 
-  @Test
-  public void testFilesToRunInActionsTools() throws Exception {
-    scratch.file(
-        "a/a.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFilesToRunInActionsTools() {
+        scratch.file(
+            "a/a.bzl",
+            """
         def _impl(ctx):
             f = ctx.actions.declare_file('output')
             ctx.actions.run(
@@ -3190,29 +3537,34 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
             )
             return [DefaultInfo(files=depset([f]))]
         r = rule(implementation=_impl, attrs = {'_tool': attr.label(default='//a:tool')})
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "a/BUILD",
-        """
+        scratch.file(
+            "a/BUILD",
+            """
         load(':a.bzl', 'r')
         load('//test_defs:foo_binary.bzl', 'foo_binary')
         r(name='r')
         foo_binary(name='tool', srcs=['tool.sh'], data=['data'])
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget r = getConfiguredTarget("//a:r");
-    Action action =
-        getGeneratingAction(r.getProvider(FileProvider.class).getFilesToBuild().getSingleton());
-    assertThat(ActionsTestUtil.baseArtifactNames(action.getInputs())).contains("tool.runfiles");
-  }
+        val r: ConfiguredTarget = getConfiguredTarget("//a:r")
+        val action: Action =
+            getGeneratingAction(r.getProvider(FileProvider::class.java).getFilesToBuild().getSingleton())
+        com.google.common.truth.Subject.contains("tool.runfiles")
+    }
 
-  // Verifies that configuration_field can only be used on 'label' attributes.
-  @Test
-  public void testConfigurationField_invalidAttributeType() throws Exception {
-    scratch.file(
-        "test/main_rule.bzl",
-        """
+    // Verifies that configuration_field can only be used on 'label' attributes.
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testConfigurationField_invalidAttributeType() {
+        scratch.file(
+            "test/main_rule.bzl",
+            """
         def _impl(ctx):
           return []
         main_rule = rule(implementation = _impl,
@@ -3222,684 +3574,815 @@ public final class StarlarkRuleImplementationFunctionsTest extends BuildViewTest
             },
             fragments = ['apple'],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "test/BUILD",
-        """
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:main_rule.bzl', 'main_rule')
         main_rule(name='main')
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError expected =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//test:main"));
+        val expected: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//test:main") })
 
-    assertThat(expected)
-        .hasMessageThat()
-        .contains(
-            "in call to int(), parameter 'default' got value of type 'LateBoundDefault', want"
-                + " 'int'");
-  }
-
-  @Test
-  public void testStarlarkCustomCommandLineKeyComputation() throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
-
-    ImmutableList.Builder<CommandLine> commandLines = ImmutableList.builder();
-
-    commandLines.add(getCommandLine("args = ruleContext.actions.args()"));
-    commandLines.add(getCommandLine("args = ruleContext.actions.args()", "args.add('foo')"));
-    commandLines.add(
-        getCommandLine("args = ruleContext.actions.args()", "args.add('--foo', 'foo')"));
-    commandLines.add(
-        getCommandLine("args = ruleContext.actions.args()", "args.add('foo', format='--foo=%s')"));
-    commandLines.add(
-        getCommandLine("args = ruleContext.actions.args()", "args.add_all(['foo', 'bar'])"));
-    commandLines.add(
-        getCommandLine(
-            "args = ruleContext.actions.args()", "args.add_all('-foo', ['foo', 'bar'])"));
-    commandLines.add(
-        getCommandLine(
-            "args = ruleContext.actions.args()",
-            "args.add_all(['foo', 'bar'], format_each='format%s')"));
-    commandLines.add(
-        getCommandLine(
-            "args = ruleContext.actions.args()", "args.add_all(['foo', 'bar'], before_each='-I')"));
-    commandLines.add(
-        getCommandLine(
-            "args = ruleContext.actions.args()", "args.add_all(['boing', 'boing', 'boing'])"));
-    commandLines.add(
-        getCommandLine(
-            "args = ruleContext.actions.args()",
-            "args.add_all(['boing', 'boing', 'boing'], uniquify=True)"));
-    commandLines.add(
-        getCommandLine(
-            "args = ruleContext.actions.args()",
-            "args.add_all(['foo', 'bar'], terminate_with='baz')"));
-    commandLines.add(
-        getCommandLine(
-            "args = ruleContext.actions.args()", "args.add_joined(['foo', 'bar'], join_with=',')"));
-    commandLines.add(
-        getCommandLine(
-            "args = ruleContext.actions.args()",
-            "args.add_joined(['foo', 'bar'], join_with=',', format_joined='--foo=%s')"));
-    commandLines.add(
-        getCommandLine(
-            "args = ruleContext.actions.args()",
-            "def _map_each(s): return s + '_mapped'",
-            "args.add_all(['foo', 'bar'], map_each=_map_each)"));
-    commandLines.add(
-        getCommandLine(
-            "args = ruleContext.actions.args()",
-            "values = depset(['a', 'b'])",
-            "args.add_all(values)"));
-    commandLines.add(
-        getCommandLine(
-            "args = ruleContext.actions.args()",
-            "def _map_each(s): return s + '_mapped'",
-            "values = depset(['a', 'b'])",
-            "args.add_all(values, map_each=_map_each)"));
-    commandLines.add(
-        getCommandLine(
-            "args = ruleContext.actions.args()",
-            "def _map_each(s): return s + '_mapped_again'",
-            "values = depset(['a', 'b'])",
-            "args.add_all(values, map_each=_map_each)"));
-
-    // Ensure all these command lines have distinct keys
-    Map<String, CommandLine> digests = new HashMap<>();
-    for (CommandLine commandLine : commandLines.build()) {
-      String digest = getDigest(commandLine);
-      CommandLine previous = digests.putIfAbsent(digest, commandLine);
-      if (previous != null) {
-        fail(
-            String.format(
-                "Found two command lines with identical digest %s: '%s' and '%s'",
-                digest,
-                Joiner.on(' ').join(previous.arguments()),
-                Joiner.on(' ').join(commandLine.arguments())));
-      }
+        Truth.assertThat(expected)
+            .hasMessageThat()
+            .contains(
+                "in call to int(), parameter 'default' got value of type 'LateBoundDefault', want"
+                        + " 'int'"
+            )
     }
 
-    // Ensure errors are handled
-    CommandLine commandLine =
-        getCommandLine(
-            "args = ruleContext.actions.args()",
-            "def _bad_fn(s): return s.doesnotexist()",
-            "values = depset(['a', 'b'])",
-            "args.add_all(values, map_each=_bad_fn)");
-    assertThrows(
-        CommandLineExpansionException.class,
-        () ->
-            commandLine.addToFingerprint(
-                actionKeyContext,
-                /* inputMetadataProvider= */ null,
-                OutputPathsMode.OFF,
-                new Fingerprint()));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStarlarkCustomCommandLineKeyComputation() {
+        setRuleContext(createRuleContext("//foo:foo"))
 
-  @Test
-  public void starlarkCustomCommandLineKeyComputation_differentMapEach() throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
+        val commandLines: com.google.common.collect.ImmutableList.Builder<CommandLine?> =
+            com.google.common.collect.ImmutableList.builder<CommandLine?>()
 
-    CommandLine commandLine1 =
-        getCommandLine(
-            "args = ruleContext.actions.args()",
-            "def _fun1(arg): return 'val1'",
-            "def _fun2(arg): return 'val2'",
-            "args.add_all(['a'], map_each=_fun1)");
-    CommandLine commandLine2 =
-        getCommandLine(
-            "args = ruleContext.actions.args()",
-            "def _fun1(arg): return 'val1'",
-            "def _fun2(arg): return 'val2'",
-            "args.add_all(['a'], map_each=_fun2)");
+        commandLines.add(getCommandLine("args = ruleContext.actions.args()"))
+        commandLines.add(getCommandLine("args = ruleContext.actions.args()", "args.add('foo')"))
+        commandLines.add(
+            getCommandLine("args = ruleContext.actions.args()", "args.add('--foo', 'foo')")
+        )
+        commandLines.add(
+            getCommandLine("args = ruleContext.actions.args()", "args.add('foo', format='--foo=%s')")
+        )
+        commandLines.add(
+            getCommandLine("args = ruleContext.actions.args()", "args.add_all(['foo', 'bar'])")
+        )
+        commandLines.add(
+            getCommandLine(
+                "args = ruleContext.actions.args()", "args.add_all('-foo', ['foo', 'bar'])"
+            )
+        )
+        commandLines.add(
+            getCommandLine(
+                "args = ruleContext.actions.args()",
+                "args.add_all(['foo', 'bar'], format_each='format%s')"
+            )
+        )
+        commandLines.add(
+            getCommandLine(
+                "args = ruleContext.actions.args()", "args.add_all(['foo', 'bar'], before_each='-I')"
+            )
+        )
+        commandLines.add(
+            getCommandLine(
+                "args = ruleContext.actions.args()", "args.add_all(['boing', 'boing', 'boing'])"
+            )
+        )
+        commandLines.add(
+            getCommandLine(
+                "args = ruleContext.actions.args()",
+                "args.add_all(['boing', 'boing', 'boing'], uniquify=True)"
+            )
+        )
+        commandLines.add(
+            getCommandLine(
+                "args = ruleContext.actions.args()",
+                "args.add_all(['foo', 'bar'], terminate_with='baz')"
+            )
+        )
+        commandLines.add(
+            getCommandLine(
+                "args = ruleContext.actions.args()", "args.add_joined(['foo', 'bar'], join_with=',')"
+            )
+        )
+        commandLines.add(
+            getCommandLine(
+                "args = ruleContext.actions.args()",
+                "args.add_joined(['foo', 'bar'], join_with=',', format_joined='--foo=%s')"
+            )
+        )
+        commandLines.add(
+            getCommandLine(
+                "args = ruleContext.actions.args()",
+                "def _map_each(s): return s + '_mapped'",
+                "args.add_all(['foo', 'bar'], map_each=_map_each)"
+            )
+        )
+        commandLines.add(
+            getCommandLine(
+                "args = ruleContext.actions.args()",
+                "values = depset(['a', 'b'])",
+                "args.add_all(values)"
+            )
+        )
+        commandLines.add(
+            getCommandLine(
+                "args = ruleContext.actions.args()",
+                "def _map_each(s): return s + '_mapped'",
+                "values = depset(['a', 'b'])",
+                "args.add_all(values, map_each=_map_each)"
+            )
+        )
+        commandLines.add(
+            getCommandLine(
+                "args = ruleContext.actions.args()",
+                "def _map_each(s): return s + '_mapped_again'",
+                "values = depset(['a', 'b'])",
+                "args.add_all(values, map_each=_map_each)"
+            )
+        )
 
-    assertThat(getDigest(commandLine1)).isNotEqualTo(getDigest(commandLine2));
-  }
+        // Ensure all these command lines have distinct keys
+        val digests: MutableMap<String?, CommandLine?> = HashMap<String?, CommandLine?>()
+        for (commandLine in commandLines.build()) {
+            val digest = getDigest(commandLine)
+            val previous: CommandLine? = digests.putIfAbsent(digest, commandLine)
+            if (previous != null) {
+                org.junit.Assert.fail(
+                    String.format(
+                        "Found two command lines with identical digest %s: '%s' and '%s'",
+                        digest,
+                        com.google.common.base.Joiner.on(' ').join(previous.arguments()),
+                        com.google.common.base.Joiner.on(' ').join(commandLine.arguments())
+                    )
+                )
+            }
+        }
 
-  @Test
-  public void starlarkCustomCommandLineKeyComputation_differentArg() throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
+        // Ensure errors are handled
+        val commandLine: CommandLine =
+            getCommandLine(
+                "args = ruleContext.actions.args()",
+                "def _bad_fn(s): return s.doesnotexist()",
+                "values = depset(['a', 'b'])",
+                "args.add_all(values, map_each=_bad_fn)"
+            )
+        org.junit.Assert.assertThrows<T?>(
+            CommandLineExpansionException::class.java,
+            org.junit.function.ThrowingRunnable {
+                commandLine.addToFingerprint(
+                    actionKeyContext,  /* inputMetadataProvider= */
+                    null,
+                    OutputPathsMode.OFF,
+                    Fingerprint()
+                )
+            })
+    }
 
-    CommandLine commandLine1 =
-        getCommandLine(
-            "args = ruleContext.actions.args()",
-            "def _fun(arg): return arg",
-            "args.add_all(['a'], map_each=_fun)");
-    CommandLine commandLine2 =
-        getCommandLine(
-            "args = ruleContext.actions.args()",
-            "def _fun(arg): return arg",
-            "args.add_all(['b'], map_each=_fun)");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkCustomCommandLineKeyComputation_differentMapEach() {
+        setRuleContext(createRuleContext("//foo:foo"))
 
-    assertThat(getDigest(commandLine1)).isNotEqualTo(getDigest(commandLine2));
-  }
+        val commandLine1: CommandLine =
+            getCommandLine(
+                "args = ruleContext.actions.args()",
+                "def _fun1(arg): return 'val1'",
+                "def _fun2(arg): return 'val2'",
+                "args.add_all(['a'], map_each=_fun1)"
+            )
+        val commandLine2: CommandLine =
+            getCommandLine(
+                "args = ruleContext.actions.args()",
+                "def _fun1(arg): return 'val1'",
+                "def _fun2(arg): return 'val2'",
+                "args.add_all(['a'], map_each=_fun2)"
+            )
 
-  @Test
-  public void starlarkCustomCommandLineKeyComputationWithExpander_equivalentMapEach_sameKey()
-      throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
+        Truth.assertThat(getDigest(commandLine1)).isNotEqualTo(getDigest(commandLine2))
+    }
 
-    CommandLine commandLine1 =
-        getCommandLine(
-            "args = ruleContext.actions.args()",
-            "directory = ruleContext.actions.declare_directory('dir')",
-            "args.add_joined([directory], join_with=',', map_each=str, expand_directories=True)");
-    CommandLine commandLine2 =
-        getCommandLine(
-            "args = ruleContext.actions.args()",
-            "directory = ruleContext.actions.declare_directory('dir')",
-            "def mystr(file): return str(file)",
-            "args.add_joined([directory], join_with=',', map_each=mystr, expand_directories=True)");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkCustomCommandLineKeyComputation_differentArg() {
+        setRuleContext(createRuleContext("//foo:foo"))
 
-    InputMetadataProvider inputMetadataProvider = createInputMetadataProvider("foo/dir", "file");
-    assertThat(getDigest(commandLine1, inputMetadataProvider))
-        .isEqualTo(getDigest(commandLine2, inputMetadataProvider));
-  }
+        val commandLine1: CommandLine =
+            getCommandLine(
+                "args = ruleContext.actions.args()",
+                "def _fun(arg): return arg",
+                "args.add_all(['a'], map_each=_fun)"
+            )
+        val commandLine2: CommandLine =
+            getCommandLine(
+                "args = ruleContext.actions.args()",
+                "def _fun(arg): return arg",
+                "args.add_all(['b'], map_each=_fun)"
+            )
 
-  @Test
-  public void starlarkCustomCommandLineKeyComputationWithExpander_mapEachConstantForDir()
-      throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
+        Truth.assertThat(getDigest(commandLine1)).isNotEqualTo(getDigest(commandLine2))
+    }
 
-    CommandLine commandLine1 =
-        getCommandLine(
-            "args = ruleContext.actions.args()",
-            "directory = ruleContext.actions.declare_directory('dir')",
-            "def _constant_for_dir(f): return 'constant' if f.path.endswith('dir') else 'value1'",
-            "args.add_all([directory], map_each=_constant_for_dir, expand_directories=True)");
-    CommandLine commandLine2 =
-        getCommandLine(
-            "args = ruleContext.actions.args()",
-            "directory = ruleContext.actions.declare_directory('dir')",
-            "def _constant_for_dir(f): return 'constant' if f.path.endswith('dir') else 'value2'",
-            "args.add_all([directory], map_each=_constant_for_dir, expand_directories=True)");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkCustomCommandLineKeyComputationWithExpander_equivalentMapEach_sameKey() {
+        setRuleContext(createRuleContext("//foo:foo"))
 
-    InputMetadataProvider inputMetadataProvider = createInputMetadataProvider("foo/dir", "file");
-    assertThat(getDigest(commandLine1, inputMetadataProvider))
-        .isNotEqualTo(getDigest(commandLine2, inputMetadataProvider));
-  }
+        val commandLine1: CommandLine =
+            getCommandLine(
+                "args = ruleContext.actions.args()",
+                "directory = ruleContext.actions.declare_directory('dir')",
+                "args.add_joined([directory], join_with=',', map_each=str, expand_directories=True)"
+            )
+        val commandLine2: CommandLine =
+            getCommandLine(
+                "args = ruleContext.actions.args()",
+                "directory = ruleContext.actions.declare_directory('dir')",
+                "def mystr(file): return str(file)",
+                "args.add_joined([directory], join_with=',', map_each=mystr, expand_directories=True)"
+            )
 
-  @Test
-  public void starlarkCustomCommandLineKeyComputationWithExpander_constantForDirWithNestedSet()
-      throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
+        val inputMetadataProvider: InputMetadataProvider = createInputMetadataProvider("foo/dir", "file")
+        Truth.assertThat(getDigest(commandLine1, inputMetadataProvider))
+            .isEqualTo(getDigest(commandLine2, inputMetadataProvider))
+    }
 
-    CommandLine commandLine1 =
-        getCommandLine(
-            "args = ruleContext.actions.args()",
-            "dir = ruleContext.actions.declare_directory('dir')",
-            "def _constant_for_dir(f): return 'constant' if f.path.endswith('dir') else 'value1'",
-            "args.add_all(depset([dir]), map_each=_constant_for_dir, expand_directories=True)");
-    CommandLine commandLine2 =
-        getCommandLine(
-            "args = ruleContext.actions.args()",
-            "dir = ruleContext.actions.declare_directory('dir')",
-            "def _constant_for_dir(f): return 'constant' if f.path.endswith('dir') else 'value2'",
-            "args.add_all(depset([dir]), map_each=_constant_for_dir, expand_directories=True)");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkCustomCommandLineKeyComputationWithExpander_mapEachConstantForDir() {
+        setRuleContext(createRuleContext("//foo:foo"))
 
-    InputMetadataProvider inputMetadataProvider = createInputMetadataProvider("foo/dir", "file");
-    assertThat(getDigest(commandLine1, inputMetadataProvider))
-        .isNotEqualTo(getDigest(commandLine2, inputMetadataProvider));
-  }
+        val commandLine1: CommandLine =
+            getCommandLine(
+                "args = ruleContext.actions.args()",
+                "directory = ruleContext.actions.declare_directory('dir')",
+                "def _constant_for_dir(f): return 'constant' if f.path.endswith('dir') else 'value1'",
+                "args.add_all([directory], map_each=_constant_for_dir, expand_directories=True)"
+            )
+        val commandLine2: CommandLine =
+            getCommandLine(
+                "args = ruleContext.actions.args()",
+                "directory = ruleContext.actions.declare_directory('dir')",
+                "def _constant_for_dir(f): return 'constant' if f.path.endswith('dir') else 'value2'",
+                "args.add_all([directory], map_each=_constant_for_dir, expand_directories=True)"
+            )
 
-  @Test
-  public void starlarkCustomCommandLineKeyComputationWithExpander_mapEachFailsForDir()
-      throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
+        val inputMetadataProvider: InputMetadataProvider = createInputMetadataProvider("foo/dir", "file")
+        Truth.assertThat(getDigest(commandLine1, inputMetadataProvider))
+            .isNotEqualTo(getDigest(commandLine2, inputMetadataProvider))
+    }
 
-    CommandLine commandLine1 =
-        getCommandLine(
-            "args = ruleContext.actions.args()",
-            "directory = ruleContext.actions.declare_directory('dir')",
-            "ruleContext.actions.run_shell(outputs=[directory], command='')",
-            "def _fail_for_dir(file):",
-            "   if file.path.endswith('dir'): fail('hello')",
-            "   return 'value1'",
-            "args.add_all([directory], map_each=_fail_for_dir, expand_directories=True)");
-    CommandLine commandLine2 =
-        getCommandLine(
-            "args = ruleContext.actions.args()",
-            "ruleContext.actions.run_shell(outputs=[directory], command='')",
-            "directory = ruleContext.actions.declare_directory('dir')",
-            "def _fail_for_dir(file):",
-            "   if file.path.endswith('dir'): fail('hello')",
-            "   return 'value2'",
-            "args.add_all([directory], map_each=_fail_for_dir, expand_directories=True)");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkCustomCommandLineKeyComputationWithExpander_constantForDirWithNestedSet() {
+        setRuleContext(createRuleContext("//foo:foo"))
 
-    InputMetadataProvider inputMetadataProvider = createInputMetadataProvider("foo/dir", "file");
-    assertThat(getDigest(commandLine1, inputMetadataProvider))
-        .isNotEqualTo(getDigest(commandLine2, inputMetadataProvider));
-  }
+        val commandLine1: CommandLine =
+            getCommandLine(
+                "args = ruleContext.actions.args()",
+                "dir = ruleContext.actions.declare_directory('dir')",
+                "def _constant_for_dir(f): return 'constant' if f.path.endswith('dir') else 'value1'",
+                "args.add_all(depset([dir]), map_each=_constant_for_dir, expand_directories=True)"
+            )
+        val commandLine2: CommandLine =
+            getCommandLine(
+                "args = ruleContext.actions.args()",
+                "dir = ruleContext.actions.declare_directory('dir')",
+                "def _constant_for_dir(f): return 'constant' if f.path.endswith('dir') else 'value2'",
+                "args.add_all(depset([dir]), map_each=_constant_for_dir, expand_directories=True)"
+            )
 
-  @Test
-  public void starlarkCustomCommandLineKeyComputationWithExpander_differentExpansion()
-      throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
-    CommandLine commandLine =
-        getCommandLine(
-            "args = ruleContext.actions.args()",
-            "directory = ruleContext.actions.declare_directory('dir')",
-            "ruleContext.actions.run_shell(outputs=[directory], command='')",
-            "def _get_path(file): return file.path",
-            "args.add_all([directory], map_each=_get_path, expand_directories=True)");
+        val inputMetadataProvider: InputMetadataProvider = createInputMetadataProvider("foo/dir", "file")
+        Truth.assertThat(getDigest(commandLine1, inputMetadataProvider))
+            .isNotEqualTo(getDigest(commandLine2, inputMetadataProvider))
+    }
 
-    InputMetadataProvider inputMetadataProvider1 = createInputMetadataProvider("foo/dir", "file1");
-    InputMetadataProvider inputMetadataProvider2 = createInputMetadataProvider("foo/dir", "file2");
-    assertThat(getDigest(commandLine, inputMetadataProvider1))
-        .isNotEqualTo(getDigest(commandLine, inputMetadataProvider2));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkCustomCommandLineKeyComputationWithExpander_mapEachFailsForDir() {
+        setRuleContext(createRuleContext("//foo:foo"))
 
-  @Test
-  public void starlarkCustomCommandLineKeyComputationWithExpander_differentExpansionNoMapEach()
-      throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
-    CommandLine commandLine =
-        getCommandLine(
-            "args = ruleContext.actions.args()",
-            "directory = ruleContext.actions.declare_directory('dir')",
-            "args.add_all([directory])");
+        val commandLine1: CommandLine =
+            getCommandLine(
+                "args = ruleContext.actions.args()",
+                "directory = ruleContext.actions.declare_directory('dir')",
+                "ruleContext.actions.run_shell(outputs=[directory], command='')",
+                "def _fail_for_dir(file):",
+                "   if file.path.endswith('dir'): fail('hello')",
+                "   return 'value1'",
+                "args.add_all([directory], map_each=_fail_for_dir, expand_directories=True)"
+            )
+        val commandLine2: CommandLine =
+            getCommandLine(
+                "args = ruleContext.actions.args()",
+                "ruleContext.actions.run_shell(outputs=[directory], command='')",
+                "directory = ruleContext.actions.declare_directory('dir')",
+                "def _fail_for_dir(file):",
+                "   if file.path.endswith('dir'): fail('hello')",
+                "   return 'value2'",
+                "args.add_all([directory], map_each=_fail_for_dir, expand_directories=True)"
+            )
 
-    InputMetadataProvider inputMetadataProvider1 = createInputMetadataProvider("foo/dir", "file1");
-    InputMetadataProvider inputMetadataProvider2 = createInputMetadataProvider("foo/dir", "file2");
-    assertThat(getDigest(commandLine, inputMetadataProvider1))
-        .isNotEqualTo(getDigest(commandLine, inputMetadataProvider2));
-  }
+        val inputMetadataProvider: InputMetadataProvider = createInputMetadataProvider("foo/dir", "file")
+        Truth.assertThat(getDigest(commandLine1, inputMetadataProvider))
+            .isNotEqualTo(getDigest(commandLine2, inputMetadataProvider))
+    }
 
-  @Test
-  public void starlarkCustomCommandLineKeyComputationWithExpander_extraFileInExpansionNoMapEach()
-      throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
-    CommandLine commandLine =
-        getCommandLine(
-            "args = ruleContext.actions.args()",
-            "directory = ruleContext.actions.declare_directory('dir')",
-            "args.add_all([directory])");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkCustomCommandLineKeyComputationWithExpander_differentExpansion() {
+        setRuleContext(createRuleContext("//foo:foo"))
+        val commandLine: CommandLine =
+            getCommandLine(
+                "args = ruleContext.actions.args()",
+                "directory = ruleContext.actions.declare_directory('dir')",
+                "ruleContext.actions.run_shell(outputs=[directory], command='')",
+                "def _get_path(file): return file.path",
+                "args.add_all([directory], map_each=_get_path, expand_directories=True)"
+            )
 
-    InputMetadataProvider expander1 = createInputMetadataProvider("foo/dir", "file1");
-    InputMetadataProvider expander2 = createInputMetadataProvider("foo/dir", "file1", "file2");
-    assertThat(getDigest(commandLine, expander1)).isNotEqualTo(getDigest(commandLine, expander2));
-  }
+        val inputMetadataProvider1: InputMetadataProvider = createInputMetadataProvider("foo/dir", "file1")
+        val inputMetadataProvider2: InputMetadataProvider = createInputMetadataProvider("foo/dir", "file2")
+        Truth.assertThat(getDigest(commandLine, inputMetadataProvider1))
+            .isNotEqualTo(getDigest(commandLine, inputMetadataProvider2))
+    }
 
-  @Test
-  public void starlarkCustomCommandLineKeyComputationWithExpander_constantForDirAddJoined()
-      throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkCustomCommandLineKeyComputationWithExpander_differentExpansionNoMapEach() {
+        setRuleContext(createRuleContext("//foo:foo"))
+        val commandLine: CommandLine =
+            getCommandLine(
+                "args = ruleContext.actions.args()",
+                "directory = ruleContext.actions.declare_directory('dir')",
+                "args.add_all([directory])"
+            )
 
-    CommandLine commandLine1 =
-        getCommandLine(
-            "args = ruleContext.actions.args()",
-            "directory = ruleContext.actions.declare_directory('dir')",
-            "def _constant_for_dir(f): return 'constant' if f.path.endswith('dir') else 'value1'",
-            "args.add_joined([directory], join_with=',', map_each=_constant_for_dir,"
-                + " expand_directories=True)");
-    CommandLine commandLine2 =
-        getCommandLine(
-            "args = ruleContext.actions.args()",
-            "directory = ruleContext.actions.declare_directory('dir')",
-            "def _constant_for_dir(f): return 'constant' if f.path.endswith('dir') else 'value2'",
-            "args.add_joined([directory], join_with=',', map_each=_constant_for_dir,"
-                + " expand_directories=True)");
+        val inputMetadataProvider1: InputMetadataProvider = createInputMetadataProvider("foo/dir", "file1")
+        val inputMetadataProvider2: InputMetadataProvider = createInputMetadataProvider("foo/dir", "file2")
+        Truth.assertThat(getDigest(commandLine, inputMetadataProvider1))
+            .isNotEqualTo(getDigest(commandLine, inputMetadataProvider2))
+    }
 
-    InputMetadataProvider inputMetadataProvider = createInputMetadataProvider("foo/dir", "file");
-    assertThat(getDigest(commandLine1, inputMetadataProvider))
-        .isNotEqualTo(getDigest(commandLine2, inputMetadataProvider));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkCustomCommandLineKeyComputationWithExpander_extraFileInExpansionNoMapEach() {
+        setRuleContext(createRuleContext("//foo:foo"))
+        val commandLine: CommandLine =
+            getCommandLine(
+                "args = ruleContext.actions.args()",
+                "directory = ruleContext.actions.declare_directory('dir')",
+                "args.add_all([directory])"
+            )
 
-  @Test
-  public void starlarkCustomCommandLineKeyComputation_inconsequentialChangeToStarlarkSemantics()
-      throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
-    CommandLine commandLine1 =
-        getCommandLine(
-            "args = ruleContext.actions.args()",
-            "directory = ruleContext.actions.declare_directory('dir')",
-            "def _path(f): return f.path",
-            "args.add_all([directory], map_each=_path)");
+        val expander1: InputMetadataProvider = createInputMetadataProvider("foo/dir", "file1")
+        val expander2: InputMetadataProvider = createInputMetadataProvider("foo/dir", "file1", "file2")
+        Truth.assertThat(getDigest(commandLine, expander1)).isNotEqualTo(getDigest(commandLine, expander2))
+    }
 
-    ev.setSemantics("--incompatible_run_shell_command_string=false");
-    // setBuildLanguageOptions reinitializes the thread -- set the ruleContext on the new one.
-    setRuleContext(createRuleContext("//foo:foo"));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkCustomCommandLineKeyComputationWithExpander_constantForDirAddJoined() {
+        setRuleContext(createRuleContext("//foo:foo"))
 
-    CommandLine commandLine2 =
-        getCommandLine(
-            "args = ruleContext.actions.args()",
-            "directory = ruleContext.actions.declare_directory('dir')",
-            "def _path(f): return f.path",
-            "args.add_all([directory], map_each=_path)");
+        val commandLine1: CommandLine =
+            getCommandLine(
+                "args = ruleContext.actions.args()",
+                "directory = ruleContext.actions.declare_directory('dir')",
+                "def _constant_for_dir(f): return 'constant' if f.path.endswith('dir') else 'value1'",
+                "args.add_joined([directory], join_with=',', map_each=_constant_for_dir,"
+                        + " expand_directories=True)"
+            )
+        val commandLine2: CommandLine =
+            getCommandLine(
+                "args = ruleContext.actions.args()",
+                "directory = ruleContext.actions.declare_directory('dir')",
+                "def _constant_for_dir(f): return 'constant' if f.path.endswith('dir') else 'value2'",
+                "args.add_joined([directory], join_with=',', map_each=_constant_for_dir,"
+                        + " expand_directories=True)"
+            )
 
-    assertThat(getDigest(commandLine1)).isEqualTo(getDigest(commandLine2));
-  }
+        val inputMetadataProvider: InputMetadataProvider = createInputMetadataProvider("foo/dir", "file")
+        Truth.assertThat(getDigest(commandLine1, inputMetadataProvider))
+            .isNotEqualTo(getDigest(commandLine2, inputMetadataProvider))
+    }
 
-  @Test
-  public void starlarkCustomCommandLineKeyComputation_singleLabel_repoMappingChanges_relevant()
-      throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkCustomCommandLineKeyComputation_inconsequentialChangeToStarlarkSemantics() {
+        setRuleContext(createRuleContext("//foo:foo"))
+        val commandLine1: CommandLine =
+            getCommandLine(
+                "args = ruleContext.actions.args()",
+                "directory = ruleContext.actions.declare_directory('dir')",
+                "def _path(f): return f.path",
+                "args.add_all([directory], map_each=_path)"
+            )
 
-    var mainRepoMapping1 =
-        RepositoryMapping.create(
-            ImmutableMap.of("apparent1", RepositoryName.createUnvalidated("canonical+")),
-            RepositoryName.MAIN);
-    var mainRepoMapping2 =
-        RepositoryMapping.create(
-            ImmutableMap.of("apparent2", RepositoryName.createUnvalidated("canonical+")),
-            RepositoryName.MAIN);
-    var args =
-        """
+        ev.setSemantics("--incompatible_run_shell_command_string=false")
+        // setBuildLanguageOptions reinitializes the thread -- set the ruleContext on the new one.
+        setRuleContext(createRuleContext("//foo:foo"))
+
+        val commandLine2: CommandLine =
+            getCommandLine(
+                "args = ruleContext.actions.args()",
+                "directory = ruleContext.actions.declare_directory('dir')",
+                "def _path(f): return f.path",
+                "args.add_all([directory], map_each=_path)"
+            )
+
+        Truth.assertThat(getDigest(commandLine1)).isEqualTo(getDigest(commandLine2))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkCustomCommandLineKeyComputation_singleLabel_repoMappingChanges_relevant() {
+        setRuleContext(createRuleContext("//foo:foo"))
+
+        val mainRepoMapping1: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            RepositoryMapping.create(
+                com.google.common.collect.ImmutableMap.of<K?, V?>(
+                    "apparent1",
+                    RepositoryName.createUnvalidated("canonical+")
+                ),
+                RepositoryName.MAIN
+            )
+        val mainRepoMapping2: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            RepositoryMapping.create(
+                com.google.common.collect.ImmutableMap.of<K?, V?>(
+                    "apparent2",
+                    RepositoryName.createUnvalidated("canonical+")
+                ),
+                RepositoryName.MAIN
+            )
+        val args: String =
+            """
         args = ruleContext.actions.args()
         args.add(Label("@@canonical+//foo:bar"))
-        """;
-    var commandLine1 = getCommandLine(mainRepoMapping1, args);
-    var commandLine2 = getCommandLine(mainRepoMapping2, args);
+        
+        """.trimIndent()
+        val commandLine1: CommandLine = getCommandLine(mainRepoMapping1, args)
+        val commandLine2: CommandLine = getCommandLine(mainRepoMapping2, args)
 
-    assertThat(ImmutableList.copyOf(commandLine1.arguments()))
-        .isNotEqualTo(ImmutableList.copyOf(commandLine2.arguments()));
-    assertThat(getDigest(commandLine1)).isNotEqualTo(getDigest(commandLine2));
-  }
+        Truth.assertThat(com.google.common.collect.ImmutableList.copyOf(commandLine1.arguments()))
+            .isNotEqualTo(com.google.common.collect.ImmutableList.copyOf(commandLine2.arguments()))
+        Truth.assertThat(getDigest(commandLine1)).isNotEqualTo(getDigest(commandLine2))
+    }
 
-  @Test
-  public void starlarkCustomCommandLineKeyComputation_singleLabel_repoMappingChanges_notRelevant()
-      throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkCustomCommandLineKeyComputation_singleLabel_repoMappingChanges_notRelevant() {
+        setRuleContext(createRuleContext("//foo:foo"))
 
-    var mainRepoMapping1 =
-        RepositoryMapping.create(
-            ImmutableMap.of(
-                "apparent", RepositoryName.createUnvalidated("canonical+"),
-                "other_repo1", RepositoryName.createUnvalidated("other_repo+")),
-            RepositoryName.MAIN);
-    var mainRepoMapping2 =
-        RepositoryMapping.create(
-            ImmutableMap.of(
-                "apparent", RepositoryName.createUnvalidated("canonical+"),
-                "other_repo2", RepositoryName.createUnvalidated("other_repo+")),
-            RepositoryName.MAIN);
-    var args =
-        """
+        val mainRepoMapping1: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            RepositoryMapping.create(
+                com.google.common.collect.ImmutableMap.of<K?, V?>(
+                    "apparent", RepositoryName.createUnvalidated("canonical+"),
+                    "other_repo1", RepositoryName.createUnvalidated("other_repo+")
+                ),
+                RepositoryName.MAIN
+            )
+        val mainRepoMapping2: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            RepositoryMapping.create(
+                com.google.common.collect.ImmutableMap.of<K?, V?>(
+                    "apparent", RepositoryName.createUnvalidated("canonical+"),
+                    "other_repo2", RepositoryName.createUnvalidated("other_repo+")
+                ),
+                RepositoryName.MAIN
+            )
+        val args: String =
+            """
         args = ruleContext.actions.args()
         args.add(Label("@@canonical+//foo:bar"))
-        """;
-    var commandLine1 = getCommandLine(mainRepoMapping1, args);
-    var commandLine2 = getCommandLine(mainRepoMapping2, args);
+        
+        """.trimIndent()
+        val commandLine1: CommandLine = getCommandLine(mainRepoMapping1, args)
+        val commandLine2: CommandLine = getCommandLine(mainRepoMapping2, args)
 
-    assertThat(commandLine1.arguments())
-        .containsExactlyElementsIn(commandLine2.arguments())
-        .inOrder();
-    assertThat(getDigest(commandLine1)).isEqualTo(getDigest(commandLine2));
-  }
+        assertThat(commandLine1.arguments())
+            .containsExactlyElementsIn(commandLine2.arguments())
+            .inOrder()
+        Truth.assertThat(getDigest(commandLine1)).isEqualTo(getDigest(commandLine2))
+    }
 
-  @Test
-  public void starlarkCustomCommandLineKeyComputation_listOfLabels_repoMappingChanges_relevant()
-      throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkCustomCommandLineKeyComputation_listOfLabels_repoMappingChanges_relevant() {
+        setRuleContext(createRuleContext("//foo:foo"))
 
-    var mainRepoMapping1 =
-        RepositoryMapping.create(
-            ImmutableMap.of("apparent1", RepositoryName.createUnvalidated("canonical+")),
-            RepositoryName.MAIN);
-    var mainRepoMapping2 =
-        RepositoryMapping.create(
-            ImmutableMap.of("apparent2", RepositoryName.createUnvalidated("canonical+")),
-            RepositoryName.MAIN);
-    var args =
-        """
+        val mainRepoMapping1: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            RepositoryMapping.create(
+                com.google.common.collect.ImmutableMap.of<K?, V?>(
+                    "apparent1",
+                    RepositoryName.createUnvalidated("canonical+")
+                ),
+                RepositoryName.MAIN
+            )
+        val mainRepoMapping2: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            RepositoryMapping.create(
+                com.google.common.collect.ImmutableMap.of<K?, V?>(
+                    "apparent2",
+                    RepositoryName.createUnvalidated("canonical+")
+                ),
+                RepositoryName.MAIN
+            )
+        val args: String =
+            """
         args = ruleContext.actions.args()
         args.add_all([Label("@@canonical+//foo:bar"), Label("@@canonical+//foo:baz")])
-        """;
-    var commandLine1 = getCommandLine(mainRepoMapping1, args);
-    var commandLine2 = getCommandLine(mainRepoMapping2, args);
+        
+        """.trimIndent()
+        val commandLine1: CommandLine = getCommandLine(mainRepoMapping1, args)
+        val commandLine2: CommandLine = getCommandLine(mainRepoMapping2, args)
 
-    assertThat(ImmutableList.copyOf(commandLine1.arguments()))
-        .isNotEqualTo(ImmutableList.copyOf(commandLine2.arguments()));
-    assertThat(getDigest(commandLine1)).isNotEqualTo(getDigest(commandLine2));
-  }
+        Truth.assertThat(com.google.common.collect.ImmutableList.copyOf(commandLine1.arguments()))
+            .isNotEqualTo(com.google.common.collect.ImmutableList.copyOf(commandLine2.arguments()))
+        Truth.assertThat(getDigest(commandLine1)).isNotEqualTo(getDigest(commandLine2))
+    }
 
-  @Test
-  public void starlarkCustomCommandLineKeyComputation_listOfLabels_repoMappingChanges_notRelevant()
-      throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkCustomCommandLineKeyComputation_listOfLabels_repoMappingChanges_notRelevant() {
+        setRuleContext(createRuleContext("//foo:foo"))
 
-    var mainRepoMapping1 =
-        RepositoryMapping.create(
-            ImmutableMap.of(
-                "apparent",
-                RepositoryName.createUnvalidated("canonical+"),
-                "other_repo1",
-                RepositoryName.createUnvalidated("other_repo+")),
-            RepositoryName.MAIN);
-    var mainRepoMapping2 =
-        RepositoryMapping.create(
-            ImmutableMap.of(
-                "apparent",
-                RepositoryName.createUnvalidated("canonical+"),
-                "other_repo2",
-                RepositoryName.createUnvalidated("other_repo+")),
-            RepositoryName.MAIN);
-    var args =
-        """
+        val mainRepoMapping1: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            RepositoryMapping.create(
+                com.google.common.collect.ImmutableMap.of<K?, V?>(
+                    "apparent",
+                    RepositoryName.createUnvalidated("canonical+"),
+                    "other_repo1",
+                    RepositoryName.createUnvalidated("other_repo+")
+                ),
+                RepositoryName.MAIN
+            )
+        val mainRepoMapping2: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            RepositoryMapping.create(
+                com.google.common.collect.ImmutableMap.of<K?, V?>(
+                    "apparent",
+                    RepositoryName.createUnvalidated("canonical+"),
+                    "other_repo2",
+                    RepositoryName.createUnvalidated("other_repo+")
+                ),
+                RepositoryName.MAIN
+            )
+        val args: String =
+            """
         args = ruleContext.actions.args()
         args.add_all([Label("@@canonical+//foo:bar"), Label("@@canonical+//foo:baz")])
-        """;
-    var commandLine1 = getCommandLine(mainRepoMapping1, args);
-    var commandLine2 = getCommandLine(mainRepoMapping2, args);
+        
+        """.trimIndent()
+        val commandLine1: CommandLine = getCommandLine(mainRepoMapping1, args)
+        val commandLine2: CommandLine = getCommandLine(mainRepoMapping2, args)
 
-    assertThat(commandLine1.arguments())
-        .containsExactlyElementsIn(commandLine2.arguments())
-        .inOrder();
-    assertThat(getDigest(commandLine1)).isEqualTo(getDigest(commandLine2));
-  }
+        assertThat(commandLine1.arguments())
+            .containsExactlyElementsIn(commandLine2.arguments())
+            .inOrder()
+        Truth.assertThat(getDigest(commandLine1)).isEqualTo(getDigest(commandLine2))
+    }
 
-  @Test
-  public void
-      starlarkCustomCommandLineKeyComputation_nestedSetOfLabels_repoMappingChanges_relevant()
-          throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkCustomCommandLineKeyComputation_nestedSetOfLabels_repoMappingChanges_relevant() {
+        setRuleContext(createRuleContext("//foo:foo"))
 
-    var mainRepoMapping1 =
-        RepositoryMapping.create(
-            ImmutableMap.of("apparent1", RepositoryName.createUnvalidated("canonical+")),
-            RepositoryName.MAIN);
-    var mainRepoMapping2 =
-        RepositoryMapping.create(
-            ImmutableMap.of("apparent2", RepositoryName.createUnvalidated("canonical+")),
-            RepositoryName.MAIN);
-    var args =
-        """
+        val mainRepoMapping1: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            RepositoryMapping.create(
+                com.google.common.collect.ImmutableMap.of<K?, V?>(
+                    "apparent1",
+                    RepositoryName.createUnvalidated("canonical+")
+                ),
+                RepositoryName.MAIN
+            )
+        val mainRepoMapping2: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            RepositoryMapping.create(
+                com.google.common.collect.ImmutableMap.of<K?, V?>(
+                    "apparent2",
+                    RepositoryName.createUnvalidated("canonical+")
+                ),
+                RepositoryName.MAIN
+            )
+        val args: String =
+            """
         args = ruleContext.actions.args()
         args.add_all(depset([Label("@@canonical+//foo:bar"), Label("@@canonical+//foo:baz")]))
-        """;
-    var commandLine1 = getCommandLine(mainRepoMapping1, args);
-    var commandLine2 = getCommandLine(mainRepoMapping2, args);
+        
+        """.trimIndent()
+        val commandLine1: CommandLine = getCommandLine(mainRepoMapping1, args)
+        val commandLine2: CommandLine = getCommandLine(mainRepoMapping2, args)
 
-    assertThat(ImmutableList.copyOf(commandLine1.arguments()))
-        .isNotEqualTo(ImmutableList.copyOf(commandLine2.arguments()));
-    assertThat(getDigest(commandLine1)).isNotEqualTo(getDigest(commandLine2));
-  }
+        Truth.assertThat(com.google.common.collect.ImmutableList.copyOf(commandLine1.arguments()))
+            .isNotEqualTo(com.google.common.collect.ImmutableList.copyOf(commandLine2.arguments()))
+        Truth.assertThat(getDigest(commandLine1)).isNotEqualTo(getDigest(commandLine2))
+    }
 
-  @Test
-  public void starlarkCustomCommandLineKeyComputation_labelVsString() throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkCustomCommandLineKeyComputation_labelVsString() {
+        setRuleContext(createRuleContext("//foo:foo"))
 
-    RepositoryMapping mainRepoMapping =
-        RepositoryMapping.create(
-            ImmutableMap.of("apparent", RepositoryName.createUnvalidated("canonical+")),
-            RepositoryName.MAIN);
-    CommandLine commandLine1 =
-        getCommandLine(
-            mainRepoMapping,
-            """
+        val mainRepoMapping: RepositoryMapping? =
+            RepositoryMapping.create(
+                com.google.common.collect.ImmutableMap.of<K?, V?>(
+                    "apparent",
+                    RepositoryName.createUnvalidated("canonical+")
+                ),
+                RepositoryName.MAIN
+            )
+        val commandLine1: CommandLine =
+            getCommandLine(
+                mainRepoMapping,
+                """
             args = ruleContext.actions.args()
             args.add(Label("@@canonical+//foo:bar"))
             args.add(str(Label("@@canonical+//foo:bar")))
-            """);
-    CommandLine commandLine2 =
-        getCommandLine(
-            mainRepoMapping,
-            """
+            
+            """.trimIndent()
+            )
+        val commandLine2: CommandLine =
+            getCommandLine(
+                mainRepoMapping,
+                """
             args = ruleContext.actions.args()
             args.add(Label("@@canonical+//foo:bar"))
             args.add(Label("@@canonical+//foo:bar"))
-            """);
+            
+            """.trimIndent()
+            )
 
-    assertThat(getArguments(commandLine1, PathMapper.NOOP))
-        .isNotEqualTo(getArguments(commandLine2, PathMapper.NOOP));
-    assertThat(getDigest(commandLine1)).isNotEqualTo(getDigest(commandLine2));
-  }
+        Truth.assertThat(getArguments(commandLine1, PathMapper.NOOP))
+            .isNotEqualTo(getArguments(commandLine2, PathMapper.NOOP))
+        Truth.assertThat(getDigest(commandLine1)).isNotEqualTo(getDigest(commandLine2))
+    }
 
-  @Test
-  public void starlarkCustomCommandLineKeyComputation_labelDepsetVsMixedList() throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkCustomCommandLineKeyComputation_labelDepsetVsMixedList() {
+        setRuleContext(createRuleContext("//foo:foo"))
 
-    // Verify that a depset with elements of type Label and a list that starts with a Label and has
-    // elements with identical string representation to those of the depset have different keys.
-    RepositoryMapping mainRepoMapping =
-        RepositoryMapping.create(
-            ImmutableMap.of(
-                "apparent1",
-                RepositoryName.createUnvalidated("canonical1+"),
-                "apparent2",
-                RepositoryName.createUnvalidated("canonical2+")),
-            RepositoryName.MAIN);
-    CommandLine commandLine1 =
-        getCommandLine(
-            mainRepoMapping,
-"""
+        // Verify that a depset with elements of type Label and a list that starts with a Label and has
+        // elements with identical string representation to those of the depset have different keys.
+        val mainRepoMapping: RepositoryMapping? =
+            RepositoryMapping.create(
+                com.google.common.collect.ImmutableMap.of<K?, V?>(
+                    "apparent1",
+                    RepositoryName.createUnvalidated("canonical1+"),
+                    "apparent2",
+                    RepositoryName.createUnvalidated("canonical2+")
+                ),
+                RepositoryName.MAIN
+            )
+        val commandLine1: CommandLine =
+            getCommandLine(
+                mainRepoMapping,
+                """
 args = ruleContext.actions.args()
 args.add_all(depset([Label("@@canonical1+//foo:bar"), Label("@@canonical2+//foo:bar")]))
-""");
-    CommandLine commandLine2 =
-        getCommandLine(
-            mainRepoMapping,
-            """
+
+""".trimIndent()
+            )
+        val commandLine2: CommandLine =
+            getCommandLine(
+                mainRepoMapping,
+                """
             args = ruleContext.actions.args()
             args.add_all([Label("@@canonical1+//foo:bar"), str(Label("@@canonical2+//foo:bar"))])
-            """);
+            
+            """.trimIndent()
+            )
 
-    assertThat(getArguments(commandLine1, PathMapper.NOOP))
-        .isNotEqualTo(getArguments(commandLine2, PathMapper.NOOP));
-    assertThat(getDigest(commandLine1)).isNotEqualTo(getDigest(commandLine2));
-  }
+        Truth.assertThat(getArguments(commandLine1, PathMapper.NOOP))
+            .isNotEqualTo(getArguments(commandLine2, PathMapper.NOOP))
+        Truth.assertThat(getDigest(commandLine1)).isNotEqualTo(getDigest(commandLine2))
+    }
 
-  @Test
-  public void starlarkCustomCommandLineKeyComputation_artifactVsPathStringInAdd() throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkCustomCommandLineKeyComputation_artifactVsPathStringInAdd() {
+        setRuleContext(createRuleContext("//foo:foo"))
 
-    CommandLine commandLine1 =
-        getCommandLine(
-            """
+        val commandLine1: CommandLine =
+            getCommandLine(
+                """
             file = ruleContext.actions.declare_file('file')
             args = ruleContext.actions.args()
             args.add(file)
-            """);
-    CommandLine commandLine2 =
-        getCommandLine(
-            """
+            
+            """.trimIndent()
+            )
+        val commandLine2: CommandLine =
+            getCommandLine(
+                """
             file = ruleContext.actions.declare_file('file')
             args = ruleContext.actions.args()
             args.add(file.path)
-            """);
+            
+            """.trimIndent()
+            )
 
-    assertThat(getArguments(commandLine1, PathMapper.NOOP))
-        .isEqualTo(getArguments(commandLine2, PathMapper.NOOP));
-    assertThat(getArguments(commandLine1, NON_TRIVIAL_PATH_MAPPER))
-        .isNotEqualTo(getArguments(commandLine2, NON_TRIVIAL_PATH_MAPPER));
-    assertThat(getDigest(commandLine1, OutputPathsMode.STRIP))
-        .isNotEqualTo(getDigest(commandLine2, OutputPathsMode.STRIP));
-  }
+        Truth.assertThat(getArguments(commandLine1, PathMapper.NOOP))
+            .isEqualTo(getArguments(commandLine2, PathMapper.NOOP))
+        Truth.assertThat(getArguments(commandLine1, NON_TRIVIAL_PATH_MAPPER))
+            .isNotEqualTo(getArguments(commandLine2, NON_TRIVIAL_PATH_MAPPER))
+        Truth.assertThat(getDigest(commandLine1, OutputPathsMode.STRIP))
+            .isNotEqualTo(getDigest(commandLine2, OutputPathsMode.STRIP))
+    }
 
-  @Test
-  public void starlarkCustomCommandLineKeyComputation_artifactVsPathStringInAddFormatted()
-      throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkCustomCommandLineKeyComputation_artifactVsPathStringInAddFormatted() {
+        setRuleContext(createRuleContext("//foo:foo"))
 
-    CommandLine commandLine1 =
-        getCommandLine(
-            """
+        val commandLine1: CommandLine =
+            getCommandLine(
+                """
             file = ruleContext.actions.declare_file('file')
             args = ruleContext.actions.args()
             args.add(file, format = '--%s')
-            """);
-    CommandLine commandLine2 =
-        getCommandLine(
-            """
+            
+            """.trimIndent()
+            )
+        val commandLine2: CommandLine =
+            getCommandLine(
+                """
             file = ruleContext.actions.declare_file('file')
             args = ruleContext.actions.args()
             args.add(file.path, format = '--%s')
-            """);
+            
+            """.trimIndent()
+            )
 
-    assertThat(getArguments(commandLine1, PathMapper.NOOP))
-        .isEqualTo(getArguments(commandLine2, PathMapper.NOOP));
-    assertThat(getArguments(commandLine1, NON_TRIVIAL_PATH_MAPPER))
-        .isNotEqualTo(getArguments(commandLine2, NON_TRIVIAL_PATH_MAPPER));
-    assertThat(getDigest(commandLine1, OutputPathsMode.STRIP))
-        .isNotEqualTo(getDigest(commandLine2, OutputPathsMode.STRIP));
-  }
+        Truth.assertThat(getArguments(commandLine1, PathMapper.NOOP))
+            .isEqualTo(getArguments(commandLine2, PathMapper.NOOP))
+        Truth.assertThat(getArguments(commandLine1, NON_TRIVIAL_PATH_MAPPER))
+            .isNotEqualTo(getArguments(commandLine2, NON_TRIVIAL_PATH_MAPPER))
+        Truth.assertThat(getDigest(commandLine1, OutputPathsMode.STRIP))
+            .isNotEqualTo(getDigest(commandLine2, OutputPathsMode.STRIP))
+    }
 
-  @Test
-  public void starlarkCustomCommandLineKeyComputation_artifactVsPathStringInAddAllList()
-      throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkCustomCommandLineKeyComputation_artifactVsPathStringInAddAllList() {
+        setRuleContext(createRuleContext("//foo:foo"))
 
-    CommandLine commandLine1 =
-        getCommandLine(
-            """
+        val commandLine1: CommandLine =
+            getCommandLine(
+                """
             file = ruleContext.actions.declare_file('file')
             args = ruleContext.actions.args()
             args.add_all([file])
-            """);
-    CommandLine commandLine2 =
-        getCommandLine(
-            """
+            
+            """.trimIndent()
+            )
+        val commandLine2: CommandLine =
+            getCommandLine(
+                """
             file = ruleContext.actions.declare_file('file')
             args = ruleContext.actions.args()
             args.add_all([file.path])
-            """);
+            
+            """.trimIndent()
+            )
 
-    assertThat(getArguments(commandLine1, PathMapper.NOOP))
-        .isEqualTo(getArguments(commandLine2, PathMapper.NOOP));
-    assertThat(getArguments(commandLine1, NON_TRIVIAL_PATH_MAPPER))
-        .isNotEqualTo(getArguments(commandLine2, NON_TRIVIAL_PATH_MAPPER));
-    assertThat(getDigest(commandLine1, OutputPathsMode.STRIP))
-        .isNotEqualTo(getDigest(commandLine2, OutputPathsMode.STRIP));
-  }
+        Truth.assertThat(getArguments(commandLine1, PathMapper.NOOP))
+            .isEqualTo(getArguments(commandLine2, PathMapper.NOOP))
+        Truth.assertThat(getArguments(commandLine1, NON_TRIVIAL_PATH_MAPPER))
+            .isNotEqualTo(getArguments(commandLine2, NON_TRIVIAL_PATH_MAPPER))
+        Truth.assertThat(getDigest(commandLine1, OutputPathsMode.STRIP))
+            .isNotEqualTo(getDigest(commandLine2, OutputPathsMode.STRIP))
+    }
 
-  @Test
-  public void starlarkCustomCommandLineKeyComputation_artifactVsPathStringInAddAllDepset()
-      throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkCustomCommandLineKeyComputation_artifactVsPathStringInAddAllDepset() {
+        setRuleContext(createRuleContext("//foo:foo"))
 
-    CommandLine commandLine1 =
-        getCommandLine(
-            """
+        val commandLine1: CommandLine =
+            getCommandLine(
+                """
             file = ruleContext.actions.declare_file('file')
             args = ruleContext.actions.args()
             args.add_all(depset([file]))
-            """);
-    CommandLine commandLine2 =
-        getCommandLine(
-            """
+            
+            """.trimIndent()
+            )
+        val commandLine2: CommandLine =
+            getCommandLine(
+                """
             file = ruleContext.actions.declare_file('file')
             args = ruleContext.actions.args()
             args.add_all(depset([file.path]))
-            """);
+            
+            """.trimIndent()
+            )
 
-    assertThat(getArguments(commandLine1, PathMapper.NOOP))
-        .isEqualTo(getArguments(commandLine2, PathMapper.NOOP));
-    assertThat(getArguments(commandLine1, NON_TRIVIAL_PATH_MAPPER))
-        .isNotEqualTo(getArguments(commandLine2, NON_TRIVIAL_PATH_MAPPER));
-    assertThat(getDigest(commandLine1, OutputPathsMode.STRIP))
-        .isNotEqualTo(getDigest(commandLine2, OutputPathsMode.STRIP));
-  }
+        Truth.assertThat(getArguments(commandLine1, PathMapper.NOOP))
+            .isEqualTo(getArguments(commandLine2, PathMapper.NOOP))
+        Truth.assertThat(getArguments(commandLine1, NON_TRIVIAL_PATH_MAPPER))
+            .isNotEqualTo(getArguments(commandLine2, NON_TRIVIAL_PATH_MAPPER))
+        Truth.assertThat(getDigest(commandLine1, OutputPathsMode.STRIP))
+            .isNotEqualTo(getDigest(commandLine2, OutputPathsMode.STRIP))
+    }
 
-  @Test
-  public void starlarkCustomCommandLineKeyComputation_artifactVsPathStringInAddAllDepsetMapEach()
-      throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkCustomCommandLineKeyComputation_artifactVsPathStringInAddAllDepsetMapEach() {
+        setRuleContext(createRuleContext("//foo:foo"))
 
-    CommandLine commandLine1 =
-        getCommandLine(
-            """
+        val commandLine1: CommandLine =
+            getCommandLine(
+                """
             def _map_each(x):
               if type(x.obj) == "File":
                 return x.obj.path
@@ -3907,10 +4390,12 @@ args.add_all(depset([Label("@@canonical1+//foo:bar"), Label("@@canonical2+//foo:
             file = ruleContext.actions.declare_file('file')
             args = ruleContext.actions.args()
             args.add_all(depset([struct(obj = file.path)]), map_each=_map_each)
-            """);
-    CommandLine commandLine2 =
-        getCommandLine(
-            """
+            
+            """.trimIndent()
+            )
+        val commandLine2: CommandLine =
+            getCommandLine(
+                """
             def _map_each(x):
               if type(x.obj) == "File":
                 return x.obj.path
@@ -3918,26 +4403,28 @@ args.add_all(depset([Label("@@canonical1+//foo:bar"), Label("@@canonical2+//foo:
             file = ruleContext.actions.declare_file('file')
             args = ruleContext.actions.args()
             args.add_all(depset([struct(obj = file)]), map_each=_map_each)
-            """);
+            
+            """.trimIndent()
+            )
 
-    assertThat(getArguments(commandLine1, PathMapper.NOOP))
-        .isEqualTo(getArguments(commandLine2, PathMapper.NOOP));
-    assertThat(getDigest(commandLine1)).isEqualTo(getDigest(commandLine2));
+        Truth.assertThat(getArguments(commandLine1, PathMapper.NOOP))
+            .isEqualTo(getArguments(commandLine2, PathMapper.NOOP))
+        Truth.assertThat(getDigest(commandLine1)).isEqualTo(getDigest(commandLine2))
 
-    assertThat(getArguments(commandLine1, NON_TRIVIAL_PATH_MAPPER))
-        .isNotEqualTo(getArguments(commandLine2, NON_TRIVIAL_PATH_MAPPER));
-    assertThat(getDigest(commandLine1, OutputPathsMode.STRIP))
-        .isNotEqualTo(getDigest(commandLine2, OutputPathsMode.STRIP));
-  }
+        Truth.assertThat(getArguments(commandLine1, NON_TRIVIAL_PATH_MAPPER))
+            .isNotEqualTo(getArguments(commandLine2, NON_TRIVIAL_PATH_MAPPER))
+        Truth.assertThat(getDigest(commandLine1, OutputPathsMode.STRIP))
+            .isNotEqualTo(getDigest(commandLine2, OutputPathsMode.STRIP))
+    }
 
-  @Test
-  public void starlarkCustomCommandLineKeyComputation_artifactVsPathStringInAddAllListMapEach()
-      throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkCustomCommandLineKeyComputation_artifactVsPathStringInAddAllListMapEach() {
+        setRuleContext(createRuleContext("//foo:foo"))
 
-    CommandLine commandLine1 =
-        getCommandLine(
-            """
+        val commandLine1: CommandLine =
+            getCommandLine(
+                """
             def _map_each(x):
               if type(x.obj) == "File":
                 return x.obj.path
@@ -3945,10 +4432,12 @@ args.add_all(depset([Label("@@canonical1+//foo:bar"), Label("@@canonical2+//foo:
             file = ruleContext.actions.declare_file('file')
             args = ruleContext.actions.args()
             args.add_all(depset([struct(obj = file.path)]), map_each=_map_each)
-            """);
-    CommandLine commandLine2 =
-        getCommandLine(
-            """
+            
+            """.trimIndent()
+            )
+        val commandLine2: CommandLine =
+            getCommandLine(
+                """
             def _map_each(x):
               if type(x.obj) == "File":
                 return x.obj.path
@@ -3956,303 +4445,316 @@ args.add_all(depset([Label("@@canonical1+//foo:bar"), Label("@@canonical2+//foo:
             file = ruleContext.actions.declare_file('file')
             args = ruleContext.actions.args()
             args.add_all(depset([struct(obj = file)]), map_each=_map_each)
-            """);
+            
+            """.trimIndent()
+            )
 
-    assertThat(getArguments(commandLine1, PathMapper.NOOP))
-        .isEqualTo(getArguments(commandLine2, PathMapper.NOOP));
-    assertThat(getDigest(commandLine1)).isEqualTo(getDigest(commandLine2));
+        Truth.assertThat(getArguments(commandLine1, PathMapper.NOOP))
+            .isEqualTo(getArguments(commandLine2, PathMapper.NOOP))
+        Truth.assertThat(getDigest(commandLine1)).isEqualTo(getDigest(commandLine2))
 
-    assertThat(getArguments(commandLine1, NON_TRIVIAL_PATH_MAPPER))
-        .isNotEqualTo(getArguments(commandLine2, NON_TRIVIAL_PATH_MAPPER));
-    assertThat(getDigest(commandLine1, OutputPathsMode.STRIP))
-        .isNotEqualTo(getDigest(commandLine2, OutputPathsMode.STRIP));
-  }
+        Truth.assertThat(getArguments(commandLine1, NON_TRIVIAL_PATH_MAPPER))
+            .isNotEqualTo(getArguments(commandLine2, NON_TRIVIAL_PATH_MAPPER))
+        Truth.assertThat(getDigest(commandLine1, OutputPathsMode.STRIP))
+            .isNotEqualTo(getDigest(commandLine2, OutputPathsMode.STRIP))
+    }
 
-  @Test
-  public void starlarkCustomCommandLineKeyComputation_artifactVsPathStringMapEachWithUniquify()
-      throws Exception {
-    setRuleContext(createRuleContext("//foo:mixed_cfgs"));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkCustomCommandLineKeyComputation_artifactVsPathStringMapEachWithUniquify() {
+        setRuleContext(createRuleContext("//foo:mixed_cfgs"))
 
-    CommandLine commandLine1 =
-        getCommandLine(
-"""
+        val commandLine1: CommandLine =
+            getCommandLine(
+                """
 def _map_each(x):
   return x.field.root.path
 args = ruleContext.actions.args()
 d = depset([struct(field = f) for f in ruleContext.files.srcs + ruleContext.files.tools])
 args.add_all(d, map_each = _map_each, uniquify = True)
-""");
-    CommandLine commandLine2 =
-        getCommandLine(
-"""
+
+""".trimIndent()
+            )
+        val commandLine2: CommandLine =
+            getCommandLine(
+                """
 def _map_each(x):
   return x.field
 args = ruleContext.actions.args()
 d = depset([struct(field = f.root.path) for f in ruleContext.files.srcs + ruleContext.files.tools])
 args.add_all(d, map_each = _map_each, uniquify = True)
-""");
 
-    assertThat(getArguments(commandLine1, PathMapper.NOOP))
-        .isEqualTo(getArguments(commandLine2, PathMapper.NOOP));
-    assertThat(getDigest(commandLine1)).isEqualTo(getDigest(commandLine2));
+""".trimIndent()
+            )
 
-    List<String> arguments1 = getArguments(commandLine1, NON_TRIVIAL_PATH_MAPPER);
-    List<String> arguments2 = getArguments(commandLine2, NON_TRIVIAL_PATH_MAPPER);
-    assertThat(arguments1).isNotEqualTo(arguments2);
-    assertThat(arguments1.size()).isNotEqualTo(arguments2.size());
-    assertThat(getDigest(commandLine1, OutputPathsMode.STRIP))
-        .isNotEqualTo(getDigest(commandLine2, OutputPathsMode.STRIP));
-  }
+        Truth.assertThat(getArguments(commandLine1, PathMapper.NOOP))
+            .isEqualTo(getArguments(commandLine2, PathMapper.NOOP))
+        Truth.assertThat(getDigest(commandLine1)).isEqualTo(getDigest(commandLine2))
 
-  private static InputMetadataProvider createInputMetadataProvider(
-      String dirRelativePath, String... files) {
-    InputMetadataProvider result = Mockito.mock(InputMetadataProvider.class);
-    when(result.getTreeMetadata(any()))
-        .thenAnswer(
-            invocation -> {
-              SpecialArtifact arg = invocation.getArgument(0);
-              if (!arg.getRootRelativePathString().equals(dirRelativePath)) {
-                throw new IllegalStateException();
-              }
+        val arguments1 = getArguments(commandLine1, NON_TRIVIAL_PATH_MAPPER)
+        val arguments2 = getArguments(commandLine2, NON_TRIVIAL_PATH_MAPPER)
+        Truth.assertThat(arguments1).isNotEqualTo(arguments2)
+        Truth.assertThat(arguments1.size).isNotEqualTo(arguments2.size)
+        Truth.assertThat(getDigest(commandLine1, OutputPathsMode.STRIP))
+            .isNotEqualTo(getDigest(commandLine2, OutputPathsMode.STRIP))
+    }
 
-              if (!arg.hasGeneratingActionKey()) {
-                arg.setGeneratingActionKey(ActionLookupData.create(arg.getArtifactOwner(), 0));
-              }
+    @Throws(CommandLineExpansionException::class, java.lang.InterruptedException::class)
+    private fun getDigest(commandLine: CommandLine): String {
+        return getDigest(commandLine,  /* inputMetadataProvider= */null, OutputPathsMode.OFF)
+    }
 
-              TreeArtifactValue.Builder builder = TreeArtifactValue.newBuilder(arg);
-              for (String file : files) {
-                builder.putChild(
-                    TreeFileArtifact.createTreeOutput(arg, PathFragment.create(file)),
-                    FileArtifactValue.MISSING_FILE_MARKER);
-              }
+    @Throws(CommandLineExpansionException::class, java.lang.InterruptedException::class)
+    private fun getDigest(commandLine: CommandLine, inputMetadataProvider: InputMetadataProvider?): String {
+        return getDigest(commandLine, inputMetadataProvider, OutputPathsMode.OFF)
+    }
 
-              return builder.build();
-            });
+    @Throws(CommandLineExpansionException::class, java.lang.InterruptedException::class)
+    private fun getDigest(commandLine: CommandLine, outputPathsMode: OutputPathsMode?): String {
+        return getDigest(commandLine,  /* inputMetadataProvider= */null, outputPathsMode)
+    }
 
-    return result;
-  }
+    @Throws(CommandLineExpansionException::class, java.lang.InterruptedException::class)
+    private fun getDigest(
+        commandLine: CommandLine,
+        inputMetadataProvider: InputMetadataProvider?,
+        outputPathsMode: OutputPathsMode?
+    ): String {
+        val fingerprint: Fingerprint = Fingerprint()
+        commandLine.addToFingerprint(
+            actionKeyContext, inputMetadataProvider, outputPathsMode, fingerprint
+        )
+        return fingerprint.hexDigestAndReset()
+    }
 
-  private String getDigest(CommandLine commandLine)
-      throws CommandLineExpansionException, InterruptedException {
-    return getDigest(commandLine, /* inputMetadataProvider= */ null, OutputPathsMode.OFF);
-  }
+    @Throws(java.lang.Exception::class)
+    private fun getCommandLine(vararg lines: String?): CommandLine {
+        return getCommandLine(RepositoryMapping.EMPTY, lines)
+    }
 
-  private String getDigest(CommandLine commandLine, InputMetadataProvider inputMetadataProvider)
-      throws CommandLineExpansionException, InterruptedException {
-    return getDigest(commandLine, inputMetadataProvider, OutputPathsMode.OFF);
-  }
+    @Throws(java.lang.Exception::class)
+    private fun getCommandLine(mainRepoMapping: RepositoryMapping?, vararg lines: String?): CommandLine {
+        ev.exec(*lines)
+        return (ev.eval("args") as Args).build({ mainRepoMapping })
+    }
 
-  private String getDigest(CommandLine commandLine, OutputPathsMode outputPathsMode)
-      throws CommandLineExpansionException, InterruptedException {
-    return getDigest(commandLine, /* inputMetadataProvider= */ null, outputPathsMode);
-  }
+    @Throws(CommandLineExpansionException::class, java.lang.InterruptedException::class)
+    private fun getArguments(commandLine: CommandLine, pathMapper: PathMapper?): MutableList<String?> {
+        return com.google.common.collect.ImmutableList.copyOf(
+            commandLine.arguments( /* inputMetadataProvider= */null, pathMapper)
+        )
+    }
 
-  private String getDigest(
-      CommandLine commandLine,
-      InputMetadataProvider inputMetadataProvider,
-      OutputPathsMode outputPathsMode)
-      throws CommandLineExpansionException, InterruptedException {
-    Fingerprint fingerprint = new Fingerprint();
-    commandLine.addToFingerprint(
-        actionKeyContext, inputMetadataProvider, outputPathsMode, fingerprint);
-    return fingerprint.hexDigestAndReset();
-  }
-
-  private CommandLine getCommandLine(String... lines) throws Exception {
-    return getCommandLine(RepositoryMapping.EMPTY, lines);
-  }
-
-  private CommandLine getCommandLine(RepositoryMapping mainRepoMapping, String... lines)
-      throws Exception {
-    ev.exec(lines);
-    return ((Args) ev.eval("args")).build(() -> mainRepoMapping);
-  }
-
-  private static final PathMapper NON_TRIVIAL_PATH_MAPPER =
-      path -> path.subFragment(0, 1).getChild("cfg").getRelative(path.subFragment(2));
-
-  private List<String> getArguments(CommandLine commandLine, PathMapper pathMapper)
-      throws CommandLineExpansionException, InterruptedException {
-    return ImmutableList.copyOf(
-        commandLine.arguments(/* inputMetadataProvider= */ null, pathMapper));
-  }
-
-  @Test
-  public void testPrintArgs() throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
-    ev.exec("args = ruleContext.actions.args()", "args.add_all(['--foo', '--bar'])");
-    Args args = (Args) ev.eval("args");
-    assertThat(
-            new Printer()
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testPrintArgs() {
+        setRuleContext(createRuleContext("//foo:foo"))
+        ev.exec("args = ruleContext.actions.args()", "args.add_all(['--foo', '--bar'])")
+        val args: Args = ev.eval("args") as Args
+        Truth.assertThat(
+            net.starlark.java.eval.Printer()
                 .debugPrint(
                     args,
                     StarlarkThread.createTransient(
-                        Mutability.create("test"), getStarlarkSemantics()))
-                .toString())
-        .isEqualTo("--foo --bar");
-  }
+                        Mutability.create("test"), starlarkSemantics
+                    )
+                )
+                .toString()
+        )
+            .isEqualTo("--foo --bar")
+    }
 
-  @Test
-  public void testDirectoryInArgs() throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
-    ev.exec(
-        "args = ruleContext.actions.args()",
-        "directory = ruleContext.actions.declare_directory('dir')",
-        "def _short_path(f): return f.short_path", // For easier assertions
-        "args.add_all([directory], map_each=_short_path)");
-    Sequence<?> result = (Sequence<?>) ev.eval("args, directory");
-    Args args = (Args) result.get(0);
-    Artifact directory = (Artifact) result.get(1);
-    CommandLine commandLine = args.build(() -> RepositoryMapping.EMPTY);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDirectoryInArgs() {
+        setRuleContext(createRuleContext("//foo:foo"))
+        ev.exec(
+            "args = ruleContext.actions.args()",
+            "directory = ruleContext.actions.declare_directory('dir')",
+            "def _short_path(f): return f.short_path",  // For easier assertions
+            "args.add_all([directory], map_each=_short_path)"
+        )
+        val result: net.starlark.java.eval.Sequence<*> =
+            ev.eval("args, directory") as net.starlark.java.eval.Sequence<*>
+        val args: Args = result.get(0) as Args
+        val directory: Artifact = result.get(1) as Artifact
+        val commandLine: CommandLine = args.build({ RepositoryMapping.EMPTY })
 
-    // When asking for arguments without an artifact expander we just return the directory
-    assertThat(commandLine.arguments()).containsExactly("foo/dir");
+        // When asking for arguments without an artifact expander we just return the directory
+        assertThat(commandLine.arguments()).containsExactly("foo/dir")
 
-    // Now ask for one with an expanded directory
-    InputMetadataProvider inputMetadataProvider =
-        createInputMetadataProvider(directory.getRootRelativePathString(), "file1", "file2");
-    assertThat(commandLine.arguments(inputMetadataProvider, PathMapper.NOOP))
-        .containsExactly("foo/dir/file1", "foo/dir/file2");
-  }
+        // Now ask for one with an expanded directory
+        val inputMetadataProvider: InputMetadataProvider =
+            createInputMetadataProvider(directory.getRootRelativePathString(), "file1", "file2")
+        assertThat(commandLine.arguments(inputMetadataProvider, PathMapper.NOOP))
+            .containsExactly("foo/dir/file1", "foo/dir/file2")
+    }
 
-  @Test
-  public void testDirectoryInArgsExpandDirectories() throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
-    ev.exec(
-        "args = ruleContext.actions.args()",
-        "directory = ruleContext.actions.declare_directory('dir')",
-        "def _short_path(f): return f.short_path", // For easier assertions
-        "args.add_all([directory], map_each=_short_path, expand_directories=True)",
-        "args.add_all([directory], map_each=_short_path, expand_directories=False)");
-    Sequence<?> result = (Sequence<?>) ev.eval("args, directory");
-    Args args = (Args) result.get(0);
-    Artifact directory = (Artifact) result.get(1);
-    CommandLine commandLine = args.build(() -> RepositoryMapping.EMPTY);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDirectoryInArgsExpandDirectories() {
+        setRuleContext(createRuleContext("//foo:foo"))
+        ev.exec(
+            "args = ruleContext.actions.args()",
+            "directory = ruleContext.actions.declare_directory('dir')",
+            "def _short_path(f): return f.short_path",  // For easier assertions
+            "args.add_all([directory], map_each=_short_path, expand_directories=True)",
+            "args.add_all([directory], map_each=_short_path, expand_directories=False)"
+        )
+        val result: net.starlark.java.eval.Sequence<*> =
+            ev.eval("args, directory") as net.starlark.java.eval.Sequence<*>
+        val args: Args = result.get(0) as Args
+        val directory: Artifact = result.get(1) as Artifact
+        val commandLine: CommandLine = args.build({ RepositoryMapping.EMPTY })
 
-    InputMetadataProvider inputMetadataProvider =
-        createInputMetadataProvider(directory.getRootRelativePathString(), "file1", "file2");
-    // First expanded, then not expanded (two separate calls)
-    assertThat(commandLine.arguments(inputMetadataProvider, PathMapper.NOOP))
-        .containsExactly("foo/dir/file1", "foo/dir/file2", "foo/dir");
-  }
+        val inputMetadataProvider: InputMetadataProvider =
+            createInputMetadataProvider(directory.getRootRelativePathString(), "file1", "file2")
+        // First expanded, then not expanded (two separate calls)
+        assertThat(commandLine.arguments(inputMetadataProvider, PathMapper.NOOP))
+            .containsExactly("foo/dir/file1", "foo/dir/file2", "foo/dir")
+    }
 
-  @Test
-  public void testDirectoryInScalarArgsFails() throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
-    ev.checkEvalErrorContains(
-        "Cannot add directories to Args#add",
-        "args = ruleContext.actions.args()",
-        "directory = ruleContext.actions.declare_directory('dir')",
-        "args.add(directory)");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDirectoryInScalarArgsFails() {
+        setRuleContext(createRuleContext("//foo:foo"))
+        ev.checkEvalErrorContains(
+            "Cannot add directories to Args#add",
+            "args = ruleContext.actions.args()",
+            "directory = ruleContext.actions.declare_directory('dir')",
+            "args.add(directory)"
+        )
+    }
 
-  @Test
-  public void testParamFileHasDirectoryAsInput() throws Exception {
-    StarlarkRuleContext ctx = createRuleContext("//foo:foo");
-    setRuleContext(ctx);
-    ev.exec(
-        "args = ruleContext.actions.args()",
-        "directory = ruleContext.actions.declare_directory('dir')",
-        "args.add_all([directory])",
-        "params = ruleContext.actions.declare_file('params')",
-        "ruleContext.actions.write(params, args)");
-    Sequence<?> result = (Sequence<?>) ev.eval("params, directory");
-    Artifact params = (Artifact) result.get(0);
-    Artifact directory = (Artifact) result.get(1);
-    ActionAnalysisMetadata action =
-        ctx.getRuleContext().getAnalysisEnvironment().getLocalGeneratingAction(params);
-    assertThat(action.getInputs().toList()).contains(directory);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testParamFileHasDirectoryAsInput() {
+        val ctx: StarlarkRuleContext = createRuleContext("//foo:foo")
+        setRuleContext(ctx)
+        ev.exec(
+            "args = ruleContext.actions.args()",
+            "directory = ruleContext.actions.declare_directory('dir')",
+            "args.add_all([directory])",
+            "params = ruleContext.actions.declare_file('params')",
+            "ruleContext.actions.write(params, args)"
+        )
+        val result: net.starlark.java.eval.Sequence<*> =
+            ev.eval("params, directory") as net.starlark.java.eval.Sequence<*>
+        val params: Artifact? = result.get(0) as Artifact?
+        val directory: Artifact? = result.get(1) as Artifact?
+        val action: ActionAnalysisMetadata =
+            ctx.getRuleContext().getAnalysisEnvironment().getLocalGeneratingAction(params)
+        com.google.common.truth.Subject.contains(directory)
+    }
 
-  @Test
-  public void testDirectoryExpansionInArgs() throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
-    ev.exec(
-        "args = ruleContext.actions.args()",
-        "directory = ruleContext.actions.declare_directory('dir')",
-        "file3 = ruleContext.actions.declare_file('file3')",
-        "def _expand_dirs(artifact, dir_expander):",
-        "  return [f.short_path for f in dir_expander.expand(artifact)]",
-        "args.add_all([directory, file3], map_each=_expand_dirs)");
-    Args args = (Args) ev.eval("args");
-    Artifact directory = (Artifact) ev.eval("directory");
-    CommandLine commandLine = args.build(() -> RepositoryMapping.EMPTY);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDirectoryExpansionInArgs() {
+        setRuleContext(createRuleContext("//foo:foo"))
+        ev.exec(
+            "args = ruleContext.actions.args()",
+            "directory = ruleContext.actions.declare_directory('dir')",
+            "file3 = ruleContext.actions.declare_file('file3')",
+            "def _expand_dirs(artifact, dir_expander):",
+            "  return [f.short_path for f in dir_expander.expand(artifact)]",
+            "args.add_all([directory, file3], map_each=_expand_dirs)"
+        )
+        val args: Args = ev.eval("args") as Args
+        val directory: Artifact = ev.eval("directory") as Artifact
+        val commandLine: CommandLine = args.build({ RepositoryMapping.EMPTY })
 
-    InputMetadataProvider inputMetadataProvider =
-        createInputMetadataProvider(directory.getRootRelativePathString(), "file1", "file2");
-    assertThat(commandLine.arguments(inputMetadataProvider, PathMapper.NOOP))
-        .containsExactly("foo/dir/file1", "foo/dir/file2", "foo/file3");
-  }
+        val inputMetadataProvider: InputMetadataProvider =
+            createInputMetadataProvider(directory.getRootRelativePathString(), "file1", "file2")
+        assertThat(commandLine.arguments(inputMetadataProvider, PathMapper.NOOP))
+            .containsExactly("foo/dir/file1", "foo/dir/file2", "foo/file3")
+    }
 
-  @Test
-  public void testCallDirectoryExpanderWithWrongType() throws Exception {
-    setRuleContext(createRuleContext("//foo:foo"));
-    ev.exec(
-        "args = ruleContext.actions.args()",
-        "f = ruleContext.actions.declare_file('file')",
-        "def _expand_dirs(artifact, dir_expander):",
-        "  return dir_expander.expand('oh no a string')",
-        "args.add_all([f], map_each=_expand_dirs)");
-    Args args = (Args) ev.eval("args");
-    CommandLine commandLine = args.build(() -> RepositoryMapping.EMPTY);
-    assertThrows(CommandLineExpansionException.class, commandLine::arguments);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCallDirectoryExpanderWithWrongType() {
+        setRuleContext(createRuleContext("//foo:foo"))
+        ev.exec(
+            "args = ruleContext.actions.args()",
+            "f = ruleContext.actions.declare_file('file')",
+            "def _expand_dirs(artifact, dir_expander):",
+            "  return dir_expander.expand('oh no a string')",
+            "args.add_all([f], map_each=_expand_dirs)"
+        )
+        val args: Args = ev.eval("args") as Args
+        val commandLine: CommandLine = args.build({ RepositoryMapping.EMPTY })
+        org.junit.Assert.assertThrows<T?>(CommandLineExpansionException::class.java, commandLine::arguments)
+    }
 
-  @Test
-  public void testDeclareSharedArtifactIsPrivateAPI() throws Exception {
-    scratch.file(
-        "abc/rule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDeclareSharedArtifactIsPrivateAPI() {
+        scratch.file(
+            "abc/rule.bzl",
+            """
         def _impl(ctx):
          ctx.actions.declare_shareable_artifact('foo')
          return []
 
         r = rule(implementation = _impl)
-        """);
-    scratch.file(
-        "abc/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "abc/BUILD",
+            """
         load(':rule.bzl', 'r')
 
         r(name = 'foo')
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError error =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//abc:foo"));
+        val error: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//abc:foo") })
 
-    assertThat(error).hasMessageThat().contains("file '//abc:rule.bzl' cannot use private API");
-  }
+        Truth.assertThat(error).hasMessageThat().contains("file '//abc:rule.bzl' cannot use private API")
+    }
 
-  @Test
-  public void testDisablingRunfilesSymlinkChecksIsPrivateAPI() throws Exception {
-    scratch.file(
-        "abc/rule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDisablingRunfilesSymlinkChecksIsPrivateAPI() {
+        scratch.file(
+            "abc/rule.bzl",
+            """
         def _impl(ctx):
          ctx.runfiles(skip_conflict_checking = True)
          return []
 
         r = rule(implementation = _impl)
-        """);
-    scratch.file(
-        "abc/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "abc/BUILD",
+            """
         load(':rule.bzl', 'r')
 
         r(name = 'foo')
-        """);
+        
+        """.trimIndent()
+        )
 
-    AssertionError error =
-        assertThrows(AssertionError.class, () -> getConfiguredTarget("//abc:foo"));
+        val error: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { getConfiguredTarget("//abc:foo") })
 
-    assertThat(error).hasMessageThat().contains("file '//abc:rule.bzl' cannot use private API");
-  }
+        Truth.assertThat(error).hasMessageThat().contains("file '//abc:rule.bzl' cannot use private API")
+    }
 
-  @Test
-  public void testDeclareSharedArtifact_differentFileRoot() throws Exception {
-    scratch.file(
-        "test/rule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDeclareSharedArtifact_differentFileRoot() {
+        scratch.file(
+            "test/rule.bzl",
+            """
         RootProvider = provider(fields = ['root'])
         def _impl(ctx):
           if not ctx.attr.dep:
@@ -4271,47 +4773,110 @@ args.add_all(d, map_each = _map_each, uniquify = True)
             implementation = _impl,
             attrs = {'dep': attr.label(cfg = 'exec')},
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load(':rule.bzl', 'r')
         r(name = 'foo', dep = ':exec_configured_child')
         r(name = 'exec_configured_child')
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration(
-        "--platforms=" + TestConstants.PLATFORM_LABEL,
-        "--experimental_platform_in_output_dir",
-        String.format(
-            "--experimental_override_name_platform_in_output_dir=%s=k8",
-            TestConstants.PLATFORM_LABEL));
+        useConfiguration(
+            "--platforms=" + TestConstants.PLATFORM_LABEL,
+            "--experimental_platform_in_output_dir",
+            String.format(
+                "--experimental_override_name_platform_in_output_dir=%s=k8",
+                TestConstants.PLATFORM_LABEL
+            )
+        )
 
-    ConfiguredTarget target = getConfiguredTarget("//test:foo");
+        val target: ConfiguredTarget = getConfiguredTarget("//test:foo")
 
-    assertThat(target).isNotNull();
-    Artifact a1 =
-        getFilesToBuild(target).toSet().stream()
-            .filter(artifactNamed("foo1.so"))
-            .findFirst()
-            .orElse(null);
-    assertThat(a1).isNotNull();
-    assertThat(a1.getRoot().getExecPathString())
-        .isEqualTo(getRelativeOutputPath() + "/k8-fastbuild/bin");
-    Artifact a2 =
-        getFilesToBuild(target).toSet().stream()
-            .filter(artifactNamed("foo2.so"))
-            .findFirst()
-            .orElse(null);
-    assertThat(a2).isNotNull();
-    assertThat(a2.getRoot().getExecPathString())
-        .matches(getRelativeOutputPath() + "/[\\w\\-]+\\-exec/bin");
-  }
+        assertThat(target).isNotNull()
+        val a1: Artifact =
+            getFilesToBuild(target).toSet().stream()
+                .filter(artifactNamed("foo1.so"))
+                .findFirst()
+                .orElse(null)
+        assertThat(a1).isNotNull()
+        assertThat(a1.getRoot().getExecPathString())
+            .isEqualTo(relativeOutputPath + "/k8-fastbuild/bin")
+        val a2: Artifact =
+            getFilesToBuild(target).toSet().stream()
+                .filter(artifactNamed("foo2.so"))
+                .findFirst()
+                .orElse(null)
+        assertThat(a2).isNotNull()
+        assertThat(a2.getRoot().getExecPathString())
+            .matches(relativeOutputPath + "/[\\w\\-]+\\-exec/bin")
+    }
 
-  @Test
-  public void testHashableProviders() throws Exception {
-    ev.execAndExport("p = provider()");
-    Dict<?, ?> dict = (Dict<?, ?>) ev.eval("{k: None for k in [DefaultInfo, p, DefaultInfo, p]}");
-    assertThat(dict.size()).isEqualTo(2);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testHashableProviders() {
+        ev.execAndExport("p = provider()")
+        val dict: Dict<*, *> = ev.eval("{k: None for k in [DefaultInfo, p, DefaultInfo, p]}") as Dict<*, *>
+        Truth.assertThat(dict.size).isEqualTo(2)
+    }
+
+    companion object {
+        private fun assertArtifactFilenames(artifacts: Iterable<Artifact>, vararg expected: String?) {
+            val filenames: com.google.common.collect.ImmutableList.Builder<String?> =
+                com.google.common.collect.ImmutableList.builder<String?>()
+            for (a in artifacts) {
+                filenames.add(a.getFilename())
+            }
+            Truth.assertThat(filenames.build())
+                .containsAtLeastElementsIn(com.google.common.collect.Lists.newArrayList<String?>(*expected))
+        }
+
+        private fun assertMatches(
+            description: String, expectedPattern: String?, computedValue: String?
+        ) {
+            Truth.assertWithMessage(
+                "%s '%s' did not match pattern '%s'", description, computedValue, expectedPattern
+            )
+                .that(java.util.regex.Pattern.matches(expectedPattern, computedValue))
+                .isTrue()
+        }
+
+        private fun getRunfileArtifacts(runfiles: Any): Iterable<Artifact?> {
+            return (runfiles as Runfiles).getAllArtifacts().toList()
+        }
+
+        private fun createInputMetadataProvider(
+            dirRelativePath: String?, vararg files: String?
+        ): InputMetadataProvider {
+            val result: InputMetadataProvider = Mockito.mock<InputMetadataProvider>(InputMetadataProvider::class.java)
+            Mockito.`when`<T?>(result.getTreeMetadata(ArgumentMatchers.any<T?>()))
+                .thenAnswer(
+                    Answer { invocation: InvocationOnMock? ->
+                        val arg: SpecialArtifact = invocation.getArgument<SpecialArtifact>(0)
+                        check(arg.getRootRelativePathString().equals(dirRelativePath))
+
+                        if (!arg.hasGeneratingActionKey()) {
+                            arg.setGeneratingActionKey(ActionLookupData.create(arg.getArtifactOwner(), 0))
+                        }
+
+                        val builder: TreeArtifactValue.Builder = TreeArtifactValue.newBuilder(arg)
+                        for (file in files) {
+                            builder.putChild(
+                                TreeFileArtifact.createTreeOutput(arg, PathFragment.create(file)),
+                                FileArtifactValue.MISSING_FILE_MARKER
+                            )
+                        }
+                        builder.build()
+                    })
+
+            return result
+        }
+
+        private val NON_TRIVIAL_PATH_MAPPER: PathMapper =
+            PathMapper { path -> path.subFragment(0, 1).getChild("cfg").getRelative(path.subFragment(2)) }
+    }
 }

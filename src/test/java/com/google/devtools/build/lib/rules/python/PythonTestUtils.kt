@@ -11,61 +11,51 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.python
 
-package com.google.devtools.build.lib.rules.python;
+import com.google.devtools.build.lib.testutil.TestConstants
+import org.junit.Assume
 
-import static com.google.devtools.build.lib.testutil.TestConstants.RULES_PYTHON_PACKAGE_ROOT;
-import static org.junit.Assume.assumeTrue;
-
-import com.google.devtools.build.lib.testutil.TestConstants;
-
-/** Helpers for Python tests. */
-public class PythonTestUtils {
-
-  // Static utilities class.
-  private PythonTestUtils() {}
-
-  /**
-   * Skips the test if the product isn't bazel. This is mostly to skip tests for py2 support that
-   * the Google implementation would otherwise fail on.
-   */
-  public static void assumeIsBazel() {
-    assumeTrue(TestConstants.PRODUCT_NAME.equals("bazel")); // Google has py2 disabled.
-  }
-
-  /**
-   * Stub method that is used to annotate that the calling test case assumes the default Python
-   * version is PY2.
-   *
-   * <p>Marking test cases that depend on the default Python version helps to diagnose failures. It
-   * also helps guard against accidentally making the test spuriously pass, e.g. if the expected
-   * value becomes the same as the default value..
-   */
-  public static void assumesDefaultIsPY2() {
-    // No-op.
-  }
-
-  /** Same as {@link #assumesDefaultIsPY2}, but for PY3. */
-  public static void assumesDefaultIsPY3() {
-    // No-op.
-  }
-
-  public static String getPyLoad(String symbolName) {
-    if (RULES_PYTHON_PACKAGE_ROOT.isEmpty()) {
-      return "";
+/** Helpers for Python tests.  */
+object PythonTestUtils {
+    /**
+     * Skips the test if the product isn't bazel. This is mostly to skip tests for py2 support that
+     * the Google implementation would otherwise fail on.
+     */
+    fun assumeIsBazel() {
+        Assume.assumeTrue(TestConstants.PRODUCT_NAME == "bazel") // Google has py2 disabled.
     }
-    String bzlFilename;
-    switch (symbolName) {
-      case "PyInfo":
-        bzlFilename = "py_info.bzl";
-        break;
-      case "PyRuntimeInfo":
-        bzlFilename = "py_runtime_info.bzl";
-        break;
-      default:
-        bzlFilename = symbolName + ".bzl";
+
+    /**
+     * Stub method that is used to annotate that the calling test case assumes the default Python
+     * version is PY2.
+     * 
+     * 
+     * Marking test cases that depend on the default Python version helps to diagnose failures. It
+     * also helps guard against accidentally making the test spuriously pass, e.g. if the expected
+     * value becomes the same as the default value..
+     */
+    fun assumesDefaultIsPY2() {
+        // No-op.
     }
-    return String.format(
-        "load('%s/python:%s', '%s')", RULES_PYTHON_PACKAGE_ROOT, bzlFilename, symbolName);
-  }
+
+    /** Same as [.assumesDefaultIsPY2], but for PY3.  */
+    fun assumesDefaultIsPY3() {
+        // No-op.
+    }
+
+    fun getPyLoad(symbolName: String): String? {
+        if (TestConstants.RULES_PYTHON_PACKAGE_ROOT.isEmpty()) {
+            return ""
+        }
+        val bzlFilename: String?
+        when (symbolName) {
+            "PyInfo" -> bzlFilename = "py_info.bzl"
+            "PyRuntimeInfo" -> bzlFilename = "py_runtime_info.bzl"
+            else -> bzlFilename = symbolName + ".bzl"
+        }
+        return String.format(
+            "load('%s/python:%s', '%s')", TestConstants.RULES_PYTHON_PACKAGE_ROOT, bzlFilename, symbolName
+        )
+    }
 }

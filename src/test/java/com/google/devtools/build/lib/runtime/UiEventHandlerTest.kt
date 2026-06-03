@@ -11,385 +11,362 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime
 
-package com.google.devtools.build.lib.runtime;
+import com.google.devtools.build.lib.actions.Artifact
 
-import static com.google.common.truth.Truth.assertThat;
-import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.mockito.Mockito.mock;
+/** Tests for [UiEventHandler].  */
+@RunWith(Enclosed::class)
+open class UiEventHandlerTest {
+    @TestParameter
+    private val skymeldMode = false
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.eventbus.EventBus;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.ArtifactRoot;
-import com.google.devtools.build.lib.actions.ArtifactRoot.RootType;
-import com.google.devtools.build.lib.actions.RunningActionEvent;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil.NullAction;
-import com.google.devtools.build.lib.analysis.AnalysisPhaseCompleteEvent;
-import com.google.devtools.build.lib.buildtool.BuildRequest;
-import com.google.devtools.build.lib.buildtool.BuildResult;
-import com.google.devtools.build.lib.buildtool.buildevent.BuildCompleteEvent;
-import com.google.devtools.build.lib.buildtool.buildevent.BuildStartingEvent;
-import com.google.devtools.build.lib.buildtool.buildevent.MainRepoMappingComputationStartingEvent;
-import com.google.devtools.build.lib.cmdline.RepositoryMapping;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.EventKind;
-import com.google.devtools.build.lib.pkgcache.LoadingPhaseCompleteEvent;
-import com.google.devtools.build.lib.runtime.UiOptions.UseCurses;
-import com.google.devtools.build.lib.testutil.ManualClock;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.lib.util.io.OutErr;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import com.google.devtools.common.options.Options;
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.experimental.runners.Enclosed;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    val uiOptions: UiOptions = createUiOptions()
+    val output: FlushCollectingOutputStream = FlushCollectingOutputStream()
+    val clock: com.google.devtools.build.lib.testutil.ManualClock = com.google.devtools.build.lib.testutil.ManualClock()
 
-/** Tests for {@link UiEventHandler}. */
-@RunWith(Enclosed.class)
-public class UiEventHandlerTest {
+    var uiEventHandler: UiEventHandler? = null
 
-  private static final BuildCompleteEvent BUILD_COMPLETE_EVENT =
-      new BuildCompleteEvent(new BuildResult(/* startTimeMillis= */ 0));
-  private static final String BUILD_DID_NOT_COMPLETE_MESSAGE =
-      "\033[31m\033[1mERROR: \033[0mBuild did NOT complete successfully" + System.lineSeparator();
-
-  /** The escape sequence that clears the progress bar when curses is enabled. */
-  private static final String CLEAR_PROGRESS_BAR = "\033[1A\033[K";
-
-  private static final ArtifactRoot OUTPUT_ROOT =
-      ArtifactRoot.asDerivedRoot(
-          new InMemoryFileSystem(DigestHashFunction.SHA256).getPath("/base/exec"),
-          RootType.OUTPUT,
-          "out");
-
-  @TestParameter private boolean skymeldMode;
-
-  final UiOptions uiOptions = createUiOptions();
-  final FlushCollectingOutputStream output = new FlushCollectingOutputStream();
-  final ManualClock clock = new ManualClock();
-
-  UiEventHandler uiEventHandler;
-
-  UiOptions createUiOptions() {
-    UiOptions options = Options.getDefaults(UiOptions.class);
-    options.setShowProgress(false);
-    return options;
-  }
-
-  void createUiEventHandler(EventKind outputKind) {
-    uiOptions.setEventKindFilters(ImmutableList.of());
-    output.flush();
-    output.flushed.clear();
-
-    OutErr outErr =
-        switch (outputKind) {
-          case STDOUT -> OutErr.create(/* out= */ output, /* err= */ mock(OutputStream.class));
-          case STDERR -> OutErr.create(/* out= */ mock(OutputStream.class), /* err= */ output);
-          default -> throw new AssertionError(outputKind);
-        };
-
-    uiEventHandler =
-        new UiEventHandler(
-            outErr,
-            uiOptions,
-            /* quiet= */ false,
-            clock,
-            new EventBus(),
-            /* workspacePathFragment= */ null,
-            skymeldMode,
-            /* newStatsSummary= */ false);
-    uiEventHandler.mainRepoMappingComputationStarted(new MainRepoMappingComputationStartingEvent());
-    uiEventHandler.buildStarted(
-        BuildStartingEvent.create(
-            "outputFileSystemType",
-            /* usesInMemoryFileSystem= */ false,
-            mock(BuildRequest.class),
-            /* workspace= */ null,
-            "/pwd"));
-  }
-
-  /** Test cases that exercise both stdout and stderr. */
-  @RunWith(TestParameterInjector.class)
-  public static final class StdoutAndStderrTest extends UiEventHandlerTest {
-
-    @TestParameter({"STDOUT", "STDERR"})
-    private EventKind outputKind;
-
-    @Before
-    public void createUiEventHandler() {
-      createUiEventHandler(outputKind);
+    fun createUiOptions(): UiOptions {
+        val options: UiOptions = com.google.devtools.common.options.Options.getDefaults<O>(UiOptions::class.java)
+        options.setShowProgress(false)
+        return options
     }
 
-    @Test
-    public void buildComplete_outputsBuildFailedOnStderr() {
-      uiEventHandler.buildComplete(BUILD_COMPLETE_EVENT);
+    fun createUiEventHandler(outputKind: com.google.devtools.build.lib.events.EventKind) {
+        uiOptions.setEventKindFilters(com.google.common.collect.ImmutableList.of<E?>())
+        output.flush()
+        output.flushed.clear()
 
-      if (outputKind == EventKind.STDOUT) {
-        output.assertFlushed();
-      } else {
-        output.assertFlushed(BUILD_DID_NOT_COMPLETE_MESSAGE);
-      }
+        val outErr: OutErr? =
+            when (outputKind) {
+                com.google.devtools.build.lib.events.EventKind.STDOUT -> OutErr.create( /* out= */output,  /* err= */< T > mock < T ? > (java.io.OutputStream::class.java)
+                    )
+                    com.google.devtools.build.lib.events.EventKind.STDERR
+
+                -> OutErr.create( /* out= */< T > mock < T ? > (java.io.OutputStream::class.java)
+                    ,  /* err= */output)
+                else -> throw java.lang.AssertionError(outputKind)
+            }
+
+        uiEventHandler =
+            UiEventHandler(
+                outErr,
+                uiOptions,  /* quiet= */
+                false,
+                clock,
+                com.google.common.eventbus.EventBus(),  /* workspacePathFragment= */
+                null,
+                skymeldMode,  /* newStatsSummary= */
+                false
+            )
+        uiEventHandler.mainRepoMappingComputationStarted(MainRepoMappingComputationStartingEvent())
+        uiEventHandler.buildStarted(
+            BuildStartingEvent.create(
+                "outputFileSystemType",  /* usesInMemoryFileSystem= */
+                false,
+                < T > mock < T ? > (BuildRequest::class.java),  /* workspace= */
+            null,
+            "/pwd"
+        ))
     }
 
-    @Test
-    public void buildComplete_flushesBufferedMessage() {
-      uiEventHandler.handle(output("hello"));
-      uiEventHandler.buildComplete(BUILD_COMPLETE_EVENT);
+    /** Test cases that exercise both stdout and stderr.  */
+    @RunWith(TestParameterInjector::class)
+    class StdoutAndStderrTest : UiEventHandlerTest() {
+        @TestParameter("STDOUT", "STDERR")
+        private val outputKind: com.google.devtools.build.lib.events.EventKind? = null
 
-      if (outputKind == EventKind.STDOUT) {
-        output.assertFlushed("hello");
-      } else {
-        output.assertFlushed("hello", System.lineSeparator() + BUILD_DID_NOT_COMPLETE_MESSAGE);
-      }
-    }
-
-    @Test
-    public void buildComplete_successfulBuild() {
-      uiEventHandler.handle(output(""));
-      var buildSuccessResult = new BuildResult(/* startTimeMillis= */ 0);
-      buildSuccessResult.setDetailedExitCode(DetailedExitCode.success());
-      uiEventHandler.buildComplete(new BuildCompleteEvent(buildSuccessResult));
-
-      if (outputKind == EventKind.STDOUT) {
-        output.assertFlushed();
-      } else {
-        output.assertFlushed(
-            "\033[32mINFO: \033[0mBuild completed successfully, 0 total actions"
-                + System.lineSeparator());
-      }
-    }
-
-    @Test
-    public void buildComplete_emptyBuffer_outputsBuildFailedOnStderr() {
-      uiEventHandler.handle(output(""));
-      uiEventHandler.buildComplete(BUILD_COMPLETE_EVENT);
-
-      if (outputKind == EventKind.STDOUT) {
-        output.assertFlushed();
-      } else {
-        output.assertFlushed(BUILD_DID_NOT_COMPLETE_MESSAGE);
-      }
-    }
-
-    @Test
-    public void handleOutputEvent_buffersWithoutNewline() {
-      uiEventHandler.handle(output("hello"));
-      output.assertFlushed();
-    }
-
-    @Test
-    public void handleOutputEvent_concatenatesInBuffer() {
-      uiEventHandler.handle(output("hello "));
-      uiEventHandler.handle(output("there"));
-      uiEventHandler.buildComplete(BUILD_COMPLETE_EVENT);
-
-      if (outputKind == EventKind.STDOUT) {
-        output.assertFlushed("hello there");
-      } else {
-        output.assertFlushed(
-            "hello there", System.lineSeparator() + BUILD_DID_NOT_COMPLETE_MESSAGE);
-      }
-    }
-
-    @Test
-    public void handleOutputEvent_flushesOnNewline() {
-      uiEventHandler.handle(output("hello\n"));
-      output.assertFlushed("hello\n");
-    }
-
-    @Test
-    public void handleOutputEvent_flushesOnlyUntilNewline() {
-      uiEventHandler.handle(output("hello\nworld"));
-      output.assertFlushed("hello\n");
-    }
-
-    @Test
-    public void handleOutputEvent_flushesUntilLastNewline() {
-      uiEventHandler.handle(output("hello\nto\neveryone"));
-      output.assertFlushed("hello\nto\n");
-    }
-
-    @Test
-    public void handleOutputEvent_flushesMultiLineMessageAtOnce() {
-      uiEventHandler.handle(output("hello\neveryone\n"));
-      output.assertFlushed("hello\neveryone\n");
-    }
-
-    @Test
-    public void handleOutputEvent_concatenatesBufferBeforeFlushingOnNewline() {
-      uiEventHandler.handle(output("hello"));
-      uiEventHandler.handle(output(" there!\nmore text"));
-
-      output.assertFlushed("hello there!\n");
-    }
-
-    // This test only exercises progress bar code when testing stderr output, since we don't make
-    // any assertions on stderr (where the progress bar is written) when testing stdout.
-    @Test
-    public void noChangeOnUnflushedWrite() {
-      uiOptions.setShowProgress(true);
-      uiOptions.setUseCursesEnum(UseCurses.YES);
-      createUiEventHandler();
-      if (outputKind == EventKind.STDERR) {
-        assertThat(output.flushed).hasSize(2);
-        output.flushed.clear();
-      }
-      // Unterminated strings are saved in memory and not pushed out at all.
-      assertThat(output.flushed).isEmpty();
-      assertThat(output.writtenSinceFlush).isEmpty();
-    }
-
-    private Event output(String message) {
-      return Event.of(outputKind, message);
-    }
-  }
-
-  /** Test cases that only exercise stdout. */
-  @RunWith(JUnit4.class)
-  public static final class StdoutOnlyTest extends UiEventHandlerTest {
-
-    @Before
-    public void createUiEventHandler() {
-      createUiEventHandler(EventKind.STDOUT);
-    }
-
-    @Test
-    public void handleOutputEvent_flushesRemainingLines() {
-      uiEventHandler.handle(Event.of(EventKind.STDOUT, "hello\nto\neveryone"));
-      output.assertFlushed("hello\nto\n");
-      uiEventHandler.afterCommand(new AfterCommandEvent());
-      output.assertFlushed("hello\nto\n", "everyone");
-    }
-  }
-
-  /** Test cases that only exercise stderr. */
-  @RunWith(JUnit4.class)
-  public static final class StderrOnlyTest extends UiEventHandlerTest {
-
-    @Before
-    public void createUiEventHandler() {
-      createUiEventHandler(EventKind.STDERR);
-    }
-
-    @Test
-    public void buildCompleteMessageDoesntOverrideError() {
-      uiOptions.setShowProgress(true);
-      uiOptions.setUseCursesEnum(UseCurses.YES);
-      createUiEventHandler();
-
-      uiEventHandler.buildComplete(BUILD_COMPLETE_EVENT);
-      uiEventHandler.handle(Event.error("Show me this!"));
-      uiEventHandler.afterCommand(new AfterCommandEvent());
-
-      assertThat(output.flushed).hasSize(5);
-      assertThat(output.flushed.get(3)).contains("Show me this!");
-      assertThat(output.flushed.get(4)).doesNotContain(CLEAR_PROGRESS_BAR);
-    }
-
-    @Test
-    public void temporarilyDisableProgress() throws Exception {
-      uiOptions.setShowProgress(true);
-      uiOptions.setUseCursesEnum(UseCurses.YES);
-      uiOptions.setShowProgressRateLimit(1);
-      uiOptions.setUiActionsShown(2);
-      createUiEventHandler();
-      NullAction action1 = actionWithProgressMessage("Executing action 1", "action1.out");
-      NullAction action2 = actionWithProgressMessage("Executing action 2", "action2.out");
-      uiEventHandler.loadingComplete(
-          new LoadingPhaseCompleteEvent(
-              ImmutableSet.of(), ImmutableSet.of(), RepositoryMapping.EMPTY));
-      uiEventHandler.analysisComplete(mock(AnalysisPhaseCompleteEvent.class));
-      output.flushed.clear();
-
-      // Showing progress, running actions shown.
-      clock.advanceMillis(2000);
-      uiEventHandler.runningAction(new RunningActionEvent(action1, "local"));
-      assertThat(output.flushed).hasSize(1);
-      assertThat(output.flushed.getFirst()).contains("Executing action 1;");
-
-      // Disable progress, progress bar cleared.
-      assertThat(uiEventHandler.disableProgress()).isTrue();
-      assertThat(output.flushed).hasSize(2);
-      assertThat(output.flushed.getLast()).endsWith(CLEAR_PROGRESS_BAR);
-
-      // Another action starts running, still no progress updates.
-      clock.advanceMillis(2000);
-      uiEventHandler.runningAction(new RunningActionEvent(action2, "local"));
-      assertThat(output.flushed).hasSize(2);
-
-      // Enable progress again, progress bar written with both running actions.
-      uiEventHandler.enableProgress();
-      assertThat(output.flushed).hasSize(3);
-      assertThat(output.flushed.getLast()).contains("2 actions running");
-      assertThat(output.flushed.getLast()).contains("Executing action 1;");
-      assertThat(output.flushed.getLast()).contains("Executing action 2;");
-    }
-
-    @Test
-    public void progressOff_disableProgressReturnsFalse() throws Exception {
-      uiOptions.setShowProgress(false);
-      createUiEventHandler();
-      assertThat(uiEventHandler.disableProgress()).isFalse();
-    }
-
-    @Test
-    public void progressAlreadyDisabled_disableProgressReturnsFalse() throws Exception {
-      uiOptions.setShowProgress(true);
-      createUiEventHandler();
-      assertThat(uiEventHandler.disableProgress()).isTrue();
-      assertThat(uiEventHandler.disableProgress()).isFalse();
-    }
-
-    private static NullAction actionWithProgressMessage(String progressMessage, String outputPath) {
-      Artifact output = ActionsTestUtil.createArtifact(OUTPUT_ROOT, outputPath);
-      return new NullAction(output) {
-        @Override
-        protected String getRawProgressMessage() {
-          return progressMessage;
+        @Before
+        fun createUiEventHandler() {
+            createUiEventHandler(outputKind)
         }
-      };
-    }
-  }
 
-  private static final class FlushCollectingOutputStream extends OutputStream {
-    private final List<String> flushed = new ArrayList<>();
-    private String writtenSinceFlush = "";
+        @org.junit.Test
+        fun buildComplete_outputsBuildFailedOnStderr() {
+            uiEventHandler.buildComplete(BUILD_COMPLETE_EVENT)
 
-    @Override
-    public void write(int b) throws IOException {
-      write(new byte[] {(byte) b});
+            if (outputKind == com.google.devtools.build.lib.events.EventKind.STDOUT) {
+                output.assertFlushed()
+            } else {
+                output.assertFlushed(BUILD_DID_NOT_COMPLETE_MESSAGE)
+            }
+        }
+
+        @org.junit.Test
+        fun buildComplete_flushesBufferedMessage() {
+            uiEventHandler.handle(output("hello"))
+            uiEventHandler.buildComplete(BUILD_COMPLETE_EVENT)
+
+            if (outputKind == com.google.devtools.build.lib.events.EventKind.STDOUT) {
+                output.assertFlushed("hello")
+            } else {
+                output.assertFlushed("hello", java.lang.System.lineSeparator() + BUILD_DID_NOT_COMPLETE_MESSAGE)
+            }
+        }
+
+        @org.junit.Test
+        fun buildComplete_successfulBuild() {
+            uiEventHandler.handle(output(""))
+            val buildSuccessResult: BuildResult = BuildResult( /* startTimeMillis= */0)
+            buildSuccessResult.setDetailedExitCode(DetailedExitCode.success())
+            uiEventHandler.buildComplete(BuildCompleteEvent(buildSuccessResult))
+
+            if (outputKind == com.google.devtools.build.lib.events.EventKind.STDOUT) {
+                output.assertFlushed()
+            } else {
+                output.assertFlushed(
+                    "\u001b[32mINFO: \u001b[0mBuild completed successfully, 0 total actions"
+                            + java.lang.System.lineSeparator()
+                )
+            }
+        }
+
+        @org.junit.Test
+        fun buildComplete_emptyBuffer_outputsBuildFailedOnStderr() {
+            uiEventHandler.handle(output(""))
+            uiEventHandler.buildComplete(BUILD_COMPLETE_EVENT)
+
+            if (outputKind == com.google.devtools.build.lib.events.EventKind.STDOUT) {
+                output.assertFlushed()
+            } else {
+                output.assertFlushed(BUILD_DID_NOT_COMPLETE_MESSAGE)
+            }
+        }
+
+        @org.junit.Test
+        fun handleOutputEvent_buffersWithoutNewline() {
+            uiEventHandler.handle(output("hello"))
+            output.assertFlushed()
+        }
+
+        @org.junit.Test
+        fun handleOutputEvent_concatenatesInBuffer() {
+            uiEventHandler.handle(output("hello "))
+            uiEventHandler.handle(output("there"))
+            uiEventHandler.buildComplete(BUILD_COMPLETE_EVENT)
+
+            if (outputKind == com.google.devtools.build.lib.events.EventKind.STDOUT) {
+                output.assertFlushed("hello there")
+            } else {
+                output.assertFlushed(
+                    "hello there", java.lang.System.lineSeparator() + BUILD_DID_NOT_COMPLETE_MESSAGE
+                )
+            }
+        }
+
+        @org.junit.Test
+        fun handleOutputEvent_flushesOnNewline() {
+            uiEventHandler.handle(output("hello\n"))
+            output.assertFlushed("hello\n")
+        }
+
+        @org.junit.Test
+        fun handleOutputEvent_flushesOnlyUntilNewline() {
+            uiEventHandler.handle(output("hello\nworld"))
+            output.assertFlushed("hello\n")
+        }
+
+        @org.junit.Test
+        fun handleOutputEvent_flushesUntilLastNewline() {
+            uiEventHandler.handle(output("hello\nto\neveryone"))
+            output.assertFlushed("hello\nto\n")
+        }
+
+        @org.junit.Test
+        fun handleOutputEvent_flushesMultiLineMessageAtOnce() {
+            uiEventHandler.handle(output("hello\neveryone\n"))
+            output.assertFlushed("hello\neveryone\n")
+        }
+
+        @org.junit.Test
+        fun handleOutputEvent_concatenatesBufferBeforeFlushingOnNewline() {
+            uiEventHandler.handle(output("hello"))
+            uiEventHandler.handle(output(" there!\nmore text"))
+
+            output.assertFlushed("hello there!\n")
+        }
+
+        // This test only exercises progress bar code when testing stderr output, since we don't make
+        // any assertions on stderr (where the progress bar is written) when testing stdout.
+        @org.junit.Test
+        fun noChangeOnUnflushedWrite() {
+            uiOptions.setShowProgress(true)
+            uiOptions.setUseCursesEnum(UseCurses.YES)
+            createUiEventHandler()
+            if (outputKind == com.google.devtools.build.lib.events.EventKind.STDERR) {
+                Truth.assertThat(output.flushed).hasSize(2)
+                output.flushed.clear()
+            }
+            // Unterminated strings are saved in memory and not pushed out at all.
+            Truth.assertThat(output.flushed).isEmpty()
+            Truth.assertThat(output.writtenSinceFlush).isEmpty()
+        }
+
+        private fun output(message: String?): com.google.devtools.build.lib.events.Event? {
+            return com.google.devtools.build.lib.events.Event.of(outputKind, message)
+        }
     }
 
-    @Override
-    public void write(byte[] bytes, int offset, int len) {
-      writtenSinceFlush += new String(Arrays.copyOfRange(bytes, offset, offset + len), UTF_8);
+    /** Test cases that only exercise stdout.  */
+    @RunWith(JUnit4::class)
+    class StdoutOnlyTest : UiEventHandlerTest() {
+        @Before
+        fun createUiEventHandler() {
+            createUiEventHandler(com.google.devtools.build.lib.events.EventKind.STDOUT)
+        }
+
+        @org.junit.Test
+        fun handleOutputEvent_flushesRemainingLines() {
+            uiEventHandler.handle(
+                com.google.devtools.build.lib.events.Event.of(
+                    com.google.devtools.build.lib.events.EventKind.STDOUT,
+                    "hello\nto\neveryone"
+                )
+            )
+            output.assertFlushed("hello\nto\n")
+            uiEventHandler.afterCommand(AfterCommandEvent())
+            output.assertFlushed("hello\nto\n", "everyone")
+        }
     }
 
-    @Override
-    public void flush() {
-      // Ignore inconsequential extra flushes.
-      if (!writtenSinceFlush.isEmpty()) {
-        flushed.add(writtenSinceFlush);
-      }
-      writtenSinceFlush = "";
+    /** Test cases that only exercise stderr.  */
+    @RunWith(JUnit4::class)
+    class StderrOnlyTest : UiEventHandlerTest() {
+        @Before
+        fun createUiEventHandler() {
+            createUiEventHandler(com.google.devtools.build.lib.events.EventKind.STDERR)
+        }
+
+        @org.junit.Test
+        fun buildCompleteMessageDoesntOverrideError() {
+            uiOptions.setShowProgress(true)
+            uiOptions.setUseCursesEnum(UseCurses.YES)
+            createUiEventHandler()
+
+            uiEventHandler.buildComplete(BUILD_COMPLETE_EVENT)
+            uiEventHandler.handle(com.google.devtools.build.lib.events.Event.error("Show me this!"))
+            uiEventHandler.afterCommand(AfterCommandEvent())
+
+            Truth.assertThat(output.flushed).hasSize(5)
+            Truth.assertThat(output.flushed.get(3)).contains("Show me this!")
+            Truth.assertThat(output.flushed.get(4)).doesNotContain(CLEAR_PROGRESS_BAR)
+        }
+
+        @org.junit.Test
+        @Throws(java.lang.Exception::class)
+        fun temporarilyDisableProgress() {
+            uiOptions.setShowProgress(true)
+            uiOptions.setUseCursesEnum(UseCurses.YES)
+            uiOptions.setShowProgressRateLimit(1)
+            uiOptions.setUiActionsShown(2)
+            createUiEventHandler()
+            val action1: NullAction = actionWithProgressMessage("Executing action 1", "action1.out")
+            val action2: NullAction = actionWithProgressMessage("Executing action 2", "action2.out")
+            uiEventHandler.loadingComplete(
+                LoadingPhaseCompleteEvent(
+                    com.google.common.collect.ImmutableSet.of<E?>(),
+                    com.google.common.collect.ImmutableSet.of<E?>(),
+                    RepositoryMapping.EMPTY
+                )
+            )
+            uiEventHandler.analysisComplete(< T > mock < T ? > (AnalysisPhaseCompleteEvent::class.java))
+            output.flushed.clear()
+
+            // Showing progress, running actions shown.
+            clock.advanceMillis(2000)
+            uiEventHandler.runningAction(RunningActionEvent(action1, "local"))
+            Truth.assertThat(output.flushed).hasSize(1)
+            Truth.assertThat(output.flushed.getFirst()).contains("Executing action 1;")
+
+            // Disable progress, progress bar cleared.
+            assertThat(uiEventHandler.disableProgress()).isTrue()
+            Truth.assertThat(output.flushed).hasSize(2)
+            Truth.assertThat(output.flushed.getLast()).endsWith(CLEAR_PROGRESS_BAR)
+
+            // Another action starts running, still no progress updates.
+            clock.advanceMillis(2000)
+            uiEventHandler.runningAction(RunningActionEvent(action2, "local"))
+            Truth.assertThat(output.flushed).hasSize(2)
+
+            // Enable progress again, progress bar written with both running actions.
+            uiEventHandler.enableProgress()
+            Truth.assertThat(output.flushed).hasSize(3)
+            Truth.assertThat(output.flushed.getLast()).contains("2 actions running")
+            Truth.assertThat(output.flushed.getLast()).contains("Executing action 1;")
+            Truth.assertThat(output.flushed.getLast()).contains("Executing action 2;")
+        }
+
+        @org.junit.Test
+        @Throws(java.lang.Exception::class)
+        fun progressOff_disableProgressReturnsFalse() {
+            uiOptions.setShowProgress(false)
+            createUiEventHandler()
+            assertThat(uiEventHandler.disableProgress()).isFalse()
+        }
+
+        @org.junit.Test
+        @Throws(java.lang.Exception::class)
+        fun progressAlreadyDisabled_disableProgressReturnsFalse() {
+            uiOptions.setShowProgress(true)
+            createUiEventHandler()
+            assertThat(uiEventHandler.disableProgress()).isTrue()
+            assertThat(uiEventHandler.disableProgress()).isFalse()
+        }
+
+        companion object {
+            private fun actionWithProgressMessage(progressMessage: String, outputPath: String?): NullAction {
+                val output: Artifact = ActionsTestUtil.createArtifact(OUTPUT_ROOT, outputPath)
+                return object : NullAction(output) {
+                    protected val rawProgressMessage: String
+                        get() = progressMessage
+                }
+            }
+        }
     }
 
-    private void assertFlushed(String... messages) {
-      assertThat(writtenSinceFlush).isEmpty();
-      assertThat(flushed).containsExactlyElementsIn(messages);
+    private class FlushCollectingOutputStream : java.io.OutputStream() {
+        private val flushed: MutableList<String?> = java.util.ArrayList<String?>()
+        private var writtenSinceFlush = ""
+
+        @Throws(IOException::class)
+        override fun write(b: Int) {
+            write(byteArrayOf(b.toByte()))
+        }
+
+        override fun write(bytes: ByteArray, offset: Int, len: Int) {
+            writtenSinceFlush += String(
+                java.util.Arrays.copyOfRange(bytes, offset, offset + len),
+                java.nio.charset.StandardCharsets.UTF_8
+            )
+        }
+
+        override fun flush() {
+            // Ignore inconsequential extra flushes.
+            if (!writtenSinceFlush.isEmpty()) {
+                flushed.add(writtenSinceFlush)
+            }
+            writtenSinceFlush = ""
+        }
+
+        fun assertFlushed(vararg messages: String?) {
+            Truth.assertThat(writtenSinceFlush).isEmpty()
+            Truth.assertThat(flushed).containsExactlyElementsIn(messages)
+        }
     }
-  }
+
+    companion object {
+        private val BUILD_COMPLETE_EVENT: BuildCompleteEvent = BuildCompleteEvent(BuildResult( /* startTimeMillis= */0))
+        private val BUILD_DID_NOT_COMPLETE_MESSAGE =
+            "\u001b[31m\u001b[1mERROR: \u001b[0mBuild did NOT complete successfully" + java.lang.System.lineSeparator()
+
+        /** The escape sequence that clears the progress bar when curses is enabled.  */
+        private const val CLEAR_PROGRESS_BAR = "\u001b[1A\u001b[K"
+
+        private val OUTPUT_ROOT: ArtifactRoot? = ArtifactRoot.asDerivedRoot(
+            InMemoryFileSystem(DigestHashFunction.SHA256).getPath("/base/exec"),
+            RootType.OUTPUT,
+            "out"
+        )
+    }
 }

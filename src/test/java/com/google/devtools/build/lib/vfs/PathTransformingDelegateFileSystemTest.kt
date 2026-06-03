@@ -12,192 +12,192 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-package com.google.devtools.build.lib.vfs;
+package com.google.devtools.build.lib.vfs
 
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.common.truth.Truth.assertThat;
-import static java.util.Arrays.stream;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.atLeastOnce;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoMoreInteractions;
-import static org.mockito.Mockito.when;
+import com.google.devtools.build.lib.analysis.util.ConfigurationTestCase.create
+import com.google.devtools.build.lib.exec.util.FakeActionInputFileCache.put
+import com.google.devtools.build.lib.exec.util.SpawnBuilder.build
+import com.google.devtools.build.lib.packages.util.MockToolsConfig.create
+import com.google.devtools.common.options.testing.ConverterTesterMap.Builder.build
+import com.google.testing.junit.testparameterinjector.TestParameterInjector
+import com.google.testing.junit.testparameterinjector.TestParameters
+import com.google.testing.junit.testparameterinjector.TestParameters.TestParametersValues
+import net.starlark.java.syntax.FileOptions.Builder.build
+import org.junit.Before
+import org.junit.runner.RunWith
+import org.mockito.ArgumentMatchers
+import org.mockito.Mockito
+import java.nio.file.Path
+import java.util.stream.Collectors
 
-import com.google.common.collect.ImmutableClassToInstanceMap;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import com.google.testing.junit.testparameterinjector.TestParameters;
-import com.google.testing.junit.testparameterinjector.TestParameters.TestParametersValues;
-import com.google.testing.junit.testparameterinjector.TestParametersValuesProvider;
-import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
-import java.util.Arrays;
-import java.util.stream.Collectors;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+/** Unit tests for PathTransformingDelegateFileSystem. Make sure all methods rewrite paths.  */
+@RunWith(TestParameterInjector::class)
+class PathTransformingDelegateFileSystemTest {
+    private val delegateFileSystem: FileSystem = createMockFileSystem()
+    private val fileSystem = TestDelegateFileSystem(delegateFileSystem)
 
-/** Unit tests for PathTransformingDelegateFileSystem. Make sure all methods rewrite paths. */
-@RunWith(TestParameterInjector.class)
-public final class PathTransformingDelegateFileSystemTest {
-  private final FileSystem delegateFileSystem = createMockFileSystem();
-  private final TestDelegateFileSystem fileSystem = new TestDelegateFileSystem(delegateFileSystem);
-
-  private static FileSystem createMockFileSystem() {
-    FileSystem fileSystem = mock(FileSystem.class);
-    when(fileSystem.getDigestFunction()).thenReturn(DigestHashFunction.SHA256);
-    when(fileSystem.getPath(any(PathFragment.class))).thenCallRealMethod();
-    return fileSystem;
-  }
-
-  @Before
-  public void verifyGetDigestFunctionCalled() {
-    // getDigestFunction gets called in the constructor of PathTransformingDelegateFileSystem, make
-    // sure to "consume" that so that tests don't need to account for that.
-    verify(delegateFileSystem, atLeastOnce()).getDigestFunction();
-    verifyNoMoreInteractions(delegateFileSystem);
-  }
-
-  @Test
-  @TestParameters(valuesProvider = FileSystemMethodProvider.class)
-  public void simplePathMethod_callsDelegateWithRewrittenPath(Method method) throws Exception {
-    PathFragment path = PathFragment.create("/original/dir/file");
-
-    method.invoke(fileSystem, pathAndDefaultArgs(method, path));
-
-    method.invoke(
-        verify(delegateFileSystem),
-        pathAndDefaultArgs(method, PathFragment.create("/transformed/dir/file")));
-    verifyNoMoreInteractions(delegateFileSystem);
-  }
-
-  @Test
-  public void readSymbolicLink_callsDelegateWithRewrittenPathAndTransformsItBack()
-      throws Exception {
-    PathFragment path = PathFragment.create("/original/dir/file");
-    when(delegateFileSystem.readSymbolicLink(PathFragment.create("/transformed/dir/file")))
-        .thenReturn(PathFragment.create("/transformed/resolved"));
-
-    PathFragment resolvedPath = fileSystem.readSymbolicLink(path);
-
-    assertThat(resolvedPath).isEqualTo(PathFragment.create("/original/resolved"));
-  }
-
-  @Test
-  public void resolveSymbolicLinks_callsDelegateWithRewrittenPathAndTransformsItBack()
-      throws Exception {
-    PathFragment path = PathFragment.create("/original/dir/file");
-    when(delegateFileSystem.resolveSymbolicLinks(PathFragment.create("/transformed/dir/file")))
-        .thenReturn(Path.create("/transformed/resolved", delegateFileSystem));
-
-    Path resolvedPath = fileSystem.resolveSymbolicLinks(path);
-
-    assertThat(resolvedPath.asFragment()).isEqualTo(PathFragment.create("/original/resolved"));
-    assertThat(resolvedPath.getFileSystem()).isSameInstanceAs(fileSystem);
-  }
-
-  @Test
-  public void createSymbolicLink_callsDelegateWithRewrittenPathNotTarget() throws Exception {
-    PathFragment target = PathFragment.create("/original/target");
-
-    fileSystem.createSymbolicLink(
-        PathFragment.create("/original/dir/file"), target, SymlinkTargetType.UNSPECIFIED);
-
-    verify(delegateFileSystem)
-        .createSymbolicLink(
-            PathFragment.create("/transformed/dir/file"), target, SymlinkTargetType.UNSPECIFIED);
-    verifyNoMoreInteractions(delegateFileSystem);
-  }
-
-  private static final ImmutableClassToInstanceMap<?> DEFAULT_VALUES =
-      ImmutableClassToInstanceMap.builder()
-          .put(boolean.class, false)
-          .put(int.class, 0)
-          .put(long.class, 0L)
-          .put(String.class, "")
-          .build();
-
-  private static Object[] pathAndDefaultArgs(Method method, PathFragment path) {
-    Class<?>[] types = method.getParameterTypes();
-    Object[] result = new Object[types.length];
-    for (int i = 0; i < types.length; ++i) {
-      if (types[i].equals(PathFragment.class)) {
-        result[i] = path.replaceName(path.getBaseName() + i);
-        continue;
-      }
-      result[i] =
-          checkNotNull(
-              DEFAULT_VALUES.get(types[i]), "Missing default value for: %s", types[i].getName());
-    }
-    return result;
-  }
-
-  private static class TestDelegateFileSystem extends PathTransformingDelegateFileSystem {
-
-    private static final PathFragment ORIGINAL = PathFragment.create("/original");
-    private static final PathFragment TRANSFORMED = PathFragment.create("/transformed");
-
-    TestDelegateFileSystem(FileSystem fileSystem) {
-      super(fileSystem);
+    @Before
+    fun verifyGetDigestFunctionCalled() {
+        // getDigestFunction gets called in the constructor of PathTransformingDelegateFileSystem, make
+        // sure to "consume" that so that tests don't need to account for that.
+        Mockito.verify<Any?>(delegateFileSystem, Mockito.atLeastOnce()).getDigestFunction()
+        Mockito.verifyNoMoreInteractions(delegateFileSystem)
     }
 
-    @Override
-    protected PathFragment toDelegatePath(PathFragment path) {
-      return TRANSFORMED.getRelative(path.relativeTo(ORIGINAL));
+    @org.junit.Test
+    @TestParameters(valuesProvider = FileSystemMethodProvider::class)
+    @Throws(java.lang.Exception::class)
+    fun simplePathMethod_callsDelegateWithRewrittenPath(method: java.lang.reflect.Method) {
+        val path: PathFragment = PathFragment.create("/original/dir/file")
+
+        method.invoke(fileSystem, *pathAndDefaultArgs(method, path))
+
+        method.invoke(
+            Mockito.verify<Any?>(delegateFileSystem),
+            *pathAndDefaultArgs(method, PathFragment.create("/transformed/dir/file"))
+        )
+        Mockito.verifyNoMoreInteractions(delegateFileSystem)
     }
 
-    @Override
-    protected PathFragment fromDelegatePath(PathFragment delegatePath) {
-      return ORIGINAL.getRelative(delegatePath.relativeTo(TRANSFORMED));
-    }
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun readSymbolicLink_callsDelegateWithRewrittenPathAndTransformsItBack() {
+        val path: PathFragment? = PathFragment.create("/original/dir/file")
+        Mockito.`when`<T?>(delegateFileSystem.readSymbolicLink(PathFragment.create("/transformed/dir/file")))
+            .thenReturn(PathFragment.create("/transformed/resolved"))
 
-  private static class FileSystemMethodProvider extends TestParametersValuesProvider {
+        val resolvedPath: PathFragment? = fileSystem.readSymbolicLink(path)
 
-    private static final ImmutableSet<Method> IGNORED =
-        ImmutableSet.of(
-            getFileSystemMethod("getPath", PathFragment.class),
-            getFileSystemMethod("readSymbolicLink", PathFragment.class),
-            getFileSystemMethod("resolveSymbolicLinks", PathFragment.class),
-            getFileSystemMethod(
-                "createSymbolicLink",
-                PathFragment.class,
-                PathFragment.class,
-                SymlinkTargetType.class));
-
-    private static Method getFileSystemMethod(String name, Class<?>... parameterTypes) {
-      try {
-        return FileSystem.class.getDeclaredMethod(name, parameterTypes);
-      } catch (NoSuchMethodException e) {
-        throw new IllegalArgumentException(e);
-      }
+        assertThat(resolvedPath).isEqualTo(PathFragment.create("/original/resolved"))
     }
 
-    @Override
-    public ImmutableList<TestParametersValues> provideValues(Context context) {
-      return stream(FileSystem.class.getDeclaredMethods())
-          .filter(
-              m ->
-                  !IGNORED.contains(m)
-                      && !Modifier.isStatic(m.getModifiers())
-                      && !Modifier.isFinal(m.getModifiers())
-                      && ImmutableList.copyOf(m.getParameterTypes()).contains(PathFragment.class))
-          .map(
-              m ->
-                  TestParametersValues.builder()
-                      .name(m.getName() + parameterString(m.getParameterTypes()))
-                      .addParameter("method", m)
-                      .build())
-          .collect(toImmutableList());
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolveSymbolicLinks_callsDelegateWithRewrittenPathAndTransformsItBack() {
+        val path: PathFragment? = PathFragment.create("/original/dir/file")
+        Mockito.`when`<T?>(delegateFileSystem.resolveSymbolicLinks(PathFragment.create("/transformed/dir/file")))
+            .thenReturn(Path.create("/transformed/resolved", delegateFileSystem))
+
+        val resolvedPath: Path = fileSystem.resolveSymbolicLinks(path)
+
+        assertThat(resolvedPath.asFragment()).isEqualTo(PathFragment.create("/original/resolved"))
+        assertThat(resolvedPath.getFileSystem()).isSameInstanceAs(fileSystem)
     }
 
-    private static String parameterString(Class<?>[] types) {
-      return Arrays.stream(types)
-          .map(Class::getSimpleName)
-          .collect(Collectors.joining(", ", "(", ")"));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun createSymbolicLink_callsDelegateWithRewrittenPathNotTarget() {
+        val target: PathFragment? = PathFragment.create("/original/target")
+
+        fileSystem.createSymbolicLink(
+            PathFragment.create("/original/dir/file"), target, SymlinkTargetType.UNSPECIFIED
+        )
+
+        Mockito.verify<Any?>(delegateFileSystem)
+            .createSymbolicLink(
+                PathFragment.create("/transformed/dir/file"), target, SymlinkTargetType.UNSPECIFIED
+            )
+        Mockito.verifyNoMoreInteractions(delegateFileSystem)
     }
-  }
+
+    private class TestDelegateFileSystem(fileSystem: FileSystem?) : PathTransformingDelegateFileSystem(fileSystem) {
+        protected override fun toDelegatePath(path: PathFragment): PathFragment {
+            return TRANSFORMED.getRelative(path.relativeTo(ORIGINAL))
+        }
+
+        protected override fun fromDelegatePath(delegatePath: PathFragment): PathFragment {
+            return ORIGINAL.getRelative(delegatePath.relativeTo(TRANSFORMED))
+        }
+
+        companion object {
+            private val ORIGINAL: PathFragment = PathFragment.create("/original")
+            private val TRANSFORMED: PathFragment = PathFragment.create("/transformed")
+        }
+    }
+
+    private class FileSystemMethodProvider :
+        com.google.testing.junit.testparameterinjector.TestParametersValuesProvider() {
+        public override fun provideValues(context: com.google.testing.junit.testparameterinjector.TestParametersValuesProvider.Context?): com.google.common.collect.ImmutableList<TestParametersValues?> {
+            return java.util.Arrays.stream<java.lang.reflect.Method?>(FileSystem::class.java.getDeclaredMethods())
+                .filter { m: java.lang.reflect.Method? ->
+                    !IGNORED.contains(m) && !java.lang.reflect.Modifier.isStatic(m.getModifiers()) && !java.lang.reflect.Modifier.isFinal(
+                        m.getModifiers()
+                    ) && com.google.common.collect.ImmutableList.copyOf<java.lang.Class<*>?>(m.getParameterTypes())
+                        .contains(PathFragment::class.java)
+                }
+                .map<TestParametersValues?> { m: java.lang.reflect.Method? ->
+                    TestParametersValues.builder()
+                        .name(m.getName() + parameterString(m.getParameterTypes()))
+                        .addParameter("method", m)
+                        .build()
+                }
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<TestParametersValues?>())
+        }
+
+        companion object {
+            private val IGNORED: com.google.common.collect.ImmutableSet<java.lang.reflect.Method?> =
+                com.google.common.collect.ImmutableSet.of<java.lang.reflect.Method?>(
+                    getFileSystemMethod("getPath", PathFragment::class.java),
+                    getFileSystemMethod("readSymbolicLink", PathFragment::class.java),
+                    getFileSystemMethod("resolveSymbolicLinks", PathFragment::class.java),
+                    getFileSystemMethod(
+                        "createSymbolicLink",
+                        PathFragment::class.java,
+                        PathFragment::class.java,
+                        SymlinkTargetType::class.java
+                    )
+                )
+
+            private fun getFileSystemMethod(
+                name: String,
+                vararg parameterTypes: java.lang.Class<*>?
+            ): java.lang.reflect.Method? {
+                try {
+                    return FileSystem::class.java.getDeclaredMethod(name, *parameterTypes)
+                } catch (e: java.lang.NoSuchMethodException) {
+                    throw java.lang.IllegalArgumentException(e)
+                }
+            }
+
+            private fun parameterString(types: Array<java.lang.Class<*>?>): String? {
+                return java.util.Arrays.stream<java.lang.Class<*>?>(types)
+                    .map<String?> { obj: java.lang.Class<*>? -> obj.getSimpleName() }
+                    .collect(Collectors.joining(", ", "(", ")"))
+            }
+        }
+    }
+
+    companion object {
+        private fun createMockFileSystem(): FileSystem {
+            val fileSystem: FileSystem = Mockito.mock<FileSystem>(FileSystem::class.java)
+            Mockito.`when`<T?>(fileSystem.getDigestFunction()).thenReturn(DigestHashFunction.SHA256)
+            Mockito.`when`<T?>(fileSystem.getPath(ArgumentMatchers.any<T?>(PathFragment::class.java)))
+                .thenCallRealMethod()
+            return fileSystem
+        }
+
+        private val DEFAULT_VALUES: com.google.common.collect.ImmutableClassToInstanceMap<*> =
+            com.google.common.collect.ImmutableClassToInstanceMap.builder<Any?>()
+                .put<Boolean?>(Boolean::class.javaPrimitiveType, false)
+                .put<Int?>(Int::class.javaPrimitiveType, 0)
+                .put<Long?>(Long::class.javaPrimitiveType, 0L)
+                .put<String?>(String::class.java, "")
+                .build()
+
+        private fun pathAndDefaultArgs(method: java.lang.reflect.Method, path: PathFragment): Array<Any?> {
+            val types: Array<java.lang.Class<*>?> = method.getParameterTypes()
+            val result = arrayOfNulls<Any>(types.size)
+            for (i in types.indices) {
+                if (types[i] == PathFragment::class.java) {
+                    result[i] = path.replaceName(path.getBaseName() + i)
+                    continue
+                }
+                result[i] =
+                    com.google.common.base.Preconditions.checkNotNull(
+                        DEFAULT_VALUES.get(types[i]), "Missing default value for: %s", types[i].getName()
+                    )
+            }
+            return result
+        }
+    }
 }

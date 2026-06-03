@@ -11,207 +11,216 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.query2.query.output
 
-package com.google.devtools.build.lib.query2.query.output;
+import com.google.common.collect.ImmutableMap
+import com.google.devtools.build.lib.packages.Attribute
+import org.junit.Test
 
-import static com.google.common.truth.Truth.assertThat;
+/** Tests for [SyntheticAttributeHashCalculator].  */
+@RunWith(TestParameterInjector::class)
+class SyntheticAttributeHashCalculatorTest : PackageLoadingTestCase() {
+    @Test
+    @Throws(Exception::class)
+    fun testComputeAttributeChangeChangesHash() {
+        scratch.file("pkg/BUILD", "genrule(name='x', cmd='touch $@', outs=['y'])")
+        val ruleBefore: Rule? = getTarget("//pkg:x") as Rule?
 
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.packages.Attribute;
-import com.google.devtools.build.lib.packages.Rule;
-import com.google.devtools.build.lib.packages.util.PackageLoadingTestCase;
-import com.google.devtools.build.lib.query2.proto.proto2api.Build;
-import com.google.devtools.build.lib.query2.proto.proto2api.Build.Attribute.Discriminator;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+        scratch.overwriteFile("pkg/BUILD", "genrule(name='x', cmd='touch $@', outs=['z'])")
+        invalidatePackages()
+        val ruleAfter: Rule? = getTarget("//pkg:x") as Rule?
 
-/** Tests for {@link SyntheticAttributeHashCalculator}. */
-@RunWith(TestParameterInjector.class)
-public class SyntheticAttributeHashCalculatorTest extends PackageLoadingTestCase {
+        val hashBefore =
+            SyntheticAttributeHashCalculator.compute(
+                ruleBefore,  /* serializedAttributes= */
+                ImmutableMap.of<Attribute, Build.Attribute>(),  /* extraDataForAttrHash= */
+                "",
+                DigestHashFunction.SHA256.getHashFunction(),  /* includeAttributeSourceAspects= */
+                false,  /* includeStarlarkRuleEnv= */
+                true
+            )
+        val hashAfter =
+            SyntheticAttributeHashCalculator.compute(
+                ruleAfter,  /* serializedAttributes= */
+                ImmutableMap.of<Attribute, Build.Attribute>(),  /* extraDataForAttrHash= */
+                "",
+                DigestHashFunction.SHA256.getHashFunction(),  /* includeAttributeSourceAspects= */
+                false,  /* includeStarlarkRuleEnv= */
+                true
+            )
 
-  @Test
-  public void testComputeAttributeChangeChangesHash() throws Exception {
-    scratch.file("pkg/BUILD", "genrule(name='x', cmd='touch $@', outs=['y'])");
-    Rule ruleBefore = (Rule) getTarget("//pkg:x");
+        Truth.assertThat(hashBefore).isNotEqualTo(hashAfter)
+    }
 
-    scratch.overwriteFile("pkg/BUILD", "genrule(name='x', cmd='touch $@', outs=['z'])");
-    invalidatePackages();
-    Rule ruleAfter = (Rule) getTarget("//pkg:x");
+    @Test
+    @Throws(Exception::class)
+    fun testComputeLocationDoesntChangeHash() {
+        scratch.file("pkg/BUILD", "genrule(name='x', cmd='touch $@', outs=['y'])")
+        val ruleBefore: Rule? = getTarget("//pkg:x") as Rule?
 
-    String hashBefore =
-        SyntheticAttributeHashCalculator.compute(
-            ruleBefore,
-            /* serializedAttributes= */ ImmutableMap.of(),
-            /* extraDataForAttrHash= */ "",
-            DigestHashFunction.SHA256.getHashFunction(),
-            /* includeAttributeSourceAspects= */ false,
-            /* includeStarlarkRuleEnv= */ true);
-    String hashAfter =
-        SyntheticAttributeHashCalculator.compute(
-            ruleAfter,
-            /* serializedAttributes= */ ImmutableMap.of(),
-            /* extraDataForAttrHash= */ "",
-            DigestHashFunction.SHA256.getHashFunction(),
-            /* includeAttributeSourceAspects= */ false,
-            /* includeStarlarkRuleEnv= */ true);
-
-    assertThat(hashBefore).isNotEqualTo(hashAfter);
-  }
-
-  @Test
-  public void testComputeLocationDoesntChangeHash() throws Exception {
-    scratch.file("pkg/BUILD", "genrule(name='x', cmd='touch $@', outs=['y'])");
-    Rule ruleBefore = (Rule) getTarget("//pkg:x");
-
-    scratch.overwriteFile(
-        "pkg/BUILD",
-        """
+        scratch.overwriteFile(
+            "pkg/BUILD",
+            """
         genrule(
             name = "rule_that_moves_x",
             outs = ["whatever"],
-            cmd = "touch $@",
+            cmd = "touch ${'$'}@",
         )
 
         genrule(
             name = "x",
             outs = ["y"],
-            cmd = "touch $@",
+            cmd = "touch ${'$'}@",
         )
-        """);
-    invalidatePackages();
-    Rule ruleAfter = (Rule) getTarget("//pkg:x");
+        
+        """.trimIndent()
+        )
+        invalidatePackages()
+        val ruleAfter: Rule? = getTarget("//pkg:x") as Rule?
 
-    String hashBefore =
-        SyntheticAttributeHashCalculator.compute(
-            ruleBefore,
-            /* serializedAttributes= */ ImmutableMap.of(),
-            /* extraDataForAttrHash= */ "",
-            DigestHashFunction.SHA256.getHashFunction(),
-            /* includeAttributeSourceAspects= */ false,
-            /* includeStarlarkRuleEnv= */ true);
-    String hashAfter =
-        SyntheticAttributeHashCalculator.compute(
-            ruleAfter,
-            /* serializedAttributes= */ ImmutableMap.of(),
-            /* extraDataForAttrHash= */ "",
-            DigestHashFunction.SHA256.getHashFunction(),
-            /* includeAttributeSourceAspects= */ false,
-            /* includeStarlarkRuleEnv= */ true);
+        val hashBefore =
+            SyntheticAttributeHashCalculator.compute(
+                ruleBefore,  /* serializedAttributes= */
+                ImmutableMap.of<Attribute, Build.Attribute>(),  /* extraDataForAttrHash= */
+                "",
+                DigestHashFunction.SHA256.getHashFunction(),  /* includeAttributeSourceAspects= */
+                false,  /* includeStarlarkRuleEnv= */
+                true
+            )
+        val hashAfter =
+            SyntheticAttributeHashCalculator.compute(
+                ruleAfter,  /* serializedAttributes= */
+                ImmutableMap.of<Attribute, Build.Attribute>(),  /* extraDataForAttrHash= */
+                "",
+                DigestHashFunction.SHA256.getHashFunction(),  /* includeAttributeSourceAspects= */
+                false,  /* includeStarlarkRuleEnv= */
+                true
+            )
 
-    assertThat(hashBefore).isEqualTo(hashAfter);
-  }
+        Truth.assertThat(hashBefore).isEqualTo(hashAfter)
+    }
 
-  @Test
-  public void testComputeSerializedAttributesUsedOverAvailable() throws Exception {
-    scratch.file("pkg/BUILD", "genrule(name='x', cmd='touch $@', outs=['y'])");
-    Rule rule = (Rule) getTarget("//pkg:x");
+    @Test
+    @Throws(Exception::class)
+    fun testComputeSerializedAttributesUsedOverAvailable() {
+        scratch.file("pkg/BUILD", "genrule(name='x', cmd='touch $@', outs=['y'])")
+        val rule: Rule? = getTarget("//pkg:x") as Rule?
 
-    String hashBefore =
-        SyntheticAttributeHashCalculator.compute(
-            rule,
-            /* serializedAttributes= */ ImmutableMap.of(),
-            /* extraDataForAttrHash= */ "",
-            DigestHashFunction.SHA256.getHashFunction(),
-            /* includeAttributeSourceAspects= */ false,
-            /* includeStarlarkRuleEnv= */ true);
+        val hashBefore =
+            SyntheticAttributeHashCalculator.compute(
+                rule,  /* serializedAttributes= */
+                ImmutableMap.of<Attribute, Build.Attribute>(),  /* extraDataForAttrHash= */
+                "",
+                DigestHashFunction.SHA256.getHashFunction(),  /* includeAttributeSourceAspects= */
+                false,  /* includeStarlarkRuleEnv= */
+                true
+            )
 
-    ImmutableMap<Attribute, Build.Attribute> serializedAttributes =
-        ImmutableMap.of(
-            rule.getRuleClassObject().getAttributeProvider().getAttributeByName("cmd"),
-            Build.Attribute.newBuilder()
-                .setName("dummy")
-                .setType(Discriminator.STRING)
-                .setStringValue("hi")
-                .build());
+        val serializedAttributes: ImmutableMap<Attribute?, Build.Attribute?> =
+            ImmutableMap.of<K?, V?>(
+                rule.getRuleClassObject().getAttributeProvider().getAttributeByName("cmd"),
+                Build.Attribute.newBuilder()
+                    .setName("dummy")
+                    .setType(Discriminator.STRING)
+                    .setStringValue("hi")
+                    .build()
+            )
 
-    String hashAfter =
-        SyntheticAttributeHashCalculator.compute(
-            rule,
-            serializedAttributes, /*extraDataForAttrHash*/
-            "",
-            DigestHashFunction.SHA256.getHashFunction(),
-            /* includeAttributeSourceAspects= */ false,
-            /* includeStarlarkRuleEnv= */ true);
+        val hashAfter =
+            SyntheticAttributeHashCalculator.compute(
+                rule,
+                serializedAttributes,  /*extraDataForAttrHash*/
+                "",
+                DigestHashFunction.SHA256.getHashFunction(),  /* includeAttributeSourceAspects= */
+                false,  /* includeStarlarkRuleEnv= */
+                true
+            )
 
-    assertThat(hashBefore).isNotEqualTo(hashAfter);
-  }
+        Truth.assertThat(hashBefore).isNotEqualTo(hashAfter)
+    }
 
-  @Test
-  public void testComputeExtraDataChangesHash() throws Exception {
-    scratch.file("pkg/BUILD", "genrule(name='x', cmd='touch $@', outs=['y'])");
-    Rule rule = (Rule) getTarget("//pkg:x");
+    @Test
+    @Throws(Exception::class)
+    fun testComputeExtraDataChangesHash() {
+        scratch.file("pkg/BUILD", "genrule(name='x', cmd='touch $@', outs=['y'])")
+        val rule: Rule? = getTarget("//pkg:x") as Rule?
 
-    String hashBefore =
-        SyntheticAttributeHashCalculator.compute(
-            rule,
-            /* serializedAttributes= */ ImmutableMap.of(),
-            /* extraDataForAttrHash= */ "",
-            DigestHashFunction.SHA256.getHashFunction(),
-            /* includeAttributeSourceAspects= */ false,
-            /* includeStarlarkRuleEnv= */ true);
+        val hashBefore =
+            SyntheticAttributeHashCalculator.compute(
+                rule,  /* serializedAttributes= */
+                ImmutableMap.of<Attribute, Build.Attribute>(),  /* extraDataForAttrHash= */
+                "",
+                DigestHashFunction.SHA256.getHashFunction(),  /* includeAttributeSourceAspects= */
+                false,  /* includeStarlarkRuleEnv= */
+                true
+            )
 
-    String hashAfter =
-        SyntheticAttributeHashCalculator.compute(
-            rule,
-            /* serializedAttributes= */ ImmutableMap.of(), /*extraDataForAttrHash*/
-            "blahblaah",
-            DigestHashFunction.SHA256.getHashFunction(),
-            /* includeAttributeSourceAspects= */ false,
-            /* includeStarlarkRuleEnv= */ true);
+        val hashAfter =
+            SyntheticAttributeHashCalculator.compute(
+                rule,  /* serializedAttributes= */
+                ImmutableMap.of<Attribute, Build.Attribute>(),  /*extraDataForAttrHash*/
+                "blahblaah",
+                DigestHashFunction.SHA256.getHashFunction(),  /* includeAttributeSourceAspects= */
+                false,  /* includeStarlarkRuleEnv= */
+                true
+            )
 
-    assertThat(hashBefore).isNotEqualTo(hashAfter);
-  }
+        Truth.assertThat(hashBefore).isNotEqualTo(hashAfter)
+    }
 
-  @Test
-  public void testComputePackageErrorStatusChangesHash() throws Exception {
-    scratch.file("pkg/BUILD", "genrule(name='x', cmd='touch $@', outs=['y'])");
-    Rule ruleBefore = (Rule) getTarget("//pkg:x");
+    @Test
+    @Throws(Exception::class)
+    fun testComputePackageErrorStatusChangesHash() {
+        scratch.file("pkg/BUILD", "genrule(name='x', cmd='touch $@', outs=['y'])")
+        val ruleBefore: Rule? = getTarget("//pkg:x") as Rule?
 
-    // Remove fail-fast handler, we're intentionally creating a package with errors.
-    reporter.removeHandler(failFastHandler);
-    scratch.overwriteFile(
-        "pkg/BUILD",
-        """
+        // Remove fail-fast handler, we're intentionally creating a package with errors.
+        reporter.removeHandler(failFastHandler)
+        scratch.overwriteFile(
+            "pkg/BUILD",
+            """
         genrule(
             name = "x",
             outs = ["z"],
-            cmd = "touch $@",
+            cmd = "touch ${'$'}@",
         )
 
         genrule(name = "missing_attributes")
-        """);
-    invalidatePackages();
-    Rule ruleAfter = (Rule) getTarget("//pkg:x");
-    assertThat(ruleAfter.containsErrors()).isTrue();
+        
+        """.trimIndent()
+        )
+        invalidatePackages()
+        val ruleAfter: Rule? = getTarget("//pkg:x") as Rule?
+        assertThat(ruleAfter.containsErrors()).isTrue()
 
-    String hashBefore =
-        SyntheticAttributeHashCalculator.compute(
-            ruleBefore,
-            /* serializedAttributes= */ ImmutableMap.of(),
-            /* extraDataForAttrHash= */ "",
-            DigestHashFunction.SHA256.getHashFunction(),
-            /* includeAttributeSourceAspects= */ false,
-            /* includeStarlarkRuleEnv= */ true);
-    String hashAfter =
-        SyntheticAttributeHashCalculator.compute(
-            ruleAfter,
-            /* serializedAttributes= */ ImmutableMap.of(),
-            /* extraDataForAttrHash= */ "",
-            DigestHashFunction.SHA256.getHashFunction(),
-            /* includeAttributeSourceAspects= */ false,
-            /* includeStarlarkRuleEnv= */ true);
+        val hashBefore =
+            SyntheticAttributeHashCalculator.compute(
+                ruleBefore,  /* serializedAttributes= */
+                ImmutableMap.of<Attribute, Build.Attribute>(),  /* extraDataForAttrHash= */
+                "",
+                DigestHashFunction.SHA256.getHashFunction(),  /* includeAttributeSourceAspects= */
+                false,  /* includeStarlarkRuleEnv= */
+                true
+            )
+        val hashAfter =
+            SyntheticAttributeHashCalculator.compute(
+                ruleAfter,  /* serializedAttributes= */
+                ImmutableMap.of<Attribute, Build.Attribute>(),  /* extraDataForAttrHash= */
+                "",
+                DigestHashFunction.SHA256.getHashFunction(),  /* includeAttributeSourceAspects= */
+                false,  /* includeStarlarkRuleEnv= */
+                true
+            )
 
-    assertThat(hashBefore).isNotEqualTo(hashAfter);
-  }
+        Truth.assertThat(hashBefore).isNotEqualTo(hashAfter)
+    }
 
-  @Test
-  public void testComputeIncludeAttributeSourceAspectsChangesHash() throws Exception {
-    scratch.file(
-        "a/defs.bzl",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testComputeIncludeAttributeSourceAspectsChangesHash() {
+        scratch.file(
+            "a/defs.bzl",
+            """
         def _test_aspect_impl(target, ctx):
             return []
 
@@ -233,10 +242,12 @@ public class SyntheticAttributeHashCalculatorTest extends PackageLoadingTestCase
                 "deps": attr.label_list(aspects = [test_aspect]),
             },
         )
-        """);
-    scratch.file(
-        "a/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "a/BUILD",
+            """
         load("defs.bzl", "test_lib")
 
         test_lib(
@@ -245,86 +256,98 @@ public class SyntheticAttributeHashCalculatorTest extends PackageLoadingTestCase
         )
 
         test_lib(name = "b")
-        """);
-    Rule rule = (Rule) getTarget("//a:a");
+        
+        """.trimIndent()
+        )
+        val rule: Rule? = getTarget("//a:a") as Rule?
 
-    String hashWithAttributeAspects =
-        SyntheticAttributeHashCalculator.compute(
-            rule,
-            /* serializedAttributes= */ ImmutableMap.of(),
-            /* extraDataForAttrHash= */ "",
-            DigestHashFunction.SHA256.getHashFunction(),
-            /* includeAttributeSourceAspects= */ true,
-            /* includeStarlarkRuleEnv= */ true);
+        val hashWithAttributeAspects =
+            SyntheticAttributeHashCalculator.compute(
+                rule,  /* serializedAttributes= */
+                ImmutableMap.of<Attribute, Build.Attribute>(),  /* extraDataForAttrHash= */
+                "",
+                DigestHashFunction.SHA256.getHashFunction(),  /* includeAttributeSourceAspects= */
+                true,  /* includeStarlarkRuleEnv= */
+                true
+            )
 
-    String hashWithoutAttributeAspects =
-        SyntheticAttributeHashCalculator.compute(
-            rule,
-            /* serializedAttributes= */ ImmutableMap.of(),
-            /* extraDataForAttrHash= */ "",
-            DigestHashFunction.SHA256.getHashFunction(),
-            /* includeAttributeSourceAspects= */ false,
-            /* includeStarlarkRuleEnv= */ true);
-    assertThat(hashWithAttributeAspects).isNotEqualTo(hashWithoutAttributeAspects);
-  }
+        val hashWithoutAttributeAspects =
+            SyntheticAttributeHashCalculator.compute(
+                rule,  /* serializedAttributes= */
+                ImmutableMap.of<Attribute, Build.Attribute>(),  /* extraDataForAttrHash= */
+                "",
+                DigestHashFunction.SHA256.getHashFunction(),  /* includeAttributeSourceAspects= */
+                false,  /* includeStarlarkRuleEnv= */
+                true
+            )
+        Truth.assertThat(hashWithAttributeAspects).isNotEqualTo(hashWithoutAttributeAspects)
+    }
 
-  @Test
-  public void testStarlarkRuleEnvChanges(@TestParameter boolean includeStarlarkRuleEnv)
-      throws Exception {
-    scratch.file(
-        "a/defs.bzl",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testStarlarkRuleEnvChanges(@TestParameter includeStarlarkRuleEnv: Boolean) {
+        scratch.file(
+            "a/defs.bzl",
+            """
         def _lib_impl(ctx):
             return "old"
 
         test_lib = rule(
             implementation = _lib_impl,
         )
-        """);
-    scratch.file(
-        "a/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "a/BUILD",
+            """
         load("defs.bzl", "test_lib")
 
         test_lib(name = "a")
-        """);
-    Rule ruleBefore = (Rule) getTarget("//a:a");
+        
+        """.trimIndent()
+        )
+        val ruleBefore: Rule? = getTarget("//a:a") as Rule?
 
-    scratch.overwriteFile(
-        "a/defs.bzl",
-        """
+        scratch.overwriteFile(
+            "a/defs.bzl",
+            """
         def _lib_impl(ctx):
             return "new"
 
         test_lib = rule(
             implementation = _lib_impl,
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    invalidatePackages();
-    Rule ruleAfter = (Rule) getTarget("//a:a");
+        invalidatePackages()
+        val ruleAfter: Rule? = getTarget("//a:a") as Rule?
 
-    String hashBefore =
-        SyntheticAttributeHashCalculator.compute(
-            ruleBefore,
-            /* serializedAttributes= */ ImmutableMap.of(),
-            /* extraDataForAttrHash= */ "",
-            DigestHashFunction.SHA256.getHashFunction(),
-            /* includeAttributeSourceAspects= */ false,
-            includeStarlarkRuleEnv);
+        val hashBefore =
+            SyntheticAttributeHashCalculator.compute(
+                ruleBefore,  /* serializedAttributes= */
+                ImmutableMap.of<Attribute, Build.Attribute>(),  /* extraDataForAttrHash= */
+                "",
+                DigestHashFunction.SHA256.getHashFunction(),  /* includeAttributeSourceAspects= */
+                false,
+                includeStarlarkRuleEnv
+            )
 
-    String hashAfter =
-        SyntheticAttributeHashCalculator.compute(
-            ruleAfter,
-            /* serializedAttributes= */ ImmutableMap.of(),
-            /* extraDataForAttrHash= */ "",
-            DigestHashFunction.SHA256.getHashFunction(),
-            /* includeAttributeSourceAspects= */ false,
-            includeStarlarkRuleEnv);
-    if (includeStarlarkRuleEnv) {
-      assertThat(hashBefore).isNotEqualTo(hashAfter);
-    } else {
-      assertThat(hashBefore).isEqualTo(hashAfter);
+        val hashAfter =
+            SyntheticAttributeHashCalculator.compute(
+                ruleAfter,  /* serializedAttributes= */
+                ImmutableMap.of<Attribute, Build.Attribute>(),  /* extraDataForAttrHash= */
+                "",
+                DigestHashFunction.SHA256.getHashFunction(),  /* includeAttributeSourceAspects= */
+                false,
+                includeStarlarkRuleEnv
+            )
+        if (includeStarlarkRuleEnv) {
+            Truth.assertThat(hashBefore).isNotEqualTo(hashAfter)
+        } else {
+            Truth.assertThat(hashBefore).isEqualTo(hashAfter)
+        }
     }
-  }
 }

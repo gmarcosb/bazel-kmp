@@ -11,34 +11,33 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.events;
+package com.google.devtools.build.lib.events
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.events.EventTestTemplate
+import net.starlark.java.syntax.SyntaxError.location
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** A test for [Reporter].  */
+@RunWith(JUnit4::class)
+class SimpleReportersTest : EventTestTemplate() {
+    private var handlerCount = 0
 
-/** A test for {@link Reporter}. */
-@RunWith(JUnit4.class)
-public class SimpleReportersTest extends EventTestTemplate {
+    @org.junit.Test
+    fun addsHandlers() {
+        val handler: com.google.devtools.build.lib.events.EventHandler =
+            object : com.google.devtools.build.lib.events.EventHandler {
+                override fun handle(event: com.google.devtools.build.lib.events.Event?) {
+                    handlerCount++
+                }
+            }
 
-  private int handlerCount = 0;
-
-  @Test
-  public void addsHandlers() {
-    EventHandler handler =
-        new EventHandler() {
-          @Override
-          public void handle(Event event) {
-            handlerCount++;
-          }
-        };
-
-    Reporter reporter = new Reporter(EventBusEventHandler.createWithNewEventBus(), handler);
-    reporter.handle(Event.info(location, "Add to handlerCount."));
-    reporter.handle(Event.info(location, "Add to handlerCount."));
-    reporter.handle(Event.info(location, "Add to handlerCount."));
-    assertThat(handlerCount).isEqualTo(3);
-  }
+        val reporter: com.google.devtools.build.lib.events.Reporter =
+            com.google.devtools.build.lib.events.Reporter(EventBusEventHandler.createWithNewEventBus(), handler)
+        reporter.handle(com.google.devtools.build.lib.events.Event.info(location, "Add to handlerCount."))
+        reporter.handle(com.google.devtools.build.lib.events.Event.info(location, "Add to handlerCount."))
+        reporter.handle(com.google.devtools.build.lib.events.Event.info(location, "Add to handlerCount."))
+        Truth.assertThat(handlerCount).isEqualTo(3)
+    }
 }

@@ -11,175 +11,178 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.profiler
 
-package com.google.devtools.build.lib.profiler;
-
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-
-import com.google.common.io.ByteStreams;
-import com.google.devtools.build.lib.profiler.MemoryProfiler.MemoryProfileStableHeapParameters;
-import com.google.devtools.build.lib.profiler.MemoryProfiler.Sleeper;
-import com.google.devtools.common.options.OptionsParsingException;
-import java.lang.management.MemoryMXBean;
-import java.lang.management.MemoryUsage;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.regex.Pattern;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-import org.mockito.Mockito;
-
-/** Tests for {@link MemoryProfiler}. */
-@RunWith(JUnit4.class)
-public class MemoryProfilerTest {
-
-  private static final Pattern NO_OP_PATTERN = Pattern.compile("no_match");
-
-  @Test
-  public void profilerDoesOneGcAndNoSleepNormally() throws Exception {
-    MemoryProfiler profiler = MemoryProfiler.instance();
-    profiler.setStableMemoryParameters(
-        new MemoryProfileStableHeapParameters.Converter().convert("1,10"), NO_OP_PATTERN);
-    profiler.start(ByteStreams.nullOutputStream());
-    MemoryMXBean bean = Mockito.mock(MemoryMXBean.class);
-    MemoryUsage heapUsage = new MemoryUsage(0, 0, 0, 0);
-    MemoryUsage nonHeapUsage = new MemoryUsage(5, 5, 5, 5);
-    when(bean.getHeapMemoryUsage()).thenReturn(heapUsage);
-    when(bean.getNonHeapMemoryUsage()).thenReturn(nonHeapUsage);
-    RecordingSleeper sleeper = new RecordingSleeper();
-    MemoryProfiler.HeapAndNonHeap result =
-        profiler.prepareBeanAndGetLocalMinUsage(ProfilePhase.ANALYZE, bean, sleeper);
-    assertThat(result.heap()).isSameInstanceAs(heapUsage);
-    assertThat(result.nonHeap()).isSameInstanceAs(nonHeapUsage);
-    assertThat(sleeper.sleeps).isEmpty();
-    verify(bean, times(1)).gc();
-    profiler.prepareBeanAndGetLocalMinUsage(ProfilePhase.FINISH, bean, sleeper);
-    verify(bean, times(2)).gc();
-    assertThat(sleeper.sleeps).isEmpty();
-  }
-
-  @Test
-  public void profilerDoesOneGcAndNoSleepExceptInFinish() throws Exception {
-    MemoryProfiler profiler = MemoryProfiler.instance();
-    profiler.setStableMemoryParameters(
-        new MemoryProfileStableHeapParameters.Converter().convert("3,10"), NO_OP_PATTERN);
-    profiler.start(ByteStreams.nullOutputStream());
-    MemoryMXBean bean = Mockito.mock(MemoryMXBean.class);
-    MemoryUsage emptyHeap = new MemoryUsage(0, 0, 0, 0);
-    MemoryUsage emptyNonHeap = new MemoryUsage(0, 0, 0, 0);
-    when(bean.getHeapMemoryUsage()).thenReturn(emptyHeap);
-    when(bean.getNonHeapMemoryUsage()).thenReturn(emptyNonHeap);
-    RecordingSleeper sleeper = new RecordingSleeper();
-    MemoryProfiler.HeapAndNonHeap result =
-        profiler.prepareBeanAndGetLocalMinUsage(ProfilePhase.ANALYZE, bean, sleeper);
-    assertThat(result.heap()).isSameInstanceAs(emptyHeap);
-    assertThat(result.nonHeap()).isSameInstanceAs(emptyNonHeap);
-    assertThat(sleeper.sleeps).isEmpty();
-    verify(bean, times(1)).gc();
-    verify(bean, times(1)).getHeapMemoryUsage();
-    verify(bean, times(1)).getNonHeapMemoryUsage();
-    MemoryUsage heapUsage = new MemoryUsage(0, 1, 2, 2);
-    when(bean.getHeapMemoryUsage())
-        .thenReturn(new MemoryUsage(5, 5, 5, 5), heapUsage, new MemoryUsage(10, 1, 10, 10));
-    MemoryUsage nonHeapUsage = new MemoryUsage(2, 2, 2, 2);
-    when(bean.getNonHeapMemoryUsage())
-        .thenReturn(new MemoryUsage(1, 1, 1, 1), nonHeapUsage, new MemoryUsage(2, 2, 2, 2));
-    result = profiler.prepareBeanAndGetLocalMinUsage(ProfilePhase.FINISH, bean, sleeper);
-    assertThat(result.heap()).isSameInstanceAs(heapUsage);
-    assertThat(result.nonHeap()).isSameInstanceAs(nonHeapUsage);
-    assertThat(sleeper.sleeps)
-        .containsExactly(Duration.ofSeconds(10), Duration.ofSeconds(10))
-        .inOrder();
-    verify(bean, times(4)).gc();
-    verify(bean, times(4)).getHeapMemoryUsage();
-    // Avoid call when heap usage is not minimal.
-    verify(bean, times(3)).getNonHeapMemoryUsage();
-  }
-
-  @Test
-  public void profilerHasMultiplePairs() throws Exception {
-    MemoryProfiler profiler = MemoryProfiler.instance();
-    profiler.setStableMemoryParameters(
-        new MemoryProfileStableHeapParameters.Converter().convert("2,1,3,4,5,6"), NO_OP_PATTERN);
-    profiler.start(ByteStreams.nullOutputStream());
-    MemoryMXBean bean = Mockito.mock(MemoryMXBean.class);
-
-    MemoryUsage heapUsage = new MemoryUsage(0, 0, 0, 0);
-    MemoryUsage nonHeapUsage = new MemoryUsage(5, 5, 5, 5);
-    when(bean.getHeapMemoryUsage()).thenReturn(heapUsage);
-    when(bean.getNonHeapMemoryUsage()).thenReturn(nonHeapUsage);
-
-    RecordingSleeper sleeper = new RecordingSleeper();
-    MemoryProfiler.HeapAndNonHeap result =
-        profiler.prepareBeanAndGetLocalMinUsage(ProfilePhase.ANALYZE, bean, sleeper);
-    assertThat(result.heap()).isSameInstanceAs(heapUsage);
-    assertThat(result.nonHeap()).isSameInstanceAs(nonHeapUsage);
-    assertThat(sleeper.sleeps).isEmpty();
-
-    verify(bean, times(1)).gc();
-    profiler.prepareBeanAndGetLocalMinUsage(ProfilePhase.FINISH, bean, sleeper);
-    // 1 for call to ANALYZE + spec'd runs
-    verify(bean, times(1 + 2 + 3 + 5)).gc();
-
-    assertThat(sleeper.sleeps)
-        .containsExactly(
-            Duration.ofSeconds(1), // 2 * 1s, but we skip the first sleep
-            Duration.ofSeconds(4), // 3 * 4s
-            Duration.ofSeconds(4),
-            Duration.ofSeconds(4),
-            Duration.ofSeconds(6), // 5 * 6s
-            Duration.ofSeconds(6),
-            Duration.ofSeconds(6),
-            Duration.ofSeconds(6),
-            Duration.ofSeconds(6))
-        .inOrder();
-  }
-
-  @Test
-  public void profilerHasBadInputOddValues() throws Exception {
-    MemoryProfiler profiler = MemoryProfiler.instance();
-    OptionsParsingException e =
-        assertThrows(
-            OptionsParsingException.class,
-            () ->
-                profiler.setStableMemoryParameters(
-                    new MemoryProfileStableHeapParameters.Converter().convert("1,10,7"),
-                    NO_OP_PATTERN));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("Expected even number of comma-separated integer values");
-  }
-
-  @Test
-  public void profilerHasBadInputNotInts() throws Exception {
-    MemoryProfiler profiler = MemoryProfiler.instance();
-    OptionsParsingException e =
-        assertThrows(
-            OptionsParsingException.class,
-            () ->
-                profiler.setStableMemoryParameters(
-                    new MemoryProfileStableHeapParameters.Converter()
-                        .convert("1,10,74,22,horse,goat"),
-                    NO_OP_PATTERN));
-    assertThat(e)
-        .hasMessageThat()
-        .contains(
-            "Expected even number of comma-separated integer values, could not parse integer in"
-                + " list");
-  }
-
-  private static class RecordingSleeper implements Sleeper {
-    private final List<Duration> sleeps = new ArrayList<>();
-
-    @Override
-    public void sleep(Duration duration) {
-      sleeps.add(duration);
+/** Tests for [MemoryProfiler].  */
+@RunWith(JUnit4::class)
+class MemoryProfilerTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun profilerDoesOneGcAndNoSleepNormally() {
+        val profiler: MemoryProfiler = MemoryProfiler.instance()
+        profiler.setStableMemoryParameters(
+            Converter().convert("1,10"), NO_OP_PATTERN
+        )
+        profiler.start(com.google.common.io.ByteStreams.nullOutputStream())
+        val bean: java.lang.management.MemoryMXBean =
+            Mockito.mock<java.lang.management.MemoryMXBean>(java.lang.management.MemoryMXBean::class.java)
+        val heapUsage: java.lang.management.MemoryUsage = java.lang.management.MemoryUsage(0, 0, 0, 0)
+        val nonHeapUsage: java.lang.management.MemoryUsage = java.lang.management.MemoryUsage(5, 5, 5, 5)
+        Mockito.`when`<java.lang.management.MemoryUsage?>(bean.getHeapMemoryUsage()).thenReturn(heapUsage)
+        Mockito.`when`<java.lang.management.MemoryUsage?>(bean.getNonHeapMemoryUsage()).thenReturn(nonHeapUsage)
+        val sleeper = RecordingSleeper()
+        val result: MemoryProfiler.HeapAndNonHeap =
+            profiler.prepareBeanAndGetLocalMinUsage(ProfilePhase.ANALYZE, bean, sleeper)
+        assertThat(result.heap()).isSameInstanceAs(heapUsage)
+        assertThat(result.nonHeap()).isSameInstanceAs(nonHeapUsage)
+        Truth.assertThat(sleeper.sleeps).isEmpty()
+        Mockito.verify<java.lang.management.MemoryMXBean?>(bean, Mockito.times(1)).gc()
+        profiler.prepareBeanAndGetLocalMinUsage(ProfilePhase.FINISH, bean, sleeper)
+        Mockito.verify<java.lang.management.MemoryMXBean?>(bean, Mockito.times(2)).gc()
+        Truth.assertThat(sleeper.sleeps).isEmpty()
     }
-  }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun profilerDoesOneGcAndNoSleepExceptInFinish() {
+        val profiler: MemoryProfiler = MemoryProfiler.instance()
+        profiler.setStableMemoryParameters(
+            Converter().convert("3,10"), NO_OP_PATTERN
+        )
+        profiler.start(com.google.common.io.ByteStreams.nullOutputStream())
+        val bean: java.lang.management.MemoryMXBean =
+            Mockito.mock<java.lang.management.MemoryMXBean>(java.lang.management.MemoryMXBean::class.java)
+        val emptyHeap: java.lang.management.MemoryUsage = java.lang.management.MemoryUsage(0, 0, 0, 0)
+        val emptyNonHeap: java.lang.management.MemoryUsage = java.lang.management.MemoryUsage(0, 0, 0, 0)
+        Mockito.`when`<java.lang.management.MemoryUsage?>(bean.getHeapMemoryUsage()).thenReturn(emptyHeap)
+        Mockito.`when`<java.lang.management.MemoryUsage?>(bean.getNonHeapMemoryUsage()).thenReturn(emptyNonHeap)
+        val sleeper = RecordingSleeper()
+        var result: MemoryProfiler.HeapAndNonHeap =
+            profiler.prepareBeanAndGetLocalMinUsage(ProfilePhase.ANALYZE, bean, sleeper)
+        assertThat(result.heap()).isSameInstanceAs(emptyHeap)
+        assertThat(result.nonHeap()).isSameInstanceAs(emptyNonHeap)
+        Truth.assertThat(sleeper.sleeps).isEmpty()
+        Mockito.verify<java.lang.management.MemoryMXBean?>(bean, Mockito.times(1)).gc()
+        Mockito.verify<java.lang.management.MemoryMXBean?>(bean, Mockito.times(1)).getHeapMemoryUsage()
+        Mockito.verify<java.lang.management.MemoryMXBean?>(bean, Mockito.times(1)).getNonHeapMemoryUsage()
+        val heapUsage: java.lang.management.MemoryUsage = java.lang.management.MemoryUsage(0, 1, 2, 2)
+        Mockito.`when`<java.lang.management.MemoryUsage?>(bean.getHeapMemoryUsage())
+            .thenReturn(
+                java.lang.management.MemoryUsage(5, 5, 5, 5),
+                heapUsage,
+                java.lang.management.MemoryUsage(10, 1, 10, 10)
+            )
+        val nonHeapUsage: java.lang.management.MemoryUsage = java.lang.management.MemoryUsage(2, 2, 2, 2)
+        Mockito.`when`<java.lang.management.MemoryUsage?>(bean.getNonHeapMemoryUsage())
+            .thenReturn(
+                java.lang.management.MemoryUsage(1, 1, 1, 1),
+                nonHeapUsage,
+                java.lang.management.MemoryUsage(2, 2, 2, 2)
+            )
+        result = profiler.prepareBeanAndGetLocalMinUsage(ProfilePhase.FINISH, bean, sleeper)
+        assertThat(result.heap()).isSameInstanceAs(heapUsage)
+        assertThat(result.nonHeap()).isSameInstanceAs(nonHeapUsage)
+        Truth.assertThat(sleeper.sleeps)
+            .containsExactly(java.time.Duration.ofSeconds(10), java.time.Duration.ofSeconds(10))
+            .inOrder()
+        Mockito.verify<java.lang.management.MemoryMXBean?>(bean, Mockito.times(4)).gc()
+        Mockito.verify<java.lang.management.MemoryMXBean?>(bean, Mockito.times(4)).getHeapMemoryUsage()
+        // Avoid call when heap usage is not minimal.
+        Mockito.verify<java.lang.management.MemoryMXBean?>(bean, Mockito.times(3)).getNonHeapMemoryUsage()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun profilerHasMultiplePairs() {
+        val profiler: MemoryProfiler = MemoryProfiler.instance()
+        profiler.setStableMemoryParameters(
+            Converter().convert("2,1,3,4,5,6"), NO_OP_PATTERN
+        )
+        profiler.start(com.google.common.io.ByteStreams.nullOutputStream())
+        val bean: java.lang.management.MemoryMXBean =
+            Mockito.mock<java.lang.management.MemoryMXBean>(java.lang.management.MemoryMXBean::class.java)
+
+        val heapUsage: java.lang.management.MemoryUsage = java.lang.management.MemoryUsage(0, 0, 0, 0)
+        val nonHeapUsage: java.lang.management.MemoryUsage = java.lang.management.MemoryUsage(5, 5, 5, 5)
+        Mockito.`when`<java.lang.management.MemoryUsage?>(bean.getHeapMemoryUsage()).thenReturn(heapUsage)
+        Mockito.`when`<java.lang.management.MemoryUsage?>(bean.getNonHeapMemoryUsage()).thenReturn(nonHeapUsage)
+
+        val sleeper = RecordingSleeper()
+        val result: MemoryProfiler.HeapAndNonHeap =
+            profiler.prepareBeanAndGetLocalMinUsage(ProfilePhase.ANALYZE, bean, sleeper)
+        assertThat(result.heap()).isSameInstanceAs(heapUsage)
+        assertThat(result.nonHeap()).isSameInstanceAs(nonHeapUsage)
+        Truth.assertThat(sleeper.sleeps).isEmpty()
+
+        Mockito.verify<java.lang.management.MemoryMXBean?>(bean, Mockito.times(1)).gc()
+        profiler.prepareBeanAndGetLocalMinUsage(ProfilePhase.FINISH, bean, sleeper)
+        // 1 for call to ANALYZE + spec'd runs
+        Mockito.verify<java.lang.management.MemoryMXBean?>(bean, Mockito.times(1 + 2 + 3 + 5)).gc()
+
+        Truth.assertThat(sleeper.sleeps)
+            .containsExactly(
+                java.time.Duration.ofSeconds(1),  // 2 * 1s, but we skip the first sleep
+                java.time.Duration.ofSeconds(4),  // 3 * 4s
+                java.time.Duration.ofSeconds(4),
+                java.time.Duration.ofSeconds(4),
+                java.time.Duration.ofSeconds(6),  // 5 * 6s
+                java.time.Duration.ofSeconds(6),
+                java.time.Duration.ofSeconds(6),
+                java.time.Duration.ofSeconds(6),
+                java.time.Duration.ofSeconds(6)
+            )
+            .inOrder()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun profilerHasBadInputOddValues() {
+        val profiler: MemoryProfiler = MemoryProfiler.instance()
+        val e: OptionsParsingException? =
+            org.junit.Assert.assertThrows<OptionsParsingException?>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    profiler.setStableMemoryParameters(
+                        Converter().convert("1,10,7"),
+                        NO_OP_PATTERN
+                    )
+                })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("Expected even number of comma-separated integer values")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun profilerHasBadInputNotInts() {
+        val profiler: MemoryProfiler = MemoryProfiler.instance()
+        val e: OptionsParsingException? =
+            org.junit.Assert.assertThrows<OptionsParsingException?>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    profiler.setStableMemoryParameters(
+                        Converter()
+                            .convert("1,10,74,22,horse,goat"),
+                        NO_OP_PATTERN
+                    )
+                })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains(
+                "Expected even number of comma-separated integer values, could not parse integer in"
+                        + " list"
+            )
+    }
+
+    private class RecordingSleeper : Sleeper {
+        private val sleeps: MutableList<java.time.Duration?> = java.util.ArrayList<java.time.Duration?>()
+
+        public override fun sleep(duration: java.time.Duration?) {
+            sleeps.add(duration)
+        }
+    }
+
+    companion object {
+        private val NO_OP_PATTERN: java.util.regex.Pattern = java.util.regex.Pattern.compile("no_match")
+    }
 }

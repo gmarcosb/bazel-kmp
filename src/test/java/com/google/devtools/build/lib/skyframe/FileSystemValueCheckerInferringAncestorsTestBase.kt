@@ -11,110 +11,95 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.base.Throwables.throwIfInstanceOf;
-import static com.google.common.base.Throwables.throwIfUnchecked;
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.truth.Truth.assertWithMessage;
+import com.google.devtools.build.lib.actions.FileStateValue
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.actions.FileStateValue;
-import com.google.devtools.build.lib.testutil.Scratch;
-import com.google.devtools.build.lib.vfs.DelegateFileSystem;
-import com.google.devtools.build.lib.vfs.Dirent;
-import com.google.devtools.build.lib.vfs.FileStateKey;
-import com.google.devtools.build.lib.vfs.FileStatus;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.lib.vfs.RootedPath;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import com.google.devtools.build.skyframe.InMemoryGraph;
-import com.google.errorprone.annotations.ForOverride;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
-import javax.annotation.Nullable;
-import org.junit.After;
-import org.junit.Before;
+class FileSystemValueCheckerInferringAncestorsTestBase {
+    protected val scratch: Scratch = Scratch()
+    protected val statedPaths: MutableList<String?> = java.util.ArrayList<String?>()
+    protected var syscallCache: DefaultSyscallCache = DefaultSyscallCache.newBuilder().build()
+    protected var root: Root? = null
+    protected var inMemoryGraph: InMemoryGraph? = null
+    protected var throwOnStat: java.lang.Exception? = null
 
-public class FileSystemValueCheckerInferringAncestorsTestBase {
-  protected final Scratch scratch = new Scratch();
-  protected final List<String> statedPaths = new ArrayList<>();
-  protected DefaultSyscallCache syscallCache = DefaultSyscallCache.newBuilder().build();
-  protected Root root;
-  protected InMemoryGraph inMemoryGraph;
-  protected Exception throwOnStat;
+    private var untrackedRoot: Root? = null
 
-  private Root untrackedRoot;
-
-  @Before
-  public void setUpGraphAndRoot() throws IOException {
-    createGraph();
-    Path srcRootPath = scratch.dir("/src");
-    PathFragment srcRoot = srcRootPath.asFragment();
-    FileSystem trackingFileSystem =
-        new DelegateFileSystem(scratch.getFileSystem()) {
-          @Nullable
-          @Override
-          public synchronized FileStatus statIfFound(PathFragment path, boolean followSymlinks)
-              throws IOException {
-            if (throwOnStat != null) {
-              Exception toThrow = throwOnStat;
-              throwOnStat = null;
-              throwIfInstanceOf(toThrow, IOException.class);
-              throwIfUnchecked(toThrow);
-              throw new AssertionError("Unexpected exception type", toThrow);
+    @Before
+    @Throws(IOException::class)
+    fun setUpGraphAndRoot() {
+        createGraph()
+        val srcRootPath: Path = scratch.dir("/src")
+        val srcRoot: PathFragment? = srcRootPath.asFragment()
+        val trackingFileSystem: FileSystem =
+            object : DelegateFileSystem(scratch.getFileSystem()) {
+                @kotlin.jvm.Synchronized
+                @Throws(IOException::class)
+                public override fun statIfFound(path: PathFragment, followSymlinks: Boolean): FileStatus? {
+                    if (throwOnStat != null) {
+                        val toThrow: java.lang.Exception? = throwOnStat
+                        throwOnStat = null
+                        com.google.common.base.Throwables.throwIfInstanceOf<IOException?>(
+                            toThrow,
+                            IOException::class.java
+                        )
+                        com.google.common.base.Throwables.throwIfUnchecked(toThrow)
+                        throw java.lang.AssertionError("Unexpected exception type", toThrow)
+                    }
+                    statedPaths.add(path.relativeTo(srcRoot).toString())
+                    return super.statIfFound(path, followSymlinks)
+                }
             }
-            statedPaths.add(path.relativeTo(srcRoot).toString());
-            return super.statIfFound(path, followSymlinks);
-          }
-        };
-    root = Root.fromPath(trackingFileSystem.getPath(srcRoot));
-    scratch.setWorkingDir("/src");
-    untrackedRoot = Root.fromPath(srcRootPath);
-  }
+        root = Root.fromPath(trackingFileSystem.getPath(srcRoot))
+        scratch.setWorkingDir("/src")
+        untrackedRoot = Root.fromPath(srcRootPath)
+    }
 
-  @ForOverride
-  protected void createGraph() {
-    inMemoryGraph = InMemoryGraph.create();
-  }
+    @com.google.errorprone.annotations.ForOverride
+    protected fun createGraph() {
+        inMemoryGraph = InMemoryGraph.create()
+    }
 
-  @After
-  public void checkExceptionThrown() {
-    assertThat(throwOnStat).isNull();
-    syscallCache.clear();
-  }
+    @org.junit.After
+    fun checkExceptionThrown() {
+        Truth.assertThat(throwOnStat).isNull()
+        syscallCache.clear()
+    }
 
-  protected FileStateKey fileStateValueKey(String relativePath) {
-    return FileStateValue.key(
-        RootedPath.toRootedPath(root, root.asPath().getRelative(relativePath)));
-  }
+    protected fun fileStateValueKey(relativePath: String?): FileStateKey {
+        return FileStateValue.key(
+            RootedPath.toRootedPath(root, root.asPath().getRelative(relativePath))
+        )
+    }
 
-  protected DirectoryListingStateValue.Key directoryListingStateValueKey(String relativePath) {
-    return DirectoryListingStateValue.key(
-        RootedPath.toRootedPath(root, root.asPath().getRelative(relativePath)));
-  }
+    protected fun directoryListingStateValueKey(relativePath: String?): DirectoryListingStateValue.Key {
+        return DirectoryListingStateValue.key(
+            RootedPath.toRootedPath(root, root.asPath().getRelative(relativePath))
+        )
+    }
 
-  protected FileStateValue fileStateValue(String relativePath) throws IOException {
-    return FileStateValue.create(
-        RootedPath.toRootedPath(
-            untrackedRoot, untrackedRoot.asPath().asFragment().getRelative(relativePath)),
-        SyscallCache.NO_CACHE,
-        /* tsgm= */ null);
-  }
+    @Throws(IOException::class)
+    protected fun fileStateValue(relativePath: String?): FileStateValue {
+        return FileStateValue.create(
+            RootedPath.toRootedPath(
+                untrackedRoot, untrackedRoot.asPath().asFragment().getRelative(relativePath)
+            ),
+            SyscallCache.NO_CACHE,  /* tsgm= */
+            null
+        )
+    }
 
-  protected static DirectoryListingStateValue directoryListingStateValue(Dirent... dirents) {
-    return DirectoryListingStateValue.create(ImmutableList.copyOf(dirents));
-  }
+    companion object {
+        protected fun directoryListingStateValue(vararg dirents: Dirent?): DirectoryListingStateValue {
+            return DirectoryListingStateValue.create(com.google.common.collect.ImmutableList.< E > copyOf < E ? > (dirents))
+        }
 
-  protected static <T> void assertIsSubsetOf(Iterable<T> list, T... elements) {
-    ImmutableSet<T> set = ImmutableSet.copyOf(elements);
-    assertWithMessage("%s has elements from outside of %s", list, set)
-        .that(set)
-        .containsAtLeastElementsIn(list);
-  }
+        protected fun <T> assertIsSubsetOf(list: Iterable<T?>, vararg elements: T?) {
+            val set: com.google.common.collect.ImmutableSet<T?> =
+                com.google.common.collect.ImmutableSet.copyOf<T?>(elements)
+            Truth.assertWithMessage("%s has elements from outside of %s", list, set)
+                .that(set)
+                .containsAtLeastElementsIn(list)
+        }
+    }
 }

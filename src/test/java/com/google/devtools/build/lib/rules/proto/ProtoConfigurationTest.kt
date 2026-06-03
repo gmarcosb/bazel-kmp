@@ -11,51 +11,74 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.proto
 
-package com.google.devtools.build.lib.rules.proto;
+import com.google.devtools.build.lib.analysis.util.BuildViewTestCase.ActionExecutionContextBuilder.build
+import com.google.devtools.build.lib.analysis.util.OptionsTestCase
+import com.google.devtools.build.lib.analysis.util.OptionsTestCase.assertSame
+import com.google.devtools.build.lib.analysis.util.OptionsTestCase.createWithPrefix
+import com.google.devtools.build.lib.exec.util.SpawnBuilder.build
+import com.google.devtools.build.lib.exec.util.TestExecutorBuilder.build
+import com.google.devtools.build.lib.packages.util.Crosstool.CcToolchainConfig.Builder.build
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import com.google.devtools.build.lib.analysis.util.OptionsTestCase;
-import com.google.devtools.build.lib.rules.proto.ProtoConfiguration.Options;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+@RunWith(JUnit4::class)
+class ProtoConfigurationTest :
+    OptionsTestCase<com.google.devtools.build.lib.rules.proto.ProtoConfiguration.Options?>() {
+    val optionsClass: java.lang.Class<com.google.devtools.build.lib.rules.proto.ProtoConfiguration.Options?>
+        get() = com.google.devtools.build.lib.rules.proto.ProtoConfiguration.Options::class.java
 
-@RunWith(JUnit4.class)
-public final class ProtoConfigurationTest extends OptionsTestCase<Options> {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testHdrSuffixes_ordering() {
+        val one: com.google.devtools.build.lib.rules.proto.ProtoConfiguration.Options? = createWithPrefix(
+            HDR_SUFFIXES_PREFIX, ".one.h,.two.h"
+        )
+        val two: com.google.devtools.build.lib.rules.proto.ProtoConfiguration.Options? = createWithPrefix(
+            HDR_SUFFIXES_PREFIX, ".two.h,.one.h"
+        )
+        assertSame(one, two)
+    }
 
-  private static final String HDR_SUFFIXES_PREFIX = "--cc_proto_library_header_suffixes=";
-  private static final String SRC_SUFFIXES_PREFIX = "--cc_proto_library_source_suffixes=";
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testHdrSuffixes_duplicates() {
+        val one: com.google.devtools.build.lib.rules.proto.ProtoConfiguration.Options? = createWithPrefix(
+            HDR_SUFFIXES_PREFIX, ".one.h,.one.h"
+        )
+        val two: com.google.devtools.build.lib.rules.proto.ProtoConfiguration.Options? = createWithPrefix(
+            HDR_SUFFIXES_PREFIX, ".one.h"
+        )
+        assertSame(one, two)
+    }
 
-  @Override
-  protected Class<Options> getOptionsClass() {
-    return Options.class;
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSrcSuffixes_ordering() {
+        val one: com.google.devtools.build.lib.rules.proto.ProtoConfiguration.Options? = createWithPrefix(
+            SRC_SUFFIXES_PREFIX, ".one.cc,.two.cc"
+        )
+        val two: com.google.devtools.build.lib.rules.proto.ProtoConfiguration.Options? = createWithPrefix(
+            SRC_SUFFIXES_PREFIX, ".two.cc,.one.cc"
+        )
+        assertSame(one, two)
+    }
 
-  @Test
-  public void testHdrSuffixes_ordering() throws Exception {
-    Options one = createWithPrefix(HDR_SUFFIXES_PREFIX, ".one.h,.two.h");
-    Options two = createWithPrefix(HDR_SUFFIXES_PREFIX, ".two.h,.one.h");
-    assertSame(one, two);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSrcSuffixes_duplicates() {
+        val one: com.google.devtools.build.lib.rules.proto.ProtoConfiguration.Options? = createWithPrefix(
+            SRC_SUFFIXES_PREFIX, ".one.cc,.one.cc"
+        )
+        val two: com.google.devtools.build.lib.rules.proto.ProtoConfiguration.Options? = createWithPrefix(
+            SRC_SUFFIXES_PREFIX, ".one.cc"
+        )
+        assertSame(one, two)
+    }
 
-  @Test
-  public void testHdrSuffixes_duplicates() throws Exception {
-    Options one = createWithPrefix(HDR_SUFFIXES_PREFIX, ".one.h,.one.h");
-    Options two = createWithPrefix(HDR_SUFFIXES_PREFIX, ".one.h");
-    assertSame(one, two);
-  }
-
-  @Test
-  public void testSrcSuffixes_ordering() throws Exception {
-    Options one = createWithPrefix(SRC_SUFFIXES_PREFIX, ".one.cc,.two.cc");
-    Options two = createWithPrefix(SRC_SUFFIXES_PREFIX, ".two.cc,.one.cc");
-    assertSame(one, two);
-  }
-
-  @Test
-  public void testSrcSuffixes_duplicates() throws Exception {
-    Options one = createWithPrefix(SRC_SUFFIXES_PREFIX, ".one.cc,.one.cc");
-    Options two = createWithPrefix(SRC_SUFFIXES_PREFIX, ".one.cc");
-    assertSame(one, two);
-  }
+    companion object {
+        private const val HDR_SUFFIXES_PREFIX = "--cc_proto_library_header_suffixes="
+        private const val SRC_SUFFIXES_PREFIX = "--cc_proto_library_source_suffixes="
+    }
 }

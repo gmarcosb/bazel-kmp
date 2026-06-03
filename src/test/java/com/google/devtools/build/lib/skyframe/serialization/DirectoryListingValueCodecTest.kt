@@ -11,49 +11,47 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.skyframe.DirectoryListingStateValue;
-import com.google.devtools.build.lib.skyframe.DirectoryListingValue;
-import com.google.devtools.build.lib.skyframe.DirectoryListingValue.DifferentRealPathDirectoryListingValue;
-import com.google.devtools.build.lib.skyframe.DirectoryListingValue.RegularDirectoryListingValue;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.FsUtils;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import com.google.devtools.build.lib.vfs.Dirent;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.lib.vfs.RootedPath;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.skyframe.DirectoryListingStateValue
 
-/** Tests for {@link DirectoryListingValue}. */
-@RunWith(JUnit4.class)
-public class DirectoryListingValueCodecTest {
+/** Tests for [DirectoryListingValue].  */
+@RunWith(JUnit4::class)
+class DirectoryListingValueCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCodec() {
+        val serializationTester: SerializationTester =
+            SerializationTester(
+                RegularDirectoryListingValue(
+                    DirectoryListingStateValue.create(com.google.common.collect.ImmutableList.of<Dirent?>())
+                ),
+                RegularDirectoryListingValue(
+                    DirectoryListingStateValue.create(
+                        com.google.common.collect.ImmutableList.of<E?>(
+                            Dirent("a", Dirent.Type.DIRECTORY),
+                            Dirent("b", Dirent.Type.SYMLINK)
+                        )
+                    )
+                ),
+                DifferentRealPathDirectoryListingValue(
+                    rootedPath("/foo", "bar"),
+                    DirectoryListingStateValue.create(
+                        com.google.common.collect.ImmutableList.of<E?>(
+                            Dirent("c", Dirent.Type.UNKNOWN), Dirent("d", Dirent.Type.FILE)
+                        )
+                    )
+                )
+            )
+        FsUtils.addDependencies(serializationTester)
+        serializationTester.runTests()
+    }
 
-  @Test
-  public void testCodec() throws Exception {
-    SerializationTester serializationTester =
-        new SerializationTester(
-            new RegularDirectoryListingValue(
-                DirectoryListingStateValue.create(ImmutableList.<Dirent>of())),
-            new RegularDirectoryListingValue(
-                DirectoryListingStateValue.create(
-                    ImmutableList.of(
-                        new Dirent("a", Dirent.Type.DIRECTORY),
-                        new Dirent("b", Dirent.Type.SYMLINK)))),
-            new DifferentRealPathDirectoryListingValue(
-                rootedPath("/foo", "bar"),
-                DirectoryListingStateValue.create(
-                    ImmutableList.of(
-                        new Dirent("c", Dirent.Type.UNKNOWN), new Dirent("d", Dirent.Type.FILE)))));
-    FsUtils.addDependencies(serializationTester);
-    serializationTester.runTests();
-  }
-
-  private static RootedPath rootedPath(String root, String relativePath) {
-    return RootedPath.toRootedPath(
-        Root.fromPath(FsUtils.TEST_FILESYSTEM.getPath(root)), PathFragment.create(relativePath));
-  }
+    companion object {
+        private fun rootedPath(root: String?, relativePath: String?): RootedPath {
+            return RootedPath.toRootedPath(
+                Root.fromPath(FsUtils.TEST_FILESYSTEM.getPath(root)), PathFragment.create(relativePath)
+            )
+        }
+    }
 }

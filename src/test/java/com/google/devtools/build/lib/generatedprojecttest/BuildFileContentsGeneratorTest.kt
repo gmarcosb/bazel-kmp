@@ -11,82 +11,71 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.generatedprojecttest
 
-package com.google.devtools.build.lib.generatedprojecttest;
-
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-
-import com.google.devtools.build.lib.generatedprojecttest.util.BuildFileContentsGenerator;
-import com.google.devtools.build.lib.generatedprojecttest.util.TestProjectBuilder;
-import com.google.devtools.build.lib.testutil.BuildRuleBuilder;
-import com.google.devtools.build.lib.testutil.Scratch;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import java.io.IOException;
-import net.starlark.java.syntax.ParserInput;
-import net.starlark.java.syntax.StarlarkFile;
-import net.starlark.java.syntax.SyntaxError;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.vfs.FileSystemUtils
 
 /**
- * Tests for {@code BuildFileContentsGenerator}.
+ * Tests for `BuildFileContentsGenerator`.
  */
-@RunWith(JUnit4.class)
-public final class BuildFileContentsGeneratorTest {
+@RunWith(JUnit4::class)
+class BuildFileContentsGeneratorTest {
+    /**
+     * The generator being tested.
+     */
+    private val generator: BuildFileContentsGenerator = BuildFileContentsGenerator()
 
-  /**
-   * The generator being tested.
-   */
-  private final BuildFileContentsGenerator generator = new BuildFileContentsGenerator();
-
-  @Test
-  public void testSetDefaultPackageVisibility() throws IllegalStateException {
-    generator.setDefaultPackageVisibility("//visibility:private");
-    assertThat(generator.getContents())
-        .startsWith("package(default_visibility = ['//visibility:private'])");
-  }
-
-  @Test
-  public void defaultPackageVisibilityIsAddedToStartOfBuildFile() throws IllegalStateException {
-    generator.addRule(new BuildRuleBuilder("cc_library", generator.uniqueRuleName()));
-    generator.setDefaultPackageVisibility("//visibility:private");
-    assertThat(generator.getContents())
-        .startsWith("package(default_visibility = ['//visibility:private'])");
-  }
-
-  @Test
-  public void defaultPackageVisibilityDefaultsToPublic() throws IllegalStateException {
-    generator.addRule(new BuildRuleBuilder("cc_library", generator.uniqueRuleName()));
-    assertThat(generator.getContents())
-        .startsWith("package(default_visibility = ['//visibility:public'])");
-  }
-
-  @Test
-  public void settingDefaultPackageVisibilityTwiceCausesException() throws IllegalStateException {
-    generator.setDefaultPackageVisibility("//visibility:private");
-    assertThrows(
-        IllegalStateException.class,
-        () -> generator.setDefaultPackageVisibility("//visibility:private"));
-  }
-
-  @Test
-  public void testContentsSyntax() throws IOException {
-    // TODO(blaze-team): (2012) write various simple generator examples to test the generated syntax
-    TestProjectBuilder builder = new TestProjectBuilder("tmp");
-    BuildFileContentsGenerator generator = new BuildFileContentsGenerator();
-    builder.createFileInDir("/a", "BUILD", generator);
-    Scratch scratch = builder.getScratch();
-    Path path = scratch.resolve("/tmp/a/BUILD");
-
-    byte[] bytes = FileSystemUtils.readWithKnownFileSize(path, path.getFileSize());
-    ParserInput input = ParserInput.fromLatin1(bytes, path.toString());
-    StarlarkFile file = StarlarkFile.parse(input);
-    for (SyntaxError error : file.errors()) {
-      System.err.println(error);
+    @org.junit.Test
+    @Throws(java.lang.IllegalStateException::class)
+    fun testSetDefaultPackageVisibility() {
+        generator.setDefaultPackageVisibility("//visibility:private")
+        Truth.assertThat(generator.getContents())
+            .startsWith("package(default_visibility = ['//visibility:private'])")
     }
-    assertThat(file.ok()).isTrue();
-  }
+
+    @org.junit.Test
+    @Throws(java.lang.IllegalStateException::class)
+    fun defaultPackageVisibilityIsAddedToStartOfBuildFile() {
+        generator.addRule(BuildRuleBuilder("cc_library", generator.uniqueRuleName()))
+        generator.setDefaultPackageVisibility("//visibility:private")
+        Truth.assertThat(generator.getContents())
+            .startsWith("package(default_visibility = ['//visibility:private'])")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.IllegalStateException::class)
+    fun defaultPackageVisibilityDefaultsToPublic() {
+        generator.addRule(BuildRuleBuilder("cc_library", generator.uniqueRuleName()))
+        Truth.assertThat(generator.getContents())
+            .startsWith("package(default_visibility = ['//visibility:public'])")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.IllegalStateException::class)
+    fun settingDefaultPackageVisibilityTwiceCausesException() {
+        generator.setDefaultPackageVisibility("//visibility:private")
+        org.junit.Assert.assertThrows<java.lang.IllegalStateException?>(
+            java.lang.IllegalStateException::class.java,
+            org.junit.function.ThrowingRunnable { generator.setDefaultPackageVisibility("//visibility:private") })
+    }
+
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun testContentsSyntax() {
+        // TODO(blaze-team): (2012) write various simple generator examples to test the generated syntax
+        val builder: TestProjectBuilder = TestProjectBuilder("tmp")
+        val generator: BuildFileContentsGenerator = BuildFileContentsGenerator()
+        builder.createFileInDir("/a", "BUILD", generator)
+        val scratch: Scratch = builder.getScratch()
+        val path: Path = scratch.resolve("/tmp/a/BUILD")
+
+        val bytes: ByteArray? = FileSystemUtils.readWithKnownFileSize(path, path.getFileSize())
+        val input: net.starlark.java.syntax.ParserInput? =
+            net.starlark.java.syntax.ParserInput.fromLatin1(bytes, path.toString())
+        val file: net.starlark.java.syntax.StarlarkFile = net.starlark.java.syntax.StarlarkFile.parse(input)
+        for (error in file.errors()) {
+            java.lang.System.err.println(error)
+        }
+        Truth.assertThat(file.ok()).isTrue()
+    }
 }

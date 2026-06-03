@@ -11,160 +11,155 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.vfs;
+package com.google.devtools.build.lib.vfs
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.skyframe.serialization.AutoRegistry
 
-import com.google.common.collect.ImmutableClassToInstanceMap;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
-import com.google.common.testing.EqualsTester;
-import com.google.devtools.build.lib.clock.BlazeClock;
-import com.google.devtools.build.lib.skyframe.serialization.AutoRegistry;
-import com.google.devtools.build.lib.skyframe.serialization.ObjectCodecRegistry;
-import com.google.devtools.build.lib.skyframe.serialization.ObjectCodecs;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import java.util.Comparator;
-import java.util.List;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [RootTest].  */
+@RunWith(JUnit4::class)
+class RootTest {
+    private var fs: FileSystem? = null
 
-/** Tests for {@link RootTest}. */
-@RunWith(JUnit4.class)
-public class RootTest {
-  private FileSystem fs;
-
-  @Before
-  public final void initializeFileSystem() {
-    fs = new InMemoryFileSystem(BlazeClock.instance(), DigestHashFunction.SHA256);
-  }
-
-  @Test
-  public void testEqualsAndHashCodeContract() {
-    FileSystem otherFs = new InMemoryFileSystem(BlazeClock.instance(), DigestHashFunction.SHA256);
-    new EqualsTester()
-        .addEqualityGroup(Root.absoluteRoot(fs), Root.absoluteRoot(fs))
-        .addEqualityGroup(Root.absoluteRoot(otherFs), Root.absoluteRoot(otherFs))
-        .addEqualityGroup(Root.fromPath(fs.getPath("/foo")), Root.fromPath(fs.getPath("/foo")))
-        .testEquals();
-  }
-
-  @Test
-  public void testPathRoot() {
-    Root root = Root.fromPath(fs.getPath("/foo"));
-    assertThat(root.asPath()).isEqualTo(fs.getPath("/foo"));
-    assertThat(root.contains(fs.getPath("/foo/bar"))).isTrue();
-    assertThat(root.contains(fs.getPath("/boo/bar"))).isFalse();
-    assertThat(root.contains(PathFragment.create("/foo/bar"))).isTrue();
-    assertThat(root.contains(PathFragment.create("foo/bar"))).isFalse();
-    assertThat(root.getRelative(PathFragment.create("bar"))).isEqualTo(fs.getPath("/foo/bar"));
-    assertThat(root.getRelative("bar")).isEqualTo(fs.getPath("/foo/bar"));
-    assertThat(root.getRelative(PathFragment.create("/bar"))).isEqualTo(fs.getPath("/bar"));
-    assertThat(root.relativize(fs.getPath("/foo/bar"))).isEqualTo(PathFragment.create("bar"));
-    assertThat(root.relativize(PathFragment.create("/foo/bar")))
-        .isEqualTo(PathFragment.create("bar"));
-    assertThrows(IllegalArgumentException.class, () -> root.relativize(PathFragment.create("foo")));
-  }
-
-  @Test
-  public void testFilesystemTransform() {
-    FileSystem fs2 = new InMemoryFileSystem(BlazeClock.instance(), DigestHashFunction.SHA256);
-    Root root = Root.fromPath(fs.getPath("/foo"));
-    Root root2 = Root.toFileSystem(root, fs2);
-    assertThat(root2.asPath().getFileSystem()).isSameInstanceAs(fs2);
-    assertThat(root2.asPath().asFragment()).isEqualTo(PathFragment.create("/foo"));
-    assertThat(root.isAbsolute).isFalse();
-  }
-
-  @Test
-  public void testFileSystemAbsoluteRoot() {
-    Root root = Root.absoluteRoot(fs);
-    assertThat(root.asPath()).isNull();
-    assertThat(root.contains(fs.getPath("/foo"))).isTrue();
-    assertThat(root.contains(PathFragment.create("/foo/bar"))).isTrue();
-    assertThat(root.contains(PathFragment.create("foo/bar"))).isFalse();
-    assertThat(root.getRelative("/foo")).isEqualTo(fs.getPath("/foo"));
-    assertThat(root.relativize(fs.getPath("/foo"))).isEqualTo(PathFragment.create("/foo"));
-    assertThat(root.relativize(PathFragment.create("/foo"))).isEqualTo(PathFragment.create("/foo"));
-
-    assertThrows(
-        IllegalArgumentException.class, () -> root.getRelative(PathFragment.create("foo")));
-    assertThrows(
-        IllegalArgumentException.class, () -> root.getRelative(PathFragment.create("foo")));
-    assertThrows(IllegalArgumentException.class, () -> root.relativize(PathFragment.create("foo")));
-  }
-
-  @Test
-  public void testCompareTo() {
-    Root a = Root.fromPath(fs.getPath("/a"));
-    Root b = Root.fromPath(fs.getPath("/b"));
-    Root root = Root.absoluteRoot(fs);
-    List<Root> list = Lists.newArrayList(a, root, b);
-    list.sort(Comparator.naturalOrder());
-    assertThat(list).containsExactly(root, a, b).inOrder();
-  }
-
-  @Test
-  public void testSerialization_simple() throws Exception {
-    Root fooPathRoot = Root.fromPath(fs.getPath("/foo"));
-    Root barPathRoot = Root.fromPath(fs.getPath("/bar"));
-    new SerializationTester(Root.absoluteRoot(fs), fooPathRoot, barPathRoot)
-        .addDependency(FileSystem.class, fs)
-        .addDependency(
-            Root.RootCodecDependencies.class,
-            new Root.RootCodecDependencies(/*likelyPopularRoot=*/ fooPathRoot))
-        .runTests();
-  }
-
-  @Test
-  public void testSerialization_likelyPopularRootIsCanonicalized() throws Exception {
-    Root fooPathRoot = Root.fromPath(fs.getPath("/foo"));
-    Root otherFooPathRoot = Root.fromPath(fs.getPath("/foo"));
-    Root barPathRoot = Root.fromPath(fs.getPath("/bar"));
-    Root bazPathRoot = Root.fromPath(fs.getPath("/baz"));
-    Root fsAabsoluteRoot = Root.absoluteRoot(fs);
-
-    assertThat(fooPathRoot).isNotSameInstanceAs(otherFooPathRoot);
-    assertThat(fooPathRoot).isEqualTo(otherFooPathRoot);
-
-    ObjectCodecRegistry registry = AutoRegistry.get();
-    ImmutableClassToInstanceMap<Object> dependencies =
-        ImmutableClassToInstanceMap.builder()
-            .put(FileSystem.class, fs)
-            .put(
-                Root.RootCodecDependencies.class,
-                new Root.RootCodecDependencies(
-                    /*likelyPopularRoots=*/ ImmutableList.of(fooPathRoot, bazPathRoot)))
-            .build();
-    ObjectCodecRegistry.Builder registryBuilder = registry.getBuilder();
-    for (Object val : dependencies.values()) {
-      registryBuilder.addReferenceConstant(val);
+    @Before
+    fun initializeFileSystem() {
+        fs = InMemoryFileSystem(com.google.devtools.build.lib.clock.BlazeClock.instance(), DigestHashFunction.SHA256)
     }
-    ObjectCodecs objectCodecs = new ObjectCodecs(registryBuilder.build(), dependencies);
 
-    Root fooPathRootDeserialized =
-        (Root) objectCodecs.deserialize(objectCodecs.serialize(fooPathRoot));
-    Root otherFooPathRootDeserialized =
-        (Root) objectCodecs.deserialize(objectCodecs.serialize(otherFooPathRoot));
-    assertThat(fooPathRootDeserialized).isSameInstanceAs(fooPathRoot);
-    assertThat(otherFooPathRootDeserialized).isSameInstanceAs(fooPathRoot);
+    @org.junit.Test
+    fun testEqualsAndHashCodeContract() {
+        val otherFs: FileSystem =
+            InMemoryFileSystem(com.google.devtools.build.lib.clock.BlazeClock.instance(), DigestHashFunction.SHA256)
+        EqualsTester()
+            .addEqualityGroup(Root.absoluteRoot(fs), Root.absoluteRoot(fs))
+            .addEqualityGroup(Root.absoluteRoot(otherFs), Root.absoluteRoot(otherFs))
+            .addEqualityGroup(Root.fromPath(fs.getPath("/foo")), Root.fromPath(fs.getPath("/foo")))
+            .testEquals()
+    }
 
-    Root barPathRootDeserialized =
-        (Root) objectCodecs.deserialize(objectCodecs.serialize(barPathRoot));
-    assertThat(barPathRootDeserialized).isNotSameInstanceAs(barPathRoot);
-    assertThat(barPathRootDeserialized).isEqualTo(barPathRoot);
+    @org.junit.Test
+    fun testPathRoot() {
+        val root: Root = Root.fromPath(fs.getPath("/foo"))
+        assertThat(root.asPath()).isEqualTo(fs.getPath("/foo"))
+        assertThat(root.contains(fs.getPath("/foo/bar"))).isTrue()
+        assertThat(root.contains(fs.getPath("/boo/bar"))).isFalse()
+        assertThat(root.contains(PathFragment.create("/foo/bar"))).isTrue()
+        assertThat(root.contains(PathFragment.create("foo/bar"))).isFalse()
+        assertThat(root.getRelative(PathFragment.create("bar"))).isEqualTo(fs.getPath("/foo/bar"))
+        assertThat(root.getRelative("bar")).isEqualTo(fs.getPath("/foo/bar"))
+        assertThat(root.getRelative(PathFragment.create("/bar"))).isEqualTo(fs.getPath("/bar"))
+        assertThat(root.relativize(fs.getPath("/foo/bar"))).isEqualTo(PathFragment.create("bar"))
+        assertThat(root.relativize(PathFragment.create("/foo/bar")))
+            .isEqualTo(PathFragment.create("bar"))
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable { root.relativize(PathFragment.create("foo")) })
+    }
 
-    Root bazPathRootDeserialized =
-        (Root) objectCodecs.deserialize(objectCodecs.serialize(bazPathRoot));
-    assertThat(bazPathRootDeserialized).isSameInstanceAs(bazPathRoot);
+    @org.junit.Test
+    fun testFilesystemTransform() {
+        val fs2: FileSystem =
+            InMemoryFileSystem(com.google.devtools.build.lib.clock.BlazeClock.instance(), DigestHashFunction.SHA256)
+        val root: Root = Root.fromPath(fs.getPath("/foo"))
+        val root2: Root = Root.toFileSystem(root, fs2)
+        assertThat(root2.asPath().getFileSystem()).isSameInstanceAs(fs2)
+        assertThat(root2.asPath().asFragment()).isEqualTo(PathFragment.create("/foo"))
+        assertThat(root.isAbsolute).isFalse()
+    }
 
-    Root fsAabsoluteRootDeserialized =
-        (Root) objectCodecs.deserialize(objectCodecs.serialize(fsAabsoluteRoot));
-    assertThat(fsAabsoluteRootDeserialized).isNotSameInstanceAs(fsAabsoluteRoot);
-    assertThat(fsAabsoluteRootDeserialized).isEqualTo(fsAabsoluteRoot);
-  }
+    @org.junit.Test
+    fun testFileSystemAbsoluteRoot() {
+        val root: Root = Root.absoluteRoot(fs)
+        assertThat(root.asPath()).isNull()
+        assertThat(root.contains(fs.getPath("/foo"))).isTrue()
+        assertThat(root.contains(PathFragment.create("/foo/bar"))).isTrue()
+        assertThat(root.contains(PathFragment.create("foo/bar"))).isFalse()
+        assertThat(root.getRelative("/foo")).isEqualTo(fs.getPath("/foo"))
+        assertThat(root.relativize(fs.getPath("/foo"))).isEqualTo(PathFragment.create("/foo"))
+        assertThat(root.relativize(PathFragment.create("/foo"))).isEqualTo(PathFragment.create("/foo"))
+
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable { root.getRelative(PathFragment.create("foo")) })
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable { root.getRelative(PathFragment.create("foo")) })
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable { root.relativize(PathFragment.create("foo")) })
+    }
+
+    @org.junit.Test
+    fun testCompareTo() {
+        val a: Root = Root.fromPath(fs.getPath("/a"))
+        val b: Root? = Root.fromPath(fs.getPath("/b"))
+        val root: Root? = Root.absoluteRoot(fs)
+        val list: MutableList<Root?> = com.google.common.collect.Lists.newArrayList<Root?>(a, root, b)
+        list.sort(java.util.Comparator.naturalOrder<Root?>())
+        Truth.assertThat(list).containsExactly(root, a, b).inOrder()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSerialization_simple() {
+        val fooPathRoot: Root? = Root.fromPath(fs.getPath("/foo"))
+        val barPathRoot: Root? = Root.fromPath(fs.getPath("/bar"))
+        SerializationTester(Root.absoluteRoot(fs), fooPathRoot, barPathRoot)
+            .addDependency(FileSystem::class.java, fs)
+            .addDependency(
+                Root.RootCodecDependencies::class.java,
+                RootCodecDependencies( /*likelyPopularRoot=*/fooPathRoot)
+            )
+            .runTests()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSerialization_likelyPopularRootIsCanonicalized() {
+        val fooPathRoot: Root? = Root.fromPath(fs.getPath("/foo"))
+        val otherFooPathRoot: Root? = Root.fromPath(fs.getPath("/foo"))
+        val barPathRoot: Root? = Root.fromPath(fs.getPath("/bar"))
+        val bazPathRoot: Root? = Root.fromPath(fs.getPath("/baz"))
+        val fsAabsoluteRoot: Root? = Root.absoluteRoot(fs)
+
+        assertThat(fooPathRoot).isNotSameInstanceAs(otherFooPathRoot)
+        assertThat(fooPathRoot).isEqualTo(otherFooPathRoot)
+
+        val registry: ObjectCodecRegistry = AutoRegistry.get()
+        val dependencies: com.google.common.collect.ImmutableClassToInstanceMap<Any?> =
+            com.google.common.collect.ImmutableClassToInstanceMap.builder<Any?>()
+                .put<FileSystem?>(FileSystem::class.java, fs)
+                .put<Root.RootCodecDependencies?>(
+                    Root.RootCodecDependencies::class.java,
+                    RootCodecDependencies( /*likelyPopularRoots=*/
+                        com.google.common.collect.ImmutableList.of<E?>(fooPathRoot, bazPathRoot)
+                    )
+                )
+                .build()
+        val registryBuilder: ObjectCodecRegistry.Builder = registry.getBuilder()
+        for (`val` in dependencies.values) {
+            registryBuilder.addReferenceConstant(`val`)
+        }
+        val objectCodecs: ObjectCodecs = ObjectCodecs(registryBuilder.build(), dependencies)
+
+        val fooPathRootDeserialized: Root? =
+            objectCodecs.deserialize(objectCodecs.serialize(fooPathRoot)) as Root?
+        val otherFooPathRootDeserialized: Root? =
+            objectCodecs.deserialize(objectCodecs.serialize(otherFooPathRoot)) as Root?
+        assertThat(fooPathRootDeserialized).isSameInstanceAs(fooPathRoot)
+        assertThat(otherFooPathRootDeserialized).isSameInstanceAs(fooPathRoot)
+
+        val barPathRootDeserialized: Root? =
+            objectCodecs.deserialize(objectCodecs.serialize(barPathRoot)) as Root?
+        assertThat(barPathRootDeserialized).isNotSameInstanceAs(barPathRoot)
+        assertThat(barPathRootDeserialized).isEqualTo(barPathRoot)
+
+        val bazPathRootDeserialized: Root? =
+            objectCodecs.deserialize(objectCodecs.serialize(bazPathRoot)) as Root?
+        assertThat(bazPathRootDeserialized).isSameInstanceAs(bazPathRoot)
+
+        val fsAabsoluteRootDeserialized: Root? =
+            objectCodecs.deserialize(objectCodecs.serialize(fsAabsoluteRoot)) as Root?
+        assertThat(fsAabsoluteRootDeserialized).isNotSameInstanceAs(fsAabsoluteRoot)
+        assertThat(fsAabsoluteRootDeserialized).isEqualTo(fsAabsoluteRoot)
+    }
 }

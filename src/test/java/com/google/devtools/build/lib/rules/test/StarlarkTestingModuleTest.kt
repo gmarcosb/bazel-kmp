@@ -11,30 +11,22 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.rules.test;
+package com.google.devtools.build.lib.rules.test
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.common.truth.Subject
+import com.google.devtools.build.lib.analysis.ConfiguredTarget
+import org.junit.Test
 
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.RunEnvironmentInfo;
-import com.google.devtools.build.lib.analysis.test.ExecutionInfo;
-import com.google.devtools.build.lib.analysis.test.TestProvider;
-import com.google.devtools.build.lib.analysis.test.TestRunnerAction;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for Starlark interaction with testing support. */
-@RunWith(JUnit4.class)
-public class StarlarkTestingModuleTest extends BuildViewTestCase {
-
-  @Test
-  public void testStarlarkRulePropagatesExecutionInfoProvider() throws Exception {
-    scratch.file("examples/rule/BUILD");
-    scratch.file(
-        "examples/rule/apple_rules.bzl",
-        """
+/** Tests for Starlark interaction with testing support.  */
+@RunWith(JUnit4::class)
+class StarlarkTestingModuleTest : BuildViewTestCase() {
+    @Test
+    @Throws(Exception::class)
+    fun testStarlarkRulePropagatesExecutionInfoProvider() {
+        scratch.file("examples/rule/BUILD")
+        scratch.file(
+            "examples/rule/apple_rules.bzl",
+            """
         def my_rule_impl(ctx):
             exec_info = testing.ExecutionInfo({"requires-darwin": "1"})
             return [exec_info]
@@ -43,10 +35,12 @@ public class StarlarkTestingModuleTest extends BuildViewTestCase {
             implementation = my_rule_impl,
             attrs = {},
         )
-        """);
-    scratch.file(
-        "examples/apple_starlark/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "examples/apple_starlark/BUILD",
+            """
         load("//examples/rule:apple_rules.bzl", "my_rule")
 
         package(default_visibility = ["//visibility:public"])
@@ -54,20 +48,23 @@ public class StarlarkTestingModuleTest extends BuildViewTestCase {
         my_rule(
             name = "my_target",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget starlarkTarget = getConfiguredTarget("//examples/apple_starlark:my_target");
-    ExecutionInfo provider = starlarkTarget.get(ExecutionInfo.PROVIDER);
+        val starlarkTarget: ConfiguredTarget = getConfiguredTarget("//examples/apple_starlark:my_target")
+        val provider: ExecutionInfo = starlarkTarget.get(ExecutionInfo.PROVIDER)
 
-    assertThat(provider.getExecutionInfo().get("requires-darwin")).isEqualTo("1");
-  }
+        assertThat(provider.getExecutionInfo().get("requires-darwin")).isEqualTo("1")
+    }
 
-  @Test
-  public void testStarlarkRulePropagatesTestEnvironmentProvider() throws Exception {
-    scratch.file("examples/rule/BUILD");
-    scratch.file(
-        "examples/rule/apple_rules.bzl",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testStarlarkRulePropagatesTestEnvironmentProvider() {
+        scratch.file("examples/rule/BUILD")
+        scratch.file(
+            "examples/rule/apple_rules.bzl",
+            """
         def my_rule_impl(ctx):
             test_env = testing.TestEnvironment({"XCODE_VERSION_OVERRIDE": "7.3.1"})
             return [test_env]
@@ -76,10 +73,12 @@ public class StarlarkTestingModuleTest extends BuildViewTestCase {
             implementation = my_rule_impl,
             attrs = {},
         )
-        """);
-    scratch.file(
-        "examples/apple_starlark/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "examples/apple_starlark/BUILD",
+            """
         load("//examples/rule:apple_rules.bzl", "my_rule")
 
         package(default_visibility = ["//visibility:public"])
@@ -87,20 +86,23 @@ public class StarlarkTestingModuleTest extends BuildViewTestCase {
         my_rule(
             name = "my_target",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget starlarkTarget = getConfiguredTarget("//examples/apple_starlark:my_target");
-    RunEnvironmentInfo provider = starlarkTarget.get(RunEnvironmentInfo.provider);
+        val starlarkTarget: ConfiguredTarget = getConfiguredTarget("//examples/apple_starlark:my_target")
+        val provider: RunEnvironmentInfo = starlarkTarget.get(RunEnvironmentInfo.provider)
 
-    assertThat(provider.getEnvironment().get("XCODE_VERSION_OVERRIDE")).isEqualTo("7.3.1");
-  }
+        assertThat(provider.getEnvironment().get("XCODE_VERSION_OVERRIDE")).isEqualTo("7.3.1")
+    }
 
-  @Test
-  public void testStarlarkRulePropagatesTestEnvironmentProviderWithInheritedEnv() throws Exception {
-    scratch.file("examples/rule/BUILD");
-    scratch.file(
-        "examples/rule/apple_rules.bzl",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testStarlarkRulePropagatesTestEnvironmentProviderWithInheritedEnv() {
+        scratch.file("examples/rule/BUILD")
+        scratch.file(
+            "examples/rule/apple_rules.bzl",
+            """
         def my_rule_impl(ctx):
             test_env = testing.TestEnvironment(
                 {"XCODE_VERSION_OVERRIDE": "7.3.1"},
@@ -115,10 +117,12 @@ public class StarlarkTestingModuleTest extends BuildViewTestCase {
             implementation = my_rule_impl,
             attrs = {},
         )
-        """);
-    scratch.file(
-        "examples/apple_starlark/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "examples/apple_starlark/BUILD",
+            """
         load("//examples/rule:apple_rules.bzl", "my_rule")
 
         package(default_visibility = ["//visibility:public"])
@@ -126,23 +130,26 @@ public class StarlarkTestingModuleTest extends BuildViewTestCase {
         my_rule(
             name = "my_target",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget starlarkTarget = getConfiguredTarget("//examples/apple_starlark:my_target");
-    RunEnvironmentInfo provider =
-        (RunEnvironmentInfo) starlarkTarget.get(RunEnvironmentInfo.provider.getKey());
+        val starlarkTarget: ConfiguredTarget = getConfiguredTarget("//examples/apple_starlark:my_target")
+        val provider: RunEnvironmentInfo =
+            starlarkTarget.get(RunEnvironmentInfo.provider.getKey()) as RunEnvironmentInfo
 
-    assertThat(provider.getEnvironment()).containsEntry("XCODE_VERSION_OVERRIDE", "7.3.1");
-    assertThat(provider.getInheritedEnvironment()).contains("DEVELOPER_DIR");
-    assertThat(provider.getInheritedEnvironment()).contains("XCODE_VERSION_OVERRIDE");
-  }
+        assertThat(provider.getEnvironment()).containsEntry("XCODE_VERSION_OVERRIDE", "7.3.1")
+        Subject.contains("DEVELOPER_DIR")
+        Subject.contains("XCODE_VERSION_OVERRIDE")
+    }
 
-  @Test
-  public void testExecutionInfoProviderCanMarkTestAsLocal() throws Exception {
-    scratch.file("examples/rule/BUILD");
-    scratch.file(
-        "examples/rule/apple_rules.bzl",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testExecutionInfoProviderCanMarkTestAsLocal() {
+        scratch.file("examples/rule/BUILD")
+        scratch.file(
+            "examples/rule/apple_rules.bzl",
+            """
         def my_rule_test_impl(ctx):
             exec_info = testing.ExecutionInfo({"local": ""})
             ctx.actions.write(ctx.outputs.executable, "", True)
@@ -153,10 +160,12 @@ public class StarlarkTestingModuleTest extends BuildViewTestCase {
             test = True,
             attrs = {},
         )
-        """);
-    scratch.file(
-        "examples/apple_starlark/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "examples/apple_starlark/BUILD",
+            """
         load("//examples/rule:apple_rules.bzl", "my_rule_test")
 
         package(default_visibility = ["//visibility:public"])
@@ -164,13 +173,14 @@ public class StarlarkTestingModuleTest extends BuildViewTestCase {
         my_rule_test(
             name = "my_target",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget starlarkTarget = getConfiguredTarget("//examples/apple_starlark:my_target");
-    TestRunnerAction testAction =
-        (TestRunnerAction)
-            getGeneratingAction(TestProvider.getTestStatusArtifacts(starlarkTarget).get(0));
+        val starlarkTarget: ConfiguredTarget = getConfiguredTarget("//examples/apple_starlark:my_target")
+        val testAction: TestRunnerAction =
+            getGeneratingAction(TestProvider.getTestStatusArtifacts(starlarkTarget).get(0)) as TestRunnerAction
 
-    assertThat(testAction.getTestProperties().isRemotable()).isFalse();
-  }
+        assertThat(testAction.getTestProperties().isRemotable()).isFalse()
+    }
 }

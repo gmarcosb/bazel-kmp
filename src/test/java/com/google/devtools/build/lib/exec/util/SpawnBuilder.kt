@@ -11,244 +11,234 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.exec.util;
+package com.google.devtools.build.lib.exec.util
 
-import static com.google.common.base.Preconditions.checkNotNull;
+import com.google.common.base.Preconditions
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.ImmutableMap
+import com.google.common.collect.ImmutableSet
+import com.google.devtools.build.lib.actions.ActionExecutionMetadata
+import com.google.errorprone.annotations.CanIgnoreReturnValue
+import kotlin.collections.ArrayList
+import kotlin.collections.Iterable
+import kotlin.collections.MutableList
+import kotlin.collections.MutableMap
+import kotlin.collections.MutableSet
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.actions.ActionExecutionMetadata;
-import com.google.devtools.build.lib.actions.ActionInput;
-import com.google.devtools.build.lib.actions.ActionInputHelper;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.PathMapper;
-import com.google.devtools.build.lib.actions.ResourceSet;
-import com.google.devtools.build.lib.actions.SimpleSpawn;
-import com.google.devtools.build.lib.actions.Spawn;
-import com.google.devtools.build.lib.analysis.platform.PlatformInfo;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import javax.annotation.Nullable;
+/** Builder class to create [Spawn] instances for testing.  */
+class SpawnBuilder(vararg args: String?) {
+    private var mnemonic = "Mnemonic"
+    private var progressMessage: String? = "progress message"
+    private var ownerLabel = "//dummy:label"
+    private var ownerRuleKind = "dummy-target-kind"
+    private var ownerPrimaryOutput: Artifact? = null
+    private var platform: PlatformInfo? = null
+    private val args: MutableList<String?>
+    private val environment: MutableMap<String?, String?> = HashMap<String?, String?>()
+    private val executionInfo: MutableMap<String?, String?> = HashMap<String?, String?>()
+    private var execProperties: ImmutableMap<String?, String?>? = ImmutableMap.of<String?, String?>()
+    private val inputs: NestedSetBuilder<ActionInput?> = NestedSetBuilder.stableOrder()
+    private val outputs: MutableList<ActionInput?> = ArrayList<ActionInput?>()
+    private var mandatoryOutputs: MutableSet<out ActionInput?>? = null
+    private val tools: NestedSetBuilder<ActionInput?> = NestedSetBuilder.stableOrder()
 
-/** Builder class to create {@link Spawn} instances for testing. */
-public final class SpawnBuilder {
-  private String mnemonic = "Mnemonic";
-  private String progressMessage = "progress message";
-  private String ownerLabel = "//dummy:label";
-  private String ownerRuleKind = "dummy-target-kind";
-  @Nullable private Artifact ownerPrimaryOutput;
-  @Nullable private PlatformInfo platform;
-  private final List<String> args;
-  private final Map<String, String> environment = new HashMap<>();
-  private final Map<String, String> executionInfo = new HashMap<>();
-  private ImmutableMap<String, String> execProperties = ImmutableMap.of();
-  private final NestedSetBuilder<ActionInput> inputs = NestedSetBuilder.stableOrder();
-  private final List<ActionInput> outputs = new ArrayList<>();
-  @Nullable private Set<? extends ActionInput> mandatoryOutputs;
-  private final NestedSetBuilder<ActionInput> tools = NestedSetBuilder.stableOrder();
+    private var resourceSet: ResourceSet? = ResourceSet.ZERO
+    private var pathMapper: PathMapper? = PathMapper.NOOP
+    private var builtForToolConfiguration = false
 
-  private ResourceSet resourceSet = ResourceSet.ZERO;
-  private PathMapper pathMapper = PathMapper.NOOP;
-  private boolean builtForToolConfiguration;
-
-  public SpawnBuilder(String... args) {
-    this.args = ImmutableList.copyOf(args);
-  }
-
-  public Spawn build() {
-    ActionExecutionMetadata owner =
-        new FakeOwner(
-            mnemonic,
-            progressMessage,
-            ownerLabel,
-            ownerRuleKind,
-            ownerPrimaryOutput,
-            platform,
-            execProperties,
-            builtForToolConfiguration);
-    return new SimpleSpawn(
-        owner,
-        ImmutableList.copyOf(args),
-        ImmutableMap.copyOf(environment),
-        ImmutableMap.copyOf(executionInfo),
-        inputs.build(),
-        tools.build(),
-        ImmutableSet.copyOf(outputs),
-        mandatoryOutputs,
-        resourceSet,
-        pathMapper);
-  }
-
-  @CanIgnoreReturnValue
-  public SpawnBuilder withPlatform(PlatformInfo platform) {
-    this.platform = platform;
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public SpawnBuilder withMnemonic(String mnemonic) {
-    this.mnemonic = checkNotNull(mnemonic);
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public SpawnBuilder withProgressMessage(String progressMessage) {
-    this.progressMessage = progressMessage;
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public SpawnBuilder withOwnerLabel(String ownerLabel) {
-    this.ownerLabel = checkNotNull(ownerLabel);
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public SpawnBuilder withOwnerRuleKind(String ownerRuleKind) {
-    this.ownerRuleKind = checkNotNull(ownerRuleKind);
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public SpawnBuilder withOwnerPrimaryOutput(Artifact output) {
-    ownerPrimaryOutput = checkNotNull(output);
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public SpawnBuilder withEnvironment(String key, String value) {
-    this.environment.put(key, value);
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public SpawnBuilder withExecutionInfo(String key, String value) {
-    this.executionInfo.put(key, value);
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public SpawnBuilder withCombinedExecProperties(ImmutableMap<String, String> execProperties) {
-    this.execProperties = execProperties;
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public SpawnBuilder withInput(ActionInput input) {
-    this.inputs.add(input);
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public SpawnBuilder withInput(String name) {
-    this.inputs.add(ActionInputHelper.fromPath(name));
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public SpawnBuilder withInputs(ActionInput... inputs) {
-    for (var input : inputs) {
-      this.inputs.add(input);
+    init {
+        this.args = ImmutableList.copyOf<String?>(args)
     }
-    return this;
-  }
 
-  @CanIgnoreReturnValue
-  public SpawnBuilder withInputs(Iterable<? extends ActionInput> inputs) {
-    for (var input : inputs) {
-      this.inputs.add(input);
+    fun build(): Spawn {
+        val owner: ActionExecutionMetadata =
+            FakeOwner(
+                mnemonic,
+                progressMessage,
+                ownerLabel,
+                ownerRuleKind,
+                ownerPrimaryOutput,
+                platform,
+                execProperties,
+                builtForToolConfiguration
+            )
+        return SimpleSpawn(
+            owner,
+            ImmutableList.< E > copyOf < E ? > (args),
+            ImmutableMap.< K, V > copyOf<K?, V?>(environment),
+            ImmutableMap.< K, V > copyOf<K?, V?>(executionInfo),
+            inputs.build(),
+            tools.build(),
+            ImmutableSet.< E > copyOf < E ? > (outputs),
+            mandatoryOutputs,
+            resourceSet,
+            pathMapper
+        )
     }
-    return this;
-  }
 
-  @CanIgnoreReturnValue
-  public SpawnBuilder withInputs(String... names) {
-    for (String name : names) {
-      this.inputs.add(ActionInputHelper.fromPath(name));
+    @CanIgnoreReturnValue
+    fun withPlatform(platform: PlatformInfo?): SpawnBuilder {
+        this.platform = platform
+        return this
     }
-    return this;
-  }
 
-  @CanIgnoreReturnValue
-  public SpawnBuilder withInputs(NestedSet<ActionInput> inputs) {
-    this.inputs.addTransitive(inputs);
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public SpawnBuilder withOutput(ActionInput output) {
-    outputs.add(output);
-    return this;
-  }
-
-  public SpawnBuilder withOutput(String name) {
-    return withOutput(ActionInputHelper.fromPath(name));
-  }
-
-  @CanIgnoreReturnValue
-  public SpawnBuilder withOutputs(ActionInput... outputs) {
-    for (ActionInput output : outputs) {
-      withOutput(output);
+    @CanIgnoreReturnValue
+    fun withMnemonic(mnemonic: String?): SpawnBuilder {
+        this.mnemonic = Preconditions.checkNotNull<String>(mnemonic)
+        return this
     }
-    return this;
-  }
 
-  @CanIgnoreReturnValue
-  public SpawnBuilder withOutputs(String... names) {
-    for (String name : names) {
-      this.outputs.add(ActionInputHelper.fromPath(name));
+    @CanIgnoreReturnValue
+    fun withProgressMessage(progressMessage: String?): SpawnBuilder {
+        this.progressMessage = progressMessage
+        return this
     }
-    return this;
-  }
 
-  @CanIgnoreReturnValue
-  public SpawnBuilder withMandatoryOutputs(@Nullable Set<? extends ActionInput> mandatoryOutputs) {
-    this.mandatoryOutputs = mandatoryOutputs;
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public SpawnBuilder withTool(ActionInput tool) {
-    tools.add(tool);
-    return this;
-  }
-
-  @CanIgnoreReturnValue
-  public SpawnBuilder withTools(ActionInput... tools) {
-    for (ActionInput tool : tools) {
-      this.tools.add(tool);
+    @CanIgnoreReturnValue
+    fun withOwnerLabel(ownerLabel: String?): SpawnBuilder {
+        this.ownerLabel = Preconditions.checkNotNull<String>(ownerLabel)
+        return this
     }
-    return this;
-  }
 
-  @CanIgnoreReturnValue
-  public SpawnBuilder withTools(NestedSet<ActionInput> tools) {
-    this.tools.addTransitive(tools);
-    return this;
-  }
+    @CanIgnoreReturnValue
+    fun withOwnerRuleKind(ownerRuleKind: String?): SpawnBuilder {
+        this.ownerRuleKind = Preconditions.checkNotNull<String>(ownerRuleKind)
+        return this
+    }
 
-  @CanIgnoreReturnValue
-  public SpawnBuilder withLocalResources(ResourceSet resourceSet) {
-    this.resourceSet = resourceSet;
-    return this;
-  }
+    @CanIgnoreReturnValue
+    fun withOwnerPrimaryOutput(output: Artifact?): SpawnBuilder {
+        ownerPrimaryOutput = Preconditions.checkNotNull<Artifact?>(output)
+        return this
+    }
 
-  @CanIgnoreReturnValue
-  public SpawnBuilder setPathMapper(PathMapper pathMapper) {
-    this.pathMapper = pathMapper;
-    return this;
-  }
+    @CanIgnoreReturnValue
+    fun withEnvironment(key: String?, value: String?): SpawnBuilder {
+        this.environment.put(key, value)
+        return this
+    }
 
-  @CanIgnoreReturnValue
-  public SpawnBuilder setBuiltForToolConfiguration(boolean builtForToolConfiguration) {
-    this.builtForToolConfiguration = builtForToolConfiguration;
-    return this;
-  }
+    @CanIgnoreReturnValue
+    fun withExecutionInfo(key: String?, value: String?): SpawnBuilder {
+        this.executionInfo.put(key, value)
+        return this
+    }
+
+    @CanIgnoreReturnValue
+    fun withCombinedExecProperties(execProperties: ImmutableMap<String?, String?>?): SpawnBuilder {
+        this.execProperties = execProperties
+        return this
+    }
+
+    @CanIgnoreReturnValue
+    fun withInput(input: ActionInput?): SpawnBuilder {
+        this.inputs.add(input)
+        return this
+    }
+
+    @CanIgnoreReturnValue
+    fun withInput(name: String?): SpawnBuilder {
+        this.inputs.add(ActionInputHelper.fromPath(name))
+        return this
+    }
+
+    @CanIgnoreReturnValue
+    fun withInputs(vararg inputs: ActionInput?): SpawnBuilder {
+        for (input in inputs) {
+            this.inputs.add(input)
+        }
+        return this
+    }
+
+    @CanIgnoreReturnValue
+    fun withInputs(inputs: Iterable<out ActionInput?>): SpawnBuilder {
+        for (input in inputs) {
+            this.inputs.add(input)
+        }
+        return this
+    }
+
+    @CanIgnoreReturnValue
+    fun withInputs(vararg names: String?): SpawnBuilder {
+        for (name in names) {
+            this.inputs.add(ActionInputHelper.fromPath(name))
+        }
+        return this
+    }
+
+    @CanIgnoreReturnValue
+    fun withInputs(inputs: NestedSet<ActionInput?>?): SpawnBuilder {
+        this.inputs.addTransitive(inputs)
+        return this
+    }
+
+    @CanIgnoreReturnValue
+    fun withOutput(output: ActionInput?): SpawnBuilder {
+        outputs.add(output)
+        return this
+    }
+
+    fun withOutput(name: String?): SpawnBuilder? {
+        return withOutput(ActionInputHelper.fromPath(name))
+    }
+
+    @CanIgnoreReturnValue
+    fun withOutputs(vararg outputs: ActionInput?): SpawnBuilder {
+        for (output in outputs) {
+            withOutput(output)
+        }
+        return this
+    }
+
+    @CanIgnoreReturnValue
+    fun withOutputs(vararg names: String?): SpawnBuilder {
+        for (name in names) {
+            this.outputs.add(ActionInputHelper.fromPath(name))
+        }
+        return this
+    }
+
+    @CanIgnoreReturnValue
+    fun withMandatoryOutputs(mandatoryOutputs: MutableSet<out ActionInput?>?): SpawnBuilder {
+        this.mandatoryOutputs = mandatoryOutputs
+        return this
+    }
+
+    @CanIgnoreReturnValue
+    fun withTool(tool: ActionInput?): SpawnBuilder {
+        tools.add(tool)
+        return this
+    }
+
+    @CanIgnoreReturnValue
+    fun withTools(vararg tools: ActionInput?): SpawnBuilder {
+        for (tool in tools) {
+            this.tools.add(tool)
+        }
+        return this
+    }
+
+    @CanIgnoreReturnValue
+    fun withTools(tools: NestedSet<ActionInput?>?): SpawnBuilder {
+        this.tools.addTransitive(tools)
+        return this
+    }
+
+    @CanIgnoreReturnValue
+    fun withLocalResources(resourceSet: ResourceSet?): SpawnBuilder {
+        this.resourceSet = resourceSet
+        return this
+    }
+
+    @CanIgnoreReturnValue
+    fun setPathMapper(pathMapper: PathMapper?): SpawnBuilder {
+        this.pathMapper = pathMapper
+        return this
+    }
+
+    @CanIgnoreReturnValue
+    fun setBuiltForToolConfiguration(builtForToolConfiguration: Boolean): SpawnBuilder {
+        this.builtForToolConfiguration = builtForToolConfiguration
+        return this
+    }
 }

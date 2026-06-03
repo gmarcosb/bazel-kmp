@@ -11,336 +11,397 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.exec;
+package com.google.devtools.build.lib.exec
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.verifyNoMoreInteractions;
-import static org.mockito.Mockito.when;
+import com.google.devtools.build.lib.actions.ActionExecutionContext
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.actions.ActionExecutionContext;
-import com.google.devtools.build.lib.actions.ActionInput;
-import com.google.devtools.build.lib.actions.InputMetadataProvider;
-import com.google.devtools.build.lib.actions.Spawn;
-import com.google.devtools.build.lib.actions.SpawnExecutedEvent;
-import com.google.devtools.build.lib.actions.SpawnResult;
-import com.google.devtools.build.lib.actions.SpawnResult.Status;
-import com.google.devtools.build.lib.events.StoredEventHandler;
-import com.google.devtools.build.lib.exec.SpawnCache.CacheHandle;
-import com.google.devtools.build.lib.exec.SpawnRunner.SpawnExecutionContext;
-import com.google.devtools.build.lib.exec.util.SpawnBuilder;
-import com.google.devtools.build.lib.server.FailureDetails;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.server.FailureDetails.Spawn.Code;
-import com.google.devtools.build.lib.testutil.ManualClock;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import com.google.devtools.common.options.Options;
-import java.time.Duration;
-import java.time.Instant;
-import java.util.List;
-import java.util.SortedMap;
-import java.util.function.Supplier;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-import org.mockito.ArgumentMatchers;
-import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
+/** Tests for [BlazeExecutor].  */
+@RunWith(JUnit4::class)
+class AbstractSpawnStrategyTest {
+    private class TestedSpawnStrategy(spawnRunner: SpawnRunner?) : AbstractSpawnStrategy(
+        spawnRunner,
+        com.google.devtools.common.options.Options.getDefaults<O?>(ExecutionOptions::class.java)
+    )
 
-/** Tests for {@link BlazeExecutor}. */
-@RunWith(JUnit4.class)
-public class AbstractSpawnStrategyTest {
-  private static final FailureDetail NON_ZERO_EXIT_DETAILS =
-      FailureDetail.newBuilder()
-          .setSpawn(FailureDetails.Spawn.newBuilder().setCode(Code.NON_ZERO_EXIT))
-          .build();
+    private val fs: FileSystem = InMemoryFileSystem(DigestHashFunction.SHA256)
+    private val execRoot: Path? = fs.getPath("/execroot")
 
-  private static class TestedSpawnStrategy extends AbstractSpawnStrategy {
-    TestedSpawnStrategy(SpawnRunner spawnRunner) {
-      super(spawnRunner, Options.getDefaults(ExecutionOptions.class));
+    @org.mockito.Mock
+    private val spawnRunner: SpawnRunner? = null
+
+    @org.mockito.Mock
+    private val actionExecutionContext: ActionExecutionContext? = null
+    private var eventHandler: StoredEventHandler? = null
+    private val clock: com.google.devtools.build.lib.testutil.ManualClock =
+        com.google.devtools.build.lib.testutil.ManualClock()
+
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun setUp() {
+        MockitoAnnotations.initMocks(this)
+        eventHandler = StoredEventHandler()
+        Mockito.`when`<T?>(actionExecutionContext.getEventHandler()).thenReturn(eventHandler)
+        Mockito.`when`<T?>(actionExecutionContext.getClock()).thenReturn(clock)
     }
-  }
 
-  private static final Spawn SIMPLE_SPAWN =
-      new SpawnBuilder("/bin/echo", "Hi!").withEnvironment("VARIABLE", "value").build();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testZeroExit() {
+        Mockito.`when`<T?>(actionExecutionContext.getContext(< T > eq < T ? > (SpawnCache::class.java))).thenReturn(SpawnCache.NO_CACHE)
+        Mockito.`when`<T?>(actionExecutionContext.getExecRoot()).thenReturn(execRoot)
+        val spawnResult: SpawnResult? =
+            Builder().setStatus(Status.SUCCESS).setRunnerName("test").build()
+        Mockito.`when`<T?>(
+            spawnRunner.exec(
+                ArgumentMatchers.any<T?>(Spawn::class.java),
+                ArgumentMatchers.any<T?>(SpawnExecutionContext::class.java)
+            )
+        )
+            .thenReturn(spawnResult)
 
-  private final FileSystem fs = new InMemoryFileSystem(DigestHashFunction.SHA256);
-  private final Path execRoot = fs.getPath("/execroot");
-  @Mock private SpawnRunner spawnRunner;
-  @Mock private ActionExecutionContext actionExecutionContext;
-  private StoredEventHandler eventHandler;
-  private final ManualClock clock = new ManualClock();
+        val spawnResults: MutableList<SpawnResult?>? =
+            TestedSpawnStrategy(spawnRunner).exec(SIMPLE_SPAWN, actionExecutionContext)
 
-  @Before
-  public final void setUp() throws Exception {
-    MockitoAnnotations.initMocks(this);
-    eventHandler = new StoredEventHandler();
-    when(actionExecutionContext.getEventHandler()).thenReturn(eventHandler);
-    when(actionExecutionContext.getClock()).thenReturn(clock);
-  }
+        Truth.assertThat(spawnResults).containsExactly(spawnResult)
 
-  @Test
-  public void testZeroExit() throws Exception {
-    when(actionExecutionContext.getContext(eq(SpawnCache.class))).thenReturn(SpawnCache.NO_CACHE);
-    when(actionExecutionContext.getExecRoot()).thenReturn(execRoot);
-    SpawnResult spawnResult =
-        new SpawnResult.Builder().setStatus(Status.SUCCESS).setRunnerName("test").build();
-    when(spawnRunner.exec(any(Spawn.class), any(SpawnExecutionContext.class)))
-        .thenReturn(spawnResult);
+        // Must only be called exactly once.
+        Mockito.verify<Any?>(spawnRunner).exec(
+            ArgumentMatchers.any<T?>(Spawn::class.java),
+            ArgumentMatchers.any<T?>(SpawnExecutionContext::class.java)
+        )
+    }
 
-    List<SpawnResult> spawnResults =
-        new TestedSpawnStrategy(spawnRunner).exec(SIMPLE_SPAWN, actionExecutionContext);
-
-    assertThat(spawnResults).containsExactly(spawnResult);
-
-    // Must only be called exactly once.
-    verify(spawnRunner).exec(any(Spawn.class), any(SpawnExecutionContext.class));
-  }
-
-  @Test
-  public void testEventPosting() throws Exception {
-    when(actionExecutionContext.getContext(eq(SpawnCache.class))).thenReturn(SpawnCache.NO_CACHE);
-    when(actionExecutionContext.getExecRoot()).thenReturn(execRoot);
-    SpawnResult spawnResult =
-        new SpawnResult.Builder().setStatus(Status.SUCCESS).setRunnerName("test").build();
-    Instant beforeTime = Instant.ofEpochMilli(clock.currentTimeMillis());
-    doAnswer(
-            invocation -> {
-              clock.advanceMillis(1);
-              return spawnResult;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEventPosting() {
+        Mockito.`when`<T?>(actionExecutionContext.getContext(< T > eq < T ? > (SpawnCache::class.java))).thenReturn(SpawnCache.NO_CACHE)
+        Mockito.`when`<T?>(actionExecutionContext.getExecRoot()).thenReturn(execRoot)
+        val spawnResult: SpawnResult? =
+            Builder().setStatus(Status.SUCCESS).setRunnerName("test").build()
+        val beforeTime: Instant? = Instant.ofEpochMilli(clock.currentTimeMillis())
+        Mockito.doAnswer(
+            Answer { invocation: InvocationOnMock? ->
+                clock.advanceMillis(1)
+                spawnResult
             })
-        .when(spawnRunner)
-        .exec(any(Spawn.class), any(SpawnExecutionContext.class));
+            .`when`<Any?>(spawnRunner)
+            .exec(
+                ArgumentMatchers.any<T?>(Spawn::class.java),
+                ArgumentMatchers.any<T?>(SpawnExecutionContext::class.java)
+            )
 
-    ImmutableList<SpawnResult> spawnResults =
-        new TestedSpawnStrategy(spawnRunner).exec(SIMPLE_SPAWN, actionExecutionContext);
+        val spawnResults: com.google.common.collect.ImmutableList<SpawnResult?>? =
+            TestedSpawnStrategy(spawnRunner).exec(SIMPLE_SPAWN, actionExecutionContext)
 
-    assertThat(spawnResults).containsExactly(spawnResult);
-    // Must only be called exactly once.
-    verify(spawnRunner).exec(any(Spawn.class), any(SpawnExecutionContext.class));
-    assertThat(eventHandler.getPosts()).hasSize(1);
-    SpawnExecutedEvent event = (SpawnExecutedEvent) eventHandler.getPosts().get(0);
-    assertThat(event.getStartTimeInstant()).isEqualTo(beforeTime);
-    assertThat(event.getSpawnResult()).isEqualTo(spawnResult);
-    assertThat(event.getExitCode()).isEqualTo(0);
-  }
+        Truth.assertThat(spawnResults).containsExactly(spawnResult)
+        // Must only be called exactly once.
+        Mockito.verify<Any?>(spawnRunner).exec(
+            ArgumentMatchers.any<T?>(Spawn::class.java),
+            ArgumentMatchers.any<T?>(SpawnExecutionContext::class.java)
+        )
+        Truth.assertThat(eventHandler.getPosts()).hasSize(1)
+        val event: SpawnExecutedEvent = eventHandler.getPosts().get(0) as SpawnExecutedEvent
+        assertThat(event.getStartTimeInstant()).isEqualTo(beforeTime)
+        assertThat(event.getSpawnResult()).isEqualTo(spawnResult)
+        assertThat(event.getExitCode()).isEqualTo(0)
+    }
 
-  @Test
-  public void testNonZeroExit() throws Exception {
-    when(actionExecutionContext.getContext(eq(SpawnCache.class))).thenReturn(SpawnCache.NO_CACHE);
-    when(actionExecutionContext.getExecRoot()).thenReturn(execRoot);
-    SpawnResult result =
-        new SpawnResult.Builder()
-            .setStatus(Status.NON_ZERO_EXIT)
-            .setExitCode(1)
-            .setFailureDetail(NON_ZERO_EXIT_DETAILS)
-            .setRunnerName("test")
-            .build();
-    when(spawnRunner.exec(any(Spawn.class), any(SpawnExecutionContext.class))).thenReturn(result);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNonZeroExit() {
+        Mockito.`when`<T?>(actionExecutionContext.getContext(< T > eq < T ? > (SpawnCache::class.java))).thenReturn(SpawnCache.NO_CACHE)
+        Mockito.`when`<T?>(actionExecutionContext.getExecRoot()).thenReturn(execRoot)
+        val result: SpawnResult? =
+            Builder()
+                .setStatus(Status.NON_ZERO_EXIT)
+                .setExitCode(1)
+                .setFailureDetail(NON_ZERO_EXIT_DETAILS)
+                .setRunnerName("test")
+                .build()
+        Mockito.`when`<T?>(
+            spawnRunner.exec(
+                ArgumentMatchers.any<T?>(Spawn::class.java),
+                ArgumentMatchers.any<T?>(SpawnExecutionContext::class.java)
+            )
+        ).thenReturn(result)
 
-    SpawnExecException e =
-        assertThrows(
-            SpawnExecException.class,
-            () ->
-                // Ignoring the List<SpawnResult> return value.
-                new TestedSpawnStrategy(spawnRunner).exec(SIMPLE_SPAWN, actionExecutionContext));
-    assertThat(e.getSpawnResult()).isSameInstanceAs(result);
-    // Must only be called exactly once.
-    verify(spawnRunner).exec(any(Spawn.class), any(SpawnExecutionContext.class));
-  }
+        val e: SpawnExecException =
+            org.junit.Assert.assertThrows<T>(
+                SpawnExecException::class.java,
+                org.junit.function.ThrowingRunnable { // Ignoring the List<SpawnResult> return value.
+                    TestedSpawnStrategy(spawnRunner).exec(SIMPLE_SPAWN, actionExecutionContext)
+                })
+        assertThat(e.getSpawnResult()).isSameInstanceAs(result)
+        // Must only be called exactly once.
+        Mockito.verify<Any?>(spawnRunner).exec(
+            ArgumentMatchers.any<T?>(Spawn::class.java),
+            ArgumentMatchers.any<T?>(SpawnExecutionContext::class.java)
+        )
+    }
 
-  @Test
-  public void testCacheHit() throws Exception {
-    SpawnCache cache = mock(SpawnCache.class);
-    SpawnResult spawnResult =
-        new SpawnResult.Builder().setStatus(Status.SUCCESS).setRunnerName("test").build();
-    when(cache.lookup(any(Spawn.class), any(SpawnExecutionContext.class)))
-        .thenReturn(SpawnCache.success(spawnResult));
-    when(actionExecutionContext.getContext(eq(SpawnCache.class))).thenReturn(cache);
-    when(actionExecutionContext.getExecRoot()).thenReturn(execRoot);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCacheHit() {
+        val cache: SpawnCache = Mockito.mock<SpawnCache>(SpawnCache::class.java)
+        val spawnResult: SpawnResult? =
+            Builder().setStatus(Status.SUCCESS).setRunnerName("test").build()
+        Mockito.`when`<T?>(
+            cache.lookup(
+                ArgumentMatchers.any<T?>(Spawn::class.java),
+                ArgumentMatchers.any<T?>(SpawnExecutionContext::class.java)
+            )
+        )
+            .thenReturn(SpawnCache.success(spawnResult))
+        Mockito.`when`<T?>(actionExecutionContext.getContext(< T > eq < T ? > (SpawnCache::class.java))).thenReturn(cache)
+        Mockito.`when`<T?>(actionExecutionContext.getExecRoot()).thenReturn(execRoot)
 
-    List<SpawnResult> spawnResults =
-        new TestedSpawnStrategy(spawnRunner).exec(SIMPLE_SPAWN, actionExecutionContext);
-    assertThat(spawnResults).containsExactly(spawnResult);
-    verify(spawnRunner, never()).exec(any(Spawn.class), any(SpawnExecutionContext.class));
-  }
+        val spawnResults: MutableList<SpawnResult?>? =
+            TestedSpawnStrategy(spawnRunner).exec(SIMPLE_SPAWN, actionExecutionContext)
+        Truth.assertThat(spawnResults).containsExactly(spawnResult)
+        Mockito.verify<Any?>(spawnRunner, Mockito.never()).exec(
+            ArgumentMatchers.any<T?>(Spawn::class.java),
+            ArgumentMatchers.any<T?>(SpawnExecutionContext::class.java)
+        )
+    }
 
-  @Test
-  public void testCacheMiss() throws Exception {
-    SpawnCache cache = mock(SpawnCache.class);
-    CacheHandle entry = mock(CacheHandle.class);
-    when(cache.lookup(any(Spawn.class), any(SpawnExecutionContext.class))).thenReturn(entry);
-    when(entry.hasResult()).thenReturn(false);
-    when(entry.willStore()).thenReturn(true);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCacheMiss() {
+        val cache: SpawnCache = Mockito.mock<SpawnCache>(SpawnCache::class.java)
+        val entry: CacheHandle = Mockito.mock<CacheHandle>(CacheHandle::class.java)
+        Mockito.`when`<T?>(
+            cache.lookup(
+                ArgumentMatchers.any<T?>(Spawn::class.java),
+                ArgumentMatchers.any<T?>(SpawnExecutionContext::class.java)
+            )
+        ).thenReturn(entry)
+        Mockito.`when`<T?>(entry.hasResult()).thenReturn(false)
+        Mockito.`when`<T?>(entry.willStore()).thenReturn(true)
 
-    when(actionExecutionContext.getContext(eq(SpawnCache.class))).thenReturn(cache);
-    when(actionExecutionContext.getExecRoot()).thenReturn(execRoot);
-    SpawnResult spawnResult =
-        new SpawnResult.Builder().setStatus(Status.SUCCESS).setRunnerName("test").build();
-    when(spawnRunner.exec(any(Spawn.class), any(SpawnExecutionContext.class)))
-        .thenReturn(spawnResult);
+        Mockito.`when`<T?>(actionExecutionContext.getContext(< T > eq < T ? > (SpawnCache::class.java))).thenReturn(cache)
+        Mockito.`when`<T?>(actionExecutionContext.getExecRoot()).thenReturn(execRoot)
+        val spawnResult: SpawnResult? =
+            Builder().setStatus(Status.SUCCESS).setRunnerName("test").build()
+        Mockito.`when`<T?>(
+            spawnRunner.exec(
+                ArgumentMatchers.any<T?>(Spawn::class.java),
+                ArgumentMatchers.any<T?>(SpawnExecutionContext::class.java)
+            )
+        )
+            .thenReturn(spawnResult)
 
-    List<SpawnResult> spawnResults =
-        new TestedSpawnStrategy(spawnRunner).exec(SIMPLE_SPAWN, actionExecutionContext);
+        val spawnResults: MutableList<SpawnResult?>? =
+            TestedSpawnStrategy(spawnRunner).exec(SIMPLE_SPAWN, actionExecutionContext)
 
-    assertThat(spawnResults).containsExactly(spawnResult);
+        Truth.assertThat(spawnResults).containsExactly(spawnResult)
 
-    // Must only be called exactly once.
-    verify(spawnRunner).exec(any(Spawn.class), any(SpawnExecutionContext.class));
-    verify(entry).store(eq(spawnResult));
-  }
+        // Must only be called exactly once.
+        Mockito.verify<Any?>(spawnRunner).exec(
+            ArgumentMatchers.any<T?>(Spawn::class.java),
+            ArgumentMatchers.any<T?>(SpawnExecutionContext::class.java)
+        )
+        Mockito.verify<Any?>(entry).store(< T > eq < T ? > (spawnResult))
+    }
 
-  @Test
-  public void testExec_whenLocalCaches_usesNoCache() throws Exception {
-    when(spawnRunner.handlesCaching()).thenReturn(true);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExec_whenLocalCaches_usesNoCache() {
+        Mockito.`when`<T?>(spawnRunner.handlesCaching()).thenReturn(true)
 
-    SpawnCache cache = mock(SpawnCache.class);
+        val cache: SpawnCache? = Mockito.mock<SpawnCache?>(SpawnCache::class.java)
 
-    when(actionExecutionContext.getContext(eq(SpawnCache.class))).thenReturn(cache);
-    when(actionExecutionContext.getExecRoot()).thenReturn(execRoot);
-    SpawnResult spawnResult =
-        new SpawnResult.Builder().setStatus(Status.SUCCESS).setRunnerName("test").build();
-    when(spawnRunner.exec(any(Spawn.class), any(SpawnExecutionContext.class)))
-        .thenReturn(spawnResult);
+        Mockito.`when`<T?>(actionExecutionContext.getContext(< T > eq < T ? > (SpawnCache::class.java))).thenReturn(cache)
+        Mockito.`when`<T?>(actionExecutionContext.getExecRoot()).thenReturn(execRoot)
+        val spawnResult: SpawnResult? =
+            Builder().setStatus(Status.SUCCESS).setRunnerName("test").build()
+        Mockito.`when`<T?>(
+            spawnRunner.exec(
+                ArgumentMatchers.any<T?>(Spawn::class.java),
+                ArgumentMatchers.any<T?>(SpawnExecutionContext::class.java)
+            )
+        )
+            .thenReturn(spawnResult)
 
-    List<SpawnResult> spawnResults =
-        new TestedSpawnStrategy(spawnRunner).exec(SIMPLE_SPAWN, actionExecutionContext);
+        val spawnResults: MutableList<SpawnResult?>? =
+            TestedSpawnStrategy(spawnRunner).exec(SIMPLE_SPAWN, actionExecutionContext)
 
-    assertThat(spawnResults).containsExactly(spawnResult);
+        Truth.assertThat(spawnResults).containsExactly(spawnResult)
 
-    // Must only be called exactly once.
-    verify(spawnRunner).exec(any(Spawn.class), any(SpawnExecutionContext.class));
-    verifyNoInteractions(cache);
-  }
+        // Must only be called exactly once.
+        Mockito.verify<Any?>(spawnRunner).exec(
+            ArgumentMatchers.any<T?>(Spawn::class.java),
+            ArgumentMatchers.any<T?>(SpawnExecutionContext::class.java)
+        )
+        Mockito.verifyNoInteractions(cache)
+    }
 
-  @Test
-  public void testExec_usefulCacheInDynamicExecution() throws Exception {
-    when(spawnRunner.handlesCaching()).thenReturn(false);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExec_usefulCacheInDynamicExecution() {
+        Mockito.`when`<T?>(spawnRunner.handlesCaching()).thenReturn(false)
 
-    SpawnCache cache = mock(SpawnCache.class);
-    when(cache.usefulInDynamicExecution()).thenReturn(true);
-    CacheHandle entry = mock(CacheHandle.class);
-    when(cache.lookup(any(Spawn.class), any(SpawnExecutionContext.class))).thenReturn(entry);
-    when(entry.hasResult()).thenReturn(false);
-    when(entry.willStore()).thenReturn(true);
+        val cache: SpawnCache = Mockito.mock<SpawnCache>(SpawnCache::class.java)
+        Mockito.`when`<T?>(cache.usefulInDynamicExecution()).thenReturn(true)
+        val entry: CacheHandle = Mockito.mock<CacheHandle>(CacheHandle::class.java)
+        Mockito.`when`<T?>(
+            cache.lookup(
+                ArgumentMatchers.any<T?>(Spawn::class.java),
+                ArgumentMatchers.any<T?>(SpawnExecutionContext::class.java)
+            )
+        ).thenReturn(entry)
+        Mockito.`when`<T?>(entry.hasResult()).thenReturn(false)
+        Mockito.`when`<T?>(entry.willStore()).thenReturn(true)
 
-    when(actionExecutionContext.getContext(eq(SpawnCache.class))).thenReturn(cache);
-    when(actionExecutionContext.getExecRoot()).thenReturn(execRoot);
-    SpawnResult spawnResult =
-        new SpawnResult.Builder().setStatus(Status.SUCCESS).setRunnerName("test").build();
-    when(spawnRunner.exec(any(Spawn.class), any(SpawnExecutionContext.class)))
-        .thenReturn(spawnResult);
+        Mockito.`when`<T?>(actionExecutionContext.getContext(< T > eq < T ? > (SpawnCache::class.java))).thenReturn(cache)
+        Mockito.`when`<T?>(actionExecutionContext.getExecRoot()).thenReturn(execRoot)
+        val spawnResult: SpawnResult? =
+            Builder().setStatus(Status.SUCCESS).setRunnerName("test").build()
+        Mockito.`when`<T?>(
+            spawnRunner.exec(
+                ArgumentMatchers.any<T?>(Spawn::class.java),
+                ArgumentMatchers.any<T?>(SpawnExecutionContext::class.java)
+            )
+        )
+            .thenReturn(spawnResult)
 
-    List<SpawnResult> spawnResults =
-        new TestedSpawnStrategy(spawnRunner)
-            .exec(SIMPLE_SPAWN, actionExecutionContext, (exitCode, errorMessage, outErr) -> {});
+        val spawnResults: MutableList<SpawnResult?>? =
+            TestedSpawnStrategy(spawnRunner)
+                .exec(SIMPLE_SPAWN, actionExecutionContext, { exitCode, errorMessage, outErr -> })
 
-    assertThat(spawnResults).containsExactly(spawnResult);
+        Truth.assertThat(spawnResults).containsExactly(spawnResult)
 
-    // Must only be called exactly once.
-    verify(spawnRunner).exec(any(Spawn.class), any(SpawnExecutionContext.class));
-    verify(entry).store(eq(spawnResult));
-  }
+        // Must only be called exactly once.
+        Mockito.verify<Any?>(spawnRunner).exec(
+            ArgumentMatchers.any<T?>(Spawn::class.java),
+            ArgumentMatchers.any<T?>(SpawnExecutionContext::class.java)
+        )
+        Mockito.verify<Any?>(entry).store(< T > eq < T ? > (spawnResult))
+    }
 
-  @Test
-  public void testExec_nonUsefulCacheInDynamicExecution() throws Exception {
-    when(spawnRunner.handlesCaching()).thenReturn(false);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExec_nonUsefulCacheInDynamicExecution() {
+        Mockito.`when`<T?>(spawnRunner.handlesCaching()).thenReturn(false)
 
-    SpawnCache cache = mock(SpawnCache.class);
-    when(cache.usefulInDynamicExecution()).thenReturn(false);
+        val cache: SpawnCache = Mockito.mock<SpawnCache>(SpawnCache::class.java)
+        Mockito.`when`<T?>(cache.usefulInDynamicExecution()).thenReturn(false)
 
-    when(actionExecutionContext.getContext(eq(SpawnCache.class))).thenReturn(cache);
-    when(actionExecutionContext.getExecRoot()).thenReturn(execRoot);
-    SpawnResult spawnResult =
-        new SpawnResult.Builder().setStatus(Status.SUCCESS).setRunnerName("test").build();
-    when(spawnRunner.exec(any(Spawn.class), any(SpawnExecutionContext.class)))
-        .thenReturn(spawnResult);
+        Mockito.`when`<T?>(actionExecutionContext.getContext(< T > eq < T ? > (SpawnCache::class.java))).thenReturn(cache)
+        Mockito.`when`<T?>(actionExecutionContext.getExecRoot()).thenReturn(execRoot)
+        val spawnResult: SpawnResult? =
+            Builder().setStatus(Status.SUCCESS).setRunnerName("test").build()
+        Mockito.`when`<T?>(
+            spawnRunner.exec(
+                ArgumentMatchers.any<T?>(Spawn::class.java),
+                ArgumentMatchers.any<T?>(SpawnExecutionContext::class.java)
+            )
+        )
+            .thenReturn(spawnResult)
 
-    List<SpawnResult> spawnResults =
-        new TestedSpawnStrategy(spawnRunner)
-            .exec(SIMPLE_SPAWN, actionExecutionContext, (exitCode, errorMessage, outErr) -> {});
+        val spawnResults: MutableList<SpawnResult?>? =
+            TestedSpawnStrategy(spawnRunner)
+                .exec(SIMPLE_SPAWN, actionExecutionContext, { exitCode, errorMessage, outErr -> })
 
-    assertThat(spawnResults).containsExactly(spawnResult);
+        Truth.assertThat(spawnResults).containsExactly(spawnResult)
 
-    // Must only be called exactly once.
-    verify(spawnRunner).exec(any(Spawn.class), any(SpawnExecutionContext.class));
-    verify(cache).usefulInDynamicExecution();
-    verifyNoMoreInteractions(cache);
-  }
+        // Must only be called exactly once.
+        Mockito.verify<Any?>(spawnRunner).exec(
+            ArgumentMatchers.any<T?>(Spawn::class.java),
+            ArgumentMatchers.any<T?>(SpawnExecutionContext::class.java)
+        )
+        Mockito.verify<Any?>(cache).usefulInDynamicExecution()
+        Mockito.verifyNoMoreInteractions(cache)
+    }
 
-  @Test
-  public void testCacheMissWithNonZeroExit() throws Exception {
-    SpawnCache cache = mock(SpawnCache.class);
-    CacheHandle entry = mock(CacheHandle.class);
-    when(cache.lookup(any(Spawn.class), any(SpawnExecutionContext.class))).thenReturn(entry);
-    when(entry.hasResult()).thenReturn(false);
-    when(entry.willStore()).thenReturn(true);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCacheMissWithNonZeroExit() {
+        val cache: SpawnCache = Mockito.mock<SpawnCache>(SpawnCache::class.java)
+        val entry: CacheHandle = Mockito.mock<CacheHandle>(CacheHandle::class.java)
+        Mockito.`when`<T?>(
+            cache.lookup(
+                ArgumentMatchers.any<T?>(Spawn::class.java),
+                ArgumentMatchers.any<T?>(SpawnExecutionContext::class.java)
+            )
+        ).thenReturn(entry)
+        Mockito.`when`<T?>(entry.hasResult()).thenReturn(false)
+        Mockito.`when`<T?>(entry.willStore()).thenReturn(true)
 
-    when(actionExecutionContext.getContext(eq(SpawnCache.class))).thenReturn(cache);
-    when(actionExecutionContext.getExecRoot()).thenReturn(execRoot);
-    SpawnResult result =
-        new SpawnResult.Builder()
-            .setStatus(Status.NON_ZERO_EXIT)
-            .setExitCode(1)
-            .setFailureDetail(NON_ZERO_EXIT_DETAILS)
-            .setRunnerName("test")
-            .build();
-    when(spawnRunner.exec(any(Spawn.class), any(SpawnExecutionContext.class))).thenReturn(result);
+        Mockito.`when`<T?>(actionExecutionContext.getContext(< T > eq < T ? > (SpawnCache::class.java))).thenReturn(cache)
+        Mockito.`when`<T?>(actionExecutionContext.getExecRoot()).thenReturn(execRoot)
+        val result: SpawnResult? =
+            Builder()
+                .setStatus(Status.NON_ZERO_EXIT)
+                .setExitCode(1)
+                .setFailureDetail(NON_ZERO_EXIT_DETAILS)
+                .setRunnerName("test")
+                .build()
+        Mockito.`when`<T?>(
+            spawnRunner.exec(
+                ArgumentMatchers.any<T?>(Spawn::class.java),
+                ArgumentMatchers.any<T?>(SpawnExecutionContext::class.java)
+            )
+        ).thenReturn(result)
 
-    SpawnExecException e =
-        assertThrows(
-            SpawnExecException.class,
-            () ->
-                // Ignoring the List<SpawnResult> return value.
-                new TestedSpawnStrategy(spawnRunner).exec(SIMPLE_SPAWN, actionExecutionContext));
-    assertThat(e.getSpawnResult()).isSameInstanceAs(result);
-    // Must only be called exactly once.
-    verify(spawnRunner).exec(any(Spawn.class), any(SpawnExecutionContext.class));
-    verify(entry).store(eq(result));
-  }
+        val e: SpawnExecException =
+            org.junit.Assert.assertThrows<T>(
+                SpawnExecException::class.java,
+                org.junit.function.ThrowingRunnable { // Ignoring the List<SpawnResult> return value.
+                    TestedSpawnStrategy(spawnRunner).exec(SIMPLE_SPAWN, actionExecutionContext)
+                })
+        assertThat(e.getSpawnResult()).isSameInstanceAs(result)
+        // Must only be called exactly once.
+        Mockito.verify<Any?>(spawnRunner).exec(
+            ArgumentMatchers.any<T?>(Spawn::class.java),
+            ArgumentMatchers.any<T?>(SpawnExecutionContext::class.java)
+        )
+        Mockito.verify<Any?>(entry).store(< T > eq < T ? > (result))
+    }
 
-  @Test
-  public void testExec_callsLogSpawn() throws Exception {
-    FileSystem actionFs = mock(FileSystem.class);
-    InputMetadataProvider inputMetadataProvider = mock(InputMetadataProvider.class);
-    SpawnLogContext spawnLogContext = mock(SpawnLogContext.class);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExec_callsLogSpawn() {
+        val actionFs: FileSystem? = Mockito.mock<FileSystem?>(FileSystem::class.java)
+        val inputMetadataProvider: InputMetadataProvider? =
+            Mockito.mock<InputMetadataProvider?>(InputMetadataProvider::class.java)
+        val spawnLogContext: SpawnLogContext? = Mockito.mock<SpawnLogContext?>(SpawnLogContext::class.java)
 
-    SpawnResult spawnResult =
-        new SpawnResult.Builder().setStatus(Status.SUCCESS).setRunnerName("test").build();
+        val spawnResult: SpawnResult? =
+            Builder().setStatus(Status.SUCCESS).setRunnerName("test").build()
 
-    when(actionExecutionContext.getContext(eq(SpawnCache.class))).thenReturn(SpawnCache.NO_CACHE);
-    when(actionExecutionContext.getContext(eq(SpawnLogContext.class))).thenReturn(spawnLogContext);
-    when(actionExecutionContext.getExecRoot()).thenReturn(execRoot);
-    when(actionExecutionContext.getActionFileSystem()).thenReturn(actionFs);
-    when(actionExecutionContext.getInputMetadataProvider()).thenReturn(inputMetadataProvider);
+        Mockito.`when`<T?>(actionExecutionContext.getContext(< T > eq < T ? > (SpawnCache::class.java))).thenReturn(SpawnCache.NO_CACHE)
+        Mockito.`when`<T?>(actionExecutionContext.getContext(< T > eq < T ? > (SpawnLogContext::class.java))).thenReturn(spawnLogContext)
+        Mockito.`when`<T?>(actionExecutionContext.getExecRoot()).thenReturn(execRoot)
+        Mockito.`when`<T?>(actionExecutionContext.getActionFileSystem()).thenReturn(actionFs)
+        Mockito.`when`<T?>(actionExecutionContext.getInputMetadataProvider()).thenReturn(inputMetadataProvider)
 
-    when(spawnRunner.exec(any(Spawn.class), any(SpawnExecutionContext.class)))
-        .thenReturn(spawnResult);
+        Mockito.`when`<T?>(
+            spawnRunner.exec(
+                ArgumentMatchers.any<T?>(Spawn::class.java),
+                ArgumentMatchers.any<T?>(SpawnExecutionContext::class.java)
+            )
+        )
+            .thenReturn(spawnResult)
 
-    ImmutableList<SpawnResult> spawnResults =
-        new TestedSpawnStrategy(spawnRunner).exec(SIMPLE_SPAWN, actionExecutionContext);
-    assertThat(spawnResults).containsExactly(spawnResult);
+        val spawnResults: com.google.common.collect.ImmutableList<SpawnResult?>? =
+            TestedSpawnStrategy(spawnRunner).exec(SIMPLE_SPAWN, actionExecutionContext)
+        Truth.assertThat(spawnResults).containsExactly(spawnResult)
 
-    verify(spawnLogContext)
-        .logSpawn(
-            eq(SIMPLE_SPAWN),
-            eq(inputMetadataProvider),
-            ArgumentMatchers.<Supplier<SortedMap<PathFragment, ActionInput>>>any(),
-            eq(actionFs),
-            eq(Duration.ZERO),
-            eq(spawnResult));
-  }
+        Mockito.verify<Any?>(spawnLogContext)
+            .logSpawn(
+                < T > eq < T ? > (SIMPLE_SPAWN),
+        <T > eq<T?>(inputMetadataProvider),
+        ArgumentMatchers.any<java.util.function.Supplier<SortedMap<PathFragment?, ActionInput?>?>?>(),
+        <T > eq<T?>(actionFs),
+        <T > eq<T?>(java.time.Duration.ZERO),
+        <T > eq<T?>(spawnResult))
+    }
+
+    companion object {
+        private val NON_ZERO_EXIT_DETAILS: FailureDetail? = FailureDetail.newBuilder()
+            .setSpawn(FailureDetails.Spawn.newBuilder().setCode(Code.NON_ZERO_EXIT))
+            .build()
+
+        private val SIMPLE_SPAWN: Spawn = SpawnBuilder("/bin/echo", "Hi!").withEnvironment("VARIABLE", "value").build()
+    }
 }

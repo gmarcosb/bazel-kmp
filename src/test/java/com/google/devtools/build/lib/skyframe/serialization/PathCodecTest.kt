@@ -11,27 +11,22 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.FsUtils
 
-import com.google.devtools.build.lib.skyframe.serialization.testutils.FsUtils;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link ObjectCodec} for {@link Path}. */
-@RunWith(JUnit4.class)
-public class PathCodecTest {
-  @Test
-  public void testCodec() throws Exception {
-    new SerializationTester(
+/** Tests for [ObjectCodec] for [Path].  */
+@RunWith(JUnit4::class)
+class PathCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCodec() {
+        SerializationTester(
             FsUtils.TEST_FILESYSTEM.getPath("/"),
             FsUtils.TEST_FILESYSTEM.getPath("/some/path"),
-            FsUtils.TEST_FILESYSTEM.getPath("/some/other/path/with/empty/last/fragment/"))
-        .addDependency(FileSystem.class, FsUtils.TEST_FILESYSTEM)
-        .runTests();
-  }
+            FsUtils.TEST_FILESYSTEM.getPath("/some/other/path/with/empty/last/fragment/")
+        )
+            .addDependency(FileSystem::class.java, FsUtils.TEST_FILESYSTEM)
+            .runTests()
+    }
 }

@@ -11,456 +11,467 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.disk;
-
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.remote.util.Utils.getFromFuture;
-import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.junit.Assert.assertThrows;
-import static org.junit.Assume.assumeNotNull;
-
-import build.bazel.remote.execution.v2.ActionResult;
-import build.bazel.remote.execution.v2.Digest;
-import build.bazel.remote.execution.v2.Directory;
-import build.bazel.remote.execution.v2.FileNode;
-import build.bazel.remote.execution.v2.OutputDirectory;
-import build.bazel.remote.execution.v2.OutputFile;
-import build.bazel.remote.execution.v2.Tree;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.remote.Store;
-import com.google.devtools.build.lib.remote.common.ActionKey;
-import com.google.devtools.build.lib.remote.common.CacheNotFoundException;
-import com.google.devtools.build.lib.remote.util.DigestUtil;
-import com.google.devtools.build.lib.testutil.TestUtils;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import com.google.devtools.build.lib.vfs.bazel.BazelHashFunctions;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import com.google.devtools.build.lib.vfs.util.FileSystems;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import com.google.protobuf.ByteString;
-import com.google.protobuf.Message;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.util.ArrayList;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link DiskCacheClient}. */
-@RunWith(JUnit4.class)
-public class DiskCacheClientTest {
-  private static final DigestUtil DIGEST_UTIL =
-      new DigestUtil(SyscallCache.NO_CACHE, DigestHashFunction.SHA256);
-
-  private final FileSystem fs = new InMemoryFileSystem(DigestHashFunction.SHA256);
-  private final Path root = fs.getPath("/disk_cache");
-  private DiskCacheClient client;
-
-  @Before
-  public void setUp() throws Exception {
-    client = new DiskCacheClient(root, DIGEST_UTIL);
-  }
-
-  @After
-  public void tearDown() {
-    client.close();
-  }
-
-  @Test
-  public void findMissingDigests_returnsAllDigests() throws Exception {
-    ImmutableList<Digest> digests =
-        ImmutableList.of(getDigest("foo"), getDigest("bar"), getDigest("baz"));
-    assertThat(getFromFuture(client.findMissingDigests(digests)))
-        .containsExactlyElementsIn(digests);
-  }
-
-  @Test
-  public void toPath_forCas_forOldStyleHashFunction() throws Exception {
-    Digest digest = Digest.newBuilder().setHash("0123456789abcdef").setSizeBytes(42).build();
-
-    Path path = client.toPath(digest, Store.CAS);
-
-    assertThat(path).isEqualTo(root.getRelative("cas/01/0123456789abcdef"));
-  }
-
-  @Test
-  public void toPath_forAc_forOldStyleHashFunction() throws Exception {
-    Digest digest = Digest.newBuilder().setHash("0123456789abcdef").setSizeBytes(42).build();
-
-    Path path = client.toPath(digest, Store.AC);
-
-    assertThat(path).isEqualTo(root.getRelative("ac/01/0123456789abcdef"));
-  }
-
-  @Test
-  public void toPath_forCas_forNewStyleHashFunction() throws Exception {
-    assumeNotNull(BazelHashFunctions.BLAKE3); // BLAKE3 not available in Blaze.
-
-    DiskCacheClient client =
-        new DiskCacheClient(root, new DigestUtil(SyscallCache.NO_CACHE, BazelHashFunctions.BLAKE3));
-    Digest digest = Digest.newBuilder().setHash("0123456789abcdef").setSizeBytes(42).build();
-    Path path = client.toPath(digest, Store.CAS);
-
-    assertThat(path).isEqualTo(root.getRelative("blake3/cas/01/0123456789abcdef"));
-  }
-
-  @Test
-  public void toPath_forAc_forNewStyleHashFunction() throws Exception {
-    assumeNotNull(BazelHashFunctions.BLAKE3); // BLAKE3 not available in Blaze.
-
-    DiskCacheClient client =
-        new DiskCacheClient(root, new DigestUtil(SyscallCache.NO_CACHE, BazelHashFunctions.BLAKE3));
-    Digest digest = Digest.newBuilder().setHash("0123456789abcdef").setSizeBytes(42).build();
-    Path path = client.toPath(digest, Store.AC);
-
-    assertThat(path).isEqualTo(root.getRelative("blake3/ac/01/0123456789abcdef"));
-  }
-
-  @Test
-  public void uploadFile_whenMissing_populatesCas() throws Exception {
-    assertThat(root.exists()).isTrue();
-    Path file = fs.getPath("/file");
-    FileSystemUtils.writeContent(file, UTF_8, "contents");
-    Digest digest = getDigest("contents");
-
-    var unused = getFromFuture(client.uploadFile(digest, file));
-
-    assertThat(FileSystemUtils.readContent(getCasPath(digest), UTF_8)).isEqualTo("contents");
-  }
-
-  @Test
-  public void uploadFile_whenPresent_updatesMtime() throws Exception {
-    Path file = fs.getPath("/file");
-    FileSystemUtils.writeContent(file, UTF_8, "contents");
-    Digest digest = getDigest("contents");
-
-    // The contents would match under normal operation. This serves to check that we don't
-    // unnecessarily overwrite the file.
-    Path path = populateCas(digest, "existing contents");
-
-    var unused = getFromFuture(client.uploadFile(digest, file));
-
-    assertThat(FileSystemUtils.readContent(path, UTF_8)).isEqualTo("existing contents");
-    assertThat(path.getLastModifiedTime()).isNotEqualTo(0);
-  }
-
-  @Test
-  public void uploadBlob_whenMissing_populatesCas() throws Exception {
-    ByteString blob = ByteString.copyFromUtf8("contents");
-    Digest digest = getDigest("contents");
-
-    var unused = getFromFuture(client.uploadBlob(digest, blob));
-
-    assertThat(FileSystemUtils.readContent(getCasPath(digest), UTF_8)).isEqualTo("contents");
-  }
-
-  @Test
-  public void uploadBlob_whenPresent_updatesMtime() throws Exception {
-    ByteString blob = ByteString.copyFromUtf8("contents");
-    Digest digest = getDigest("contents");
-
-    // The contents would match under normal operation. This serves to check that we don't
-    // unnecessarily overwrite the file.
-    Path path = populateCas(digest, "existing contents");
-
-    var unused = getFromFuture(client.uploadBlob(digest, blob));
-
-    assertThat(FileSystemUtils.readContent(path, UTF_8)).isEqualTo("existing contents");
-    assertThat(path.getLastModifiedTime()).isNotEqualTo(0);
-  }
-
-  @Test
-  public void uploadActionResult_whenMissing_populatesAc() throws Exception {
-    ActionKey actionKey = new ActionKey(getDigest("key"));
-    ActionResult actionResult = ActionResult.newBuilder().setExitCode(42).build();
-    Path path = getAcPath(actionKey);
-
-    var unused = getFromFuture(client.uploadActionResult(actionKey, actionResult));
-
-    assertThat(FileSystemUtils.readContent(path)).isEqualTo(actionResult.toByteArray());
-  }
-
-  @Test
-  public void uploadActionResult_whenPresent_updatesContent() throws Exception {
-    ActionKey actionKey = new ActionKey(getDigest("key"));
-    ActionResult actionResult1 = ActionResult.newBuilder().setExitCode(42).build();
-
-    Path path = populateAc(actionKey, actionResult1);
-
-    ActionResult actionResult2 = ActionResult.newBuilder().setExitCode(43).build();
-    var unused = getFromFuture(client.uploadActionResult(actionKey, actionResult2));
-
-    assertThat(FileSystemUtils.readContent(path)).isEqualTo(actionResult2.toByteArray());
-    assertThat(path.getLastModifiedTime()).isNotEqualTo(0);
-  }
-
-  @Test
-  public void downloadBlob_whenPresent_returnsContents() throws Exception {
-    Digest digest = getDigest("contents");
-    populateCas(digest, "contents");
-    Path out = fs.getPath("/out");
-
-    var unused = getFromFuture(client.downloadBlob(digest, out.getOutputStream()));
-
-    assertThat(FileSystemUtils.readContent(out, UTF_8)).isEqualTo("contents");
-  }
-
-  @Test
-  public void downloadBlob_whenMissing_throwsCacheNotFoundException() throws Exception {
-    Path out = fs.getPath("/out");
-
-    assertThrows(
-        CacheNotFoundException.class,
-        () -> getFromFuture(client.downloadBlob(getDigest("contents"), out.getOutputStream())));
-  }
-
-  @Test
-  public void downloadActionResult_whenPresent_returnsCachedActionResult() throws Exception {
-    ActionKey actionKey = new ActionKey(getDigest("key"));
-    ActionResult actionResult = ActionResult.newBuilder().setExitCode(42).build();
-
-    Path path = populateAc(actionKey, actionResult);
-
-    var result = getFromFuture(client.downloadActionResult(actionKey));
-
-    assertThat(result).isEqualTo(actionResult);
-    assertThat(path.getLastModifiedTime()).isNotEqualTo(0);
-  }
-
-  @Test
-  public void downloadActionResult_whenMissing_returnsNull() throws Exception {
-    ActionKey actionKey = new ActionKey(getDigest("key"));
-
-    var result = getFromFuture(client.downloadActionResult(actionKey));
-
-    assertThat(result).isNull();
-  }
-
-  @Test
-  public void downloadActionResult_withReferencedBlobsPresent_updatesMtimeOnBlobs()
-      throws Exception {
-    Digest stdoutDigest = getDigest("stdout contents");
-    Digest stderrDigest = getDigest("stderr contents");
-    Digest fileDigest = getDigest("file contents");
-    Digest treeFileDigest = getDigest("tree file contents");
-    Tree tree = getTreeWithFile(treeFileDigest);
-    Digest treeDigest = getDigest(tree);
-    ActionKey actionKey = new ActionKey(getDigest("key"));
-    ActionResult actionResult =
-        ActionResult.newBuilder()
-            .setStdoutDigest(stdoutDigest)
-            .setStderrDigest(stderrDigest)
-            .addOutputFiles(OutputFile.newBuilder().setDigest(fileDigest).build())
-            .addOutputDirectories(OutputDirectory.newBuilder().setTreeDigest(getDigest(tree)))
-            .build();
-
-    Path acPath = populateAc(actionKey, actionResult);
-    Path stdoutCasPath = populateCas(stdoutDigest, "stdout contents");
-    Path stderrCasPath = populateCas(stderrDigest, "stderr contents");
-    Path fileCasPath = populateCas(fileDigest, "file contents");
-    Path treeCasPath = populateCas(treeDigest, tree);
-    Path treeFileCasPath = populateCas(treeFileDigest, "tree file contents");
-
-    var result = getFromFuture(client.downloadActionResult(actionKey));
-
-    assertThat(result).isEqualTo(actionResult);
-    assertThat(acPath.getLastModifiedTime()).isNotEqualTo(0);
-    assertThat(stdoutCasPath.getLastModifiedTime()).isNotEqualTo(0);
-    assertThat(stderrCasPath.getLastModifiedTime()).isNotEqualTo(0);
-    assertThat(fileCasPath.getLastModifiedTime()).isNotEqualTo(0);
-    assertThat(treeCasPath.getLastModifiedTime()).isNotEqualTo(0);
-    assertThat(treeFileCasPath.getLastModifiedTime()).isNotEqualTo(0);
-  }
-
-  @Test
-  public void downloadActionResult_withReferencedFileMissing_returnsNull() throws Exception {
-    Digest fileDigest = getDigest("contents");
-    ActionKey actionKey = new ActionKey(getDigest("key"));
-    ActionResult actionResult =
-        ActionResult.newBuilder()
-            .addOutputFiles(OutputFile.newBuilder().setDigest(fileDigest).build())
-            .build();
-
-    populateAc(actionKey, actionResult);
-
-    var result = getFromFuture(client.downloadActionResult(actionKey));
-
-    assertThat(result).isNull();
-  }
-
-  @Test
-  public void downloadActionResult_withReferencedTreeMissing_returnsNull() throws Exception {
-    Digest fileDigest = getDigest("contents");
-    Tree tree = getTreeWithFile(fileDigest);
-    Digest treeDigest = getDigest(tree);
-    ActionKey actionKey = new ActionKey(getDigest("key"));
-    ActionResult actionResult =
-        ActionResult.newBuilder()
-            .addOutputDirectories(OutputDirectory.newBuilder().setTreeDigest(treeDigest))
-            .build();
-
-    populateAc(actionKey, actionResult);
-    populateCas(fileDigest, "contents");
-
-    var result = getFromFuture(client.downloadActionResult(actionKey));
-
-    assertThat(result).isNull();
-  }
-
-  @Test
-  public void downloadActionResult_withReferencedTreeFileMissing_returnsNull() throws Exception {
-    Digest fileDigest = getDigest("contents");
-    Tree tree = getTreeWithFile(fileDigest);
-    Digest treeDigest = getDigest(tree);
-    ActionKey actionKey = new ActionKey(getDigest("key"));
-    ActionResult actionResult =
-        ActionResult.newBuilder()
-            .addOutputDirectories(OutputDirectory.newBuilder().setTreeDigest(treeDigest))
-            .build();
-
-    populateAc(actionKey, actionResult);
-    populateCas(treeDigest, tree);
-
-    var result = getFromFuture(client.downloadActionResult(actionKey));
-
-    assertThat(result).isNull();
-  }
-
-  @Test
-  public void concurrentUploadDownload()
-      throws IOException, ExecutionException, InterruptedException {
-    var nativeDiskCacheDir = TestUtils.createUniqueTmpDir(FileSystems.getNativeFileSystem());
-    var nativeClient = new DiskCacheClient(nativeDiskCacheDir, DIGEST_UTIL);
-    var tasks = new ArrayList<Future<?>>();
-    // Use 1 MB blobs to increase the window for concurrent access during write/rename.
-    var contentSize = 1024 * 1024;
-    var numConcurrentOps = 10;
-    try (var executor = Executors.newFixedThreadPool(numConcurrentOps)) {
-      for (int attempt = 0; attempt < 100; attempt++) {
-        var contentArray = new byte[contentSize];
-        // Fill with a pattern based on the attempt number.
-        for (int i = 0; i < contentSize; i++) {
-          contentArray[i] = (byte) (attempt + i);
-        }
-        var contentBytes = ByteString.copyFrom(contentArray);
-        var contentDigest = DIGEST_UTIL.compute(contentArray);
-        // Use a latch to ensure all concurrent tasks start at roughly the same time.
-        var startLatch = new CountDownLatch(numConcurrentOps);
-        // Half the tasks do uploads, half do downloads with a slow OutputStream to keep the file
-        // open longer. This maximizes the chance of a rename failing because a download has the
-        // file open.
-        for (int concurrentOp = 0; concurrentOp < numConcurrentOps; concurrentOp++) {
-          boolean isUploader = concurrentOp % 2 == 0;
-          tasks.add(
-              executor.submit(
-                  () -> {
-                    // Signal ready and wait for all tasks to be ready.
-                    startLatch.countDown();
-                    startLatch.await();
-                    if (isUploader) {
-                      getFromFuture(nativeClient.uploadBlob(contentDigest, contentBytes));
-                    } else {
-                      // Use a slow OutputStream that pauses periodically to keep the file open
-                      // longer during download.
-                      var out =
-                          new OutputStream() {
-                            private int bytesWritten = 0;
-
-                            @Override
-                            public void write(int b) throws IOException {
-                              bytesWritten++;
-                              maybeSleep();
-                            }
-
-                            @Override
-                            public void write(byte[] b, int off, int len) throws IOException {
-                              bytesWritten += len;
-                              maybeSleep();
-                            }
-
-                            private void maybeSleep() {
-                              // Sleep every 64KB to slow down the download.
-                              if (bytesWritten % (64 * 1024) < 100) {
-                                try {
-                                  Thread.sleep(1);
-                                } catch (InterruptedException e) {
-                                  Thread.currentThread().interrupt();
-                                }
-                              }
-                            }
-                          };
-                      try {
-                        getFromFuture(nativeClient.downloadBlob(contentDigest, out));
-                      } catch (CacheNotFoundException ignored) {
-                        // File not yet uploaded by another task.
-                      }
-                    }
-                    return null;
-                  }));
-        }
-      }
-      for (var task : tasks) {
-        task.get();
-      }
+package com.google.devtools.build.lib.remote.disk
+
+import com.google.common.collect.ImmutableList
+import com.google.devtools.build.lib.remote.util.Utils.getFromFuture
+import com.google.devtools.build.lib.testutil.TestUtils
+import com.google.devtools.build.lib.vfs.util.FileSystems
+import com.google.errorprone.annotations.CanIgnoreReturnValue
+import org.junit.After
+import org.junit.Assert
+import org.junit.Test
+import org.junit.function.ThrowingRunnable
+import java.io.OutputStream
+import java.nio.charset.StandardCharsets
+import java.util.concurrent.Callable
+import java.util.concurrent.Future
+import kotlin.collections.ArrayList
+
+/** Tests for [DiskCacheClient].  */
+@RunWith(JUnit4::class)
+class DiskCacheClientTest {
+    private val fs: FileSystem = InMemoryFileSystem(DigestHashFunction.SHA256)
+    private val root: Path = fs.getPath("/disk_cache")
+    private var client: DiskCacheClient? = null
+
+    @Before
+    @Throws(Exception::class)
+    fun setUp() {
+        client = DiskCacheClient(root, DIGEST_UTIL)
     }
-  }
 
-  private Tree getTreeWithFile(Digest fileDigest) {
-    return Tree.newBuilder()
-        .addChildren(Directory.newBuilder().addFiles(FileNode.newBuilder().setDigest(fileDigest)))
-        .build();
-  }
+    @After
+    fun tearDown() {
+        client!!.close()
+    }
 
-  private Path getCasPath(Digest digest) {
-    return client.toPath(digest, Store.CAS);
-  }
+    @Test
+    @Throws(Exception::class)
+    fun findMissingDigests_returnsAllDigests() {
+        val digests: ImmutableList<Digest?> =
+            ImmutableList.of<Digest?>(getDigest("foo"), getDigest("bar"), getDigest("baz"))
+        assertThat(getFromFuture(client!!.findMissingDigests(digests)))
+            .containsExactlyElementsIn(digests)
+    }
 
-  @CanIgnoreReturnValue
-  private Path populateCas(Digest digest, String contents) throws IOException {
-    return populateCas(digest, contents.getBytes(UTF_8));
-  }
+    @Test
+    @Throws(Exception::class)
+    fun toPath_forCas_forOldStyleHashFunction() {
+        val digest: Digest? = Digest.newBuilder().setHash("0123456789abcdef").setSizeBytes(42).build()
 
-  @CanIgnoreReturnValue
-  private Path populateCas(Digest digest, Message m) throws IOException {
-    return populateCas(digest, m.toByteArray());
-  }
+        val path: Path = client.toPath(digest, Store.CAS)
 
-  private Path populateCas(Digest digest, byte[] contents) throws IOException {
-    Path path = getCasPath(digest);
-    path.getParentDirectory().createDirectoryAndParents();
-    FileSystemUtils.writeContent(path, contents);
-    path.setLastModifiedTime(0);
-    return path;
-  }
+        assertThat(path).isEqualTo(root.getRelative("cas/01/0123456789abcdef"))
+    }
 
-  private Path getAcPath(ActionKey actionKey) {
-    return client.toPath(actionKey.digest(), Store.AC);
-  }
+    @Test
+    @Throws(Exception::class)
+    fun toPath_forAc_forOldStyleHashFunction() {
+        val digest: Digest? = Digest.newBuilder().setHash("0123456789abcdef").setSizeBytes(42).build()
 
-  @CanIgnoreReturnValue
-  private Path populateAc(ActionKey actionKey, ActionResult actionResult) throws IOException {
-    Path path = getAcPath(actionKey);
-    path.getParentDirectory().createDirectoryAndParents();
-    FileSystemUtils.writeContent(path, actionResult.toByteArray());
-    path.setLastModifiedTime(0);
-    return path;
-  }
+        val path: Path = client.toPath(digest, Store.AC)
 
-  private Digest getDigest(String contents) {
-    return DIGEST_UTIL.computeAsUtf8(contents);
-  }
+        assertThat(path).isEqualTo(root.getRelative("ac/01/0123456789abcdef"))
+    }
 
-  private Digest getDigest(Message m) {
-    return DIGEST_UTIL.compute(m.toByteArray());
-  }
+    @Test
+    @Throws(Exception::class)
+    fun toPath_forCas_forNewStyleHashFunction() {
+        Assume.assumeNotNull(BazelHashFunctions.BLAKE3) // BLAKE3 not available in Blaze.
+
+        val client =
+            DiskCacheClient(root, DigestUtil(SyscallCache.NO_CACHE, BazelHashFunctions.BLAKE3))
+        val digest: Digest? = Digest.newBuilder().setHash("0123456789abcdef").setSizeBytes(42).build()
+        val path: Path = client.toPath(digest, Store.CAS)
+
+        assertThat(path).isEqualTo(root.getRelative("blake3/cas/01/0123456789abcdef"))
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun toPath_forAc_forNewStyleHashFunction() {
+        Assume.assumeNotNull(BazelHashFunctions.BLAKE3) // BLAKE3 not available in Blaze.
+
+        val client =
+            DiskCacheClient(root, DigestUtil(SyscallCache.NO_CACHE, BazelHashFunctions.BLAKE3))
+        val digest: Digest? = Digest.newBuilder().setHash("0123456789abcdef").setSizeBytes(42).build()
+        val path: Path = client.toPath(digest, Store.AC)
+
+        assertThat(path).isEqualTo(root.getRelative("blake3/ac/01/0123456789abcdef"))
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun uploadFile_whenMissing_populatesCas() {
+        assertThat(root.exists()).isTrue()
+        val file: Path = fs.getPath("/file")
+        FileSystemUtils.writeContent(file, StandardCharsets.UTF_8, "contents")
+        val digest: Digest = getDigest("contents")
+
+        val unused: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            getFromFuture(client!!.uploadFile(digest, file))
+
+        assertThat(FileSystemUtils.readContent(getCasPath(digest), StandardCharsets.UTF_8)).isEqualTo("contents")
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun uploadFile_whenPresent_updatesMtime() {
+        val file: Path = fs.getPath("/file")
+        FileSystemUtils.writeContent(file, StandardCharsets.UTF_8, "contents")
+        val digest: Digest = getDigest("contents")
+
+        // The contents would match under normal operation. This serves to check that we don't
+        // unnecessarily overwrite the file.
+        val path: Path = populateCas(digest, "existing contents")
+
+        val unused: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            getFromFuture(client!!.uploadFile(digest, file))
+
+        assertThat(FileSystemUtils.readContent(path, StandardCharsets.UTF_8)).isEqualTo("existing contents")
+        assertThat(path.getLastModifiedTime()).isNotEqualTo(0)
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun uploadBlob_whenMissing_populatesCas() {
+        val blob: ByteString = ByteString.copyFromUtf8("contents")
+        val digest: Digest = getDigest("contents")
+
+        val unused: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            getFromFuture(client.uploadBlob(digest, blob))
+
+        assertThat(FileSystemUtils.readContent(getCasPath(digest), StandardCharsets.UTF_8)).isEqualTo("contents")
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun uploadBlob_whenPresent_updatesMtime() {
+        val blob: ByteString = ByteString.copyFromUtf8("contents")
+        val digest: Digest = getDigest("contents")
+
+        // The contents would match under normal operation. This serves to check that we don't
+        // unnecessarily overwrite the file.
+        val path: Path = populateCas(digest, "existing contents")
+
+        val unused: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            getFromFuture(client.uploadBlob(digest, blob))
+
+        assertThat(FileSystemUtils.readContent(path, StandardCharsets.UTF_8)).isEqualTo("existing contents")
+        assertThat(path.getLastModifiedTime()).isNotEqualTo(0)
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun uploadActionResult_whenMissing_populatesAc() {
+        val actionKey: ActionKey = ActionKey(getDigest("key"))
+        val actionResult: ActionResult = ActionResult.newBuilder().setExitCode(42).build()
+        val path: Path = getAcPath(actionKey)
+
+        val unused: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            getFromFuture(client!!.uploadActionResult(actionKey, actionResult))
+
+        assertThat(FileSystemUtils.readContent(path)).isEqualTo(actionResult.toByteArray())
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun uploadActionResult_whenPresent_updatesContent() {
+        val actionKey: ActionKey = ActionKey(getDigest("key"))
+        val actionResult1: ActionResult = ActionResult.newBuilder().setExitCode(42).build()
+
+        val path: Path = populateAc(actionKey, actionResult1)
+
+        val actionResult2: ActionResult = ActionResult.newBuilder().setExitCode(43).build()
+        val unused: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            getFromFuture(client!!.uploadActionResult(actionKey, actionResult2))
+
+        assertThat(FileSystemUtils.readContent(path)).isEqualTo(actionResult2.toByteArray())
+        assertThat(path.getLastModifiedTime()).isNotEqualTo(0)
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun downloadBlob_whenPresent_returnsContents() {
+        val digest: Digest = getDigest("contents")
+        populateCas(digest, "contents")
+        val out: Path = fs.getPath("/out")
+
+        val unused: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            getFromFuture(client!!.downloadBlob(digest, out.getOutputStream()))
+
+        assertThat(FileSystemUtils.readContent(out, StandardCharsets.UTF_8)).isEqualTo("contents")
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun downloadBlob_whenMissing_throwsCacheNotFoundException() {
+        val out: Path = fs.getPath("/out")
+
+        Assert.assertThrows<T?>(
+            CacheNotFoundException::class.java,
+            ThrowingRunnable { getFromFuture(client!!.downloadBlob(getDigest("contents"), out.getOutputStream())) })
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun downloadActionResult_whenPresent_returnsCachedActionResult() {
+        val actionKey: ActionKey = ActionKey(getDigest("key"))
+        val actionResult: ActionResult = ActionResult.newBuilder().setExitCode(42).build()
+
+        val path: Path = populateAc(actionKey, actionResult)
+
+        val result: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            getFromFuture(client!!.downloadActionResult(actionKey))
+
+        assertThat(result).isEqualTo(actionResult)
+        assertThat(path.getLastModifiedTime()).isNotEqualTo(0)
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun downloadActionResult_whenMissing_returnsNull() {
+        val actionKey: ActionKey = ActionKey(getDigest("key"))
+
+        val result: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            getFromFuture(client!!.downloadActionResult(actionKey))
+
+        assertThat(result).isNull()
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun downloadActionResult_withReferencedBlobsPresent_updatesMtimeOnBlobs() {
+        val stdoutDigest: Digest = getDigest("stdout contents")
+        val stderrDigest: Digest = getDigest("stderr contents")
+        val fileDigest: Digest = getDigest("file contents")
+        val treeFileDigest: Digest = getDigest("tree file contents")
+        val tree: Tree = getTreeWithFile(treeFileDigest)
+        val treeDigest: Digest? = getDigest(tree)
+        val actionKey: ActionKey = ActionKey(getDigest("key"))
+        val actionResult: ActionResult =
+            ActionResult.newBuilder()
+                .setStdoutDigest(stdoutDigest)
+                .setStderrDigest(stderrDigest)
+                .addOutputFiles(OutputFile.newBuilder().setDigest(fileDigest).build())
+                .addOutputDirectories(OutputDirectory.newBuilder().setTreeDigest(getDigest(tree)))
+                .build()
+
+        val acPath: Path = populateAc(actionKey, actionResult)
+        val stdoutCasPath: Path = populateCas(stdoutDigest, "stdout contents")
+        val stderrCasPath: Path = populateCas(stderrDigest, "stderr contents")
+        val fileCasPath: Path = populateCas(fileDigest, "file contents")
+        val treeCasPath: Path = populateCas(treeDigest, tree)
+        val treeFileCasPath: Path = populateCas(treeFileDigest, "tree file contents")
+
+        val result: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            getFromFuture(client!!.downloadActionResult(actionKey))
+
+        assertThat(result).isEqualTo(actionResult)
+        assertThat(acPath.getLastModifiedTime()).isNotEqualTo(0)
+        assertThat(stdoutCasPath.getLastModifiedTime()).isNotEqualTo(0)
+        assertThat(stderrCasPath.getLastModifiedTime()).isNotEqualTo(0)
+        assertThat(fileCasPath.getLastModifiedTime()).isNotEqualTo(0)
+        assertThat(treeCasPath.getLastModifiedTime()).isNotEqualTo(0)
+        assertThat(treeFileCasPath.getLastModifiedTime()).isNotEqualTo(0)
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun downloadActionResult_withReferencedFileMissing_returnsNull() {
+        val fileDigest: Digest = getDigest("contents")
+        val actionKey: ActionKey = ActionKey(getDigest("key"))
+        val actionResult: ActionResult =
+            ActionResult.newBuilder()
+                .addOutputFiles(OutputFile.newBuilder().setDigest(fileDigest).build())
+                .build()
+
+        populateAc(actionKey, actionResult)
+
+        val result: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            getFromFuture(client!!.downloadActionResult(actionKey))
+
+        assertThat(result).isNull()
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun downloadActionResult_withReferencedTreeMissing_returnsNull() {
+        val fileDigest: Digest = getDigest("contents")
+        val tree: Tree = getTreeWithFile(fileDigest)
+        val treeDigest: Digest? = getDigest(tree)
+        val actionKey: ActionKey = ActionKey(getDigest("key"))
+        val actionResult: ActionResult =
+            ActionResult.newBuilder()
+                .addOutputDirectories(OutputDirectory.newBuilder().setTreeDigest(treeDigest))
+                .build()
+
+        populateAc(actionKey, actionResult)
+        populateCas(fileDigest, "contents")
+
+        val result: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            getFromFuture(client!!.downloadActionResult(actionKey))
+
+        assertThat(result).isNull()
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun downloadActionResult_withReferencedTreeFileMissing_returnsNull() {
+        val fileDigest: Digest = getDigest("contents")
+        val tree: Tree = getTreeWithFile(fileDigest)
+        val treeDigest: Digest? = getDigest(tree)
+        val actionKey: ActionKey = ActionKey(getDigest("key"))
+        val actionResult: ActionResult =
+            ActionResult.newBuilder()
+                .addOutputDirectories(OutputDirectory.newBuilder().setTreeDigest(treeDigest))
+                .build()
+
+        populateAc(actionKey, actionResult)
+        populateCas(treeDigest, tree)
+
+        val result: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            getFromFuture(client!!.downloadActionResult(actionKey))
+
+        assertThat(result).isNull()
+    }
+
+    @Test
+    @Throws(IOException::class, ExecutionException::class, InterruptedException::class)
+    fun concurrentUploadDownload() {
+        val nativeDiskCacheDir: Path = TestUtils.createUniqueTmpDir(FileSystems.getNativeFileSystem())
+        val nativeClient = DiskCacheClient(nativeDiskCacheDir, DIGEST_UTIL)
+        val tasks = ArrayList<Future<*>>()
+        // Use 1 MB blobs to increase the window for concurrent access during write/rename.
+        val contentSize = 1024 * 1024
+        val numConcurrentOps = 10
+        Executors.newFixedThreadPool(numConcurrentOps).use { executor ->
+            for (attempt in 0..99) {
+                val contentArray = ByteArray(contentSize)
+                // Fill with a pattern based on the attempt number.
+                for (i in 0..<contentSize) {
+                    contentArray[i] = (attempt + i).toByte()
+                }
+                val contentBytes: ByteString = ByteString.copyFrom(contentArray)
+                val contentDigest: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+                    DIGEST_UTIL.compute(contentArray)
+                // Use a latch to ensure all concurrent tasks start at roughly the same time.
+                val startLatch: CountDownLatch = CountDownLatch(numConcurrentOps)
+                // Half the tasks do uploads, half do downloads with a slow OutputStream to keep the file
+                // open longer. This maximizes the chance of a rename failing because a download has the
+                // file open.
+                for (concurrentOp in 0..<numConcurrentOps) {
+                    val isUploader = concurrentOp % 2 == 0
+                    tasks.add(
+                        executor.submit<Any?>(
+                            Callable {
+                                // Signal ready and wait for all tasks to be ready.
+                                startLatch.countDown()
+                                startLatch.await()
+                                if (isUploader) {
+                                    getFromFuture(nativeClient.uploadBlob(contentDigest, contentBytes))
+                                } else {
+                                    // Use a slow OutputStream that pauses periodically to keep the file open
+                                    // longer during download.
+                                    val out: OutputStream? =
+                                        object : OutputStream() {
+                                            private var bytesWritten = 0
+
+                                            @Throws(IOException::class)
+                                            override fun write(b: Int) {
+                                                bytesWritten++
+                                                maybeSleep()
+                                            }
+
+                                            @Throws(IOException::class)
+                                            override fun write(b: ByteArray?, off: Int, len: Int) {
+                                                bytesWritten += len
+                                                maybeSleep()
+                                            }
+
+                                            fun maybeSleep() {
+                                                // Sleep every 64KB to slow down the download.
+                                                if (bytesWritten % (64 * 1024) < 100) {
+                                                    try {
+                                                        Thread.sleep(1)
+                                                    } catch (e: InterruptedException) {
+                                                        Thread.currentThread().interrupt()
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    try {
+                                        getFromFuture(nativeClient.downloadBlob(contentDigest, out!!))
+                                    } catch (ignored: CacheNotFoundException) {
+                                        // File not yet uploaded by another task.
+                                    }
+                                }
+                                null
+                            })
+                    )
+                }
+            }
+            for (task in tasks) {
+                task.get()
+            }
+        }
+    }
+
+    private fun getTreeWithFile(fileDigest: Digest?): Tree {
+        return Tree.newBuilder()
+            .addChildren(Directory.newBuilder().addFiles(FileNode.newBuilder().setDigest(fileDigest)))
+            .build()
+    }
+
+    private fun getCasPath(digest: Digest?): Path {
+        return client.toPath(digest, Store.CAS)
+    }
+
+    @CanIgnoreReturnValue
+    @Throws(IOException::class)
+    private fun populateCas(digest: Digest?, contents: String): Path {
+        return populateCas(digest, contents.toByteArray(StandardCharsets.UTF_8))
+    }
+
+    @CanIgnoreReturnValue
+    @Throws(IOException::class)
+    private fun populateCas(digest: Digest?, m: Message): Path? {
+        return populateCas(digest, m.toByteArray())
+    }
+
+    @Throws(IOException::class)
+    private fun populateCas(digest: Digest?, contents: ByteArray?): Path {
+        val path: Path = getCasPath(digest)
+        path.getParentDirectory().createDirectoryAndParents()
+        FileSystemUtils.writeContent(path, contents)
+        path.setLastModifiedTime(0)
+        return path
+    }
+
+    private fun getAcPath(actionKey: ActionKey): Path {
+        return client.toPath(actionKey.digest(), Store.AC)
+    }
+
+    @CanIgnoreReturnValue
+    @Throws(IOException::class)
+    private fun populateAc(actionKey: ActionKey, actionResult: ActionResult): Path {
+        val path: Path = getAcPath(actionKey)
+        path.getParentDirectory().createDirectoryAndParents()
+        FileSystemUtils.writeContent(path, actionResult.toByteArray())
+        path.setLastModifiedTime(0)
+        return path
+    }
+
+    private fun getDigest(contents: String?): Digest {
+        return DIGEST_UTIL.computeAsUtf8(contents)
+    }
+
+    private fun getDigest(m: Message): Digest {
+        return DIGEST_UTIL.compute(m.toByteArray())
+    }
+
+    companion object {
+        private val DIGEST_UTIL: DigestUtil = DigestUtil(SyscallCache.NO_CACHE, DigestHashFunction.SHA256)
+    }
 }

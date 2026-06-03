@@ -11,34 +11,39 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester
 
-import static com.google.common.truth.Truth.assertThat;
+/** Tests for [FluentIterableCodec].  */
+@RunWith(JUnit4::class)
+class FluentIterableCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCodec() {
+        SerializationTester(
+            com.google.common.collect.FluentIterable.of<E?>("x"),
+            com.google.common.collect.FluentIterable.< E > of < E ? > ("abc", "def"
+        ),
+        com.google.common.collect.Iterables.< T > concat < T ? > (com.google.common.collect.ImmutableList.of<String?>(
+            "first",
+            "second"
+        ), com.google.common.collect.ImmutableList.of<kotlin.String?>("third")))
+        .setVerificationFunction({ first: com.google.common.collect.FluentIterable<kotlin.Any?>, second: com.google.common.collect.FluentIterable<kotlin.Any?> ->
+            verifyEquals(
+                first,
+                second
+            )
+        })
+            .runTests()
+    }
 
-import com.google.common.collect.FluentIterable;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link FluentIterableCodec}. */
-@RunWith(JUnit4.class)
-public final class FluentIterableCodecTest {
-
-  @Test
-  public void testCodec() throws Exception {
-    new SerializationTester(
-            FluentIterable.of("x"),
-            FluentIterable.of("abc", "def"),
-            Iterables.concat(ImmutableList.of("first", "second"), ImmutableList.of("third")))
-        .setVerificationFunction(FluentIterableCodecTest::verifyEquals)
-        .runTests();
-  }
-
-  private static void verifyEquals(FluentIterable<Object> first, FluentIterable<Object> second) {
-    assertThat(first.toList()).isEqualTo(second.toList());
-  }
+    companion object {
+        private fun verifyEquals(
+            first: com.google.common.collect.FluentIterable<Any?>,
+            second: com.google.common.collect.FluentIterable<Any?>
+        ) {
+            Truth.assertThat(first.toList()).isEqualTo(second.toList())
+        }
+    }
 }

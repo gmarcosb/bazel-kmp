@@ -11,46 +11,52 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package net.starlark.java.syntax;
+package net.starlark.java.syntax
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.common.truth.Truth
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests of the Starlark [Program].  */
+@RunWith(JUnit4::class)
+class ProgramTest {
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    private fun compileFile(vararg lines: String?): net.starlark.java.syntax.Program {
+        val input: net.starlark.java.syntax.ParserInput? = net.starlark.java.syntax.ParserInput.fromLines(*lines)
+        val file: net.starlark.java.syntax.StarlarkFile? =
+            net.starlark.java.syntax.StarlarkFile.parse(input, net.starlark.java.syntax.FileOptions.DEFAULT)
+        return net.starlark.java.syntax.Program.compileFile(
+            file,
+            net.starlark.java.syntax.TestUtils.Module.Companion.withPredeclared("pre")
+        )
+    }
 
-/** Tests of the Starlark {@link Program}. */
-@RunWith(JUnit4.class)
-public final class ProgramTest {
-
-  private Program compileFile(String... lines) throws SyntaxError.Exception {
-    ParserInput input = ParserInput.fromLines(lines);
-    StarlarkFile file = StarlarkFile.parse(input, FileOptions.DEFAULT);
-    return Program.compileFile(file, TestUtils.Module.withPredeclared("pre"));
-  }
-
-  @Test
-  public void docComments_basicFunctionality() throws Exception {
-    Program program =
-        compileFile(
-            """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun docComments_basicFunctionality() {
+        val program: net.starlark.java.syntax.Program =
+            compileFile(
+                """
             #: Doc comment for A
             #: multiline
             FOO = 1
             BAR, BAZ = (2, 3)  #: Applies to LHS list
-            """);
-    assertThat(program.docCommentsMap.keySet()).containsExactly("FOO", "BAR", "BAZ").inOrder();
-    assertThat(program.docCommentsMap.get("FOO").getText())
-        .isEqualTo("Doc comment for A\nmultiline");
-    assertThat(program.docCommentsMap.get("BAR").getText()).isEqualTo("Applies to LHS list");
-    assertThat(program.docCommentsMap.get("BAZ").getText()).isEqualTo("Applies to LHS list");
-  }
+            
+            """.trimIndent()
+            )
+        assertThat(program.docCommentsMap.keySet()).containsExactly("FOO", "BAR", "BAZ").inOrder()
+        assertThat(program.docCommentsMap.get("FOO").getText())
+            .isEqualTo("Doc comment for A\nmultiline")
+        assertThat(program.docCommentsMap.get("BAR").getText()).isEqualTo("Applies to LHS list")
+        assertThat(program.docCommentsMap.get("BAZ").getText()).isEqualTo("Applies to LHS list")
+    }
 
-  @Test
-  public void docComments_unused() throws Exception {
-    Program program =
-        compileFile(
-            """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun docComments_unused() {
+        val program: net.starlark.java.syntax.Program =
+            compileFile(
+                """
             #: Unused - separated by a non-doc comment line
             # Non-doc comment line - not in module.unassignedDocComments()
             A = 1
@@ -62,16 +68,22 @@ public final class ProgramTest {
                 #: Unused - not a global assignment
                 C = 3
             # Another non-doc comment line - not in module.unassignedDocComments()
-            """);
+            
+            """.trimIndent()
+            )
 
-    assertThat(program.getDocCommentsMap().keySet()).containsExactly("B");
-    assertThat(program.docCommentsMap.get("B").getText())
-        .isEqualTo("Trailing doc comment for B overrides preceding doc comment block");
-    assertThat(program.unusedDocCommentLines.stream().map(Comment::getDocCommentText))
-        .containsExactly(
-            "Unused - separated by a non-doc comment line",
-            "Unused - overridden by trailing doc comment",
-            "Unused - not a global assignment")
-        .inOrder();
-  }
+        Truth.assertThat(program.getDocCommentsMap().keys).containsExactly("B")
+        assertThat(program.docCommentsMap.get("B").getText())
+            .isEqualTo("Trailing doc comment for B overrides preceding doc comment block")
+        assertThat(
+            program.unusedDocCommentLines.stream()
+                .map({ obj: net.starlark.java.syntax.Comment? -> obj.getDocCommentText() })
+        )
+            .containsExactly(
+                "Unused - separated by a non-doc comment line",
+                "Unused - overridden by trailing doc comment",
+                "Unused - not a global assignment"
+            )
+            .inOrder()
+    }
 }

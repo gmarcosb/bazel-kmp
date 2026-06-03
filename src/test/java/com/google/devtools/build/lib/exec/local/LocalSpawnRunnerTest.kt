@@ -11,945 +11,990 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package com.google.devtools.build.lib.exec.local;
-
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.testing.common.DirectoryListingHelper.file;
-import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.junit.Assert.assertThrows;
-import static org.junit.Assume.assumeTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.matches;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.io.ByteStreams;
-import com.google.common.io.Files;
-import com.google.devtools.build.lib.actions.ActionInputHelper;
-import com.google.devtools.build.lib.actions.CommandLines.ParamFileActionInput;
-import com.google.devtools.build.lib.actions.ExecutionRequirements;
-import com.google.devtools.build.lib.actions.LocalHostCapacity;
-import com.google.devtools.build.lib.actions.ParameterFile.ParameterFileType;
-import com.google.devtools.build.lib.actions.ResourceManager;
-import com.google.devtools.build.lib.actions.ResourceSet;
-import com.google.devtools.build.lib.actions.Spawn;
-import com.google.devtools.build.lib.actions.SpawnResult;
-import com.google.devtools.build.lib.actions.SpawnResult.Status;
-import com.google.devtools.build.lib.actions.VirtualActionInput;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
-import com.google.devtools.build.lib.exec.BinTools;
-import com.google.devtools.build.lib.exec.RunfilesTreeUpdater;
-import com.google.devtools.build.lib.exec.SpawnExecutingEvent;
-import com.google.devtools.build.lib.exec.SpawnSchedulingEvent;
-import com.google.devtools.build.lib.exec.util.SpawnBuilder;
-import com.google.devtools.build.lib.runtime.ProcessWrapper;
-import com.google.devtools.build.lib.sandbox.SpawnRunnerTestUtil.SpawnExecutionContextForTesting;
-import com.google.devtools.build.lib.shell.JavaSubprocessFactory;
-import com.google.devtools.build.lib.shell.Subprocess;
-import com.google.devtools.build.lib.shell.SubprocessBuilder;
-import com.google.devtools.build.lib.shell.SubprocessBuilder.StreamAction;
-import com.google.devtools.build.lib.shell.SubprocessFactory;
-import com.google.devtools.build.lib.testing.common.DirectoryListingHelper;
-import com.google.devtools.build.lib.testutil.BlazeTestUtils;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import com.google.devtools.build.lib.testutil.TestUtils;
-import com.google.devtools.build.lib.unix.NativePosixFilesServiceImpl;
-import com.google.devtools.build.lib.unix.UnixFileSystem;
-import com.google.devtools.build.lib.util.NetUtil;
-import com.google.devtools.build.lib.util.OS;
-import com.google.devtools.build.lib.util.io.FileOutErr;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.JavaIoFileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import com.google.devtools.common.options.Converters.RegexPatternConverter;
-import com.google.devtools.common.options.Options;
-import java.io.ByteArrayInputStream;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
-import java.time.Duration;
-import java.util.Map;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.Semaphore;
-import java.util.concurrent.ThreadLocalRandom;
-import java.util.logging.Logger;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Mockito;
-
-/** Unit tests for {@link LocalSpawnRunner}. */
-@RunWith(JUnit4.class)
-public class LocalSpawnRunnerTest {
-
-  private static final class TestedLocalSpawnRunner extends LocalSpawnRunner {
-    private Path tmpDirPath;
-
-    TestedLocalSpawnRunner(
-        Path execRoot,
-        LocalExecutionOptions localExecutionOptions,
-        ResourceManager resourceManager,
-        ProcessWrapper processWrapper,
-        LocalEnvProvider localEnvProvider) {
-      super(
-          execRoot,
-          localExecutionOptions,
-          resourceManager,
-          localEnvProvider,
-          /* binTools= */ null,
-          processWrapper,
-          Mockito.mock(RunfilesTreeUpdater.class));
-    }
-
-    // Rigged to act on supplied filesystem (e.g. InMemoryFileSystem) for testing purposes
-    // TODO(b/70572634): Update FileSystem abstraction to support createTempDirectory() from
-    // the java.nio.file.Files package.
-    @Override
-    protected Path createActionTemp(Path execRoot) throws IOException {
-      Path tempDirPath;
-      do {
-        String idStr =
-            Long.toHexString(Thread.currentThread().getId())
-                + "_"
-                + Long.toHexString(ThreadLocalRandom.current().nextLong());
-        tempDirPath = execRoot.getRelative("tmp" + idStr);
-      } while (tempDirPath.exists());
-      if (!tempDirPath.createDirectory()) {
-        throw new IOException(String.format("Could not create temp directory '%s'", tempDirPath));
-      }
-      this.tmpDirPath = tempDirPath;
-      return tempDirPath;
-    }
-
-    Path getActionTemp() {
-      return tmpDirPath;
-    }
-  }
-
-  private static class FinishedSubprocess implements Subprocess {
-    private final int exitCode;
-
-    FinishedSubprocess(int exitCode) {
-      this.exitCode = exitCode;
-    }
-
-    @Override
-    public boolean destroy() {
-      return false;
-    }
-
-    @Override
-    public int exitValue() {
-      return exitCode;
-    }
-
-    @Override
-    public boolean finished() {
-      return true;
-    }
-
-    @Override
-    public boolean isAlive() {
-      return false;
-    }
-
-    @Override
-    public boolean timedout() {
-      return false;
-    }
-
-    @Override
-    public void waitFor() throws InterruptedException {
-      // Do nothing.
-    }
-
-    @Override
-    public OutputStream getOutputStream() {
-      return ByteStreams.nullOutputStream();
-    }
-
-    @Override
-    public InputStream getInputStream() {
-      return new ByteArrayInputStream(new byte[0]);
-    }
-
-    @Override
-    public InputStream getErrorStream() {
-      return new ByteArrayInputStream(new byte[0]);
-    }
-
-    @Override
-    public void close() {
-      // Do nothing.
-    }
-
-    @Override
-    public long getProcessId() {
-      return 0;
-    }
-  }
-
-  private static final Spawn SIMPLE_SPAWN =
-      new SpawnBuilder("/bin/echo", "Hi!").withEnvironment("VARIABLE", "value").build();
-
-  private static final class SubprocessInterceptor implements SubprocessFactory {
-    @Override
-    public Subprocess create(SubprocessBuilder params) {
-      throw new UnsupportedOperationException();
-    }
-  }
-
-  private final ResourceManager resourceManager = new ResourceManager();
-
-  private static ImmutableMap<String, String> keepLocalEnvUnchanged(
-      Map<String, String> env, BinTools binTools, String fallbackTmpDir) {
-    return ImmutableMap.copyOf(env);
-  }
-
-  @Before
-  public final void suppressLogging() {
-    Logger.getLogger(TestedLocalSpawnRunner.class.getName()).setFilter(record -> false);
-  }
-
-  private FileSystem setupEnvironmentForFakeExecution() {
-    // Prevent any subprocess execution at all.
-    SubprocessBuilder.setDefaultSubprocessFactory(new SubprocessInterceptor());
-    resourceManager.setAvailableResources(
-        ResourceSet.create(/* memoryMb= */ 1, /* cpu= */ 1, /* localTestCount= */ 1));
-    return new InMemoryFileSystem(DigestHashFunction.SHA256);
-  }
-
-  private static ProcessWrapper makeProcessWrapper(LocalExecutionOptions options) {
-    return new ProcessWrapper(
-        PathFragment.create("/process-wrapper"),
-        ActionInputHelper.fromPath("/process-wrapper"),
-        options.getLocalSigkillGraceSecondsDuration(),
-        /* gracefulSigterm= */ false);
-  }
-
-  /**
-   * Enables real execution by default.
-   *
-   * <p>Tests should call setupEnvironmentForFakeExecution() if they do not want real execution.
-   */
-  @Before
-  public final void setupEnvironmentForRealExecution() {
-    SubprocessBuilder.setDefaultSubprocessFactory(JavaSubprocessFactory.INSTANCE);
-    resourceManager.setAvailableResources(LocalHostCapacity.getLocalHostCapacity());
-  }
-
-  @Test
-  public void vanillaZeroExit() throws Exception {
-    // TODO(#3536): Make this test work on Windows.
-    // The Command API implicitly absolutizes the path, and we get weird paths on Windows:
-    // T:\execroot\execroot\_bin\process-wrapper
-    assumeTrue(OS.getCurrent() != OS.WINDOWS);
-
-    FileSystem fs = setupEnvironmentForFakeExecution();
-
-    SubprocessFactory factory = mock(SubprocessFactory.class);
-    ArgumentCaptor<SubprocessBuilder> captor = ArgumentCaptor.forClass(SubprocessBuilder.class);
-    when(factory.create(captor.capture())).thenReturn(new FinishedSubprocess(0));
-    SubprocessBuilder.setDefaultSubprocessFactory(factory);
-
-    LocalExecutionOptions options = Options.getDefaults(LocalExecutionOptions.class);
-    options.localSigkillGraceSeconds = 456;
-    TestedLocalSpawnRunner testedRunner =
-        new TestedLocalSpawnRunner(
-            fs.getPath("/execroot"),
-            options,
-            resourceManager,
-            makeProcessWrapper(options),
-            LocalSpawnRunnerTest::keepLocalEnvUnchanged);
-    LocalSpawnRunner runner = testedRunner;
-
-    FileOutErr fileOutErr = new FileOutErr(fs.getPath("/out/stdout"), fs.getPath("/out/stderr"));
-    SpawnExecutionContextForTesting context =
-        new SpawnExecutionContextForTesting(SIMPLE_SPAWN, fileOutErr, Duration.ofSeconds(123));
-    assertThat(fs.getPath("/execroot").createDirectory()).isTrue();
-    SpawnResult result = runner.exec(SIMPLE_SPAWN, context);
-    verify(factory).create(any(SubprocessBuilder.class));
-    assertThat(result.status()).isEqualTo(SpawnResult.Status.SUCCESS);
-    assertThat(result.exitCode()).isEqualTo(0);
-    assertThat(result.setupSuccess()).isTrue();
-    assertThat(result.getExecutorHostName()).isEqualTo(NetUtil.getCachedShortHostName());
-
-    assertThat(captor.getValue().getArgv())
-        .containsExactlyElementsIn(
-            ImmutableList.of(
-                "/process-wrapper",
-                "--timeout=123",
-                "--kill_delay=456",
-                "--stats=" + testedRunner.getActionTemp().getRelative("stats.out"),
-                "/bin/echo",
-                "Hi!"));
-    assertThat(captor.getValue().getEnv()).containsExactly("VARIABLE", "value");
-    assertThat(captor.getValue().getTimeoutMillis()).isEqualTo(0);
-    assertThat(captor.getValue().getStdout()).isEqualTo(StreamAction.REDIRECT);
-    assertThat(captor.getValue().getStdoutFile()).isEqualTo(new File("/out/stdout"));
-    assertThat(captor.getValue().getStderr()).isEqualTo(StreamAction.REDIRECT);
-    assertThat(captor.getValue().getStderrFile()).isEqualTo(new File("/out/stderr"));
-
-    assertThat(context.lockOutputFilesCalled).isTrue();
-    assertThat(context.reportedStatus)
-        .containsExactly(SpawnSchedulingEvent.create("local"), SpawnExecutingEvent.create("local"))
-        .inOrder();
-  }
-
-  @Test
-  public void testParamFiles() throws Exception {
-    // TODO(#3536): Make this test work on Windows.
-    // The Command API implicitly absolutizes the path, and we get weird paths on Windows:
-    // T:\execroot\execroot\_bin\process-wrapper
-    assumeTrue(OS.getCurrent() != OS.WINDOWS);
-
-    FileSystem fs = setupEnvironmentForFakeExecution();
-
-    SubprocessFactory factory = mock(SubprocessFactory.class);
-    when(factory.create(any())).thenReturn(new FinishedSubprocess(0));
-    SubprocessBuilder.setDefaultSubprocessFactory(factory);
-
-    LocalExecutionOptions options = Options.getDefaults(LocalExecutionOptions.class);
-    options.localSigkillGraceSeconds = 456;
-    Path execRoot = fs.getPath("/execroot");
-    LocalSpawnRunner runner =
-        new TestedLocalSpawnRunner(
-            execRoot,
-            options,
-            resourceManager,
-            makeProcessWrapper(options),
-            LocalSpawnRunnerTest::keepLocalEnvUnchanged);
-    ParamFileActionInput paramFileActionInput =
-        new ParamFileActionInput(
-            PathFragment.create("some/dir/params"),
-            ImmutableList.of("--foo", "--bar"),
-            ParameterFileType.UNQUOTED);
-    Spawn spawn =
-        new SpawnBuilder("/bin/echo", "Hi!")
-            .withInput(paramFileActionInput)
-            .withEnvironment("VARIABLE", "value")
-            .build();
-    FileOutErr fileOutErr = new FileOutErr(fs.getPath("/out/stdout"), fs.getPath("/out/stderr"));
-    SpawnExecutionContextForTesting context =
-        new SpawnExecutionContextForTesting(spawn, fileOutErr, Duration.ofSeconds(123));
-    assertThat(fs.getPath("/execroot").createDirectory()).isTrue();
-    SpawnResult result = runner.exec(spawn, context);
-    assertThat(result.status()).isEqualTo(SpawnResult.Status.SUCCESS);
-    assertThat(result.exitCode()).isEqualTo(0);
-    assertThat(result.setupSuccess()).isTrue();
-    assertThat(result.getExecutorHostName()).isEqualTo(NetUtil.getCachedShortHostName());
-    Path paramFile = execRoot.getRelative("some/dir/params");
-    assertThat(paramFile.exists()).isTrue();
-    try (InputStream inputStream = paramFile.getInputStream()) {
-      assertThat(new String(ByteStreams.toByteArray(inputStream), UTF_8).split("\n"))
-          .asList()
-          .containsExactly("--foo", "--bar");
-    }
-  }
-
-  @Test
-  public void exec_materializesVirtualInputAsExecutable() throws Exception {
-    FileSystem fs = setupEnvironmentForFakeExecution();
-    SubprocessFactory factory = mock(SubprocessFactory.class);
-    when(factory.create(any())).thenReturn(new FinishedSubprocess(0));
-    SubprocessBuilder.setDefaultSubprocessFactory(factory);
-    Path execRoot = fs.getPath("/execroot");
-    LocalExecutionOptions options = Options.getDefaults(LocalExecutionOptions.class);
-    LocalSpawnRunner runner =
-        new TestedLocalSpawnRunner(
-            execRoot,
-            options,
-            resourceManager,
-            makeProcessWrapper(options),
-            LocalSpawnRunnerTest::keepLocalEnvUnchanged);
-    VirtualActionInput virtualInput = ActionsTestUtil.createVirtualActionInput("input1", "hello");
-    Spawn spawn = new SpawnBuilder("/bin/true").withInput(virtualInput).build();
-    FileOutErr fileOutErr = new FileOutErr(fs.getPath("/out/stdout"), fs.getPath("/out/stderr"));
-    SpawnExecutionContextForTesting context =
-        new SpawnExecutionContextForTesting(spawn, fileOutErr, Duration.ZERO);
-
-    SpawnResult result = runner.exec(spawn, context);
-
-    assertThat(result.status()).isEqualTo(Status.SUCCESS);
-    assertThat(DirectoryListingHelper.leafDirectoryEntries(execRoot))
-        .containsExactly(file("input1"));
-    Path inputPath = execRoot.getRelative(virtualInput.getExecPath());
-    assertThat(inputPath.isExecutable()).isTrue();
-    assertThat(FileSystemUtils.readLinesAsLatin1(inputPath)).containsExactly("hello");
-  }
-
-  @Test
-  public void noProcessWrapper() throws Exception {
-    // TODO(#3536): Make this test work on Windows.
-    // The Command API implicitly absolutizes the path, and we get weird paths on Windows:
-    // T:\execroot\bin\echo
-    assumeTrue(OS.getCurrent() != OS.WINDOWS);
-
-    FileSystem fs = setupEnvironmentForFakeExecution();
-
-    SubprocessFactory factory = mock(SubprocessFactory.class);
-    ArgumentCaptor<SubprocessBuilder> captor = ArgumentCaptor.forClass(SubprocessBuilder.class);
-    when(factory.create(captor.capture())).thenReturn(new FinishedSubprocess(0));
-    SubprocessBuilder.setDefaultSubprocessFactory(factory);
-
-    LocalExecutionOptions options = Options.getDefaults(LocalExecutionOptions.class);
-    options.localSigkillGraceSeconds = 456;
-    LocalSpawnRunner runner =
-        new TestedLocalSpawnRunner(
-            fs.getPath("/execroot"),
-            options,
-            resourceManager,
-            /* processWrapper= */ null,
-            LocalSpawnRunnerTest::keepLocalEnvUnchanged);
-
-    FileOutErr fileOutErr = new FileOutErr(fs.getPath("/out/stdout"), fs.getPath("/out/stderr"));
-    SpawnExecutionContextForTesting context =
-        new SpawnExecutionContextForTesting(SIMPLE_SPAWN, fileOutErr, Duration.ofSeconds(123));
-    assertThat(fs.getPath("/execroot").createDirectory()).isTrue();
-    SpawnResult result = runner.exec(SIMPLE_SPAWN, context);
-    verify(factory).create(any());
-    assertThat(result.status()).isEqualTo(SpawnResult.Status.SUCCESS);
-    assertThat(result.exitCode()).isEqualTo(0);
-    assertThat(result.setupSuccess()).isTrue();
-    assertThat(result.getExecutorHostName()).isEqualTo(NetUtil.getCachedShortHostName());
-
-    assertThat(captor.getValue().getArgv())
-        .containsExactlyElementsIn(ImmutableList.of("/bin/echo", "Hi!"));
-    assertThat(captor.getValue().getEnv()).containsExactly("VARIABLE", "value");
-    // Without the process wrapper, we use the Command API to enforce the timeout.
-    assertThat(captor.getValue().getTimeoutMillis()).isEqualTo(123 * 1000L);
-
-    assertThat(context.lockOutputFilesCalled).isTrue();
-  }
-
-  @Test
-  public void nonZeroExit() throws Exception {
-    // TODO(#3536): Make this test work on Windows.
-    // The Command API implicitly absolutizes the path, and we get weird paths on Windows:
-    // T:\execroot\execroot\_bin\process-wrapper
-    assumeTrue(OS.getCurrent() != OS.WINDOWS);
-
-    FileSystem fs = setupEnvironmentForFakeExecution();
-
-    SubprocessFactory factory = mock(SubprocessFactory.class);
-    ArgumentCaptor<SubprocessBuilder> captor = ArgumentCaptor.forClass(SubprocessBuilder.class);
-    when(factory.create(captor.capture())).thenReturn(new FinishedSubprocess(3));
-    SubprocessBuilder.setDefaultSubprocessFactory(factory);
-
-    LocalExecutionOptions options = Options.getDefaults(LocalExecutionOptions.class);
-    TestedLocalSpawnRunner testedRunner =
-        new TestedLocalSpawnRunner(
-            fs.getPath("/execroot"),
-            options,
-            resourceManager,
-            makeProcessWrapper(options),
-            LocalSpawnRunnerTest::keepLocalEnvUnchanged);
-    LocalSpawnRunner runner = testedRunner;
-
-    assertThat(fs.getPath("/execroot").createDirectory()).isTrue();
-    FileOutErr fileOutErr = new FileOutErr(fs.getPath("/out/stdout"), fs.getPath("/out/stderr"));
-    SpawnExecutionContextForTesting context =
-        new SpawnExecutionContextForTesting(SIMPLE_SPAWN, fileOutErr, Duration.ZERO);
-    SpawnResult result = runner.exec(SIMPLE_SPAWN, context);
-    verify(factory).create(any(SubprocessBuilder.class));
-    assertThat(result.status()).isEqualTo(SpawnResult.Status.NON_ZERO_EXIT);
-    assertThat(result.exitCode()).isEqualTo(3);
-    assertThat(result.setupSuccess()).isTrue();
-    assertThat(result.getExecutorHostName()).isEqualTo(NetUtil.getCachedShortHostName());
-
-    assertThat(captor.getValue().getArgv())
-        .containsExactlyElementsIn(
-            ImmutableList.of(
-                "/process-wrapper",
-                "--timeout=0",
-                "--kill_delay=15",
-                "--stats=" + testedRunner.getActionTemp().getRelative("stats.out"),
-                "/bin/echo",
-                "Hi!"));
-    assertThat(captor.getValue().getEnv()).containsExactly("VARIABLE", "value");
-    assertThat(captor.getValue().getStdout()).isEqualTo(StreamAction.REDIRECT);
-    assertThat(captor.getValue().getStdoutFile()).isEqualTo(new File("/out/stdout"));
-    assertThat(captor.getValue().getStderr()).isEqualTo(StreamAction.REDIRECT);
-    assertThat(captor.getValue().getStderrFile()).isEqualTo(new File("/out/stderr"));
-
-    assertThat(context.lockOutputFilesCalled).isTrue();
-  }
-
-  @Test
-  public void processStartupThrows() throws Exception {
-    FileSystem fs = setupEnvironmentForFakeExecution();
-
-    SubprocessFactory factory = mock(SubprocessFactory.class);
-    ArgumentCaptor<SubprocessBuilder> captor = ArgumentCaptor.forClass(SubprocessBuilder.class);
-    when(factory.create(captor.capture())).thenThrow(new IOException("I'm sorry, Dave"));
-    SubprocessBuilder.setDefaultSubprocessFactory(factory);
-
-    LocalExecutionOptions options = Options.getDefaults(LocalExecutionOptions.class);
-    LocalSpawnRunner runner =
-        new TestedLocalSpawnRunner(
-            fs.getPath("/execroot"),
-            options,
-            resourceManager,
-            makeProcessWrapper(options),
-            LocalSpawnRunnerTest::keepLocalEnvUnchanged);
-
-    assertThat(fs.getPath("/out").createDirectory()).isTrue();
-    assertThat(fs.getPath("/execroot").createDirectory()).isTrue();
-    FileOutErr fileOutErr = new FileOutErr(fs.getPath("/out/stdout"), fs.getPath("/out/stderr"));
-    SpawnExecutionContextForTesting context =
-        new SpawnExecutionContextForTesting(SIMPLE_SPAWN, fileOutErr, Duration.ZERO);
-    SpawnResult result = runner.exec(SIMPLE_SPAWN, context);
-    verify(factory).create(any(SubprocessBuilder.class));
-    assertThat(result.status()).isEqualTo(SpawnResult.Status.EXECUTION_FAILED);
-    assertThat(result.exitCode()).isEqualTo(-1);
-    assertThat(result.setupSuccess()).isFalse();
-    assertThat(result.getWallTimeInMs()).isEqualTo(0);
-    assertThat(result.getUserTimeInMs()).isEqualTo(0);
-    assertThat(result.getSystemTimeInMs()).isEqualTo(0);
-    assertThat(result.getExecutorHostName()).isEqualTo(NetUtil.getCachedShortHostName());
-
-    assertThat(FileSystemUtils.readContent(fs.getPath("/out/stderr"), UTF_8))
-        .isEqualTo("Action failed to execute: java.io.IOException: I'm sorry, Dave\n");
-
-    assertThat(context.lockOutputFilesCalled).isTrue();
-  }
-
-  @Test
-  public void disallowLocalExecution() throws Exception {
-    FileSystem fs = setupEnvironmentForFakeExecution();
-
-    LocalExecutionOptions options = Options.getDefaults(LocalExecutionOptions.class);
-    options.setAllowedLocalAction(new RegexPatternConverter().convert("none"));
-    LocalSpawnRunner runner =
-        new TestedLocalSpawnRunner(
-            fs.getPath("/execroot"),
-            options,
-            resourceManager,
-            makeProcessWrapper(options),
-            LocalSpawnRunnerTest::keepLocalEnvUnchanged);
-
-    assertThat(fs.getPath("/execroot").createDirectory()).isTrue();
-    FileOutErr fileOutErr = new FileOutErr();
-    SpawnExecutionContextForTesting context =
-        new SpawnExecutionContextForTesting(SIMPLE_SPAWN, fileOutErr, Duration.ZERO);
-    SpawnResult reply = runner.exec(SIMPLE_SPAWN, context);
-    assertThat(reply.status()).isEqualTo(SpawnResult.Status.EXECUTION_DENIED);
-    assertThat(reply.exitCode()).isEqualTo(-1);
-    assertThat(reply.setupSuccess()).isFalse();
-    assertThat(reply.getWallTimeInMs()).isEqualTo(0);
-    assertThat(reply.getUserTimeInMs()).isEqualTo(0);
-    assertThat(reply.getSystemTimeInMs()).isEqualTo(0);
-    assertThat(reply.getExecutorHostName()).isEqualTo(NetUtil.getCachedShortHostName());
-
-    // TODO(ulfjack): Maybe we should only lock after checking?
-    assertThat(context.lockOutputFilesCalled).isTrue();
-  }
-
-  @Test
-  public void interruptedException() throws Exception {
-    FileSystem fs = setupEnvironmentForFakeExecution();
-
-    SubprocessFactory factory = mock(SubprocessFactory.class);
-    ArgumentCaptor<SubprocessBuilder> captor = ArgumentCaptor.forClass(SubprocessBuilder.class);
-    when(factory.create(captor.capture()))
-        .thenReturn(
-            new FinishedSubprocess(3) {
-              private boolean destroyed;
-
-              @Override
-              public boolean destroy() {
-                destroyed = true;
-                return true;
-              }
-
-              @Override
-              public void waitFor() throws InterruptedException {
-                if (!destroyed) {
-                  throw new InterruptedException();
-                }
-              }
-            });
-    SubprocessBuilder.setDefaultSubprocessFactory(factory);
-
-    LocalExecutionOptions options = Options.getDefaults(LocalExecutionOptions.class);
-    LocalSpawnRunner runner =
-        new TestedLocalSpawnRunner(
-            fs.getPath("/execroot"),
-            options,
-            resourceManager,
-            makeProcessWrapper(options),
-            LocalSpawnRunnerTest::keepLocalEnvUnchanged);
-
-    FileOutErr fileOutErr = new FileOutErr(fs.getPath("/out/stdout"), fs.getPath("/out/stderr"));
-    SpawnExecutionContextForTesting context =
-        new SpawnExecutionContextForTesting(SIMPLE_SPAWN, fileOutErr, Duration.ZERO);
-    assertThat(fs.getPath("/execroot").createDirectory()).isTrue();
-    assertThrows(InterruptedException.class, () -> runner.exec(SIMPLE_SPAWN, context));
-    Thread.interrupted();
-    assertThat(context.lockOutputFilesCalled).isTrue();
-  }
-
-  @Test
-  public void interruptWaitsForProcessExit() throws Exception {
-    assumeTrue(OS.getCurrent() != OS.WINDOWS);
-
-    Path tempDir = TestUtils.createUniqueTmpDir(new JavaIoFileSystem(DigestHashFunction.SHA256));
-
-    LocalSpawnRunner runner =
-        new LocalSpawnRunner(
-            tempDir,
-            Options.getDefaults(LocalExecutionOptions.class),
-            resourceManager,
-            LocalEnvProvider.forCurrentOs(ImmutableMap.of()),
-            /* binTools= */ null,
-            /* processWrapper= */ null,
-            Mockito.mock(RunfilesTreeUpdater.class));
-    FileOutErr fileOutErr =
-        new FileOutErr(tempDir.getRelative("stdout"), tempDir.getRelative("stderr"));
-
-    // This test to exercise a race condition by attempting an operation multiple times. We can get
-    // false positives (the test passing without us catching a problem), so try a few times. When
-    // implementing this fix on 2019-09-11, this specific configuration was sufficient to catch the
-    // previously-existent bug.
-    int tries = 10;
-    int delaySeconds = 1;
-
-    Path content = tempDir.getChild("content");
-    Path started = tempDir.getChild("started");
-    // Start a subprocess that blocks until it is killed, and when it is, writes some output to
-    // a temporary file after some delay.
-    String script =
-        "trap 'sleep "
-            + delaySeconds
-            + "; echo foo >"
-            + content.getPathString()
-            + "; exit 1' TERM; "
-            + "touch "
-            + started.getPathString()
-            + "; "
-            + "while :; do "
-            + "  echo 'waiting to be killed'; "
-            + "  sleep 1; "
-            + "done";
-    Spawn spawn = new SpawnBuilder("/bin/sh", "-c", script).build();
-
-    SpawnExecutionContextForTesting context =
-        new SpawnExecutionContextForTesting(spawn, fileOutErr, Duration.ZERO);
-
-    ExecutorService executor = Executors.newSingleThreadExecutor();
-    try {
-      for (int i = 0; i < tries; i++) {
-        content.delete();
-        started.delete();
-        Semaphore interruptCaught = new Semaphore(0);
-        Future<?> future =
-            executor.submit(
-                () -> {
-                  try {
-                    runner.exec(spawn, context);
-                  } catch (InterruptedException e) {
-                    interruptCaught.release();
-                  } catch (Throwable t) {
-                    throw new IllegalStateException(t);
-                  }
-                });
-        // Wait until we know the subprocess has started so that delivering a termination signal
-        // to it triggers the delayed write to the file.
-        while (!started.exists()) {
-          Thread.sleep(1);
+package com.google.devtools.build.lib.exec.local
+
+import com.google.devtools.build.lib.testing.common.DirectoryListingHelper.file
+
+/** Unit tests for [LocalSpawnRunner].  */
+@RunWith(JUnit4::class)
+class LocalSpawnRunnerTest {
+    private class TestedLocalSpawnRunner(
+        execRoot: Path?,
+        localExecutionOptions: LocalExecutionOptions?,
+        resourceManager: ResourceManager?,
+        processWrapper: ProcessWrapper?,
+        localEnvProvider: LocalEnvProvider?
+    ) : LocalSpawnRunner(
+        execRoot,
+        localExecutionOptions,
+        resourceManager,
+        localEnvProvider,  /* binTools= */
+        null,
+        processWrapper,
+        Mockito.< T > mock < T ? > (RunfilesTreeUpdater::class.java)
+    ) {
+        private var tmpDirPath: Path? = null
+
+        // Rigged to act on supplied filesystem (e.g. InMemoryFileSystem) for testing purposes
+        // TODO(b/70572634): Update FileSystem abstraction to support createTempDirectory() from
+        // the java.nio.file.Files package.
+        @Throws(IOException::class)
+        protected override fun createActionTemp(execRoot: Path): Path {
+            var tempDirPath: Path
+            do {
+                val idStr =
+                    (java.lang.Long.toHexString(java.lang.Thread.currentThread().getId())
+                            + "_"
+                            + java.lang.Long.toHexString(java.util.concurrent.ThreadLocalRandom.current().nextLong()))
+                tempDirPath = execRoot.getRelative("tmp" + idStr)
+            } while (tempDirPath.exists())
+            if (!tempDirPath.createDirectory()) {
+                throw IOException(String.format("Could not create temp directory '%s'", tempDirPath))
+            }
+            this.tmpDirPath = tempDirPath
+            return tempDirPath
         }
-        future.cancel(true);
-        interruptCaught.acquireUninterruptibly();
-        // At this point, the subprocess must have fully stopped so write some content to the file
-        // and expect that these contents remain unmodified.
-        FileSystemUtils.writeContent(content, StandardCharsets.UTF_8, "bar");
-        // Wait for longer than the spawn takes to exit before we check the file contents to ensure
-        // that we properly awaited for termination of the subprocess.
-        Thread.sleep(delaySeconds * 2 * 1000);
-        assertThat(FileSystemUtils.readContent(content, StandardCharsets.UTF_8)).isEqualTo("bar");
-      }
-    } finally {
-      executor.shutdown();
+
+        val actionTemp: Path?
+            get() = tmpDirPath
     }
-  }
 
-  @Test
-  public void checkPrefetchCalled() throws Exception {
-    FileSystem fs = setupEnvironmentForFakeExecution();
+    private open class FinishedSubprocess(private val exitCode: Int) : Subprocess {
+        public override fun destroy(): Boolean {
+            return false
+        }
 
-    SubprocessFactory factory = mock(SubprocessFactory.class);
-    when(factory.create(any())).thenReturn(new FinishedSubprocess(0));
-    SubprocessBuilder.setDefaultSubprocessFactory(factory);
+        public override fun exitValue(): Int {
+            return exitCode
+        }
 
-    LocalExecutionOptions options = Options.getDefaults(LocalExecutionOptions.class);
-    LocalSpawnRunner runner =
-        new TestedLocalSpawnRunner(
-            fs.getPath("/execroot"),
-            options,
-            resourceManager,
-            makeProcessWrapper(options),
-            LocalSpawnRunnerTest::keepLocalEnvUnchanged);
+        public override fun finished(): Boolean {
+            return true
+        }
 
-    FileOutErr fileOutErr = new FileOutErr(fs.getPath("/out/stdout"), fs.getPath("/out/stderr"));
-    SpawnExecutionContextForTesting context =
-        new SpawnExecutionContextForTesting(SIMPLE_SPAWN, fileOutErr, Duration.ofSeconds(123));
-    assertThat(fs.getPath("/execroot").createDirectory()).isTrue();
-    runner.exec(SIMPLE_SPAWN, context);
-    assertThat(context.prefetchCalled).isTrue();
-  }
+        val isAlive: Boolean
+            get() = false
 
-  @Test
-  public void checkNoPrefetchCalled() throws Exception {
-    FileSystem fs = setupEnvironmentForFakeExecution();
+        public override fun timedout(): Boolean {
+            return false
+        }
 
-    SubprocessFactory factory = mock(SubprocessFactory.class);
-    when(factory.create(any())).thenReturn(new FinishedSubprocess(0));
-    SubprocessBuilder.setDefaultSubprocessFactory(factory);
+        @Throws(java.lang.InterruptedException::class)
+        public override fun waitFor() {
+            // Do nothing.
+        }
 
-    LocalExecutionOptions options = Options.getDefaults(LocalExecutionOptions.class);
-    LocalSpawnRunner runner =
-        new TestedLocalSpawnRunner(
-            fs.getPath("/execroot"),
-            options,
-            resourceManager,
-            makeProcessWrapper(options),
-            LocalSpawnRunnerTest::keepLocalEnvUnchanged);
+        val outputStream: java.io.OutputStream
+            get() = com.google.common.io.ByteStreams.nullOutputStream()
 
-    FileOutErr fileOutErr = new FileOutErr(fs.getPath("/out/stdout"), fs.getPath("/out/stderr"));
+        val inputStream: java.io.InputStream
+            get() = ByteArrayInputStream(ByteArray(0))
 
-    Spawn spawn =
-        new SpawnBuilder("/bin/echo", "Hi!")
-            .withExecutionInfo(ExecutionRequirements.DISABLE_LOCAL_PREFETCH, "")
-            .build();
+        val errorStream: java.io.InputStream
+            get() = ByteArrayInputStream(ByteArray(0))
 
-    SpawnExecutionContextForTesting context =
-        new SpawnExecutionContextForTesting(spawn, fileOutErr, Duration.ofSeconds(123));
+        public override fun close() {
+            // Do nothing.
+        }
 
-    assertThat(fs.getPath("/execroot").createDirectory()).isTrue();
-    runner.exec(spawn, context);
-    assertThat(context.prefetchCalled).isFalse();
-  }
+        val processId: Long
+            get() = 0
+    }
 
-  @Test
-  public void checkLocalEnvProviderCalled() throws Exception {
-    FileSystem fs = setupEnvironmentForFakeExecution();
+    private class SubprocessInterceptor : SubprocessFactory {
+        public override fun create(params: SubprocessBuilder?): Subprocess? {
+            throw java.lang.UnsupportedOperationException()
+        }
+    }
 
-    SubprocessFactory factory = mock(SubprocessFactory.class);
-    when(factory.create(any())).thenReturn(new FinishedSubprocess(0));
-    SubprocessBuilder.setDefaultSubprocessFactory(factory);
-    LocalEnvProvider localEnvProvider = mock(LocalEnvProvider.class);
+    private val resourceManager: ResourceManager = ResourceManager()
 
-    LocalExecutionOptions options = Options.getDefaults(LocalExecutionOptions.class);
-    LocalSpawnRunner runner =
-        new TestedLocalSpawnRunner(
-            fs.getPath("/execroot"),
-            options,
-            resourceManager,
-            makeProcessWrapper(options),
-            localEnvProvider);
+    @Before
+    fun suppressLogging() {
+        java.util.logging.Logger.getLogger(TestedLocalSpawnRunner::class.java.getName())
+            .setFilter(java.util.logging.Filter { record: LogRecord? -> false })
+    }
 
-    FileOutErr fileOutErr = new FileOutErr(fs.getPath("/out/stdout"), fs.getPath("/out/stderr"));
-    SpawnExecutionContextForTesting context =
-        new SpawnExecutionContextForTesting(SIMPLE_SPAWN, fileOutErr, Duration.ofSeconds(123));
-    assertThat(fs.getPath("/execroot").createDirectory()).isTrue();
+    private fun setupEnvironmentForFakeExecution(): FileSystem {
+        // Prevent any subprocess execution at all.
+        SubprocessBuilder.setDefaultSubprocessFactory(SubprocessInterceptor())
+        resourceManager.setAvailableResources(
+            ResourceSet.create( /* memoryMb= */1,  /* cpu= */1,  /* localTestCount= */1)
+        )
+        return InMemoryFileSystem(DigestHashFunction.SHA256)
+    }
 
-    runner.exec(SIMPLE_SPAWN, context);
-    verify(localEnvProvider)
-        .rewriteLocalEnv(any(), any(), matches("^/execroot/tmp[0-9a-fA-F]+_[0-9a-fA-F]+/work$"));
-  }
+    /**
+     * Enables real execution by default.
+     * 
+     * 
+     * Tests should call setupEnvironmentForFakeExecution() if they do not want real execution.
+     */
+    @Before
+    fun setupEnvironmentForRealExecution() {
+        SubprocessBuilder.setDefaultSubprocessFactory(JavaSubprocessFactory.INSTANCE)
+        resourceManager.setAvailableResources(LocalHostCapacity.getLocalHostCapacity())
+    }
 
-  /**
-   * Copies the {@code process-wrapper} tool into the path under the temporary execRoot where the
-   * {@link LocalSpawnRunner} expects to find it.
-   */
-  private static void copyProcessWrapperIntoExecRoot(Path wrapperPath) throws IOException {
-    File realProcessWrapperFile =
-        new File(
-            PathFragment.create(BlazeTestUtils.runfilesDir())
-                .getRelative(TestConstants.PROCESS_WRAPPER_PATH)
-                .getPathString());
-    assertThat(realProcessWrapperFile.exists()).isTrue();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun vanillaZeroExit() {
+        // TODO(#3536): Make this test work on Windows.
+        // The Command API implicitly absolutizes the path, and we get weird paths on Windows:
+        // T:\execroot\execroot\_bin\process-wrapper
+        Assume.assumeTrue(com.google.devtools.build.lib.util.OS.getCurrent() != com.google.devtools.build.lib.util.OS.WINDOWS)
 
-    wrapperPath.createDirectoryAndParents();
-    File wrapperFile = wrapperPath.getPathFile();
+        val fs: FileSystem = setupEnvironmentForFakeExecution()
 
-    wrapperPath.delete();
-    Files.copy(realProcessWrapperFile, wrapperFile);
-    assertThat(wrapperPath.exists()).isTrue();
+        val factory: SubprocessFactory = Mockito.mock<SubprocessFactory>(SubprocessFactory::class.java)
+        val captor: ArgumentCaptor<SubprocessBuilder?> =
+            ArgumentCaptor.forClass<SubprocessBuilder?, SubprocessBuilder?>(SubprocessBuilder::class.java)
+        Mockito.`when`<T?>(factory.create(captor.capture())).thenReturn(FinishedSubprocess(0))
+        SubprocessBuilder.setDefaultSubprocessFactory(factory)
 
-    wrapperPath.setExecutable(true);
-  }
+        val options: LocalExecutionOptions =
+            com.google.devtools.common.options.Options.getDefaults<O>(LocalExecutionOptions::class.java)
+        options.localSigkillGraceSeconds = 456
+        val testedRunner =
+            TestedLocalSpawnRunner(
+                fs.getPath("/execroot"),
+                options,
+                resourceManager,
+                makeProcessWrapper(options),
+                LocalEnvProvider { env: MutableMap<String?, String?>, binTools: BinTools?, fallbackTmpDir: String? ->
+                    keepLocalEnvUnchanged(
+                        env,
+                        binTools,
+                        fallbackTmpDir
+                    )
+                })
+        val runner: LocalSpawnRunner = testedRunner
 
-  /**
-   * Copies the {@code spend_cpu_time} test util into the temporary execRoot so that the {@link
-   * LocalSpawnRunner} can execute it.
-   */
-  private static Path copyCpuTimeSpenderIntoExecRoot(Path execRoot) throws IOException {
-    File realCpuTimeSpenderFile =
-        new File(
-            PathFragment.create(BlazeTestUtils.runfilesDir())
-                .getRelative(TestConstants.CPU_TIME_SPENDER_PATH)
-                .getPathString());
-    assertThat(realCpuTimeSpenderFile.exists()).isTrue();
+        val fileOutErr: FileOutErr = FileOutErr(fs.getPath("/out/stdout"), fs.getPath("/out/stderr"))
+        val context: SpawnExecutionContextForTesting =
+            SpawnExecutionContextForTesting(SIMPLE_SPAWN, fileOutErr, java.time.Duration.ofSeconds(123))
+        assertThat(fs.getPath("/execroot").createDirectory()).isTrue()
+        val result: SpawnResult = runner.exec(SIMPLE_SPAWN, context)
+        Mockito.verify<Any?>(factory).create(ArgumentMatchers.any<T?>(SubprocessBuilder::class.java))
+        assertThat(result.status()).isEqualTo(SpawnResult.Status.SUCCESS)
+        assertThat(result.exitCode()).isEqualTo(0)
+        assertThat(result.setupSuccess()).isTrue()
+        assertThat(result.getExecutorHostName()).isEqualTo(NetUtil.getCachedShortHostName())
 
-    Path execRootCpuTimeSpenderPath = execRoot.getRelative("spend-cpu-time");
-    File execRootCpuTimeSpenderFile = execRootCpuTimeSpenderPath.getPathFile();
+        assertThat(captor.getValue().getArgv())
+            .containsExactlyElementsIn(
+                com.google.common.collect.ImmutableList.of<E?>(
+                    "/process-wrapper",
+                    "--timeout=123",
+                    "--kill_delay=456",
+                    "--stats=" + testedRunner.actionTemp.getRelative("stats.out"),
+                    "/bin/echo",
+                    "Hi!"
+                )
+            )
+        assertThat(captor.getValue().getEnv()).containsExactly("VARIABLE", "value")
+        assertThat(captor.getValue().getTimeoutMillis()).isEqualTo(0)
+        assertThat(captor.getValue().getStdout()).isEqualTo(StreamAction.REDIRECT)
+        assertThat(captor.getValue().getStdoutFile()).isEqualTo(java.io.File("/out/stdout"))
+        assertThat(captor.getValue().getStderr()).isEqualTo(StreamAction.REDIRECT)
+        assertThat(captor.getValue().getStderrFile()).isEqualTo(java.io.File("/out/stderr"))
 
-    assertThat(execRootCpuTimeSpenderPath.exists()).isFalse();
-    Files.copy(realCpuTimeSpenderFile, execRootCpuTimeSpenderFile);
-    assertThat(execRootCpuTimeSpenderPath.exists()).isTrue();
+        Truth.assertThat(context.lockOutputFilesCalled).isTrue()
+        Truth.assertThat(context.reportedStatus)
+            .containsExactly(SpawnSchedulingEvent.create("local"), SpawnExecutingEvent.create("local"))
+            .inOrder()
+    }
 
-    execRootCpuTimeSpenderPath.setExecutable(true);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testParamFiles() {
+        // TODO(#3536): Make this test work on Windows.
+        // The Command API implicitly absolutizes the path, and we get weird paths on Windows:
+        // T:\execroot\execroot\_bin\process-wrapper
+        Assume.assumeTrue(com.google.devtools.build.lib.util.OS.getCurrent() != com.google.devtools.build.lib.util.OS.WINDOWS)
 
-    return execRootCpuTimeSpenderPath;
-  }
+        val fs: FileSystem = setupEnvironmentForFakeExecution()
 
-  private static Path getTemporaryRoot(FileSystem fs, String name) throws IOException {
-    Path tempDirPath = TestUtils.createUniqueTmpDir(fs);
-    assertThat(tempDirPath.exists()).isTrue();
+        val factory: SubprocessFactory = Mockito.mock<SubprocessFactory>(SubprocessFactory::class.java)
+        Mockito.`when`<T?>(factory.create(ArgumentMatchers.any<T?>())).thenReturn(FinishedSubprocess(0))
+        SubprocessBuilder.setDefaultSubprocessFactory(factory)
 
-    Path root = tempDirPath.getRelative(name);
-    assertThat(root.createDirectory()).isTrue();
-    assertThat(root.exists()).isTrue();
+        val options: LocalExecutionOptions =
+            com.google.devtools.common.options.Options.getDefaults<O>(LocalExecutionOptions::class.java)
+        options.localSigkillGraceSeconds = 456
+        val execRoot: Path = fs.getPath("/execroot")
+        val runner: LocalSpawnRunner =
+            TestedLocalSpawnRunner(
+                execRoot,
+                options,
+                resourceManager,
+                makeProcessWrapper(options),
+                LocalEnvProvider { env: MutableMap<String?, String?>, binTools: BinTools?, fallbackTmpDir: String? ->
+                    keepLocalEnvUnchanged(
+                        env,
+                        binTools,
+                        fallbackTmpDir
+                    )
+                })
+        val paramFileActionInput: ParamFileActionInput =
+            ParamFileActionInput(
+                PathFragment.create("some/dir/params"),
+                com.google.common.collect.ImmutableList.of<E?>("--foo", "--bar"),
+                ParameterFileType.UNQUOTED
+            )
+        val spawn: Spawn =
+            SpawnBuilder("/bin/echo", "Hi!")
+                .withInput(paramFileActionInput)
+                .withEnvironment("VARIABLE", "value")
+                .build()
+        val fileOutErr: FileOutErr = FileOutErr(fs.getPath("/out/stdout"), fs.getPath("/out/stderr"))
+        val context: SpawnExecutionContextForTesting =
+            SpawnExecutionContextForTesting(spawn, fileOutErr, java.time.Duration.ofSeconds(123))
+        assertThat(fs.getPath("/execroot").createDirectory()).isTrue()
+        val result: SpawnResult = runner.exec(spawn, context)
+        assertThat(result.status()).isEqualTo(SpawnResult.Status.SUCCESS)
+        assertThat(result.exitCode()).isEqualTo(0)
+        assertThat(result.setupSuccess()).isTrue()
+        assertThat(result.getExecutorHostName()).isEqualTo(NetUtil.getCachedShortHostName())
+        val paramFile: Path = execRoot.getRelative("some/dir/params")
+        assertThat(paramFile.exists()).isTrue()
+        paramFile.getInputStream().use { inputStream ->
+            Truth.assertThat<String?>(
+                String(
+                    com.google.common.io.ByteStreams.toByteArray(inputStream),
+                    java.nio.charset.StandardCharsets.UTF_8
+                ).split("\n".toRegex()).dropLastWhile { it.isEmpty() }.toTypedArray()
+            )
+                .asList()
+                .containsExactly("--foo", "--bar")
+        }
+    }
 
-    return root;
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun exec_materializesVirtualInputAsExecutable() {
+        val fs: FileSystem = setupEnvironmentForFakeExecution()
+        val factory: SubprocessFactory = Mockito.mock<SubprocessFactory>(SubprocessFactory::class.java)
+        Mockito.`when`<T?>(factory.create(ArgumentMatchers.any<T?>())).thenReturn(FinishedSubprocess(0))
+        SubprocessBuilder.setDefaultSubprocessFactory(factory)
+        val execRoot: Path = fs.getPath("/execroot")
+        val options: LocalExecutionOptions =
+            com.google.devtools.common.options.Options.getDefaults<O>(LocalExecutionOptions::class.java)
+        val runner: LocalSpawnRunner =
+            TestedLocalSpawnRunner(
+                execRoot,
+                options,
+                resourceManager,
+                makeProcessWrapper(options),
+                LocalEnvProvider { env: MutableMap<String?, String?>, binTools: BinTools?, fallbackTmpDir: String? ->
+                    keepLocalEnvUnchanged(
+                        env,
+                        binTools,
+                        fallbackTmpDir
+                    )
+                })
+        val virtualInput: VirtualActionInput = ActionsTestUtil.createVirtualActionInput("input1", "hello")
+        val spawn: Spawn = SpawnBuilder("/bin/true").withInput(virtualInput).build()
+        val fileOutErr: FileOutErr = FileOutErr(fs.getPath("/out/stdout"), fs.getPath("/out/stderr"))
+        val context: SpawnExecutionContextForTesting =
+            SpawnExecutionContextForTesting(spawn, fileOutErr, java.time.Duration.ZERO)
 
-  /**
-   * Returns an execRoot {@link Path} inside a new temporary directory.
-   *
-   * <p>The temporary directory will be automatically deleted on exit.
-   */
-  private static Path getTemporaryExecRoot(FileSystem fs) throws IOException {
-    return getTemporaryRoot(fs, "execRoot");
-  }
+        val result: SpawnResult = runner.exec(spawn, context)
 
-  private static Path getTemporaryEmbeddedBin(FileSystem fs) throws IOException {
-    return getTemporaryRoot(fs, "embedded_bin");
-  }
+        assertThat(result.status()).isEqualTo(Status.SUCCESS)
+        assertThat(DirectoryListingHelper.leafDirectoryEntries(execRoot))
+            .containsExactly(file("input1"))
+        val inputPath: Path = execRoot.getRelative(virtualInput.getExecPath())
+        assertThat(inputPath.isExecutable()).isTrue()
+        assertThat(FileSystemUtils.readLinesAsLatin1(inputPath)).containsExactly("hello")
+    }
 
-  @Test
-  public void hasExecutionStatistics() throws Exception {
-    // TODO(b/62588075) Currently no process-wrapper or execution statistics support in Windows.
-    assumeTrue(OS.getCurrent() != OS.WINDOWS);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun noProcessWrapper() {
+        // TODO(#3536): Make this test work on Windows.
+        // The Command API implicitly absolutizes the path, and we get weird paths on Windows:
+        // T:\execroot\bin\echo
+        Assume.assumeTrue(com.google.devtools.build.lib.util.OS.getCurrent() != com.google.devtools.build.lib.util.OS.WINDOWS)
 
-    FileSystem fs =
-        new UnixFileSystem(
-            DigestHashFunction.SHA256,
-            /* hashAttributeName= */ "",
-            new NativePosixFilesServiceImpl());
+        val fs: FileSystem = setupEnvironmentForFakeExecution()
 
-    LocalExecutionOptions options = Options.getDefaults(LocalExecutionOptions.class);
+        val factory: SubprocessFactory = Mockito.mock<SubprocessFactory>(SubprocessFactory::class.java)
+        val captor: ArgumentCaptor<SubprocessBuilder?> =
+            ArgumentCaptor.forClass<SubprocessBuilder?, SubprocessBuilder?>(SubprocessBuilder::class.java)
+        Mockito.`when`<T?>(factory.create(captor.capture())).thenReturn(FinishedSubprocess(0))
+        SubprocessBuilder.setDefaultSubprocessFactory(factory)
 
-    int minimumWallTimeToSpendInMs = 10 * 1000;
+        val options: LocalExecutionOptions =
+            com.google.devtools.common.options.Options.getDefaults<O>(LocalExecutionOptions::class.java)
+        options.localSigkillGraceSeconds = 456
+        val runner: LocalSpawnRunner =
+            TestedLocalSpawnRunner(
+                fs.getPath("/execroot"),
+                options,
+                resourceManager,  /* processWrapper= */
+                null,
+                LocalEnvProvider { env: MutableMap<String?, String?>, binTools: BinTools?, fallbackTmpDir: String? ->
+                    keepLocalEnvUnchanged(
+                        env,
+                        binTools,
+                        fallbackTmpDir
+                    )
+                })
 
-    int minimumUserTimeToSpendInMs = minimumWallTimeToSpendInMs;
-    // Under normal loads we should be able to use a much lower bound for maxUserTime, but be
-    // generous here in case of hardware issues.
-    int maximumUserTimeToSpendInMs = minimumUserTimeToSpendInMs + 20 * 1000;
+        val fileOutErr: FileOutErr = FileOutErr(fs.getPath("/out/stdout"), fs.getPath("/out/stderr"))
+        val context: SpawnExecutionContextForTesting =
+            SpawnExecutionContextForTesting(SIMPLE_SPAWN, fileOutErr, java.time.Duration.ofSeconds(123))
+        assertThat(fs.getPath("/execroot").createDirectory()).isTrue()
+        val result: SpawnResult = runner.exec(SIMPLE_SPAWN, context)
+        Mockito.verify<Any?>(factory).create(ArgumentMatchers.any<T?>())
+        assertThat(result.status()).isEqualTo(SpawnResult.Status.SUCCESS)
+        assertThat(result.exitCode()).isEqualTo(0)
+        assertThat(result.setupSuccess()).isTrue()
+        assertThat(result.getExecutorHostName()).isEqualTo(NetUtil.getCachedShortHostName())
 
-    int minimumSystemTimeToSpendInMs = 0;
-    // Under normal loads we should be able to use a much lower bound for maxSysTime, but be
-    // generous here in case of hardware issues.
-    int maximumSystemTimeToSpendInMs = minimumSystemTimeToSpendInMs + 20 * 1000;
+        assertThat(captor.getValue().getArgv())
+            .containsExactlyElementsIn(com.google.common.collect.ImmutableList.of<E?>("/bin/echo", "Hi!"))
+        assertThat(captor.getValue().getEnv()).containsExactly("VARIABLE", "value")
+        // Without the process wrapper, we use the Command API to enforce the timeout.
+        assertThat(captor.getValue().getTimeoutMillis()).isEqualTo(123 * 1000L)
 
-    Path execRoot = getTemporaryExecRoot(fs);
-    Path embeddedBinaries = getTemporaryEmbeddedBin(fs);
-    BinTools binTools =
-        BinTools.forEmbeddedBin(embeddedBinaries, ImmutableList.of("process-wrapper"));
-    Path processWrapperPath = binTools.getEmbeddedPath("process-wrapper");
-    copyProcessWrapperIntoExecRoot(processWrapperPath);
-    Path cpuTimeSpenderPath = copyCpuTimeSpenderIntoExecRoot(execRoot);
+        Truth.assertThat(context.lockOutputFilesCalled).isTrue()
+    }
 
-    LocalSpawnRunner runner =
-        new LocalSpawnRunner(
-            execRoot,
-            options,
-            resourceManager,
-            LocalSpawnRunnerTest::keepLocalEnvUnchanged,
-            binTools,
-            new ProcessWrapper(
-                processWrapperPath.asFragment(),
-                ActionInputHelper.fromPath(processWrapperPath.asFragment()),
-                /* killDelay= */ Duration.ZERO,
-                /* gracefulSigterm= */ false),
-            Mockito.mock(RunfilesTreeUpdater.class));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun nonZeroExit() {
+        // TODO(#3536): Make this test work on Windows.
+        // The Command API implicitly absolutizes the path, and we get weird paths on Windows:
+        // T:\execroot\execroot\_bin\process-wrapper
+        Assume.assumeTrue(com.google.devtools.build.lib.util.OS.getCurrent() != com.google.devtools.build.lib.util.OS.WINDOWS)
 
-    Spawn spawn =
-        new SpawnBuilder(
+        val fs: FileSystem = setupEnvironmentForFakeExecution()
+
+        val factory: SubprocessFactory = Mockito.mock<SubprocessFactory>(SubprocessFactory::class.java)
+        val captor: ArgumentCaptor<SubprocessBuilder?> =
+            ArgumentCaptor.forClass<SubprocessBuilder?, SubprocessBuilder?>(SubprocessBuilder::class.java)
+        Mockito.`when`<T?>(factory.create(captor.capture())).thenReturn(FinishedSubprocess(3))
+        SubprocessBuilder.setDefaultSubprocessFactory(factory)
+
+        val options: LocalExecutionOptions =
+            com.google.devtools.common.options.Options.getDefaults<O>(LocalExecutionOptions::class.java)
+        val testedRunner =
+            TestedLocalSpawnRunner(
+                fs.getPath("/execroot"),
+                options,
+                resourceManager,
+                makeProcessWrapper(options),
+                LocalEnvProvider { env: MutableMap<String?, String?>, binTools: BinTools?, fallbackTmpDir: String? ->
+                    keepLocalEnvUnchanged(
+                        env,
+                        binTools,
+                        fallbackTmpDir
+                    )
+                })
+        val runner: LocalSpawnRunner = testedRunner
+
+        assertThat(fs.getPath("/execroot").createDirectory()).isTrue()
+        val fileOutErr: FileOutErr = FileOutErr(fs.getPath("/out/stdout"), fs.getPath("/out/stderr"))
+        val context: SpawnExecutionContextForTesting =
+            SpawnExecutionContextForTesting(SIMPLE_SPAWN, fileOutErr, java.time.Duration.ZERO)
+        val result: SpawnResult = runner.exec(SIMPLE_SPAWN, context)
+        Mockito.verify<Any?>(factory).create(ArgumentMatchers.any<T?>(SubprocessBuilder::class.java))
+        assertThat(result.status()).isEqualTo(SpawnResult.Status.NON_ZERO_EXIT)
+        assertThat(result.exitCode()).isEqualTo(3)
+        assertThat(result.setupSuccess()).isTrue()
+        assertThat(result.getExecutorHostName()).isEqualTo(NetUtil.getCachedShortHostName())
+
+        assertThat(captor.getValue().getArgv())
+            .containsExactlyElementsIn(
+                com.google.common.collect.ImmutableList.of<E?>(
+                    "/process-wrapper",
+                    "--timeout=0",
+                    "--kill_delay=15",
+                    "--stats=" + testedRunner.actionTemp.getRelative("stats.out"),
+                    "/bin/echo",
+                    "Hi!"
+                )
+            )
+        assertThat(captor.getValue().getEnv()).containsExactly("VARIABLE", "value")
+        assertThat(captor.getValue().getStdout()).isEqualTo(StreamAction.REDIRECT)
+        assertThat(captor.getValue().getStdoutFile()).isEqualTo(java.io.File("/out/stdout"))
+        assertThat(captor.getValue().getStderr()).isEqualTo(StreamAction.REDIRECT)
+        assertThat(captor.getValue().getStderrFile()).isEqualTo(java.io.File("/out/stderr"))
+
+        Truth.assertThat(context.lockOutputFilesCalled).isTrue()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun processStartupThrows() {
+        val fs: FileSystem = setupEnvironmentForFakeExecution()
+
+        val factory: SubprocessFactory = Mockito.mock<SubprocessFactory>(SubprocessFactory::class.java)
+        val captor: ArgumentCaptor<SubprocessBuilder?> =
+            ArgumentCaptor.forClass<SubprocessBuilder?, SubprocessBuilder?>(SubprocessBuilder::class.java)
+        Mockito.`when`<T?>(factory.create(captor.capture())).thenThrow(IOException("I'm sorry, Dave"))
+        SubprocessBuilder.setDefaultSubprocessFactory(factory)
+
+        val options: LocalExecutionOptions =
+            com.google.devtools.common.options.Options.getDefaults<O>(LocalExecutionOptions::class.java)
+        val runner: LocalSpawnRunner =
+            TestedLocalSpawnRunner(
+                fs.getPath("/execroot"),
+                options,
+                resourceManager,
+                makeProcessWrapper(options),
+                LocalEnvProvider { env: MutableMap<String?, String?>, binTools: BinTools?, fallbackTmpDir: String? ->
+                    keepLocalEnvUnchanged(
+                        env,
+                        binTools,
+                        fallbackTmpDir
+                    )
+                })
+
+        assertThat(fs.getPath("/out").createDirectory()).isTrue()
+        assertThat(fs.getPath("/execroot").createDirectory()).isTrue()
+        val fileOutErr: FileOutErr = FileOutErr(fs.getPath("/out/stdout"), fs.getPath("/out/stderr"))
+        val context: SpawnExecutionContextForTesting =
+            SpawnExecutionContextForTesting(SIMPLE_SPAWN, fileOutErr, java.time.Duration.ZERO)
+        val result: SpawnResult = runner.exec(SIMPLE_SPAWN, context)
+        Mockito.verify<Any?>(factory).create(ArgumentMatchers.any<T?>(SubprocessBuilder::class.java))
+        assertThat(result.status()).isEqualTo(SpawnResult.Status.EXECUTION_FAILED)
+        assertThat(result.exitCode()).isEqualTo(-1)
+        assertThat(result.setupSuccess()).isFalse()
+        assertThat(result.getWallTimeInMs()).isEqualTo(0)
+        assertThat(result.getUserTimeInMs()).isEqualTo(0)
+        assertThat(result.getSystemTimeInMs()).isEqualTo(0)
+        assertThat(result.getExecutorHostName()).isEqualTo(NetUtil.getCachedShortHostName())
+
+        assertThat(FileSystemUtils.readContent(fs.getPath("/out/stderr"), java.nio.charset.StandardCharsets.UTF_8))
+            .isEqualTo("Action failed to execute: java.io.IOException: I'm sorry, Dave\n")
+
+        Truth.assertThat(context.lockOutputFilesCalled).isTrue()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun disallowLocalExecution() {
+        val fs: FileSystem = setupEnvironmentForFakeExecution()
+
+        val options: LocalExecutionOptions =
+            com.google.devtools.common.options.Options.getDefaults<O>(LocalExecutionOptions::class.java)
+        options.setAllowedLocalAction(RegexPatternConverter().convert("none"))
+        val runner: LocalSpawnRunner =
+            TestedLocalSpawnRunner(
+                fs.getPath("/execroot"),
+                options,
+                resourceManager,
+                makeProcessWrapper(options),
+                LocalEnvProvider { env: MutableMap<String?, String?>, binTools: BinTools?, fallbackTmpDir: String? ->
+                    keepLocalEnvUnchanged(
+                        env,
+                        binTools,
+                        fallbackTmpDir
+                    )
+                })
+
+        assertThat(fs.getPath("/execroot").createDirectory()).isTrue()
+        val fileOutErr: FileOutErr = FileOutErr()
+        val context: SpawnExecutionContextForTesting =
+            SpawnExecutionContextForTesting(SIMPLE_SPAWN, fileOutErr, java.time.Duration.ZERO)
+        val reply: SpawnResult = runner.exec(SIMPLE_SPAWN, context)
+        assertThat(reply.status()).isEqualTo(SpawnResult.Status.EXECUTION_DENIED)
+        assertThat(reply.exitCode()).isEqualTo(-1)
+        assertThat(reply.setupSuccess()).isFalse()
+        assertThat(reply.getWallTimeInMs()).isEqualTo(0)
+        assertThat(reply.getUserTimeInMs()).isEqualTo(0)
+        assertThat(reply.getSystemTimeInMs()).isEqualTo(0)
+        assertThat(reply.getExecutorHostName()).isEqualTo(NetUtil.getCachedShortHostName())
+
+        // TODO(ulfjack): Maybe we should only lock after checking?
+        Truth.assertThat(context.lockOutputFilesCalled).isTrue()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun interruptedException() {
+        val fs: FileSystem = setupEnvironmentForFakeExecution()
+
+        val factory: SubprocessFactory = Mockito.mock<SubprocessFactory>(SubprocessFactory::class.java)
+        val captor: ArgumentCaptor<SubprocessBuilder?> =
+            ArgumentCaptor.forClass<SubprocessBuilder?, SubprocessBuilder?>(SubprocessBuilder::class.java)
+        Mockito.`when`<T?>(factory.create(captor.capture()))
+            .thenReturn(
+                object : FinishedSubprocess(3) {
+                    private var destroyed = false
+
+                    override fun destroy(): Boolean {
+                        destroyed = true
+                        return true
+                    }
+
+                    @Throws(java.lang.InterruptedException::class)
+                    override fun waitFor() {
+                        if (!destroyed) {
+                            throw java.lang.InterruptedException()
+                        }
+                    }
+                })
+        SubprocessBuilder.setDefaultSubprocessFactory(factory)
+
+        val options: LocalExecutionOptions =
+            com.google.devtools.common.options.Options.getDefaults<O>(LocalExecutionOptions::class.java)
+        val runner: LocalSpawnRunner =
+            TestedLocalSpawnRunner(
+                fs.getPath("/execroot"),
+                options,
+                resourceManager,
+                makeProcessWrapper(options),
+                LocalEnvProvider { env: MutableMap<String?, String?>, binTools: BinTools?, fallbackTmpDir: String? ->
+                    keepLocalEnvUnchanged(
+                        env,
+                        binTools,
+                        fallbackTmpDir
+                    )
+                })
+
+        val fileOutErr: FileOutErr = FileOutErr(fs.getPath("/out/stdout"), fs.getPath("/out/stderr"))
+        val context: SpawnExecutionContextForTesting =
+            SpawnExecutionContextForTesting(SIMPLE_SPAWN, fileOutErr, java.time.Duration.ZERO)
+        assertThat(fs.getPath("/execroot").createDirectory()).isTrue()
+        org.junit.Assert.assertThrows<java.lang.InterruptedException?>(
+            java.lang.InterruptedException::class.java,
+            org.junit.function.ThrowingRunnable {
+                runner.exec(
+                    SIMPLE_SPAWN, context
+                )
+            })
+        java.lang.Thread.interrupted()
+        Truth.assertThat(context.lockOutputFilesCalled).isTrue()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun interruptWaitsForProcessExit() {
+        Assume.assumeTrue(com.google.devtools.build.lib.util.OS.getCurrent() != com.google.devtools.build.lib.util.OS.WINDOWS)
+
+        val tempDir: Path =
+            com.google.devtools.build.lib.testutil.TestUtils.createUniqueTmpDir(JavaIoFileSystem(DigestHashFunction.SHA256))
+
+        val runner: LocalSpawnRunner =
+            LocalSpawnRunner(
+                tempDir,
+                com.google.devtools.common.options.Options.getDefaults<O?>(LocalExecutionOptions::class.java),
+                resourceManager,
+                LocalEnvProvider.forCurrentOs(com.google.common.collect.ImmutableMap.of<K?, V?>()),  /* binTools= */
+                null,  /* processWrapper= */
+                null,
+                Mockito.< T > mock < T ? > (RunfilesTreeUpdater::class.java)
+            )
+        val fileOutErr: FileOutErr =
+            FileOutErr(tempDir.getRelative("stdout"), tempDir.getRelative("stderr"))
+
+        // This test to exercise a race condition by attempting an operation multiple times. We can get
+        // false positives (the test passing without us catching a problem), so try a few times. When
+        // implementing this fix on 2019-09-11, this specific configuration was sufficient to catch the
+        // previously-existent bug.
+        val tries = 10
+        val delaySeconds = 1
+
+        val content: Path = tempDir.getChild("content")
+        val started: Path = tempDir.getChild("started")
+        // Start a subprocess that blocks until it is killed, and when it is, writes some output to
+        // a temporary file after some delay.
+        val script =
+            ("trap 'sleep "
+                    + delaySeconds
+                    + "; echo foo >"
+                    + content.getPathString()
+                    + "; exit 1' TERM; "
+                    + "touch "
+                    + started.getPathString()
+                    + "; "
+                    + "while :; do "
+                    + "  echo 'waiting to be killed'; "
+                    + "  sleep 1; "
+                    + "done")
+        val spawn: Spawn = SpawnBuilder("/bin/sh", "-c", script).build()
+
+        val context: SpawnExecutionContextForTesting =
+            SpawnExecutionContextForTesting(spawn, fileOutErr, java.time.Duration.ZERO)
+
+        val executor: ExecutorService = Executors.newSingleThreadExecutor()
+        try {
+            for (i in 0..<tries) {
+                content.delete()
+                started.delete()
+                val interruptCaught: Semaphore = Semaphore(0)
+                val future: java.util.concurrent.Future<*> =
+                    executor.submit(
+                        java.lang.Runnable {
+                            try {
+                                runner.exec(spawn, context)
+                            } catch (e: java.lang.InterruptedException) {
+                                interruptCaught.release()
+                            } catch (t: Throwable) {
+                                throw java.lang.IllegalStateException(t)
+                            }
+                        })
+                // Wait until we know the subprocess has started so that delivering a termination signal
+                // to it triggers the delayed write to the file.
+                while (!started.exists()) {
+                    java.lang.Thread.sleep(1)
+                }
+                future.cancel(true)
+                interruptCaught.acquireUninterruptibly()
+                // At this point, the subprocess must have fully stopped so write some content to the file
+                // and expect that these contents remain unmodified.
+                FileSystemUtils.writeContent(content, java.nio.charset.StandardCharsets.UTF_8, "bar")
+                // Wait for longer than the spawn takes to exit before we check the file contents to ensure
+                // that we properly awaited for termination of the subprocess.
+                java.lang.Thread.sleep((delaySeconds * 2 * 1000).toLong())
+                assertThat(
+                    FileSystemUtils.readContent(
+                        content,
+                        java.nio.charset.StandardCharsets.UTF_8
+                    )
+                ).isEqualTo("bar")
+            }
+        } finally {
+            executor.shutdown()
+        }
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun checkPrefetchCalled() {
+        val fs: FileSystem = setupEnvironmentForFakeExecution()
+
+        val factory: SubprocessFactory = Mockito.mock<SubprocessFactory>(SubprocessFactory::class.java)
+        Mockito.`when`<T?>(factory.create(ArgumentMatchers.any<T?>())).thenReturn(FinishedSubprocess(0))
+        SubprocessBuilder.setDefaultSubprocessFactory(factory)
+
+        val options: LocalExecutionOptions =
+            com.google.devtools.common.options.Options.getDefaults<O>(LocalExecutionOptions::class.java)
+        val runner: LocalSpawnRunner =
+            TestedLocalSpawnRunner(
+                fs.getPath("/execroot"),
+                options,
+                resourceManager,
+                makeProcessWrapper(options),
+                LocalEnvProvider { env: MutableMap<String?, String?>, binTools: BinTools?, fallbackTmpDir: String? ->
+                    keepLocalEnvUnchanged(
+                        env,
+                        binTools,
+                        fallbackTmpDir
+                    )
+                })
+
+        val fileOutErr: FileOutErr = FileOutErr(fs.getPath("/out/stdout"), fs.getPath("/out/stderr"))
+        val context: SpawnExecutionContextForTesting =
+            SpawnExecutionContextForTesting(SIMPLE_SPAWN, fileOutErr, java.time.Duration.ofSeconds(123))
+        assertThat(fs.getPath("/execroot").createDirectory()).isTrue()
+        runner.exec(SIMPLE_SPAWN, context)
+        Truth.assertThat(context.prefetchCalled).isTrue()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun checkNoPrefetchCalled() {
+        val fs: FileSystem = setupEnvironmentForFakeExecution()
+
+        val factory: SubprocessFactory = Mockito.mock<SubprocessFactory>(SubprocessFactory::class.java)
+        Mockito.`when`<T?>(factory.create(ArgumentMatchers.any<T?>())).thenReturn(FinishedSubprocess(0))
+        SubprocessBuilder.setDefaultSubprocessFactory(factory)
+
+        val options: LocalExecutionOptions =
+            com.google.devtools.common.options.Options.getDefaults<O>(LocalExecutionOptions::class.java)
+        val runner: LocalSpawnRunner =
+            TestedLocalSpawnRunner(
+                fs.getPath("/execroot"),
+                options,
+                resourceManager,
+                makeProcessWrapper(options),
+                LocalEnvProvider { env: MutableMap<String?, String?>, binTools: BinTools?, fallbackTmpDir: String? ->
+                    keepLocalEnvUnchanged(
+                        env,
+                        binTools,
+                        fallbackTmpDir
+                    )
+                })
+
+        val fileOutErr: FileOutErr = FileOutErr(fs.getPath("/out/stdout"), fs.getPath("/out/stderr"))
+
+        val spawn: Spawn =
+            SpawnBuilder("/bin/echo", "Hi!")
+                .withExecutionInfo(ExecutionRequirements.DISABLE_LOCAL_PREFETCH, "")
+                .build()
+
+        val context: SpawnExecutionContextForTesting =
+            SpawnExecutionContextForTesting(spawn, fileOutErr, java.time.Duration.ofSeconds(123))
+
+        assertThat(fs.getPath("/execroot").createDirectory()).isTrue()
+        runner.exec(spawn, context)
+        Truth.assertThat(context.prefetchCalled).isFalse()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun checkLocalEnvProviderCalled() {
+        val fs: FileSystem = setupEnvironmentForFakeExecution()
+
+        val factory: SubprocessFactory = Mockito.mock<SubprocessFactory>(SubprocessFactory::class.java)
+        Mockito.`when`<T?>(factory.create(ArgumentMatchers.any<T?>())).thenReturn(FinishedSubprocess(0))
+        SubprocessBuilder.setDefaultSubprocessFactory(factory)
+        val localEnvProvider: LocalEnvProvider? = Mockito.mock<LocalEnvProvider?>(LocalEnvProvider::class.java)
+
+        val options: LocalExecutionOptions =
+            com.google.devtools.common.options.Options.getDefaults<O>(LocalExecutionOptions::class.java)
+        val runner: LocalSpawnRunner =
+            TestedLocalSpawnRunner(
+                fs.getPath("/execroot"),
+                options,
+                resourceManager,
+                makeProcessWrapper(options),
+                localEnvProvider
+            )
+
+        val fileOutErr: FileOutErr = FileOutErr(fs.getPath("/out/stdout"), fs.getPath("/out/stderr"))
+        val context: SpawnExecutionContextForTesting =
+            SpawnExecutionContextForTesting(SIMPLE_SPAWN, fileOutErr, java.time.Duration.ofSeconds(123))
+        assertThat(fs.getPath("/execroot").createDirectory()).isTrue()
+
+        runner.exec(SIMPLE_SPAWN, context)
+        Mockito.verify<Any?>(localEnvProvider)
+            .rewriteLocalEnv(
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.matches("^/execroot/tmp[0-9a-fA-F]+_[0-9a-fA-F]+/work$")
+            )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun hasExecutionStatistics() {
+        // TODO(b/62588075) Currently no process-wrapper or execution statistics support in Windows.
+        Assume.assumeTrue(com.google.devtools.build.lib.util.OS.getCurrent() != com.google.devtools.build.lib.util.OS.WINDOWS)
+
+        val fs: FileSystem =
+            UnixFileSystem(
+                DigestHashFunction.SHA256,  /* hashAttributeName= */
+                "",
+                NativePosixFilesServiceImpl()
+            )
+
+        val options: LocalExecutionOptions? =
+            com.google.devtools.common.options.Options.getDefaults<O?>(LocalExecutionOptions::class.java)
+
+        val minimumWallTimeToSpendInMs = 10 * 1000
+
+        val minimumUserTimeToSpendInMs = minimumWallTimeToSpendInMs
+        // Under normal loads we should be able to use a much lower bound for maxUserTime, but be
+        // generous here in case of hardware issues.
+        val maximumUserTimeToSpendInMs = minimumUserTimeToSpendInMs + 20 * 1000
+
+        val minimumSystemTimeToSpendInMs = 0
+        // Under normal loads we should be able to use a much lower bound for maxSysTime, but be
+        // generous here in case of hardware issues.
+        val maximumSystemTimeToSpendInMs = minimumSystemTimeToSpendInMs + 20 * 1000
+
+        val execRoot: Path = getTemporaryExecRoot(fs)
+        val embeddedBinaries: Path = getTemporaryEmbeddedBin(fs)
+        val binTools: BinTools =
+            BinTools.forEmbeddedBin(embeddedBinaries, com.google.common.collect.ImmutableList.of<E?>("process-wrapper"))
+        val processWrapperPath: Path = binTools.getEmbeddedPath("process-wrapper")
+        copyProcessWrapperIntoExecRoot(processWrapperPath)
+        val cpuTimeSpenderPath: Path = copyCpuTimeSpenderIntoExecRoot(execRoot)
+
+        val runner: LocalSpawnRunner =
+            LocalSpawnRunner(
+                execRoot,
+                options,
+                resourceManager,
+                { env: MutableMap<String?, String?>, binTools: BinTools?, fallbackTmpDir: String? ->
+                    keepLocalEnvUnchanged(
+                        env,
+                        binTools,
+                        fallbackTmpDir
+                    )
+                },
+                binTools,
+                ProcessWrapper(
+                    processWrapperPath.asFragment(),
+                    ActionInputHelper.fromPath(processWrapperPath.asFragment()),  /* killDelay= */
+                    java.time.Duration.ZERO,  /* gracefulSigterm= */
+                    false
+                ),
+                Mockito.< T > mock < T ? > (RunfilesTreeUpdater::class.java)
+            )
+
+        val spawn: Spawn =
+            SpawnBuilder(
                 cpuTimeSpenderPath.getPathString(),
-                String.valueOf(minimumUserTimeToSpendInMs / 1000L),
-                String.valueOf(minimumSystemTimeToSpendInMs / 1000L))
-            .build();
+                (minimumUserTimeToSpendInMs / 1000L).toString(),
+                (minimumSystemTimeToSpendInMs / 1000L).toString()
+            )
+                .build()
 
-    FileOutErr fileOutErr = new FileOutErr(fs.getPath("/dev/null"), fs.getPath("/dev/null"));
-    SpawnExecutionContextForTesting context =
-        new SpawnExecutionContextForTesting(spawn, fileOutErr, Duration.ZERO);
+        val fileOutErr: FileOutErr = FileOutErr(fs.getPath("/dev/null"), fs.getPath("/dev/null"))
+        val context: SpawnExecutionContextForTesting =
+            SpawnExecutionContextForTesting(spawn, fileOutErr, java.time.Duration.ZERO)
 
-    SpawnResult spawnResult = runner.exec(spawn, context);
+        val spawnResult: SpawnResult = runner.exec(spawn, context)
 
-    assertThat(spawnResult.status()).isEqualTo(SpawnResult.Status.SUCCESS);
-    assertThat(spawnResult.exitCode()).isEqualTo(0);
-    assertThat(spawnResult.setupSuccess()).isTrue();
-    assertThat(spawnResult.getExecutorHostName()).isEqualTo(NetUtil.getCachedShortHostName());
+        assertThat(spawnResult.status()).isEqualTo(SpawnResult.Status.SUCCESS)
+        assertThat(spawnResult.exitCode()).isEqualTo(0)
+        assertThat(spawnResult.setupSuccess()).isTrue()
+        assertThat(spawnResult.getExecutorHostName()).isEqualTo(NetUtil.getCachedShortHostName())
 
-    assertThat(spawnResult.getWallTimeInMs()).isAtLeast(minimumWallTimeToSpendInMs);
-    // Under heavy starvation, max wall time could be anything, so don't check it here.
-    assertThat(spawnResult.getUserTimeInMs()).isAtLeast(minimumUserTimeToSpendInMs);
-    assertThat(spawnResult.getUserTimeInMs()).isAtMost(maximumUserTimeToSpendInMs);
-    assertThat(spawnResult.getSystemTimeInMs()).isAtLeast(minimumSystemTimeToSpendInMs);
-    assertThat(spawnResult.getSystemTimeInMs()).isAtMost(maximumSystemTimeToSpendInMs);
-    assertThat(spawnResult.getNumBlockOutputOperations()).isAtLeast(0L);
-    assertThat(spawnResult.getNumBlockInputOperations()).isAtLeast(0L);
-    assertThat(spawnResult.getNumInvoluntaryContextSwitches()).isAtLeast(0L);
-  }
+        assertThat(spawnResult.getWallTimeInMs()).isAtLeast(minimumWallTimeToSpendInMs)
+        // Under heavy starvation, max wall time could be anything, so don't check it here.
+        assertThat(spawnResult.getUserTimeInMs()).isAtLeast(minimumUserTimeToSpendInMs)
+        assertThat(spawnResult.getUserTimeInMs()).isAtMost(maximumUserTimeToSpendInMs)
+        assertThat(spawnResult.getSystemTimeInMs()).isAtLeast(minimumSystemTimeToSpendInMs)
+        assertThat(spawnResult.getSystemTimeInMs()).isAtMost(maximumSystemTimeToSpendInMs)
+        assertThat(spawnResult.getNumBlockOutputOperations()).isAtLeast(0L)
+        assertThat(spawnResult.getNumBlockInputOperations()).isAtLeast(0L)
+        assertThat(spawnResult.getNumInvoluntaryContextSwitches()).isAtLeast(0L)
+    }
 
-  // Check that relative paths in the Spawn are absolutized relative to the execroot passed to the
-  // LocalSpawnRunner.
-  @Test
-  public void relativePath() throws Exception {
-    // TODO(#3536): Make this test work on Windows.
-    // The Command API implicitly absolutizes the path, and we get weird paths on Windows:
-    // T:\execroot\execroot\_bin\process-wrapper
-    assumeTrue(OS.getCurrent() != OS.WINDOWS);
+    // Check that relative paths in the Spawn are absolutized relative to the execroot passed to the
+    // LocalSpawnRunner.
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun relativePath() {
+        // TODO(#3536): Make this test work on Windows.
+        // The Command API implicitly absolutizes the path, and we get weird paths on Windows:
+        // T:\execroot\execroot\_bin\process-wrapper
+        Assume.assumeTrue(com.google.devtools.build.lib.util.OS.getCurrent() != com.google.devtools.build.lib.util.OS.WINDOWS)
 
-    FileSystem fs = setupEnvironmentForFakeExecution();
+        val fs: FileSystem = setupEnvironmentForFakeExecution()
 
-    SubprocessFactory factory = mock(SubprocessFactory.class);
-    ArgumentCaptor<SubprocessBuilder> captor = ArgumentCaptor.forClass(SubprocessBuilder.class);
-    when(factory.create(captor.capture())).thenReturn(new FinishedSubprocess(0));
-    SubprocessBuilder.setDefaultSubprocessFactory(factory);
+        val factory: SubprocessFactory = Mockito.mock<SubprocessFactory>(SubprocessFactory::class.java)
+        val captor: ArgumentCaptor<SubprocessBuilder?> =
+            ArgumentCaptor.forClass<SubprocessBuilder?, SubprocessBuilder?>(SubprocessBuilder::class.java)
+        Mockito.`when`<T?>(factory.create(captor.capture())).thenReturn(FinishedSubprocess(0))
+        SubprocessBuilder.setDefaultSubprocessFactory(factory)
 
-    LocalSpawnRunner runner =
-        new TestedLocalSpawnRunner(
-            fs.getPath("/execroot"),
-            Options.getDefaults(LocalExecutionOptions.class),
-            resourceManager,
-            /* processWrapper= */ null,
-            LocalSpawnRunnerTest::keepLocalEnvUnchanged);
+        val runner: LocalSpawnRunner =
+            TestedLocalSpawnRunner(
+                fs.getPath("/execroot"),
+                com.google.devtools.common.options.Options.getDefaults<O?>(LocalExecutionOptions::class.java),
+                resourceManager,  /* processWrapper= */
+                null,
+                LocalEnvProvider { env: MutableMap<String?, String?>, binTools: BinTools?, fallbackTmpDir: String? ->
+                    keepLocalEnvUnchanged(
+                        env,
+                        binTools,
+                        fallbackTmpDir
+                    )
+                })
 
-    FileOutErr fileOutErr = new FileOutErr(fs.getPath("/out/stdout"), fs.getPath("/out/stderr"));
-    Spawn spawn = new SpawnBuilder("foo/bar", "Hi!").build();
-    SpawnExecutionContextForTesting context =
-        new SpawnExecutionContextForTesting(spawn, fileOutErr, Duration.ofSeconds(123));
-    assertThat(fs.getPath("/execroot").createDirectory()).isTrue();
-    runner.exec(spawn, context);
-    verify(factory).create(any(SubprocessBuilder.class));
+        val fileOutErr: FileOutErr = FileOutErr(fs.getPath("/out/stdout"), fs.getPath("/out/stderr"))
+        val spawn: Spawn = SpawnBuilder("foo/bar", "Hi!").build()
+        val context: SpawnExecutionContextForTesting =
+            SpawnExecutionContextForTesting(spawn, fileOutErr, java.time.Duration.ofSeconds(123))
+        assertThat(fs.getPath("/execroot").createDirectory()).isTrue()
+        runner.exec(spawn, context)
+        Mockito.verify<Any?>(factory).create(ArgumentMatchers.any<T?>(SubprocessBuilder::class.java))
 
-    assertThat(captor.getValue().getArgv()).containsExactly("/execroot/foo/bar", "Hi!");
-  }
+        assertThat(captor.getValue().getArgv()).containsExactly("/execroot/foo/bar", "Hi!")
+    }
+
+    companion object {
+        private val SIMPLE_SPAWN: Spawn = SpawnBuilder("/bin/echo", "Hi!").withEnvironment("VARIABLE", "value").build()
+
+        private fun keepLocalEnvUnchanged(
+            env: MutableMap<String?, String?>, binTools: BinTools?, fallbackTmpDir: String?
+        ): com.google.common.collect.ImmutableMap<String?, String?> {
+            return com.google.common.collect.ImmutableMap.copyOf<String?, String?>(env)
+        }
+
+        private fun makeProcessWrapper(options: LocalExecutionOptions): ProcessWrapper {
+            return ProcessWrapper(
+                PathFragment.create("/process-wrapper"),
+                ActionInputHelper.fromPath("/process-wrapper"),
+                options.getLocalSigkillGraceSecondsDuration(),  /* gracefulSigterm= */
+                false
+            )
+        }
+
+        /**
+         * Copies the `process-wrapper` tool into the path under the temporary execRoot where the
+         * [LocalSpawnRunner] expects to find it.
+         */
+        @Throws(IOException::class)
+        private fun copyProcessWrapperIntoExecRoot(wrapperPath: Path) {
+            val realProcessWrapperFile: java.io.File =
+                java.io.File(
+                    PathFragment.create(BlazeTestUtils.runfilesDir())
+                        .getRelative(TestConstants.PROCESS_WRAPPER_PATH)
+                        .getPathString()
+                )
+            Truth.assertThat(realProcessWrapperFile.exists()).isTrue()
+
+            wrapperPath.createDirectoryAndParents()
+            val wrapperFile: java.io.File = wrapperPath.getPathFile()
+
+            wrapperPath.delete()
+            com.google.common.io.Files.copy(realProcessWrapperFile, wrapperFile)
+            assertThat(wrapperPath.exists()).isTrue()
+
+            wrapperPath.setExecutable(true)
+        }
+
+        /**
+         * Copies the `spend_cpu_time` test util into the temporary execRoot so that the [ ] can execute it.
+         */
+        @Throws(IOException::class)
+        private fun copyCpuTimeSpenderIntoExecRoot(execRoot: Path): Path {
+            val realCpuTimeSpenderFile: java.io.File =
+                java.io.File(
+                    PathFragment.create(BlazeTestUtils.runfilesDir())
+                        .getRelative(TestConstants.CPU_TIME_SPENDER_PATH)
+                        .getPathString()
+                )
+            Truth.assertThat(realCpuTimeSpenderFile.exists()).isTrue()
+
+            val execRootCpuTimeSpenderPath: Path = execRoot.getRelative("spend-cpu-time")
+            val execRootCpuTimeSpenderFile: java.io.File = execRootCpuTimeSpenderPath.getPathFile()
+
+            assertThat(execRootCpuTimeSpenderPath.exists()).isFalse()
+            com.google.common.io.Files.copy(realCpuTimeSpenderFile, execRootCpuTimeSpenderFile)
+            assertThat(execRootCpuTimeSpenderPath.exists()).isTrue()
+
+            execRootCpuTimeSpenderPath.setExecutable(true)
+
+            return execRootCpuTimeSpenderPath
+        }
+
+        @Throws(IOException::class)
+        private fun getTemporaryRoot(fs: FileSystem?, name: String?): Path {
+            val tempDirPath: Path = com.google.devtools.build.lib.testutil.TestUtils.createUniqueTmpDir(fs)
+            assertThat(tempDirPath.exists()).isTrue()
+
+            val root: Path = tempDirPath.getRelative(name)
+            assertThat(root.createDirectory()).isTrue()
+            assertThat(root.exists()).isTrue()
+
+            return root
+        }
+
+        /**
+         * Returns an execRoot [Path] inside a new temporary directory.
+         * 
+         * 
+         * The temporary directory will be automatically deleted on exit.
+         */
+        @Throws(IOException::class)
+        private fun getTemporaryExecRoot(fs: FileSystem?): Path {
+            return getTemporaryRoot(fs, "execRoot")
+        }
+
+        @Throws(IOException::class)
+        private fun getTemporaryEmbeddedBin(fs: FileSystem?): Path {
+            return getTemporaryRoot(fs, "embedded_bin")
+        }
+    }
 }

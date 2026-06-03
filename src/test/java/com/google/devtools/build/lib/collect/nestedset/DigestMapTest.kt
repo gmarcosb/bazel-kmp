@@ -11,114 +11,107 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.collect.nestedset;
+package com.google.devtools.build.lib.collect.nestedset
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.util.Fingerprint
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.util.Fingerprint;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Random;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
-import org.junit.runners.Parameterized.Parameter;
-import org.junit.runners.Parameterized.Parameters;
+/** Tests for [DigestMap].  */
+@RunWith(org.junit.runners.Parameterized::class)
+class DigestMapTest {
+    @org.junit.runners.Parameterized.Parameter
+    var digestHashFunction: DigestHashFunction? = null
 
-/** Tests for {@link DigestMap}. */
-@RunWith(Parameterized.class)
-public class DigestMapTest {
-
-  @Parameters(name = "Hash: {0}")
-  public static Iterable<Object[]> hashFunction() {
-    return ImmutableList.of(
-        new Object[] {DigestHashFunction.SHA1}, new Object[] {DigestHashFunction.SHA256});
-  }
-
-  @Parameter public DigestHashFunction digestHashFunction;
-
-  private Fingerprint fingerprint() {
-    return new Fingerprint(digestHashFunction);
-  }
-
-  @Test
-  public void simpleTest() {
-    int count = 128; // Must be smaller than byte for this test or we'll overflow
-    Object[] keys = new Object[count];
-    for (int i = 0; i < count; ++i) {
-      keys[i] = new Object();
+    private fun fingerprint(): Fingerprint {
+        return Fingerprint(digestHashFunction)
     }
 
-    DigestMap digestMap = new DigestMap(digestHashFunction, 4);
-    for (int i = 0; i < count; ++i) {
-      Fingerprint digest = fingerprint().addInt(i);
-      Fingerprint fingerprint = fingerprint();
-      digestMap.insertAndReadDigest(keys[i], digest, fingerprint);
-      Fingerprint reference = fingerprint().addBytes(fingerprint().addInt(i).digestAndReset());
-      assertThat(fingerprint.hexDigestAndReset()).isEqualTo(reference.hexDigestAndReset());
-    }
-    for (int i = 0; i < count; ++i) {
-      Fingerprint fingerprint = fingerprint();
-      assertThat(digestMap.readDigest(keys[i], fingerprint)).isTrue();
-      Fingerprint reference = fingerprint().addBytes(fingerprint().addInt(i).digestAndReset());
-      assertThat(fingerprint.hexDigestAndReset()).isEqualTo(reference.hexDigestAndReset());
-    }
-  }
+    @org.junit.Test
+    fun simpleTest() {
+        val count = 128 // Must be smaller than byte for this test or we'll overflow
+        val keys = arrayOfNulls<Any>(count)
+        for (i in 0..<count) {
+            keys[i] = Any()
+        }
 
-  @Test
-  public void concurrencyTest() throws Exception {
-    int count = 128; // Must be smaller than byte for this test or we'll overflow
-    Object[] keys = new Object[count];
-    for (int i = 0; i < count; ++i) {
-      keys[i] = new Object();
+        val digestMap: DigestMap = DigestMap(digestHashFunction, 4)
+        for (i in 0..<count) {
+            val digest: Fingerprint? = fingerprint().addInt(i)
+            val fingerprint: Fingerprint = fingerprint()
+            digestMap.insertAndReadDigest(keys[i], digest, fingerprint)
+            val reference: Fingerprint = fingerprint().addBytes(fingerprint().addInt(i).digestAndReset())
+            assertThat(fingerprint.hexDigestAndReset()).isEqualTo(reference.hexDigestAndReset())
+        }
+        for (i in 0..<count) {
+            val fingerprint: Fingerprint = fingerprint()
+            assertThat(digestMap.readDigest(keys[i], fingerprint)).isTrue()
+            val reference: Fingerprint = fingerprint().addBytes(fingerprint().addInt(i).digestAndReset())
+            assertThat(fingerprint.hexDigestAndReset()).isEqualTo(reference.hexDigestAndReset())
+        }
     }
-    DigestMap digestMap = new DigestMap(digestHashFunction, 4);
 
-    AtomicBoolean done = new AtomicBoolean();
-    AtomicReference<Exception> exception = new AtomicReference<>();
-    List<Thread> threads = new ArrayList<>();
-    int threadCount = 16;
-    for (int i = 0; i < threadCount; ++i) {
-      Thread thread =
-          new Thread(
-              () -> {
-                Random random = new Random();
-                while (!done.get()) {
-                  int index = random.nextInt(count);
-                  Object key = keys[index];
-                  Fingerprint fingerprint = fingerprint();
-                  if (!digestMap.readDigest(key, fingerprint)) {
-                    Fingerprint digest = fingerprint().addInt(index);
-                    digestMap.insertAndReadDigest(key, digest, fingerprint);
-                  }
-                  Fingerprint reference =
-                      fingerprint().addBytes(fingerprint().addInt(index).digestAndReset());
-                  String hexDigest = fingerprint.hexDigestAndReset();
-                  String referenceDigest = reference.hexDigestAndReset();
-                  if (!hexDigest.equals(referenceDigest)) {
-                    exception.set(
-                        new IllegalStateException(
-                            String.format(
-                                "Digests are not equal: %s != %s, index %d",
-                                hexDigest, referenceDigest, index)));
-                    done.set(true);
-                  }
-                }
-              });
-      thread.start();
-      threads.add(thread);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun concurrencyTest() {
+        val count = 128 // Must be smaller than byte for this test or we'll overflow
+        val keys = arrayOfNulls<Any>(count)
+        for (i in 0..<count) {
+            keys[i] = Any()
+        }
+        val digestMap: DigestMap = DigestMap(digestHashFunction, 4)
+
+        val done: AtomicBoolean = AtomicBoolean()
+        val exception: AtomicReference<java.lang.Exception?> = AtomicReference<java.lang.Exception?>()
+        val threads: MutableList<java.lang.Thread?> = java.util.ArrayList<java.lang.Thread?>()
+        val threadCount = 16
+        for (i in 0..<threadCount) {
+            val thread: java.lang.Thread =
+                java.lang.Thread(
+                    java.lang.Runnable {
+                        val random: Random = Random()
+                        while (!done.get()) {
+                            val index: Int = random.nextInt(count)
+                            val key = keys[index]
+                            val fingerprint: Fingerprint = fingerprint()
+                            if (!digestMap.readDigest(key, fingerprint)) {
+                                val digest: Fingerprint? = fingerprint().addInt(index)
+                                digestMap.insertAndReadDigest(key, digest, fingerprint)
+                            }
+                            val reference: Fingerprint =
+                                fingerprint().addBytes(fingerprint().addInt(index).digestAndReset())
+                            val hexDigest: String = fingerprint.hexDigestAndReset()
+                            val referenceDigest: String? = reference.hexDigestAndReset()
+                            if (hexDigest != referenceDigest) {
+                                exception.set(
+                                    java.lang.IllegalStateException(
+                                        String.format(
+                                            "Digests are not equal: %s != %s, index %d",
+                                            hexDigest, referenceDigest, index
+                                        )
+                                    )
+                                )
+                                done.set(true)
+                            }
+                        }
+                    })
+            thread.start()
+            threads.add(thread)
+        }
+        java.lang.Thread.sleep(1000)
+        done.set(true)
+        for (i in 0..<threadCount) {
+            threads.get(i).join(1000)
+        }
+        if (exception.get() != null) {
+            throw exception.get()
+        }
     }
-    Thread.sleep(1000);
-    done.set(true);
-    for (int i = 0; i < threadCount; ++i) {
-      threads.get(i).join(1000);
+
+    companion object {
+        @org.junit.runners.Parameterized.Parameters(name = "Hash: {0}")
+        fun hashFunction(): Iterable<Array<Any?>?> {
+            return com.google.common.collect.ImmutableList.of<Array<Any?>?>(
+                arrayOf<Any?>(DigestHashFunction.SHA1), arrayOf<Any?>(DigestHashFunction.SHA256)
+            )
+        }
     }
-    if (exception.get() != null) {
-      throw exception.get();
-    }
-  }
 }

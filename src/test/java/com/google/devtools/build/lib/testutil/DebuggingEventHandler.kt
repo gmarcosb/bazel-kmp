@@ -11,31 +11,26 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.testutil
 
-package com.google.devtools.build.lib.testutil;
-
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.EventHandler;
-
-import java.io.PrintStream;
+import net.starlark.java.syntax.SyntaxError.Exception.getMessage
+import java.io.PrintStream
 
 /**
- * Prints all errors and warnings to {@link System#out}.
+ * Prints all errors and warnings to [System.out].
  */
-public class DebuggingEventHandler implements EventHandler {
+class DebuggingEventHandler : com.google.devtools.build.lib.events.EventHandler {
+    private val out: PrintStream
 
-  private PrintStream out;
-
-  public DebuggingEventHandler() {
-    this.out = System.out;
-  }
-
-  @Override
-  public void handle(Event e) {
-    if (e.getLocation() != null) {
-      out.println(e.getKind() + " " + e.getLocation() + ": " + e.getMessage());
-    } else {
-      out.println(e.getKind() + " " + e.getMessage());
+    init {
+        this.out = java.lang.System.out
     }
-  }
+
+    override fun handle(e: com.google.devtools.build.lib.events.Event) {
+        if (e.getLocation() != null) {
+            out.println(e.getKind().toString() + " " + e.getLocation() + ": " + e.getMessage())
+        } else {
+            out.println(e.getKind().toString() + " " + e.getMessage())
+        }
+    }
 }

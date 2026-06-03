@@ -11,91 +11,87 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.common.options.processor.optiontestsources;
+package com.google.devtools.common.options.processor.optiontestsources
 
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
-import com.google.devtools.common.options.TriState;
-import java.time.Duration;
+import OptionFilters.OptionEffectTag
+import com.google.devtools.common.options.OptionDocumentationCategory
+import com.google.devtools.common.options.OptionEffectTag
+import com.google.devtools.common.options.OptionsBase
+import com.google.devtools.common.options.OptionsClass
 
 /**
  * This class should contain all of the types with DEFAULT_CONVERTERS, and each converter should be
  * found without generating compilation errors.
  */
 @OptionsClass
-public abstract class AllDefaultConverters extends OptionsBase {
-  @Option(
-      name = "boolean_option",
-      defaultValue = "true",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS})
-  public abstract boolean getBooleanOption();
+abstract class AllDefaultConverters : OptionsBase() {
+    @get:com.google.devtools.common.options.Option(
+        name = "boolean_option",
+        defaultValue = "true",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.AFFECTS_OUTPUTS]
+    )
+    abstract var booleanOption: Boolean
 
-  public abstract void setBooleanOption(boolean value);
+    @get:com.google.devtools.common.options.Option(
+        name = "double_option",
+        defaultValue = "42.73",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.AFFECTS_OUTPUTS]
+    )
+    abstract var doubleOption: Double
 
-  @Option(
-      name = "double_option",
-      defaultValue = "42.73",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS})
-  public abstract double getDoubleOption();
+    @get:com.google.devtools.common.options.Option(
+        name = "int_option",
+        defaultValue = "42",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.AFFECTS_OUTPUTS]
+    )
+    abstract var intOption: Int
 
-  public abstract void setDoubleOption(double value);
+    @get:com.google.devtools.common.options.Option(
+        name = "long_option",
+        defaultValue = "-5000000000000",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.AFFECTS_OUTPUTS]
+    )
+    abstract var longOption: Long
 
-  @Option(
-      name = "int_option",
-      defaultValue = "42",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS})
-  public abstract int getIntOption();
+    @get:com.google.devtools.common.options.Option(
+        name = "string_option",
+        defaultValue = "strings are strings are strings are strings",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.AFFECTS_OUTPUTS]
+    )
+    abstract var stringOption: String?
 
-  public abstract void setIntOption(int value);
+    @get:com.google.devtools.common.options.Option(
+        name = "tri_state_option",
+        defaultValue = "auto",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.AFFECTS_OUTPUTS]
+    )
+    abstract val triStateOption: com.google.devtools.common.options.TriState?
 
-  @Option(
-      name = "long_option",
-      defaultValue = "-5000000000000",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS})
-  public abstract long getLongOption();
+    abstract fun setTriStateOption(value: com.google.devtools.common.options.TriState?)
 
-  public abstract void setLongOption(long value);
+    @get:com.google.devtools.common.options.Option(
+        name = "duration_option",
+        defaultValue = "3600s",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.AFFECTS_OUTPUTS]
+    )
+    abstract val durationOption: java.time.Duration?
 
-  @Option(
-      name = "string_option",
-      defaultValue = "strings are strings are strings are strings",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS})
-  public abstract String getStringOption();
+    abstract fun setDurationOption(value: java.time.Duration?)
 
-  public abstract void setStringOption(String value);
+    @get:com.google.devtools.common.options.Option(
+        name = "void_option",
+        defaultValue = "null",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.AFFECTS_OUTPUTS]
+    )
+    abstract val voidOption: java.lang.Void?
 
-  @Option(
-      name = "tri_state_option",
-      defaultValue = "auto",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS})
-  public abstract TriState getTriStateOption();
-
-  public abstract void setTriStateOption(TriState value);
-
-  @Option(
-      name = "duration_option",
-      defaultValue = "3600s",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS})
-  public abstract Duration getDurationOption();
-
-  public abstract void setDurationOption(Duration value);
-
-  @Option(
-      name = "void_option",
-      defaultValue = "null",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS})
-  public abstract Void getVoidOption();
-
-  public abstract void setVoidOption(Void value);
+    abstract fun setVoidOption(value: java.lang.Void?)
 }

@@ -11,53 +11,54 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.skyframe.PrepareDepsOfPatternsValue.TargetPatternSequence
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.skyframe.PrepareDepsOfPatternsValue.TargetPatternSequence;
-import com.google.devtools.build.lib.skyframe.serialization.ObjectCodecs;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for serialization of {@link TargetPatternSequence}. */
-@RunWith(JUnit4.class)
-public final class TargetPatternSequenceCodecTest {
-  @Test
-  public void testCodec() throws Exception {
-    new SerializationTester(
-            TargetPatternSequence.create(ImmutableList.of(), PathFragment.EMPTY_FRAGMENT),
+/** Tests for serialization of [TargetPatternSequence].  */
+@RunWith(JUnit4::class)
+class TargetPatternSequenceCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCodec() {
+        SerializationTester(
+            TargetPatternSequence.create(com.google.common.collect.ImmutableList.of<E?>(), PathFragment.EMPTY_FRAGMENT),
             TargetPatternSequence.create(
-                ImmutableList.of("foo", "bar"), PathFragment.create("baz")),
+                com.google.common.collect.ImmutableList.of<E?>("foo", "bar"), PathFragment.create("baz")
+            ),
             TargetPatternSequence.create(
-                ImmutableList.of("uno", "dos"), PathFragment.create("tres")),
+                com.google.common.collect.ImmutableList.of<E?>("uno", "dos"), PathFragment.create("tres")
+            ),
             TargetPatternSequence.create(
-                ImmutableList.of("dos", "uno"), PathFragment.create("tres")))
-        .runTests();
-  }
+                com.google.common.collect.ImmutableList.of<E?>("dos", "uno"), PathFragment.create("tres")
+            )
+        )
+            .runTests()
+    }
 
-  @Test
-  public void testPatternsOrderSignificant() throws Exception {
-    ObjectCodecs codecs = new ObjectCodecs();
-    byte[] serialized1 =
-        codecs
-            .serialize(
-                TargetPatternSequence.create(
-                    ImmutableList.of("uno", "dos"), PathFragment.create("tres")))
-            .toByteArray();
-    assertThat(serialized1).asList().isNotEmpty();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testPatternsOrderSignificant() {
+        val codecs: ObjectCodecs = ObjectCodecs()
+        val serialized1: ByteArray? =
+            codecs
+                .serialize(
+                    TargetPatternSequence.create(
+                        com.google.common.collect.ImmutableList.of<E?>("uno", "dos"), PathFragment.create("tres")
+                    )
+                )
+                .toByteArray()
+        Truth.assertThat(serialized1).asList().isNotEmpty()
 
-    byte[] serialized2 =
-        codecs
-            .serialize(
-                TargetPatternSequence.create(
-                    ImmutableList.of("dos", "uno"), PathFragment.create("tres")))
-            .toByteArray();
-    assertThat(serialized2).asList().isNotEmpty();
-    assertThat(serialized1).isNotEqualTo(serialized2);
-  }
+        val serialized2: ByteArray? =
+            codecs
+                .serialize(
+                    TargetPatternSequence.create(
+                        com.google.common.collect.ImmutableList.of<E?>("dos", "uno"), PathFragment.create("tres")
+                    )
+                )
+                .toByteArray()
+        Truth.assertThat(serialized2).asList().isNotEmpty()
+        Truth.assertThat(serialized1).isNotEqualTo(serialized2)
+    }
 }

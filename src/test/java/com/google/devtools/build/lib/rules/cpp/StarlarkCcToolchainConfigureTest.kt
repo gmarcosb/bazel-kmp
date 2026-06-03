@@ -11,52 +11,58 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.rules.cpp;
+package com.google.devtools.build.lib.rules.cpp
 
-import com.google.devtools.build.lib.packages.util.ResourceLoader;
-import com.google.devtools.build.lib.starlark.util.BazelEvaluationTestCase;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import java.io.IOException;
-import net.starlark.java.eval.Mutability;
-import net.starlark.java.eval.StarlarkList;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.analysis.util.BuildViewTestCase.ActionExecutionContextBuilder.build
+import com.google.devtools.build.lib.exec.util.SpawnBuilder.build
+import com.google.devtools.build.lib.exec.util.TestExecutorBuilder.build
+import com.google.devtools.build.lib.packages.util.Crosstool.CcToolchainConfig.Builder.build
+import com.google.devtools.build.lib.packages.util.ResourceLoader.readFromResources
+import com.google.devtools.build.lib.starlark.util.BazelEvaluationTestCase
+import com.google.devtools.build.lib.testutil.TestConstants
+import net.starlark.java.eval.Mutability
+import net.starlark.java.eval.StarlarkList
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.io.IOException
 
-/** Tests for cc autoconfiguration. */
-@RunWith(JUnit4.class)
-public class StarlarkCcToolchainConfigureTest {
+/** Tests for cc autoconfiguration.  */
+@RunWith(JUnit4::class)
+class StarlarkCcToolchainConfigureTest {
+    private val ev: BazelEvaluationTestCase = BazelEvaluationTestCase()
 
-  private final BazelEvaluationTestCase ev = new BazelEvaluationTestCase();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSplitEscaped() {
+        val mu: Mutability? = null
+        newTest()
+            .testExpression("split_escaped('a:b:c', ':')", StarlarkList.of<String?>(mu, "a", "b", "c"))
+            .testExpression("split_escaped('a%:b', ':')", StarlarkList.of<String?>(mu, "a:b"))
+            .testExpression("split_escaped('a%%b', ':')", StarlarkList.of<String?>(mu, "a%b"))
+            .testExpression("split_escaped('a:::b', ':')", StarlarkList.of<String?>(mu, "a", "", "", "b"))
+            .testExpression("split_escaped('a:b%:c', ':')", StarlarkList.of<String?>(mu, "a", "b:c"))
+            .testExpression("split_escaped('a%%:b:c', ':')", StarlarkList.of<String?>(mu, "a%", "b", "c"))
+            .testExpression("split_escaped(':a', ':')", StarlarkList.of<String?>(mu, "", "a"))
+            .testExpression("split_escaped('a:', ':')", StarlarkList.of<String?>(mu, "a", ""))
+            .testExpression("split_escaped('::a::', ':')", StarlarkList.of<String?>(mu, "", "", "a", "", ""))
+            .testExpression("split_escaped('%%%:a%%%%:b', ':')", StarlarkList.of<String?>(mu, "%:a%%", "b"))
+            .testExpression("split_escaped('', ':')", StarlarkList.of<Any?>(mu))
+            .testExpression("split_escaped('%', ':')", StarlarkList.of<String?>(mu, "%"))
+            .testExpression("split_escaped('%%', ':')", StarlarkList.of<String?>(mu, "%"))
+            .testExpression("split_escaped('%:', ':')", StarlarkList.of<String?>(mu, ":"))
+            .testExpression("split_escaped(':', ':')", StarlarkList.of<String?>(mu, "", ""))
+            .testExpression("split_escaped('a%%b', ':')", StarlarkList.of<String?>(mu, "a%b"))
+            .testExpression("split_escaped('a%:', ':')", StarlarkList.of<String?>(mu, "a:"))
+    }
 
-  @Test
-  public void testSplitEscaped() throws Exception {
-    Mutability mu = null;
-    newTest()
-        .testExpression("split_escaped('a:b:c', ':')", StarlarkList.of(mu, "a", "b", "c"))
-        .testExpression("split_escaped('a%:b', ':')", StarlarkList.of(mu, "a:b"))
-        .testExpression("split_escaped('a%%b', ':')", StarlarkList.of(mu, "a%b"))
-        .testExpression("split_escaped('a:::b', ':')", StarlarkList.of(mu, "a", "", "", "b"))
-        .testExpression("split_escaped('a:b%:c', ':')", StarlarkList.of(mu, "a", "b:c"))
-        .testExpression("split_escaped('a%%:b:c', ':')", StarlarkList.of(mu, "a%", "b", "c"))
-        .testExpression("split_escaped(':a', ':')", StarlarkList.of(mu, "", "a"))
-        .testExpression("split_escaped('a:', ':')", StarlarkList.of(mu, "a", ""))
-        .testExpression("split_escaped('::a::', ':')", StarlarkList.of(mu, "", "", "a", "", ""))
-        .testExpression("split_escaped('%%%:a%%%%:b', ':')", StarlarkList.of(mu, "%:a%%", "b"))
-        .testExpression("split_escaped('', ':')", StarlarkList.of(mu))
-        .testExpression("split_escaped('%', ':')", StarlarkList.of(mu, "%"))
-        .testExpression("split_escaped('%%', ':')", StarlarkList.of(mu, "%"))
-        .testExpression("split_escaped('%:', ':')", StarlarkList.of(mu, ":"))
-        .testExpression("split_escaped(':', ':')", StarlarkList.of(mu, "", ""))
-        .testExpression("split_escaped('a%%b', ':')", StarlarkList.of(mu, "a%b"))
-        .testExpression("split_escaped('a%:', ':')", StarlarkList.of(mu, "a:"));
-  }
-
-  private BazelEvaluationTestCase.Scenario newTest(String... starlarkOptions) throws IOException {
-    return ev.new Scenario(starlarkOptions)
-        .setUp(
-            ResourceLoader.readFromResources(
-                TestConstants.RULES_CC_REPOSITORY_EXECROOT
-                    + "cc/private/toolchain/lib_cc_configure.bzl"));
-  }
+    @Throws(IOException::class)
+    private fun newTest(vararg starlarkOptions: String?): com.google.devtools.build.lib.starlark.util.BazelEvaluationTestCase.Scenario {
+        return ev.Scenario(*starlarkOptions)
+            .setUp(
+                com.google.devtools.build.lib.packages.util.ResourceLoader.readFromResources(
+                    TestConstants.RULES_CC_REPOSITORY_EXECROOT
+                            + "cc/private/toolchain/lib_cc_configure.bzl"
+                )
+            )
+    }
 }

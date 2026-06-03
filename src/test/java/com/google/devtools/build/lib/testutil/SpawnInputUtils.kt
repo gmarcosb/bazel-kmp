@@ -11,110 +11,103 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.testutil;
+package com.google.devtools.build.lib.testutil
 
-import static com.google.common.base.MoreObjects.firstNonNull;
-import static com.google.common.base.Preconditions.checkState;
+import com.google.devtools.build.lib.actions.ActionExecutionContext
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.actions.ActionExecutionContext;
-import com.google.devtools.build.lib.actions.ActionExecutionMetadata;
-import com.google.devtools.build.lib.actions.ActionInput;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.Artifact.SpecialArtifact;
-import com.google.devtools.build.lib.actions.FilesetOutputSymlink;
-import com.google.devtools.build.lib.actions.InputMetadataProvider;
-import com.google.devtools.build.lib.actions.Spawn;
-import java.util.NoSuchElementException;
+/** Utilities for finding [ActionInput] instances within a [Spawn].  */
+object SpawnInputUtils {
+    fun getInputWithName(spawn: Spawn, name: String?): ActionInput {
+        return spawn.getInputFiles().toList().stream()
+            .filter({ input -> input.getExecPathString().contains(name) })
+            .findFirst()
+            .orElseThrow({ noSuchInput("spawn input", name, spawn) })
+    }
 
-/** Utilities for finding {@link ActionInput} instances within a {@link Spawn}. */
-public final class SpawnInputUtils {
-
-  public static ActionInput getInputWithName(Spawn spawn, String name) {
-    return spawn.getInputFiles().toList().stream()
-        .filter(input -> input.getExecPathString().contains(name))
-        .findFirst()
-        .orElseThrow(() -> noSuchInput("spawn input", name, spawn));
-  }
-
-  public static ActionInput getFilesetInputWithName(
-      Spawn spawn,
-      InputMetadataProvider inputMetadataProvider,
-      String artifactName,
-      String inputName) {
-    for (ActionInput actionInput : spawn.getInputFiles().toList()) {
-      if (!(actionInput instanceof Artifact fileset)
-          || !fileset.isFileset()
-          || !fileset.getExecPathString().contains(artifactName)) {
-        continue;
-      }
-      for (FilesetOutputSymlink filesetOutputSymlink :
-          inputMetadataProvider.getFileset(fileset).symlinks()) {
-        if (filesetOutputSymlink.target().getExecPathString().contains(inputName)) {
-          return filesetOutputSymlink.target();
+    fun getFilesetInputWithName(
+        spawn: Spawn,
+        inputMetadataProvider: InputMetadataProvider,
+        artifactName: String?,
+        inputName: String?
+    ): ActionInput {
+        for (actionInput in spawn.getInputFiles().toList()) {
+            if ((actionInput !is Artifact) || !actionInput.isFileset() || !actionInput.getExecPathString()
+                    .contains(artifactName)
+            ) {
+                continue
+            }
+            for (filesetOutputSymlink in inputMetadataProvider.getFileset(actionInput).symlinks()) {
+                if (filesetOutputSymlink.target().getExecPathString().contains(inputName)) {
+                    return filesetOutputSymlink.target()
+                }
+            }
         }
-      }
+        throw noSuchInput("fileset input in " + artifactName, inputName, spawn)
     }
-    throw noSuchInput("fileset input in " + artifactName, inputName, spawn);
-  }
 
-  public static Artifact getRunfilesFilesetInputWithName(
-      Spawn spawn, ActionExecutionContext context, String artifactName, String inputName) {
-    Artifact filesetArtifact = getRunfilesArtifactWithName(spawn, context, artifactName);
-    checkState(filesetArtifact.isFileset(), filesetArtifact);
+    fun getRunfilesFilesetInputWithName(
+        spawn: Spawn, context: ActionExecutionContext, artifactName: String?, inputName: String?
+    ): Artifact {
+        val filesetArtifact: Artifact = getRunfilesArtifactWithName(spawn, context, artifactName)
+        checkState(filesetArtifact.isFileset(), filesetArtifact)
 
-    ImmutableList<FilesetOutputSymlink> filesetLinks =
-        context.getInputMetadataProvider().getFileset(filesetArtifact).symlinks();
-    for (FilesetOutputSymlink filesetOutputSymlink : filesetLinks) {
-      if (filesetOutputSymlink.target().getExecPathString().contains(inputName)) {
-        return filesetOutputSymlink.target();
-      }
+        val filesetLinks: com.google.common.collect.ImmutableList<FilesetOutputSymlink> =
+            context.getInputMetadataProvider().getFileset(filesetArtifact).symlinks()
+        for (filesetOutputSymlink in filesetLinks) {
+            if (filesetOutputSymlink.target().getExecPathString().contains(inputName)) {
+                return filesetOutputSymlink.target()
+            }
+        }
+        throw noSuchInput("runfiles fileset in " + filesetArtifact, inputName, spawn)
     }
-    throw noSuchInput("runfiles fileset in " + filesetArtifact, inputName, spawn);
-  }
 
-  public static SpecialArtifact getTreeArtifactWithName(Spawn spawn, String name) {
-    ActionInput input = getInputWithName(spawn, name);
-    checkState(
-        input instanceof SpecialArtifact && ((SpecialArtifact) input).isTreeArtifact(),
-        "Expected spawn %s to have tree artifact input with name %s, but it is: %s",
-        spawn.getResourceOwner().describe(),
-        name,
-        input);
-    return (SpecialArtifact) input;
-  }
+    fun getTreeArtifactWithName(spawn: Spawn, name: String?): SpecialArtifact? {
+        val input: ActionInput = getInputWithName(spawn, name)
+        checkState(
+            input is SpecialArtifact && (input as SpecialArtifact).isTreeArtifact(),
+            "Expected spawn %s to have tree artifact input with name %s, but it is: %s",
+            spawn.getResourceOwner().describe(),
+            name,
+            input
+        )
+        return input as SpecialArtifact?
+    }
 
-  public static Artifact getExpandedToArtifact(
-      String name, Artifact expandableArtifact, Spawn spawn, ActionExecutionContext context) {
-    return context
-        .getInputMetadataProvider()
-        .getTreeMetadata(expandableArtifact)
-        .getChildren()
-        .stream()
-        .filter(artifact -> artifact.getExecPathString().contains(name))
-        .findFirst()
-        .orElseThrow(
-            () -> noSuchInput("artifact expanded from " + expandableArtifact, name, spawn));
-  }
+    fun getExpandedToArtifact(
+        name: String?, expandableArtifact: Artifact?, spawn: Spawn, context: ActionExecutionContext
+    ): Artifact {
+        return context
+            .getInputMetadataProvider()
+            .getTreeMetadata(expandableArtifact)
+            .getChildren()
+            .stream()
+            .filter({ artifact -> artifact.getExecPathString().contains(name) })
+            .findFirst()
+            .orElseThrow(
+                { noSuchInput("artifact expanded from " + expandableArtifact, name, spawn) })
+    }
 
-  public static Artifact getRunfilesArtifactWithName(
-      Spawn spawn, ActionExecutionContext context, String name) {
-    return spawn.getInputFiles().toList().stream()
-        .filter(i -> i instanceof Artifact && ((Artifact) i).isRunfilesTree())
-        .map(i -> context.getInputMetadataProvider().getRunfilesMetadata(i).getRunfilesTree())
-        .flatMap(t -> t.getArtifacts().toList().stream())
-        .filter(artifact -> artifact.getExecPathString().contains(name))
-        .findFirst()
-        .orElseThrow(() -> noSuchInput("runfiles artifact", name, spawn));
-  }
+    fun getRunfilesArtifactWithName(
+        spawn: Spawn, context: ActionExecutionContext, name: String?
+    ): Artifact {
+        return spawn.getInputFiles().toList().stream()
+            .filter({ i -> i is Artifact && (i as Artifact).isRunfilesTree() })
+            .map({ i -> context.getInputMetadataProvider().getRunfilesMetadata(i).getRunfilesTree() })
+            .flatMap({ t -> t.getArtifacts().toList().stream() })
+            .filter({ artifact -> artifact.getExecPathString().contains(name) })
+            .findFirst()
+            .orElseThrow({ noSuchInput("runfiles artifact", name, spawn) })
+    }
 
-  private static NoSuchElementException noSuchInput(String inputType, String name, Spawn spawn) {
-    ActionExecutionMetadata action = spawn.getResourceOwner();
-    return new NoSuchElementException(
-        String.format(
-            "No %s named %s in %s",
-            inputType, name, firstNonNull(action.getProgressMessage(), action.prettyPrint())));
-  }
-
-  private SpawnInputUtils() {}
+    private fun noSuchInput(inputType: String?, name: String?, spawn: Spawn): java.util.NoSuchElementException {
+        val action: ActionExecutionMetadata = spawn.getResourceOwner()
+        return java.util.NoSuchElementException(
+            String.format(
+                "No %s named %s in %s",
+                inputType,
+                name,
+                com.google.common.base.MoreObjects.firstNonNull<T?>(action.getProgressMessage(), action.prettyPrint())
+            )
+        )
+    }
 }

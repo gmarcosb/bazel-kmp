@@ -11,239 +11,222 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.worker
 
-package com.google.devtools.build.lib.worker;
+import com.google.devtools.build.lib.vfs.DigestHashFunction
 
-import static com.google.common.truth.Truth.assertThat;
+/** Tests for WorkerMultiplexer  */
+@RunWith(JUnit4::class)
+class WorkerMultiplexerTest {
+    private var fileSystem: FileSystem? = null
+    private var logPath: Path? = null
 
-import com.google.common.collect.ImmutableMap;
-import com.google.common.util.concurrent.Futures;
-import com.google.devtools.build.lib.clock.BlazeClock;
-import com.google.devtools.build.lib.testutil.TestUtils;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import com.google.devtools.build.lib.worker.WorkerProtocol.WorkRequest;
-import com.google.devtools.build.lib.worker.WorkerProtocol.WorkResponse;
-import com.google.devtools.build.lib.worker.WorkerTestUtils.FakeSubprocess;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.io.PipedInputStream;
-import java.io.PipedOutputStream;
-import java.lang.Thread.State;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for WorkerMultiplexer */
-@RunWith(JUnit4.class)
-public class WorkerMultiplexerTest {
-  private FileSystem fileSystem;
-  private Path logPath;
-
-  @Before
-  public void setUp() throws IOException {
-    fileSystem = new InMemoryFileSystem(BlazeClock.instance(), DigestHashFunction.SHA256);
-    logPath = fileSystem.getPath("/tmp/logs4");
-    logPath.createDirectoryAndParents();
-  }
-
-  @After
-  public void tearDown() {
-    WorkerMultiplexerManager.resetForTesting();
-  }
-
-  @Test
-  public void testGetResponse_noOutstandingRequests() throws IOException, InterruptedException {
-    WorkerKey workerKey = WorkerTestUtils.createWorkerKey(fileSystem, "test1", true, "fakeBinary");
-    WorkerMultiplexer multiplexer = WorkerMultiplexerManager.getInstance(workerKey, logPath);
-
-    PipedInputStream serverInputStream = new PipedInputStream();
-    OutputStream workerOutputStream = new PipedOutputStream(serverInputStream);
-    multiplexer.setProcessFactory(params -> new FakeSubprocess(serverInputStream));
-
-    WorkRequest request1 = WorkRequest.newBuilder().setRequestId(1).build();
-    WorkerProxy worker =
-        new WorkerProxy(workerKey, 2, logPath, multiplexer, workerKey.getExecRoot());
-    worker.prepareExecution(null, null, null, ImmutableMap.of());
-    worker.putRequest(request1);
-    WorkResponse response1 = WorkResponse.newBuilder().setRequestId(1).build();
-    response1.writeDelimitedTo(workerOutputStream);
-    workerOutputStream.flush();
-    WorkResponse response = worker.getResponse(1);
-    assertThat(response.getRequestId()).isEqualTo(1);
-    // Can't get the same response twice - but the responseChecker is gone, so it just returns null
-    assertThat(multiplexer.getResponse(1)).isNull();
-    assertThat(multiplexer.noOutstandingRequests()).isTrue();
-  }
-
-  @Test
-  public void testGetResponse_basicConcurrency()
-      throws IOException, InterruptedException, ExecutionException {
-    WorkerKey workerKey = WorkerTestUtils.createWorkerKey(fileSystem, "test2", true, "fakeBinary");
-    WorkerMultiplexer multiplexer = WorkerMultiplexerManager.getInstance(workerKey, logPath);
-
-    PipedInputStream serverInputStream = new PipedInputStream();
-    OutputStream workerOutputStream = new PipedOutputStream(serverInputStream);
-    multiplexer.setProcessFactory(params -> new FakeSubprocess(serverInputStream));
-
-    WorkerProxy worker1 =
-        new WorkerProxy(workerKey, 1, logPath, multiplexer, workerKey.getExecRoot());
-    worker1.prepareExecution(null, null, null, ImmutableMap.of());
-    WorkRequest request1 = WorkRequest.newBuilder().setRequestId(3).build();
-    worker1.putRequest(request1);
-
-    WorkerProxy worker2 =
-        new WorkerProxy(workerKey, 2, logPath, multiplexer, workerKey.getExecRoot());
-    worker2.prepareExecution(null, null, null, ImmutableMap.of());
-    WorkRequest request2 = WorkRequest.newBuilder().setRequestId(42).build();
-    worker2.putRequest(request2);
-
-    Executor executor = Executors.newFixedThreadPool(2);
-    Future<WorkResponse> response1 = Futures.submit(() -> worker1.getResponse(3), executor);
-    Future<WorkResponse> response2 = Futures.submit(() -> worker2.getResponse(42), executor);
-
-    WorkResponse fakedResponse1 = WorkResponse.newBuilder().setRequestId(3).build();
-    WorkResponse fakedResponse2 = WorkResponse.newBuilder().setRequestId(42).build();
-    // Responses can arrive out of order
-    fakedResponse2.writeDelimitedTo(workerOutputStream);
-    fakedResponse1.writeDelimitedTo(workerOutputStream);
-    workerOutputStream.flush();
-
-    assertThat(response1.get().getRequestId()).isEqualTo(3);
-    assertThat(response2.get().getRequestId()).isEqualTo(42);
-    assertThat(multiplexer.noOutstandingRequests()).isTrue();
-  }
-
-  @Test
-  public void testGetResponse_slowMultiplexer()
-      throws IOException, InterruptedException, ExecutionException {
-    WorkerKey workerKey = WorkerTestUtils.createWorkerKey(fileSystem, "test3", true, "fakeBinary");
-    WorkerMultiplexer multiplexer = WorkerMultiplexerManager.getInstance(workerKey, logPath);
-
-    PipedInputStream serverInputStream = new PipedInputStream();
-    OutputStream workerOutputStream = new PipedOutputStream(serverInputStream);
-    multiplexer.setProcessFactory(params -> new FakeSubprocess(serverInputStream));
-
-    WorkerProxy worker1 =
-        new WorkerProxy(workerKey, 1, logPath, multiplexer, workerKey.getExecRoot());
-    worker1.prepareExecution(null, null, null, ImmutableMap.of());
-    WorkRequest request1 = WorkRequest.newBuilder().setRequestId(3).build();
-    worker1.putRequest(request1);
-
-    WorkerProxy worker2 =
-        new WorkerProxy(workerKey, 2, logPath, multiplexer, workerKey.getExecRoot());
-    worker2.prepareExecution(null, null, null, ImmutableMap.of());
-    WorkRequest request2 = WorkRequest.newBuilder().setRequestId(42).build();
-    worker2.putRequest(request2);
-
-    Thread[] proxyThreads = new Thread[2];
-    Executor executor = Executors.newFixedThreadPool(2);
-    Future<WorkResponse> response1 =
-        Futures.submit(
-            () -> {
-              synchronized (this) {
-                proxyThreads[0] = Thread.currentThread();
-              }
-
-              return worker1.getResponse(3);
-            },
-            executor);
-    Future<WorkResponse> response2 =
-        Futures.submit(
-            () -> {
-              synchronized (this) {
-                proxyThreads[1] = Thread.currentThread();
-              }
-              return worker2.getResponse(42);
-            },
-            executor);
-
-    // Makes sure both workers are waiting for responses before the multiplexer processes anything.
-    while (threadsAreNotWaiting(proxyThreads)) {
-      Thread.sleep(1);
+    @Before
+    @Throws(IOException::class)
+    fun setUp() {
+        fileSystem =
+            InMemoryFileSystem(com.google.devtools.build.lib.clock.BlazeClock.instance(), DigestHashFunction.SHA256)
+        logPath = fileSystem.getPath("/tmp/logs4")
+        logPath.createDirectoryAndParents()
     }
 
-    WorkResponse fakedResponse1 = WorkResponse.newBuilder().setRequestId(3).build();
-    WorkResponse fakedResponse2 = WorkResponse.newBuilder().setRequestId(42).build();
-    // Responses can arrive out of order
-    fakedResponse2.writeDelimitedTo(workerOutputStream);
-    fakedResponse1.writeDelimitedTo(workerOutputStream);
-    workerOutputStream.flush();
-
-    assertThat(response1.get().getRequestId()).isEqualTo(3);
-    assertThat(response2.get().getRequestId()).isEqualTo(42);
-    assertThat(multiplexer.noOutstandingRequests()).isTrue();
-  }
-
-  synchronized boolean threadsAreNotWaiting(Thread[] threads) {
-    for (Thread thread : threads) {
-      if (thread == null || thread.getState() != State.WAITING) {
-        return true;
-      }
+    @org.junit.After
+    fun tearDown() {
+        WorkerMultiplexerManager.resetForTesting()
     }
-    return false;
-  }
 
-  @Test
-  public void testGetResponse_slowProxy()
-      throws IOException, InterruptedException, ExecutionException {
-    WorkerKey workerKey = WorkerTestUtils.createWorkerKey(fileSystem, "test4", true, "fakeBinary");
-    WorkerMultiplexer multiplexer = WorkerMultiplexerManager.getInstance(workerKey, logPath);
+    @org.junit.Test
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    fun testGetResponse_noOutstandingRequests() {
+        val workerKey: WorkerKey = WorkerTestUtils.createWorkerKey(fileSystem, "test1", true, "fakeBinary")
+        val multiplexer: WorkerMultiplexer = WorkerMultiplexerManager.getInstance(workerKey, logPath)
 
-    PipedInputStream serverInputStream = new PipedInputStream();
-    OutputStream workerOutputStream = new PipedOutputStream(serverInputStream);
-    multiplexer.setProcessFactory(params -> new FakeSubprocess(serverInputStream));
+        val serverInputStream: PipedInputStream = PipedInputStream()
+        val workerOutputStream: java.io.OutputStream = PipedOutputStream(serverInputStream)
+        multiplexer.setProcessFactory({ params -> FakeSubprocess(serverInputStream) })
 
-    WorkerProxy worker1 =
-        new WorkerProxy(workerKey, 1, logPath, multiplexer, workerKey.getExecRoot());
-    worker1.prepareExecution(null, null, null, ImmutableMap.of());
-    WorkRequest request1 = WorkRequest.newBuilder().setRequestId(3).build();
-    worker1.putRequest(request1);
+        val request1: WorkRequest? = WorkRequest.newBuilder().setRequestId(1).build()
+        val worker: WorkerProxy =
+            WorkerProxy(workerKey, 2, logPath, multiplexer, workerKey.getExecRoot())
+        worker.prepareExecution(null, null, null, com.google.common.collect.ImmutableMap.of<K?, V?>())
+        worker.putRequest(request1)
+        val response1: WorkResponse = WorkResponse.newBuilder().setRequestId(1).build()
+        response1.writeDelimitedTo(workerOutputStream)
+        workerOutputStream.flush()
+        val response: WorkResponse = worker.getResponse(1)
+        assertThat(response.getRequestId()).isEqualTo(1)
+        // Can't get the same response twice - but the responseChecker is gone, so it just returns null
+        assertThat(multiplexer.getResponse(1)).isNull()
+        assertThat(multiplexer.noOutstandingRequests()).isTrue()
+    }
 
-    WorkerProxy worker2 =
-        new WorkerProxy(workerKey, 2, logPath, multiplexer, workerKey.getExecRoot());
-    worker2.prepareExecution(null, null, null, ImmutableMap.of());
-    WorkRequest request2 = WorkRequest.newBuilder().setRequestId(42).build();
-    worker2.putRequest(request2);
+    @org.junit.Test
+    @Throws(IOException::class, java.lang.InterruptedException::class, ExecutionException::class)
+    fun testGetResponse_basicConcurrency() {
+        val workerKey: WorkerKey = WorkerTestUtils.createWorkerKey(fileSystem, "test2", true, "fakeBinary")
+        val multiplexer: WorkerMultiplexer = WorkerMultiplexerManager.getInstance(workerKey, logPath)
 
-    WorkResponse fakedResponse1 = WorkResponse.newBuilder().setRequestId(3).build();
-    WorkResponse fakedResponse2 = WorkResponse.newBuilder().setRequestId(42).build();
-    // Responses can arrive out of order, and before the workerproxies are ready to get them.
-    fakedResponse2.writeDelimitedTo(workerOutputStream);
-    fakedResponse1.writeDelimitedTo(workerOutputStream);
-    workerOutputStream.flush();
+        val serverInputStream: PipedInputStream = PipedInputStream()
+        val workerOutputStream: java.io.OutputStream = PipedOutputStream(serverInputStream)
+        multiplexer.setProcessFactory({ params -> FakeSubprocess(serverInputStream) })
 
-    Executor executor = Executors.newFixedThreadPool(2);
-    Future<WorkResponse> response1 = Futures.submit(() -> worker1.getResponse(3), executor);
-    Future<WorkResponse> response2 = Futures.submit(() -> worker2.getResponse(42), executor);
+        val worker1: WorkerProxy =
+            WorkerProxy(workerKey, 1, logPath, multiplexer, workerKey.getExecRoot())
+        worker1.prepareExecution(null, null, null, com.google.common.collect.ImmutableMap.of<K?, V?>())
+        val request1: WorkRequest? = WorkRequest.newBuilder().setRequestId(3).build()
+        worker1.putRequest(request1)
 
-    assertThat(response1.get().getRequestId()).isEqualTo(3);
-    assertThat(response2.get().getRequestId()).isEqualTo(42);
-    assertThat(multiplexer.noOutstandingRequests()).isTrue();
-  }
+        val worker2: WorkerProxy =
+            WorkerProxy(workerKey, 2, logPath, multiplexer, workerKey.getExecRoot())
+        worker2.prepareExecution(null, null, null, com.google.common.collect.ImmutableMap.of<K?, V?>())
+        val request2: WorkRequest? = WorkRequest.newBuilder().setRequestId(42).build()
+        worker2.putRequest(request2)
 
-  @Test
-  public void workDir_destroyMultiplexer_successfullyDestroysWorkDir() throws IOException {
-    Path testRoot = fileSystem.getPath(TestUtils.tmpDir());
+        val executor: java.util.concurrent.Executor = Executors.newFixedThreadPool(2)
+        val response1: java.util.concurrent.Future<WorkResponse?> =
+            com.google.common.util.concurrent.Futures.submit(java.lang.Runnable { worker1.getResponse(3) }, executor)
+        val response2: java.util.concurrent.Future<WorkResponse?> =
+            com.google.common.util.concurrent.Futures.submit(java.lang.Runnable { worker2.getResponse(42) }, executor)
 
-    WorkerKey workerKey =
-        WorkerTestUtils.createWorkerKey(fileSystem, "TestMnemonic", true, "fakeBinary");
-    WorkerMultiplexer multiplexer = WorkerMultiplexerManager.getInstance(workerKey, logPath);
+        val fakedResponse1: WorkResponse = WorkResponse.newBuilder().setRequestId(3).build()
+        val fakedResponse2: WorkResponse = WorkResponse.newBuilder().setRequestId(42).build()
+        // Responses can arrive out of order
+        fakedResponse2.writeDelimitedTo(workerOutputStream)
+        fakedResponse1.writeDelimitedTo(workerOutputStream)
+        workerOutputStream.flush()
 
-    Path workDir = testRoot.getRelative("/tmp/workdir");
-    workDir.createDirectoryAndParents();
-    assertThat(workDir.exists()).isTrue();
+        assertThat(response1.get().getRequestId()).isEqualTo(3)
+        assertThat(response2.get().getRequestId()).isEqualTo(42)
+        assertThat(multiplexer.noOutstandingRequests()).isTrue()
+    }
 
-    multiplexer.setWorkDir(workDir);
-    multiplexer.destroyMultiplexer();
-    assertThat(workDir.exists()).isFalse();
-  }
+    @org.junit.Test
+    @Throws(IOException::class, java.lang.InterruptedException::class, ExecutionException::class)
+    fun testGetResponse_slowMultiplexer() {
+        val workerKey: WorkerKey = WorkerTestUtils.createWorkerKey(fileSystem, "test3", true, "fakeBinary")
+        val multiplexer: WorkerMultiplexer = WorkerMultiplexerManager.getInstance(workerKey, logPath)
+
+        val serverInputStream: PipedInputStream = PipedInputStream()
+        val workerOutputStream: java.io.OutputStream = PipedOutputStream(serverInputStream)
+        multiplexer.setProcessFactory({ params -> FakeSubprocess(serverInputStream) })
+
+        val worker1: WorkerProxy =
+            WorkerProxy(workerKey, 1, logPath, multiplexer, workerKey.getExecRoot())
+        worker1.prepareExecution(null, null, null, com.google.common.collect.ImmutableMap.of<K?, V?>())
+        val request1: WorkRequest? = WorkRequest.newBuilder().setRequestId(3).build()
+        worker1.putRequest(request1)
+
+        val worker2: WorkerProxy =
+            WorkerProxy(workerKey, 2, logPath, multiplexer, workerKey.getExecRoot())
+        worker2.prepareExecution(null, null, null, com.google.common.collect.ImmutableMap.of<K?, V?>())
+        val request2: WorkRequest? = WorkRequest.newBuilder().setRequestId(42).build()
+        worker2.putRequest(request2)
+
+        val proxyThreads: Array<java.lang.Thread?> = arrayOfNulls<java.lang.Thread>(2)
+        val executor: java.util.concurrent.Executor = Executors.newFixedThreadPool(2)
+        val response1: java.util.concurrent.Future<WorkResponse?> =
+            com.google.common.util.concurrent.Futures.submit<O?>(
+                java.util.concurrent.Callable {
+                    synchronized(this) {
+                        proxyThreads[0] = java.lang.Thread.currentThread()
+                    }
+                    worker1.getResponse(3)
+                },
+                executor
+            )
+        val response2: java.util.concurrent.Future<WorkResponse?> =
+            com.google.common.util.concurrent.Futures.submit<O?>(
+                java.util.concurrent.Callable {
+                    synchronized(this) {
+                        proxyThreads[1] = java.lang.Thread.currentThread()
+                    }
+                    worker2.getResponse(42)
+                },
+                executor
+            )
+
+        // Makes sure both workers are waiting for responses before the multiplexer processes anything.
+        while (threadsAreNotWaiting(proxyThreads)) {
+            java.lang.Thread.sleep(1)
+        }
+
+        val fakedResponse1: WorkResponse = WorkResponse.newBuilder().setRequestId(3).build()
+        val fakedResponse2: WorkResponse = WorkResponse.newBuilder().setRequestId(42).build()
+        // Responses can arrive out of order
+        fakedResponse2.writeDelimitedTo(workerOutputStream)
+        fakedResponse1.writeDelimitedTo(workerOutputStream)
+        workerOutputStream.flush()
+
+        assertThat(response1.get().getRequestId()).isEqualTo(3)
+        assertThat(response2.get().getRequestId()).isEqualTo(42)
+        assertThat(multiplexer.noOutstandingRequests()).isTrue()
+    }
+
+    @kotlin.jvm.Synchronized
+    fun threadsAreNotWaiting(threads: Array<java.lang.Thread?>): Boolean {
+        for (thread in threads) {
+            if (thread == null || thread.getState() != java.lang.Thread.State.WAITING) {
+                return true
+            }
+        }
+        return false
+    }
+
+    @org.junit.Test
+    @Throws(IOException::class, java.lang.InterruptedException::class, ExecutionException::class)
+    fun testGetResponse_slowProxy() {
+        val workerKey: WorkerKey = WorkerTestUtils.createWorkerKey(fileSystem, "test4", true, "fakeBinary")
+        val multiplexer: WorkerMultiplexer = WorkerMultiplexerManager.getInstance(workerKey, logPath)
+
+        val serverInputStream: PipedInputStream = PipedInputStream()
+        val workerOutputStream: java.io.OutputStream = PipedOutputStream(serverInputStream)
+        multiplexer.setProcessFactory({ params -> FakeSubprocess(serverInputStream) })
+
+        val worker1: WorkerProxy =
+            WorkerProxy(workerKey, 1, logPath, multiplexer, workerKey.getExecRoot())
+        worker1.prepareExecution(null, null, null, com.google.common.collect.ImmutableMap.of<K?, V?>())
+        val request1: WorkRequest? = WorkRequest.newBuilder().setRequestId(3).build()
+        worker1.putRequest(request1)
+
+        val worker2: WorkerProxy =
+            WorkerProxy(workerKey, 2, logPath, multiplexer, workerKey.getExecRoot())
+        worker2.prepareExecution(null, null, null, com.google.common.collect.ImmutableMap.of<K?, V?>())
+        val request2: WorkRequest? = WorkRequest.newBuilder().setRequestId(42).build()
+        worker2.putRequest(request2)
+
+        val fakedResponse1: WorkResponse = WorkResponse.newBuilder().setRequestId(3).build()
+        val fakedResponse2: WorkResponse = WorkResponse.newBuilder().setRequestId(42).build()
+        // Responses can arrive out of order, and before the workerproxies are ready to get them.
+        fakedResponse2.writeDelimitedTo(workerOutputStream)
+        fakedResponse1.writeDelimitedTo(workerOutputStream)
+        workerOutputStream.flush()
+
+        val executor: java.util.concurrent.Executor = Executors.newFixedThreadPool(2)
+        val response1: java.util.concurrent.Future<WorkResponse?> =
+            com.google.common.util.concurrent.Futures.submit(java.lang.Runnable { worker1.getResponse(3) }, executor)
+        val response2: java.util.concurrent.Future<WorkResponse?> =
+            com.google.common.util.concurrent.Futures.submit(java.lang.Runnable { worker2.getResponse(42) }, executor)
+
+        assertThat(response1.get().getRequestId()).isEqualTo(3)
+        assertThat(response2.get().getRequestId()).isEqualTo(42)
+        assertThat(multiplexer.noOutstandingRequests()).isTrue()
+    }
+
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun workDir_destroyMultiplexer_successfullyDestroysWorkDir() {
+        val testRoot: Path = fileSystem.getPath(com.google.devtools.build.lib.testutil.TestUtils.tmpDir())
+
+        val workerKey: WorkerKey =
+            WorkerTestUtils.createWorkerKey(fileSystem, "TestMnemonic", true, "fakeBinary")
+        val multiplexer: WorkerMultiplexer = WorkerMultiplexerManager.getInstance(workerKey, logPath)
+
+        val workDir: Path = testRoot.getRelative("/tmp/workdir")
+        workDir.createDirectoryAndParents()
+        assertThat(workDir.exists()).isTrue()
+
+        multiplexer.setWorkDir(workDir)
+        multiplexer.destroyMultiplexer()
+        assertThat(workDir.exists()).isFalse()
+    }
 }

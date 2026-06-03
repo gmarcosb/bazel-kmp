@@ -11,179 +11,175 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.truth.Truth.assertWithMessage;
+import com.google.common.truth.Truth
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests [AnalysisProgressReceiver].  */
+@RunWith(JUnit4::class)
+class AnalysisProgressReceiverTest {
+    @org.junit.Test
+    fun testTargetCounted() {
+        // If the configuration of a target is completed it is counted as fully configured target.
+        val progress: AnalysisProgressReceiver = AnalysisProgressReceiver()
+        progress.doneConfigureTarget()
+        val progressString1: String = progress.getProgressString()
 
-/** Tests {@link AnalysisProgressReceiver}. */
-@RunWith(JUnit4.class)
-public class AnalysisProgressReceiverTest {
+        Truth.assertWithMessage("One configured target should be visible in progress.")
+            .that(progressString1.contains("1 target configured"))
+            .isTrue()
 
-  @Test
-  public void testTargetCounted() {
-    // If the configuration of a target is completed it is counted as fully configured target.
-    AnalysisProgressReceiver progress = new AnalysisProgressReceiver();
-    progress.doneConfigureTarget();
-    String progressString1 = progress.getProgressString();
+        progress.doneConfigureTarget()
+        val progressString2: String = progress.getProgressString()
 
-    assertWithMessage("One configured target should be visible in progress.")
-        .that(progressString1.contains("1 target configured"))
-        .isTrue();
-
-    progress.doneConfigureTarget();
-    String progressString2 = progress.getProgressString();
-
-    assertWithMessage("Two configured targets should be visible in progress.")
-        .that(progressString2.contains("2 targets configured"))
-        .isTrue();
-  }
-
-  @Test
-  public void testDownloadedTargetCounted() {
-    AnalysisProgressReceiver progress = new AnalysisProgressReceiver();
-    progress.doneDownloadedConfiguredTarget();
-    String progressString1 = progress.getProgressString();
-
-    assertThat(progressString1).contains("1 target configured (1 remote cache hits)");
-
-    progress.doneConfigureTarget();
-    String progressString2 = progress.getProgressString();
-
-    assertThat(progressString2).contains("2 targets configured (1 remote cache hits)");
-  }
-
-  @Test
-  public void testAspectCounted() {
-    AnalysisProgressReceiver progress = new AnalysisProgressReceiver();
-    progress.doneConfigureAspect();
-    String progressString1 = progress.getProgressString();
-
-    assertWithMessage("One configured aspect should be visible in progress.")
-        .that(progressString1.contains("0 targets configured, 1 aspect application"))
-        .isTrue();
-
-    progress.doneConfigureAspect();
-    String progressString2 = progress.getProgressString();
-
-    assertWithMessage("Two configured aspects should be visible in progress.")
-        .that(progressString2.contains("0 targets configured, 2 aspect applications"))
-        .isTrue();
-  }
-
-  @Test
-  public void testDownloadedAspectCounted() {
-    AnalysisProgressReceiver progress = new AnalysisProgressReceiver();
-    progress.doneDownloadedConfiguredAspect();
-    String progressString1 = progress.getProgressString();
-
-    assertThat(progressString1)
-        .contains("0 targets configured, 1 aspect application (1 remote cache hits)");
-
-    progress.doneConfigureAspect();
-    String progressString2 = progress.getProgressString();
-
-    assertThat(progressString2)
-        .contains("0 targets configured, 2 aspect applications (1 remote cache hits)");
-  }
-
-  @Test
-  public void testTargetAndAspectCounted() {
-    AnalysisProgressReceiver progress = new AnalysisProgressReceiver();
-    String progressString1 = progress.getProgressString();
-    assertThat(progressString1).contains("0 targets configured");
-
-    progress.doneConfigureTarget();
-    String progressString2 = progress.getProgressString();
-
-    assertThat(progressString2).contains("1 target configured");
-
-    progress.doneConfigureAspect();
-    String progressString3 = progress.getProgressString();
-
-    assertThat(progressString3).contains("1 target configured, 1 aspect application");
-  }
-
-  @Test
-  public void testReset() {
-    // After resetting, messages should be as immediately after creation.
-    AnalysisProgressReceiver progress = new AnalysisProgressReceiver();
-    String defaultProgress = progress.getProgressString();
-    progress.doneConfigureTarget();
-    assertThat(progress.getProgressString()).isNotEqualTo(defaultProgress);
-    progress.reset();
-    assertThat(progress.getProgressString()).isEqualTo(defaultProgress);
-  }
-
-  @Test
-  public void testLargeTargetCountFormattedWithCommas() {
-    // Verify that large target counts are formatted with comma separators for readability.
-    AnalysisProgressReceiver progress = new AnalysisProgressReceiver();
-
-    for (int i = 0; i < 12345; i++) {
-      progress.doneConfigureTarget();
+        Truth.assertWithMessage("Two configured targets should be visible in progress.")
+            .that(progressString2.contains("2 targets configured"))
+            .isTrue()
     }
 
-    String progressString = progress.getProgressString();
-    assertThat(progressString).contains("12,345 targets configured");
-  }
+    @org.junit.Test
+    fun testDownloadedTargetCounted() {
+        val progress: AnalysisProgressReceiver = AnalysisProgressReceiver()
+        progress.doneDownloadedConfiguredTarget()
+        val progressString1: String? = progress.getProgressString()
 
-  @Test
-  public void testLargeDownloadedTargetCountFormattedWithCommas() {
-    // Verify that large downloaded target counts (>= 10,000) are formatted with comma separators.
-    AnalysisProgressReceiver progress = new AnalysisProgressReceiver();
+        Truth.assertThat(progressString1).contains("1 target configured (1 remote cache hits)")
 
-    for (int i = 0; i < 15678; i++) {
-      progress.doneDownloadedConfiguredTarget();
+        progress.doneConfigureTarget()
+        val progressString2: String? = progress.getProgressString()
+
+        Truth.assertThat(progressString2).contains("2 targets configured (1 remote cache hits)")
     }
 
-    String progressString = progress.getProgressString();
-    assertThat(progressString).contains("15,678 targets configured");
-    assertThat(progressString).contains("(15,678 remote cache hits)");
-  }
+    @org.junit.Test
+    fun testAspectCounted() {
+        val progress: AnalysisProgressReceiver = AnalysisProgressReceiver()
+        progress.doneConfigureAspect()
+        val progressString1: String = progress.getProgressString()
 
-  @Test
-  public void testLargeAspectCountFormattedWithCommas() {
-    // Verify that large aspect counts (>= 10,000) are formatted with comma separators.
-    AnalysisProgressReceiver progress = new AnalysisProgressReceiver();
+        Truth.assertWithMessage("One configured aspect should be visible in progress.")
+            .that(progressString1.contains("0 targets configured, 1 aspect application"))
+            .isTrue()
 
-    for (int i = 0; i < 12500; i++) {
-      progress.doneConfigureAspect();
+        progress.doneConfigureAspect()
+        val progressString2: String = progress.getProgressString()
+
+        Truth.assertWithMessage("Two configured aspects should be visible in progress.")
+            .that(progressString2.contains("0 targets configured, 2 aspect applications"))
+            .isTrue()
     }
 
-    String progressString = progress.getProgressString();
-    assertThat(progressString).contains("12,500 aspect applications");
-  }
+    @org.junit.Test
+    fun testDownloadedAspectCounted() {
+        val progress: AnalysisProgressReceiver = AnalysisProgressReceiver()
+        progress.doneDownloadedConfiguredAspect()
+        val progressString1: String? = progress.getProgressString()
 
-  @Test
-  public void testLargeDownloadedAspectCountFormattedWithCommas() {
-    // Verify that large downloaded aspect counts (>= 10,000) are formatted with comma separators.
-    AnalysisProgressReceiver progress = new AnalysisProgressReceiver();
+        Truth.assertThat(progressString1)
+            .contains("0 targets configured, 1 aspect application (1 remote cache hits)")
 
-    for (int i = 0; i < 11234; i++) {
-      progress.doneDownloadedConfiguredAspect();
+        progress.doneConfigureAspect()
+        val progressString2: String? = progress.getProgressString()
+
+        Truth.assertThat(progressString2)
+            .contains("0 targets configured, 2 aspect applications (1 remote cache hits)")
     }
 
-    String progressString = progress.getProgressString();
-    assertThat(progressString).contains("11,234 aspect applications");
-    assertThat(progressString).contains("(11,234 remote cache hits)");
-  }
+    @org.junit.Test
+    fun testTargetAndAspectCounted() {
+        val progress: AnalysisProgressReceiver = AnalysisProgressReceiver()
+        val progressString1: String? = progress.getProgressString()
+        Truth.assertThat(progressString1).contains("0 targets configured")
 
-  @Test
-  public void testSmallCountsNotFormattedWithCommas() {
-    // Verify that counts below 10,000 (IEEE style threshold) are NOT formatted with commas.
-    AnalysisProgressReceiver progress = new AnalysisProgressReceiver();
+        progress.doneConfigureTarget()
+        val progressString2: String? = progress.getProgressString()
 
-    for (int i = 0; i < 5678; i++) {
-      progress.doneConfigureTarget();
+        Truth.assertThat(progressString2).contains("1 target configured")
+
+        progress.doneConfigureAspect()
+        val progressString3: String? = progress.getProgressString()
+
+        Truth.assertThat(progressString3).contains("1 target configured, 1 aspect application")
     }
 
-    String progressString = progress.getProgressString();
-    assertThat(progressString).contains("5678 targets configured");
-    assertThat(progressString).doesNotContain("5,678");
-  }
+    @org.junit.Test
+    fun testReset() {
+        // After resetting, messages should be as immediately after creation.
+        val progress: AnalysisProgressReceiver = AnalysisProgressReceiver()
+        val defaultProgress: String? = progress.getProgressString()
+        progress.doneConfigureTarget()
+        assertThat(progress.getProgressString()).isNotEqualTo(defaultProgress)
+        progress.reset()
+        assertThat(progress.getProgressString()).isEqualTo(defaultProgress)
+    }
+
+    @org.junit.Test
+    fun testLargeTargetCountFormattedWithCommas() {
+        // Verify that large target counts are formatted with comma separators for readability.
+        val progress: AnalysisProgressReceiver = AnalysisProgressReceiver()
+
+        for (i in 0..12344) {
+            progress.doneConfigureTarget()
+        }
+
+        val progressString: String? = progress.getProgressString()
+        Truth.assertThat(progressString).contains("12,345 targets configured")
+    }
+
+    @org.junit.Test
+    fun testLargeDownloadedTargetCountFormattedWithCommas() {
+        // Verify that large downloaded target counts (>= 10,000) are formatted with comma separators.
+        val progress: AnalysisProgressReceiver = AnalysisProgressReceiver()
+
+        for (i in 0..15677) {
+            progress.doneDownloadedConfiguredTarget()
+        }
+
+        val progressString: String? = progress.getProgressString()
+        Truth.assertThat(progressString).contains("15,678 targets configured")
+        Truth.assertThat(progressString).contains("(15,678 remote cache hits)")
+    }
+
+    @org.junit.Test
+    fun testLargeAspectCountFormattedWithCommas() {
+        // Verify that large aspect counts (>= 10,000) are formatted with comma separators.
+        val progress: AnalysisProgressReceiver = AnalysisProgressReceiver()
+
+        for (i in 0..12499) {
+            progress.doneConfigureAspect()
+        }
+
+        val progressString: String? = progress.getProgressString()
+        Truth.assertThat(progressString).contains("12,500 aspect applications")
+    }
+
+    @org.junit.Test
+    fun testLargeDownloadedAspectCountFormattedWithCommas() {
+        // Verify that large downloaded aspect counts (>= 10,000) are formatted with comma separators.
+        val progress: AnalysisProgressReceiver = AnalysisProgressReceiver()
+
+        for (i in 0..11233) {
+            progress.doneDownloadedConfiguredAspect()
+        }
+
+        val progressString: String? = progress.getProgressString()
+        Truth.assertThat(progressString).contains("11,234 aspect applications")
+        Truth.assertThat(progressString).contains("(11,234 remote cache hits)")
+    }
+
+    @org.junit.Test
+    fun testSmallCountsNotFormattedWithCommas() {
+        // Verify that counts below 10,000 (IEEE style threshold) are NOT formatted with commas.
+        val progress: AnalysisProgressReceiver = AnalysisProgressReceiver()
+
+        for (i in 0..5677) {
+            progress.doneConfigureTarget()
+        }
+
+        val progressString: String? = progress.getProgressString()
+        Truth.assertThat(progressString).contains("5678 targets configured")
+        Truth.assertThat(progressString).doesNotContain("5,678")
+    }
 }

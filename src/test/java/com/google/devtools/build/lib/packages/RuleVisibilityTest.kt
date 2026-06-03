@@ -11,166 +11,258 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
+import com.google.devtools.build.lib.cmdline.Label
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+/** Tests for [RuleVisibility].  */
+@RunWith(JUnit4::class)
+class RuleVisibilityTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun validateAndSimplify_validates() {
+        val e1: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    RuleVisibility.validateAndSimplify(
+                        com.google.common.collect.ImmutableList.of<E?>(label("//visibility:pirvate"))
+                    )
+                })
+        Truth.assertThat(e1)
+            .hasMessageThat()
+            .contains(
+                "Invalid visibility label '//visibility:pirvate'; did you mean //visibility:public or"
+                        + " //visibility:private?"
+            )
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import net.starlark.java.eval.EvalException;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link RuleVisibility}. */
-@RunWith(JUnit4.class)
-public final class RuleVisibilityTest {
-
-  private static Label label(String labelString) {
-    return Label.parseCanonicalUnchecked(labelString);
-  }
-
-  private static PackageIdentifier pkg(String labelString) {
-    return label(labelString).getPackageIdentifier();
-  }
-
-  private static RuleVisibility ruleVisibility(String... labelStrings) {
-    ImmutableList.Builder<Label> labels = ImmutableList.builder();
-    for (String labelString : labelStrings) {
-      labels.add(label(labelString));
+        val e2: net.starlark.java.eval.EvalException? =
+            org.junit.Assert.assertThrows<net.starlark.java.eval.EvalException?>(
+                net.starlark.java.eval.EvalException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    RuleVisibility.validateAndSimplify(
+                        com.google.common.collect.ImmutableList.of<E?>(label(PUBLIC), label("//visibility:pbulic"))
+                    )
+                })
+        Truth.assertThat(e2)
+            .hasMessageThat()
+            .contains(
+                "Invalid visibility label '//visibility:pbulic'; did you mean //visibility:public or"
+                        + " //visibility:private?"
+            )
     }
-    return RuleVisibility.parseUnchecked(labels.build());
-  }
 
-  private static final String A = "//a:__pkg__";
-  // Package group labels are represented differently than __pkg__ labels, so cover both cases.
-  private static final String B_PG = "//b:pkggroup";
-  private static final String C = "//c:__pkg__";
-  private static final String PUBLIC = "//visibility:public";
-  private static final String PRIVATE = "//visibility:private";
-  private static final RuleVisibility PUBLIC_VIS = RuleVisibility.PUBLIC;
-  private static final RuleVisibility PRIVATE_VIS = RuleVisibility.PRIVATE;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun validateAndSimplify_simplifiesPublic() {
+        assertThat(
+            RuleVisibility.validateAndSimplify(
+                com.google.common.collect.ImmutableList.of<E?>(
+                    label(A), label(
+                        PUBLIC
+                    )
+                )
+            )
+        )
+            .containsExactly(label(PUBLIC))
+        assertThat(
+            RuleVisibility.validateAndSimplify(
+                com.google.common.collect.ImmutableList.of<E?>(
+                    label(PUBLIC), label(
+                        B_PG
+                    )
+                )
+            )
+        )
+            .containsExactly(label(PUBLIC))
+        assertThat(
+            RuleVisibility.validateAndSimplify(
+                com.google.common.collect.ImmutableList.of<E?>(
+                    label(PUBLIC), label(
+                        PRIVATE
+                    )
+                )
+            )
+        )
+            .containsExactly(label(PUBLIC))
+        assertThat(
+            RuleVisibility.validateAndSimplify(
+                com.google.common.collect.ImmutableList.of<E?>(
+                    label(PUBLIC), label(
+                        PUBLIC
+                    )
+                )
+            )
+        )
+            .containsExactly(label(PUBLIC))
+    }
 
-  @Test
-  public void validateAndSimplify_validates() throws Exception {
-    EvalException e1 =
-        assertThrows(
-            EvalException.class,
-            () ->
-                RuleVisibility.validateAndSimplify(
-                    ImmutableList.of(label("//visibility:pirvate"))));
-    assertThat(e1)
-        .hasMessageThat()
-        .contains(
-            "Invalid visibility label '//visibility:pirvate'; did you mean //visibility:public or"
-                + " //visibility:private?");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun validateAndSimplify_simplifiesPrivate() {
+        assertThat(
+            RuleVisibility.validateAndSimplify(
+                com.google.common.collect.ImmutableList.of<E?>(
+                    label(A), label(
+                        PRIVATE
+                    )
+                )
+            )
+        )
+            .containsExactly(label(A))
+        assertThat(
+            RuleVisibility.validateAndSimplify(
+                com.google.common.collect.ImmutableList.of<E?>(
+                    label(PRIVATE), label(
+                        B_PG
+                    )
+                )
+            )
+        )
+            .containsExactly(label(B_PG))
+        assertThat(
+            RuleVisibility.validateAndSimplify(
+                com.google.common.collect.ImmutableList.of<E?>(
+                    label(PRIVATE), label(
+                        PRIVATE
+                    )
+                )
+            )
+        )
+            .containsExactly(label(PRIVATE))
+    }
 
-    EvalException e2 =
-        assertThrows(
-            EvalException.class,
-            () ->
-                RuleVisibility.validateAndSimplify(
-                    ImmutableList.of(label(PUBLIC), label("//visibility:pbulic"))));
-    assertThat(e2)
-        .hasMessageThat()
-        .contains(
-            "Invalid visibility label '//visibility:pbulic'; did you mean //visibility:public or"
-                + " //visibility:private?");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun emptyListCanonicalizedToPrivate() {
+        assertThat(RuleVisibility.validateAndSimplify(com.google.common.collect.ImmutableList.of<E?>()))
+            .containsExactly(label(PRIVATE))
+        val e: java.lang.IllegalArgumentException? =
+            org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+                java.lang.IllegalArgumentException::class.java,
+                org.junit.function.ThrowingRunnable { RuleVisibility.parseUnchecked(com.google.common.collect.ImmutableList.of<E?>()) })
+        Truth.assertThat(e).hasMessageThat().contains("must not be empty")
+    }
 
-  @Test
-  public void validateAndSimplify_simplifiesPublic() throws Exception {
-    assertThat(RuleVisibility.validateAndSimplify(ImmutableList.of(label(A), label(PUBLIC))))
-        .containsExactly(label(PUBLIC));
-    assertThat(RuleVisibility.validateAndSimplify(ImmutableList.of(label(PUBLIC), label(B_PG))))
-        .containsExactly(label(PUBLIC));
-    assertThat(RuleVisibility.validateAndSimplify(ImmutableList.of(label(PUBLIC), label(PRIVATE))))
-        .containsExactly(label(PUBLIC));
-    assertThat(RuleVisibility.validateAndSimplify(ImmutableList.of(label(PUBLIC), label(PUBLIC))))
-        .containsExactly(label(PUBLIC));
-  }
+    // TODO(arostovtsev): we ought to uniquify the labels, but that would be an incompatible change
+    // (affects query output).
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun validateAndSimplify_doesNotUniquify() {
+        assertThat(
+            RuleVisibility.validateAndSimplify(
+                com.google.common.collect.ImmutableList.of<E?>(
+                    label(A),
+                    label(A)
+                )
+            )
+        )
+            .containsExactly(label(A), label(A))
+    }
 
-  @Test
-  public void validateAndSimplify_simplifiesPrivate() throws Exception {
-    assertThat(RuleVisibility.validateAndSimplify(ImmutableList.of(label(A), label(PRIVATE))))
-        .containsExactly(label(A));
-    assertThat(RuleVisibility.validateAndSimplify(ImmutableList.of(label(PRIVATE), label(B_PG))))
-        .containsExactly(label(B_PG));
-    assertThat(RuleVisibility.validateAndSimplify(ImmutableList.of(label(PRIVATE), label(PRIVATE))))
-        .containsExactly(label(PRIVATE));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun packageGroupsRuleVisibility_create_requiresValidatedSimplifiedNonConstantLabels() {
+        val e1: java.lang.IllegalArgumentException? =
+            org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+                java.lang.IllegalArgumentException::class.java,
+                org.junit.function.ThrowingRunnable { PackageGroupsRuleVisibility.create(com.google.common.collect.ImmutableList.of<E?>()) })
+        Truth.assertThat(e1).hasMessageThat().contains("must not be empty")
+        val e2: java.lang.IllegalArgumentException? =
+            org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+                java.lang.IllegalArgumentException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    PackageGroupsRuleVisibility.create(
+                        com.google.common.collect.ImmutableList.of<E?>(
+                            label(PUBLIC), label(A)
+                        )
+                    )
+                })
+        Truth.assertThat(e2).hasMessageThat().contains("must be validated and simplified")
+        val e3: java.lang.IllegalArgumentException? =
+            org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+                java.lang.IllegalArgumentException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    PackageGroupsRuleVisibility.create(
+                        com.google.common.collect.ImmutableList.of<E?>(
+                            label(A), label(PRIVATE)
+                        )
+                    )
+                })
+        Truth.assertThat(e3).hasMessageThat().contains("must be validated and simplified")
+        val e4: java.lang.IllegalArgumentException? =
+            org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+                java.lang.IllegalArgumentException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    PackageGroupsRuleVisibility.create(
+                        com.google.common.collect.ImmutableList.of<E?>(
+                            label(PUBLIC)
+                        )
+                    )
+                })
+        Truth.assertThat(e4)
+            .hasMessageThat()
+            .contains("must not equal [\"//visibility:public\"] or [\"//visibility:private\"]")
+        val e5: java.lang.IllegalArgumentException? =
+            org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+                java.lang.IllegalArgumentException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    PackageGroupsRuleVisibility.create(
+                        com.google.common.collect.ImmutableList.of<E?>(
+                            label(PRIVATE)
+                        )
+                    )
+                })
+        Truth.assertThat(e5)
+            .hasMessageThat()
+            .contains("must not equal [\"//visibility:public\"] or [\"//visibility:private\"]")
+    }
 
-  @Test
-  public void emptyListCanonicalizedToPrivate() throws Exception {
-    assertThat(RuleVisibility.validateAndSimplify(ImmutableList.of()))
-        .containsExactly(label(PRIVATE));
-    IllegalArgumentException e =
-        assertThrows(
-            IllegalArgumentException.class,
-            () -> RuleVisibility.parseUnchecked(ImmutableList.of()));
-    assertThat(e).hasMessageThat().contains("must not be empty");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun concatenation() {
+        assertThat(ruleVisibility(A, B_PG).concatWithPackage(pkg(C)))
+            .isEqualTo(ruleVisibility(A, B_PG, C))
 
-  // TODO(arostovtsev): we ought to uniquify the labels, but that would be an incompatible change
-  // (affects query output).
-  @Test
-  public void validateAndSimplify_doesNotUniquify() throws Exception {
-    assertThat(RuleVisibility.validateAndSimplify(ImmutableList.of(label(A), label(A))))
-        .containsExactly(label(A), label(A));
-  }
+        assertThat(PUBLIC_VIS.concatWithPackage(pkg(C))).isEqualTo(PUBLIC_VIS)
 
-  @Test
-  public void packageGroupsRuleVisibility_create_requiresValidatedSimplifiedNonConstantLabels()
-      throws Exception {
-    IllegalArgumentException e1 =
-        assertThrows(
-            IllegalArgumentException.class,
-            () -> PackageGroupsRuleVisibility.create(ImmutableList.of()));
-    assertThat(e1).hasMessageThat().contains("must not be empty");
-    IllegalArgumentException e2 =
-        assertThrows(
-            IllegalArgumentException.class,
-            () -> PackageGroupsRuleVisibility.create(ImmutableList.of(label(PUBLIC), label(A))));
-    assertThat(e2).hasMessageThat().contains("must be validated and simplified");
-    IllegalArgumentException e3 =
-        assertThrows(
-            IllegalArgumentException.class,
-            () -> PackageGroupsRuleVisibility.create(ImmutableList.of(label(A), label(PRIVATE))));
-    assertThat(e3).hasMessageThat().contains("must be validated and simplified");
-    IllegalArgumentException e4 =
-        assertThrows(
-            IllegalArgumentException.class,
-            () -> PackageGroupsRuleVisibility.create(ImmutableList.of(label(PUBLIC))));
-    assertThat(e4)
-        .hasMessageThat()
-        .contains("must not equal [\"//visibility:public\"] or [\"//visibility:private\"]");
-    IllegalArgumentException e5 =
-        assertThrows(
-            IllegalArgumentException.class,
-            () -> PackageGroupsRuleVisibility.create(ImmutableList.of(label(PRIVATE))));
-    assertThat(e5)
-        .hasMessageThat()
-        .contains("must not equal [\"//visibility:public\"] or [\"//visibility:private\"]");
-  }
+        assertThat(PRIVATE_VIS.concatWithPackage(pkg(C))).isEqualTo(ruleVisibility(C))
 
-  @Test
-  public void concatenation() throws Exception {
-    assertThat(ruleVisibility(A, B_PG).concatWithPackage(pkg(C)))
-        .isEqualTo(ruleVisibility(A, B_PG, C));
+        // Duplicates are not added, though they are preserved.
+        assertThat(ruleVisibility(A, B_PG).concatWithPackage(pkg(A)))
+            .isEqualTo(ruleVisibility(A, B_PG))
+        assertThat(ruleVisibility(A, B_PG, B_PG, A).concatWithPackage(pkg(A)))
+            .isEqualTo(ruleVisibility(A, B_PG, B_PG, A))
+        assertThat(ruleVisibility(A, B_PG, B_PG, A).concatWithPackage(pkg(C)))
+            .isEqualTo(ruleVisibility(A, B_PG, B_PG, A, C))
+    }
 
-    assertThat(PUBLIC_VIS.concatWithPackage(pkg(C))).isEqualTo(PUBLIC_VIS);
+    companion object {
+        private fun label(labelString: String?): Label {
+            return Label.parseCanonicalUnchecked(labelString)
+        }
 
-    assertThat(PRIVATE_VIS.concatWithPackage(pkg(C))).isEqualTo(ruleVisibility(C));
+        private fun pkg(labelString: String?): PackageIdentifier {
+            return label(labelString).getPackageIdentifier()
+        }
 
-    // Duplicates are not added, though they are preserved.
-    assertThat(ruleVisibility(A, B_PG).concatWithPackage(pkg(A)))
-        .isEqualTo(ruleVisibility(A, B_PG));
-    assertThat(ruleVisibility(A, B_PG, B_PG, A).concatWithPackage(pkg(A)))
-        .isEqualTo(ruleVisibility(A, B_PG, B_PG, A));
-    assertThat(ruleVisibility(A, B_PG, B_PG, A).concatWithPackage(pkg(C)))
-        .isEqualTo(ruleVisibility(A, B_PG, B_PG, A, C));
-  }
+        private fun ruleVisibility(vararg labelStrings: String?): RuleVisibility {
+            val labels: com.google.common.collect.ImmutableList.Builder<Label?> =
+                com.google.common.collect.ImmutableList.builder<Label?>()
+            for (labelString in labelStrings) {
+                labels.add(label(labelString))
+            }
+            return RuleVisibility.parseUnchecked(labels.build())
+        }
+
+        private const val A = "//a:__pkg__"
+
+        // Package group labels are represented differently than __pkg__ labels, so cover both cases.
+        private const val B_PG = "//b:pkggroup"
+        private const val C = "//c:__pkg__"
+        private const val PUBLIC = "//visibility:public"
+        private const val PRIVATE = "//visibility:private"
+        private val PUBLIC_VIS: RuleVisibility = RuleVisibility.PUBLIC
+        private val PRIVATE_VIS: RuleVisibility = RuleVisibility.PRIVATE
+    }
 }

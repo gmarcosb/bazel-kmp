@@ -11,105 +11,87 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.buildeventstream;
+package com.google.devtools.build.lib.buildeventstream
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.buildeventstream.BuildEvent.LocalFile
 
-import com.google.common.util.concurrent.Futures;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.devtools.build.lib.buildeventstream.BuildEvent.LocalFile;
-import com.google.devtools.build.lib.runtime.BuildEventArtifactUploaderFactory;
-import com.google.devtools.build.lib.runtime.BuildEventArtifactUploaderFactoryMap;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.vfs.Path;
-import io.netty.util.ReferenceCounted;
-import java.io.IOException;
-import java.util.Map;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [BuildEventArtifactUploaderFactoryMap].  */
+@RunWith(JUnit4::class)
+class BuildEventArtifactUploaderFactoryMapTest {
+    private var uploaderFactories: BuildEventArtifactUploaderFactoryMap? = null
+    private var noConversionUploaderFactory: BuildEventArtifactUploaderFactory? = null
 
-/** Tests for {@link BuildEventArtifactUploaderFactoryMap}. */
-@RunWith(JUnit4.class)
-public final class BuildEventArtifactUploaderFactoryMapTest {
-  private BuildEventArtifactUploaderFactoryMap uploaderFactories;
-  private BuildEventArtifactUploaderFactory noConversionUploaderFactory;
+    @Before
+    fun setUp() {
+        noConversionUploaderFactory =
+            BuildEventArtifactUploaderFactory { env: CommandEnvironment? ->
+                object : BuildEventArtifactUploader() {
+                    public override fun upload(files: MutableMap<Path?, LocalFile?>?): com.google.common.util.concurrent.ListenableFuture<PathConverter?> {
+                        return@BuildEventArtifactUploaderFactory com.google.common.util.concurrent.Futures.immediateFuture<PathConverter?>(
+                            PathConverter.NO_CONVERSION
+                        )
+                    }
 
-  @Before
-  public void setUp() {
-    noConversionUploaderFactory =
-        (CommandEnvironment env) ->
-            new BuildEventArtifactUploader() {
-              @Override
-              public ListenableFuture<PathConverter> upload(Map<Path, LocalFile> files) {
-                return Futures.immediateFuture(PathConverter.NO_CONVERSION);
-              }
+                    public override fun mayBeSlow(): Boolean {
+                        return@BuildEventArtifactUploaderFactory false
+                    }
 
-              @Override
-              public boolean mayBeSlow() {
-                return false;
-              }
+                    public override fun refCnt(): Int {
+                        return@BuildEventArtifactUploaderFactory 0
+                    }
 
-              @Override
-              public int refCnt() {
-                return 0;
-              }
+                    public override fun retain(): io.netty.util.ReferenceCounted {
+                        return@BuildEventArtifactUploaderFactory this
+                    }
 
-              @Override
-              public ReferenceCounted retain() {
-                return this;
-              }
+                    public override fun retain(i: Int): io.netty.util.ReferenceCounted {
+                        return@BuildEventArtifactUploaderFactory this
+                    }
 
-              @Override
-              public ReferenceCounted retain(int i) {
-                return this;
-              }
+                    public override fun touch(): io.netty.util.ReferenceCounted {
+                        return@BuildEventArtifactUploaderFactory this
+                    }
 
-              @Override
-              public ReferenceCounted touch() {
-                return this;
-              }
+                    public override fun touch(o: Any?): io.netty.util.ReferenceCounted {
+                        return@BuildEventArtifactUploaderFactory this
+                    }
 
-              @Override
-              public ReferenceCounted touch(Object o) {
-                return this;
-              }
+                    public override fun release(): Boolean {
+                        return@BuildEventArtifactUploaderFactory false
+                    }
 
-              @Override
-              public boolean release() {
-                return false;
-              }
+                    public override fun release(i: Int): Boolean {
+                        return@BuildEventArtifactUploaderFactory false
+                    }
+                }
+            }
+        uploaderFactories =
+            Builder()
+                .add("a", BuildEventArtifactUploaderFactory.LOCAL_FILES_UPLOADER_FACTORY)
+                .add("b", noConversionUploaderFactory)
+                .build()
+    }
 
-              @Override
-              public boolean release(int i) {
-                return false;
-              }
-            };
-    uploaderFactories =
-        new BuildEventArtifactUploaderFactoryMap.Builder()
-            .add("a", BuildEventArtifactUploaderFactory.LOCAL_FILES_UPLOADER_FACTORY)
-            .add("b", noConversionUploaderFactory)
-            .build();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEmptyUploaders() {
+        val emptyUploader: BuildEventArtifactUploaderFactoryMap =
+            Builder().build()
+        assertThat(emptyUploader.select(null).create(null).getClass())
+            .isEqualTo(LocalFilesArtifactUploader::class.java)
+    }
 
-  @Test
-  public void testEmptyUploaders() throws Exception {
-    BuildEventArtifactUploaderFactoryMap emptyUploader =
-        new BuildEventArtifactUploaderFactoryMap.Builder().build();
-    assertThat(emptyUploader.select(null).create(null).getClass())
-        .isEqualTo(LocalFilesArtifactUploader.class);
-  }
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun testAlphabeticalOrder() {
+        assertThat(uploaderFactories.select(null).create(null).getClass())
+            .isEqualTo(LocalFilesArtifactUploader::class.java)
+    }
 
-  @Test
-  public void testAlphabeticalOrder() throws IOException {
-    assertThat(uploaderFactories.select(null).create(null).getClass())
-        .isEqualTo(LocalFilesArtifactUploader.class);
-  }
-
-  @Test
-  public void testSelectByName() throws Exception {
-    assertThat(uploaderFactories.select("b"))
-        .isEqualTo(noConversionUploaderFactory);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSelectByName() {
+        assertThat(uploaderFactories.select("b"))
+            .isEqualTo(noConversionUploaderFactory)
+    }
 }

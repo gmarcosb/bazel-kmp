@@ -11,40 +11,42 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester
 
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import java.util.concurrent.atomic.AtomicReferenceArray;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link AtomicReferenceArrayCodec}. */
-@RunWith(JUnit4.class)
-public final class AtomicReferenceArrayCodecTest {
-
-  @Test
-  public void arrays() throws Exception {
-    var instance1 = new AtomicReferenceArray<Integer>(3);
-    instance1.setPlain(0, 0);
-    instance1.setPlain(1, 1);
-    instance1.setPlain(2, null);
-    var instance2 = new AtomicReferenceArray<String>(3);
-    instance2.setPlain(0, "foo");
-    instance2.setPlain(1, null);
-    instance2.setPlain(2, "bar");
-    new SerializationTester(new AtomicReferenceArray<Object>(0), instance1, instance2)
-        .setVerificationFunction(AtomicReferenceArrayCodecTest::verifyDeserialized)
-        .runTests();
-  }
-
-  private static void verifyDeserialized(
-      AtomicReferenceArray<?> original, AtomicReferenceArray<?> deserialized) {
-    assertThat(deserialized.length()).isEqualTo(original.length());
-    for (int i = 0; i < deserialized.length(); i++) {
-      assertThat(deserialized.getPlain(i)).isEqualTo(original.getPlain(i));
+/** Tests for [AtomicReferenceArrayCodec].  */
+@RunWith(JUnit4::class)
+class AtomicReferenceArrayCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun arrays() {
+        val instance1: AtomicReferenceArray<Int?> = AtomicReferenceArray<Int?>(3)
+        instance1.setPlain(0, 0)
+        instance1.setPlain(1, 1)
+        instance1.setPlain(2, null)
+        val instance2: AtomicReferenceArray<String?> = AtomicReferenceArray<String?>(3)
+        instance2.setPlain(0, "foo")
+        instance2.setPlain(1, null)
+        instance2.setPlain(2, "bar")
+        SerializationTester(AtomicReferenceArray<Any?>(0), instance1, instance2)
+            .setVerificationFunction({ original: AtomicReferenceArray<*>, deserialized: AtomicReferenceArray<*> ->
+                verifyDeserialized(
+                    original,
+                    deserialized
+                )
+            })
+            .runTests()
     }
-  }
+
+    companion object {
+        private fun verifyDeserialized(
+            original: AtomicReferenceArray<*>, deserialized: AtomicReferenceArray<*>
+        ) {
+            Truth.assertThat(deserialized.length()).isEqualTo(original.length())
+            for (i in 0..<deserialized.length()) {
+                Truth.assertThat(deserialized.getPlain(i)).isEqualTo(original.getPlain(i))
+            }
+        }
+    }
 }

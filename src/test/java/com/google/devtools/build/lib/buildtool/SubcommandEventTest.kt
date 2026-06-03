@@ -11,77 +11,68 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.buildtool;
+package com.google.devtools.build.lib.buildtool
 
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.buildtool.util.BuildIntegrationTestCase;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.EventCollector;
-import com.google.devtools.build.lib.events.EventKind;
-import com.google.devtools.build.lib.shell.Command;
-import com.google.devtools.build.lib.vfs.Path;
-import java.io.ByteArrayOutputStream;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.shell.Command
 
 /**
  * Test that SUBCOMMAND events report command lines in a form than can be "replayed" by copy+paste
  * to the shell.
  */
-@RunWith(JUnit4.class)
-public class SubcommandEventTest extends BuildIntegrationTestCase {
+@RunWith(JUnit4::class)
+class SubcommandEventTest : BuildIntegrationTestCase() {
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun stageEmbeddedTools() {
+        addOptions("--spawn_strategy=standalone")
+    }
 
-  @Before
-  public void stageEmbeddedTools() throws Exception {
-    addOptions("--spawn_strategy=standalone");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSubcommandEvent() {
+        val eventCollector: EventCollector = EventCollector(com.google.devtools.build.lib.events.EventKind.SUBCOMMAND)
+        events.addHandler(eventCollector)
+        runtimeWrapper.addOptions("--subcommands")
 
-  @Test
-  public void testSubcommandEvent() throws Exception {
-    EventCollector eventCollector = new EventCollector(EventKind.SUBCOMMAND);
-    events.addHandler(eventCollector);
-    runtimeWrapper.addOptions("--subcommands");
-
-    write(
-        "hello/BUILD",
-        """
+        write(
+            "hello/BUILD",
+            """
         genrule(
             name = "hello",
             outs = ["hello.out"],
-            cmd = 'echo "Hello, World!" > $(location hello.out)',
+            cmd = 'echo "Hello, World!" > ${'$'}(location hello.out)',
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    // (1) Ensure that building the target creates the output:
-    buildTarget("//hello");
-    Path helloOut = Iterables.getOnlyElement(getArtifacts("//hello:hello.out")).getPath();
-    assertThat(helloOut.isFile()).isTrue();
-    assertThat(helloOut.getFileSize()).isEqualTo(14);
+        // (1) Ensure that building the target creates the output:
+        buildTarget("//hello")
+        val helloOut: Path =
+            com.google.common.collect.Iterables.getOnlyElement<Artifact?>(getArtifacts("//hello:hello.out")).getPath()
+        assertThat(helloOut.isFile()).isTrue()
+        assertThat(helloOut.getFileSize()).isEqualTo(14)
 
-    // (2) Delete the output:
-    helloOut.delete();
-    assertThat(helloOut.exists()).isFalse();
+        // (2) Delete the output:
+        helloOut.delete()
+        assertThat(helloOut.exists()).isFalse()
 
-    // (3) Test that the message in the SUBCOMMAND event replays the action:
-    String command = null;
-    for (Event event : eventCollector) {
-      command = event.getMessage();
-      if (command.contains("World")) {
-        break;
-      }
-    }
-    assertThat(
-            new Command(ImmutableList.of("/bin/sh", "-c", command), System.getenv())
-                .execute(new ByteArrayOutputStream(), new ByteArrayOutputStream())
+        // (3) Test that the message in the SUBCOMMAND event replays the action:
+        var command: String? = null
+        for (event in eventCollector) {
+            command = event.getMessage()
+            if (command.contains("World")) {
+                break
+            }
+        }
+        assertThat(
+            Command(com.google.common.collect.ImmutableList.of<E?>("/bin/sh", "-c", command), java.lang.System.getenv())
+                .execute(java.io.ByteArrayOutputStream(), java.io.ByteArrayOutputStream())
                 .terminationStatus()
-                .success())
-        .isTrue();
-    assertThat(helloOut.isFile()).isTrue();
-    assertThat(helloOut.getFileSize()).isEqualTo(14);
-  }
+                .success()
+        )
+            .isTrue()
+        assertThat(helloOut.isFile()).isTrue()
+        assertThat(helloOut.getFileSize()).isEqualTo(14)
+    }
 }

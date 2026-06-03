@@ -11,46 +11,23 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.cquery;
+package com.google.devtools.build.lib.query2.cquery
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.common.truth.Truth.assertThat;
-import static java.nio.charset.StandardCharsets.UTF_8;
+import com.google.devtools.build.lib.analysis.OutputGroupInfo
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.OutputGroupInfo;
-import com.google.devtools.build.lib.analysis.OutputGroupInfo.ValidationMode;
-import com.google.devtools.build.lib.analysis.TopLevelArtifactContext;
-import com.google.devtools.build.lib.events.EventBusEventHandler;
-import com.google.devtools.build.lib.events.Reporter;
-import com.google.devtools.build.lib.query2.PostAnalysisQueryEnvironment;
-import com.google.devtools.build.lib.query2.common.CqueryNode;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment;
-import com.google.devtools.build.lib.query2.engine.QueryExpression;
-import com.google.devtools.build.lib.query2.engine.QueryParser;
-import com.google.devtools.common.options.Options;
-import java.io.ByteArrayOutputStream;
-import java.io.PrintStream;
-import java.util.Arrays;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
-import org.junit.Before;
-import org.junit.Test;
+/** Tests cquery's [=files][--output] format.  */
+class FilesOutputFormatterCallbackTest : ConfiguredTargetQueryTest() {
+    private val options: CqueryOptions? =
+        com.google.devtools.common.options.Options.getDefaults<O?>(CqueryOptions::class.java)
+    private val reporter: com.google.devtools.build.lib.events.Reporter =
+        com.google.devtools.build.lib.events.Reporter(EventBusEventHandler.createWithNewEventBus())
 
-/** Tests cquery's {@link --output=files} format. */
-public final class FilesOutputFormatterCallbackTest extends ConfiguredTargetQueryTest {
-
-  private final CqueryOptions options = Options.getDefaults(CqueryOptions.class);
-  private final Reporter reporter = new Reporter(EventBusEventHandler.createWithNewEventBus());
-
-  @Before
-  public void defineSimpleRule() throws Exception {
-    writeFile(
-        "defs/rules.bzl",
-        """
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun defineSimpleRule() {
+        writeFile(
+            "defs/rules.bzl",
+            """
         AspectInfo = provider()
         def _r_impl(ctx):
             default_file = ctx.actions.declare_file(ctx.attr.name + '_default_file')
@@ -60,7 +37,8 @@ public final class FilesOutputFormatterCallbackTest extends ConfiguredTargetQuer
             files = [default_file, output_group_only, runfile, executable_only]
             ctx.actions.run_shell(
                 outputs = files,
-                command = '\\n'.join(['touch %s' % file.path for file in files]),
+                command = '\
+                '.join(['touch %s' % file.path for file in files]),
             )
             return [
                 DefaultInfo(
@@ -120,11 +98,13 @@ public final class FilesOutputFormatterCallbackTest extends ConfiguredTargetQuer
                 AspectInfo(),
             ]
         b = aspect(implementation = _b_impl)
-        """);
-    writeFile("defs/BUILD", "exports_files(['rules.bzl'])");
-    writeFile(
-        "pkg/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        writeFile("defs/BUILD", "exports_files(['rules.bzl'])")
+        writeFile(
+            "pkg/BUILD",
+            """
         load("//defs:rules.bzl", "r")
 
         r(
@@ -137,166 +117,210 @@ public final class FilesOutputFormatterCallbackTest extends ConfiguredTargetQuer
             explicit_source_dep = "BUILD",
             deps = [":main"],
         )
-        """);
-  }
-
-  private ImmutableList<String> getOutput(
-      String queryExpression, List<String> outputGroups, String... aspects) throws Exception {
-    QueryExpression expression = QueryParser.parse(queryExpression, getDefaultFunctions());
-    Set<String> targetPatternSet = new LinkedHashSet<>();
-    expression.collectTargetPatterns(targetPatternSet);
-    PostAnalysisQueryEnvironment<CqueryNode> env =
-        ((ConfiguredTargetQueryHelper) helper)
-            .getPostAnalysisQueryEnvironment(targetPatternSet, Arrays.asList(aspects));
-
-    ByteArrayOutputStream output = new ByteArrayOutputStream();
-    FilesOutputFormatterCallback callback =
-        new FilesOutputFormatterCallback(
-            reporter,
-            options,
-            new PrintStream(output),
-            getHelper().getSkyframeExecutor(),
-            env.getAccessor(),
-            // Based on BuildRequest#getTopLevelArtifactContext.
-            new TopLevelArtifactContext(
-                false,
-                false,
-                OutputGroupInfo.determineOutputGroups(outputGroups, ValidationMode.OFF, false)));
-    env.evaluateQuery(expression, callback);
-    return Pattern.compile("\n")
-        .splitAsStream(output.toString(UTF_8))
-        .filter(line -> !line.isEmpty())
-        .collect(toImmutableList());
-  }
-
-  @Test
-  public void basicQuery_defaultOutputGroup() throws Exception {
-    List<String> output = getOutput("//pkg:all", ImmutableList.of());
-    var sourceAndGeneratedFiles =
-        output.stream()
-            .collect(Collectors.<String>partitioningBy(path -> path.matches("^[^/]*-out/.*")));
-    assertThat(sourceAndGeneratedFiles.get(false)).containsExactly("pkg/BUILD", "defs/rules.bzl");
-    assertContainsExactlyWithBinDirPrefix(
-        sourceAndGeneratedFiles.get(true), "pkg/main_default_file", "pkg/other_default_file");
-  }
-
-  @Test
-  public void basicQuery_defaultAndCustomOutputGroup() throws Exception {
-    List<String> output = getOutput("//pkg:main", ImmutableList.of("+foobar"));
-    var sourceAndGeneratedFiles =
-        output.stream()
-            .collect(Collectors.<String>partitioningBy(path -> path.matches("^[^/]*-out/.*")));
-    assertThat(sourceAndGeneratedFiles.get(false)).containsExactly("pkg/BUILD", "defs/rules.bzl");
-    assertContainsExactlyWithBinDirPrefix(
-        sourceAndGeneratedFiles.get(true), "pkg/main_default_file", "pkg/main_output_group_only");
-  }
-
-  @Test
-  public void basicQuery_customOutputGroupOnly() throws Exception {
-    List<String> output = getOutput("//pkg:other", ImmutableList.of("foobar"));
-    var sourceAndGeneratedFiles =
-        output.stream()
-            .collect(Collectors.<String>partitioningBy(path -> path.matches("^[^/]*-out/.*")));
-    assertThat(sourceAndGeneratedFiles.get(false)).containsExactly("pkg/BUILD");
-    assertContainsExactlyWithBinDirPrefix(
-        sourceAndGeneratedFiles.get(true), "pkg/other_output_group_only");
-  }
-
-  @Test
-  public void withAspect_customOutputGroupOnly() throws Exception {
-    helper.setQuerySettings(QueryEnvironment.Setting.INCLUDE_ASPECTS);
-    List<String> output =
-        getOutput("//pkg:other", ImmutableList.of("aspect_files"), "//defs:rules.bzl%a");
-    var sourceAndGeneratedFiles =
-        output.stream()
-            .collect(Collectors.<String>partitioningBy(path -> path.matches("^[^/]*-out/.*")));
-    assertThat(sourceAndGeneratedFiles.get(false)).isEmpty();
-    assertContainsExactlyWithBinDirPrefix(
-        sourceAndGeneratedFiles.get(true), "pkg/other_custom_aspect_a_file");
-  }
-
-  @Test
-  public void withAspect_sharedOutputGroupOnly() throws Exception {
-    helper.setQuerySettings(QueryEnvironment.Setting.INCLUDE_ASPECTS);
-    List<String> output =
-        getOutput("//pkg:other", ImmutableList.of("foobar"), "//defs:rules.bzl%a");
-    var sourceAndGeneratedFiles =
-        output.stream()
-            .collect(Collectors.<String>partitioningBy(path -> path.matches("^[^/]*-out/.*")));
-    assertThat(sourceAndGeneratedFiles.get(false)).containsExactly("pkg/BUILD");
-    assertContainsExactlyWithBinDirPrefix(
-        sourceAndGeneratedFiles.get(true),
-        "pkg/other_output_group_only",
-        "pkg/other_shared_aspect_a_file");
-  }
-
-  @Test
-  public void withAspects_customOutputGroupOnly() throws Exception {
-    helper.setQuerySettings(QueryEnvironment.Setting.INCLUDE_ASPECTS);
-    List<String> output =
-        getOutput(
-            "//pkg:other",
-            ImmutableList.of("aspect_files"),
-            "//defs:rules.bzl%a",
-            "//defs:rules.bzl%b");
-    var sourceAndGeneratedFiles =
-        output.stream()
-            .collect(Collectors.<String>partitioningBy(path -> path.matches("^[^/]*-out/.*")));
-    assertThat(sourceAndGeneratedFiles.get(false)).isEmpty();
-    assertContainsExactlyWithBinDirPrefix(
-        sourceAndGeneratedFiles.get(true),
-        "pkg/other_custom_aspect_b_file",
-        "pkg/other_custom_aspect_a_file");
-  }
-
-  @Test
-  public void withAspects_sharedOutputGroupOnly() throws Exception {
-    helper.setQuerySettings(QueryEnvironment.Setting.INCLUDE_ASPECTS);
-    List<String> output =
-        getOutput(
-            "//pkg:other", ImmutableList.of("foobar"), "//defs:rules.bzl%a", "//defs:rules.bzl%b");
-    var sourceAndGeneratedFiles =
-        output.stream()
-            .collect(Collectors.<String>partitioningBy(path -> path.matches("^[^/]*-out/.*")));
-    assertThat(sourceAndGeneratedFiles.get(false)).containsExactly("pkg/BUILD");
-    assertContainsExactlyWithBinDirPrefix(
-        sourceAndGeneratedFiles.get(true),
-        "pkg/other_output_group_only",
-        "pkg/other_shared_aspect_b_file",
-        "pkg/other_shared_aspect_a_file");
-  }
-
-  @Test
-  public void withAspects_noIncludeAspects() throws Exception {
-    // Explicitly omit INCLUDE_ASPECTS.
-    helper.setQuerySettings();
-    List<String> output =
-        getOutput(
-            "//pkg:other", ImmutableList.of("foobar"), "//defs:rules.bzl%a", "//defs:rules.bzl%b");
-    var sourceAndGeneratedFiles =
-        output.stream()
-            .collect(Collectors.<String>partitioningBy(path -> path.matches("^[^/]*-out/.*")));
-    assertThat(sourceAndGeneratedFiles.get(false)).containsExactly("pkg/BUILD");
-    assertContainsExactlyWithBinDirPrefix(
-        sourceAndGeneratedFiles.get(true), "pkg/other_output_group_only");
-  }
-
-  private static void assertContainsExactlyWithBinDirPrefix(
-      List<String> output, String... binDirRelativePaths) {
-    if (binDirRelativePaths.length == 0) {
-      assertThat(output).isEmpty();
-      return;
+        
+        """.trimIndent()
+        )
     }
 
-    // Extract the configuration-dependent bin dir from the first output.
-    assertThat(output).isNotEmpty();
-    String firstPath = output.get(0);
-    String binDir = firstPath.substring(0, firstPath.indexOf("bin/") + "bin/".length());
+    @Throws(java.lang.Exception::class)
+    private fun getOutput(
+        queryExpression: String?, outputGroups: MutableList<String?>?, vararg aspects: String?
+    ): com.google.common.collect.ImmutableList<String?> {
+        val expression: QueryExpression =
+            com.google.devtools.build.lib.query2.engine.QueryParser.parse(queryExpression, getDefaultFunctions())
+        val targetPatternSet: MutableSet<String?> = LinkedHashSet<String?>()
+        expression.collectTargetPatterns(targetPatternSet)
+        val env: PostAnalysisQueryEnvironment<CqueryNode?> =
+            (helper as ConfiguredTargetQueryHelper)
+                .getPostAnalysisQueryEnvironment(targetPatternSet, java.util.Arrays.asList<String?>(*aspects))
 
-    assertThat(output)
-        .containsExactly(
-            Arrays.stream(binDirRelativePaths)
-                .map(binDirRelativePath -> binDir + binDirRelativePath)
-                .toArray());
-  }
+        val output: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        val callback: FilesOutputFormatterCallback =
+            FilesOutputFormatterCallback(
+                reporter,
+                options,
+                PrintStream(output),
+                getHelper().getSkyframeExecutor(),
+                env.getAccessor(),  // Based on BuildRequest#getTopLevelArtifactContext.
+                TopLevelArtifactContext(
+                    false,
+                    false,
+                    OutputGroupInfo.determineOutputGroups(outputGroups, ValidationMode.OFF, false)
+                )
+            )
+        env.evaluateQuery(expression, callback)
+        return java.util.regex.Pattern.compile("\n")
+            .splitAsStream(output.toString(java.nio.charset.StandardCharsets.UTF_8))
+            .filter { line: String? -> !line.isEmpty() }
+            .collect(com.google.common.collect.ImmutableList.toImmutableList<String?>())
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun basicQuery_defaultOutputGroup() {
+        val output: MutableList<String?> = getOutput("//pkg:all", com.google.common.collect.ImmutableList.of<String?>())
+        val sourceAndGeneratedFiles: MutableMap<Boolean?, MutableList<String?>?> =
+            output.stream()
+                .collect(Collectors.partitioningBy(java.util.function.Predicate { path: String? -> path.matches("^[^/]*-out/.*".toRegex()) }))
+        Truth.assertThat(sourceAndGeneratedFiles.get(false)).containsExactly("pkg/BUILD", "defs/rules.bzl")
+        Companion.assertContainsExactlyWithBinDirPrefix(
+            sourceAndGeneratedFiles.get(true), "pkg/main_default_file", "pkg/other_default_file"
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun basicQuery_defaultAndCustomOutputGroup() {
+        val output: MutableList<String?> =
+            getOutput("//pkg:main", com.google.common.collect.ImmutableList.of<String?>("+foobar"))
+        val sourceAndGeneratedFiles: MutableMap<Boolean?, MutableList<String?>?> =
+            output.stream()
+                .collect(Collectors.partitioningBy(java.util.function.Predicate { path: String? -> path.matches("^[^/]*-out/.*".toRegex()) }))
+        Truth.assertThat(sourceAndGeneratedFiles.get(false)).containsExactly("pkg/BUILD", "defs/rules.bzl")
+        Companion.assertContainsExactlyWithBinDirPrefix(
+            sourceAndGeneratedFiles.get(true), "pkg/main_default_file", "pkg/main_output_group_only"
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun basicQuery_customOutputGroupOnly() {
+        val output: MutableList<String?> =
+            getOutput("//pkg:other", com.google.common.collect.ImmutableList.of<String?>("foobar"))
+        val sourceAndGeneratedFiles: MutableMap<Boolean?, MutableList<String?>?> =
+            output.stream()
+                .collect(Collectors.partitioningBy(java.util.function.Predicate { path: String? -> path.matches("^[^/]*-out/.*".toRegex()) }))
+        Truth.assertThat(sourceAndGeneratedFiles.get(false)).containsExactly("pkg/BUILD")
+        Companion.assertContainsExactlyWithBinDirPrefix(
+            sourceAndGeneratedFiles.get(true), "pkg/other_output_group_only"
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun withAspect_customOutputGroupOnly() {
+        helper.setQuerySettings(QueryEnvironment.Setting.INCLUDE_ASPECTS)
+        val output: MutableList<String?> =
+            getOutput(
+                "//pkg:other",
+                com.google.common.collect.ImmutableList.of<String?>("aspect_files"),
+                "//defs:rules.bzl%a"
+            )
+        val sourceAndGeneratedFiles: MutableMap<Boolean?, MutableList<String?>?> =
+            output.stream()
+                .collect(Collectors.partitioningBy(java.util.function.Predicate { path: String? -> path.matches("^[^/]*-out/.*".toRegex()) }))
+        Truth.assertThat(sourceAndGeneratedFiles.get(false)).isEmpty()
+        Companion.assertContainsExactlyWithBinDirPrefix(
+            sourceAndGeneratedFiles.get(true), "pkg/other_custom_aspect_a_file"
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun withAspect_sharedOutputGroupOnly() {
+        helper.setQuerySettings(QueryEnvironment.Setting.INCLUDE_ASPECTS)
+        val output: MutableList<String?> =
+            getOutput(
+                "//pkg:other",
+                com.google.common.collect.ImmutableList.of<String?>("foobar"),
+                "//defs:rules.bzl%a"
+            )
+        val sourceAndGeneratedFiles: MutableMap<Boolean?, MutableList<String?>?> =
+            output.stream()
+                .collect(Collectors.partitioningBy(java.util.function.Predicate { path: String? -> path.matches("^[^/]*-out/.*".toRegex()) }))
+        Truth.assertThat(sourceAndGeneratedFiles.get(false)).containsExactly("pkg/BUILD")
+        Companion.assertContainsExactlyWithBinDirPrefix(
+            sourceAndGeneratedFiles.get(true),
+            "pkg/other_output_group_only",
+            "pkg/other_shared_aspect_a_file"
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun withAspects_customOutputGroupOnly() {
+        helper.setQuerySettings(QueryEnvironment.Setting.INCLUDE_ASPECTS)
+        val output: MutableList<String?> =
+            getOutput(
+                "//pkg:other",
+                com.google.common.collect.ImmutableList.of<String?>("aspect_files"),
+                "//defs:rules.bzl%a",
+                "//defs:rules.bzl%b"
+            )
+        val sourceAndGeneratedFiles: MutableMap<Boolean?, MutableList<String?>?> =
+            output.stream()
+                .collect(Collectors.partitioningBy(java.util.function.Predicate { path: String? -> path.matches("^[^/]*-out/.*".toRegex()) }))
+        Truth.assertThat(sourceAndGeneratedFiles.get(false)).isEmpty()
+        Companion.assertContainsExactlyWithBinDirPrefix(
+            sourceAndGeneratedFiles.get(true),
+            "pkg/other_custom_aspect_b_file",
+            "pkg/other_custom_aspect_a_file"
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun withAspects_sharedOutputGroupOnly() {
+        helper.setQuerySettings(QueryEnvironment.Setting.INCLUDE_ASPECTS)
+        val output: MutableList<String?> =
+            getOutput(
+                "//pkg:other",
+                com.google.common.collect.ImmutableList.of<String?>("foobar"),
+                "//defs:rules.bzl%a",
+                "//defs:rules.bzl%b"
+            )
+        val sourceAndGeneratedFiles: MutableMap<Boolean?, MutableList<String?>?> =
+            output.stream()
+                .collect(Collectors.partitioningBy(java.util.function.Predicate { path: String? -> path.matches("^[^/]*-out/.*".toRegex()) }))
+        Truth.assertThat(sourceAndGeneratedFiles.get(false)).containsExactly("pkg/BUILD")
+        Companion.assertContainsExactlyWithBinDirPrefix(
+            sourceAndGeneratedFiles.get(true),
+            "pkg/other_output_group_only",
+            "pkg/other_shared_aspect_b_file",
+            "pkg/other_shared_aspect_a_file"
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun withAspects_noIncludeAspects() {
+        // Explicitly omit INCLUDE_ASPECTS.
+        helper.setQuerySettings()
+        val output: MutableList<String?> =
+            getOutput(
+                "//pkg:other",
+                com.google.common.collect.ImmutableList.of<String?>("foobar"),
+                "//defs:rules.bzl%a",
+                "//defs:rules.bzl%b"
+            )
+        val sourceAndGeneratedFiles: MutableMap<Boolean?, MutableList<String?>?> =
+            output.stream()
+                .collect(Collectors.partitioningBy(java.util.function.Predicate { path: String? -> path.matches("^[^/]*-out/.*".toRegex()) }))
+        Truth.assertThat(sourceAndGeneratedFiles.get(false)).containsExactly("pkg/BUILD")
+        Companion.assertContainsExactlyWithBinDirPrefix(
+            sourceAndGeneratedFiles.get(true), "pkg/other_output_group_only"
+        )
+    }
+
+    companion object {
+        private fun assertContainsExactlyWithBinDirPrefix(
+            output: MutableList<String>?, vararg binDirRelativePaths: String?
+        ) {
+            if (binDirRelativePaths.size == 0) {
+                Truth.assertThat(output).isEmpty()
+                return
+            }
+
+            // Extract the configuration-dependent bin dir from the first output.
+            Truth.assertThat(output).isNotEmpty()
+            val firstPath = output!!.get(0)
+            val binDir: String = firstPath.substring(0, firstPath.indexOf("bin/") + "bin/".length)
+
+            Truth.assertThat(output)
+                .containsExactly(
+                    *java.util.Arrays.stream<String?>(binDirRelativePaths)
+                        .map<String?> { binDirRelativePath: String? -> binDir + binDirRelativePath }
+                        .toArray())
+        }
+    }
 }

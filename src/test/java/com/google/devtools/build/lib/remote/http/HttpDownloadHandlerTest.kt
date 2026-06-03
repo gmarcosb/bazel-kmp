@@ -11,207 +11,197 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.http;
+package com.google.devtools.build.lib.remote.http
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
+import build.bazel.remote.execution.v2.Digest
+import com.google.common.collect.ImmutableList
+import com.google.common.net.HttpHeaders
+import io.netty.buffer.ByteBufUtil
+import io.netty.buffer.Unpooled
+import io.netty.channel.embedded.EmbeddedChannel
+import io.netty.handler.codec.http.*
+import org.junit.Test
+import java.io.ByteArrayOutputStream
+import java.net.URI
 
-import build.bazel.remote.execution.v2.Digest;
-import com.google.common.collect.ImmutableList;
-import com.google.common.net.HttpHeaders;
-import com.google.devtools.build.lib.remote.util.DigestUtil;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufUtil;
-import io.netty.buffer.Unpooled;
-import io.netty.channel.ChannelPromise;
-import io.netty.channel.embedded.EmbeddedChannel;
-import io.netty.handler.codec.http.DefaultHttpContent;
-import io.netty.handler.codec.http.DefaultHttpResponse;
-import io.netty.handler.codec.http.DefaultLastHttpContent;
-import io.netty.handler.codec.http.HttpHeaderNames;
-import io.netty.handler.codec.http.HttpHeaderValues;
-import io.netty.handler.codec.http.HttpMethod;
-import io.netty.handler.codec.http.HttpRequest;
-import io.netty.handler.codec.http.HttpResponse;
-import io.netty.handler.codec.http.HttpResponseStatus;
-import io.netty.handler.codec.http.HttpVersion;
-import io.netty.handler.codec.http.LastHttpContent;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.net.URI;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-import org.mockito.Mockito;
-
-/** Tests for {@link HttpDownloadHandler}. */
-@RunWith(JUnit4.class)
-@SuppressWarnings("FutureReturnValueIgnored")
-public class HttpDownloadHandlerTest extends AbstractHttpHandlerTest {
-  private static final URI CACHE_URI = URI.create("http://storage.googleapis.com:80/cache-bucket");
-  private static final DigestUtil DIGEST_UTIL =
-      new DigestUtil(SyscallCache.NO_CACHE, DigestHashFunction.SHA256);
-  private static final Digest DIGEST = DIGEST_UTIL.computeAsUtf8("foo");
-
-  /**
-   * Test that downloading blobs works from both the Action Cache and the CAS. Also test that the
-   * handler is reusable.
-   */
-  @Test
-  public void downloadShouldWork() throws IOException {
-    EmbeddedChannel ch = new EmbeddedChannel(new HttpDownloadHandler(null, ImmutableList.of()));
-    downloadShouldWork(true, ch);
-    downloadShouldWork(false, ch);
-  }
-
-  private void downloadShouldWork(boolean casDownload, EmbeddedChannel ch) throws IOException {
-    ByteArrayOutputStream out = Mockito.spy(new ByteArrayOutputStream());
-    DownloadCommand cmd = new DownloadCommand(CACHE_URI, casDownload, DIGEST, out);
-    ChannelPromise writePromise = ch.newPromise();
-    ch.writeOneOutbound(cmd, writePromise);
-
-    HttpRequest request = ch.readOutbound();
-    assertThat(request.method()).isEqualTo(HttpMethod.GET);
-    assertThat(request.headers().get(HttpHeaderNames.HOST)).isEqualTo(CACHE_URI.getHost());
-    if (casDownload) {
-      assertThat(request.uri()).isEqualTo("/cache-bucket/cas/" + DIGEST.getHash());
-    } else {
-      assertThat(request.uri()).isEqualTo("/cache-bucket/ac/" + DIGEST.getHash());
+/** Tests for [HttpDownloadHandler].  */
+@RunWith(JUnit4::class)
+class HttpDownloadHandlerTest : AbstractHttpHandlerTest() {
+    /**
+     * Test that downloading blobs works from both the Action Cache and the CAS. Also test that the
+     * handler is reusable.
+     */
+    @Test
+    @Throws(IOException::class)
+    fun downloadShouldWork() {
+        val ch =
+            EmbeddedChannel(HttpDownloadHandler(null, ImmutableList.of<MutableMap.MutableEntry<String?, String?>?>()))
+        downloadShouldWork(true, ch)
+        downloadShouldWork(false, ch)
     }
 
-    assertThat(writePromise.isDone()).isFalse();
+    @Throws(IOException::class)
+    private fun downloadShouldWork(casDownload: Boolean, ch: EmbeddedChannel) {
+        val out: ByteArrayOutputStream = Mockito.spy<ByteArrayOutputStream>(ByteArrayOutputStream())
+        val cmd = DownloadCommand(CACHE_URI, casDownload, DIGEST, out)
+        val writePromise = ch.newPromise()
+        ch.writeOneOutbound(cmd, writePromise)
 
-    HttpResponse response = new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
-    response.headers().set(HttpHeaders.CONTENT_LENGTH, 5);
-    response.headers().set(HttpHeaders.CONNECTION, HttpHeaderValues.KEEP_ALIVE);
-    ch.writeInbound(response);
-    ByteBuf content = Unpooled.buffer();
-    content.writeBytes(new byte[] {1, 2, 3, 4, 5});
-    ch.writeInbound(new DefaultLastHttpContent(content));
+        val request = ch.readOutbound<HttpRequest>()
+        Truth.assertThat<HttpMethod?>(request.method()).isEqualTo(HttpMethod.GET)
+        Truth.assertThat(request.headers().get(HttpHeaderNames.HOST)).isEqualTo(CACHE_URI.getHost())
+        if (casDownload) {
+            Truth.assertThat(request.uri()).isEqualTo("/cache-bucket/cas/" + DIGEST.getHash())
+        } else {
+            Truth.assertThat(request.uri()).isEqualTo("/cache-bucket/ac/" + DIGEST.getHash())
+        }
 
-    assertThat(writePromise.isDone()).isTrue();
-    assertThat(out.toByteArray()).isEqualTo(new byte[] {1, 2, 3, 4, 5});
-    verify(out, never()).close();
-    assertThat(ch.isActive()).isTrue();
-  }
+        Truth.assertThat(writePromise.isDone()).isFalse()
 
-  /** Test that the handler correctly supports http error codes i.e. 404 (NOT FOUND). */
-  @Test
-  public void httpErrorsAreSupported() throws IOException {
-    EmbeddedChannel ch = new EmbeddedChannel(new HttpDownloadHandler(null, ImmutableList.of()));
-    ByteArrayOutputStream out = Mockito.spy(new ByteArrayOutputStream());
-    DownloadCommand cmd = new DownloadCommand(CACHE_URI, true, DIGEST, out);
-    ChannelPromise writePromise = ch.newPromise();
-    ch.writeOneOutbound(cmd, writePromise);
+        val response: HttpResponse = DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK)
+        response.headers().set(HttpHeaders.CONTENT_LENGTH, 5)
+        response.headers().set(HttpHeaders.CONNECTION, HttpHeaderValues.KEEP_ALIVE)
+        ch.writeInbound(response)
+        val content = Unpooled.buffer()
+        content.writeBytes(byteArrayOf(1, 2, 3, 4, 5))
+        ch.writeInbound(DefaultLastHttpContent(content))
 
-    HttpResponse response =
-        new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.NOT_FOUND);
-    response.headers().set(HttpHeaders.HOST, "localhost");
-    response.headers().set(HttpHeaders.CONTENT_LENGTH, 0);
-    response.headers().set(HttpHeaders.CONNECTION, HttpHeaderValues.KEEP_ALIVE);
-    ch.writeInbound(response);
-    ch.writeInbound(LastHttpContent.EMPTY_LAST_CONTENT);
-    assertThat(writePromise.isDone()).isTrue();
-    assertThat(writePromise.cause()).isInstanceOf(HttpException.class);
-    assertThat(((HttpException) writePromise.cause()).response().status())
-        .isEqualTo(HttpResponseStatus.NOT_FOUND);
-    // No data should have been written to the OutputStream and it should have been closed.
-    assertThat(out.size()).isEqualTo(0);
-    // The caller is responsible for closing the stream.
-    verify(out, never()).close();
-    assertThat(ch.isOpen()).isTrue();
-  }
+        Truth.assertThat(writePromise.isDone()).isTrue()
+        Truth.assertThat(out.toByteArray()).isEqualTo(byteArrayOf(1, 2, 3, 4, 5))
+        Mockito.verify<ByteArrayOutputStream?>(out, Mockito.never()).close()
+        Truth.assertThat(ch.isActive()).isTrue()
+    }
 
-  /**
-   * Test that the handler correctly supports http error codes i.e. 404 (NOT FOUND) with a
-   * Content-Length header.
-   */
-  @Test
-  public void httpErrorsWithContentAreSupported() throws IOException {
-    EmbeddedChannel ch = new EmbeddedChannel(new HttpDownloadHandler(null, ImmutableList.of()));
-    ByteArrayOutputStream out = Mockito.spy(new ByteArrayOutputStream());
-    DownloadCommand cmd = new DownloadCommand(CACHE_URI, true, DIGEST, out);
-    ChannelPromise writePromise = ch.newPromise();
-    ch.writeOneOutbound(cmd, writePromise);
+    /** Test that the handler correctly supports http error codes i.e. 404 (NOT FOUND).  */
+    @Test
+    @Throws(IOException::class)
+    fun httpErrorsAreSupported() {
+        val ch =
+            EmbeddedChannel(HttpDownloadHandler(null, ImmutableList.of<MutableMap.MutableEntry<String?, String?>?>()))
+        val out: ByteArrayOutputStream = Mockito.spy<ByteArrayOutputStream>(ByteArrayOutputStream())
+        val cmd = DownloadCommand(CACHE_URI, true, DIGEST, out)
+        val writePromise = ch.newPromise()
+        ch.writeOneOutbound(cmd, writePromise)
 
-    HttpResponse response =
-        new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.NOT_FOUND);
-    ByteBuf errorMessage = ByteBufUtil.writeAscii(ch.alloc(), "Error message");
-    response.headers().set(HttpHeaders.HOST, "localhost");
-    response
-        .headers()
-        .set(HttpHeaders.CONTENT_LENGTH, String.valueOf(errorMessage.readableBytes()));
-    response.headers().set(HttpHeaders.CONNECTION, HttpHeaderValues.CLOSE);
+        val response: HttpResponse =
+            DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.NOT_FOUND)
+        response.headers().set(HttpHeaders.HOST, "localhost")
+        response.headers().set(HttpHeaders.CONTENT_LENGTH, 0)
+        response.headers().set(HttpHeaders.CONNECTION, HttpHeaderValues.KEEP_ALIVE)
+        ch.writeInbound(response)
+        ch.writeInbound(LastHttpContent.EMPTY_LAST_CONTENT)
+        Truth.assertThat(writePromise.isDone()).isTrue()
+        Truth.assertThat(writePromise.cause()).isInstanceOf(HttpException::class.java)
+        HttpResponseStatus > Truth.assertThat<HttpResponseStatus?>(
+            (writePromise.cause() as HttpException).response()!!.status()
+        )
+            .isEqualTo(HttpResponseStatus.NOT_FOUND)
+        // No data should have been written to the OutputStream and it should have been closed.
+        Truth.assertThat(out.size()).isEqualTo(0)
+        ByteArrayOutputStream > Mockito.verify<ByteArrayOutputStream?>(out, Mockito.never()).close()
+        Truth.assertThat(ch.isOpen()).isTrue()
+    }
 
-    ch.writeInbound(response);
-    // The promise must not be done because we haven't received the error message yet.
-    assertThat(writePromise.isDone()).isFalse();
+    /**
+     * Test that the handler correctly supports http error codes i.e. 404 (NOT FOUND) with a
+     * Content-Length header.
+     */
+    @Test
+    @Throws(IOException::class)
+    fun httpErrorsWithContentAreSupported() {
+        val ch =
+            EmbeddedChannel(HttpDownloadHandler(null, ImmutableList.of<MutableMap.MutableEntry<String?, String?>?>()))
+        val out: ByteArrayOutputStream = Mockito.spy<ByteArrayOutputStream>(ByteArrayOutputStream())
+        val cmd = DownloadCommand(CACHE_URI, true, DIGEST, out)
+        val writePromise = ch.newPromise()
+        ch.writeOneOutbound(cmd, writePromise)
 
-    ch.writeInbound(new DefaultHttpContent(errorMessage));
-    ch.writeInbound(LastHttpContent.EMPTY_LAST_CONTENT);
-    assertThat(writePromise.isDone()).isTrue();
-    assertThat(writePromise.cause()).isInstanceOf(HttpException.class);
-    assertThat(((HttpException) writePromise.cause()).response().status())
-        .isEqualTo(HttpResponseStatus.NOT_FOUND);
-    // No data should have been written to the OutputStream and it should have been closed.
-    assertThat(out.size()).isEqualTo(0);
-    // The caller is responsible for closing the stream.
-    verify(out, never()).close();
-    assertThat(ch.isOpen()).isFalse();
-  }
+        val response: HttpResponse =
+            DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.NOT_FOUND)
+        val errorMessage = ByteBufUtil.writeAscii(ch.alloc(), "Error message")
+        response.headers().set(HttpHeaders.HOST, "localhost")
+        response
+            .headers()
+            .set(HttpHeaders.CONTENT_LENGTH, errorMessage.readableBytes().toString())
+        response.headers().set(HttpHeaders.CONNECTION, HttpHeaderValues.CLOSE)
 
-  /** Test that the handler correctly supports downloads at an offset, e.g. on retry. */
-  @Test
-  public void downloadAtOffsetShouldWork() throws IOException {
-    EmbeddedChannel ch = new EmbeddedChannel(new HttpDownloadHandler(null, ImmutableList.of()));
-    ByteArrayOutputStream out = Mockito.spy(new ByteArrayOutputStream());
-    DownloadCommand cmd = new DownloadCommand(CACHE_URI, true, DIGEST, out, 2);
-    ChannelPromise writePromise = ch.newPromise();
-    ch.writeOneOutbound(cmd, writePromise);
+        ch.writeInbound(response)
+        // The promise must not be done because we haven't received the error message yet.
+        Truth.assertThat(writePromise.isDone()).isFalse()
 
-    HttpResponse response = new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
-    response.headers().set(HttpHeaders.CONTENT_LENGTH, 5);
-    response.headers().set(HttpHeaders.CONNECTION, HttpHeaderValues.KEEP_ALIVE);
-    ch.writeInbound(response);
-    ByteBuf content = Unpooled.buffer();
-    content.writeBytes(new byte[] {1, 2, 3, 4, 5});
-    ch.writeInbound(new DefaultLastHttpContent(content));
+        ch.writeInbound(DefaultHttpContent(errorMessage))
+        ch.writeInbound(LastHttpContent.EMPTY_LAST_CONTENT)
+        Truth.assertThat(writePromise.isDone()).isTrue()
+        Truth.assertThat(writePromise.cause()).isInstanceOf(HttpException::class.java)
+        HttpResponseStatus > Truth.assertThat<HttpResponseStatus?>(
+            (writePromise.cause() as HttpException).response()!!.status()
+        )
+            .isEqualTo(HttpResponseStatus.NOT_FOUND)
+        // No data should have been written to the OutputStream and it should have been closed.
+        Truth.assertThat(out.size()).isEqualTo(0)
+        ByteArrayOutputStream > Mockito.verify<ByteArrayOutputStream?>(out, Mockito.never()).close()
+        Truth.assertThat(ch.isOpen()).isFalse()
+    }
 
-    assertThat(writePromise.isDone()).isTrue();
-    assertThat(out.toByteArray()).isEqualTo(new byte[] {3, 4, 5});
-    verify(out, never()).close();
-    assertThat(ch.isActive()).isTrue();
-  }
+    /** Test that the handler correctly supports downloads at an offset, e.g. on retry.  */
+    @Test
+    @Throws(IOException::class)
+    fun downloadAtOffsetShouldWork() {
+        val ch =
+            EmbeddedChannel(HttpDownloadHandler(null, ImmutableList.of<MutableMap.MutableEntry<String?, String?>?>()))
+        val out: ByteArrayOutputStream = Mockito.spy<ByteArrayOutputStream>(ByteArrayOutputStream())
+        val cmd = DownloadCommand(CACHE_URI, true, DIGEST, out, 2)
+        val writePromise = ch.newPromise()
+        ch.writeOneOutbound(cmd, writePromise)
 
-  /** Test that the handler correctly supports chunked downloads at an offset, e.g. on retry. */
-  @Test
-  public void chunkedDownloadAtOffsetShouldWork() throws IOException {
-    EmbeddedChannel ch = new EmbeddedChannel(new HttpDownloadHandler(null, ImmutableList.of()));
-    ByteArrayOutputStream out = Mockito.spy(new ByteArrayOutputStream());
-    DownloadCommand cmd = new DownloadCommand(CACHE_URI, true, DIGEST, out, 3);
-    ChannelPromise writePromise = ch.newPromise();
-    ch.writeOneOutbound(cmd, writePromise);
+        val response: HttpResponse = DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK)
+        response.headers().set(HttpHeaders.CONTENT_LENGTH, 5)
+        response.headers().set(HttpHeaders.CONNECTION, HttpHeaderValues.KEEP_ALIVE)
+        ch.writeInbound(response)
+        val content = Unpooled.buffer()
+        content.writeBytes(byteArrayOf(1, 2, 3, 4, 5))
+        ch.writeInbound(DefaultLastHttpContent(content))
 
-    HttpResponse response = new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
-    response.headers().set(HttpHeaders.TRANSFER_ENCODING, HttpHeaderValues.CHUNKED);
-    response.headers().set(HttpHeaders.CONNECTION, HttpHeaderValues.KEEP_ALIVE);
-    ch.writeInbound(response);
-    ByteBuf content1 = Unpooled.buffer();
-    content1.writeBytes(new byte[] {1, 2});
-    ch.writeInbound(new DefaultHttpContent(content1));
-    ByteBuf content2 = Unpooled.buffer();
-    content2.writeBytes(new byte[] {3, 4});
-    ch.writeInbound(new DefaultHttpContent(content2));
-    ByteBuf content3 = Unpooled.buffer();
-    content3.writeBytes(new byte[] {5});
-    ch.writeInbound(new DefaultLastHttpContent(content3));
+        Truth.assertThat(writePromise.isDone()).isTrue()
+        Truth.assertThat(out.toByteArray()).isEqualTo(byteArrayOf(3, 4, 5))
+        ByteArrayOutputStream > Mockito.verify<ByteArrayOutputStream?>(out, Mockito.never()).close()
+        Truth.assertThat(ch.isActive()).isTrue()
+    }
 
-    assertThat(writePromise.isDone()).isTrue();
-    assertThat(out.toByteArray()).isEqualTo(new byte[] {4, 5});
-    verify(out, never()).close();
-    assertThat(ch.isActive()).isTrue();
-  }
+    /** Test that the handler correctly supports chunked downloads at an offset, e.g. on retry.  */
+    @Test
+    @Throws(IOException::class)
+    fun chunkedDownloadAtOffsetShouldWork() {
+        val ch =
+            EmbeddedChannel(HttpDownloadHandler(null, ImmutableList.of<MutableMap.MutableEntry<String?, String?>?>()))
+        val out: ByteArrayOutputStream = Mockito.spy<ByteArrayOutputStream>(ByteArrayOutputStream())
+        val cmd = DownloadCommand(CACHE_URI, true, DIGEST, out, 3)
+        val writePromise = ch.newPromise()
+        ch.writeOneOutbound(cmd, writePromise)
+
+        val response: HttpResponse = DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK)
+        response.headers().set(HttpHeaders.TRANSFER_ENCODING, HttpHeaderValues.CHUNKED)
+        response.headers().set(HttpHeaders.CONNECTION, HttpHeaderValues.KEEP_ALIVE)
+        ch.writeInbound(response)
+        val content1 = Unpooled.buffer()
+        content1.writeBytes(byteArrayOf(1, 2))
+        ch.writeInbound(DefaultHttpContent(content1))
+        val content2 = Unpooled.buffer()
+        content2.writeBytes(byteArrayOf(3, 4))
+        ch.writeInbound(DefaultHttpContent(content2))
+        val content3 = Unpooled.buffer()
+        content3.writeBytes(byteArrayOf(5))
+        ch.writeInbound(DefaultLastHttpContent(content3))
+
+        Truth.assertThat(writePromise.isDone()).isTrue()
+        Truth.assertThat(out.toByteArray()).isEqualTo(byteArrayOf(4, 5))
+        ByteArrayOutputStream > Mockito.verify<ByteArrayOutputStream?>(out, Mockito.never()).close()
+        Truth.assertThat(ch.isActive()).isTrue()
+    }
+
+    companion object {
+        private val CACHE_URI: URI = URI.create("http://storage.googleapis.com:80/cache-bucket")
+        private val DIGEST_UTIL: DigestUtil = DigestUtil(SyscallCache.NO_CACHE, DigestHashFunction.SHA256)
+        private val DIGEST: Digest = DIGEST_UTIL.computeAsUtf8("foo")
+    }
 }

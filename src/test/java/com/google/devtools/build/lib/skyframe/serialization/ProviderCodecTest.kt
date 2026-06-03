@@ -11,39 +11,29 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static com.google.devtools.build.lib.skyframe.BzlLoadValue.keyForBuild;
+import com.google.devtools.build.lib.skyframe.BzlLoadValue.keyForBuild
 
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.BuiltinProvider;
-import com.google.devtools.build.lib.packages.StarlarkProvider;
-import com.google.devtools.build.lib.packages.StructImpl;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import net.starlark.java.syntax.Location;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Unit tests for [ProviderCodec].  */
+@RunWith(JUnit4::class)
+class ProviderCodecTest {
+    private class DummyProvider : BuiltinProvider<StructImpl?>("DummyInfo", StructImpl::class.java)
 
-/** Unit tests for {@link ProviderCodec}. */
-@RunWith(JUnit4.class)
-public final class ProviderCodecTest {
-  private static class DummyProvider extends BuiltinProvider<StructImpl> {
-    DummyProvider() {
-      super("DummyInfo", StructImpl.class);
-    }
-  }
-
-  @Test
-  public void objectCodecTests() throws Exception {
-    DummyProvider dummyProvider = new DummyProvider();
-    new SerializationTester(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun objectCodecTests() {
+        val dummyProvider = DummyProvider()
+        SerializationTester(
             dummyProvider,
-            StarlarkProvider.builder(Location.BUILTIN)
+            StarlarkProvider.builder(net.starlark.java.syntax.Location.BUILTIN)
                 .buildExported(
-                    new StarlarkProvider.Key(
-                        keyForBuild(Label.parseCanonicalUnchecked("//foo:bar.bzl")), "foo")))
-        .addDependency(DummyProvider.class, dummyProvider)
-        .runTests();
-  }
+                    Key(
+                        keyForBuild(Label.parseCanonicalUnchecked("//foo:bar.bzl")), "foo"
+                    )
+                )
+        )
+            .addDependency(DummyProvider::class.java, dummyProvider)
+            .runTests()
+    }
 }

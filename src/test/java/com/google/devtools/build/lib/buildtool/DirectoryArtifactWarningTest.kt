@@ -11,49 +11,50 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.buildtool;
+package com.google.devtools.build.lib.buildtool
 
-import static org.junit.Assert.assertThrows;
-
-import com.google.devtools.build.lib.actions.BuildFailedException;
-import com.google.devtools.build.lib.buildtool.util.BuildIntegrationTestCase;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.actions.BuildFailedException
 
 /**
  * Integration test for warnings issued when an artifact is a directory.
  */
-@RunWith(JUnit4.class)
-public class DirectoryArtifactWarningTest extends BuildIntegrationTestCase {
-
-  private void setupGenruleWithOutputArtifactDirectory() throws Exception {
-    write(
-        "x/BUILD",
-        """
+@RunWith(JUnit4::class)
+class DirectoryArtifactWarningTest : BuildIntegrationTestCase() {
+    @Throws(java.lang.Exception::class)
+    private fun setupGenruleWithOutputArtifactDirectory() {
+        write(
+            "x/BUILD",
+            """
         genrule(
             name = "x",
             srcs = [],
             outs = ["dir"],
-            cmd = "mkdir $(location dir)",
+            cmd = "mkdir ${'$'}(location dir)",
         )
-        """);
-  }
+        
+        """.trimIndent()
+        )
+    }
 
-  @Test
-  public void testOutputArtifactDirectoryError_forGenrule() throws Exception {
-    setupGenruleWithOutputArtifactDirectory();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testOutputArtifactDirectoryError_forGenrule() {
+        setupGenruleWithOutputArtifactDirectory()
 
-    assertThrows(BuildFailedException.class, () -> buildTarget("//x"));
+        org.junit.Assert.assertThrows<T?>(
+            BuildFailedException::class.java,
+            org.junit.function.ThrowingRunnable { buildTarget("//x") })
 
-    events.assertContainsError(
-        "output 'x/dir' of //x:x is a directory but was not declared as such");
-  }
+        events.assertContainsError(
+            "output 'x/dir' of //x:x is a directory but was not declared as such"
+        )
+    }
 
-  private void setupStarlarkRuleWithOutputArtifactDirectory() throws Exception {
-    write(
-        "x/defs.bzl",
-        """
+    @Throws(java.lang.Exception::class)
+    private fun setupStarlarkRuleWithOutputArtifactDirectory() {
+        write(
+            "x/defs.bzl",
+            """
         def _impl(ctx):
             ctx.actions.run_shell(
                 outputs = [ctx.outputs.out],
@@ -66,55 +67,68 @@ public class DirectoryArtifactWarningTest extends BuildIntegrationTestCase {
                 "out": attr.output(),
             },
         )
-        """);
-    write(
-        "x/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        write(
+            "x/BUILD",
+            """
         load("defs.bzl", "my_rule")
 
         my_rule(
             name = "x",
             out = "dir",
         )
-        """);
-  }
+        
+        """.trimIndent()
+        )
+    }
 
-  @Test
-  public void testOutputArtifactDirectoryError_forStarlarkRule() throws Exception {
-    setupStarlarkRuleWithOutputArtifactDirectory();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testOutputArtifactDirectoryError_forStarlarkRule() {
+        setupStarlarkRuleWithOutputArtifactDirectory()
 
-    assertThrows(BuildFailedException.class, () -> buildTarget("//x"));
+        org.junit.Assert.assertThrows<T?>(
+            BuildFailedException::class.java,
+            org.junit.function.ThrowingRunnable { buildTarget("//x") })
 
-    events.assertContainsError(
-        "output 'x/dir' of //x:x is a directory but was not declared as such");
-  }
+        events.assertContainsError(
+            "output 'x/dir' of //x:x is a directory but was not declared as such"
+        )
+    }
 
-  @Test
-  public void testInputArtifactDirectoryWarning_forGenrule() throws Exception {
-    write(
-        "x/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testInputArtifactDirectoryWarning_forGenrule() {
+        write(
+            "x/BUILD",
+            """
         genrule(
             name = "x",
             srcs = ["dir"],
             outs = ["out"],
-            cmd = "touch $(location out)",
+            cmd = "touch ${'$'}(location out)",
         )
-        """);
-    write("x/dir/empty");
+        
+        """.trimIndent()
+        )
+        write("x/dir/empty")
 
-    buildTarget("//x");
+        buildTarget("//x")
 
-    events.assertContainsWarning(
-        "input 'x/dir' of //x:x is a directory; "
-            + "dependency checking of directories is unsound");
-  }
+        events.assertContainsWarning(
+            "input 'x/dir' of //x:x is a directory; "
+                    + "dependency checking of directories is unsound"
+        )
+    }
 
-  @Test
-  public void testInputArtifactDirectoryWarning_forStarlarkRule() throws Exception {
-    write(
-        "x/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testInputArtifactDirectoryWarning_forStarlarkRule() {
+        write(
+            "x/defs.bzl",
+            """
         def _impl(ctx):
             ctx.actions.run_shell(
                 inputs = [ctx.file.src],
@@ -129,10 +143,12 @@ public class DirectoryArtifactWarningTest extends BuildIntegrationTestCase {
                 "out": attr.output(),
             },
         )
-        """);
-    write(
-        "x/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        write(
+            "x/BUILD",
+            """
         load("defs.bzl", "my_rule")
 
         my_rule(
@@ -140,13 +156,16 @@ public class DirectoryArtifactWarningTest extends BuildIntegrationTestCase {
             src = "dir",
             out = "out",
         )
-        """);
-    write("x/dir/empty");
+        
+        """.trimIndent()
+        )
+        write("x/dir/empty")
 
-    buildTarget("//x");
+        buildTarget("//x")
 
-    events.assertContainsWarning(
-        "input 'x/dir' of //x:x is a directory; "
-            + "dependency checking of directories is unsound");
-  }
+        events.assertContainsWarning(
+            "input 'x/dir' of //x:x is a directory; "
+                    + "dependency checking of directories is unsound"
+        )
+    }
 }

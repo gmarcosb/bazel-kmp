@@ -11,74 +11,50 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages.util;
+package com.google.devtools.build.lib.packages.util
 
-import static java.lang.Integer.MAX_VALUE;
+import com.google.common.base.Predicate
+import com.google.common.collect.ImmutableList
+import com.google.devtools.build.lib.cmdline.Label
+import com.google.devtools.build.lib.util.OS
 
-import com.google.common.base.Predicate;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.util.Crosstool.CcToolchainConfig;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import com.google.devtools.build.lib.util.OS;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.runfiles.Runfiles;
-import java.io.IOException;
-import java.text.MessageFormat;
-import java.util.Arrays;
-
-/** Bazel implementation of {@link MockCcSupport} */
-public final class BazelMockCcSupport extends MockCcSupport {
-  public static final BazelMockCcSupport INSTANCE = new BazelMockCcSupport();
-
-  /** Filter to remove implicit dependencies of C/C++ rules. */
-  private static final boolean isNotCcLabel(String label) {
-    return !label.startsWith("//tools/cpp");
-  }
-
-  private BazelMockCcSupport() {}
-
-  private static final ImmutableList<String> CROSSTOOL_ARCHS =
-      ImmutableList.of("piii", "k8", "armeabi-v7a", "ppc", "darwin_x86_64");
-
-  @Override
-  protected String getRealFilesystemCrosstoolTopPath() {
-    if (OS.getCurrent() == OS.LINUX) {
-      return "src/test/java/com/google/devtools/build/lib/packages/util/real/linux";
+/** Bazel implementation of [MockCcSupport]  */
+class BazelMockCcSupport private constructor() : MockCcSupport() {
+    override fun getRealFilesystemCrosstoolTopPath(): String {
+        if (OS.getCurrent() == OS.LINUX) {
+            return "src/test/java/com/google/devtools/build/lib/packages/util/real/linux"
+        }
+        throw IllegalStateException("Unsupported OS: " + OS.getCurrent())
     }
-    throw new IllegalStateException("Unsupported OS: " + OS.getCurrent());
-  }
 
-  @Override
-  protected String[] getRealFilesystemToolsToLink(String crosstoolTop) {
-    return new String[0];
-  }
+    override fun getRealFilesystemToolsToLink(crosstoolTop: String?): Array<String?> {
+        return arrayOfNulls<String>(0)
+    }
 
-  @Override
-  protected String[] getRealFilesystemToolsToCopy(String crosstoolTop) {
-    return new String[] {crosstoolTop + "/BUILD"};
-  }
+    override fun getRealFilesystemToolsToCopy(crosstoolTop: String?): Array<String?> {
+        return arrayOf<String>(crosstoolTop + "/BUILD")
+    }
 
-  @Override
-  protected ImmutableList<String> getCrosstoolArchs() {
-    return CROSSTOOL_ARCHS;
-  }
+    override fun getCrosstoolArchs(): ImmutableList<String?> {
+        return CROSSTOOL_ARCHS
+    }
 
-  @Override
-  public void setup(MockToolsConfig config) throws IOException {
-    writeMacroFile(config);
-    setupRulesCc(config);
-    setupCcToolchainConfig(config, getToolchainConfigs());
-    createParseHeadersAndLayeringCheckWhitelist(config);
-    createStarlarkLooseHeadersWhitelist(config, "//...");
-    config.append(
-        TestConstants.TOOLS_REPOSITORY_SCRATCH + "tools/cpp/BUILD",
-        "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
-        "alias(name='host_xcodes',actual='@local_config_xcode//:host_xcodes')");
-    if (config.isRealFileSystem() && shouldUseRealFileSystemCrosstool()) {
-      config.append(
-          TestConstants.TOOLS_REPOSITORY_SCRATCH + "tools/cpp/BUILD",
-          """
+    @Throws(IOException::class)
+    override fun setup(config: MockToolsConfig) {
+        writeMacroFile(config)
+        setupRulesCc(config)
+        setupCcToolchainConfig(config, toolchainConfigs)
+        MockCcSupport.Companion.createParseHeadersAndLayeringCheckWhitelist(config)
+        MockCcSupport.Companion.createStarlarkLooseHeadersWhitelist(config, "//...")
+        config.append(
+            TestConstants.TOOLS_REPOSITORY_SCRATCH + "tools/cpp/BUILD",
+            "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
+            "alias(name='host_xcodes',actual='@local_config_xcode//:host_xcodes')"
+        )
+        if (config.isRealFileSystem() && shouldUseRealFileSystemCrosstool()) {
+            config.append(
+                TestConstants.TOOLS_REPOSITORY_SCRATCH + "tools/cpp/BUILD",
+                """
           toolchain_type(name = 'toolchain_type')
           cc_library(
               name = 'link_extra_lib',
@@ -106,29 +82,31 @@ public final class BazelMockCcSupport extends MockCcSupport {
               name = 'link_dynamic_library',
               srcs = ['link_dynamic_library.sh'],
           )
-          """);
-      for (String s :
-          Arrays.asList(
-              "linkextra.cc",
-              "malloc.cc",
-              "aggregate-ddi.sh",
-              "generate-modmap.sh",
-              "interface_library_builder.sh",
-              "link_dynamic_library.sh")) {
-        config.create(TestConstants.TOOLS_REPOSITORY_SCRATCH + "tools/cpp/" + s);
-      }
-    }
+          
+          """.trimIndent()
+            )
+            for (s in mutableListOf<String?>(
+                "linkextra.cc",
+                "malloc.cc",
+                "aggregate-ddi.sh",
+                "generate-modmap.sh",
+                "interface_library_builder.sh",
+                "link_dynamic_library.sh"
+            )) {
+                config.create(TestConstants.TOOLS_REPOSITORY_SCRATCH + "tools/cpp/" + s)
+            }
+        }
 
-    // Copies rules_cc from real @rules_cc
-    config.create("third_party/bazel_rules/rules_cc/MODULE.bazel", "module(name='rules_cc')");
-    Runfiles runfiles = Runfiles.preload().withSourceRepository("");
-    PathFragment path = PathFragment.create(runfiles.rlocation("rules_cc/cc/defs.bzl"));
-    config.copyDirectory(
-        path.getParentDirectory(), "third_party/bazel_rules/rules_cc/cc", MAX_VALUE, true);
+        // Copies rules_cc from real @rules_cc
+        config.create("third_party/bazel_rules/rules_cc/MODULE.bazel", "module(name='rules_cc')")
+        val runfiles: Runfiles = Runfiles.preload().withSourceRepository("")
+        val path: PathFragment = PathFragment.create(runfiles.rlocation("rules_cc/cc/defs.bzl"))
+        config.copyDirectory(
+            path.getParentDirectory(), "third_party/bazel_rules/rules_cc/cc", Int.Companion.MAX_VALUE, true
+        )
 
-    // avoid cc_compatibility_proxy indirection
-    for (String ruleName :
-        ImmutableList.of(
+        // avoid cc_compatibility_proxy indirection
+        for (ruleName in ImmutableList.of<String?>(
             "cc_binary",
             "cc_import",
             "cc_library",
@@ -136,120 +114,151 @@ public final class BazelMockCcSupport extends MockCcSupport {
             "cc_static_library",
             "cc_test",
             "objc_import",
-            "objc_library")) {
-      config.overwrite(
-          "third_party/bazel_rules/rules_cc/cc/" + ruleName + ".bzl",
-          MessageFormat.format(
-              """
+            "objc_library"
+        )) {
+            config.overwrite(
+                "third_party/bazel_rules/rules_cc/cc/" + ruleName + ".bzl",
+                MessageFormat.format(
+                    """
               load("//cc/private/rules_impl:{0}.bzl", _{0} = "{0}")
               {0} = _{0}
-              """,
-              ruleName));
-    }
-    for (String ruleName : ImmutableList.of("cc_toolchain", "cc_toolchain_alias")) {
-      config.overwrite(
-          "third_party/bazel_rules/rules_cc/cc/toolchains/" + ruleName + ".bzl",
-          MessageFormat.format(
-              """
+              
+              """.trimIndent(),
+                    ruleName
+                )
+            )
+        }
+        for (ruleName in ImmutableList.of<String?>("cc_toolchain", "cc_toolchain_alias")) {
+            config.overwrite(
+                "third_party/bazel_rules/rules_cc/cc/toolchains/" + ruleName + ".bzl",
+                MessageFormat.format(
+                    """
               load("//cc/private/rules_impl:{0}.bzl", _{0} = "{0}")
               {0} = _{0}
-              """,
-              ruleName));
-    }
-    for (String ruleName :
-        ImmutableList.of("fdo_prefetch_hints", "fdo_profile", "propeller_optimize")) {
-      config.overwrite(
-          "third_party/bazel_rules/rules_cc/cc/toolchains/" + ruleName + ".bzl",
-          MessageFormat.format(
-              """
+              
+              """.trimIndent(),
+                    ruleName
+                )
+            )
+        }
+        for (ruleName in ImmutableList.of<String?>("fdo_prefetch_hints", "fdo_profile", "propeller_optimize")) {
+            config.overwrite(
+                "third_party/bazel_rules/rules_cc/cc/toolchains/" + ruleName + ".bzl",
+                MessageFormat.format(
+                    """
               load("//cc/private/rules_impl/fdo:{0}.bzl", _{0} = "{0}")
               {0} = _{0}
-              """,
-              ruleName));
-    }
-    config.overwrite(
-        "third_party/bazel_rules/rules_cc/cc/common/cc_info.bzl",
-        """
+              
+              """.trimIndent(),
+                    ruleName
+                )
+            )
+        }
+        config.overwrite(
+            "third_party/bazel_rules/rules_cc/cc/common/cc_info.bzl",
+            """
         load("//cc/private:cc_info.bzl", _CcInfo = "CcInfo")
         CcInfo = _CcInfo
-        """);
-    config.overwrite(
-        "third_party/bazel_rules/rules_cc/cc/common/cc_shared_library_info.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        config.overwrite(
+            "third_party/bazel_rules/rules_cc/cc/common/cc_shared_library_info.bzl",
+            """
         load("//cc/private:cc_shared_library_info.bzl", _CcSharedLibraryInfo = "CcSharedLibraryInfo")
         CcSharedLibraryInfo = _CcSharedLibraryInfo
-        """);
-    config.overwrite(
-        "third_party/bazel_rules/rules_cc/cc/common/debug_package_info.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        config.overwrite(
+            "third_party/bazel_rules/rules_cc/cc/common/debug_package_info.bzl",
+            """
         load("//cc/private:debug_package_info.bzl", _DebugPackageInfo = "DebugPackageInfo")
         DebugPackageInfo = _DebugPackageInfo
-        """);
-    config.overwrite(
-        "third_party/bazel_rules/rules_cc/cc/common/cc_common.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        config.overwrite(
+            "third_party/bazel_rules/rules_cc/cc/common/cc_common.bzl",
+            """
         load("//cc/private:cc_common.bzl", _cc_common = "cc_common")
         cc_common = _cc_common
-        """);
-    config.overwrite(
-        "third_party/bazel_rules/rules_cc/cc/common/objc_info.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        config.overwrite(
+            "third_party/bazel_rules/rules_cc/cc/common/objc_info.bzl",
+            """
         load("//cc/private:objc_info.bzl", _ObjcInfo = "ObjcInfo")
         ObjcInfo = _ObjcInfo
-        """);
-    config.overwrite(
-        "third_party/bazel_rules/rules_cc/cc/toolchains/cc_toolchain_config_info.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        config.overwrite(
+            "third_party/bazel_rules/rules_cc/cc/toolchains/cc_toolchain_config_info.bzl",
+            """
         load("//cc/private/toolchain_config:cc_toolchain_config_info.bzl", _CcToolchainConfigInfo = "CcToolchainConfigInfo")
         CcToolchainConfigInfo = _CcToolchainConfigInfo
-        """);
-    config.overwrite("third_party/bazel_rules/bazel_features_mock/BUILD");
-    config.overwrite("third_party/bazel_rules/rules_cc/cc/common/BUILD");
-    config.overwrite("third_party/bazel_rules/rules_cc/cc/private/BUILD");
-    config.overwrite("third_party/bazel_rules/rules_cc/cc/toolchains/actions/BUILD");
-    config.overwrite("third_party/bazel_rules/rules_cc/cc/toolchains/args/BUILD");
-    config.overwrite("third_party/bazel_rules/rules_cc/cc/toolchains/artifacts/BUILD");
-    config.overwrite("third_party/bazel_rules/rules_cc/cc/toolchains/BUILD");
-    config.overwrite("third_party/bazel_rules/rules_cc/cc/toolchains/features/BUILD");
-    config.overwrite("third_party/bazel_rules/rules_cc/cc/toolchains/features/legacy/BUILD");
-    config.overwrite("third_party/bazel_rules/rules_cc/cc/toolchains/impl/BUILD");
-    config.overwrite("third_party/bazel_rules/rules_cc/cc/toolchains/variables/BUILD");
-  }
-
-  @Override
-  public Label getMockCrosstoolLabel() {
-    return Label.parseCanonicalUnchecked("@bazel_tools//tools/cpp:toolchain");
-  }
-
-  @Override
-  public String getMockCrosstoolPath() {
-    return "embedded_tools/tools/cpp/";
-  }
-
-  @Override
-  public Predicate<String> labelNameFilter() {
-    return BazelMockCcSupport::isNotCcLabel;
-  }
-
-  @Override
-  protected boolean shouldUseRealFileSystemCrosstool() {
-    return OS.getCurrent() == OS.LINUX;
-  }
-
-  private static ImmutableList<CcToolchainConfig> getToolchainConfigs() {
-    ImmutableList.Builder<CcToolchainConfig> result = ImmutableList.builder();
-
-    // Different from CcToolchainConfig.getDefault....
-    result.add(CcToolchainConfig.builder().build());
-
-    if (OS.getCurrent() == OS.DARWIN) {
-      result.add(CcToolchainConfig.getCcToolchainConfigForCpu("darwin_x86_64"));
-      result.add(CcToolchainConfig.getCcToolchainConfigForCpu("darwin_arm64"));
+        
+        """.trimIndent()
+        )
+        config.overwrite("third_party/bazel_rules/bazel_features_mock/BUILD")
+        config.overwrite("third_party/bazel_rules/rules_cc/cc/common/BUILD")
+        config.overwrite("third_party/bazel_rules/rules_cc/cc/private/BUILD")
+        config.overwrite("third_party/bazel_rules/rules_cc/cc/toolchains/actions/BUILD")
+        config.overwrite("third_party/bazel_rules/rules_cc/cc/toolchains/args/BUILD")
+        config.overwrite("third_party/bazel_rules/rules_cc/cc/toolchains/artifacts/BUILD")
+        config.overwrite("third_party/bazel_rules/rules_cc/cc/toolchains/BUILD")
+        config.overwrite("third_party/bazel_rules/rules_cc/cc/toolchains/features/BUILD")
+        config.overwrite("third_party/bazel_rules/rules_cc/cc/toolchains/features/legacy/BUILD")
+        config.overwrite("third_party/bazel_rules/rules_cc/cc/toolchains/impl/BUILD")
+        config.overwrite("third_party/bazel_rules/rules_cc/cc/toolchains/variables/BUILD")
     }
 
-    if (System.getProperty("os.arch").equals("s390x")) {
-      result.add(CcToolchainConfig.getCcToolchainConfigForCpu("s390x"));
+    override fun getMockCrosstoolLabel(): Label {
+        return Label.parseCanonicalUnchecked("@bazel_tools//tools/cpp:toolchain")
     }
-    return result.build();
-  }
+
+    override fun getMockCrosstoolPath(): String {
+        return "embedded_tools/tools/cpp/"
+    }
+
+    override fun labelNameFilter(): Predicate<String?> {
+        return Predicate { label: String? -> Companion.isNotCcLabel(label!!) }
+    }
+
+    override fun shouldUseRealFileSystemCrosstool(): Boolean {
+        return OS.getCurrent() == OS.LINUX
+    }
+
+    companion object {
+        val INSTANCE: BazelMockCcSupport = BazelMockCcSupport()
+
+        /** Filter to remove implicit dependencies of C/C++ rules.  */
+        private fun isNotCcLabel(label: String): Boolean {
+            return !label.startsWith("//tools/cpp")
+        }
+
+        private val CROSSTOOL_ARCHS: ImmutableList<String?> =
+            ImmutableList.of<String?>("piii", "k8", "armeabi-v7a", "ppc", "darwin_x86_64")
+
+        private val toolchainConfigs: ImmutableList<CcToolchainConfig>
+            get() {
+                val result: ImmutableList.Builder<CcToolchainConfig?> =
+                    ImmutableList.builder<CcToolchainConfig?>()
+
+                // Different from CcToolchainConfig.getDefault....
+                result.add(CcToolchainConfig.Companion.builder().build())
+
+                if (OS.getCurrent() == OS.DARWIN) {
+                    result.add(CcToolchainConfig.Companion.getCcToolchainConfigForCpu("darwin_x86_64"))
+                    result.add(CcToolchainConfig.Companion.getCcToolchainConfigForCpu("darwin_arm64"))
+                }
+
+                if (System.getProperty("os.arch") == "s390x") {
+                    result.add(CcToolchainConfig.Companion.getCcToolchainConfigForCpu("s390x"))
+                }
+                return result.build()
+            }
+    }
 }

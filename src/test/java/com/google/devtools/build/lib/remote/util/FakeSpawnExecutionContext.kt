@@ -11,145 +11,101 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.util;
+package com.google.devtools.build.lib.remote.util
 
-import static com.google.common.base.Preconditions.checkNotNull;
+import com.google.devtools.build.lib.actions.ActionContext
 
-import com.google.common.collect.ClassToInstanceMap;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.devtools.build.lib.actions.ActionContext;
-import com.google.devtools.build.lib.actions.ActionInput;
-import com.google.devtools.build.lib.actions.ArtifactPathResolver;
-import com.google.devtools.build.lib.actions.InputMetadataProvider;
-import com.google.devtools.build.lib.actions.Spawn;
-import com.google.devtools.build.lib.exec.Protos.Digest;
-import com.google.devtools.build.lib.exec.SpawnInputExpander;
-import com.google.devtools.build.lib.exec.SpawnRunner.ProgressStatus;
-import com.google.devtools.build.lib.exec.SpawnRunner.SpawnExecutionContext;
-import com.google.devtools.build.lib.remote.RemoteActionFileSystem;
-import com.google.devtools.build.lib.util.io.FileOutErr;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.time.Duration;
-import java.util.SortedMap;
-import javax.annotation.Nullable;
+/** Execution context for tests  */
+class FakeSpawnExecutionContext(
+    spawn: Spawn?,
+    inputMetadataProvider: InputMetadataProvider?,
+    execRoot: Path?,
+    outErr: FileOutErr?,
+    actionContextRegistry: com.google.common.collect.ClassToInstanceMap<ActionContext?>,
+    actionFileSystem: RemoteActionFileSystem?
+) : SpawnExecutionContext {
+    var isLockOutputFilesCalled: Boolean = false
+        private set
 
-/** Execution context for tests */
-public class FakeSpawnExecutionContext implements SpawnExecutionContext {
+    private val spawn: Spawn?
+    private val inputMetadataProvider: InputMetadataProvider?
+    private val execRoot: Path?
+    private val outErr: FileOutErr?
+    private val actionContextRegistry: com.google.common.collect.ClassToInstanceMap<ActionContext?>
+    private val actionFileSystem: RemoteActionFileSystem?
 
-  private boolean lockOutputFilesCalled;
+    private var digest: Digest? = null
 
-  private final Spawn spawn;
-  private final InputMetadataProvider inputMetadataProvider;
-  private final Path execRoot;
-  private final FileOutErr outErr;
-  private final ClassToInstanceMap<ActionContext> actionContextRegistry;
-  @Nullable private final RemoteActionFileSystem actionFileSystem;
+    init {
+        this.spawn = spawn
+        this.inputMetadataProvider = inputMetadataProvider
+        this.execRoot = execRoot
+        this.outErr = outErr
+        this.actionContextRegistry = actionContextRegistry
+        this.actionFileSystem = actionFileSystem
+    }
 
-  @Nullable private Digest digest;
+    val id: Int
+        get() = 0
 
-  public FakeSpawnExecutionContext(
-      Spawn spawn,
-      InputMetadataProvider inputMetadataProvider,
-      Path execRoot,
-      FileOutErr outErr,
-      ClassToInstanceMap<ActionContext> actionContextRegistry,
-      @Nullable RemoteActionFileSystem actionFileSystem) {
-    this.spawn = spawn;
-    this.inputMetadataProvider = inputMetadataProvider;
-    this.execRoot = execRoot;
-    this.outErr = outErr;
-    this.actionContextRegistry = actionContextRegistry;
-    this.actionFileSystem = actionFileSystem;
-  }
+    public override fun setDigest(digest: Digest?) {
+        .also {
+            this.digest = it
+        }<Digest> com . google . common . base . Preconditions . checkNotNull < kotlin . Any ? > (digest)
+    }
 
-  public boolean isLockOutputFilesCalled() {
-    return lockOutputFilesCalled;
-  }
+    public override fun getDigest(): Digest? {
+        return digest
+    }
 
-  @Override
-  public int getId() {
-    return 0;
-  }
+    public override fun prefetchInputs(): com.google.common.util.concurrent.ListenableFuture<java.lang.Void?>? {
+        throw java.lang.UnsupportedOperationException()
+    }
 
-  @Override
-  public void setDigest(Digest digest) {
-    this.digest = checkNotNull(digest);
-  }
+    public override fun lockOutputFiles(exitCode: Int, errorMessage: String?, outErr: FileOutErr?) {
+        this.isLockOutputFilesCalled = true
+    }
 
-  @Override
-  public Digest getDigest() {
-    return digest;
-  }
+    public override fun speculating(): Boolean {
+        return false
+    }
 
-  @Override
-  public ListenableFuture<Void> prefetchInputs() {
-    throw new UnsupportedOperationException();
-  }
+    public override fun getInputMetadataProvider(): InputMetadataProvider? {
+        return inputMetadataProvider
+    }
 
-  @Override
-  public void lockOutputFiles(int exitCode, String errorMessage, FileOutErr outErr) {
-    lockOutputFilesCalled = true;
-  }
+    val pathResolver: ArtifactPathResolver
+        get() = ArtifactPathResolver.forExecRoot(execRoot)
 
-  @Override
-  public boolean speculating() {
-    return false;
-  }
+    val timeout: java.time.Duration
+        get() = java.time.Duration.ZERO
 
-  @Override
-  public InputMetadataProvider getInputMetadataProvider() {
-    return inputMetadataProvider;
-  }
+    val fileOutErr: FileOutErr?
+        get() = outErr
 
-  @Override
-  public ArtifactPathResolver getPathResolver() {
-    return ArtifactPathResolver.forExecRoot(execRoot);
-  }
+    public override fun getInputMapping(
+        baseDirectory: PathFragment?, willAccessRepeatedly: Boolean
+    ): SortedMap<PathFragment?, ActionInput?> {
+        return SpawnInputExpander().getInputMapping(spawn, inputMetadataProvider, baseDirectory)
+    }
 
-  @Override
-  public Duration getTimeout() {
-    return Duration.ZERO;
-  }
+    public override fun report(progress: ProgressStatus?) {
+        // Intentionally left empty.
+    }
 
-  @Override
-  public FileOutErr getFileOutErr() {
-    return outErr;
-  }
+    public override fun <T : ActionContext?> getContext(identifyingType: java.lang.Class<T?>): T? {
+        return actionContextRegistry.getInstance<T?>(identifyingType)
+    }
 
-  @Override
-  public SortedMap<PathFragment, ActionInput> getInputMapping(
-      PathFragment baseDirectory, boolean willAccessRepeatedly) {
-    return new SpawnInputExpander().getInputMapping(spawn, inputMetadataProvider, baseDirectory);
-  }
+    val isRewindingEnabled: Boolean
+        get() = false
 
-  @Override
-  public void report(ProgressStatus progress) {
-    // Intentionally left empty.
-  }
+    public override fun checkForLostInputs() {}
 
-  @Override
-  public <T extends ActionContext> T getContext(Class<T> identifyingType) {
-    return actionContextRegistry.getInstance(identifyingType);
-  }
+    public override fun getActionFileSystem(): RemoteActionFileSystem? {
+        return actionFileSystem
+    }
 
-  @Override
-  public boolean isRewindingEnabled() {
-    return false;
-  }
-
-  @Override
-  public void checkForLostInputs() {}
-
-  @Nullable
-  @Override
-  public RemoteActionFileSystem getActionFileSystem() {
-    return actionFileSystem;
-  }
-
-  @Override
-  public ImmutableMap<String, String> getClientEnv() {
-    return ImmutableMap.of();
-  }
+    val clientEnv: com.google.common.collect.ImmutableMap<String?, String?>
+        get() = com.google.common.collect.ImmutableMap.of<String?, String?>()
 }

@@ -11,75 +11,45 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.starlark;
+package com.google.devtools.build.lib.starlark
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.common.collect.MoreCollectors.onlyElement;
-import static com.google.common.collect.Streams.stream;
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.skyframe.BzlLoadValue.keyForBuild;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.skyframe.BzlLoadValue.keyForBuild
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Sets;
-import com.google.devtools.build.lib.analysis.AnalysisResult;
-import com.google.devtools.build.lib.analysis.ConfiguredAspect;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.PlatformOptions;
-import com.google.devtools.build.lib.analysis.ViewCreationFailedException;
-import com.google.devtools.build.lib.analysis.util.AnalysisTestCase;
-import com.google.devtools.build.lib.analysis.util.MockRule;
-import com.google.devtools.build.lib.analysis.util.TestAspects.DepsVisitingFileAspect;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.AspectClass;
-import com.google.devtools.build.lib.packages.RuleClass.ToolchainResolutionMode;
-import com.google.devtools.build.lib.packages.StarlarkAspectClass;
-import com.google.devtools.build.lib.packages.StarlarkInfo;
-import com.google.devtools.build.lib.packages.StarlarkProvider;
-import com.google.devtools.build.lib.packages.util.Crosstool.CcToolchainConfig;
-import com.google.devtools.build.lib.skyframe.AspectKeyCreator.AspectKey;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetKey;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import com.google.testing.junit.testparameterinjector.TestParameters;
-import java.util.Map;
-import net.starlark.java.eval.Dict;
-import net.starlark.java.eval.Sequence;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-
-/** Tests for Starlark aspects propagation to targets toolchain dependencies. */
-@RunWith(TestParameterInjector.class)
-public final class StarlarkAspectsToolchainPropagationTest extends AnalysisTestCase {
-
-  /**
-   * Sets up 3 toolchain rules:
-   *
-   * <p>test_toolchain: has no attribute dependency and no advertised providers
-   *
-   * <p>test_toolchain_with_provider: has an advertised provider but no attribute dependency
-   *
-   * <p>test_toolchain_with_dep: has an attribute dependency but no advertised providers
-   *
-   * <p>We also set up 3 toolchain types:
-   *
-   * <p>toolchain_type_1: resolved by `foo` of rule `test_toolchain`
-   *
-   * <p>toolchain_type_2: resolved by `foo_with_provider` of rule `test_toolchain_with_provider`
-   *
-   * <p>toolchain_type_3: resolved by `foo_with_dep` of rule `test_toolchain_with_dep`
-   *
-   * <p>Toolchain `foo_for_all` resolved both toolchain_type_2 and toolchain_type_3
-   */
-  public void createToolchainsAndPlatforms() throws Exception {
-    scratch.overwriteFile(
-        "rule/test_toolchain.bzl",
-        """
+/** Tests for Starlark aspects propagation to targets toolchain dependencies.  */
+@RunWith(TestParameterInjector::class)
+class StarlarkAspectsToolchainPropagationTest : AnalysisTestCase() {
+    /**
+     * Sets up 3 toolchain rules:
+     * 
+     * 
+     * test_toolchain: has no attribute dependency and no advertised providers
+     * 
+     * 
+     * test_toolchain_with_provider: has an advertised provider but no attribute dependency
+     * 
+     * 
+     * test_toolchain_with_dep: has an attribute dependency but no advertised providers
+     * 
+     * 
+     * We also set up 3 toolchain types:
+     * 
+     * 
+     * toolchain_type_1: resolved by `foo` of rule `test_toolchain`
+     * 
+     * 
+     * toolchain_type_2: resolved by `foo_with_provider` of rule `test_toolchain_with_provider`
+     * 
+     * 
+     * toolchain_type_3: resolved by `foo_with_dep` of rule `test_toolchain_with_dep`
+     * 
+     * 
+     * Toolchain `foo_for_all` resolved both toolchain_type_2 and toolchain_type_3
+     */
+    @Throws(java.lang.Exception::class)
+    fun createToolchainsAndPlatforms() {
+        scratch.overwriteFile(
+            "rule/test_toolchain.bzl",
+            """
         MyProvider = provider()
 
         def _impl(ctx):
@@ -129,10 +99,13 @@ public final class StarlarkAspectsToolchainPropagationTest extends AnalysisTestC
             },
         )
 
-        """);
-    scratch.overwriteFile(
-        "rule/BUILD",
-        """
+        
+
+        """.trimIndent()
+        )
+        scratch.overwriteFile(
+            "rule/BUILD",
+            """
         exports_files(["test_toolchain/bzl"])
 
         toolchain_type(name = "toolchain_type_1")
@@ -141,10 +114,12 @@ public final class StarlarkAspectsToolchainPropagationTest extends AnalysisTestC
         toolchain_type(name = "toolchain_type_2")
 
         toolchain_type(name = "toolchain_type_3")
-        """);
-    scratch.overwriteFile(
-        "toolchain/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.overwriteFile(
+            "toolchain/BUILD",
+            """
         load("//rule:test_toolchain.bzl", "test_toolchain",
               "test_toolchain_with_provider", "test_toolchain_with_dep")
 
@@ -221,11 +196,13 @@ public final class StarlarkAspectsToolchainPropagationTest extends AnalysisTestC
             exec_compatible_with = ['//platforms:constraint_2'],
             toolchain_type = "//rule:toolchain_type_2",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.overwriteFile(
-        "platforms/BUILD",
-        """
+        scratch.overwriteFile(
+            "platforms/BUILD",
+            """
         constraint_setting(name = "setting_1")
         constraint_setting(name = "setting_2")
 
@@ -250,31 +227,35 @@ public final class StarlarkAspectsToolchainPropagationTest extends AnalysisTestC
                 "watermelon.color": "red",
             },
         )
-        """);
-    getAnalysisMock()
-        .ccSupport()
-        .setupCcToolchainConfig(
-            mockToolsConfig,
-            CcToolchainConfig.builder()
-                .withToolchainTargetConstraints("@@//platforms:constraint_1")
-                .withToolchainExecConstraints("@@//platforms:constraint_1")
-                .withCpu("fake"));
-  }
+        
+        """.trimIndent()
+        )
+        getAnalysisMock()
+            .ccSupport()
+            .setupCcToolchainConfig(
+                mockToolsConfig,
+                CcToolchainConfig.builder()
+                    .withToolchainTargetConstraints("@@//platforms:constraint_1")
+                    .withToolchainExecConstraints("@@//platforms:constraint_1")
+                    .withCpu("fake")
+            )
+    }
 
-  @Before
-  public void setup() throws Exception {
-    createToolchainsAndPlatforms();
-  }
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun setup() {
+        createToolchainsAndPlatforms()
+    }
 
-  @Test
-  @TestParameters({
-    "{autoExecGroups: True}",
-    "{autoExecGroups: False}",
-  })
-  public void aspectPropagatesToToolchain_singleDepAdded(String autoExecGroups) throws Exception {
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @TestParameters(
+        "{autoExecGroups: True}", "{autoExecGroups: False}"
+    )
+    @Throws(java.lang.Exception::class)
+    fun aspectPropagatesToToolchain_singleDepAdded(autoExecGroups: String?) {
+        scratch.file(
+            "test/defs.bzl",
+            """
         def _impl(target, ctx):
           return []
 
@@ -294,66 +275,95 @@ public final class StarlarkAspectsToolchainPropagationTest extends AnalysisTestC
           implementation = _rule_impl,
           toolchains = ['//rule:toolchain_type_1'],
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:defs.bzl', 'r1')
         r1(name = 't1')
-        """);
-    useConfiguration(
-        "--extra_toolchains=//toolchain:foo_toolchain",
-        "--incompatible_auto_exec_groups=" + autoExecGroups);
+        
+        """.trimIndent()
+        )
+        useConfiguration(
+            "--extra_toolchains=//toolchain:foo_toolchain",
+            "--incompatible_auto_exec_groups=" + autoExecGroups
+        )
 
-    var unused =
-        update(
-            ImmutableList.of(
-                "//test:defs.bzl%toolchain_aspect", "//test:defs.bzl%no_toolchain_aspect"),
-            "//test:t1");
+        val unused: @NotNull AnalysisResult =
+            update(
+                com.google.common.collect.ImmutableList.of<String?>(
+                    "//test:defs.bzl%toolchain_aspect", "//test:defs.bzl%no_toolchain_aspect"
+                ),
+                "//test:t1"
+            )
 
-    var toolchainAspect =
-        Iterables.getOnlyElement(getAspectKeys("//test:t1", "//test:defs.bzl%toolchain_aspect"));
-    var toolchainAspectNode =
-        skyframeExecutor.getEvaluator().getInMemoryGraph().getAllNodeEntries().stream()
-            .filter(n -> n.getKey().equals(toolchainAspect))
-            .findFirst()
-            .orElse(null);
-    assertThat(toolchainAspectNode).isNotNull();
+        val toolchainAspect: AspectKey? =
+            com.google.common.collect.Iterables.getOnlyElement<AspectKey?>(
+                getAspectKeys(
+                    "//test:t1",
+                    "//test:defs.bzl%toolchain_aspect"
+                )
+            )
+        val toolchainAspectNode: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            skyframeExecutor.getEvaluator().getInMemoryGraph().getAllNodeEntries().stream()
+                .filter({ n -> n.getKey().equals(toolchainAspect) })
+                .findFirst()
+                .orElse(null)
+        assertThat(toolchainAspectNode).isNotNull()
 
-    var noToolchainAspect =
-        Iterables.getOnlyElement(getAspectKeys("//test:t1", "//test:defs.bzl%no_toolchain_aspect"));
-    var noToolchainAspectNode =
-        skyframeExecutor.getEvaluator().getInMemoryGraph().getAllNodeEntries().stream()
-            .filter(n -> n.getKey().equals(noToolchainAspect))
-            .findFirst()
-            .orElse(null);
-    assertThat(noToolchainAspectNode).isNotNull();
+        val noToolchainAspect: AspectKey? =
+            com.google.common.collect.Iterables.getOnlyElement<AspectKey?>(
+                getAspectKeys(
+                    "//test:t1",
+                    "//test:defs.bzl%no_toolchain_aspect"
+                )
+            )
+        val noToolchainAspectNode: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            skyframeExecutor.getEvaluator().getInMemoryGraph().getAllNodeEntries().stream()
+                .filter({ n -> n.getKey().equals(noToolchainAspect) })
+                .findFirst()
+                .orElse(null)
+        assertThat(noToolchainAspectNode).isNotNull()
 
-    var toolchainAspectDirectDeps =
-        ImmutableSet.copyOf(Iterables.filter(toolchainAspectNode.getDirectDeps(), SkyKey.class));
-    var noToolchainAspectDirectDeps =
-        ImmutableSet.copyOf(Iterables.filter(noToolchainAspectNode.getDirectDeps(), SkyKey.class));
+        val toolchainAspectDirectDeps: com.google.common.collect.ImmutableSet<out Any> =
+            com.google.common.collect.ImmutableSet.copyOf(
+                com.google.common.collect.Iterables.filter(
+                    toolchainAspectNode.getDirectDeps(),
+                    SkyKey::class.java
+                )
+            )
+        val noToolchainAspectDirectDeps: com.google.common.collect.ImmutableSet<out Any?> =
+            com.google.common.collect.ImmutableSet.copyOf(
+                com.google.common.collect.Iterables.filter(
+                    noToolchainAspectNode.getDirectDeps(),
+                    SkyKey::class.java
+                )
+            )
 
-    // only one extra dependency is added for the toolchain propagating aspect
-    assertThat(toolchainAspectDirectDeps.size() - noToolchainAspectDirectDeps.size()).isEqualTo(1);
-    assertThat(toolchainAspectDirectDeps).containsAtLeastElementsIn(noToolchainAspectDirectDeps);
+        // only one extra dependency is added for the toolchain propagating aspect
+        Truth.assertThat(toolchainAspectDirectDeps.size - noToolchainAspectDirectDeps.size).isEqualTo(1)
+        Truth.assertThat(toolchainAspectDirectDeps).containsAtLeastElementsIn(noToolchainAspectDirectDeps)
 
-    // the extra dependency is the aspect application on the target's resolved toolchain
-    var aspectOnToolchainDep =
-        Iterables.getOnlyElement(
-            Sets.difference(toolchainAspectDirectDeps, noToolchainAspectDirectDeps));
-    assertThat(aspectOnToolchainDep).isInstanceOf(AspectKey.class);
-    assertThat(((AspectKey) aspectOnToolchainDep).getAspectName())
-        .isEqualTo("//test:defs.bzl%toolchain_aspect");
-    assertThat(((AspectKey) aspectOnToolchainDep).getLabel().toString())
-        .isEqualTo("//toolchain:foo");
-  }
+        // the extra dependency is the aspect application on the target's resolved toolchain
+        val aspectOnToolchainDep: Any =
+            com.google.common.collect.Iterables.getOnlyElement(
+                com.google.common.collect.Sets.difference(toolchainAspectDirectDeps, noToolchainAspectDirectDeps)
+            )
+        Truth.assertThat(aspectOnToolchainDep).isInstanceOf(AspectKey::class.java)
+        assertThat((aspectOnToolchainDep as AspectKey).getAspectName())
+            .isEqualTo("//test:defs.bzl%toolchain_aspect")
+        assertThat((aspectOnToolchainDep as AspectKey).getLabel().toString())
+            .isEqualTo("//toolchain:foo")
+    }
 
-  @Test
-  public void aspectPropagatesToExecGpToolchain_singleDepAdded() throws Exception {
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun aspectPropagatesToExecGpToolchain_singleDepAdded() {
+        scratch.file(
+            "test/defs.bzl",
+            """
         def _impl(target, ctx):
           return []
 
@@ -373,68 +383,95 @@ public final class StarlarkAspectsToolchainPropagationTest extends AnalysisTestC
           implementation = _rule_impl,
           exec_groups = {"gp": exec_group(toolchains = ['//rule:toolchain_type_1'])},
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:defs.bzl', 'r1')
         r1(name = 't1')
-        """);
-    useConfiguration("--extra_toolchains=//toolchain:foo_toolchain");
+        
+        """.trimIndent()
+        )
+        useConfiguration("--extra_toolchains=//toolchain:foo_toolchain")
 
-    var unused =
-        update(
-            ImmutableList.of(
-                "//test:defs.bzl%toolchain_aspect", "//test:defs.bzl%no_toolchain_aspect"),
-            "//test:t1");
+        val unused: @NotNull AnalysisResult =
+            update(
+                com.google.common.collect.ImmutableList.of<String?>(
+                    "//test:defs.bzl%toolchain_aspect", "//test:defs.bzl%no_toolchain_aspect"
+                ),
+                "//test:t1"
+            )
 
-    var toolchainAspect =
-        Iterables.getOnlyElement(getAspectKeys("//test:t1", "//test:defs.bzl%toolchain_aspect"));
-    var toolchainAspectNode =
-        skyframeExecutor.getEvaluator().getInMemoryGraph().getAllNodeEntries().stream()
-            .filter(n -> n.getKey().equals(toolchainAspect))
-            .findFirst()
-            .orElse(null);
-    assertThat(toolchainAspectNode).isNotNull();
+        val toolchainAspect: AspectKey? =
+            com.google.common.collect.Iterables.getOnlyElement<AspectKey?>(
+                getAspectKeys(
+                    "//test:t1",
+                    "//test:defs.bzl%toolchain_aspect"
+                )
+            )
+        val toolchainAspectNode: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            skyframeExecutor.getEvaluator().getInMemoryGraph().getAllNodeEntries().stream()
+                .filter({ n -> n.getKey().equals(toolchainAspect) })
+                .findFirst()
+                .orElse(null)
+        assertThat(toolchainAspectNode).isNotNull()
 
-    var noToolchainAspect =
-        Iterables.getOnlyElement(getAspectKeys("//test:t1", "//test:defs.bzl%no_toolchain_aspect"));
-    var noToolchainAspectNode =
-        skyframeExecutor.getEvaluator().getInMemoryGraph().getAllNodeEntries().stream()
-            .filter(n -> n.getKey().equals(noToolchainAspect))
-            .findFirst()
-            .orElse(null);
-    assertThat(noToolchainAspectNode).isNotNull();
+        val noToolchainAspect: AspectKey? =
+            com.google.common.collect.Iterables.getOnlyElement<AspectKey?>(
+                getAspectKeys(
+                    "//test:t1",
+                    "//test:defs.bzl%no_toolchain_aspect"
+                )
+            )
+        val noToolchainAspectNode: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            skyframeExecutor.getEvaluator().getInMemoryGraph().getAllNodeEntries().stream()
+                .filter({ n -> n.getKey().equals(noToolchainAspect) })
+                .findFirst()
+                .orElse(null)
+        assertThat(noToolchainAspectNode).isNotNull()
 
-    var toolchainAspectDirectDeps =
-        ImmutableSet.copyOf(Iterables.filter(toolchainAspectNode.getDirectDeps(), SkyKey.class));
-    var noToolchainAspectDirectDeps =
-        ImmutableSet.copyOf(Iterables.filter(noToolchainAspectNode.getDirectDeps(), SkyKey.class));
+        val toolchainAspectDirectDeps: com.google.common.collect.ImmutableSet<out Any> =
+            com.google.common.collect.ImmutableSet.copyOf(
+                com.google.common.collect.Iterables.filter(
+                    toolchainAspectNode.getDirectDeps(),
+                    SkyKey::class.java
+                )
+            )
+        val noToolchainAspectDirectDeps: com.google.common.collect.ImmutableSet<out Any?> =
+            com.google.common.collect.ImmutableSet.copyOf(
+                com.google.common.collect.Iterables.filter(
+                    noToolchainAspectNode.getDirectDeps(),
+                    SkyKey::class.java
+                )
+            )
 
-    // only one extra dependency is added for the toolchain propagating aspect
-    assertThat(toolchainAspectDirectDeps.size() - noToolchainAspectDirectDeps.size()).isEqualTo(1);
-    assertThat(toolchainAspectDirectDeps).containsAtLeastElementsIn(noToolchainAspectDirectDeps);
+        // only one extra dependency is added for the toolchain propagating aspect
+        Truth.assertThat(toolchainAspectDirectDeps.size - noToolchainAspectDirectDeps.size).isEqualTo(1)
+        Truth.assertThat(toolchainAspectDirectDeps).containsAtLeastElementsIn(noToolchainAspectDirectDeps)
 
-    // the extra dependency is the aspect application on the target's resolved toolchain
-    var aspectOnToolchainDep =
-        Iterables.getOnlyElement(
-            Sets.difference(toolchainAspectDirectDeps, noToolchainAspectDirectDeps));
-    assertThat(aspectOnToolchainDep).isInstanceOf(AspectKey.class);
-    assertThat(((AspectKey) aspectOnToolchainDep).getAspectName())
-        .isEqualTo("//test:defs.bzl%toolchain_aspect");
-    assertThat(((AspectKey) aspectOnToolchainDep).getLabel().toString())
-        .isEqualTo("//toolchain:foo");
-  }
+        // the extra dependency is the aspect application on the target's resolved toolchain
+        val aspectOnToolchainDep: Any =
+            com.google.common.collect.Iterables.getOnlyElement(
+                com.google.common.collect.Sets.difference(toolchainAspectDirectDeps, noToolchainAspectDirectDeps)
+            )
+        Truth.assertThat(aspectOnToolchainDep).isInstanceOf(AspectKey::class.java)
+        assertThat((aspectOnToolchainDep as AspectKey).getAspectName())
+            .isEqualTo("//test:defs.bzl%toolchain_aspect")
+        assertThat((aspectOnToolchainDep as AspectKey).getLabel().toString())
+            .isEqualTo("//toolchain:foo")
+    }
 
-  @Test
-  @TestParameters({
-    "{autoExecGroups: True}",
-    "{autoExecGroups: False}",
-  })
-  public void aspectHasToolchains_dependencyEdgeCreated(String autoExecGroups) throws Exception {
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @TestParameters(
+        "{autoExecGroups: True}", "{autoExecGroups: False}"
+    )
+    @Throws(java.lang.Exception::class)
+    fun aspectHasToolchains_dependencyEdgeCreated(autoExecGroups: String?) {
+        scratch.file(
+            "test/defs.bzl",
+            """
         def _impl(target, ctx):
           return []
 
@@ -451,49 +488,60 @@ public final class StarlarkAspectsToolchainPropagationTest extends AnalysisTestC
           implementation = _rule_impl,
           toolchains = ['//rule:toolchain_type_1'],
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:defs.bzl', 'r1')
         r1(name = 't1')
-        """);
-    useConfiguration(
-        "--extra_toolchains=//toolchain:foo_toolchain,//toolchain:foo_toolchain_with_provider",
-        "--incompatible_auto_exec_groups=" + autoExecGroups);
+        
+        """.trimIndent()
+        )
+        useConfiguration(
+            "--extra_toolchains=//toolchain:foo_toolchain,//toolchain:foo_toolchain_with_provider",
+            "--incompatible_auto_exec_groups=" + autoExecGroups
+        )
 
-    var unused = update(ImmutableList.of("//test:defs.bzl%toolchain_aspect"), "//test:t1");
+        val unused: @NotNull AnalysisResult =
+            update(com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%toolchain_aspect"), "//test:t1")
 
-    var toolchainAspect =
-        Iterables.getOnlyElement(getAspectKeys("//test:t1", "//test:defs.bzl%toolchain_aspect"));
-    var toolchainAspectNode =
-        skyframeExecutor.getEvaluator().getInMemoryGraph().getAllNodeEntries().stream()
-            .filter(n -> n.getKey().equals(toolchainAspect))
-            .findFirst()
-            .orElse(null);
-    assertThat(toolchainAspectNode).isNotNull();
+        val toolchainAspect: AspectKey? =
+            com.google.common.collect.Iterables.getOnlyElement<AspectKey?>(
+                getAspectKeys(
+                    "//test:t1",
+                    "//test:defs.bzl%toolchain_aspect"
+                )
+            )
+        val toolchainAspectNode: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            skyframeExecutor.getEvaluator().getInMemoryGraph().getAllNodeEntries().stream()
+                .filter({ n -> n.getKey().equals(toolchainAspect) })
+                .findFirst()
+                .orElse(null)
+        assertThat(toolchainAspectNode).isNotNull()
 
-    // A dependency edge is created from the aspect to its own toolchain but not to the target's
-    // toolchain.
-    var aspectConfiguredTargetDeps =
-        Iterables.transform(
-            Iterables.filter(
-                toolchainAspectNode.getDirectDeps(), d -> d instanceof ConfiguredTargetKey),
-            d -> ((ConfiguredTargetKey) d).getLabel().toString());
-    assertThat(aspectConfiguredTargetDeps)
-        .containsExactly("//toolchain:foo_with_provider", "//test:t1");
-  }
+        // A dependency edge is created from the aspect to its own toolchain but not to the target's
+        // toolchain.
+        val aspectConfiguredTargetDeps: Iterable<T> =
+            com.google.common.collect.Iterables.transform<F?, T>(
+                com.google.common.collect.Iterables.filter<T?>(
+                    toolchainAspectNode.getDirectDeps(),
+                    com.google.common.base.Predicate { d: T? -> d is ConfiguredTargetKey }),
+                com.google.common.base.Function { d: F? -> (d as ConfiguredTargetKey).getLabel().toString() })
+        Truth.assertThat(aspectConfiguredTargetDeps)
+            .containsExactly("//toolchain:foo_with_provider", "//test:t1")
+    }
 
-  @Test
-  @TestParameters({
-    "{autoExecGroups: True}",
-    "{autoExecGroups: False}",
-  })
-  public void aspectPropagatesToToolchainUsingToolchainTypeAlias(String autoExecGroups)
-      throws Exception {
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @TestParameters(
+        "{autoExecGroups: True}", "{autoExecGroups: False}"
+    )
+    @Throws(java.lang.Exception::class)
+    fun aspectPropagatesToToolchainUsingToolchainTypeAlias(autoExecGroups: String?) {
+        scratch.file(
+            "test/defs.bzl",
+            """
         def _impl(target, ctx):
           return []
 
@@ -513,71 +561,98 @@ public final class StarlarkAspectsToolchainPropagationTest extends AnalysisTestC
           implementation = _rule_impl,
           toolchains = ['//rule:toolchain_type_1_alias'],
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:defs.bzl', 'r1')
         r1(name = 't1')
-        """);
-    useConfiguration(
-        "--extra_toolchains=//toolchain:foo_toolchain",
-        "--incompatible_auto_exec_groups=" + autoExecGroups);
+        
+        """.trimIndent()
+        )
+        useConfiguration(
+            "--extra_toolchains=//toolchain:foo_toolchain",
+            "--incompatible_auto_exec_groups=" + autoExecGroups
+        )
 
-    var unused =
-        update(
-            ImmutableList.of(
-                "//test:defs.bzl%toolchain_aspect", "//test:defs.bzl%no_toolchain_aspect"),
-            "//test:t1");
+        val unused: @NotNull AnalysisResult =
+            update(
+                com.google.common.collect.ImmutableList.of<String?>(
+                    "//test:defs.bzl%toolchain_aspect", "//test:defs.bzl%no_toolchain_aspect"
+                ),
+                "//test:t1"
+            )
 
-    var toolchainAspect =
-        Iterables.getOnlyElement(getAspectKeys("//test:t1", "//test:defs.bzl%toolchain_aspect"));
-    var toolchainAspectNode =
-        skyframeExecutor.getEvaluator().getInMemoryGraph().getAllNodeEntries().stream()
-            .filter(n -> n.getKey().equals(toolchainAspect))
-            .findFirst()
-            .orElse(null);
-    assertThat(toolchainAspectNode).isNotNull();
+        val toolchainAspect: AspectKey? =
+            com.google.common.collect.Iterables.getOnlyElement<AspectKey?>(
+                getAspectKeys(
+                    "//test:t1",
+                    "//test:defs.bzl%toolchain_aspect"
+                )
+            )
+        val toolchainAspectNode: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            skyframeExecutor.getEvaluator().getInMemoryGraph().getAllNodeEntries().stream()
+                .filter({ n -> n.getKey().equals(toolchainAspect) })
+                .findFirst()
+                .orElse(null)
+        assertThat(toolchainAspectNode).isNotNull()
 
-    var noToolchainAspect =
-        Iterables.getOnlyElement(getAspectKeys("//test:t1", "//test:defs.bzl%no_toolchain_aspect"));
-    var noToolchainAspectNode =
-        skyframeExecutor.getEvaluator().getInMemoryGraph().getAllNodeEntries().stream()
-            .filter(n -> n.getKey().equals(noToolchainAspect))
-            .findFirst()
-            .orElse(null);
-    assertThat(noToolchainAspectNode).isNotNull();
+        val noToolchainAspect: AspectKey? =
+            com.google.common.collect.Iterables.getOnlyElement<AspectKey?>(
+                getAspectKeys(
+                    "//test:t1",
+                    "//test:defs.bzl%no_toolchain_aspect"
+                )
+            )
+        val noToolchainAspectNode: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            skyframeExecutor.getEvaluator().getInMemoryGraph().getAllNodeEntries().stream()
+                .filter({ n -> n.getKey().equals(noToolchainAspect) })
+                .findFirst()
+                .orElse(null)
+        assertThat(noToolchainAspectNode).isNotNull()
 
-    var toolchainAspectDirectDeps =
-        ImmutableSet.copyOf(Iterables.filter(toolchainAspectNode.getDirectDeps(), SkyKey.class));
-    var noToolchainAspectDirectDeps =
-        ImmutableSet.copyOf(Iterables.filter(noToolchainAspectNode.getDirectDeps(), SkyKey.class));
+        val toolchainAspectDirectDeps: com.google.common.collect.ImmutableSet<out Any> =
+            com.google.common.collect.ImmutableSet.copyOf(
+                com.google.common.collect.Iterables.filter(
+                    toolchainAspectNode.getDirectDeps(),
+                    SkyKey::class.java
+                )
+            )
+        val noToolchainAspectDirectDeps: com.google.common.collect.ImmutableSet<out Any?> =
+            com.google.common.collect.ImmutableSet.copyOf(
+                com.google.common.collect.Iterables.filter(
+                    noToolchainAspectNode.getDirectDeps(),
+                    SkyKey::class.java
+                )
+            )
 
-    // only one extra dependency is added for the toolchain propagating aspect
-    assertThat(toolchainAspectDirectDeps.size() - noToolchainAspectDirectDeps.size()).isEqualTo(1);
-    assertThat(toolchainAspectDirectDeps).containsAtLeastElementsIn(noToolchainAspectDirectDeps);
+        // only one extra dependency is added for the toolchain propagating aspect
+        Truth.assertThat(toolchainAspectDirectDeps.size - noToolchainAspectDirectDeps.size).isEqualTo(1)
+        Truth.assertThat(toolchainAspectDirectDeps).containsAtLeastElementsIn(noToolchainAspectDirectDeps)
 
-    // the extra dependency is the aspect application on the target's resolved toolchain
-    var aspectOnToolchainDep =
-        Iterables.getOnlyElement(
-            Sets.difference(toolchainAspectDirectDeps, noToolchainAspectDirectDeps));
-    assertThat(aspectOnToolchainDep).isInstanceOf(AspectKey.class);
-    assertThat(((AspectKey) aspectOnToolchainDep).getAspectName())
-        .isEqualTo("//test:defs.bzl%toolchain_aspect");
-    assertThat(((AspectKey) aspectOnToolchainDep).getLabel().toString())
-        .isEqualTo("//toolchain:foo");
-  }
+        // the extra dependency is the aspect application on the target's resolved toolchain
+        val aspectOnToolchainDep: Any =
+            com.google.common.collect.Iterables.getOnlyElement(
+                com.google.common.collect.Sets.difference(toolchainAspectDirectDeps, noToolchainAspectDirectDeps)
+            )
+        Truth.assertThat(aspectOnToolchainDep).isInstanceOf(AspectKey::class.java)
+        assertThat((aspectOnToolchainDep as AspectKey).getAspectName())
+            .isEqualTo("//test:defs.bzl%toolchain_aspect")
+        assertThat((aspectOnToolchainDep as AspectKey).getLabel().toString())
+            .isEqualTo("//toolchain:foo")
+    }
 
-  @Test
-  @TestParameters({
-    "{autoExecGroups: True}",
-    "{autoExecGroups: False}",
-  })
-  public void toolchainPropagationBasedOnAspectRequiredProviders(String autoExecGroups)
-      throws Exception {
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @TestParameters(
+        "{autoExecGroups: True}", "{autoExecGroups: False}"
+    )
+    @Throws(java.lang.Exception::class)
+    fun toolchainPropagationBasedOnAspectRequiredProviders(autoExecGroups: String?) {
+        scratch.file(
+            "test/defs.bzl",
+            """
         load("//rule:test_toolchain.bzl", "MyProvider")
 
         def _impl(target, ctx):
@@ -598,41 +673,54 @@ public final class StarlarkAspectsToolchainPropagationTest extends AnalysisTestC
           exec_groups = {"gp": exec_group(toolchains = ['//rule:toolchain_type_2'])},
           provides = [MyProvider],
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:defs.bzl', 'r1')
         r1(name = 't1')
-        """);
-    useConfiguration(
-        "--extra_toolchains=//toolchain:foo_toolchain,//toolchain:foo_toolchain_with_provider",
-        "--incompatible_auto_exec_groups=" + autoExecGroups);
+        
+        """.trimIndent()
+        )
+        useConfiguration(
+            "--extra_toolchains=//toolchain:foo_toolchain,//toolchain:foo_toolchain_with_provider",
+            "--incompatible_auto_exec_groups=" + autoExecGroups
+        )
 
-    var unused = update(ImmutableList.of("//test:defs.bzl%toolchain_aspect"), "//test:t1");
+        val unused: @NotNull AnalysisResult =
+            update(com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%toolchain_aspect"), "//test:t1")
 
-    var aspectOnTarget =
-        Iterables.getOnlyElement(getAspectKeys("//test:t1", "//test:defs.bzl%toolchain_aspect"));
-    var aspectOnTargetNode =
-        skyframeExecutor.getEvaluator().getInMemoryGraph().getAllNodeEntries().stream()
-            .filter(n -> n.getKey().equals(aspectOnTarget))
-            .findFirst()
-            .orElse(null);
-    assertThat(aspectOnTargetNode).isNotNull();
+        val aspectOnTarget: AspectKey? =
+            com.google.common.collect.Iterables.getOnlyElement<AspectKey?>(
+                getAspectKeys(
+                    "//test:t1",
+                    "//test:defs.bzl%toolchain_aspect"
+                )
+            )
+        val aspectOnTargetNode: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            skyframeExecutor.getEvaluator().getInMemoryGraph().getAllNodeEntries().stream()
+                .filter({ n -> n.getKey().equals(aspectOnTarget) })
+                .findFirst()
+                .orElse(null)
+        assertThat(aspectOnTargetNode).isNotNull()
 
-    // aspect propagated only to //toolchain:foo_with_provider
-    var aspectOnToolchain =
-        Iterables.getOnlyElement(
-            Iterables.filter(aspectOnTargetNode.getDirectDeps(), AspectKey.class));
-    assertThat(aspectOnToolchain.getLabel().toString()).isEqualTo("//toolchain:foo_with_provider");
-    assertThat(aspectOnToolchain.getAspectName()).isEqualTo("//test:defs.bzl%toolchain_aspect");
-  }
+        // aspect propagated only to //toolchain:foo_with_provider
+        val aspectOnToolchain: T? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(
+                com.google.common.collect.Iterables.filter(aspectOnTargetNode.getDirectDeps(), AspectKey::class.java)
+            )
+        assertThat(aspectOnToolchain.getLabel().toString()).isEqualTo("//toolchain:foo_with_provider")
+        assertThat(aspectOnToolchain.getAspectName()).isEqualTo("//test:defs.bzl%toolchain_aspect")
+    }
 
-  @Test
-  public void aspectPropagatesToToolchainDeps() throws Exception {
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun aspectPropagatesToToolchainDeps() {
+        scratch.file(
+            "test/defs.bzl",
+            """
         def _impl(target, ctx):
           return []
 
@@ -649,49 +737,62 @@ public final class StarlarkAspectsToolchainPropagationTest extends AnalysisTestC
           implementation = _rule_impl,
           exec_groups = {"gp": exec_group(toolchains = ['//rule:toolchain_type_3'])},
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:defs.bzl', 'r1')
         r1(name = 't1')
-        """);
-    useConfiguration("--extra_toolchains=//toolchain:foo_toolchain_with_dep");
+        
+        """.trimIndent()
+        )
+        useConfiguration("--extra_toolchains=//toolchain:foo_toolchain_with_dep")
 
-    var unused = update(ImmutableList.of("//test:defs.bzl%toolchain_aspect"), "//test:t1");
+        val unused: @NotNull AnalysisResult =
+            update(com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%toolchain_aspect"), "//test:t1")
 
-    var aspectOnTarget =
-        Iterables.getOnlyElement(getAspectKeys("//test:t1", "//test:defs.bzl%toolchain_aspect"));
-    var aspectOnTargetNode =
-        skyframeExecutor.getEvaluator().getInMemoryGraph().getAllNodeEntries().stream()
-            .filter(n -> n.getKey().equals(aspectOnTarget))
-            .findFirst()
-            .orElse(null);
-    assertThat(aspectOnTargetNode).isNotNull();
+        val aspectOnTarget: AspectKey? =
+            com.google.common.collect.Iterables.getOnlyElement<AspectKey?>(
+                getAspectKeys(
+                    "//test:t1",
+                    "//test:defs.bzl%toolchain_aspect"
+                )
+            )
+        val aspectOnTargetNode: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            skyframeExecutor.getEvaluator().getInMemoryGraph().getAllNodeEntries().stream()
+                .filter({ n -> n.getKey().equals(aspectOnTarget) })
+                .findFirst()
+                .orElse(null)
+        assertThat(aspectOnTargetNode).isNotNull()
 
-    var aspectOnToolchain =
-        Iterables.getOnlyElement(
-            Iterables.filter(aspectOnTargetNode.getDirectDeps(), AspectKey.class));
-    var aspectOnToolchainNode =
-        skyframeExecutor.getEvaluator().getInMemoryGraph().getAllNodeEntries().stream()
-            .filter(n -> n.getKey().equals(aspectOnToolchain))
-            .findFirst()
-            .orElse(null);
-    assertThat(aspectOnToolchainNode).isNotNull();
-    assertThat(aspectOnToolchain.getLabel().toString()).isEqualTo("//toolchain:foo_with_dep");
+        val aspectOnToolchain: T? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(
+                com.google.common.collect.Iterables.filter(aspectOnTargetNode.getDirectDeps(), AspectKey::class.java)
+            )
+        val aspectOnToolchainNode: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            skyframeExecutor.getEvaluator().getInMemoryGraph().getAllNodeEntries().stream()
+                .filter({ n -> n.getKey().equals(aspectOnToolchain) })
+                .findFirst()
+                .orElse(null)
+        assertThat(aspectOnToolchainNode).isNotNull()
+        assertThat(aspectOnToolchain.getLabel().toString()).isEqualTo("//toolchain:foo_with_dep")
 
-    var aspectOnToolchainDep =
-        Iterables.getOnlyElement(
-            Iterables.filter(aspectOnToolchainNode.getDirectDeps(), AspectKey.class));
-    assertThat(aspectOnToolchainDep.getLabel().toString()).isEqualTo("//toolchain:toolchain_dep");
-    assertThat(aspectOnToolchainDep.getAspectName()).isEqualTo("//test:defs.bzl%toolchain_aspect");
-  }
+        val aspectOnToolchainDep: T? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(
+                com.google.common.collect.Iterables.filter(aspectOnToolchainNode.getDirectDeps(), AspectKey::class.java)
+            )
+        assertThat(aspectOnToolchainDep.getLabel().toString()).isEqualTo("//toolchain:toolchain_dep")
+        assertThat(aspectOnToolchainDep.getAspectName()).isEqualTo("//test:defs.bzl%toolchain_aspect")
+    }
 
-  @Test
-  public void requiredAspectPropagatesToToolchain() throws Exception {
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun requiredAspectPropagatesToToolchain() {
+        scratch.file(
+            "test/defs.bzl",
+            """
         def _impl(target, ctx):
           return []
 
@@ -710,49 +811,60 @@ public final class StarlarkAspectsToolchainPropagationTest extends AnalysisTestC
           implementation = _rule_impl,
           exec_groups = {"gp": exec_group(toolchains = ['//rule:toolchain_type_1'])},
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:defs.bzl', 'r1')
         r1(name = 't1')
-        """);
-    useConfiguration("--extra_toolchains=//toolchain:foo_toolchain");
+        
+        """.trimIndent()
+        )
+        useConfiguration("--extra_toolchains=//toolchain:foo_toolchain")
 
-    var unused = update(ImmutableList.of("//test:defs.bzl%toolchain_aspect"), "//test:t1");
+        val unused: @NotNull AnalysisResult =
+            update(com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%toolchain_aspect"), "//test:t1")
 
-    var aspectOnTarget =
-        Iterables.getOnlyElement(getAspectKeys("//test:t1", "//test:defs.bzl%toolchain_aspect"));
-    var aspectOnTargetNode =
-        skyframeExecutor.getEvaluator().getInMemoryGraph().getAllNodeEntries().stream()
-            .filter(n -> n.getKey().equals(aspectOnTarget))
-            .findFirst()
-            .orElse(null);
-    assertThat(aspectOnTargetNode).isNotNull();
+        val aspectOnTarget: AspectKey? =
+            com.google.common.collect.Iterables.getOnlyElement<AspectKey?>(
+                getAspectKeys(
+                    "//test:t1",
+                    "//test:defs.bzl%toolchain_aspect"
+                )
+            )
+        val aspectOnTargetNode: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            skyframeExecutor.getEvaluator().getInMemoryGraph().getAllNodeEntries().stream()
+                .filter({ n -> n.getKey().equals(aspectOnTarget) })
+                .findFirst()
+                .orElse(null)
+        assertThat(aspectOnTargetNode).isNotNull()
 
-    var aspectsDeps =
-        Iterables.transform(
-            Iterables.filter(aspectOnTargetNode.getDirectDeps(), AspectKey.class),
-            k -> k.getAspectName() + " on " + k.getLabel().toString());
-    assertThat(aspectsDeps).hasSize(3);
-    // toolchain_aspect requires required_aspect so required_aspect will be propagated before
-    // toolchain_aspect to //test:t1 and its toolchain
-    assertThat(aspectsDeps)
-        .containsExactly(
-            "//test:defs.bzl%required_aspect on //test:t1",
-            "//test:defs.bzl%toolchain_aspect on //toolchain:foo",
-            "//test:defs.bzl%required_aspect on //toolchain:foo");
-  }
+        val aspectsDeps: Iterable<T> =
+            com.google.common.collect.Iterables.transform<F?, T>(
+                com.google.common.collect.Iterables.filter(aspectOnTargetNode.getDirectDeps(), AspectKey::class.java),
+                com.google.common.base.Function { k: F? -> k.getAspectName() + " on " + k.getLabel().toString() })
+        Truth.assertThat(aspectsDeps).hasSize(3)
+        // toolchain_aspect requires required_aspect so required_aspect will be propagated before
+        // toolchain_aspect to //test:t1 and its toolchain
+        Truth.assertThat(aspectsDeps)
+            .containsExactly(
+                "//test:defs.bzl%required_aspect on //test:t1",
+                "//test:defs.bzl%toolchain_aspect on //toolchain:foo",
+                "//test:defs.bzl%required_aspect on //toolchain:foo"
+            )
+    }
 
-  @Test
-  @TestParameters({
-    "{autoExecGroups: True}",
-    "{autoExecGroups: False}",
-  })
-  public void aspectOnAspectPropagateToToolchain(String autoExecGroups) throws Exception {
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @TestParameters(
+        "{autoExecGroups: True}", "{autoExecGroups: False}"
+    )
+    @Throws(java.lang.Exception::class)
+    fun aspectOnAspectPropagateToToolchain(autoExecGroups: String?) {
+        scratch.file(
+            "test/defs.bzl",
+            """
         Prov1 = provider()
         Prov2 = provider()
 
@@ -790,68 +902,86 @@ public final class StarlarkAspectsToolchainPropagationTest extends AnalysisTestC
           implementation = _rule_impl,
           toolchains = ['//rule:toolchain_type_1'],
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:defs.bzl', 'r1')
         r1(name = 't1')
-        """);
-    useConfiguration(
-        "--extra_toolchains=//toolchain:foo_toolchain",
-        "--incompatible_auto_exec_groups=" + autoExecGroups);
+        
+        """.trimIndent()
+        )
+        useConfiguration(
+            "--extra_toolchains=//toolchain:foo_toolchain",
+            "--incompatible_auto_exec_groups=" + autoExecGroups
+        )
 
-    var unused =
-        update(
-            ImmutableList.of(
-                "//test:defs.bzl%toolchain_aspect_2",
-                "//test:defs.bzl%no_toolchain_aspect", "//test:defs.bzl%toolchain_aspect_1"),
-            "//test:t1");
+        val unused: @NotNull AnalysisResult =
+            update(
+                com.google.common.collect.ImmutableList.of<String?>(
+                    "//test:defs.bzl%toolchain_aspect_2",
+                    "//test:defs.bzl%no_toolchain_aspect", "//test:defs.bzl%toolchain_aspect_1"
+                ),
+                "//test:t1"
+            )
 
-    var aspectOnTarget =
-        Iterables.getOnlyElement(getAspectKeys("//test:t1", "//test:defs.bzl%toolchain_aspect_1"));
-    assertThat(aspectOnTarget.baseKeys).hasSize(1);
-    assertThat(aspectOnTarget.baseKeys.get(0).getAspectName())
-        .isEqualTo("//test:defs.bzl%no_toolchain_aspect");
+        val aspectOnTarget: AspectKey? =
+            com.google.common.collect.Iterables.getOnlyElement<AspectKey?>(
+                getAspectKeys(
+                    "//test:t1",
+                    "//test:defs.bzl%toolchain_aspect_1"
+                )
+            )
+        assertThat(aspectOnTarget.baseKeys).hasSize(1)
+        assertThat(aspectOnTarget.baseKeys.get(0).getAspectName())
+            .isEqualTo("//test:defs.bzl%no_toolchain_aspect")
 
-    var aspectOnTargetNode =
-        skyframeExecutor.getEvaluator().getInMemoryGraph().getAllNodeEntries().stream()
-            .filter(n -> n.getKey().equals(aspectOnTarget))
-            .findFirst()
-            .orElse(null);
-    assertThat(aspectOnTargetNode).isNotNull();
+        val aspectOnTargetNode: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            skyframeExecutor.getEvaluator().getInMemoryGraph().getAllNodeEntries().stream()
+                .filter({ n -> n.getKey().equals(aspectOnTarget) })
+                .findFirst()
+                .orElse(null)
+        assertThat(aspectOnTargetNode).isNotNull()
 
-    var aspectsOnToolchain =
-        Iterables.transform(
-            Iterables.filter(aspectOnTargetNode.getDirectDeps(), AspectKey.class),
-            k -> k.getAspectName() + " on " + k.getLabel().toString());
-    assertThat(aspectsOnToolchain).hasSize(4);
-    // Only `toolchain_aspect_1` and `toolchain_aspect_2` are propagated to the toolchain
-    assertThat(aspectsOnToolchain)
-        .containsExactly(
-            "//test:defs.bzl%toolchain_aspect_2 on //test:t1",
-            "//test:defs.bzl%no_toolchain_aspect on //test:t1",
-            "//test:defs.bzl%toolchain_aspect_1 on //toolchain:foo",
-            "//test:defs.bzl%toolchain_aspect_2 on //toolchain:foo");
+        val aspectsOnToolchain: Iterable<T> =
+            com.google.common.collect.Iterables.transform<F?, T>(
+                com.google.common.collect.Iterables.filter(aspectOnTargetNode.getDirectDeps(), AspectKey::class.java),
+                com.google.common.base.Function { k: F? -> k.getAspectName() + " on " + k.getLabel().toString() })
+        Truth.assertThat(aspectsOnToolchain).hasSize(4)
+        // Only `toolchain_aspect_1` and `toolchain_aspect_2` are propagated to the toolchain
+        Truth.assertThat(aspectsOnToolchain)
+            .containsExactly(
+                "//test:defs.bzl%toolchain_aspect_2 on //test:t1",
+                "//test:defs.bzl%no_toolchain_aspect on //test:t1",
+                "//test:defs.bzl%toolchain_aspect_1 on //toolchain:foo",
+                "//test:defs.bzl%toolchain_aspect_2 on //toolchain:foo"
+            )
 
-    var toolchainAspect1 =
-        Iterables.getOnlyElement(
-            Iterables.filter(
-                Iterables.filter(aspectOnTargetNode.getDirectDeps(), AspectKey.class),
-                k ->
-                    k.getAspectName().equals("//test:defs.bzl%toolchain_aspect_1")
-                        && k.getLabel().toString().equals("//toolchain:foo")));
-    // Since `toolchain_aspect_1` only depends on `no_toolchain_aspect`, it will have no base keys
-    // when applied on the toolchain.
-    assertThat(toolchainAspect1.baseKeys).isEmpty();
-  }
+        val toolchainAspect1: T? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(
+                com.google.common.collect.Iterables.filter<T?>(
+                    com.google.common.collect.Iterables.filter(
+                        aspectOnTargetNode.getDirectDeps(),
+                        AspectKey::class.java
+                    ),
+                    com.google.common.base.Predicate { k: T? ->
+                        k.getAspectName().equals("//test:defs.bzl%toolchain_aspect_1")
+                                && k.getLabel().toString().equals("//toolchain:foo")
+                    })
+            )
+        // Since `toolchain_aspect_1` only depends on `no_toolchain_aspect`, it will have no base keys
+        // when applied on the toolchain.
+        assertThat(toolchainAspect1.baseKeys).isEmpty()
+    }
 
-  @Test
-  public void execGroupWithMultipleToolchainTypes_aspectsPropagateToRelevantTypes()
-      throws Exception {
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun execGroupWithMultipleToolchainTypes_aspectsPropagateToRelevantTypes() {
+        scratch.file(
+            "test/defs.bzl",
+            """
         Prov1 = provider()
         Prov2 = provider()
 
@@ -894,66 +1024,82 @@ public final class StarlarkAspectsToolchainPropagationTest extends AnalysisTestC
           exec_groups = {"gp": exec_group(
               toolchains = ['//rule:toolchain_type_1', '//rule:toolchain_type_3'])},
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:defs.bzl', 'r1')
         r1(name = 't1')
-        """);
-    useConfiguration(
-        "--extra_toolchains=//toolchain:foo_toolchain,//toolchain:foo_toolchain_with_dep");
+        
+        """.trimIndent()
+        )
+        useConfiguration(
+            "--extra_toolchains=//toolchain:foo_toolchain,//toolchain:foo_toolchain_with_dep"
+        )
 
-    var unused =
-        update(
-            ImmutableList.of(
-                "//test:defs.bzl%toolchain_aspect_2",
-                "//test:defs.bzl%toolchain_aspect_1", "//test:defs.bzl%toolchain_aspect_0"),
-            "//test:t1");
+        val unused: @NotNull AnalysisResult =
+            update(
+                com.google.common.collect.ImmutableList.of<String?>(
+                    "//test:defs.bzl%toolchain_aspect_2",
+                    "//test:defs.bzl%toolchain_aspect_1", "//test:defs.bzl%toolchain_aspect_0"
+                ),
+                "//test:t1"
+            )
 
-    var aspectOnTarget =
-        Iterables.getOnlyElement(getAspectKeys("//test:t1", "//test:defs.bzl%toolchain_aspect_0"));
-    var aspectOnTargetNode =
-        skyframeExecutor.getEvaluator().getInMemoryGraph().getAllNodeEntries().stream()
-            .filter(n -> n.getKey().equals(aspectOnTarget))
-            .findFirst()
-            .orElse(null);
-    assertThat(aspectOnTargetNode).isNotNull();
+        val aspectOnTarget: AspectKey? =
+            com.google.common.collect.Iterables.getOnlyElement<AspectKey?>(
+                getAspectKeys(
+                    "//test:t1",
+                    "//test:defs.bzl%toolchain_aspect_0"
+                )
+            )
+        val aspectOnTargetNode: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            skyframeExecutor.getEvaluator().getInMemoryGraph().getAllNodeEntries().stream()
+                .filter({ n -> n.getKey().equals(aspectOnTarget) })
+                .findFirst()
+                .orElse(null)
+        assertThat(aspectOnTargetNode).isNotNull()
 
-    var aspectsOnToolchain =
-        Iterables.transform(
-            Iterables.filter(aspectOnTargetNode.getDirectDeps(), AspectKey.class),
-            k -> k.getAspectName() + " on " + k.getLabel().toString());
-    assertThat(aspectsOnToolchain).hasSize(5);
-    assertThat(aspectsOnToolchain)
-        .containsExactly(
-            "//test:defs.bzl%toolchain_aspect_1 on //test:t1",
-            "//test:defs.bzl%toolchain_aspect_2 on //test:t1",
-            // toolchain_aspect_0 and toolchain_aspect_2 propagate to //toolchain:foo of
-            // //rule:toolchain_type_1
-            "//test:defs.bzl%toolchain_aspect_0 on //toolchain:foo",
-            "//test:defs.bzl%toolchain_aspect_2 on //toolchain:foo",
-            // toolchain_aspect_1 propagates to //toolchain:foo_with_dep of //rule:toolchain_type_3
-            "//test:defs.bzl%toolchain_aspect_1 on //toolchain:foo_with_dep");
+        val aspectsOnToolchain: Iterable<T> =
+            com.google.common.collect.Iterables.transform<F?, T>(
+                com.google.common.collect.Iterables.filter(aspectOnTargetNode.getDirectDeps(), AspectKey::class.java),
+                com.google.common.base.Function { k: F? -> k.getAspectName() + " on " + k.getLabel().toString() })
+        Truth.assertThat(aspectsOnToolchain).hasSize(5)
+        Truth.assertThat(aspectsOnToolchain)
+            .containsExactly(
+                "//test:defs.bzl%toolchain_aspect_1 on //test:t1",
+                "//test:defs.bzl%toolchain_aspect_2 on //test:t1",  // toolchain_aspect_0 and toolchain_aspect_2 propagate to //toolchain:foo of
+                // //rule:toolchain_type_1
+                "//test:defs.bzl%toolchain_aspect_0 on //toolchain:foo",
+                "//test:defs.bzl%toolchain_aspect_2 on //toolchain:foo",  // toolchain_aspect_1 propagates to //toolchain:foo_with_dep of //rule:toolchain_type_3
+                "//test:defs.bzl%toolchain_aspect_1 on //toolchain:foo_with_dep"
+            )
 
-    var toolchainAspect1 =
-        Iterables.getOnlyElement(
-            Iterables.filter(
-                Iterables.filter(aspectOnTargetNode.getDirectDeps(), AspectKey.class),
-                k ->
-                    k.getAspectName().equals("//test:defs.bzl%toolchain_aspect_0")
-                        && k.getLabel().toString().equals("//toolchain:foo")));
-    // Since `toolchain_aspect_0` depends on `toolchain_aspect_2` when applied on //toolchain:foo,
-    assertThat(Iterables.getOnlyElement(toolchainAspect1.baseKeys).getAspectName())
-        .isEqualTo("//test:defs.bzl%toolchain_aspect_2");
-  }
+        val toolchainAspect1: T? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(
+                com.google.common.collect.Iterables.filter<T?>(
+                    com.google.common.collect.Iterables.filter(
+                        aspectOnTargetNode.getDirectDeps(),
+                        AspectKey::class.java
+                    ),
+                    com.google.common.base.Predicate { k: T? ->
+                        k.getAspectName().equals("//test:defs.bzl%toolchain_aspect_0")
+                                && k.getLabel().toString().equals("//toolchain:foo")
+                    })
+            )
+        // Since `toolchain_aspect_0` depends on `toolchain_aspect_2` when applied on //toolchain:foo,
+        assertThat(com.google.common.collect.Iterables.getOnlyElement<Any?>(toolchainAspect1.baseKeys).getAspectName())
+            .isEqualTo("//test:defs.bzl%toolchain_aspect_2")
+    }
 
-  @Test
-  public void toolchainTypesResolvedToSameToolchain_aspectsPropagateToSameToolchain()
-      throws Exception {
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun toolchainTypesResolvedToSameToolchain_aspectsPropagateToSameToolchain() {
+        scratch.file(
+            "test/defs.bzl",
+            """
         prov = provider()
 
         def _impl(target, ctx):
@@ -982,52 +1128,64 @@ public final class StarlarkAspectsToolchainPropagationTest extends AnalysisTestC
           exec_groups = {"gp": exec_group(
               toolchains = ['//rule:toolchain_type_2', '//rule:toolchain_type_3'])},
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:defs.bzl', 'r1')
         r1(name = 't1')
-        """);
-    useConfiguration(
-        "--extra_toolchains=//toolchain:foo_type_2", "--extra_toolchains=//toolchain:foo_type_3");
+        
+        """.trimIndent()
+        )
+        useConfiguration(
+            "--extra_toolchains=//toolchain:foo_type_2", "--extra_toolchains=//toolchain:foo_type_3"
+        )
 
-    var unused =
-        update(
-            ImmutableList.of(
-                "//test:defs.bzl%toolchain_aspect_2", "//test:defs.bzl%toolchain_aspect_1"),
-            "//test:t1");
+        val unused: @NotNull AnalysisResult =
+            update(
+                com.google.common.collect.ImmutableList.of<String?>(
+                    "//test:defs.bzl%toolchain_aspect_2", "//test:defs.bzl%toolchain_aspect_1"
+                ),
+                "//test:t1"
+            )
 
-    var aspectOnTarget =
-        Iterables.getOnlyElement(getAspectKeys("//test:t1", "//test:defs.bzl%toolchain_aspect_1"));
-    var aspectOnTargetNode =
-        skyframeExecutor.getEvaluator().getInMemoryGraph().getAllNodeEntries().stream()
-            .filter(n -> n.getKey().equals(aspectOnTarget))
-            .findFirst()
-            .orElse(null);
-    assertThat(aspectOnTargetNode).isNotNull();
+        val aspectOnTarget: AspectKey? =
+            com.google.common.collect.Iterables.getOnlyElement<AspectKey?>(
+                getAspectKeys(
+                    "//test:t1",
+                    "//test:defs.bzl%toolchain_aspect_1"
+                )
+            )
+        val aspectOnTargetNode: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            skyframeExecutor.getEvaluator().getInMemoryGraph().getAllNodeEntries().stream()
+                .filter({ n -> n.getKey().equals(aspectOnTarget) })
+                .findFirst()
+                .orElse(null)
+        assertThat(aspectOnTargetNode).isNotNull()
 
-    var aspectsOnToolchain =
-        Iterables.transform(
-            Iterables.filter(aspectOnTargetNode.getDirectDeps(), AspectKey.class),
-            k -> k.getAspectName() + " on " + k.getLabel().toString());
-    assertThat(aspectsOnToolchain).hasSize(3);
+        val aspectsOnToolchain: Iterable<T> =
+            com.google.common.collect.Iterables.transform<F?, T>(
+                com.google.common.collect.Iterables.filter(aspectOnTargetNode.getDirectDeps(), AspectKey::class.java),
+                com.google.common.base.Function { k: F? -> k.getAspectName() + " on " + k.getLabel().toString() })
+        Truth.assertThat(aspectsOnToolchain).hasSize(3)
 
-    assertThat(aspectsOnToolchain)
-        .containsExactly(
-            "//test:defs.bzl%toolchain_aspect_2 on //test:t1",
-            // both aspects propagated to //toolchain:foo_for_all because it resolves both the
-            // toolchain types
-            "//test:defs.bzl%toolchain_aspect_1 on //toolchain:foo_for_all",
-            "//test:defs.bzl%toolchain_aspect_2 on //toolchain:foo_for_all");
-  }
+        Truth.assertThat(aspectsOnToolchain)
+            .containsExactly(
+                "//test:defs.bzl%toolchain_aspect_2 on //test:t1",  // both aspects propagated to //toolchain:foo_for_all because it resolves both the
+                // toolchain types
+                "//test:defs.bzl%toolchain_aspect_1 on //toolchain:foo_for_all",
+                "//test:defs.bzl%toolchain_aspect_2 on //toolchain:foo_for_all"
+            )
+    }
 
-  @Test
-  public void toolchainTypesResolvedToSameToolchainDiffExecPlatform_aspectPropagateTwice()
-      throws Exception {
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun toolchainTypesResolvedToSameToolchainDiffExecPlatform_aspectPropagateTwice() {
+        scratch.file(
+            "test/defs.bzl",
+            """
         def _impl(target, ctx):
           return []
 
@@ -1048,57 +1206,69 @@ public final class StarlarkAspectsToolchainPropagationTest extends AnalysisTestC
               ),
             "gp2": exec_group(toolchains = ['//rule:toolchain_type_1'])},
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:defs.bzl', 'r1')
         r1(name = 't1')
-        """);
-    useConfiguration(
-        "--extra_toolchains=//toolchain:foo_toolchain",
-        "--extra_execution_platforms=//platforms:platform_1,//platforms:platform_2");
+        
+        """.trimIndent()
+        )
+        useConfiguration(
+            "--extra_toolchains=//toolchain:foo_toolchain",
+            "--extra_execution_platforms=//platforms:platform_1,//platforms:platform_2"
+        )
 
-    var unused = update(ImmutableList.of("//test:defs.bzl%toolchain_aspect"), "//test:t1");
+        val unused: @NotNull AnalysisResult =
+            update(com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%toolchain_aspect"), "//test:t1")
 
-    var aspectOnTarget =
-        Iterables.getOnlyElement(getAspectKeys("//test:t1", "//test:defs.bzl%toolchain_aspect"));
-    var aspectOnTargetNode =
-        skyframeExecutor.getEvaluator().getInMemoryGraph().getAllNodeEntries().stream()
-            .filter(n -> n.getKey().equals(aspectOnTarget))
-            .findFirst()
-            .orElse(null);
-    assertThat(aspectOnTargetNode).isNotNull();
+        val aspectOnTarget: AspectKey? =
+            com.google.common.collect.Iterables.getOnlyElement<AspectKey?>(
+                getAspectKeys(
+                    "//test:t1",
+                    "//test:defs.bzl%toolchain_aspect"
+                )
+            )
+        val aspectOnTargetNode: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            skyframeExecutor.getEvaluator().getInMemoryGraph().getAllNodeEntries().stream()
+                .filter({ n -> n.getKey().equals(aspectOnTarget) })
+                .findFirst()
+                .orElse(null)
+        assertThat(aspectOnTargetNode).isNotNull()
 
-    var aspectsOnToolchain =
-        Iterables.transform(
-            Iterables.filter(aspectOnTargetNode.getDirectDeps(), AspectKey.class),
-            k ->
-                k.getAspectName()
-                    + " on "
-                    + k.getLabel().toString()
-                    + ", exec_platform: "
-                    + k.getBaseConfiguredTargetKey().getExecutionPlatformLabel().toString());
-    assertThat(aspectsOnToolchain).hasSize(2);
-    // aspect propagated twice on the same toolchain target but with different execution platform
-    assertThat(aspectsOnToolchain)
-        .containsExactly(
-            "//test:defs.bzl%toolchain_aspect on //toolchain:foo, exec_platform:"
-                + " //platforms:platform_2",
-            "//test:defs.bzl%toolchain_aspect on //toolchain:foo, exec_platform:"
-                + " //platforms:platform_1");
-  }
+        val aspectsOnToolchain: Iterable<T> =
+            com.google.common.collect.Iterables.transform<F?, T>(
+                com.google.common.collect.Iterables.filter(aspectOnTargetNode.getDirectDeps(), AspectKey::class.java),
+                com.google.common.base.Function { k: F? ->
+                    (k.getAspectName()
+                            + " on "
+                            + k.getLabel().toString()
+                            + ", exec_platform: "
+                            + k.getBaseConfiguredTargetKey().getExecutionPlatformLabel().toString())
+                })
+        Truth.assertThat(aspectsOnToolchain).hasSize(2)
+        // aspect propagated twice on the same toolchain target but with different execution platform
+        Truth.assertThat(aspectsOnToolchain)
+            .containsExactly(
+                "//test:defs.bzl%toolchain_aspect on //toolchain:foo, exec_platform:"
+                        + " //platforms:platform_2",
+                "//test:defs.bzl%toolchain_aspect on //toolchain:foo, exec_platform:"
+                        + " //platforms:platform_1"
+            )
+    }
 
-  @Test
-  @TestParameters({
-    "{autoExecGroups: True}",
-    "{autoExecGroups: False}",
-  })
-  public void aspectPropagatesToToolchain_providersCollected(String autoExecGroups)
-      throws Exception {
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @TestParameters(
+        "{autoExecGroups: True}", "{autoExecGroups: False}"
+    )
+    @Throws(java.lang.Exception::class)
+    fun aspectPropagatesToToolchain_providersCollected(autoExecGroups: String?) {
+        scratch.file(
+            "test/defs.bzl",
+            """
         AspectProvider = provider()
         def _impl(target, ctx):
           target_res = "toolchain_aspect has param = " + ctx.attr.param
@@ -1127,43 +1297,53 @@ public final class StarlarkAspectsToolchainPropagationTest extends AnalysisTestC
           implementation = _rule_impl,
           toolchains = ['//rule:toolchain_type_1'],
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:defs.bzl', 'r1')
         r1(name = 't1')
-        """);
-    useConfiguration(
-        "--extra_toolchains=//toolchain:foo_toolchain",
-        "--incompatible_auto_exec_groups=" + autoExecGroups);
+        
+        """.trimIndent()
+        )
+        useConfiguration(
+            "--extra_toolchains=//toolchain:foo_toolchain",
+            "--incompatible_auto_exec_groups=" + autoExecGroups
+        )
 
-    var analysisResult =
-        update(
-            ImmutableList.of("//test:defs.bzl%toolchain_aspect"),
-            ImmutableMap.of("param", "xxx"),
-            "//test:t1");
+        val analysisResult: @NotNull AnalysisResult =
+            update(
+                com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%toolchain_aspect"),
+                com.google.common.collect.ImmutableMap.of<String?, String?>("param", "xxx"),
+                "//test:t1"
+            )
 
-    ConfiguredAspect configuredAspect =
-        Iterables.getOnlyElement(analysisResult.getAspectsMap().values());
+        val configuredAspect: ConfiguredAspect? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(analysisResult.getAspectsMap().values())
 
-    StarlarkProvider.Key providerKey =
-        new StarlarkProvider.Key(
-            keyForBuild(Label.parseCanonical("//test:defs.bzl")), "AspectProvider");
+        val providerKey: StarlarkProvider.Key =
+            Key(
+                keyForBuild(Label.parseCanonical("//test:defs.bzl")), "AspectProvider"
+            )
 
-    var value = ((StarlarkInfo) configuredAspect.get(providerKey)).getValue("value");
-    assertThat((Iterable<?>) value)
-        .containsExactly(
-            "toolchain_aspect has param = xxx on @@//test:t1",
-            "toolchain_aspect has param = xxx on @@//toolchain:foo with tool in ToolchainInfo ="
-                + " <generated file toolchain/atool>");
-  }
+        val value: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            (configuredAspect.get(providerKey) as StarlarkInfo).getValue("value")
+        Truth.assertThat(value)
+            .containsExactly(
+                "toolchain_aspect has param = xxx on @@//test:t1",
+                "toolchain_aspect has param = xxx on @@//toolchain:foo with tool in ToolchainInfo ="
+                        + " <generated file toolchain/atool>"
+            )
+    }
 
-  @Test
-  public void aspectPropagatesToExecGpToolchain_providersCollected() throws Exception {
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun aspectPropagatesToExecGpToolchain_providersCollected() {
+        scratch.file(
+            "test/defs.bzl",
+            """
         AspectProvider = provider()
 
         def _impl(target, ctx):
@@ -1198,46 +1378,53 @@ public final class StarlarkAspectsToolchainPropagationTest extends AnalysisTestC
           implementation = _rule_impl,
           exec_groups = {"gp": exec_group(toolchains = ['//rule:toolchain_type_1'])},
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:defs.bzl', 'r1')
         r1(name = 't1')
-        """);
-    useConfiguration("--extra_toolchains=//toolchain:foo_toolchain");
+        
+        """.trimIndent()
+        )
+        useConfiguration("--extra_toolchains=//toolchain:foo_toolchain")
 
-    var analysisResult =
-        update(
-            ImmutableList.of("//test:defs.bzl%toolchain_aspect"),
-            ImmutableMap.of("param", "xxx"),
-            "//test:t1");
+        val analysisResult: @NotNull AnalysisResult =
+            update(
+                com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%toolchain_aspect"),
+                com.google.common.collect.ImmutableMap.of<String?, String?>("param", "xxx"),
+                "//test:t1"
+            )
 
-    ConfiguredAspect configuredAspect =
-        Iterables.getOnlyElement(analysisResult.getAspectsMap().values());
+        val configuredAspect: ConfiguredAspect? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(analysisResult.getAspectsMap().values())
 
-    StarlarkProvider.Key providerKey =
-        new StarlarkProvider.Key(
-            keyForBuild(Label.parseCanonical("//test:defs.bzl")), "AspectProvider");
+        val providerKey: StarlarkProvider.Key =
+            Key(
+                keyForBuild(Label.parseCanonical("//test:defs.bzl")), "AspectProvider"
+            )
 
-    var value = ((StarlarkInfo) configuredAspect.get(providerKey)).getValue("value");
-    assertThat((Iterable<?>) value)
-        .containsExactly(
-            "toolchain_aspect has param = xxx on @@//test:t1",
-            "toolchain_aspect has param = xxx on @@//toolchain:foo with tool in"
-                + " ToolchainInfo = <generated file toolchain/atool>");
-  }
+        val value: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            (configuredAspect.get(providerKey) as StarlarkInfo).getValue("value")
+        Truth.assertThat(value)
+            .containsExactly(
+                "toolchain_aspect has param = xxx on @@//test:t1",
+                "toolchain_aspect has param = xxx on @@//toolchain:foo with tool in"
+                        + " ToolchainInfo = <generated file toolchain/atool>"
+            )
+    }
 
-  @Test
-  @TestParameters({
-    "{autoExecGroups: True}",
-    "{autoExecGroups: False}",
-  })
-  public void aspectPropagatesToToolchainUsingAlias_providersCollected(String autoExecGroups)
-      throws Exception {
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @TestParameters(
+        "{autoExecGroups: True}", "{autoExecGroups: False}"
+    )
+    @Throws(java.lang.Exception::class)
+    fun aspectPropagatesToToolchainUsingAlias_providersCollected(autoExecGroups: String?) {
+        scratch.file(
+            "test/defs.bzl",
+            """
         AspectProvider = provider()
         def _impl(target, ctx):
           target_res = "toolchain_aspect has param = " + ctx.attr.param
@@ -1267,43 +1454,53 @@ public final class StarlarkAspectsToolchainPropagationTest extends AnalysisTestC
           implementation = _rule_impl,
           toolchains = ['//rule:toolchain_type_1_alias'],
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:defs.bzl', 'r1')
         r1(name = 't1')
-        """);
-    useConfiguration(
-        "--extra_toolchains=//toolchain:foo_toolchain",
-        "--incompatible_auto_exec_groups=" + autoExecGroups);
+        
+        """.trimIndent()
+        )
+        useConfiguration(
+            "--extra_toolchains=//toolchain:foo_toolchain",
+            "--incompatible_auto_exec_groups=" + autoExecGroups
+        )
 
-    var analysisResult =
-        update(
-            ImmutableList.of("//test:defs.bzl%toolchain_aspect"),
-            ImmutableMap.of("param", "xxx"),
-            "//test:t1");
+        val analysisResult: @NotNull AnalysisResult =
+            update(
+                com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%toolchain_aspect"),
+                com.google.common.collect.ImmutableMap.of<String?, String?>("param", "xxx"),
+                "//test:t1"
+            )
 
-    ConfiguredAspect configuredAspect =
-        Iterables.getOnlyElement(analysisResult.getAspectsMap().values());
+        val configuredAspect: ConfiguredAspect? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(analysisResult.getAspectsMap().values())
 
-    StarlarkProvider.Key providerKey =
-        new StarlarkProvider.Key(
-            keyForBuild(Label.parseCanonical("//test:defs.bzl")), "AspectProvider");
+        val providerKey: StarlarkProvider.Key =
+            Key(
+                keyForBuild(Label.parseCanonical("//test:defs.bzl")), "AspectProvider"
+            )
 
-    var value = ((StarlarkInfo) configuredAspect.get(providerKey)).getValue("value");
-    assertThat((Iterable<?>) value)
-        .containsExactly(
-            "toolchain_aspect has param = xxx on @@//test:t1",
-            "toolchain_aspect has param = xxx on @@//toolchain:foo with tool in ToolchainInfo ="
-                + " <generated file toolchain/atool>");
-  }
+        val value: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            (configuredAspect.get(providerKey) as StarlarkInfo).getValue("value")
+        Truth.assertThat(value)
+            .containsExactly(
+                "toolchain_aspect has param = xxx on @@//test:t1",
+                "toolchain_aspect has param = xxx on @@//toolchain:foo with tool in ToolchainInfo ="
+                        + " <generated file toolchain/atool>"
+            )
+    }
 
-  @Test
-  public void aspectPropagatesToToolchain_cannotSeeToolchainInfoOfDeps() throws Exception {
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun aspectPropagatesToToolchain_cannotSeeToolchainInfoOfDeps() {
+        scratch.file(
+            "test/defs.bzl",
+            """
         AspectProvider = provider()
         def _impl(target, ctx):
           if ctx.rule.toolchains and '//rule:toolchain_type_1' in ctx.rule.toolchains:
@@ -1323,32 +1520,42 @@ public final class StarlarkAspectsToolchainPropagationTest extends AnalysisTestC
           implementation = _rule_impl,
           toolchains = ['//rule:toolchain_type_1'],
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:defs.bzl', 'r1')
         r1(name = 't1')
-        """);
-    useConfiguration("--extra_toolchains=//toolchain:foo_toolchain");
+        
+        """.trimIndent()
+        )
+        useConfiguration("--extra_toolchains=//toolchain:foo_toolchain")
 
-    reporter.removeHandler(failFastHandler);
-    try {
-      var unused = update(ImmutableList.of("//test:defs.bzl%toolchain_aspect"), "//test:t1");
-    } catch (Exception unused) {
-      // expect to fail
+        reporter.removeHandler(failFastHandler)
+        try {
+            val unused: @NotNull AnalysisResult = update(
+                com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%toolchain_aspect"),
+                "//test:t1"
+            )
+        } catch (unused: java.lang.Exception) {
+            // expect to fail
+        }
+        assertContainsEvent(
+            "<ToolchainAspectsProviders for toolchain target: //toolchain:foo> doesn't contain declared"
+                    + " provider 'ToolchainInfo'"
+        )
     }
-    assertContainsEvent(
-        "<ToolchainAspectsProviders for toolchain target: //toolchain:foo> doesn't contain declared"
-            + " provider 'ToolchainInfo'");
-  }
 
-  @Test
-  public void aspectDoesNotPropagatesToToolchain_cannotSeeTargetToolchains(
-      @TestParameter boolean autoExecGroups) throws Exception {
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun aspectDoesNotPropagatesToToolchain_cannotSeeTargetToolchains(
+        @TestParameter autoExecGroups: Boolean
+    ) {
+        scratch.file(
+            "test/defs.bzl",
+            """
         AspectProvider = provider()
         def _impl(target, ctx):
           print(ctx.rule.toolchains['//rule:toolchain_type_1'][AspectProvider])
@@ -1365,32 +1572,45 @@ public final class StarlarkAspectsToolchainPropagationTest extends AnalysisTestC
           implementation = _rule_impl,
           toolchains = ['//rule:toolchain_type_1'],
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:defs.bzl', 'r1')
         r1(name = 't1')
-        """);
-    useConfiguration(
-        "--extra_toolchains=//toolchain:foo_toolchain",
-        "--incompatible_auto_exec_groups=" + autoExecGroups);
+        
+        """.trimIndent()
+        )
+        useConfiguration(
+            "--extra_toolchains=//toolchain:foo_toolchain",
+            "--incompatible_auto_exec_groups=" + autoExecGroups
+        )
 
-    reporter.removeHandler(failFastHandler);
-    assertThrows(
-        ViewCreationFailedException.class,
-        () -> update(ImmutableList.of("//test:defs.bzl%non_toolchain_aspect"), "//test:t1"));
-    assertContainsEvent(
-        "Error: <ToolchainAspectsProviders for toolchain target: //toolchain:foo> doesn't contain"
-            + " declared provider 'AspectProvider'");
-  }
+        reporter.removeHandler(failFastHandler)
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable {
+                update(
+                    com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%non_toolchain_aspect"),
+                    "//test:t1"
+                )
+            })
+        assertContainsEvent(
+            "Error: <ToolchainAspectsProviders for toolchain target: //toolchain:foo> doesn't contain"
+                    + " declared provider 'AspectProvider'"
+        )
+    }
 
-  @Test
-  public void aspectDoesNotPropagatesToToolchain_cannotSeeTargetExecGroups(
-      @TestParameter boolean autoExecGroups) throws Exception {
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun aspectDoesNotPropagatesToToolchain_cannotSeeTargetExecGroups(
+        @TestParameter autoExecGroups: Boolean
+    ) {
+        scratch.file(
+            "test/defs.bzl",
+            """
         AspectProvider = provider()
         def _impl(target, ctx):
           print(ctx.rule.exec_groups['gp'].toolchains['//rule:toolchain_type_1'][AspectProvider])
@@ -1407,31 +1627,43 @@ public final class StarlarkAspectsToolchainPropagationTest extends AnalysisTestC
           implementation = _rule_impl,
           exec_groups = {"gp": exec_group(toolchains = ['//rule:toolchain_type_1'])},
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:defs.bzl', 'r1')
         r1(name = 't1')
-        """);
-    useConfiguration(
-        "--extra_toolchains=//toolchain:foo_toolchain",
-        "--incompatible_auto_exec_groups=" + autoExecGroups);
+        
+        """.trimIndent()
+        )
+        useConfiguration(
+            "--extra_toolchains=//toolchain:foo_toolchain",
+            "--incompatible_auto_exec_groups=" + autoExecGroups
+        )
 
-    reporter.removeHandler(failFastHandler);
-    assertThrows(
-        ViewCreationFailedException.class,
-        () -> update(ImmutableList.of("//test:defs.bzl%non_toolchain_aspect"), "//test:t1"));
-    assertContainsEvent(
-        "Error: <ToolchainAspectsProviders for toolchain target: //toolchain:foo> doesn't contain"
-            + " declared provider 'AspectProvider'");
-  }
+        reporter.removeHandler(failFastHandler)
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable {
+                update(
+                    com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%non_toolchain_aspect"),
+                    "//test:t1"
+                )
+            })
+        assertContainsEvent(
+            "Error: <ToolchainAspectsProviders for toolchain target: //toolchain:foo> doesn't contain"
+                    + " declared provider 'AspectProvider'"
+        )
+    }
 
-  @Test
-  public void requiredAspectPropagatesToToolchain_providersCollected() throws Exception {
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun requiredAspectPropagatesToToolchain_providersCollected() {
+        scratch.file(
+            "test/defs.bzl",
+            """
         ToolchainAspectProvider = provider()
         RequiredAspectProvider = provider()
 
@@ -1468,41 +1700,50 @@ public final class StarlarkAspectsToolchainPropagationTest extends AnalysisTestC
           implementation = _rule_impl,
           toolchains = ['//rule:toolchain_type_1'],
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:defs.bzl', 'r1')
         r1(name = 't1')
-        """);
-    useConfiguration("--extra_toolchains=//toolchain:foo_toolchain");
+        
+        """.trimIndent()
+        )
+        useConfiguration("--extra_toolchains=//toolchain:foo_toolchain")
 
-    var analysisResult = update(ImmutableList.of("//test:defs.bzl%toolchain_aspect"), "//test:t1");
+        val analysisResult: @NotNull AnalysisResult =
+            update(com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%toolchain_aspect"), "//test:t1")
 
-    ConfiguredAspect configuredAspect =
-        analysisResult
-            .getAspectsMap()
-            .get(getAspectKeys("//test:t1", "//test:defs.bzl%toolchain_aspect").get(0));
+        val configuredAspect: ConfiguredAspect =
+            analysisResult
+                .getAspectsMap()
+                .get(getAspectKeys("//test:t1", "//test:defs.bzl%toolchain_aspect").get(0))
 
-    StarlarkProvider.Key providerKey =
-        new StarlarkProvider.Key(
-            keyForBuild(Label.parseCanonical("//test:defs.bzl")), "ToolchainAspectProvider");
+        val providerKey: StarlarkProvider.Key =
+            Key(
+                keyForBuild(Label.parseCanonical("//test:defs.bzl")), "ToolchainAspectProvider"
+            )
 
-    var value = ((StarlarkInfo) configuredAspect.get(providerKey)).getValue("value");
-    assertThat((Iterable<?>) value)
-        .containsExactly(
-            "toolchain_aspect on @@//test:t1 can see required_aspect (required_aspect on"
-                + " @@//test:t1)",
-            "toolchain_aspect on @@//toolchain:foo can see required_aspect (required_aspect on"
-                + " @@//toolchain:foo with tool in ToolchainInfo = <generated file"
-                + " toolchain/atool>)");
-  }
+        val value: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            (configuredAspect.get(providerKey) as StarlarkInfo).getValue("value")
+        Truth.assertThat(value)
+            .containsExactly(
+                "toolchain_aspect on @@//test:t1 can see required_aspect (required_aspect on"
+                        + " @@//test:t1)",
+                ("toolchain_aspect on @@//toolchain:foo can see required_aspect (required_aspect on"
+                        + " @@//toolchain:foo with tool in ToolchainInfo = <generated file"
+                        + " toolchain/atool>)")
+            )
+    }
 
-  @Test
-  public void aspectPropagatesToToolchainFromRule_providersCollected() throws Exception {
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun aspectPropagatesToToolchainFromRule_providersCollected() {
+        scratch.file(
+            "test/defs.bzl",
+            """
         AspectProvider = provider()
         RuleProvider = provider()
 
@@ -1542,37 +1783,47 @@ public final class StarlarkAspectsToolchainPropagationTest extends AnalysisTestC
           toolchains = ['//rule:toolchain_type_3'],
         )
 
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:defs.bzl', 'r1', 'r2')
         r1(name = 't1', rule_dep = ':t2')
         r2(name = 't2')
-        """);
-    useConfiguration("--extra_toolchains=//toolchain:foo_toolchain_with_dep");
+        
+        """.trimIndent()
+        )
+        useConfiguration("--extra_toolchains=//toolchain:foo_toolchain_with_dep")
 
-    var analysisResult = update("//test:t1");
+        val analysisResult: @NotNull AnalysisResult = update("//test:t1")
 
-    var configuredTarget = Iterables.getOnlyElement(analysisResult.getTargetsToBuild());
+        val configuredTarget: T? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(analysisResult.getTargetsToBuild())
 
-    StarlarkProvider.Key providerKey =
-        new StarlarkProvider.Key(
-            keyForBuild(Label.parseCanonical("//test:defs.bzl")), "RuleProvider");
+        val providerKey: StarlarkProvider.Key =
+            Key(
+                keyForBuild(Label.parseCanonical("//test:defs.bzl")), "RuleProvider"
+            )
 
-    var value = ((StarlarkInfo) configuredTarget.get(providerKey)).getValue("value");
-    assertThat((Iterable<?>) value)
-        .containsExactly(
-            "toolchain_aspect on @@//test:t2",
-            "toolchain_aspect on @@//toolchain:foo_with_dep",
-            "toolchain_aspect on @@//toolchain:toolchain_dep");
-  }
+        val value: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            (configuredTarget.get(providerKey) as StarlarkInfo).getValue("value")
+        Truth.assertThat(value)
+            .containsExactly(
+                "toolchain_aspect on @@//test:t2",
+                "toolchain_aspect on @@//toolchain:foo_with_dep",
+                "toolchain_aspect on @@//toolchain:toolchain_dep"
+            )
+    }
 
-  @Test
-  public void toolchainAspectOnOutputFile_notPropagatedToDeps() throws Exception {
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun toolchainAspectOnOutputFile_notPropagatedToDeps() {
+        scratch.file(
+            "test/defs.bzl",
+            """
         AspectProvider = provider()
         def _impl(target, ctx):
           return [AspectProvider(val="hi")]
@@ -1596,45 +1847,55 @@ public final class StarlarkAspectsToolchainPropagationTest extends AnalysisTestC
           },
           toolchains = ['//rule:toolchain_type_1'],
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:defs.bzl', 'r1')
         r1(name = 't1', out = 'my_out.txt', dep = ':t2')
         r1(name = 't2')
-        """);
-    useConfiguration("--extra_toolchains=//toolchain:foo_toolchain");
+        
+        """.trimIndent()
+        )
+        useConfiguration("--extra_toolchains=//toolchain:foo_toolchain")
 
-    var unused = update(ImmutableList.of("//test:defs.bzl%toolchain_aspect"), "//test:my_out.txt");
+        val unused: @NotNull AnalysisResult = update(
+            com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%toolchain_aspect"),
+            "//test:my_out.txt"
+        )
 
-    // {@link AspectKey} is created for toolchain_aspect on the output file //test:my_out.txt but
-    // the aspect is not applied (no returned providers) because the aspect cannot be applied to
-    // output files. The aspect does not propagate to any of the generating rule dependencies.
-    var nodes =
-        skyframeExecutor.getEvaluator().getDoneValues().entrySet().stream()
-            .filter(
-                entry ->
-                    entry.getKey() instanceof AspectKey
-                        && ((AspectKey) entry.getKey())
+        // {@link AspectKey} is created for toolchain_aspect on the output file //test:my_out.txt but
+        // the aspect is not applied (no returned providers) because the aspect cannot be applied to
+        // output files. The aspect does not propagate to any of the generating rule dependencies.
+        val nodes: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            skyframeExecutor.getEvaluator().getDoneValues().entrySet().stream()
+                .filter(
+                    { entry ->
+                        entry.getKey() is AspectKey
+                                && (entry.getKey() as AspectKey)
                             .getAspectClass()
                             .getName()
-                            .equals("//test:defs.bzl%toolchain_aspect"))
-            .collect(toImmutableList());
-    assertThat(nodes).hasSize(1);
+                            .equals("//test:defs.bzl%toolchain_aspect")
+                    })
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
+        assertThat(nodes).hasSize(1)
 
-    AspectKey aspectKey = (AspectKey) Iterables.getOnlyElement(nodes).getKey();
-    assertThat(aspectKey.getLabel().toString()).isEqualTo("//test:my_out.txt");
+        val aspectKey: AspectKey = com.google.common.collect.Iterables.getOnlyElement<Any?>(nodes).getKey() as AspectKey
+        assertThat(aspectKey.getLabel().toString()).isEqualTo("//test:my_out.txt")
 
-    ConfiguredAspect aspectValue = (ConfiguredAspect) Iterables.getOnlyElement(nodes).getValue();
-    assertThat(aspectValue.getProviders().getProviderCount()).isEqualTo(0);
-  }
+        val aspectValue: ConfiguredAspect =
+            com.google.common.collect.Iterables.getOnlyElement<Any?>(nodes).getValue() as ConfiguredAspect
+        assertThat(aspectValue.getProviders().getProviderCount()).isEqualTo(0)
+    }
 
-  @Test
-  public void toolchainAspectApplyToGeneratingRule_propagateToDeps() throws Exception {
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun toolchainAspectApplyToGeneratingRule_propagateToDeps() {
+        scratch.file(
+            "test/defs.bzl",
+            """
         def _impl(target, ctx):
           return []
 
@@ -1658,43 +1919,55 @@ public final class StarlarkAspectsToolchainPropagationTest extends AnalysisTestC
           },
           toolchains = ['//rule:toolchain_type_1'],
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:defs.bzl', 'r1')
         r1(name = 't1', out = 'my_out.txt', dep = ':t2')
         r1(name = 't2')
-        """);
-    useConfiguration("--extra_toolchains=//toolchain:foo_toolchain");
+        
+        """.trimIndent()
+        )
+        useConfiguration("--extra_toolchains=//toolchain:foo_toolchain")
 
-    var unused = update(ImmutableList.of("//test:defs.bzl%toolchain_aspect"), "//test:my_out.txt");
+        val unused: @NotNull AnalysisResult = update(
+            com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%toolchain_aspect"),
+            "//test:my_out.txt"
+        )
 
-    var visitedTargets =
-        skyframeExecutor.getEvaluator().getDoneValues().entrySet().stream()
-            .filter(
-                entry ->
-                    entry.getKey() instanceof AspectKey
-                        && ((AspectKey) entry.getKey())
+        val visitedTargets: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            skyframeExecutor.getEvaluator().getDoneValues().entrySet().stream()
+                .filter(
+                    { entry ->
+                        entry.getKey() is AspectKey
+                                && (entry.getKey() as AspectKey)
                             .getAspectClass()
                             .getName()
-                            .equals("//test:defs.bzl%toolchain_aspect"))
-            .map(e -> ((AspectKey) e.getKey()).getLabel().toString())
-            .collect(toImmutableList());
+                            .equals("//test:defs.bzl%toolchain_aspect")
+                    })
+                .map({ e -> (e.getKey() as AspectKey).getLabel().toString() })
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
 
-    // toolchain_aspect is applied to the generating rule of the output file and propagated to its
-    // attribute dependency and toolchain dependency.
-    assertThat(visitedTargets)
-        .containsExactly("//test:my_out.txt", "//test:t1", "//test:t2", "//toolchain:foo");
-  }
+        // toolchain_aspect is applied to the generating rule of the output file and propagated to its
+        // attribute dependency and toolchain dependency.
+        assertThat(visitedTargets)
+            .containsExactly("//test:my_out.txt", "//test:t1", "//test:t2", "//toolchain:foo")
+    }
 
-  @Test
-  public void toolchainAspectApplyToFiles_notPropagatedToDeps() throws Exception {
-    DepsVisitingFileAspect aspect = new DepsVisitingFileAspect("dep", "//rule:toolchain_type_1");
-    setRulesAndAspectsAvailableInTests(ImmutableList.of(aspect), ImmutableList.of());
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun toolchainAspectApplyToFiles_notPropagatedToDeps() {
+        val aspect: DepsVisitingFileAspect = DepsVisitingFileAspect("dep", "//rule:toolchain_type_1")
+        setRulesAndAspectsAvailableInTests(
+            com.google.common.collect.ImmutableList.of<DepsVisitingFileAspect?>(aspect),
+            com.google.common.collect.ImmutableList.of<RuleDefinition>()
+        )
+        scratch.file(
+            "test/defs.bzl",
+            """
         def _rule_1_impl(ctx):
           if ctx.outputs.out:
             ctx.actions.write(ctx.outputs.out, 'hi')
@@ -1708,58 +1981,67 @@ public final class StarlarkAspectsToolchainPropagationTest extends AnalysisTestC
           },
           toolchains = ['//rule:toolchain_type_1'],
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:defs.bzl', 'r1')
         r1(name = 't1', out = 'my_out.txt', dep = ':t2')
         r1(name = 't2')
-        """);
-    useConfiguration("--extra_toolchains=//toolchain:foo_toolchain");
+        
+        """.trimIndent()
+        )
+        useConfiguration("--extra_toolchains=//toolchain:foo_toolchain")
 
-    var unused = update(ImmutableList.of(aspect.getName()), "//test:my_out.txt");
+        val unused: @NotNull AnalysisResult =
+            update(com.google.common.collect.ImmutableList.of<String?>(aspect.name), "//test:my_out.txt")
 
-    // {@link DepsVisitingFileAspect} is only applied to //test:my_out.txt file therefore it does
-    // not propagate to the dependencies of its generating rule.
-    var nodes =
-        skyframeExecutor.getEvaluator().getDoneValues().entrySet().stream()
-            .filter(
-                entry ->
-                    entry.getKey() instanceof AspectKey
-                        && ((AspectKey) entry.getKey())
+        // {@link DepsVisitingFileAspect} is only applied to //test:my_out.txt file therefore it does
+        // not propagate to the dependencies of its generating rule.
+        val nodes: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            skyframeExecutor.getEvaluator().getDoneValues().entrySet().stream()
+                .filter(
+                    { entry ->
+                        entry.getKey() is AspectKey
+                                && (entry.getKey() as AspectKey)
                             .getAspectClass()
                             .getName()
-                            .equals(aspect.getName()))
-            .collect(toImmutableList());
-    assertThat(nodes).hasSize(1);
+                            .equals(aspect.name)
+                    })
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
+        assertThat(nodes).hasSize(1)
 
-    AspectKey aspectKey = (AspectKey) Iterables.getOnlyElement(nodes).getKey();
-    assertThat(aspectKey.getLabel().toString()).isEqualTo("//test:my_out.txt");
+        val aspectKey: AspectKey = com.google.common.collect.Iterables.getOnlyElement<Any?>(nodes).getKey() as AspectKey
+        assertThat(aspectKey.getLabel().toString()).isEqualTo("//test:my_out.txt")
 
-    ConfiguredAspect aspectValue = (ConfiguredAspect) Iterables.getOnlyElement(nodes).getValue();
-    StarlarkInfo provider =
-        (StarlarkInfo) aspectValue.get(DepsVisitingFileAspect.PROVIDER.getKey());
-    assertThat(provider.getValue("val")).isEqualTo("//test:my_out.txt");
-  }
+        val aspectValue: ConfiguredAspect =
+            com.google.common.collect.Iterables.getOnlyElement<Any?>(nodes).getValue() as ConfiguredAspect
+        val provider: StarlarkInfo =
+            aspectValue.get(DepsVisitingFileAspect.PROVIDER.getKey()) as StarlarkInfo
+        assertThat(provider.getValue("val")).isEqualTo("//test:my_out.txt")
+    }
 
-  @Test
-  @TestParameters({
-    "{autoExecGroups: True}",
-    "{autoExecGroups: False}",
-  })
-  public void toolchainAspectOnTargetWithoutToolchain_success(String autoExecGroups)
-      throws Exception {
-    MockRule ruleWithoutToolchain =
-        () ->
-            MockRule.define(
-                "rule_without_toolchain",
-                (builder, env) ->
-                    builder.toolchainResolutionMode(ToolchainResolutionMode.DISABLED));
-    setRulesAndAspectsAvailableInTests(ImmutableList.of(), ImmutableList.of(ruleWithoutToolchain));
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @TestParameters(
+        "{autoExecGroups: True}", "{autoExecGroups: False}"
+    )
+    @Throws(java.lang.Exception::class)
+    fun toolchainAspectOnTargetWithoutToolchain_success(autoExecGroups: String?) {
+        val ruleWithoutToolchain: MockRule =
+            MockRule {
+                MockRule.define(
+                    "rule_without_toolchain",
+                    { builder, env -> builder.toolchainResolutionMode(ToolchainResolutionMode.DISABLED) })
+            }
+        setRulesAndAspectsAvailableInTests(
+            com.google.common.collect.ImmutableList.of<NativeAspectClass>(),
+            com.google.common.collect.ImmutableList.of<MockRule?>(ruleWithoutToolchain)
+        )
+        scratch.file(
+            "test/defs.bzl",
+            """
         AspectProvider = provider()
 
         def _aspect_impl(target, ctx):
@@ -1777,64 +2059,77 @@ public final class StarlarkAspectsToolchainPropagationTest extends AnalysisTestC
           implementation = _rule_impl,
           toolchains = ['//rule:toolchain_type_1'],
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:defs.bzl', 'rule_with_toolchain')
         rule_with_toolchain(name = 'target_with_toolchain')
         rule_without_toolchain(name = 'target_without_toolchain')
-        """);
-    useConfiguration(
-        "--extra_toolchains=//toolchain:foo_toolchain",
-        "--incompatible_auto_exec_groups=" + autoExecGroups);
+        
+        """.trimIndent()
+        )
+        useConfiguration(
+            "--extra_toolchains=//toolchain:foo_toolchain",
+            "--incompatible_auto_exec_groups=" + autoExecGroups
+        )
 
-    var unused = update(ImmutableList.of("//test:defs.bzl%toolchain_aspect"), "//test:all");
+        val unused: @NotNull AnalysisResult = update(
+            com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%toolchain_aspect"),
+            "//test:all"
+        )
 
-    StarlarkProvider.Key providerKey =
-        new StarlarkProvider.Key(
-            keyForBuild(Label.parseCanonical("//test:defs.bzl")), "AspectProvider");
+        val providerKey: StarlarkProvider.Key =
+            Key(
+                keyForBuild(Label.parseCanonical("//test:defs.bzl")), "AspectProvider"
+            )
 
-    var aspectOnVisitedTargets =
-        skyframeExecutor.getEvaluator().getDoneValues().entrySet().stream()
-            .filter(
-                entry ->
-                    entry.getKey() instanceof AspectKey
-                        && ((AspectKey) entry.getKey())
+        val aspectOnVisitedTargets: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            skyframeExecutor.getEvaluator().getDoneValues().entrySet().stream()
+                .filter(
+                    { entry ->
+                        entry.getKey() is AspectKey
+                                && (entry.getKey() as AspectKey)
                             .getAspectClass()
                             .getName()
-                            .equals("//test:defs.bzl%toolchain_aspect"))
-            .map(e -> (ConfiguredAspect) e.getValue())
-            .map(a -> ((StarlarkInfo) a.get(providerKey)).getValue("val"))
-            .map(v -> (String) v)
-            .collect(toImmutableList());
+                            .equals("//test:defs.bzl%toolchain_aspect")
+                    })
+                .map({ e -> e.getValue() as ConfiguredAspect? })
+                .map({ a -> (a.get(providerKey) as StarlarkInfo).getValue("val") })
+                .map({ v -> v as String? })
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
 
-    // aspect successfully propagates to the 2 targets in //test package and to the toolchain of
-    // //test:target_with_toolchain
-    assertThat(aspectOnVisitedTargets)
-        .containsExactly(
-            "toolchain_aspect on @@//test:target_with_toolchain",
-            "toolchain_aspect on @@//test:target_without_toolchain",
-            "toolchain_aspect on @@//toolchain:foo");
-  }
+        // aspect successfully propagates to the 2 targets in //test package and to the toolchain of
+        // //test:target_with_toolchain
+        assertThat(aspectOnVisitedTargets)
+            .containsExactly(
+                "toolchain_aspect on @@//test:target_with_toolchain",
+                "toolchain_aspect on @@//test:target_without_toolchain",
+                "toolchain_aspect on @@//toolchain:foo"
+            )
+    }
 
-  @Test
-  @TestParameters({
-    "{autoExecGroups: True}",
-    "{autoExecGroups: False}",
-  })
-  public void requiredToolchainAspectOnTargetWithoutToolchain_success(String autoExecGroups)
-      throws Exception {
-    MockRule ruleWithoutToolchain =
-        () ->
-            MockRule.define(
-                "rule_without_toolchain",
-                (builder, env) ->
-                    builder.toolchainResolutionMode(ToolchainResolutionMode.DISABLED));
-    setRulesAndAspectsAvailableInTests(ImmutableList.of(), ImmutableList.of(ruleWithoutToolchain));
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @TestParameters(
+        "{autoExecGroups: True}", "{autoExecGroups: False}"
+    )
+    @Throws(java.lang.Exception::class)
+    fun requiredToolchainAspectOnTargetWithoutToolchain_success(autoExecGroups: String?) {
+        val ruleWithoutToolchain: MockRule =
+            MockRule {
+                MockRule.define(
+                    "rule_without_toolchain",
+                    { builder, env -> builder.toolchainResolutionMode(ToolchainResolutionMode.DISABLED) })
+            }
+        setRulesAndAspectsAvailableInTests(
+            com.google.common.collect.ImmutableList.of<NativeAspectClass>(),
+            com.google.common.collect.ImmutableList.of<MockRule?>(ruleWithoutToolchain)
+        )
+        scratch.file(
+            "test/defs.bzl",
+            """
         MainAspectProvider = provider()
         RequiredAspectProvider = provider()
 
@@ -1873,66 +2168,76 @@ public final class StarlarkAspectsToolchainPropagationTest extends AnalysisTestC
           implementation = _rule_impl,
           toolchains = ['//rule:toolchain_type_1'],
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:defs.bzl', 'rule_with_toolchain')
         rule_with_toolchain(name = 'target_with_toolchain')
         rule_without_toolchain(name = 'target_without_toolchain')
-        """);
-    useConfiguration(
-        "--extra_toolchains=//toolchain:foo_toolchain",
-        "--incompatible_auto_exec_groups=" + autoExecGroups);
+        
+        """.trimIndent()
+        )
+        useConfiguration(
+            "--extra_toolchains=//toolchain:foo_toolchain",
+            "--incompatible_auto_exec_groups=" + autoExecGroups
+        )
 
-    var analysisResult = update(ImmutableList.of("//test:defs.bzl%main_aspect"), "//test:all");
+        val analysisResult: @NotNull AnalysisResult =
+            update(com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%main_aspect"), "//test:all")
 
-    StarlarkProvider.Key providerKey =
-        new StarlarkProvider.Key(
-            keyForBuild(Label.parseCanonical("//test:defs.bzl")), "MainAspectProvider");
+        val providerKey: StarlarkProvider.Key =
+            Key(
+                keyForBuild(Label.parseCanonical("//test:defs.bzl")), "MainAspectProvider"
+            )
 
-    // results on //test:target_with_toolchain
-    ConfiguredAspect aspectOnWithToolchainTarget =
-        getToplevelConfiguredAspect(
-            analysisResult, "//test:defs.bzl%main_aspect", "//test:target_with_toolchain");
+        // results on //test:target_with_toolchain
+        val aspectOnWithToolchainTarget: ConfiguredAspect =
+            getToplevelConfiguredAspect(
+                analysisResult, "//test:defs.bzl%main_aspect", "//test:target_with_toolchain"
+            )
 
-    var mainAspectValue =
-        ((StarlarkInfo) aspectOnWithToolchainTarget.get(providerKey)).getValue("main_aspect_val");
-    assertThat((String) mainAspectValue).isEqualTo("main_aspect on @@//test:target_with_toolchain");
+        var mainAspectValue: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            (aspectOnWithToolchainTarget.get(providerKey) as StarlarkInfo).getValue("main_aspect_val")
+        Truth.assertThat(mainAspectValue).isEqualTo("main_aspect on @@//test:target_with_toolchain")
 
-    var requiredAspectValue =
-        ((StarlarkInfo) aspectOnWithToolchainTarget.get(providerKey))
-            .getValue("required_aspect_val");
-    assertThat((Iterable<?>) requiredAspectValue)
-        .containsExactly(
-            "required_aspect on @@//test:target_with_toolchain",
-            "required_aspect on @@//toolchain:foo with tool in ToolchainInfo ="
-                + " <generated file toolchain/atool>");
+        var requiredAspectValue: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            (aspectOnWithToolchainTarget.get(providerKey) as StarlarkInfo)
+                .getValue("required_aspect_val")
+        Truth.assertThat(requiredAspectValue)
+            .containsExactly(
+                "required_aspect on @@//test:target_with_toolchain",
+                "required_aspect on @@//toolchain:foo with tool in ToolchainInfo ="
+                        + " <generated file toolchain/atool>"
+            )
 
-    // test:target_without_toolchain
-    ConfiguredAspect aspectOnWithoutToolchainTarget =
-        getToplevelConfiguredAspect(
-            analysisResult, "//test:defs.bzl%main_aspect", "//test:target_without_toolchain");
+        // test:target_without_toolchain
+        val aspectOnWithoutToolchainTarget: ConfiguredAspect =
+            getToplevelConfiguredAspect(
+                analysisResult, "//test:defs.bzl%main_aspect", "//test:target_without_toolchain"
+            )
 
-    mainAspectValue =
-        ((StarlarkInfo) aspectOnWithoutToolchainTarget.get(providerKey))
-            .getValue("main_aspect_val");
-    assertThat((String) mainAspectValue)
-        .isEqualTo("main_aspect on @@//test:target_without_toolchain");
+        mainAspectValue =
+            (aspectOnWithoutToolchainTarget.get(providerKey) as StarlarkInfo)
+                .getValue("main_aspect_val")
+        Truth.assertThat(mainAspectValue)
+            .isEqualTo("main_aspect on @@//test:target_without_toolchain")
 
-    requiredAspectValue =
-        ((StarlarkInfo) aspectOnWithoutToolchainTarget.get(providerKey))
-            .getValue("required_aspect_val");
-    assertThat((Iterable<?>) requiredAspectValue)
-        .containsExactly("required_aspect on @@//test:target_without_toolchain");
-  }
+        requiredAspectValue =
+            (aspectOnWithoutToolchainTarget.get(providerKey) as StarlarkInfo)
+                .getValue("required_aspect_val")
+        Truth.assertThat(requiredAspectValue)
+            .containsExactly("required_aspect on @@//test:target_without_toolchain")
+    }
 
-  @Test
-  public void aspectUsesBaseTargetToolchainsToConfigureTargetDepsWithDefaultExecGp_autoExecGps()
-      throws Exception {
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun aspectUsesBaseTargetToolchainsToConfigureTargetDepsWithDefaultExecGp_autoExecGps() {
+        scratch.file(
+            "test/defs.bzl",
+            """
         def _impl(target, ctx):
           return []
 
@@ -1952,65 +2257,78 @@ public final class StarlarkAspectsToolchainPropagationTest extends AnalysisTestC
             "_tool": attr.label(default='//test:tool', cfg='exec'),
           },
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:defs.bzl', 'r1')
         load('//test_defs:foo_binary.bzl', 'foo_binary')
         r1(name = 't1')
         foo_binary(name = 'tool', srcs = ['test.sh'])
-        """);
-    scratch.file("test/test.sh", "");
-    useConfiguration(
-        "--extra_toolchains=//toolchain:foo_toolchain_exec_1,//toolchain:foo_toolchain_exec_2",
-        "--extra_execution_platforms=//platforms:platform_1,//platforms:platform_2",
-        "--incompatible_auto_exec_groups=True",
-        "--incompatible_enable_cc_toolchain_resolution");
+        
+        """.trimIndent()
+        )
+        scratch.file("test/test.sh", "")
+        useConfiguration(
+            "--extra_toolchains=//toolchain:foo_toolchain_exec_1,//toolchain:foo_toolchain_exec_2",
+            "--extra_execution_platforms=//platforms:platform_1,//platforms:platform_2",
+            "--incompatible_auto_exec_groups=True",
+            "--incompatible_enable_cc_toolchain_resolution"
+        )
 
-    var analysisResult = update(ImmutableList.of("//test:defs.bzl%my_aspect"), "//test:t1");
+        val analysisResult: @NotNull AnalysisResult =
+            update(com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%my_aspect"), "//test:t1")
 
-    ConfiguredTarget topLevelTarget = Iterables.getOnlyElement(analysisResult.getTargetsToBuild());
-    var topLevelTargetDeps =
-        getDirectDeps(ConfiguredTargetKey.fromConfiguredTarget(topLevelTarget));
+        val topLevelTarget: ConfiguredTarget? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(analysisResult.getTargetsToBuild())
+        val topLevelTargetDeps: Iterable<SkyKey?> =
+            getDirectDeps(ConfiguredTargetKey.fromConfiguredTarget(topLevelTarget))
 
-    ConfiguredTargetKey toolDependencyFromTarget =
-        (ConfiguredTargetKey)
-            stream(topLevelTargetDeps)
-                .filter(e -> isConfiguredTarget(e, "//test:tool"))
-                .collect(onlyElement());
+        val toolDependencyFromTarget: ConfiguredTargetKey? =
+            com.google.common.collect.Streams.stream<SkyKey?>(topLevelTargetDeps)
+                .filter { e: SkyKey? -> isConfiguredTarget(e, "//test:tool") }
+                .collect(com.google.common.collect.MoreCollectors.onlyElement<SkyKey?>()) as ConfiguredTargetKey?
 
-    AspectKey aspectOnToolDependnecyKey =
-        Iterables.getOnlyElement(getAspectKeys("//test:tool", "//test:defs.bzl%my_aspect"));
+        val aspectOnToolDependnecyKey: AspectKey? =
+            com.google.common.collect.Iterables.getOnlyElement<AspectKey?>(
+                getAspectKeys(
+                    "//test:tool",
+                    "//test:defs.bzl%my_aspect"
+                )
+            )
 
-    // The aspect used the base target's toolchain to request the target's dependency, so the
-    // two keys are equal.
-    assertThat(toolDependencyFromTarget)
-        .isEqualTo(aspectOnToolDependnecyKey.getBaseConfiguredTargetKey());
+        // The aspect used the base target's toolchain to request the target's dependency, so the
+        // two keys are equal.
+        assertThat(toolDependencyFromTarget)
+            .isEqualTo(aspectOnToolDependnecyKey.getBaseConfiguredTargetKey())
 
-    // The //test:tool target is requested only once and its key contains the execution platform of
-    // its parent's (//test:t1) toolchain
-    ImmutableList<ConfiguredTargetKey> toolDependencyKey = getConfiguredTargetKey("//test:tool");
-    assertThat(toolDependencyKey).hasSize(1);
+        // The //test:tool target is requested only once and its key contains the execution platform of
+        // its parent's (//test:t1) toolchain
+        val toolDependencyKey: com.google.common.collect.ImmutableList<ConfiguredTargetKey> =
+            getConfiguredTargetKey("//test:tool")
+        Truth.assertThat(toolDependencyKey).hasSize(1)
 
-    // //test:tool gets the execution platform of the default exec gp, when automatic execution
-    // groups are enabled, the default exec gp will have the basic execution platform.
-    assertThat(
+        // //test:tool gets the execution platform of the default exec gp, when automatic execution
+        // groups are enabled, the default exec gp will have the basic execution platform.
+        assertThat(
             toolDependencyKey
                 .get(0)
                 .getConfigurationKey()
                 .getOptions()
-                .get(PlatformOptions.class)
-                .getPlatforms())
-        .containsExactly(Label.parseCanonicalUnchecked("//platforms:platform_1"));
-  }
+                .get(PlatformOptions::class.java)
+                .getPlatforms()
+        )
+            .containsExactly(Label.parseCanonicalUnchecked("//platforms:platform_1"))
+    }
 
-  @Test
-  public void aspectUsesBaseTargetToolchainsToConfigureTargetDepsWithDefaultExecGp_noAutoExecGps()
-      throws Exception {
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun aspectUsesBaseTargetToolchainsToConfigureTargetDepsWithDefaultExecGp_noAutoExecGps() {
+        scratch.file(
+            "test/defs.bzl",
+            """
         def _impl(target, ctx):
           return []
 
@@ -2030,66 +2348,81 @@ public final class StarlarkAspectsToolchainPropagationTest extends AnalysisTestC
             "_tool": attr.label(default='//test:tool', cfg='exec'),
           },
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:defs.bzl', 'r1')
         load('//test_defs:foo_binary.bzl', 'foo_binary')
         r1(name = 't1')
         foo_binary(name = 'tool', srcs = ['test.sh'])
-        """);
-    scratch.file("test/test.sh", "");
-    useConfiguration(
-        "--extra_toolchains=//toolchain:foo_toolchain_exec_1,//toolchain:foo_toolchain_exec_2",
-        "--extra_execution_platforms=//platforms:platform_1,//platforms:platform_2",
-        "--incompatible_auto_exec_groups=False",
-        "--incompatible_enable_cc_toolchain_resolution");
+        
+        """.trimIndent()
+        )
+        scratch.file("test/test.sh", "")
+        useConfiguration(
+            "--extra_toolchains=//toolchain:foo_toolchain_exec_1,//toolchain:foo_toolchain_exec_2",
+            "--extra_execution_platforms=//platforms:platform_1,//platforms:platform_2",
+            "--incompatible_auto_exec_groups=False",
+            "--incompatible_enable_cc_toolchain_resolution"
+        )
 
-    var analysisResult = update(ImmutableList.of("//test:defs.bzl%my_aspect"), "//test:t1");
+        val analysisResult: @NotNull AnalysisResult =
+            update(com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%my_aspect"), "//test:t1")
 
-    ConfiguredTarget topLevelTarget = Iterables.getOnlyElement(analysisResult.getTargetsToBuild());
-    var topLevelTargetDeps =
-        getDirectDeps(ConfiguredTargetKey.fromConfiguredTarget(topLevelTarget));
+        val topLevelTarget: ConfiguredTarget? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(analysisResult.getTargetsToBuild())
+        val topLevelTargetDeps: Iterable<SkyKey?> =
+            getDirectDeps(ConfiguredTargetKey.fromConfiguredTarget(topLevelTarget))
 
-    ConfiguredTargetKey toolDependencyFromTarget =
-        (ConfiguredTargetKey)
-            stream(topLevelTargetDeps)
-                .filter(e -> isConfiguredTarget(e, "//test:tool"))
-                .collect(onlyElement());
+        val toolDependencyFromTarget: ConfiguredTargetKey? =
+            com.google.common.collect.Streams.stream<SkyKey?>(topLevelTargetDeps)
+                .filter { e: SkyKey? -> isConfiguredTarget(e, "//test:tool") }
+                .collect(com.google.common.collect.MoreCollectors.onlyElement<SkyKey?>()) as ConfiguredTargetKey?
 
-    AspectKey aspectOnToolDependnecyKey =
-        Iterables.getOnlyElement(getAspectKeys("//test:tool", "//test:defs.bzl%my_aspect"));
+        val aspectOnToolDependnecyKey: AspectKey? =
+            com.google.common.collect.Iterables.getOnlyElement<AspectKey?>(
+                getAspectKeys(
+                    "//test:tool",
+                    "//test:defs.bzl%my_aspect"
+                )
+            )
 
-    // The aspect used the base target's toolchain to request the target's dependency, so the
-    // two keys are equal.
-    assertThat(toolDependencyFromTarget)
-        .isEqualTo(aspectOnToolDependnecyKey.getBaseConfiguredTargetKey());
+        // The aspect used the base target's toolchain to request the target's dependency, so the
+        // two keys are equal.
+        assertThat(toolDependencyFromTarget)
+            .isEqualTo(aspectOnToolDependnecyKey.getBaseConfiguredTargetKey())
 
-    // The //test:tool target is requested only once and its key contains the execution platform of
-    // its parent's (//test:t1) toolchain
-    ImmutableList<ConfiguredTargetKey> toolDependencyKey = getConfiguredTargetKey("//test:tool");
-    assertThat(toolDependencyKey).hasSize(1);
+        // The //test:tool target is requested only once and its key contains the execution platform of
+        // its parent's (//test:t1) toolchain
+        val toolDependencyKey: com.google.common.collect.ImmutableList<ConfiguredTargetKey> =
+            getConfiguredTargetKey("//test:tool")
+        Truth.assertThat(toolDependencyKey).hasSize(1)
 
-    // //test:tool gets the execution platform of the default exec gp, when automatic execution
-    // groups are disabled, the default exec gp will have the execution platform of the only
-    // toolchain type it has.
-    assertThat(
+        // //test:tool gets the execution platform of the default exec gp, when automatic execution
+        // groups are disabled, the default exec gp will have the execution platform of the only
+        // toolchain type it has.
+        assertThat(
             toolDependencyKey
                 .get(0)
                 .getConfigurationKey()
                 .getOptions()
-                .get(PlatformOptions.class)
-                .getPlatforms())
-        .containsExactly(Label.parseCanonicalUnchecked("//platforms:platform_2"));
-  }
+                .get(PlatformOptions::class.java)
+                .getPlatforms()
+        )
+            .containsExactly(Label.parseCanonicalUnchecked("//platforms:platform_2"))
+    }
 
-  @Test
-  public void aspectUsesBaseTargetToolchainsToConfigureTargetDepsWithCustomExecGp(
-      @TestParameter boolean autoExecGroups) throws Exception {
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun aspectUsesBaseTargetToolchainsToConfigureTargetDepsWithCustomExecGp(
+        @TestParameter autoExecGroups: Boolean
+    ) {
+        scratch.file(
+            "test/defs.bzl",
+            """
         def _impl(target, ctx):
           return []
 
@@ -2109,62 +2442,77 @@ public final class StarlarkAspectsToolchainPropagationTest extends AnalysisTestC
             "_tool": attr.label(default='//test:tool', cfg = config.exec(exec_group = 'gp')),
           },
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:defs.bzl', 'r1')
         load('//test_defs:foo_binary.bzl', 'foo_binary')
         r1(name = 't1')
         foo_binary(name = 'tool', srcs = ['test.sh'])
-        """);
-    scratch.file("test/test.sh", "");
-    useConfiguration(
-        "--extra_toolchains=//toolchain:foo_toolchain_exec_1,//toolchain:foo_toolchain_exec_2",
-        "--extra_execution_platforms=//platforms:platform_1,//platforms:platform_2",
-        "--incompatible_auto_exec_groups=" + autoExecGroups,
-        "--incompatible_enable_cc_toolchain_resolution");
+        
+        """.trimIndent()
+        )
+        scratch.file("test/test.sh", "")
+        useConfiguration(
+            "--extra_toolchains=//toolchain:foo_toolchain_exec_1,//toolchain:foo_toolchain_exec_2",
+            "--extra_execution_platforms=//platforms:platform_1,//platforms:platform_2",
+            "--incompatible_auto_exec_groups=" + autoExecGroups,
+            "--incompatible_enable_cc_toolchain_resolution"
+        )
 
-    var analysisResult = update(ImmutableList.of("//test:defs.bzl%my_aspect"), "//test:t1");
+        val analysisResult: @NotNull AnalysisResult =
+            update(com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%my_aspect"), "//test:t1")
 
-    ConfiguredTarget topLevelTarget = Iterables.getOnlyElement(analysisResult.getTargetsToBuild());
-    var topLevelTargetDeps =
-        getDirectDeps(ConfiguredTargetKey.fromConfiguredTarget(topLevelTarget));
+        val topLevelTarget: ConfiguredTarget? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(analysisResult.getTargetsToBuild())
+        val topLevelTargetDeps: Iterable<SkyKey?> =
+            getDirectDeps(ConfiguredTargetKey.fromConfiguredTarget(topLevelTarget))
 
-    ConfiguredTargetKey toolDependencyFromTarget =
-        (ConfiguredTargetKey)
-            stream(topLevelTargetDeps)
-                .filter(e -> isConfiguredTarget(e, "//test:tool"))
-                .collect(onlyElement());
+        val toolDependencyFromTarget: ConfiguredTargetKey? =
+            com.google.common.collect.Streams.stream<SkyKey?>(topLevelTargetDeps)
+                .filter { e: SkyKey? -> isConfiguredTarget(e, "//test:tool") }
+                .collect(com.google.common.collect.MoreCollectors.onlyElement<SkyKey?>()) as ConfiguredTargetKey?
 
-    AspectKey aspectOnToolDependnecyKey =
-        Iterables.getOnlyElement(getAspectKeys("//test:tool", "//test:defs.bzl%my_aspect"));
+        val aspectOnToolDependnecyKey: AspectKey? =
+            com.google.common.collect.Iterables.getOnlyElement<AspectKey?>(
+                getAspectKeys(
+                    "//test:tool",
+                    "//test:defs.bzl%my_aspect"
+                )
+            )
 
-    // The aspect used the base target's toolchain to request the target's dependency, so the
-    // two keys are equal.
-    assertThat(toolDependencyFromTarget)
-        .isEqualTo(aspectOnToolDependnecyKey.getBaseConfiguredTargetKey());
+        // The aspect used the base target's toolchain to request the target's dependency, so the
+        // two keys are equal.
+        assertThat(toolDependencyFromTarget)
+            .isEqualTo(aspectOnToolDependnecyKey.getBaseConfiguredTargetKey())
 
-    // The //test:tool target is requested only once and its key contains the execution platform of
-    // the exec group 'gp' from its parent (//test:t1).
-    ImmutableList<ConfiguredTargetKey> toolDependencyKey = getConfiguredTargetKey("//test:tool");
-    assertThat(toolDependencyKey).hasSize(1);
-    assertThat(
+        // The //test:tool target is requested only once and its key contains the execution platform of
+        // the exec group 'gp' from its parent (//test:t1).
+        val toolDependencyKey: com.google.common.collect.ImmutableList<ConfiguredTargetKey> =
+            getConfiguredTargetKey("//test:tool")
+        Truth.assertThat(toolDependencyKey).hasSize(1)
+        assertThat(
             toolDependencyKey
                 .get(0)
                 .getConfigurationKey()
                 .getOptions()
-                .get(PlatformOptions.class)
-                .getPlatforms())
-        .containsExactly(Label.parseCanonicalUnchecked("//platforms:platform_2"));
-  }
+                .get(PlatformOptions::class.java)
+                .getPlatforms()
+        )
+            .containsExactly(Label.parseCanonicalUnchecked("//platforms:platform_2"))
+    }
 
-  @Test
-  public void aspectAndRuleHaveDifferentExecutionPlatforms_buildSucceeds(
-      @TestParameter boolean autoExecGroups) throws Exception {
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun aspectAndRuleHaveDifferentExecutionPlatforms_buildSucceeds(
+        @TestParameter autoExecGroups: Boolean
+    ) {
+        scratch.file(
+            "test/defs.bzl",
+            """
         def _impl(target, ctx):
           return []
 
@@ -2192,65 +2540,80 @@ public final class StarlarkAspectsToolchainPropagationTest extends AnalysisTestC
             "_tool": attr.label(default='//test:rule_tool', cfg = config.exec(exec_group = 'gp')),
           },
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:defs.bzl', 'r1')
         load('//test_defs:foo_binary.bzl', 'foo_binary')
         r1(name = 't1')
         foo_binary(name = 'rule_tool', srcs = ['test.sh'])
         foo_binary(name = 'aspect_tool', srcs = ['test.sh'])
-        """);
-    useConfiguration(
-        "--extra_toolchains=//toolchain:foo_toolchain",
-        "--extra_execution_platforms=//platforms:platform_1,//platforms:platform_2",
-        "--incompatible_auto_exec_groups=" + autoExecGroups,
-        "--incompatible_enable_cc_toolchain_resolution");
+        
+        """.trimIndent()
+        )
+        useConfiguration(
+            "--extra_toolchains=//toolchain:foo_toolchain",
+            "--extra_execution_platforms=//platforms:platform_1,//platforms:platform_2",
+            "--incompatible_auto_exec_groups=" + autoExecGroups,
+            "--incompatible_enable_cc_toolchain_resolution"
+        )
 
-    var unused = update(ImmutableList.of("//test:defs.bzl%toolchain_aspect"), "//test:t1");
+        val unused: @NotNull AnalysisResult =
+            update(com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%toolchain_aspect"), "//test:t1")
 
-    // //test:rule_tool uses //platforms:platform_2
-    ConfiguredTargetKey ruleTool =
-        Iterables.getOnlyElement(getConfiguredTargetKey("//test:rule_tool"));
-    assertThat(
-            ruleTool.getConfigurationKey().getOptions().get(PlatformOptions.class).getPlatforms())
-        .containsExactly(Label.parseCanonicalUnchecked("//platforms:platform_2"));
+        // //test:rule_tool uses //platforms:platform_2
+        val ruleTool: ConfiguredTargetKey? =
+            com.google.common.collect.Iterables.getOnlyElement<ConfiguredTargetKey?>(getConfiguredTargetKey("//test:rule_tool"))
+        assertThat(
+            ruleTool.getConfigurationKey().getOptions().get(PlatformOptions::class.java).getPlatforms()
+        )
+            .containsExactly(Label.parseCanonicalUnchecked("//platforms:platform_2"))
 
-    // //test:aspect_tool uses //platforms:platform_1
-    ConfiguredTargetKey aspectTool =
-        Iterables.getOnlyElement(getConfiguredTargetKey("//test:aspect_tool"));
-    assertThat(
-            aspectTool.getConfigurationKey().getOptions().get(PlatformOptions.class).getPlatforms())
-        .containsExactly(Label.parseCanonicalUnchecked("//platforms:platform_1"));
+        // //test:aspect_tool uses //platforms:platform_1
+        val aspectTool: ConfiguredTargetKey? =
+            com.google.common.collect.Iterables.getOnlyElement<ConfiguredTargetKey?>(getConfiguredTargetKey("//test:aspect_tool"))
+        assertThat(
+            aspectTool.getConfigurationKey().getOptions().get(PlatformOptions::class.java).getPlatforms()
+        )
+            .containsExactly(Label.parseCanonicalUnchecked("//platforms:platform_1"))
 
-    // aspect propagates to the rule's toolchain (with //platforms:platform_2 execution platform)
-    // not to its own toolchain
-    var aspectOnTarget =
-        Iterables.getOnlyElement(getAspectKeys("//test:t1", "//test:defs.bzl%toolchain_aspect"));
-    var aspectOnTargetDeps = getDirectDeps(aspectOnTarget);
+        // aspect propagates to the rule's toolchain (with //platforms:platform_2 execution platform)
+        // not to its own toolchain
+        val aspectOnTarget: AspectKey? =
+            com.google.common.collect.Iterables.getOnlyElement<AspectKey?>(
+                getAspectKeys(
+                    "//test:t1",
+                    "//test:defs.bzl%toolchain_aspect"
+                )
+            )
+        val aspectOnTargetDeps: Iterable<SkyKey?> = getDirectDeps(aspectOnTarget)
 
-    var aspectsOnToolchain =
-        Iterables.transform(
-            Iterables.filter(aspectOnTargetDeps, AspectKey.class),
-            k ->
-                k.getAspectName()
-                    + " on "
-                    + k.getLabel()
-                    + ", exec_platform: "
-                    + k.getBaseConfiguredTargetKey().getExecutionPlatformLabel());
-    assertThat(aspectsOnToolchain)
-        .containsExactly(
-            "//test:defs.bzl%toolchain_aspect on //toolchain:foo,"
-                + " exec_platform: //platforms:platform_2");
-  }
+        val aspectsOnToolchain: Iterable<String> =
+            com.google.common.collect.Iterables.transform<AspectKey?, String?>(
+                com.google.common.collect.Iterables.filter<AspectKey?>(aspectOnTargetDeps, AspectKey::class.java),
+                com.google.common.base.Function { k: AspectKey? ->
+                    (k.getAspectName()
+                            + " on "
+                            + k.getLabel()
+                            + ", exec_platform: "
+                            + k.getBaseConfiguredTargetKey().getExecutionPlatformLabel())
+                })
+        Truth.assertThat(aspectsOnToolchain)
+            .containsExactly(
+                "//test:defs.bzl%toolchain_aspect on //toolchain:foo,"
+                        + " exec_platform: //platforms:platform_2"
+            )
+    }
 
-  @Test
-  public void aspectPropagatesToToolchain_seesToolchainLabel(@TestParameter boolean autoExecGroups)
-      throws Exception {
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun aspectPropagatesToToolchain_seesToolchainLabel(@TestParameter autoExecGroups: Boolean) {
+        scratch.file(
+            "test/defs.bzl",
+            """
         AspectProvider = provider()
         def _impl(target, ctx):
           if ctx.rule.toolchains and '//rule:toolchain_type_1' in ctx.rule.toolchains:
@@ -2271,35 +2634,44 @@ public final class StarlarkAspectsToolchainPropagationTest extends AnalysisTestC
           implementation = _rule_impl,
           toolchains = ['//rule:toolchain_type_1'],
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:defs.bzl', 'r1')
         r1(name = 't1')
-        """);
-    useConfiguration(
-        "--extra_toolchains=//toolchain:foo_toolchain",
-        "--incompatible_auto_exec_groups=" + autoExecGroups);
+        
+        """.trimIndent()
+        )
+        useConfiguration(
+            "--extra_toolchains=//toolchain:foo_toolchain",
+            "--incompatible_auto_exec_groups=" + autoExecGroups
+        )
 
-    var analysisResult = update(ImmutableList.of("//test:defs.bzl%toolchain_aspect"), "//test:t1");
+        val analysisResult: @NotNull AnalysisResult =
+            update(com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%toolchain_aspect"), "//test:t1")
 
-    ConfiguredAspect configuredAspect =
-        Iterables.getOnlyElement(analysisResult.getAspectsMap().values());
+        val configuredAspect: ConfiguredAspect? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(analysisResult.getAspectsMap().values())
 
-    StarlarkProvider.Key providerKey =
-        new StarlarkProvider.Key(
-            keyForBuild(Label.parseCanonical("//test:defs.bzl")), "AspectProvider");
+        val providerKey: StarlarkProvider.Key =
+            Key(
+                keyForBuild(Label.parseCanonical("//test:defs.bzl")), "AspectProvider"
+            )
 
-    var value = ((StarlarkInfo) configuredAspect.get(providerKey)).getValue("value");
-    assertThat((String) value).isEqualTo("@@//test:t1 has toolchain @@//toolchain:foo");
-  }
+        val value: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            (configuredAspect.get(providerKey) as StarlarkInfo).getValue("value")
+        Truth.assertThat(value).isEqualTo("@@//test:t1 has toolchain @@//toolchain:foo")
+    }
 
-  @Test
-  public void aspectCollectsAttributeVars() throws Exception {
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun aspectCollectsAttributeVars() {
+        scratch.file(
+            "test/defs.bzl",
+            """
         VarProvider = provider(fields = ["aspect_vars", "rule_vars"])
 
         def _impl(target, ctx):
@@ -2330,10 +2702,12 @@ public final class StarlarkAspectsToolchainPropagationTest extends AnalysisTestC
               "vars": attr.string_dict(),
           },
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-"""
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
 load('//test:defs.bzl', 'r1', 'var_supplier')
 r1(
     name = 't1',
@@ -2354,55 +2728,60 @@ var_supplier(
         "aspect_var_key": "aspect_var_value",
     },
 )
-""");
-    useConfiguration();
 
-    var analysisResult = update(ImmutableList.of("//test:defs.bzl%var_aspect"), "//test:t1");
+""".trimIndent()
+        )
+        useConfiguration()
 
-    ConfiguredAspect configuredAspect =
-        Iterables.getOnlyElement(analysisResult.getAspectsMap().values());
+        val analysisResult: @NotNull AnalysisResult =
+            update(com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%var_aspect"), "//test:t1")
 
-    StarlarkProvider.Key providerKey =
-        new StarlarkProvider.Key(
-            keyForBuild(Label.parseCanonical("//test:defs.bzl")), "VarProvider");
+        val configuredAspect: ConfiguredAspect? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(analysisResult.getAspectsMap().values())
 
-    StarlarkInfo provider = (StarlarkInfo) configuredAspect.get(providerKey);
+        val providerKey: StarlarkProvider.Key =
+            Key(
+                keyForBuild(Label.parseCanonical("//test:defs.bzl")), "VarProvider"
+            )
 
-    // Check vars from the aspect itself.
-    Object rawAspectVars = provider.getValue("aspect_vars");
-    assertThat(rawAspectVars).isInstanceOf(Dict.class);
+        val provider: StarlarkInfo = configuredAspect.get(providerKey) as StarlarkInfo
 
-    // This can't fail due to the above assertion, but makes the compiler happy.
-    if (rawAspectVars instanceof Dict<?, ?> vars) {
+        // Check vars from the aspect itself.
+        val rawAspectVars: Any? = provider.getValue("aspect_vars")
+        Truth.assertThat(rawAspectVars).isInstanceOf(Dict::class.java)
 
-      // This will have several standard keys as well, so don't check exact keys.
-      // This will have several standard keys as well, so don't check exact keys.
-      assertThat(vars.keySet()).contains("aspect_var_key");
-      assertThat(vars.get("aspect_var_key")).isEqualTo("aspect_var_value");
-      // Should not contain keys from the rule.
-      assertThat(vars.keySet()).doesNotContain("rule_var_key");
+        // This can't fail due to the above assertion, but makes the compiler happy.
+        if (rawAspectVars is Dict<*, *>) {
+            // This will have several standard keys as well, so don't check exact keys.
+            // This will have several standard keys as well, so don't check exact keys.
+
+            Truth.assertThat(rawAspectVars.keys).contains("aspect_var_key")
+            Truth.assertThat(rawAspectVars.get("aspect_var_key")).isEqualTo("aspect_var_value")
+            // Should not contain keys from the rule.
+            Truth.assertThat(rawAspectVars.keys).doesNotContain("rule_var_key")
+        }
+
+        // Check vars from the underlying rule.
+        val rawRuleVars: Any? = provider.getValue("rule_vars")
+        Truth.assertThat(rawRuleVars).isInstanceOf(Dict::class.java)
+
+        // This can't fail due to the above assertion, but makes the compiler happy.
+        if (rawRuleVars is Dict<*, *>) {
+            // This will have several standard keys as well, so don't check exact keys.
+
+            Truth.assertThat(rawRuleVars.keys).contains("rule_var_key")
+            Truth.assertThat(rawRuleVars.get("rule_var_key")).isEqualTo("rule_var_value")
+            // Should not contain keys from the rule.
+            Truth.assertThat(rawRuleVars.keys).doesNotContain("aspect_var_key")
+        }
     }
 
-    // Check vars from the underlying rule.
-    Object rawRuleVars = provider.getValue("rule_vars");
-    assertThat(rawRuleVars).isInstanceOf(Dict.class);
-
-    // This can't fail due to the above assertion, but makes the compiler happy.
-    if (rawRuleVars instanceof Dict<?, ?> vars) {
-
-      // This will have several standard keys as well, so don't check exact keys.
-      assertThat(vars.keySet()).contains("rule_var_key");
-      assertThat(vars.get("rule_var_key")).isEqualTo("rule_var_value");
-      // Should not contain keys from the rule.
-      assertThat(vars.keySet()).doesNotContain("aspect_var_key");
-    }
-  }
-
-  @Test
-  public void aspectCollectsToolchainVars() throws Exception {
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun aspectCollectsToolchainVars() {
+        scratch.file(
+            "test/defs.bzl",
+            """
         VarProvider = provider(fields = ["aspect_vars", "rule_vars"])
 
         def _impl(target, ctx):
@@ -2423,62 +2802,71 @@ var_supplier(
           implementation = _rule_impl,
           toolchains = ['//rule:toolchain_type_2'],
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:defs.bzl', 'r1')
         r1(name = 't1')
-        """);
-    useConfiguration(
-        "--extra_toolchains=//toolchain:foo_toolchain,//toolchain:foo_toolchain_with_provider");
+        
+        """.trimIndent()
+        )
+        useConfiguration(
+            "--extra_toolchains=//toolchain:foo_toolchain,//toolchain:foo_toolchain_with_provider"
+        )
 
-    var analysisResult = update(ImmutableList.of("//test:defs.bzl%var_aspect"), "//test:t1");
+        val analysisResult: @NotNull AnalysisResult =
+            update(com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%var_aspect"), "//test:t1")
 
-    ConfiguredAspect configuredAspect =
-        Iterables.getOnlyElement(analysisResult.getAspectsMap().values());
+        val configuredAspect: ConfiguredAspect? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(analysisResult.getAspectsMap().values())
 
-    StarlarkProvider.Key providerKey =
-        new StarlarkProvider.Key(
-            keyForBuild(Label.parseCanonical("//test:defs.bzl")), "VarProvider");
+        val providerKey: StarlarkProvider.Key =
+            Key(
+                keyForBuild(Label.parseCanonical("//test:defs.bzl")), "VarProvider"
+            )
 
-    StarlarkInfo provider = (StarlarkInfo) configuredAspect.get(providerKey);
+        val provider: StarlarkInfo = configuredAspect.get(providerKey) as StarlarkInfo
 
-    // Check vars from the aspect itself.
-    Object rawAspectVars = provider.getValue("aspect_vars");
-    assertThat(rawAspectVars).isInstanceOf(Dict.class);
+        // Check vars from the aspect itself.
+        val rawAspectVars: Any? = provider.getValue("aspect_vars")
+        Truth.assertThat(rawAspectVars).isInstanceOf(Dict::class.java)
 
-    // This can't fail due to the above assertion, but makes the compiler happy.
-    if (rawAspectVars instanceof Dict<?, ?> vars) {
+        // This can't fail due to the above assertion, but makes the compiler happy.
+        if (rawAspectVars is Dict<*, *>) {
+            // This will have several standard keys as well, so don't check exact keys.
 
-      // This will have several standard keys as well, so don't check exact keys.
-      assertThat(vars.keySet()).contains("type_1_key");
-      assertThat(vars.get("type_1_key")).isEqualTo("type_1_value");
-      // Should not contain keys from the rule.
-      assertThat(vars.keySet()).doesNotContain("type_2_key");
+            Truth.assertThat(rawAspectVars.keys).contains("type_1_key")
+            Truth.assertThat(rawAspectVars.get("type_1_key")).isEqualTo("type_1_value")
+            // Should not contain keys from the rule.
+            Truth.assertThat(rawAspectVars.keys).doesNotContain("type_2_key")
+        }
+
+        // Check vars from the underlying rule.
+        val rawRuleVars: Any? = provider.getValue("rule_vars")
+        Truth.assertThat(rawRuleVars).isInstanceOf(Dict::class.java)
+
+        // This can't fail due to the above assertion, but makes the compiler happy.
+        if (rawRuleVars is Dict<*, *>) {
+            // This will have several standard keys as well, so don't check exact keys.
+
+            Truth.assertThat(rawRuleVars.keys).contains("type_2_key")
+            Truth.assertThat(rawRuleVars.get("type_2_key")).isEqualTo("type_2_value")
+            // Should not contain keys from the aspect.
+            Truth.assertThat(rawRuleVars.keys).doesNotContain("type_1_key")
+        }
     }
 
-    // Check vars from the underlying rule.
-    Object rawRuleVars = provider.getValue("rule_vars");
-    assertThat(rawRuleVars).isInstanceOf(Dict.class);
-
-    // This can't fail due to the above assertion, but makes the compiler happy.
-    if (rawRuleVars instanceof Dict<?, ?> vars) {
-
-      // This will have several standard keys as well, so don't check exact keys.
-      assertThat(vars.keySet()).contains("type_2_key");
-      assertThat(vars.get("type_2_key")).isEqualTo("type_2_value");
-      // Should not contain keys from the aspect.
-      assertThat(vars.keySet()).doesNotContain("type_1_key");
-    }
-  }
-
-  @Test
-  public void propagationPredicateAppliedOnToolchain_aspectPropagatedToSatisfyingToolchain(
-      @TestParameter boolean autoExecGroups) throws Exception {
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun propagationPredicateAppliedOnToolchain_aspectPropagatedToSatisfyingToolchain(
+        @TestParameter autoExecGroups: Boolean
+    ) {
+        scratch.file(
+            "test/defs.bzl",
+            """
         AspectInfo = provider()
 
         def _propagation_predicate(ctx):
@@ -2510,42 +2898,52 @@ var_supplier(
           implementation = _rule_impl,
           toolchains = ['//rule:toolchain_type_1', '//rule:toolchain_type_2'],
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:defs.bzl', 'r1')
         r1(name = 't1')
-        """);
-    useConfiguration(
-        "--extra_toolchains=//toolchain:foo_toolchain,//toolchain:foo_toolchain_with_provider",
-        "--incompatible_auto_exec_groups=" + autoExecGroups);
+        
+        """.trimIndent()
+        )
+        useConfiguration(
+            "--extra_toolchains=//toolchain:foo_toolchain,//toolchain:foo_toolchain_with_provider",
+            "--incompatible_auto_exec_groups=" + autoExecGroups
+        )
 
-    var analysisResult = update(ImmutableList.of("//test:defs.bzl%toolchain_aspect"), "//test:t1");
+        val analysisResult: @NotNull AnalysisResult =
+            update(com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%toolchain_aspect"), "//test:t1")
 
-    var aspectKeys = getAspectKeys("//test:defs.bzl%toolchain_aspect");
-    // Only the keys to the targets that satisfy the aspect's propagation predicate are present.
-    assertThat(aspectKeys)
-        .containsExactly(
-            "//test:defs.bzl%toolchain_aspect on //test:t1",
-            "//test:defs.bzl%toolchain_aspect on //toolchain:foo_with_provider");
+        val aspectKeys: com.google.common.collect.ImmutableList<String> =
+            getAspectKeys("//test:defs.bzl%toolchain_aspect")
+        // Only the keys to the targets that satisfy the aspect's propagation predicate are present.
+        Truth.assertThat(aspectKeys)
+            .containsExactly(
+                "//test:defs.bzl%toolchain_aspect on //test:t1",
+                "//test:defs.bzl%toolchain_aspect on //toolchain:foo_with_provider"
+            )
 
-    ConfiguredAspect configuredAspect =
-        Iterables.getOnlyElement(analysisResult.getAspectsMap().values());
+        val configuredAspect: ConfiguredAspect? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(analysisResult.getAspectsMap().values())
 
-    assertThat(
+        assertThat(
             getStarlarkProvider(configuredAspect, "//test:defs.bzl", "AspectInfo")
-                .getValue("res", Sequence.class))
-        .containsExactly(
-            "my_aspect on @@//test:t1", "my_aspect on @@//toolchain:foo_with_provider");
-  }
+                .getValue("res", net.starlark.java.eval.Sequence::class.java)
+        )
+            .containsExactly(
+                "my_aspect on @@//test:t1", "my_aspect on @@//toolchain:foo_with_provider"
+            )
+    }
 
-  @Test
-  public void toolchainTypesFunc_invalidToolchainType_fails(@TestParameter boolean autoExecGroups)
-      throws Exception {
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun toolchainTypesFunc_invalidToolchainType_fails(@TestParameter autoExecGroups: Boolean) {
+        scratch.file(
+            "test/defs.bzl",
+            """
         AspectInfo = provider()
 
         def _toolchain_aspects(ctx):
@@ -2566,29 +2964,40 @@ var_supplier(
           implementation = _rule_impl,
           toolchains = ['//rule:toolchain_type_1'],
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:defs.bzl', 'r1')
         r1(name = 't1')
-        """);
-    useConfiguration(
-        "--extra_toolchains=//toolchain:foo_toolchain",
-        "--incompatible_auto_exec_groups=" + autoExecGroups);
+        
+        """.trimIndent()
+        )
+        useConfiguration(
+            "--extra_toolchains=//toolchain:foo_toolchain",
+            "--incompatible_auto_exec_groups=" + autoExecGroups
+        )
 
-    reporter.removeHandler(failFastHandler);
-    assertThrows(
-        ViewCreationFailedException.class,
-        () -> update(ImmutableList.of("//test:defs.bzl%toolchain_aspect"), "//test:t1"));
-    assertContainsEvent("invalid label in Label(): invalid repository name ':'");
-  }
+        reporter.removeHandler(failFastHandler)
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable {
+                update(
+                    com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%toolchain_aspect"),
+                    "//test:t1"
+                )
+            })
+        assertContainsEvent("invalid label in Label(): invalid repository name ':'")
+    }
 
-  @Test
-  public void toolchainTypesFunc_invalidReturnValue_fails() throws Exception {
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun toolchainTypesFunc_invalidReturnValue_fails() {
+        scratch.file(
+            "test/defs.bzl",
+            """
         AspectInfo = provider()
 
         def _toolchains_aspects(ctx):
@@ -2609,28 +3018,39 @@ var_supplier(
           implementation = _rule_impl,
           toolchains = ['//rule:toolchain_type_1'],
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:defs.bzl', 'r1')
         r1(name = 't1')
-        """);
-    useConfiguration("--extra_toolchains=//toolchain:foo_toolchain");
+        
+        """.trimIndent()
+        )
+        useConfiguration("--extra_toolchains=//toolchain:foo_toolchain")
 
-    reporter.removeHandler(failFastHandler);
-    assertThrows(
-        ViewCreationFailedException.class,
-        () -> update(ImmutableList.of("//test:defs.bzl%toolchain_aspect"), "//test:t1"));
-    assertContainsEvent("at index 0 of toolchains_aspects, got element of type string, want Label");
-  }
+        reporter.removeHandler(failFastHandler)
+        org.junit.Assert.assertThrows<T?>(
+            ViewCreationFailedException::class.java,
+            org.junit.function.ThrowingRunnable {
+                update(
+                    com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%toolchain_aspect"),
+                    "//test:t1"
+                )
+            })
+        assertContainsEvent("at index 0 of toolchains_aspects, got element of type string, want Label")
+    }
 
-  @Test
-  public void toolchainTypesFunc_wildcardEnumeratesResolvedToolchains(
-      @TestParameter boolean autoExecGroups) throws Exception {
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun toolchainTypesFunc_wildcardEnumeratesResolvedToolchains(
+        @TestParameter autoExecGroups: Boolean
+    ) {
+        scratch.file(
+            "test/defs.bzl",
+            """
         AspectInfo = provider()
 
         def _impl(target, ctx):
@@ -2652,43 +3072,53 @@ var_supplier(
           implementation = _rule_impl,
           toolchains = ['//rule:toolchain_type_1', '//rule:toolchain_type_2'],
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:defs.bzl', 'r1')
         r1(name = 't1')
-        """);
-    useConfiguration(
-        "--extra_toolchains=//toolchain:foo_toolchain,//toolchain:foo_toolchain_with_provider",
-        "--incompatible_auto_exec_groups=" + autoExecGroups);
+        
+        """.trimIndent()
+        )
+        useConfiguration(
+            "--extra_toolchains=//toolchain:foo_toolchain,//toolchain:foo_toolchain_with_provider",
+            "--incompatible_auto_exec_groups=" + autoExecGroups
+        )
 
-    var analysisResult = update(ImmutableList.of("//test:defs.bzl%toolchain_aspect"), "//test:t1");
+        val analysisResult: @NotNull AnalysisResult =
+            update(com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%toolchain_aspect"), "//test:t1")
 
-    var aspectKeys = getAspectKeys("//test:defs.bzl%toolchain_aspect");
-    assertThat(aspectKeys)
-        .containsExactly(
-            "//test:defs.bzl%toolchain_aspect on //test:t1",
-            "//test:defs.bzl%toolchain_aspect on //toolchain:foo",
-            "//test:defs.bzl%toolchain_aspect on //toolchain:foo_with_provider");
+        val aspectKeys: com.google.common.collect.ImmutableList<String> =
+            getAspectKeys("//test:defs.bzl%toolchain_aspect")
+        Truth.assertThat(aspectKeys)
+            .containsExactly(
+                "//test:defs.bzl%toolchain_aspect on //test:t1",
+                "//test:defs.bzl%toolchain_aspect on //toolchain:foo",
+                "//test:defs.bzl%toolchain_aspect on //toolchain:foo_with_provider"
+            )
 
-    ConfiguredAspect configuredAspect =
-        Iterables.getOnlyElement(analysisResult.getAspectsMap().values());
-    assertThat(
+        val configuredAspect: ConfiguredAspect? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(analysisResult.getAspectsMap().values())
+        assertThat(
             getStarlarkProvider(configuredAspect, "//test:defs.bzl", "AspectInfo")
-                .getValue("res", Sequence.class))
-        .containsExactly(
-            "my_aspect on @@//test:t1",
-            "my_aspect on @@//toolchain:foo",
-            "my_aspect on @@//toolchain:foo_with_provider");
-  }
+                .getValue("res", net.starlark.java.eval.Sequence::class.java)
+        )
+            .containsExactly(
+                "my_aspect on @@//test:t1",
+                "my_aspect on @@//toolchain:foo",
+                "my_aspect on @@//toolchain:foo_with_provider"
+            )
+    }
 
-  @Test
-  public void toolchainTypesFunc_propagateToSelectedTypes(@TestParameter boolean autoExecGroups)
-      throws Exception {
-    scratch.file(
-        "test/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun toolchainTypesFunc_propagateToSelectedTypes(@TestParameter autoExecGroups: Boolean) {
+        scratch.file(
+            "test/defs.bzl",
+            """
         AspectInfo = provider()
 
         def _toolchains_aspects(ctx):
@@ -2721,123 +3151,148 @@ var_supplier(
           implementation = _rule_impl,
           toolchains = ['//rule:toolchain_type_1', '//rule:toolchain_type_2'],
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load('//test:defs.bzl', 'r1')
         r1(name = 't1')
         r1(name = 't2')
         r1(name = 't3')
-        """);
-    useConfiguration(
-        "--extra_toolchains=//toolchain:foo_toolchain,//toolchain:foo_toolchain_with_provider",
-        "--incompatible_auto_exec_groups=" + autoExecGroups);
+        
+        """.trimIndent()
+        )
+        useConfiguration(
+            "--extra_toolchains=//toolchain:foo_toolchain,//toolchain:foo_toolchain_with_provider",
+            "--incompatible_auto_exec_groups=" + autoExecGroups
+        )
 
-    var analysisResult =
-        update(
-            ImmutableList.of("//test:defs.bzl%toolchain_aspect"),
-            "//test:t1",
-            "//test:t2",
-            "//test:t3");
+        val analysisResult: @NotNull AnalysisResult =
+            update(
+                com.google.common.collect.ImmutableList.of<String?>("//test:defs.bzl%toolchain_aspect"),
+                "//test:t1",
+                "//test:t2",
+                "//test:t3"
+            )
 
-    var aspectKeys = getAspectKeys("//test:defs.bzl%toolchain_aspect");
-    assertThat(aspectKeys)
-        .containsExactly(
-            "//test:defs.bzl%toolchain_aspect on //test:t1",
-            "//test:defs.bzl%toolchain_aspect on //test:t2",
-            "//test:defs.bzl%toolchain_aspect on //test:t3",
-            "//test:defs.bzl%toolchain_aspect on //toolchain:foo",
-            "//test:defs.bzl%toolchain_aspect on //toolchain:foo_with_provider");
+        val aspectKeys: com.google.common.collect.ImmutableList<String> =
+            getAspectKeys("//test:defs.bzl%toolchain_aspect")
+        Truth.assertThat(aspectKeys)
+            .containsExactly(
+                "//test:defs.bzl%toolchain_aspect on //test:t1",
+                "//test:defs.bzl%toolchain_aspect on //test:t2",
+                "//test:defs.bzl%toolchain_aspect on //test:t3",
+                "//test:defs.bzl%toolchain_aspect on //toolchain:foo",
+                "//test:defs.bzl%toolchain_aspect on //toolchain:foo_with_provider"
+            )
 
-    var t1AspectResult =
-        getAspectResult(
-            analysisResult.getAspectsMap(), "toolchain_aspect", "//test:t1", "AspectInfo");
-    assertThat(t1AspectResult)
-        .containsExactly("my_aspect on @@//test:t1", "my_aspect on @@//toolchain:foo");
+        val t1AspectResult: net.starlark.java.eval.Sequence<*> =
+            getAspectResult(
+                analysisResult.getAspectsMap(), "toolchain_aspect", "//test:t1", "AspectInfo"
+            )
+        Truth.assertThat(t1AspectResult)
+            .containsExactly("my_aspect on @@//test:t1", "my_aspect on @@//toolchain:foo")
 
-    var t2AspectResult =
-        getAspectResult(
-            analysisResult.getAspectsMap(), "toolchain_aspect", "//test:t2", "AspectInfo");
-    assertThat(t2AspectResult)
-        .containsExactly(
-            "my_aspect on @@//test:t2", "my_aspect on @@//toolchain:foo_with_provider");
+        val t2AspectResult: net.starlark.java.eval.Sequence<*> =
+            getAspectResult(
+                analysisResult.getAspectsMap(), "toolchain_aspect", "//test:t2", "AspectInfo"
+            )
+        Truth.assertThat(t2AspectResult)
+            .containsExactly(
+                "my_aspect on @@//test:t2", "my_aspect on @@//toolchain:foo_with_provider"
+            )
 
-    var t3AspectResult =
-        getAspectResult(
-            analysisResult.getAspectsMap(), "toolchain_aspect", "//test:t3", "AspectInfo");
-    assertThat(t3AspectResult).containsExactly("my_aspect on @@//test:t3");
-  }
-
-  private Sequence<?> getAspectResult(
-      Map<AspectKey, ConfiguredAspect> aspectsMap,
-      String aspectName,
-      String targetLabel,
-      String providerName)
-      throws Exception {
-    for (Map.Entry<AspectKey, ConfiguredAspect> entry : aspectsMap.entrySet()) {
-      AspectClass aspectClass = entry.getKey().getAspectClass();
-      if (aspectClass instanceof StarlarkAspectClass starlarkAspectClass) {
-        String aspectExportedName = starlarkAspectClass.exportedName;
-        if (aspectExportedName.equals(aspectName)
-            && (targetLabel == null || entry.getKey().getLabel().toString().equals(targetLabel))) {
-          return getStarlarkProvider(entry.getValue(), "//test:defs.bzl", providerName)
-              .getValue("res", Sequence.class);
-        }
-      }
+        val t3AspectResult: net.starlark.java.eval.Sequence<*> =
+            getAspectResult(
+                analysisResult.getAspectsMap(), "toolchain_aspect", "//test:t3", "AspectInfo"
+            )
+        Truth.assertThat(t3AspectResult).containsExactly("my_aspect on @@//test:t3")
     }
-    throw new AssertionError("Aspect result not found for aspect: " + aspectName);
-  }
 
-  private ImmutableList<ConfiguredTargetKey> getConfiguredTargetKey(String targetLabel) {
-    return skyframeExecutor.getEvaluator().getInMemoryGraph().getAllNodeEntries().stream()
-        .filter(n -> isConfiguredTarget(n.getKey(), targetLabel))
-        .map(n -> (ConfiguredTargetKey) n.getKey())
-        .collect(toImmutableList());
-  }
+    @Throws(java.lang.Exception::class)
+    private fun getAspectResult(
+        aspectsMap: MutableMap<AspectKey?, ConfiguredAspect?>,
+        aspectName: String?,
+        targetLabel: String?,
+        providerName: String?
+    ): net.starlark.java.eval.Sequence<*> {
+        for (entry in aspectsMap.entries) {
+            val aspectClass: AspectClass? = entry.key.getAspectClass()
+            if (aspectClass is StarlarkAspectClass) {
+                val aspectExportedName: String = aspectClass.exportedName
+                if (aspectExportedName == aspectName
+                    && (targetLabel == null || entry.key.getLabel().toString().equals(targetLabel))
+                ) {
+                    return getStarlarkProvider(entry.value, "//test:defs.bzl", providerName)
+                        .getValue("res", net.starlark.java.eval.Sequence::class.java)
+                }
+            }
+        }
+        throw java.lang.AssertionError("Aspect result not found for aspect: " + aspectName)
+    }
 
-  private Iterable<SkyKey> getDirectDeps(SkyKey key) throws Exception {
-    return skyframeExecutor
-        .getEvaluator()
-        .getExistingEntryAtCurrentlyEvaluatingVersion(key)
-        .getDirectDeps();
-  }
+    private fun getConfiguredTargetKey(targetLabel: String?): com.google.common.collect.ImmutableList<ConfiguredTargetKey> {
+        return skyframeExecutor.getEvaluator().getInMemoryGraph().getAllNodeEntries().stream()
+            .filter({ n -> isConfiguredTarget(n.getKey(), targetLabel) })
+            .map({ n -> n.getKey() as ConfiguredTargetKey? })
+            .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
+    }
 
-  private static boolean isConfiguredTarget(SkyKey key, String label) {
-    return key instanceof ConfiguredTargetKey ctKey && ctKey.getLabel().toString().equals(label);
-  }
+    @Throws(java.lang.Exception::class)
+    private fun getDirectDeps(key: SkyKey?): Iterable<SkyKey?> {
+        return skyframeExecutor
+            .getEvaluator()
+            .getExistingEntryAtCurrentlyEvaluatingVersion(key)
+            .getDirectDeps()
+    }
 
-  private ImmutableList<String> getAspectKeys(String aspectLabel) {
-    return skyframeExecutor.getEvaluator().getDoneValues().entrySet().stream()
-        .filter(
-            entry ->
-                entry.getKey() instanceof AspectKey
-                    && ((AspectKey) entry.getKey()).getAspectClass().getName().equals(aspectLabel))
-        .map(e -> (AspectKey) e.getKey())
-        .map(k -> k.getAspectClass().getName() + " on " + k.getLabel())
-        .collect(toImmutableList());
-  }
-
-  private ImmutableList<AspectKey> getAspectKeys(String targetLabel, String aspectLabel) {
-    return skyframeExecutor.getEvaluator().getDoneValues().entrySet().stream()
-        .filter(
-            entry ->
-                entry.getKey() instanceof AspectKey
-                    && ((AspectKey) entry.getKey()).getAspectClass().getName().equals(aspectLabel)
-                    && ((AspectKey) entry.getKey()).getLabel().toString().equals(targetLabel))
-        .map(e -> (AspectKey) e.getKey())
-        .collect(toImmutableList());
-  }
-
-  private static ConfiguredAspect getToplevelConfiguredAspect(
-      AnalysisResult analysisResult, String aspectName, String targetLabel) {
-    return Iterables.getOnlyElement(
-        analysisResult.getAspectsMap().entrySet().stream()
+    private fun getAspectKeys(aspectLabel: String?): com.google.common.collect.ImmutableList<String> {
+        return skyframeExecutor.getEvaluator().getDoneValues().entrySet().stream()
             .filter(
-                e ->
-                    e.getKey().getAspectName().equals(aspectName)
-                        && e.getKey().getLabel().toString().equals(targetLabel))
-            .map(e -> e.getValue())
-            .collect(toImmutableList()));
-  }
+                { entry ->
+                    entry.getKey() is AspectKey
+                            && (entry.getKey() as AspectKey).getAspectClass().getName().equals(aspectLabel)
+                })
+            .map({ e -> e.getKey() as AspectKey? })
+            .map({ k -> k.getAspectClass().getName() + " on " + k.getLabel() })
+            .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
+    }
+
+    private fun getAspectKeys(
+        targetLabel: String?,
+        aspectLabel: String?
+    ): com.google.common.collect.ImmutableList<AspectKey?> {
+        return skyframeExecutor.getEvaluator().getDoneValues().entrySet().stream()
+            .filter(
+                { entry ->
+                    entry.getKey() is AspectKey
+                            && (entry.getKey() as AspectKey).getAspectClass().getName().equals(aspectLabel)
+                            && (entry.getKey() as AspectKey).getLabel().toString().equals(targetLabel)
+                })
+            .map({ e -> e.getKey() as AspectKey? })
+            .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
+    }
+
+    companion object {
+        private fun isConfiguredTarget(key: SkyKey?, label: String?): Boolean {
+            return key is ConfiguredTargetKey && key.getLabel().toString().equals(label)
+        }
+
+        private fun getToplevelConfiguredAspect(
+            analysisResult: AnalysisResult, aspectName: String?, targetLabel: String?
+        ): ConfiguredAspect {
+            return com.google.common.collect.Iterables.getOnlyElement<T>(
+                analysisResult.getAspectsMap().entrySet().stream()
+                    .filter(
+                        { e ->
+                            e.getKey().getAspectName().equals(aspectName)
+                                    && e.getKey().getLabel().toString().equals(targetLabel)
+                        })
+                    .map({ e -> e.getValue() })
+                    .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
+            )
+        }
+    }
 }

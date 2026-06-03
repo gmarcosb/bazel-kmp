@@ -11,103 +11,98 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.testutils;
+package com.google.devtools.build.lib.skyframe.serialization.testutils
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.skyframe.serialization.testutils.IsomorphismKey.areIsomorphismKeysEqual;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.IsomorphismKey.areIsomorphismKeysEqual
+import org.junit.Test
 
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+@RunWith(JUnit4::class)
+class IsomorphismKeyTest {
+    @Test
+    fun comparingTrivialKeys_comparesTrue() {
+        val key1: IsomorphismKey = IsomorphismKey("a")
+        val key2: IsomorphismKey = IsomorphismKey("a")
 
-@RunWith(JUnit4.class)
-public final class IsomorphismKeyTest {
+        assertThat(areIsomorphismKeysEqual(key1, key2)).isTrue()
+    }
 
-  @Test
-  public void comparingTrivialKeys_comparesTrue() {
-    var key1 = new IsomorphismKey("a");
-    var key2 = new IsomorphismKey("a");
+    @Test
+    fun differentFingerprints_comparesFalse() {
+        val key1: IsomorphismKey = IsomorphismKey("a")
+        val key2: IsomorphismKey = IsomorphismKey("b")
 
-    assertThat(areIsomorphismKeysEqual(key1, key2)).isTrue();
-  }
+        assertThat(areIsomorphismKeysEqual(key1, key2)).isFalse()
+    }
 
-  @Test
-  public void differentFingerprints_comparesFalse() {
-    var key1 = new IsomorphismKey("a");
-    var key2 = new IsomorphismKey("b");
+    @Test
+    fun sameCyclicStructure_comparesTrue() {
+        val key1: IsomorphismKey = IsomorphismKey("a")
+        val key2: IsomorphismKey = IsomorphismKey("a")
 
-    assertThat(areIsomorphismKeysEqual(key1, key2)).isFalse();
-  }
+        key1.addLink(key1)
+        key2.addLink(key2)
 
-  @Test
-  public void sameCyclicStructure_comparesTrue() {
-    var key1 = new IsomorphismKey("a");
-    var key2 = new IsomorphismKey("a");
+        assertThat(areIsomorphismKeysEqual(key1, key2)).isTrue()
+    }
 
-    key1.addLink(key1);
-    key2.addLink(key2);
+    @Test
+    fun differentStructure_comparesFalse() {
+        val key1: IsomorphismKey = IsomorphismKey("a")
+        val key2: IsomorphismKey = IsomorphismKey("a")
 
-    assertThat(areIsomorphismKeysEqual(key1, key2)).isTrue();
-  }
+        key1.addLink(key1)
 
-  @Test
-  public void differentStructure_comparesFalse() {
-    var key1 = new IsomorphismKey("a");
-    var key2 = new IsomorphismKey("a");
+        assertThat(areIsomorphismKeysEqual(key1, key2)).isFalse()
+    }
 
-    key1.addLink(key1);
+    @Test
+    fun nestedStructure_comparesTrue() {
+        val key1: IsomorphismKey = IsomorphismKey("a")
+        val b1: IsomorphismKey = IsomorphismKey("b")
+        val c1: IsomorphismKey = IsomorphismKey("c")
+        val d1: IsomorphismKey = IsomorphismKey("d")
 
-    assertThat(areIsomorphismKeysEqual(key1, key2)).isFalse();
-  }
+        key1.addLink(b1)
+        key1.addLink(c1)
+        b1.addLink(d1)
+        c1.addLink(d1)
 
-  @Test
-  public void nestedStructure_comparesTrue() {
-    var key1 = new IsomorphismKey("a");
-    var b1 = new IsomorphismKey("b");
-    var c1 = new IsomorphismKey("c");
-    var d1 = new IsomorphismKey("d");
+        val key2: IsomorphismKey = IsomorphismKey("a")
+        val b2: IsomorphismKey = IsomorphismKey("b")
+        val c2: IsomorphismKey = IsomorphismKey("c")
+        val d2: IsomorphismKey = IsomorphismKey("d")
 
-    key1.addLink(b1);
-    key1.addLink(c1);
-    b1.addLink(d1);
-    c1.addLink(d1);
+        key2.addLink(b2)
+        key2.addLink(c2)
+        b2.addLink(d2)
+        c2.addLink(d2)
 
-    var key2 = new IsomorphismKey("a");
-    var b2 = new IsomorphismKey("b");
-    var c2 = new IsomorphismKey("c");
-    var d2 = new IsomorphismKey("d");
+        assertThat(areIsomorphismKeysEqual(key1, key2)).isTrue()
+    }
 
-    key2.addLink(b2);
-    key2.addLink(c2);
-    b2.addLink(d2);
-    c2.addLink(d2);
+    @Test
+    fun slightlyDifferentStructure_comparesFalse() {
+        val key1: IsomorphismKey = IsomorphismKey("a")
+        val b1: IsomorphismKey = IsomorphismKey("b")
+        val c1: IsomorphismKey = IsomorphismKey("c")
+        val d1: IsomorphismKey = IsomorphismKey("d")
 
-    assertThat(areIsomorphismKeysEqual(key1, key2)).isTrue();
-  }
+        key1.addLink(b1)
+        key1.addLink(c1)
+        b1.addLink(d1)
+        c1.addLink(d1)
 
-  @Test
-  public void slightlyDifferentStructure_comparesFalse() {
-    var key1 = new IsomorphismKey("a");
-    var b1 = new IsomorphismKey("b");
-    var c1 = new IsomorphismKey("c");
-    var d1 = new IsomorphismKey("d");
+        val key2: IsomorphismKey = IsomorphismKey("a")
+        val b2: IsomorphismKey = IsomorphismKey("b")
+        val c2: IsomorphismKey = IsomorphismKey("c")
+        val d2: IsomorphismKey = IsomorphismKey("d")
+        val d2prime: IsomorphismKey = IsomorphismKey("d")
 
-    key1.addLink(b1);
-    key1.addLink(c1);
-    b1.addLink(d1);
-    c1.addLink(d1);
+        key2.addLink(b2)
+        key2.addLink(c2)
+        b2.addLink(d2)
+        c2.addLink(d2prime)
 
-    var key2 = new IsomorphismKey("a");
-    var b2 = new IsomorphismKey("b");
-    var c2 = new IsomorphismKey("c");
-    var d2 = new IsomorphismKey("d");
-    var d2prime = new IsomorphismKey("d");
-
-    key2.addLink(b2);
-    key2.addLink(c2);
-    b2.addLink(d2);
-    c2.addLink(d2prime);
-
-    assertThat(areIsomorphismKeysEqual(key1, key2)).isFalse();
-  }
+        assertThat(areIsomorphismKeysEqual(key1, key2)).isFalse()
+    }
 }

@@ -11,129 +11,143 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.testutil;
+package com.google.devtools.build.lib.testutil
 
-import static org.hamcrest.CoreMatchers.equalTo;
-import static org.hamcrest.CoreMatchers.instanceOf;
-import static org.junit.Assert.assertThrows;
-import static org.junit.internal.matchers.ThrowableMessageMatcher.hasMessage;
+import com.google.devtools.build.lib.analysis.util.ConfigurationTestCase.create
+import com.google.devtools.build.lib.bugreport.BugReporter.sendBugReport
+import com.google.devtools.build.lib.bugreport.Crash
+import com.google.devtools.build.lib.bugreport.CrashContext
+import com.google.devtools.build.lib.packages.util.MockToolsConfig.create
+import com.google.devtools.build.lib.testutil.TestInterruptingBugReporter
+import org.hamcrest.CoreMatchers
+import org.junit.internal.matchers.ThrowableMessageMatcher
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.io.IOException
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
-import com.google.common.util.concurrent.SettableFuture;
-import com.google.devtools.build.lib.bugreport.Crash;
-import com.google.devtools.build.lib.bugreport.CrashContext;
-import java.io.IOException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import org.junit.After;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.ExpectedException;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [TestInterruptingBugReporter].  */
+@RunWith(JUnit4::class)
+// Need to use an outer rule to test our inner rule.
+class TestInterruptingBugReporterTest {
+    @org.junit.Rule(order = 0)
+    @Suppress("deprecation") // See above.
+    val thrown: org.junit.rules.ExpectedException = org.junit.rules.ExpectedException.none()
 
-/** Tests for {@link TestInterruptingBugReporter}. */
-@RunWith(JUnit4.class)
-@SuppressWarnings("ExpectedExceptionChecker") // Need to use an outer rule to test our inner rule.
-public final class TestInterruptingBugReporterTest {
+    @org.junit.Rule(order = 1)
+    val bugReporter: TestInterruptingBugReporter = TestInterruptingBugReporter()
 
-  @Rule(order = 0)
-  @SuppressWarnings("deprecation") // See above.
-  public final ExpectedException thrown = ExpectedException.none();
+    private val executor: ExecutorService = Executors.newSingleThreadExecutor()
 
-  @Rule(order = 1)
-  public final TestInterruptingBugReporter bugReporter = new TestInterruptingBugReporter();
+    @org.junit.After
+    fun shutdownExecutor() {
+        executor.shutdownNow()
+    }
 
-  private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    @org.junit.Test
+    fun passing() {
+    }
 
-  @After
-  public void shutdownExecutor() {
-    executor.shutdownNow();
-  }
+    @org.junit.Test
+    fun failing() {
+        thrown.expect(java.lang.IllegalStateException::class.java)
+        thrown.expectMessage("Intentional")
+        throw java.lang.IllegalStateException("Intentional")
+    }
 
-  @Test
-  public void passing() {}
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun interrupted() {
+        thrown.expect(java.lang.InterruptedException::class.java)
+        thrown.expectMessage("Manual interrupt")
+        throw java.lang.InterruptedException("Manual interrupt")
+    }
 
-  @Test
-  public void failing() {
-    thrown.expect(IllegalStateException.class);
-    thrown.expectMessage("Intentional");
-    throw new IllegalStateException("Intentional");
-  }
+    @org.junit.Test
+    fun mainThread_sendBugReport() {
+        thrown.expect(java.lang.IllegalStateException::class.java)
+        thrown.expectCause(CoreMatchers.instanceOf<Any?>(IOException::class.java))
+        thrown.expectCause(ThrowableMessageMatcher.hasMessage<Throwable?>(CoreMatchers.equalTo<String?>("IO error")))
+        throw org.junit.Assert.assertThrows<java.lang.IllegalStateException?>(
+            java.lang.IllegalStateException::class.java,
+            org.junit.function.ThrowingRunnable { bugReporter.sendBugReport(IOException("IO error")) })
+    }
 
-  @Test
-  public void interrupted() throws Exception {
-    thrown.expect(InterruptedException.class);
-    thrown.expectMessage("Manual interrupt");
-    throw new InterruptedException("Manual interrupt");
-  }
-
-  @Test
-  public void mainThread_sendBugReport() {
-    thrown.expect(IllegalStateException.class);
-    thrown.expectCause(instanceOf(IOException.class));
-    thrown.expectCause(hasMessage(equalTo("IO error")));
-    throw assertThrows(
-        IllegalStateException.class, () -> bugReporter.sendBugReport(new IOException("IO error")));
-  }
-
-  @Test
-  public void mainThread_handleCrash() {
-    thrown.expect(IllegalStateException.class);
-    thrown.expectCause(instanceOf(IOException.class));
-    thrown.expectCause(hasMessage(equalTo("IO error")));
-    throw assertThrows(
-        IllegalStateException.class,
-        () ->
-            bugReporter.handleCrash(Crash.from(new IOException("IO error")), CrashContext.halt()));
-  }
-
-  @Test
-  public void asyncThread_noException() throws Exception {
-    Future<Void> future = doSomethingAsync(() -> {});
-    future.get();
-  }
-
-  @Test
-  public void asyncThread_uncaughtException() throws Exception {
-    thrown.expect(IllegalStateException.class);
-    thrown.expectMessage("Intentional");
-    Future<Void> future =
-        doSomethingAsync(
-            () -> {
-              throw new IllegalStateException("Intentional");
-            });
-    throw assertThrows(InterruptedException.class, future::get);
-  }
-
-  @Test
-  public void asyncThread_sendBugReport() throws Exception {
-    thrown.expect(IllegalStateException.class);
-    thrown.expectMessage("Intentional");
-    Future<Void> future =
-        doSomethingAsync(() -> bugReporter.sendBugReport(new IllegalStateException("Intentional")));
-    throw assertThrows(InterruptedException.class, future::get);
-  }
-
-  @Test
-  public void asyncThread_handleCrash() throws Exception {
-    thrown.expect(IllegalStateException.class);
-    thrown.expectMessage("Intentional");
-    Future<Void> future =
-        doSomethingAsync(
-            () ->
+    @org.junit.Test
+    fun mainThread_handleCrash() {
+        thrown.expect(java.lang.IllegalStateException::class.java)
+        thrown.expectCause(CoreMatchers.instanceOf<Any?>(IOException::class.java))
+        thrown.expectCause(ThrowableMessageMatcher.hasMessage<Throwable?>(CoreMatchers.equalTo<String?>("IO error")))
+        throw org.junit.Assert.assertThrows<java.lang.IllegalStateException?>(
+            java.lang.IllegalStateException::class.java,
+            org.junit.function.ThrowingRunnable {
                 bugReporter.handleCrash(
-                    Crash.from(new IllegalStateException("Intentional")), CrashContext.halt()));
-    throw assertThrows(InterruptedException.class, future::get);
-  }
+                    Crash.from(IOException("IO error")),
+                    CrashContext.halt()
+                )
+            })
+    }
 
-  private Future<Void> doSomethingAsync(Runnable something) {
-    SettableFuture<Void> future = SettableFuture.create();
-    executor.execute(
-        () -> {
-          something.run();
-          future.set(null);
-        });
-    return future;
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun asyncThread_noException() {
+        val future: java.util.concurrent.Future<java.lang.Void?> = doSomethingAsync(java.lang.Runnable {})
+        future.get()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun asyncThread_uncaughtException() {
+        thrown.expect(java.lang.IllegalStateException::class.java)
+        thrown.expectMessage("Intentional")
+        val future: java.util.concurrent.Future<java.lang.Void?> =
+            doSomethingAsync(
+                java.lang.Runnable {
+                    throw java.lang.IllegalStateException("Intentional")
+                })
+        throw org.junit.Assert.assertThrows<java.lang.InterruptedException?>(
+            java.lang.InterruptedException::class.java,
+            org.junit.function.ThrowingRunnable { future.get() })
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun asyncThread_sendBugReport() {
+        thrown.expect(java.lang.IllegalStateException::class.java)
+        thrown.expectMessage("Intentional")
+        val future: java.util.concurrent.Future<java.lang.Void?> =
+            doSomethingAsync(java.lang.Runnable { bugReporter.sendBugReport(java.lang.IllegalStateException("Intentional")) })
+        throw org.junit.Assert.assertThrows<java.lang.InterruptedException?>(
+            java.lang.InterruptedException::class.java,
+            org.junit.function.ThrowingRunnable { future.get() })
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun asyncThread_handleCrash() {
+        thrown.expect(java.lang.IllegalStateException::class.java)
+        thrown.expectMessage("Intentional")
+        val future: java.util.concurrent.Future<java.lang.Void?> =
+            doSomethingAsync(
+                java.lang.Runnable {
+                    bugReporter.handleCrash(
+                        Crash.from(java.lang.IllegalStateException("Intentional")), CrashContext.halt()
+                    )
+                })
+        throw org.junit.Assert.assertThrows<java.lang.InterruptedException?>(
+            java.lang.InterruptedException::class.java,
+            org.junit.function.ThrowingRunnable { future.get() })
+    }
+
+    private fun doSomethingAsync(something: java.lang.Runnable): java.util.concurrent.Future<java.lang.Void?> {
+        val future: com.google.common.util.concurrent.SettableFuture<java.lang.Void?> =
+            com.google.common.util.concurrent.SettableFuture.create<java.lang.Void?>()
+        executor.execute(
+            java.lang.Runnable {
+                something.run()
+                future.set(null)
+            })
+        return future
+    }
 }

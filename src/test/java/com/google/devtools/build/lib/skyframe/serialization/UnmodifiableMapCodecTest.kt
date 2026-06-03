@@ -11,37 +11,29 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester
 
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester.VerificationFunction;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link UnmodifiableMapCodec}. */
-@RunWith(JUnit4.class)
-public final class UnmodifiableMapCodecTest {
-  @Test
-  public void smoke() throws Exception {
-    HashMap<String, String> map1 = new HashMap<>();
-    map1.put("a", "first");
-    map1.put("b", null);
-    LinkedHashMap<String, String> map2 = new LinkedHashMap<>();
-    map2.put("c", null);
-    map2.put("a", "second");
-    new SerializationTester(Collections.unmodifiableMap(map1), Collections.unmodifiableMap(map2))
-        .setVerificationFunction(
-            (VerificationFunction<Map<String, String>>)
-                (original, deserialized) ->
-                    assertThat(deserialized).containsExactlyEntriesIn(original).inOrder())
-        .runTests();
-  }
+/** Tests for [UnmodifiableMapCodec].  */
+@RunWith(JUnit4::class)
+class UnmodifiableMapCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun smoke() {
+        val map1: HashMap<String?, String?> = HashMap<String?, String?>()
+        map1.put("a", "first")
+        map1.put("b", null)
+        val map2: LinkedHashMap<String?, String?> = LinkedHashMap<String?, String?>()
+        map2.put("c", null)
+        map2.put("a", "second")
+        SerializationTester(Collections.unmodifiableMap<K?, V?>(map1), Collections.unmodifiableMap<K?, V?>(map2))
+            .setVerificationFunction(
+                VerificationFunction { original, deserialized ->
+                    assertThat(deserialized).containsExactlyEntriesIn(
+                        original
+                    ).inOrder()
+                } as VerificationFunction<MutableMap<String?, String?>?>)
+            .runTests()
+    }
 }

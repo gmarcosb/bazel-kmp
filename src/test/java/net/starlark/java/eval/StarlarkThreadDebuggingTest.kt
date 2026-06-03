@@ -11,316 +11,331 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.eval
 
-package net.starlark.java.eval;
+import net.starlark.java.eval.Debug.ReadyToPause
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Iterables;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.Debug.ReadyToPause;
-import net.starlark.java.eval.Debug.Stepping;
-import net.starlark.java.syntax.FileOptions;
-import net.starlark.java.syntax.Location;
-import net.starlark.java.syntax.ParserInput;
-import net.starlark.java.syntax.SyntaxError;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests of debugging features of StarlarkThread. */
-@RunWith(JUnit4.class)
-public class StarlarkThreadDebuggingTest {
-
-  // TODO(adonovan): rewrite these tests at a higher level.
-
-  private static StarlarkThread newThread() {
-    return StarlarkThread.createTransient(Mutability.create("test"), StarlarkSemantics.DEFAULT);
-  }
-
-  // Executes the definition of a trivial function f and returns the function value.
-  private static StarlarkFunction defineFunc() throws Exception {
-    return (StarlarkFunction)
-        Starlark.execFile(
-            ParserInput.fromLines("def f(): pass\nf"),
-            FileOptions.DEFAULT,
-            Module.create(),
-            newThread());
-  }
-
-  @Test
-  public void testListFramesEmptyStack() {
-    StarlarkThread thread = newThread();
-    assertThat(Debug.getCallStack(thread)).isEmpty();
-    assertThat(thread.getCallStack()).isEmpty();
-  }
-
-  /**
-   * A callable which captures the Starlark call stack at the time of the last call to it.
-   *
-   * <p>In Starlark, returns the first positional arg if supplied, or None otherwise.
-   */
-  private static final class StackTracer implements StarlarkCallable {
-    private final String name;
-    // Debug.Frame values are mutable (and are expected to mutate during the execution of a thread),
-    // so we capture their formatted string form instead. (The string form also makes test failures
-    // more informative.)
-    @Nullable private ImmutableList<String> debugStack;
-    @Nullable private ImmutableList<StarlarkThread.CallStackEntry> liteStack;
-
-    private StackTracer(String name) {
-      this.name = name;
+/** Tests of debugging features of StarlarkThread.  */
+@RunWith(JUnit4::class)
+class StarlarkThreadDebuggingTest {
+    @org.junit.Test
+    fun testListFramesEmptyStack() {
+        val thread: StarlarkThread = newThread()
+        assertThat(Debug.getCallStack(thread)).isEmpty()
+        assertThat(thread.getCallStack()).isEmpty()
     }
 
-    @Nullable
-    public ImmutableList<String> getDebugStack() {
-      return debugStack;
+    /**
+     * A callable which captures the Starlark call stack at the time of the last call to it.
+     * 
+     * 
+     * In Starlark, returns the first positional arg if supplied, or None otherwise.
+     */
+    private class StackTracer(val name: String?) : StarlarkCallable {
+        // Debug.Frame values are mutable (and are expected to mutate during the execution of a thread),
+        // so we capture their formatted string form instead. (The string form also makes test failures
+        // more informative.)
+        private var debugStack: com.google.common.collect.ImmutableList<String?>? = null
+        private var liteStack: com.google.common.collect.ImmutableList<CallStackEntry?>? = null
+
+        fun getDebugStack(): com.google.common.collect.ImmutableList<String?>? {
+            return debugStack
+        }
+
+        val callerDebugFrame: String?
+            get() = if (debugStack != null) debugStack.get(debugStack.size - 2) else null
+
+        fun getLiteStack(): com.google.common.collect.ImmutableList<CallStackEntry?>? {
+            return liteStack
+        }
+
+        public override fun call(thread: StarlarkThread, args: Tuple, kwargs: Dict<String?, Any?>?): Any? {
+            debugStack =
+                Debug.getCallStack(thread).stream()
+                    .map({ fr: Debug.Frame -> this.formatDebugFrame(fr) })
+                    .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
+            liteStack = thread.getCallStack()
+            return com.google.common.collect.Iterables.getFirst<Any?>(args, Starlark.NONE)
+        }
+
+        fun formatDebugFrame(fr: Debug.Frame): String? {
+            return java.lang.String.format(
+                "%s @ %s local=%s", fr.getFunction().getName(), fr.getLocation(), fr.getLocals()
+            )
+        }
+
+        val location: net.starlark.java.syntax.Location
+            get() = net.starlark.java.syntax.Location.BUILTIN
+
+        override fun toString(): String {
+            return "<stack tracer>"
+        }
     }
 
-    @Nullable
-    public String getCallerDebugFrame() {
-      return debugStack != null ? debugStack.get(debugStack.size() - 2) : null;
-    }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testListFramesFromBuiltin() {
+        // f is a built-in that captures the stack using the Debugger API.
+        val f = StackTracer("f")
 
-    @Nullable
-    public ImmutableList<StarlarkThread.CallStackEntry> getLiteStack() {
-      return liteStack;
-    }
+        // Set up global environment.
+        val module: java.lang.Module? =
+            java.lang.Module.withPredeclared(
+                StarlarkSemantics.DEFAULT,
+                com.google.common.collect.ImmutableMap.of<K?, V?>("a", 1, "b", 2, "f", f)
+            )
 
-    @Override
-    public String getName() {
-      return name;
-    }
-
-    @Override
-    public Object call(StarlarkThread thread, Tuple args, Dict<String, Object> kwargs) {
-      debugStack =
-          Debug.getCallStack(thread).stream()
-              .map(this::formatDebugFrame)
-              .collect(toImmutableList());
-      liteStack = thread.getCallStack();
-      return Iterables.getFirst(args, Starlark.NONE);
-    }
-
-    private String formatDebugFrame(Debug.Frame fr) {
-      return String.format(
-          "%s @ %s local=%s", fr.getFunction().getName(), fr.getLocation(), fr.getLocals());
-    }
-
-    @Override
-    public Location getLocation() {
-      return Location.BUILTIN;
-    }
-
-    @Override
-    public String toString() {
-      return "<stack tracer>";
-    }
-  }
-
-  @Test
-  public void testListFramesFromBuiltin() throws Exception {
-    // f is a built-in that captures the stack using the Debugger API.
-    StackTracer f = new StackTracer("f");
-
-    // Set up global environment.
-    Module module =
-        Module.withPredeclared(StarlarkSemantics.DEFAULT, ImmutableMap.of("a", 1, "b", 2, "f", f));
-
-    // Execute a small file that calls f.
-    ParserInput input =
-        ParserInput.fromString(
-            """
+        // Execute a small file that calls f.
+        val input: net.starlark.java.syntax.ParserInput? =
+            net.starlark.java.syntax.ParserInput.fromString(
+                """
 def g(a, y, z):  # shadows global a
     f()
 
 g(4, 5, 6)
-""",
-            "main.star");
-    Starlark.execFile(input, FileOptions.DEFAULT, module, newThread());
 
-    assertThat(f.getDebugStack())
-        .containsExactly(
-            // location is paren of g(4, 5, 6) call:
-            "<toplevel> @ main.star:4:2 local={}",
-            // location is paren of "f()" call:
-            "g @ main.star:2:6 local={a=4, y=5, z=6}",
-            // location is "current PC" in f.
-            "f @ <builtin> local={}")
-        .inOrder();
+""".trimIndent(),
+                "main.star"
+            )
+        Starlark.execFile(input, net.starlark.java.syntax.FileOptions.DEFAULT, module, newThread())
 
-    // Same, with "lite" stack API.
-    assertThat(f.getLiteStack().toString()) // an ImmutableList<StarlarkThread.CallStackEntry>
-        .isEqualTo("[<toplevel>@main.star:4:2, g@main.star:2:6, f@<builtin>]");
+        Truth.assertThat(f.getDebugStack())
+            .containsExactly( // location is paren of g(4, 5, 6) call:
+                "<toplevel> @ main.star:4:2 local={}",  // location is paren of "f()" call:
+                "g @ main.star:2:6 local={a=4, y=5, z=6}",  // location is "current PC" in f.
+                "f @ <builtin> local={}"
+            )
+            .inOrder()
 
-    // TODO(adonovan): more tests:
-    // - a stack containing functions defined in different modules.
-    // - changing environment at various program points within a function.
-  }
+        // Same, with "lite" stack API.
+        Truth.assertThat(f.getLiteStack().toString()) // an ImmutableList<StarlarkThread.CallStackEntry>
+            .isEqualTo("[<toplevel>@main.star:4:2, g@main.star:2:6, f@<builtin>]")
 
-  @Test
-  public void comprehensionVariables() throws Exception {
-    // Tracers for capturing the stack using the Debugger API.
-    StackTracer f = new StackTracer("f");
-    StackTracer g = new StackTracer("g");
-    StackTracer h = new StackTracer("h");
-    StackTracer i = new StackTracer("i");
-    StackTracer j = new StackTracer("j");
-    StackTracer k = new StackTracer("k");
+        // TODO(adonovan): more tests:
+        // - a stack containing functions defined in different modules.
+        // - changing environment at various program points within a function.
+    }
 
-    Module module =
-        Module.withPredeclared(
-            StarlarkSemantics.DEFAULT,
-            ImmutableMap.of("f", f, "g", g, "h", h, "i", i, "j", j, "k", k));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun comprehensionVariables() {
+        // Tracers for capturing the stack using the Debugger API.
+        val f = StackTracer("f")
+        val g = StackTracer("g")
+        val h = StackTracer("h")
+        val i = StackTracer("i")
+        val j = StackTracer("j")
+        val k = StackTracer("k")
 
-    ParserInput input =
-        ParserInput.fromString(
-            """
+        val module: java.lang.Module? =
+            java.lang.Module.withPredeclared(
+                StarlarkSemantics.DEFAULT,
+                com.google.common.collect.ImmutableMap.of<K?, V?>("f", f, "g", g, "h", h, "i", i, "j", j, "k", k)
+            )
+
+        val input: net.starlark.java.syntax.ParserInput? =
+            net.starlark.java.syntax.ParserInput.fromString(
+                """
 def foo(x):
     x += [[j(x) for x in i(x)] + h(x) for x in f(x) if g(x)]
     return k(x)
 
 foo([[1]])
-""",
-            "main.star");
-    Starlark.execFile(input, FileOptions.DEFAULT, module, newThread());
-    // f is in the outer comprehension's first for clause, and sees foo's local x
-    assertThat(f.getCallerDebugFrame()).isEqualTo("foo @ main.star:2:49 local={x=[[1]]}");
-    // g and h see the outer comprehension's x
-    assertThat(g.getCallerDebugFrame()).isEqualTo("foo @ main.star:2:57 local={x=[1]}");
-    assertThat(h.getCallerDebugFrame()).isEqualTo("foo @ main.star:2:35 local={x=[1]}");
-    // i is in the inner comprehension's first for clause, and so sees the outer comprehension's x
-    assertThat(i.getCallerDebugFrame()).isEqualTo("foo @ main.star:2:27 local={x=[1]}");
-    // j sees the inner comprehension's x
-    assertThat(j.getCallerDebugFrame()).isEqualTo("foo @ main.star:2:13 local={x=1}");
-    // k is outside the comprehensions' scope, and sees the final value of foo's local x
-    assertThat(k.getCallerDebugFrame()).isEqualTo("foo @ main.star:3:13 local={x=[[1], [1, 1]]}");
-  }
 
-  @Test
-  public void testStepIntoFunction() throws Exception {
-    StarlarkThread thread = newThread();
+""".trimIndent(),
+                "main.star"
+            )
+        Starlark.execFile(input, net.starlark.java.syntax.FileOptions.DEFAULT, module, newThread())
+        // f is in the outer comprehension's first for clause, and sees foo's local x
+        Truth.assertThat(f.callerDebugFrame).isEqualTo("foo @ main.star:2:49 local={x=[[1]]}")
+        // g and h see the outer comprehension's x
+        Truth.assertThat(g.callerDebugFrame).isEqualTo("foo @ main.star:2:57 local={x=[1]}")
+        Truth.assertThat(h.callerDebugFrame).isEqualTo("foo @ main.star:2:35 local={x=[1]}")
+        // i is in the inner comprehension's first for clause, and so sees the outer comprehension's x
+        Truth.assertThat(i.callerDebugFrame).isEqualTo("foo @ main.star:2:27 local={x=[1]}")
+        // j sees the inner comprehension's x
+        Truth.assertThat(j.callerDebugFrame).isEqualTo("foo @ main.star:2:13 local={x=1}")
+        // k is outside the comprehensions' scope, and sees the final value of foo's local x
+        Truth.assertThat(k.callerDebugFrame).isEqualTo("foo @ main.star:3:13 local={x=[[1], [1, 1]]}")
+    }
 
-    ReadyToPause predicate = Debug.stepControl(thread, Stepping.INTO);
-    thread.push(defineFunc());
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStepIntoFunction() {
+        val thread: StarlarkThread = newThread()
 
-    assertThat(predicate.test(thread)).isTrue();
-  }
+        val predicate: ReadyToPause = Debug.stepControl(thread, Stepping.INTO)
+        thread.push(defineFunc())
 
-  @Test
-  public void testStepIntoFallsBackToStepOver() {
-    // test that when stepping into, we'll fall back to stopping at the next statement in the
-    // current frame
-    StarlarkThread thread = newThread();
+        assertThat(predicate.test(thread)).isTrue()
+    }
 
-    ReadyToPause predicate = Debug.stepControl(thread, Stepping.INTO);
+    @org.junit.Test
+    fun testStepIntoFallsBackToStepOver() {
+        // test that when stepping into, we'll fall back to stopping at the next statement in the
+        // current frame
+        val thread: StarlarkThread = newThread()
 
-    assertThat(predicate.test(thread)).isTrue();
-  }
+        val predicate: ReadyToPause = Debug.stepControl(thread, Stepping.INTO)
 
-  @Test
-  public void testStepIntoFallsBackToStepOut() throws Exception {
-    // test that when stepping into, we'll fall back to stopping when exiting the current frame
-    StarlarkThread thread = newThread();
-    thread.push(defineFunc());
+        assertThat(predicate.test(thread)).isTrue()
+    }
 
-    ReadyToPause predicate = Debug.stepControl(thread, Stepping.INTO);
-    thread.pop();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStepIntoFallsBackToStepOut() {
+        // test that when stepping into, we'll fall back to stopping when exiting the current frame
+        val thread: StarlarkThread = newThread()
+        thread.push(defineFunc())
 
-    assertThat(predicate.test(thread)).isTrue();
-  }
+        val predicate: ReadyToPause = Debug.stepControl(thread, Stepping.INTO)
+        thread.pop()
 
-  @Test
-  public void testStepOverFunction() throws Exception {
-    StarlarkThread thread = newThread();
+        assertThat(predicate.test(thread)).isTrue()
+    }
 
-    ReadyToPause predicate = Debug.stepControl(thread, Stepping.OVER);
-    thread.push(defineFunc());
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStepOverFunction() {
+        val thread: StarlarkThread = newThread()
 
-    assertThat(predicate.test(thread)).isFalse();
-    thread.pop();
-    assertThat(predicate.test(thread)).isTrue();
-  }
+        val predicate: ReadyToPause = Debug.stepControl(thread, Stepping.OVER)
+        thread.push(defineFunc())
 
-  @Test
-  public void testStepOverFallsBackToStepOut() throws Exception {
-    // test that when stepping over, we'll fall back to stopping when exiting the current frame
-    StarlarkThread thread = newThread();
-    thread.push(defineFunc());
+        assertThat(predicate.test(thread)).isFalse()
+        thread.pop()
+        assertThat(predicate.test(thread)).isTrue()
+    }
 
-    ReadyToPause predicate = Debug.stepControl(thread, Stepping.OVER);
-    thread.pop();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStepOverFallsBackToStepOut() {
+        // test that when stepping over, we'll fall back to stopping when exiting the current frame
+        val thread: StarlarkThread = newThread()
+        thread.push(defineFunc())
 
-    assertThat(predicate.test(thread)).isTrue();
-  }
+        val predicate: ReadyToPause = Debug.stepControl(thread, Stepping.OVER)
+        thread.pop()
 
-  @Test
-  public void testStepOutOfInnerFrame() throws Exception {
-    StarlarkThread thread = newThread();
-    thread.push(defineFunc());
+        assertThat(predicate.test(thread)).isTrue()
+    }
 
-    ReadyToPause predicate = Debug.stepControl(thread, Stepping.OUT);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStepOutOfInnerFrame() {
+        val thread: StarlarkThread = newThread()
+        thread.push(defineFunc())
 
-    assertThat(predicate.test(thread)).isFalse();
-    thread.pop();
-    assertThat(predicate.test(thread)).isTrue();
-  }
+        val predicate: ReadyToPause = Debug.stepControl(thread, Stepping.OUT)
 
-  @Test
-  public void testStepOutOfOutermostFrame() {
-    StarlarkThread thread = newThread();
+        assertThat(predicate.test(thread)).isFalse()
+        thread.pop()
+        assertThat(predicate.test(thread)).isTrue()
+    }
 
-    assertThat(Debug.stepControl(thread, Stepping.OUT)).isNull();
-  }
+    @org.junit.Test
+    fun testStepOutOfOutermostFrame() {
+        val thread: StarlarkThread = newThread()
 
-  @Test
-  public void testStepControlWithNoSteppingReturnsNull() {
-    StarlarkThread thread = newThread();
+        assertThat(Debug.stepControl(thread, Stepping.OUT)).isNull()
+    }
 
-    assertThat(Debug.stepControl(thread, Stepping.NONE)).isNull();
-  }
+    @org.junit.Test
+    fun testStepControlWithNoSteppingReturnsNull() {
+        val thread: StarlarkThread = newThread()
 
-  @Test
-  public void testEvaluateVariableInScope() throws Exception {
-    Module module =
-        Module.withPredeclared(StarlarkSemantics.DEFAULT, ImmutableMap.of("a", StarlarkInt.of(1)));
+        assertThat(Debug.stepControl(thread, Stepping.NONE)).isNull()
+    }
 
-    StarlarkThread thread = newThread();
-    Object a = Starlark.execFile(ParserInput.fromLines("a"), FileOptions.DEFAULT, module, thread);
-    assertThat(a).isEqualTo(StarlarkInt.of(1));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEvaluateVariableInScope() {
+        val module: java.lang.Module? =
+            java.lang.Module.withPredeclared(
+                StarlarkSemantics.DEFAULT,
+                com.google.common.collect.ImmutableMap.of<K?, V?>("a", StarlarkInt.of(1))
+            )
 
-  @Test
-  public void testEvaluateVariableNotInScopeFails() {
-    Module module = Module.create();
+        val thread: StarlarkThread = newThread()
+        val a: Any? = Starlark.execFile(
+            net.starlark.java.syntax.ParserInput.fromLines("a"),
+            net.starlark.java.syntax.FileOptions.DEFAULT,
+            module,
+            thread
+        )
+        Truth.assertThat(a).isEqualTo(StarlarkInt.of(1))
+    }
 
-    SyntaxError.Exception e =
-        assertThrows(
-            SyntaxError.Exception.class,
-            () ->
-                Starlark.execFile(
-                    ParserInput.fromLines("b"), FileOptions.DEFAULT, module, newThread()));
+    @org.junit.Test
+    fun testEvaluateVariableNotInScopeFails() {
+        val module: java.lang.Module? = java.lang.Module.create()
 
-    assertThat(e).hasMessageThat().isEqualTo("name 'b' is not defined");
-  }
+        val e: net.starlark.java.syntax.SyntaxError.Exception? =
+            org.junit.Assert.assertThrows<net.starlark.java.syntax.SyntaxError.Exception?>(
+                net.starlark.java.syntax.SyntaxError.Exception::class.java,
+                org.junit.function.ThrowingRunnable {
+                    Starlark.execFile(
+                        net.starlark.java.syntax.ParserInput.fromLines("b"),
+                        net.starlark.java.syntax.FileOptions.DEFAULT,
+                        module,
+                        newThread()
+                    )
+                })
 
-  @Test
-  public void testEvaluateExpressionOnVariableInScope() throws Exception {
-    StarlarkThread thread = newThread();
-    Module module =
-        Module.withPredeclared(
-            StarlarkSemantics.DEFAULT, /*predeclared=*/ ImmutableMap.of("a", "string"));
+        Truth.assertThat(e).hasMessageThat().isEqualTo("name 'b' is not defined")
+    }
 
-    assertThat(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEvaluateExpressionOnVariableInScope() {
+        val thread: StarlarkThread = newThread()
+        val module: java.lang.Module? =
+            java.lang.Module.withPredeclared(
+                StarlarkSemantics.DEFAULT,  /*predeclared=*/
+                com.google.common.collect.ImmutableMap.of<K?, V?>("a", "string")
+            )
+
+        assertThat(
             Starlark.execFile(
-                ParserInput.fromLines("a.startswith('str')"), FileOptions.DEFAULT, module, thread))
-        .isEqualTo(true);
-    Starlark.execFile(ParserInput.fromLines("a = 1"), FileOptions.DEFAULT, module, thread);
-    assertThat(Starlark.execFile(ParserInput.fromLines("a"), FileOptions.DEFAULT, module, thread))
-        .isEqualTo(StarlarkInt.of(1));
-  }
+                net.starlark.java.syntax.ParserInput.fromLines("a.startswith('str')"),
+                net.starlark.java.syntax.FileOptions.DEFAULT,
+                module,
+                thread
+            )
+        )
+            .isEqualTo(true)
+        Starlark.execFile(
+            net.starlark.java.syntax.ParserInput.fromLines("a = 1"),
+            net.starlark.java.syntax.FileOptions.DEFAULT,
+            module,
+            thread
+        )
+        assertThat(
+            Starlark.execFile(
+                net.starlark.java.syntax.ParserInput.fromLines("a"),
+                net.starlark.java.syntax.FileOptions.DEFAULT,
+                module,
+                thread
+            )
+        )
+            .isEqualTo(StarlarkInt.of(1))
+    }
+
+    companion object {
+        // TODO(adonovan): rewrite these tests at a higher level.
+        private fun newThread(): StarlarkThread {
+            return StarlarkThread.createTransient(Mutability.create("test"), StarlarkSemantics.DEFAULT)
+        }
+
+        // Executes the definition of a trivial function f and returns the function value.
+        @Throws(java.lang.Exception::class)
+        private fun defineFunc(): StarlarkFunction? {
+            return Starlark.execFile(
+                net.starlark.java.syntax.ParserInput.fromLines("def f(): pass\nf"),
+                net.starlark.java.syntax.FileOptions.DEFAULT,
+                java.lang.Module.create(),
+                newThread()
+            ) as StarlarkFunction?
+        }
+    }
 }

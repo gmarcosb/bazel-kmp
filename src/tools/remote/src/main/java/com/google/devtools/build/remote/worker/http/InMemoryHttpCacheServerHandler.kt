@@ -11,34 +11,28 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.remote.worker.http
 
-package com.google.devtools.build.remote.worker.http;
+import com.google.common.annotations.VisibleForTesting
+import com.google.common.base.Preconditions
+import io.netty.channel.ChannelHandler
+import java.util.concurrent.ConcurrentMap
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
-import io.netty.channel.ChannelHandler.Sharable;
-import java.util.concurrent.ConcurrentMap;
-import javax.annotation.Nullable;
+/** A simple HTTP REST in-memory cache used during testing the LRE.  */
+@ChannelHandler.Sharable
+class InMemoryHttpCacheServerHandler @VisibleForTesting constructor(cache: ConcurrentMap<String?, ByteArray?>?) :
+    AbstractHttpCacheServerHandler() {
+    private val cache: ConcurrentMap<String?, ByteArray?>
 
-/** A simple HTTP REST in-memory cache used during testing the LRE. */
-@Sharable
-public class InMemoryHttpCacheServerHandler extends AbstractHttpCacheServerHandler {
+    init {
+        this.cache = Preconditions.checkNotNull<ConcurrentMap<String?, ByteArray?>>(cache)
+    }
 
-  private final ConcurrentMap<String, byte[]> cache;
+    override fun readFromCache(uri: String?): ByteArray? {
+        return cache.get(uri)
+    }
 
-  @VisibleForTesting
-  public InMemoryHttpCacheServerHandler(ConcurrentMap<String, byte[]> cache) {
-    this.cache = Preconditions.checkNotNull(cache);
-  }
-
-  @Nullable
-  @Override
-  protected byte[] readFromCache(String uri) {
-    return cache.get(uri);
-  }
-
-  @Override
-  protected void writeToCache(String uri, byte[] content) {
-    cache.putIfAbsent(uri, content);
-  }
+    override fun writeToCache(uri: String?, content: ByteArray?) {
+        cache.putIfAbsent(uri, content)
+    }
 }

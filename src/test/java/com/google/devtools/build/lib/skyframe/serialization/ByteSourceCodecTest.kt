@@ -11,31 +11,35 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester
 
-import com.google.common.io.ByteSource;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import java.io.IOException;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+@RunWith(JUnit4::class)
+class ByteSourceCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun codec_roundtrips() {
+        SerializationTester(
+            com.google.common.io.ByteSource.empty(),
+            com.google.common.io.ByteSource.wrap(byteArrayOf(0.toByte(), 1.toByte(), 2.toByte(), 3.toByte()))
+        )
+            .setVerificationFunction({ original: com.google.common.io.ByteSource, deserialized: com.google.common.io.ByteSource ->
+                verifyEquals(
+                    original,
+                    deserialized
+                )
+            })
+            .runTests()
+    }
 
-@RunWith(JUnit4.class)
-public final class ByteSourceCodecTest {
-
-  @Test
-  public void codec_roundtrips() throws Exception {
-    new SerializationTester(
-            ByteSource.empty(),
-            ByteSource.wrap(new byte[] {(byte) 0, (byte) 1, (byte) 2, (byte) 3}))
-        .setVerificationFunction(ByteSourceCodecTest::verifyEquals)
-        .runTests();
-  }
-
-  private static void verifyEquals(ByteSource original, ByteSource deserialized)
-      throws IOException {
-    assertThat(deserialized.read()).isEqualTo(original.read());
-  }
+    companion object {
+        @Throws(IOException::class)
+        private fun verifyEquals(
+            original: com.google.common.io.ByteSource,
+            deserialized: com.google.common.io.ByteSource
+        ) {
+            Truth.assertThat(deserialized.read()).isEqualTo(original.read())
+        }
+    }
 }

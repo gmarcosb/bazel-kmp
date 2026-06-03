@@ -11,139 +11,151 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util.io;
+package com.google.devtools.build.lib.util.io
 
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.common.io.ByteStreams;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.io.UnsupportedEncodingException;
-import java.util.Arrays;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.common.io.ByteStreams
+import com.google.common.truth.Truth
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.io.ByteArrayOutputStream
+import java.io.IOException
+import java.io.OutputStream
+import java.io.UnsupportedEncodingException
+import java.util.*
 
 /**
- * Test for {@link StreamMultiplexer}.
+ * Test for [StreamMultiplexer].
  */
-@RunWith(JUnit4.class)
-public class StreamMultiplexerTest {
+@RunWith(JUnit4::class)
+class StreamMultiplexerTest {
+    private var multiplexed: ByteArrayOutputStream? = null
+    private var out: OutputStream? = null
+    private var err: OutputStream? = null
+    private var ctl: OutputStream? = null
 
-  private ByteArrayOutputStream multiplexed;
-  private OutputStream out;
-  private OutputStream err;
-  private OutputStream ctl;
-
-  @Before
-  public final void createOutputStreams() throws Exception  {
-    multiplexed = new ByteArrayOutputStream();
-    StreamMultiplexer multiplexer = new StreamMultiplexer(multiplexed);
-    out = multiplexer.createStdout();
-    err = multiplexer.createStderr();
-    ctl = multiplexer.createControl();
-  }
-
-  @Test
-  public void testEmptyWire() throws IOException {
-    out.flush();
-    err.flush();
-    ctl.flush();
-    assertThat(multiplexed.toByteArray()).isEmpty();
-  }
-
-  private static byte[] getLatin(String string)
-      throws UnsupportedEncodingException {
-    return string.getBytes("ISO-8859-1");
-  }
-
-  @Test
-  public void testHelloWorldOnStdOut() throws Exception {
-    out.write(getLatin("Hello, world."));
-    out.flush();
-    assertMessage(multiplexed.toByteArray(), 0, "Hello, world.");
-  }
-
-  @Test
-  public void testInterleavedStdoutStderrControl() throws Exception {
-    int start = 0;
-    out.write(getLatin("Hello, stdout."));
-    out.flush();
-    assertMessage(multiplexed.toByteArray(), start, "Hello, stdout.");
-    start = multiplexed.toByteArray().length;
-
-    err.write(getLatin("Hello, stderr."));
-    err.flush();
-    assertMessage(multiplexed.toByteArray(), start, "Hello, stderr.");
-    start = multiplexed.toByteArray().length;
-
-    ctl.write(getLatin("Hello, control."));
-    ctl.flush();
-    assertMessage(multiplexed.toByteArray(), start, "Hello, control.");
-    start = multiplexed.toByteArray().length;
-
-    out.write(getLatin("... and back!"));
-    out.flush();
-    assertMessage(multiplexed.toByteArray(), start, "... and back!");
-  }
-
-  @Test
-  public void testWillNotCommitToUnderlyingStreamUnlessFlushOrNewline()
-      throws Exception {
-    out.write(getLatin("There are no newline characters in here, so it won't" +
-        " get written just yet."));
-    assertThat(new byte[0]).isEqualTo(multiplexed.toByteArray());
-  }
-
-  @Test
-  public void testNewlineTriggersFlush() throws Exception {
-    out.write(getLatin("No newline just yet, so no flushing. "));
-    assertThat(new byte[0]).isEqualTo(multiplexed.toByteArray());
-    out.write(getLatin("OK, here we go:\nAnd more to come."));
-    assertMessage(
-        multiplexed.toByteArray(), 0, "No newline just yet, so no flushing. OK, here we go:\n");
-    int firstMessageLength = multiplexed.toByteArray().length;
-    out.write((byte) '\n');
-    assertMessage(multiplexed.toByteArray(), firstMessageLength, "And more to come.\n");
-  }
-
-  @Test
-  public void testFlush() throws Exception {
-    out.write(getLatin("Don't forget to flush!"));
-    assertThat(multiplexed.toByteArray()).isEqualTo(new byte[0]);
-    out.flush(); // now the output will appear in multiplexed.
-    assertStartsWith(multiplexed.toByteArray(), 1, 0, 0, 0);
-    assertMessage(multiplexed.toByteArray(), 0, "Don't forget to flush!");
-  }
-
-  @Test
-  public void testByteEncoding() throws IOException {
-    OutputStream devNull = ByteStreams.nullOutputStream();
-    StreamDemultiplexer demux = new StreamDemultiplexer((byte) 1, devNull);
-    StreamMultiplexer mux = new StreamMultiplexer(demux);
-    OutputStream out = mux.createStdout();
-
-    // When we cast 266 to a byte, we get 10. So basically, we ended up
-    // comparing 266 with 10 as an integer (because out.write takes an int),
-    // and then later cast it to 10. This way we'd end up with a control
-    // character \n in the middle of the payload which would then screw things
-    // up when the real control character arrived. The fixed version of the
-    // StreamMultiplexer avoids this problem by always casting to a byte before
-    // carrying out any comparisons.
-
-    out.write(266);
-    out.write(10);
-  }
-
-  private static void assertStartsWith(byte[] actual, int... expectedPrefix){
-    for (int i = 0; i < expectedPrefix.length; i++) {
-      assertThat(actual[i]).isEqualTo(expectedPrefix[i]);
+    @Before
+    @Throws(Exception::class)
+    fun createOutputStreams() {
+        multiplexed = ByteArrayOutputStream()
+        val multiplexer: StreamMultiplexer = StreamMultiplexer(multiplexed)
+        out = multiplexer.createStdout()
+        err = multiplexer.createStderr()
+        ctl = multiplexer.createControl()
     }
-  }
 
-  private static void assertMessage(byte[] actual, int start, String expected) throws Exception {
-    assertThat(Arrays.copyOfRange(actual, start + 5, actual.length)).isEqualTo(getLatin(expected));
-  }
+    @Test
+    @Throws(IOException::class)
+    fun testEmptyWire() {
+        out!!.flush()
+        err!!.flush()
+        ctl!!.flush()
+        Truth.assertThat(multiplexed!!.toByteArray()).isEmpty()
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testHelloWorldOnStdOut() {
+        out!!.write(getLatin("Hello, world."))
+        out!!.flush()
+        assertMessage(multiplexed!!.toByteArray(), 0, "Hello, world.")
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testInterleavedStdoutStderrControl() {
+        var start = 0
+        out!!.write(getLatin("Hello, stdout."))
+        out!!.flush()
+        assertMessage(multiplexed!!.toByteArray(), start, "Hello, stdout.")
+        start = multiplexed!!.toByteArray().size
+
+        err!!.write(getLatin("Hello, stderr."))
+        err!!.flush()
+        assertMessage(multiplexed!!.toByteArray(), start, "Hello, stderr.")
+        start = multiplexed!!.toByteArray().size
+
+        ctl!!.write(getLatin("Hello, control."))
+        ctl!!.flush()
+        assertMessage(multiplexed!!.toByteArray(), start, "Hello, control.")
+        start = multiplexed!!.toByteArray().size
+
+        out!!.write(getLatin("... and back!"))
+        out!!.flush()
+        assertMessage(multiplexed!!.toByteArray(), start, "... and back!")
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testWillNotCommitToUnderlyingStreamUnlessFlushOrNewline() {
+        out!!.write(
+            getLatin(
+                "There are no newline characters in here, so it won't" +
+                        " get written just yet."
+            )
+        )
+        Truth.assertThat(ByteArray(0)).isEqualTo(multiplexed!!.toByteArray())
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testNewlineTriggersFlush() {
+        out!!.write(getLatin("No newline just yet, so no flushing. "))
+        Truth.assertThat(ByteArray(0)).isEqualTo(multiplexed!!.toByteArray())
+        out!!.write(getLatin("OK, here we go:\nAnd more to come."))
+        assertMessage(
+            multiplexed!!.toByteArray(), 0, "No newline just yet, so no flushing. OK, here we go:\n"
+        )
+        val firstMessageLength = multiplexed!!.toByteArray().size
+        out.write('\n'.code.toByte().toInt())
+        assertMessage(multiplexed!!.toByteArray(), firstMessageLength, "And more to come.\n")
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testFlush() {
+        out!!.write(getLatin("Don't forget to flush!"))
+        Truth.assertThat(multiplexed!!.toByteArray()).isEqualTo(ByteArray(0))
+        out!!.flush() // now the output will appear in multiplexed.
+        assertStartsWith(multiplexed!!.toByteArray(), 1, 0, 0, 0)
+        assertMessage(multiplexed!!.toByteArray(), 0, "Don't forget to flush!")
+    }
+
+    @Test
+    @Throws(IOException::class)
+    fun testByteEncoding() {
+        val devNull = ByteStreams.nullOutputStream()
+        val demux: StreamDemultiplexer = StreamDemultiplexer(1.toByte(), devNull)
+        val mux: StreamMultiplexer = StreamMultiplexer(demux)
+        val out: OutputStream = mux.createStdout()
+
+        // When we cast 266 to a byte, we get 10. So basically, we ended up
+        // comparing 266 with 10 as an integer (because out.write takes an int),
+        // and then later cast it to 10. This way we'd end up with a control
+        // character \n in the middle of the payload which would then screw things
+        // up when the real control character arrived. The fixed version of the
+        // StreamMultiplexer avoids this problem by always casting to a byte before
+        // carrying out any comparisons.
+        out.write(266)
+        out.write(10)
+    }
+
+    companion object {
+        @Throws(UnsupportedEncodingException::class)
+        private fun getLatin(string: String): ByteArray? {
+            return string.toByteArray(charset("ISO-8859-1"))
+        }
+
+        private fun assertStartsWith(actual: ByteArray, vararg expectedPrefix: Int) {
+            for (i in expectedPrefix.indices) {
+                Truth.assertThat<Byte?>(actual[i]).isEqualTo(expectedPrefix[i])
+            }
+        }
+
+        @Throws(Exception::class)
+        private fun assertMessage(actual: ByteArray, start: Int, expected: String) {
+            Truth.assertThat(Arrays.copyOfRange(actual, start + 5, actual.size)).isEqualTo(getLatin(expected))
+        }
+    }
 }

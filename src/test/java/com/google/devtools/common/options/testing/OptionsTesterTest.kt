@@ -11,220 +11,221 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.common.options.testing
 
-package com.google.devtools.common.options.testing;
+import org.junit.Assert
+import org.junit.Test
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.fail;
-
-import com.google.devtools.common.options.Converter;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
-import java.util.List;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for the OptionsTester. */
-@RunWith(JUnit4.class)
-public final class OptionsTesterTest {
-
-  @Test
-  public void optionAnnotationCheck_PassesWhenAllOptionsAnnotated() throws Exception {
-    new OptionsTester(OptionAnnotationCheckAllOptionsAnnotated.class).testAllOptions();
-  }
-
-  /** Test options class for optionAnnotationCheck_PassesWhenAllOptionsAnnotated. */
-  @OptionsClass
-  public abstract static class BaseAllOptionsAnnotated extends OptionsBase {
-    @Option(
-        name = "public_inherited_option_with_annotation",
-        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "defaultFoo")
-    public abstract String getInheritedOptione();
-  }
-
-  /** Test options class for optionAnnotationCheck_PassesWhenAllOptionsAnnotated. */
-  @OptionsClass
-  public abstract static class OptionAnnotationCheckAllOptionsAnnotated
-      extends BaseAllOptionsAnnotated {
-    @Option(
-        name = "public_declared_option_with_annotation",
-        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "defaultFoo")
-    public abstract String getPublicOption();
-
-    @Option(
-        name = "other_public_declared_option_with_annotation",
-        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "defaultFoo")
-    public abstract String getPublicOption2();
-  }
-
-  public static final class TestConverter extends Converter.Contextless<String> {
-    @Override
-    public String convert(String input) {
-      return input;
+/** Tests for the OptionsTester.  */
+@RunWith(JUnit4::class)
+class OptionsTesterTest {
+    @Test
+    @Throws(Exception::class)
+    fun optionAnnotationCheck_PassesWhenAllOptionsAnnotated() {
+        OptionsTester(OptionAnnotationCheckAllOptionsAnnotated::class.java).testAllOptions()
     }
 
-    @Override
-    public String getTypeDescription() {
-      return "a string";
+    /** Test options class for optionAnnotationCheck_PassesWhenAllOptionsAnnotated.  */
+    @OptionsClass
+    abstract class BaseAllOptionsAnnotated : OptionsBase() {
+        @get:Option(
+            name = "public_inherited_option_with_annotation",
+            documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "defaultFoo"
+        )
+        abstract val inheritedOptione: String?
     }
-  }
 
-  @Test
-  public void defaultTestCheck_PassesIfAllDefaultsTestedIgnoringNullAndAllowMultiple() {
-    new OptionsTester(DefaultTestCheck.class)
-        .testAllDefaultValuesTestedBy(
-            new ConverterTesterMap.Builder()
-                .add(
-                    new ConverterTester(TestConverter.class, /*conversionContext=*/ null)
-                        .addEqualityGroup("testedDefault", "otherTestedDefault"))
-                .build());
-  }
+    /** Test options class for optionAnnotationCheck_PassesWhenAllOptionsAnnotated.  */
+    @OptionsClass
+    abstract class OptionAnnotationCheckAllOptionsAnnotated
 
-  /** Test options class for defaultTestCheck_PassesIfAllDefaultsTested. */
-  @OptionsClass
-  public abstract static class DefaultTestCheck extends OptionsBase {
-    @Option(
-        name = "tested_option",
-        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-        effectTags = {OptionEffectTag.NO_OP},
-        converter = TestConverter.class,
-        defaultValue = "testedDefault")
-    public abstract String getTestedOption();
+        : BaseAllOptionsAnnotated() {
+        @get:Option(
+            name = "public_declared_option_with_annotation",
+            documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "defaultFoo"
+        )
+        abstract val publicOption: String?
 
-    @Option(
-        name = "option_implicitly_using_default_converter",
-        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "implicitConverterDefault")
-    public abstract String getImplicitConverterOption();
-
-    @Option(
-        name = "other_tested_option",
-        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-        effectTags = {OptionEffectTag.NO_OP},
-        converter = TestConverter.class,
-        defaultValue = "otherTestedDefault")
-    public abstract String getOtherTestedOption();
-
-    @Option(
-        name = "option_with_null_default",
-        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-        effectTags = {OptionEffectTag.NO_OP},
-        converter = TestConverter.class,
-        defaultValue = "null")
-    public abstract String getNullDefaultOption();
-
-    @Option(
-        name = "allowMultiple_option",
-        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-        effectTags = {OptionEffectTag.NO_OP},
-        converter = TestConverter.class,
-        defaultValue = "null",
-        allowMultiple = true)
-    public abstract List<String> getAllowMultipleOption();
-  }
-
-  @Test
-  public void defaultTestCheck_FailsIfTesterIsPresentButValueIsNotTested() {
-    try {
-      new OptionsTester(DefaultTestCheckUntestedOption.class)
-          .testAllDefaultValuesTestedBy(
-              new ConverterTesterMap.Builder()
-                  .add(
-                      new ConverterTester(TestConverter.class, /* conversionContext= */ null)
-                          .addEqualityGroup("testedDefault"))
-                  .build());
-    } catch (AssertionError expected) {
-      assertThat(expected).hasMessageThat().contains("getUntestedOption");
-      assertThat(expected).hasMessageThat().contains("untestedDefault");
-      return;
+        @get:Option(
+            name = "other_public_declared_option_with_annotation",
+            documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "defaultFoo"
+        )
+        abstract val publicOption2: String?
     }
-    fail("test is expected to have failed");
-  }
 
-  @Test
-  public void defaultTestCheck_FailsIfTesterIsAbsent() {
-    try {
-      new OptionsTester(DefaultTestCheckUntestedOption.class)
-          .testAllDefaultValuesTestedBy(new ConverterTesterMap.Builder().build());
-    } catch (AssertionError expected) {
-      assertThat(expected).hasMessageThat().contains("TestConverter");
-      return;
+    class TestConverter : Contextless<String?>() {
+        public override fun convert(input: String?): String? {
+            return input
+        }
+
+        val typeDescription: String
+            get() = "a string"
     }
-    fail("test is expected to have failed");
-  }
 
-  /**
-   * Test options class for defaultTestCheck_FailsIfTesterIsPresentButValueIsNotTested and
-   * defaultTestCheck_FailsIfTesterIsAbsent.
-   */
-  @OptionsClass
-  public abstract static class DefaultTestCheckUntestedOption extends OptionsBase {
-    @Option(
-        name = "untested_option",
-        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-        effectTags = {OptionEffectTag.NO_OP},
-        converter = TestConverter.class,
-        defaultValue = "untestedDefault")
-    public abstract String getUntestedOption();
-  }
-
-  @Test
-  public void defaultTestCheck_FailsIfTesterIsAbsentEvenForNullDefault() {
-    try {
-      new OptionsTester(DefaultTestCheckUntestedNullOption.class)
-          .testAllDefaultValuesTestedBy(new ConverterTesterMap.Builder().build());
-    } catch (AssertionError expected) {
-      assertThat(expected).hasMessageThat().contains("TestConverter");
-      return;
+    @Test
+    fun defaultTestCheck_PassesIfAllDefaultsTestedIgnoringNullAndAllowMultiple() {
+        OptionsTester(DefaultTestCheck::class.java)
+            .testAllDefaultValuesTestedBy(
+                ConverterTesterMap.Builder()
+                    .add(
+                        ConverterTester(TestConverter::class.java,  /*conversionContext=*/null)
+                            .addEqualityGroup("testedDefault", "otherTestedDefault")
+                    )
+                    .build()
+            )
     }
-    fail("test is expected to have failed");
-  }
 
-  /** Test options class for defaultTestCheck_FailsIfTesterIsAbsentEvenForNullDefault. */
-  @OptionsClass
-  public abstract static class DefaultTestCheckUntestedNullOption extends OptionsBase {
-    @Option(
-        name = "untested_option",
-        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-        effectTags = {OptionEffectTag.NO_OP},
-        converter = TestConverter.class,
-        defaultValue = "null")
-    public abstract String getUntestedNullOption();
-  }
+    /** Test options class for defaultTestCheck_PassesIfAllDefaultsTested.  */
+    @OptionsClass
+    abstract class DefaultTestCheck : OptionsBase() {
+        @get:Option(
+            name = "tested_option",
+            documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+            effectTags = [OptionEffectTag.NO_OP],
+            converter = TestConverter::class,
+            defaultValue = "testedDefault"
+        )
+        abstract val testedOption: String?
 
-  @Test
-  public void defaultTestCheck_FailsIfTesterIsAbsentEvenForAllowMultiple() {
-    try {
-      new OptionsTester(DefaultTestCheckUntestedMultipleOption.class)
-          .testAllDefaultValuesTestedBy(new ConverterTesterMap.Builder().build());
-    } catch (AssertionError expected) {
-      assertThat(expected).hasMessageThat().contains("TestConverter");
-      return;
+        @get:Option(
+            name = "option_implicitly_using_default_converter",
+            documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "implicitConverterDefault"
+        )
+        abstract val implicitConverterOption: String?
+
+        @get:Option(
+            name = "other_tested_option",
+            documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+            effectTags = [OptionEffectTag.NO_OP],
+            converter = TestConverter::class,
+            defaultValue = "otherTestedDefault"
+        )
+        abstract val otherTestedOption: String?
+
+        @get:Option(
+            name = "option_with_null_default",
+            documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+            effectTags = [OptionEffectTag.NO_OP],
+            converter = TestConverter::class,
+            defaultValue = "null"
+        )
+        abstract val nullDefaultOption: String?
+
+        @get:Option(
+            name = "allowMultiple_option",
+            documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+            effectTags = [OptionEffectTag.NO_OP],
+            converter = TestConverter::class,
+            defaultValue = "null",
+            allowMultiple = true
+        )
+        abstract val allowMultipleOption: MutableList<String?>?
     }
-    fail("test is expected to have failed");
-  }
 
-  /** Test options class for defaultTestCheck_FailsIfTesterIsAbsentEvenForAllowMultiple. */
-  @OptionsClass
-  public abstract static class DefaultTestCheckUntestedMultipleOption extends OptionsBase {
-    @Option(
-        name = "untested_option",
-        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-        effectTags = {OptionEffectTag.NO_OP},
-        converter = TestConverter.class,
-        defaultValue = "null",
-        allowMultiple = true)
-    public abstract List<String> getUntestedMultipleOption();
-  }
+    @Test
+    fun defaultTestCheck_FailsIfTesterIsPresentButValueIsNotTested() {
+        try {
+            OptionsTester(DefaultTestCheckUntestedOption::class.java)
+                .testAllDefaultValuesTestedBy(
+                    ConverterTesterMap.Builder()
+                        .add(
+                            ConverterTester(TestConverter::class.java,  /* conversionContext= */null)
+                                .addEqualityGroup("testedDefault")
+                        )
+                        .build()
+                )
+        } catch (expected: AssertionError) {
+            Truth.assertThat(expected).hasMessageThat().contains("getUntestedOption")
+            Truth.assertThat(expected).hasMessageThat().contains("untestedDefault")
+            return
+        }
+        Assert.fail("test is expected to have failed")
+    }
+
+    @Test
+    fun defaultTestCheck_FailsIfTesterIsAbsent() {
+        try {
+            OptionsTester(DefaultTestCheckUntestedOption::class.java)
+                .testAllDefaultValuesTestedBy(ConverterTesterMap.Builder().build())
+        } catch (expected: AssertionError) {
+            Truth.assertThat(expected).hasMessageThat().contains("TestConverter")
+            return
+        }
+        Assert.fail("test is expected to have failed")
+    }
+
+    /**
+     * Test options class for defaultTestCheck_FailsIfTesterIsPresentButValueIsNotTested and
+     * defaultTestCheck_FailsIfTesterIsAbsent.
+     */
+    @OptionsClass
+    abstract class DefaultTestCheckUntestedOption : OptionsBase() {
+        @get:Option(
+            name = "untested_option",
+            documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+            effectTags = [OptionEffectTag.NO_OP],
+            converter = TestConverter::class,
+            defaultValue = "untestedDefault"
+        )
+        abstract val untestedOption: String?
+    }
+
+    @Test
+    fun defaultTestCheck_FailsIfTesterIsAbsentEvenForNullDefault() {
+        try {
+            OptionsTester(DefaultTestCheckUntestedNullOption::class.java)
+                .testAllDefaultValuesTestedBy(ConverterTesterMap.Builder().build())
+        } catch (expected: AssertionError) {
+            Truth.assertThat(expected).hasMessageThat().contains("TestConverter")
+            return
+        }
+        Assert.fail("test is expected to have failed")
+    }
+
+    /** Test options class for defaultTestCheck_FailsIfTesterIsAbsentEvenForNullDefault.  */
+    @OptionsClass
+    abstract class DefaultTestCheckUntestedNullOption : OptionsBase() {
+        @get:Option(
+            name = "untested_option",
+            documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+            effectTags = [OptionEffectTag.NO_OP],
+            converter = TestConverter::class,
+            defaultValue = "null"
+        )
+        abstract val untestedNullOption: String?
+    }
+
+    @Test
+    fun defaultTestCheck_FailsIfTesterIsAbsentEvenForAllowMultiple() {
+        try {
+            OptionsTester(DefaultTestCheckUntestedMultipleOption::class.java)
+                .testAllDefaultValuesTestedBy(ConverterTesterMap.Builder().build())
+        } catch (expected: AssertionError) {
+            Truth.assertThat(expected).hasMessageThat().contains("TestConverter")
+            return
+        }
+        Assert.fail("test is expected to have failed")
+    }
+
+    /** Test options class for defaultTestCheck_FailsIfTesterIsAbsentEvenForAllowMultiple.  */
+    @OptionsClass
+    abstract class DefaultTestCheckUntestedMultipleOption : OptionsBase() {
+        @get:Option(
+            name = "untested_option",
+            documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+            effectTags = [OptionEffectTag.NO_OP],
+            converter = TestConverter::class,
+            defaultValue = "null",
+            allowMultiple = true
+        )
+        abstract val untestedMultipleOption: MutableList<String?>?
+    }
 }

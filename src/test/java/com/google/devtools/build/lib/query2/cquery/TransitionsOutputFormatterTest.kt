@@ -11,66 +11,43 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.cquery;
+package com.google.devtools.build.lib.query2.cquery
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.packages.Attribute.attr;
-import static com.google.devtools.build.lib.packages.BuildType.LABEL;
-import static com.google.devtools.build.lib.packages.BuildType.LABEL_LIST;
+import com.google.devtools.build.lib.packages.Attribute.attr
 
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
-import com.google.devtools.build.lib.analysis.config.transitions.ConfigurationTransition;
-import com.google.devtools.build.lib.analysis.config.transitions.NoTransition;
-import com.google.devtools.build.lib.analysis.config.transitions.TransitionFactory;
-import com.google.devtools.build.lib.analysis.util.MockRule;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.EventBusEventHandler;
-import com.google.devtools.build.lib.events.Reporter;
-import com.google.devtools.build.lib.packages.LabelPrinter;
-import com.google.devtools.build.lib.packages.RuleTransitionData;
-import com.google.devtools.build.lib.query2.PostAnalysisQueryEnvironment;
-import com.google.devtools.build.lib.query2.common.CqueryNode;
-import com.google.devtools.build.lib.query2.cquery.CqueryOptions.Transitions;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.Setting;
-import com.google.devtools.build.lib.query2.engine.QueryExpression;
-import com.google.devtools.build.lib.query2.engine.QueryParser;
-import com.google.devtools.build.lib.util.FileTypeSet;
-import com.google.devtools.common.options.Options;
-import java.util.ArrayList;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Set;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for the transitions output format.  */
+@RunWith(JUnit4::class)
+class TransitionsOutputFormatterTest : ConfiguredTargetQueryTest() {
+    private var options: CqueryOptions? = null
+    private var reporter: com.google.devtools.build.lib.events.Reporter? = null
+    private val events: MutableList<com.google.devtools.build.lib.events.Event> =
+        java.util.ArrayList<com.google.devtools.build.lib.events.Event>()
+    private var ruleClassProvider: ConfiguredRuleClassProvider? = null
 
-/** Tests for the transitions output format. */
-@RunWith(JUnit4.class)
-public class TransitionsOutputFormatterTest extends ConfiguredTargetQueryTest {
+    @Before
+    fun setUpCqueryOptions() {
+        this.options = com.google.devtools.common.options.Options.getDefaults<O>(CqueryOptions::class.java)
+        options.setIncludeToolDeps(false)
+        options.setIncludeImplicitDeps(false)
+        options.setIncludeNoDepDeps(false)
+        helper.setQuerySettings(com.google.devtools.build.lib.query2.engine.QueryEnvironment.Setting.INCLUDE_ASPECTS)
+        this.reporter = com.google.devtools.build.lib.events.Reporter(
+            EventBusEventHandler.createWithNewEventBus(),
+            com.google.devtools.build.lib.events.EventHandler { e: com.google.devtools.build.lib.events.Event? ->
+                events.add(
+                    e
+                )
+            })
+    }
 
-  private CqueryOptions options;
-  private Reporter reporter;
-  private final List<Event> events = new ArrayList<>();
-  private ConfiguredRuleClassProvider ruleClassProvider;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTransitions_full() {
+        setUpRules()
 
-  @Before
-  public final void setUpCqueryOptions() {
-    this.options = Options.getDefaults(CqueryOptions.class);
-    options.setIncludeToolDeps(false);
-    options.setIncludeImplicitDeps(false);
-    options.setIncludeNoDepDeps(false);
-    helper.setQuerySettings(Setting.INCLUDE_ASPECTS);
-    this.reporter = new Reporter(EventBusEventHandler.createWithNewEventBus(), events::add);
-  }
-
-  @Test
-  public void testTransitions_full() throws Exception {
-    setUpRules();
-
-    writeFile(
-        "test/BUILD",
-        """
+        writeFile(
+            "test/BUILD",
+            """
         my_rule(
             name = "rule_with_patch",
             patched = [
@@ -92,36 +69,40 @@ public class TransitionsOutputFormatterTest extends ConfiguredTargetQueryTest {
         simple_rule(name = "trimmed_foo")
 
         simple_rule(name = "bar")
-        """);
+        
+        """.trimIndent()
+        )
 
-    List<String> result = getOutput("deps(//test:rule_with_patch)", Transitions.FULL);
+        var result = getOutput("deps(//test:rule_with_patch)", Transitions.FULL)
 
-    assertThat(result.get(0)).startsWith("FooPatchRuleTransitionFactory -> //test:rule_with_patch");
-    assertThat(result.get(1)).startsWith("  patched#//test:foo#FooPatch");
-    assertThat(result.get(2)).isEqualTo("    foo:SET BY RULE CLASS PATCH -> [SET BY PATCH]");
-    assertThat(result.get(3)).startsWith("  patched#//test:foo2#FooPatchAttrTransitionFactory");
-    assertThat(result.get(4)).isEqualTo(result.get(2));
-    assertThat(result.get(5))
-        .startsWith(
-            "  patched#//test:trimmed_foo#(FooPatchAttrTransitionFactory +"
-                + " FooPatchTransition(trim))");
-    assertThat(result.get(6)).isEqualTo("    foo:SET BY RULE CLASS PATCH -> [SET BY TRIM]");
+        Truth.assertThat(result.get(0)).startsWith("FooPatchRuleTransitionFactory -> //test:rule_with_patch")
+        Truth.assertThat(result.get(1)).startsWith("  patched#//test:foo#FooPatch")
+        Truth.assertThat(result.get(2)).isEqualTo("    foo:SET BY RULE CLASS PATCH -> [SET BY PATCH]")
+        Truth.assertThat(result.get(3)).startsWith("  patched#//test:foo2#FooPatchAttrTransitionFactory")
+        Truth.assertThat(result.get(4)).isEqualTo(result.get(2))
+        Truth.assertThat(result.get(5))
+            .startsWith(
+                "  patched#//test:trimmed_foo#(FooPatchAttrTransitionFactory +"
+                        + " FooPatchTransition(trim))"
+            )
+        Truth.assertThat(result.get(6)).isEqualTo("    foo:SET BY RULE CLASS PATCH -> [SET BY TRIM]")
 
-    result = getOutput("deps(//test:rule_with_split)", Transitions.FULL);
-    assertThat(result.get(1)).startsWith("  split#//test:bar#FooSplitTransitionFactory");
-    // TODO(shahan): the right hand side of the diff below is in split dep ordering, which is
-    // dependent on checksum values. It could be brittle.
-    assertThat(result.get(2))
-        .isEqualTo("    foo:SET BY RULE CLASS PATCH -> [SET BY SPLIT 2, SET BY SPLIT 1]");
-  }
+        result = getOutput("deps(//test:rule_with_split)", Transitions.FULL)
+        Truth.assertThat(result.get(1)).startsWith("  split#//test:bar#FooSplitTransitionFactory")
+        // TODO(shahan): the right hand side of the diff below is in split dep ordering, which is
+        // dependent on checksum values. It could be brittle.
+        Truth.assertThat(result.get(2))
+            .isEqualTo("    foo:SET BY RULE CLASS PATCH -> [SET BY SPLIT 2, SET BY SPLIT 1]")
+    }
 
-  @Test
-  public void testTransitions_lite() throws Exception {
-    setUpRules();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTransitions_lite() {
+        setUpRules()
 
-    writeFile(
-        "test/BUILD",
-        """
+        writeFile(
+            "test/BUILD",
+            """
         my_rule(
             name = "rule_with_patch",
             patched = [
@@ -140,67 +121,74 @@ public class TransitionsOutputFormatterTest extends ConfiguredTargetQueryTest {
         simple_rule(name = "foo2")
 
         simple_rule(name = "bar")
-        """);
+        
+        """.trimIndent()
+        )
 
-    List<String> result = getOutput("deps(//test:rule_with_patch)", Transitions.LITE);
+        var result = getOutput("deps(//test:rule_with_patch)", Transitions.LITE)
 
-    assertThat(result.get(0)).startsWith("FooPatchRuleTransitionFactory -> //test:rule_with_patch");
-    assertThat(result.get(1)).startsWith("  patched#//test:foo#FooPatchAttrTransitionFactory");
-    assertThat(result.get(2)).startsWith("  patched#//test:foo2#FooPatchAttrTransitionFactory");
+        Truth.assertThat(result.get(0)).startsWith("FooPatchRuleTransitionFactory -> //test:rule_with_patch")
+        Truth.assertThat(result.get(1)).startsWith("  patched#//test:foo#FooPatchAttrTransitionFactory")
+        Truth.assertThat(result.get(2)).startsWith("  patched#//test:foo2#FooPatchAttrTransitionFactory")
 
-    result = getOutput("deps(//test:rule_with_split)", Transitions.LITE);
-    assertThat(result.get(0)).startsWith("FooPatchRuleTransitionFactory -> //test:rule_with_split");
-    assertThat(result.get(1)).startsWith("  split#//test:bar#FooSplitTransitionFactory");
-  }
+        result = getOutput("deps(//test:rule_with_split)", Transitions.LITE)
+        Truth.assertThat(result.get(0)).startsWith("FooPatchRuleTransitionFactory -> //test:rule_with_split")
+        Truth.assertThat(result.get(1)).startsWith("  split#//test:bar#FooSplitTransitionFactory")
+    }
 
-  @Test
-  public void testTransitions_getRightConfigurations() throws Exception {
-    setUpRules();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTransitions_getRightConfigurations() {
+        setUpRules()
 
-    writeFile(
-        "test/BUILD",
-        """
+        writeFile(
+            "test/BUILD",
+            """
         my_rule(
             name = "rule_with_patch",
             patched = [":foo"],
         )
 
         simple_rule(name = "foo")
-        """);
+        
+        """.trimIndent()
+        )
 
-    List<String> result = getOutput("deps(//test:rule_with_patch)", Transitions.LITE);
-    String depEntry = result.get(2);
-    // depEntry is "//test:rule_with_path (<config_id>)". This gets just "<config_id>".
-    String postPatchConfig =
-        depEntry.substring(depEntry.lastIndexOf("(") + 1, depEntry.length() - 1);
-    assertThat(result.get(1)).endsWith(postPatchConfig);
-  }
+        val result = getOutput("deps(//test:rule_with_patch)", Transitions.LITE)
+        val depEntry = result.get(2)
+        // depEntry is "//test:rule_with_path (<config_id>)". This gets just "<config_id>".
+        val postPatchConfig: String =
+            depEntry.substring(depEntry.lastIndexOf("(") + 1, depEntry.length - 1)
+        Truth.assertThat(result.get(1)).endsWith(postPatchConfig)
+    }
 
-  @Test
-  public void testTransitions_noTransitions() throws Exception {
-    setUpRules();
-    writeFile("test/BUILD", "simple_rule(name = 'foo')");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTransitions_noTransitions() {
+        setUpRules()
+        writeFile("test/BUILD", "simple_rule(name = 'foo')")
 
-    List<String> result = getOutput("//test:foo", Transitions.NONE);
-    assertThat(result).isEmpty();
-    assertThat(events).hasSize(1);
-    assertThat(events.get(0).getMessage())
-        .isEqualTo(
-            "Instead of using --output=transitions, set the --transitions flag explicitly to 'lite'"
-                + " or 'full'");
-  }
+        val result = getOutput("//test:foo", Transitions.NONE)
+        Truth.assertThat(result).isEmpty()
+        Truth.assertThat(events).hasSize(1)
+        Truth.assertThat(events.get(0).getMessage())
+            .isEqualTo(
+                "Instead of using --output=transitions, set the --transitions flag explicitly to 'lite'"
+                        + " or 'full'"
+            )
+    }
 
-  @Test
-  public void nonAttributeDependencySkipped() throws Exception {
-    setUpRules();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun nonAttributeDependencySkipped() {
+        setUpRules()
 
-    // A visibility dependency on a package_group produces a
-    // DependencyKind.NonAttributeDependencyKind. This test checks that the existence of those
-    // attribute types doesn't crash cquery.
-
-    writeFile(
-        "test/BUILD",
-        """
+        // A visibility dependency on a package_group produces a
+        // DependencyKind.NonAttributeDependencyKind. This test checks that the existence of those
+        // attribute types doesn't crash cquery.
+        writeFile(
+            "test/BUILD",
+            """
         package_group(
             name = "custom_visibility",
             packages = ["//test/..."],
@@ -215,85 +203,99 @@ public class TransitionsOutputFormatterTest extends ConfiguredTargetQueryTest {
             visibility = [":custom_visibility"],
             deps = [":child"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertThat(getOutput("deps(//test:parent)", Transitions.LITE)).isNotNull();
-    assertThat(events).isEmpty();
-  }
+        Truth.assertThat(getOutput("deps(//test:parent)", Transitions.LITE)).isNotNull()
+        Truth.assertThat(events).isEmpty()
+    }
 
-  private void setUpRules() throws Exception {
-    TransitionFactory<RuleTransitionData> infixTrimmingTransitionFactory =
-        new TransitionFactory<>() {
-          @Override
-          public ConfigurationTransition create(RuleTransitionData ruleData) {
-            if (!ruleData.rule().getName().contains("trimmed")) {
-              return NoTransition.INSTANCE;
+    @Throws(java.lang.Exception::class)
+    private fun setUpRules() {
+        val infixTrimmingTransitionFactory: TransitionFactory<RuleTransitionData?> =
+            object : TransitionFactory() {
+                public override fun create(ruleData: RuleTransitionData): ConfigurationTransition? {
+                    if (!ruleData.rule().getName().contains("trimmed")) {
+                        return NoTransition.INSTANCE
+                    }
+                    // rename the transition so it's distinguishable from the others in tests
+                    return FooPatchTransition("SET BY TRIM", "FooPatchTransition(trim)")
+                }
+
+                public override fun transitionType(): TransitionType {
+                    return TransitionType.RULE
+                }
             }
-            // rename the transition so it's distinguishable from the others in tests
-            return new FooPatchTransition("SET BY TRIM", "FooPatchTransition(trim)");
-          }
+        val ruleClassTransition: FooPatchRuleTransitionFactory =
+            FooPatchRuleTransitionFactory("SET BY RULE CLASS PATCH")
+        val attributePatchTransition: FooPatchAttrTransitionFactory =
+            FooPatchAttrTransitionFactory("SET BY PATCH")
+        val attributeSplitTransitions: FooSplitTransitionFactory =
+            FooSplitTransitionFactory("SET BY SPLIT 1", "SET BY SPLIT 2")
 
-          @Override
-          public TransitionType transitionType() {
-            return TransitionType.RULE;
-          }
-        };
-    FooPatchRuleTransitionFactory ruleClassTransition =
-        new FooPatchRuleTransitionFactory("SET BY RULE CLASS PATCH");
-    FooPatchAttrTransitionFactory attributePatchTransition =
-        new FooPatchAttrTransitionFactory("SET BY PATCH");
-    FooSplitTransitionFactory attributeSplitTransitions =
-        new FooSplitTransitionFactory("SET BY SPLIT 1", "SET BY SPLIT 2");
+        val ruleWithTransitions: MockRule =
+            MockRule {
+                MockRule.define(
+                    "my_rule",
+                    { builder, env ->
+                        builder
+                            .cfg(ruleClassTransition)
+                            .add(
+                                attr("patched", LABEL_LIST)
+                                    .allowedFileTypes(FileTypeSet.ANY_FILE)
+                                    .cfg(attributePatchTransition)
+                            )
+                            .add(
+                                attr("split", LABEL)
+                                    .allowedFileTypes(FileTypeSet.ANY_FILE)
+                                    .cfg(attributeSplitTransitions)
+                            )
+                    })
+            }
+        val simpleRule: MockRule =
+            MockRule {
+                MockRule.define(
+                    "simple_rule",
+                    { builder, env -> builder.add(attr("deps", LABEL_LIST).allowedFileTypes(FileTypeSet.ANY_FILE)) })
+            }
 
-    MockRule ruleWithTransitions =
-        () ->
-            MockRule.define(
-                "my_rule",
-                (builder, env) ->
-                    builder
-                        .cfg(ruleClassTransition)
-                        .add(
-                            attr("patched", LABEL_LIST)
-                                .allowedFileTypes(FileTypeSet.ANY_FILE)
-                                .cfg(attributePatchTransition))
-                        .add(
-                            attr("split", LABEL)
-                                .allowedFileTypes(FileTypeSet.ANY_FILE)
-                                .cfg(attributeSplitTransitions)));
-    MockRule simpleRule =
-        () ->
-            MockRule.define(
-                "simple_rule",
-                (builder, env) ->
-                    builder.add(attr("deps", LABEL_LIST).allowedFileTypes(FileTypeSet.ANY_FILE)));
+        this.ruleClassProvider =
+            setRuleClassProviders(ruleWithTransitions, simpleRule)
+                .overrideTrimmingTransitionFactoryForTesting(infixTrimmingTransitionFactory)
+                .build()
+        helper.useRuleClassProvider(ruleClassProvider)
+    }
 
-    this.ruleClassProvider =
-        setRuleClassProviders(ruleWithTransitions, simpleRule)
-            .overrideTrimmingTransitionFactoryForTesting(infixTrimmingTransitionFactory)
-            .build();
-    helper.useRuleClassProvider(ruleClassProvider);
-  }
-
-  private List<String> getOutput(String queryExpression, CqueryOptions.Transitions verbosity)
-      throws Exception {
-    QueryExpression expression = QueryParser.parse(queryExpression, getDefaultFunctions());
-    Set<String> targetPatternSet = new LinkedHashSet<>();
-    expression.collectTargetPatterns(targetPatternSet);
-    helper.setQuerySettings(Setting.NO_IMPLICIT_DEPS);
-    PostAnalysisQueryEnvironment<CqueryNode> env =
-        ((ConfiguredTargetQueryHelper) helper).getPostAnalysisQueryEnvironment(targetPatternSet);
-    options.setTransitions(verbosity);
-    // TODO(blaze-configurability): Test late-bound attributes.
-    TransitionsOutputFormatterCallback callback =
-        new TransitionsOutputFormatterCallback(
-            reporter,
-            options,
-            /* out= */ null,
-            getHelper().getSkyframeExecutor(),
-            env.getAccessor(),
-            ruleClassProvider,
-            LabelPrinter.legacy());
-    env.evaluateQuery(env.transformParsedQuery(QueryParser.parse(queryExpression, env)), callback);
-    return callback.getResult();
-  }
+    @Throws(java.lang.Exception::class)
+    private fun getOutput(queryExpression: String?, verbosity: CqueryOptions.Transitions?): MutableList<String> {
+        val expression: QueryExpression =
+            com.google.devtools.build.lib.query2.engine.QueryParser.parse(queryExpression, getDefaultFunctions())
+        val targetPatternSet: MutableSet<String?> = LinkedHashSet<String?>()
+        expression.collectTargetPatterns(targetPatternSet)
+        helper.setQuerySettings(com.google.devtools.build.lib.query2.engine.QueryEnvironment.Setting.NO_IMPLICIT_DEPS)
+        val env: PostAnalysisQueryEnvironment<CqueryNode?> =
+            (helper as ConfiguredTargetQueryHelper).getPostAnalysisQueryEnvironment(targetPatternSet)
+        options.setTransitions(verbosity)
+        // TODO(blaze-configurability): Test late-bound attributes.
+        val callback: TransitionsOutputFormatterCallback =
+            TransitionsOutputFormatterCallback(
+                reporter,
+                options,  /* out= */
+                null,
+                getHelper().getSkyframeExecutor(),
+                env.getAccessor(),
+                ruleClassProvider,
+                LabelPrinter.legacy()
+            )
+        env.evaluateQuery(
+            env.transformParsedQuery(
+                com.google.devtools.build.lib.query2.engine.QueryParser.parse(
+                    queryExpression,
+                    env
+                )
+            ), callback
+        )
+        return callback.getResult()
+    }
 }

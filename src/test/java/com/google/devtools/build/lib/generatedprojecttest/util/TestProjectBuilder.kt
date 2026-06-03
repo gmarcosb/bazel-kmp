@@ -11,92 +11,85 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.generatedprojecttest.util
 
-package com.google.devtools.build.lib.generatedprojecttest.util;
-
-import com.google.devtools.build.lib.testutil.BuildRuleBuilder;
-import com.google.devtools.build.lib.testutil.Scratch;
-import java.io.IOException;
+import com.google.devtools.build.lib.testutil.BuildRuleBuilder
+import com.google.devtools.build.lib.testutil.Scratch
+import java.io.IOException
 
 /**
  * A builder that generates whole test projects in a scratch file system.
  */
-
 // TODO(blaze-team): (2012) generate valid parameterized BUILD rules.
 // TODO(blaze-team): (2012) generate any required src or data or other files.
+class TestProjectBuilder @kotlin.jvm.JvmOverloads constructor(// The directory name to use for the workspace.
+    private val workspace: String? = WORKSPACE
+) {
+    /**
+     * Returns the [Scratch] containing the Test Project that has been built.
+     */
+    /** Provides functionality to create and manipulate a scratch file system.  */
+    val scratch: Scratch
 
-public final class TestProjectBuilder {
-
-  // Default workspace name.
-  private static final String WORKSPACE = "workspace";
-
-  // The directory name to use for the workspace.
-  private final String workspace;
-  /** Provides functionality to create and manipulate a scratch file system. */
-  private final Scratch scratch;
-
-  /**
-   * Creates a builder that will use the default workspace name as the directory.
-   */
-  public TestProjectBuilder() {
-    this(WORKSPACE);
-  }
-
-  /**
-   * Creates a builder that will use the given workspace name as the directory.
-   */
-  public TestProjectBuilder(String workspace) {
-    this.workspace = workspace;
-    this.scratch = new Scratch(String.format("/%s", workspace));
-  }
-
-  /**
-   * Creates a file in the specified directory with the given content.
-   *
-   * @param dirName directory to create a new file within
-   * @param fileName file Name of the new file (must be unique within the directory)
-   * @param generator FileContentsGenerator implementation
-   * @throws IOException if the input dirName was not valid, or the file already existed
-   */
-  public void createFileInDir(String dirName, String fileName, FileContentsGenerator generator)
-      throws IOException {
-    scratch.file(
-        String.format("/%s/%s/%s", workspace, dirName, fileName), generator.getContents());
-  }
-
-  /**
-   * Returns the {@link Scratch} containing the Test Project that has been built.
-   */
-  public Scratch getScratch() {
-    return this.scratch;
-  }
-
-  /** Creates a dummy file with dummy content in the given package with the given name. */
-  public void createDummyFileInDir(String pkg, String fileName) throws IOException {
-    scratch.file(String.format("%s/%s", pkg, fileName), dummyContentFor(fileName));
-  }
-
-  /**
-   * Generates the files necessary for the rule. 
-   */
-  public void createFilesToGenerate(BuildRuleBuilder ruleBuilder) throws IOException {
-    for (String file : ruleBuilder.getFilesToGenerate()) {
-      scratch.file(file, dummyContentFor(file));
+    /**
+     * Creates a builder that will use the given workspace name as the directory.
+     */
+    /**
+     * Creates a builder that will use the default workspace name as the directory.
+     */
+    init {
+        this.scratch = Scratch(String.format("/%s", workspace))
     }
-  }
 
-  /** Generates dummy content for a file based on its name and extension. */
-  private static String dummyContentFor(String filePath) {
-    String fileName = filePath.substring(filePath.lastIndexOf('/') + 1);
-    String extension = fileName.substring(fileName.lastIndexOf('.') + 1);
-    if (extension.equals("bzl")
-        || fileName.equals("BUILD")
-        || fileName.equals("BUILD.bazel")
-        || fileName.equals("WORKSPACE")
-        || fileName.equals("WORKSPACE.bazel")) {
-      return "# dummy";
-    } else {
-      return "dummy";
+    /**
+     * Creates a file in the specified directory with the given content.
+     * 
+     * @param dirName directory to create a new file within
+     * @param fileName file Name of the new file (must be unique within the directory)
+     * @param generator FileContentsGenerator implementation
+     * @throws IOException if the input dirName was not valid, or the file already existed
+     */
+    @Throws(IOException::class)
+    fun createFileInDir(dirName: String?, fileName: String?, generator: FileContentsGenerator) {
+        scratch.file(
+            String.format("/%s/%s/%s", workspace, dirName, fileName), generator.getContents()
+        )
     }
-  }
+
+    /** Creates a dummy file with dummy content in the given package with the given name.  */
+    @Throws(IOException::class)
+    fun createDummyFileInDir(pkg: String?, fileName: String) {
+        scratch.file(String.format("%s/%s", pkg, fileName), dummyContentFor(fileName))
+    }
+
+    /**
+     * Generates the files necessary for the rule.
+     */
+    @Throws(IOException::class)
+    fun createFilesToGenerate(ruleBuilder: BuildRuleBuilder) {
+        for (file in ruleBuilder.getFilesToGenerate()) {
+            scratch.file(file, dummyContentFor(file))
+        }
+    }
+
+    companion object {
+        // Default workspace name.
+        private const val WORKSPACE = "workspace"
+
+        /** Generates dummy content for a file based on its name and extension.  */
+        private fun dummyContentFor(filePath: String): String {
+            val fileName: String = filePath.substring(filePath.lastIndexOf('/') + 1)
+            val extension: String = fileName.substring(fileName.lastIndexOf('.') + 1)
+            if (extension == "bzl"
+                || fileName == "BUILD"
+                || fileName == "BUILD.bazel"
+                || fileName == "WORKSPACE"
+                || fileName == "WORKSPACE.bazel"
+            ) {
+                return "# dummy"
+            } else {
+                return "dummy"
+            }
+        }
+    }
 }

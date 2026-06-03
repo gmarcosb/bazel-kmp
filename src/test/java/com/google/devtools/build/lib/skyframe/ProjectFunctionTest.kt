@@ -11,224 +11,235 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.cmdline.Label
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.collect.PathFragmentPrefixTrie;
-import com.google.devtools.build.lib.skyframe.util.SkyframeExecutorTestUtils;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.skyframe.EvaluationResult;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+@RunWith(JUnit4::class)
+class ProjectFunctionTest : BuildViewTestCase() {
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun setUp() {
+        setBuildLanguageOptions("--experimental_enable_scl_dialect=true")
+        writeProjectSclDefinition("test/project_proto.scl")
+    }
 
-@RunWith(JUnit4.class)
-public class ProjectFunctionTest extends BuildViewTestCase {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun projectFunction_emptyFile_isValid() {
+        scratch.file("test/PROJECT.scl", "project = {}")
+        scratch.file("test/BUILD")
+        val key: ProjectValue.Key = Key(Label.parseCanonical("//test:PROJECT.scl"))
 
-  @Before
-  public void setUp() throws Exception {
-    setBuildLanguageOptions("--experimental_enable_scl_dialect=true");
-    writeProjectSclDefinition("test/project_proto.scl");
-  }
+        val result: EvaluationResult<ProjectValue?> =
+            SkyframeExecutorTestUtils.evaluate<T?>(skyframeExecutor, key, false, reporter)
+        assertThat(result.hasError()).isFalse()
 
-  @Test
-  public void projectFunction_emptyFile_isValid() throws Exception {
-    scratch.file("test/PROJECT.scl", "project = {}");
-    scratch.file("test/BUILD");
-    ProjectValue.Key key = new ProjectValue.Key(Label.parseCanonical("//test:PROJECT.scl"));
+        val value: ProjectValue = result.get(key)
+        assertThat(value.getDefaultProjectDirectories()).isEmpty()
+    }
 
-    EvaluationResult<ProjectValue> result =
-        SkyframeExecutorTestUtils.evaluate(skyframeExecutor, key, false, reporter);
-    assertThat(result.hasError()).isFalse();
-
-    ProjectValue value = result.get(key);
-    assertThat(value.getDefaultProjectDirectories()).isEmpty();
-  }
-
-  @Test
-  public void projectFunction_returnsActiveDirectories() throws Exception {
-    scratch.file(
-        "test/PROJECT.scl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun projectFunction_returnsActiveDirectories() {
+        scratch.file(
+            "test/PROJECT.scl",
+            """
         project = {
           "active_directories": {'default': ['foo'], 'a': ['bar', '-bar/baz']},
         }
-        """);
-    scratch.file("test/BUILD");
-    ProjectValue.Key key = new ProjectValue.Key(Label.parseCanonical("//test:PROJECT.scl"));
+        
+        """.trimIndent()
+        )
+        scratch.file("test/BUILD")
+        val key: ProjectValue.Key = Key(Label.parseCanonical("//test:PROJECT.scl"))
 
-    EvaluationResult<ProjectValue> result =
-        SkyframeExecutorTestUtils.evaluate(skyframeExecutor, key, false, reporter);
-    assertThat(result.hasError()).isFalse();
+        val result: EvaluationResult<ProjectValue?> =
+            SkyframeExecutorTestUtils.evaluate<T?>(skyframeExecutor, key, false, reporter)
+        assertThat(result.hasError()).isFalse()
 
-    ProjectValue value = result.get(key);
-    ImmutableMap<String, PathFragmentPrefixTrie> trie =
-        PathFragmentPrefixTrie.transformValues(value.getProjectDirectories());
-    assertThat(trie.get("default").includes(PathFragment.create("foo"))).isTrue();
-    assertThat(trie.get("default").includes(PathFragment.create("bar"))).isFalse();
-    assertThat(trie.get("a").includes(PathFragment.create("bar"))).isTrue();
-    assertThat(trie.get("a").includes(PathFragment.create("bar/baz"))).isFalse();
-    assertThat(trie.get("a").includes(PathFragment.create("bar/qux"))).isTrue();
-    assertThat(trie.get("b")).isNull();
-  }
+        val value: ProjectValue = result.get(key)
+        val trie: com.google.common.collect.ImmutableMap<String?, PathFragmentPrefixTrie?> =
+            PathFragmentPrefixTrie.transformValues(value.getProjectDirectories())
+        assertThat(trie.get("default").includes(PathFragment.create("foo"))).isTrue()
+        assertThat(trie.get("default").includes(PathFragment.create("bar"))).isFalse()
+        assertThat(trie.get("a").includes(PathFragment.create("bar"))).isTrue()
+        assertThat(trie.get("a").includes(PathFragment.create("bar/baz"))).isFalse()
+        assertThat(trie.get("a").includes(PathFragment.create("bar/qux"))).isTrue()
+        assertThat(trie.get("b")).isNull()
+    }
 
-  @Test
-  public void projectFunction_returnsDefaultActiveDirectories() throws Exception {
-    scratch.file(
-        "test/PROJECT.scl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun projectFunction_returnsDefaultActiveDirectories() {
+        scratch.file(
+            "test/PROJECT.scl",
+            """
         project = {
           "active_directories": { 'default': ['a', 'b/c'] },
         }
-        """);
-    scratch.file("test/BUILD");
-    ProjectValue.Key key = new ProjectValue.Key(Label.parseCanonical("//test:PROJECT.scl"));
+        
+        """.trimIndent()
+        )
+        scratch.file("test/BUILD")
+        val key: ProjectValue.Key = Key(Label.parseCanonical("//test:PROJECT.scl"))
 
-    EvaluationResult<ProjectValue> result =
-        SkyframeExecutorTestUtils.evaluate(skyframeExecutor, key, false, reporter);
-    assertThat(result.hasError()).isFalse();
+        val result: EvaluationResult<ProjectValue?> =
+            SkyframeExecutorTestUtils.evaluate<T?>(skyframeExecutor, key, false, reporter)
+        assertThat(result.hasError()).isFalse()
 
-    ProjectValue value = result.get(key);
-    PathFragmentPrefixTrie trie = PathFragmentPrefixTrie.of(value.getDefaultProjectDirectories());
-    assertThat(trie.includes(PathFragment.create("a"))).isTrue();
-    assertThat(trie.includes(PathFragment.create("b/c"))).isTrue();
-    assertThat(trie.includes(PathFragment.create("d"))).isFalse();
-  }
+        val value: ProjectValue = result.get(key)
+        val trie: PathFragmentPrefixTrie = PathFragmentPrefixTrie.of(value.getDefaultProjectDirectories())
+        assertThat(trie.includes(PathFragment.create("a"))).isTrue()
+        assertThat(trie.includes(PathFragment.create("b/c"))).isTrue()
+        assertThat(trie.includes(PathFragment.create("d"))).isFalse()
+    }
 
-  @Test
-  public void projectFunction_returnsDefaultActiveDirectories_topLevelProjectSchema()
-      throws Exception {
-    scratch.file(
-        "test/PROJECT.scl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun projectFunction_returnsDefaultActiveDirectories_topLevelProjectSchema() {
+        scratch.file(
+            "test/PROJECT.scl",
+            """
         project = {
           "active_directories": { "default": ["a", "b/c"] }
         }
-        """);
-    scratch.file("test/BUILD");
-    ProjectValue.Key key = new ProjectValue.Key(Label.parseCanonical("//test:PROJECT.scl"));
+        
+        """.trimIndent()
+        )
+        scratch.file("test/BUILD")
+        val key: ProjectValue.Key = Key(Label.parseCanonical("//test:PROJECT.scl"))
 
-    EvaluationResult<ProjectValue> result =
-        SkyframeExecutorTestUtils.evaluate(skyframeExecutor, key, false, reporter);
-    assertThat(result.hasError()).isFalse();
+        val result: EvaluationResult<ProjectValue?> =
+            SkyframeExecutorTestUtils.evaluate<T?>(skyframeExecutor, key, false, reporter)
+        assertThat(result.hasError()).isFalse()
 
-    ProjectValue value = result.get(key);
-    PathFragmentPrefixTrie trie = PathFragmentPrefixTrie.of(value.getDefaultProjectDirectories());
-    assertThat(trie.includes(PathFragment.create("a"))).isTrue();
-    assertThat(trie.includes(PathFragment.create("b/c"))).isTrue();
-    assertThat(trie.includes(PathFragment.create("d"))).isFalse();
-  }
+        val value: ProjectValue = result.get(key)
+        val trie: PathFragmentPrefixTrie = PathFragmentPrefixTrie.of(value.getDefaultProjectDirectories())
+        assertThat(trie.includes(PathFragment.create("a"))).isTrue()
+        assertThat(trie.includes(PathFragment.create("b/c"))).isTrue()
+        assertThat(trie.includes(PathFragment.create("d"))).isFalse()
+    }
 
-  @Test
-  public void projectFunction_nonEmptyActiveDirectoriesMustHaveADefault() throws Exception {
-    scratch.file(
-        "test/PROJECT.scl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun projectFunction_nonEmptyActiveDirectoriesMustHaveADefault() {
+        scratch.file(
+            "test/PROJECT.scl",
+            """
         project = {
           "active_directories": { 'foo': ['a', 'b/c'] },
         }
-        """);
-    scratch.file("test/BUILD");
-    ProjectValue.Key key = new ProjectValue.Key(Label.parseCanonical("//test:PROJECT.scl"));
+        
+        """.trimIndent()
+        )
+        scratch.file("test/BUILD")
+        val key: ProjectValue.Key = Key(Label.parseCanonical("//test:PROJECT.scl"))
 
-    EvaluationResult<ProjectValue> result =
-        SkyframeExecutorTestUtils.evaluate(skyframeExecutor, key, false, reporter);
-    assertThat(result.hasError()).isTrue();
-    assertThat(result.getError().getException())
-        .hasMessageThat()
-        .contains("non-empty active_directories must contain the 'default' key");
-  }
+        val result: EvaluationResult<ProjectValue?> =
+            SkyframeExecutorTestUtils.evaluate<T?>(skyframeExecutor, key, false, reporter)
+        assertThat(result.hasError()).isTrue()
+        assertThat(result.getError().getException())
+            .hasMessageThat()
+            .contains("non-empty active_directories must contain the 'default' key")
+    }
 
-  @Test
-  public void projectFunction_incorrectType() throws Exception {
-    scratch.file(
-        "test/PROJECT.scl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun projectFunction_incorrectType() {
+        scratch.file(
+            "test/PROJECT.scl",
+            """
         project = {
           "active_directories": 42,
         }
-        """);
-    scratch.file("test/BUILD");
-    ProjectValue.Key key = new ProjectValue.Key(Label.parseCanonical("//test:PROJECT.scl"));
+        
+        """.trimIndent()
+        )
+        scratch.file("test/BUILD")
+        val key: ProjectValue.Key = Key(Label.parseCanonical("//test:PROJECT.scl"))
 
-    EvaluationResult<ProjectValue> result =
-        SkyframeExecutorTestUtils.evaluate(skyframeExecutor, key, false, reporter);
-    assertThat(result.hasError()).isTrue();
-    assertThat(result.getError().getException())
-        .hasMessageThat()
-        .matches("expected a map of string to list of strings, got .+Int32");
-  }
+        val result: EvaluationResult<ProjectValue?> =
+            SkyframeExecutorTestUtils.evaluate<T?>(skyframeExecutor, key, false, reporter)
+        assertThat(result.hasError()).isTrue()
+        assertThat(result.getError().getException())
+            .hasMessageThat()
+            .matches("expected a map of string to list of strings, got .+Int32")
+    }
 
-  @Test
-  public void projectFunction_incorrectType_inList() throws Exception {
-    scratch.file(
-        "test/PROJECT.scl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun projectFunction_incorrectType_inList() {
+        scratch.file(
+            "test/PROJECT.scl",
+            """
         project = {
           "active_directories": { 'default': [42] },
         }
-        """);
-    scratch.file("test/BUILD");
-    ProjectValue.Key key = new ProjectValue.Key(Label.parseCanonical("//test:PROJECT.scl"));
+        
+        """.trimIndent()
+        )
+        scratch.file("test/BUILD")
+        val key: ProjectValue.Key = Key(Label.parseCanonical("//test:PROJECT.scl"))
 
-    EvaluationResult<ProjectValue> result =
-        SkyframeExecutorTestUtils.evaluate(skyframeExecutor, key, false, reporter);
-    assertThat(result.hasError()).isTrue();
-    assertThat(result.getError().getException())
-        .hasMessageThat()
-        .matches("expected a list of strings, got element of .+Int32");
-  }
+        val result: EvaluationResult<ProjectValue?> =
+            SkyframeExecutorTestUtils.evaluate<T?>(skyframeExecutor, key, false, reporter)
+        assertThat(result.hasError()).isTrue()
+        assertThat(result.getError().getException())
+            .hasMessageThat()
+            .matches("expected a list of strings, got element of .+Int32")
+    }
 
-  @Test
-  public void projectFunction_incorrectProjectType() throws Exception {
-    scratch.file(
-        "test/PROJECT.scl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun projectFunction_incorrectProjectType() {
+        scratch.file(
+            "test/PROJECT.scl",
+            """
         project = 1
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file("test/BUILD");
-    ProjectValue.Key key = new ProjectValue.Key(Label.parseCanonical("//test:PROJECT.scl"));
+        scratch.file("test/BUILD")
+        val key: ProjectValue.Key = Key(Label.parseCanonical("//test:PROJECT.scl"))
 
-    EvaluationResult<ProjectValue> result =
-        SkyframeExecutorTestUtils.evaluate(skyframeExecutor, key, false, reporter);
-    assertThat(result.hasError()).isTrue();
-    assertThat(result.getError().getException())
-        .hasMessageThat()
-        .matches("project variable: expected a map of string to objects, got .+Int32");
-  }
+        val result: EvaluationResult<ProjectValue?> =
+            SkyframeExecutorTestUtils.evaluate<T?>(skyframeExecutor, key, false, reporter)
+        assertThat(result.hasError()).isTrue()
+        assertThat(result.getError().getException())
+            .hasMessageThat()
+            .matches("project variable: expected a map of string to objects, got .+Int32")
+    }
 
-  @Test
-  public void projectFunction_incorrectProjectKeyType() throws Exception {
-    scratch.file(
-        "test/PROJECT.scl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun projectFunction_incorrectProjectKeyType() {
+        scratch.file(
+            "test/PROJECT.scl",
+            """
         project = {1: [] }
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file("test/BUILD");
-    ProjectValue.Key key = new ProjectValue.Key(Label.parseCanonical("//test:PROJECT.scl"));
+        scratch.file("test/BUILD")
+        val key: ProjectValue.Key = Key(Label.parseCanonical("//test:PROJECT.scl"))
 
-    EvaluationResult<ProjectValue> result =
-        SkyframeExecutorTestUtils.evaluate(skyframeExecutor, key, false, reporter);
-    assertThat(result.hasError()).isTrue();
-    assertThat(result.getError().getException())
-        .hasMessageThat()
-        .matches("project variable: expected string key, got element of .+Int32");
-  }
+        val result: EvaluationResult<ProjectValue?> =
+            SkyframeExecutorTestUtils.evaluate<T?>(skyframeExecutor, key, false, reporter)
+        assertThat(result.hasError()).isTrue()
+        assertThat(result.getError().getException())
+            .hasMessageThat()
+            .matches("project variable: expected string key, got element of .+Int32")
+    }
 
-  @Test
-  public void projectFunction_buildableUnitsFormat() throws Exception {
-    scratch.file(
-        "test/PROJECT.scl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun projectFunction_buildableUnitsFormat() {
+        scratch.file(
+            "test/PROJECT.scl",
+            """
         load(
             "//test:project_proto.scl",
             "buildable_unit_pb2",
@@ -260,50 +271,57 @@ public class ProjectFunctionTest extends BuildViewTestCase {
               ),
           ],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file("test/BUILD");
-    ProjectValue.Key key = new ProjectValue.Key(Label.parseCanonical("//test:PROJECT.scl"));
+        scratch.file("test/BUILD")
+        val key: ProjectValue.Key = Key(Label.parseCanonical("//test:PROJECT.scl"))
 
-    EvaluationResult<ProjectValue> result =
-        SkyframeExecutorTestUtils.evaluate(skyframeExecutor, key, false, reporter);
-    assertThat(result.hasError()).isFalse();
-    ProjectValue value = result.get(key);
-    assertThat(value.enforcementPolicy).isEqualTo(ProjectValue.EnforcementPolicy.WARN);
-    assertThat(value.getAlwaysAllowedConfigs()).isEqualTo(ImmutableList.of("--config=foo"));
-    assertThat(value.getActualProjectFile()).isEqualTo(Label.parseCanonical("//test:PROJECT.scl"));
-    assertThat(value.getBuildableUnits().get("default").isDefault).isTrue();
-    assertThat(value.getBuildableUnits().get("non_default").isDefault).isFalse();
-    assertThat(value.getProjectDirectories()).hasSize(1);
-    assertThat(value.getProjectDirectories().get("default")).containsExactly("//test/...");
+        val result: EvaluationResult<ProjectValue?> =
+            SkyframeExecutorTestUtils.evaluate<T?>(skyframeExecutor, key, false, reporter)
+        assertThat(result.hasError()).isFalse()
+        val value: ProjectValue = result.get(key)
+        assertThat(value.enforcementPolicy).isEqualTo(ProjectValue.EnforcementPolicy.WARN)
+        assertThat(value.getAlwaysAllowedConfigs()).isEqualTo(com.google.common.collect.ImmutableList.of<String?>("--config=foo"))
+        assertThat(value.getActualProjectFile()).isEqualTo(Label.parseCanonical("//test:PROJECT.scl"))
+        assertThat(value.getBuildableUnits().get("default").isDefault).isTrue()
+        assertThat(value.getBuildableUnits().get("non_default").isDefault).isFalse()
+        assertThat(value.getProjectDirectories()).hasSize(1)
+        assertThat(value.getProjectDirectories().get("default")).containsExactly("//test/...")
 
-    assertThat(value.getBuildableUnits()).containsKey("default");
-    assertThat(value.getBuildableUnits().get("default"))
-        .isEqualTo(
-            ProjectValue.BuildableUnit.create(
-                "default",
-                ImmutableList.of("//test/..."),
-                "default",
-                ImmutableList.of("--define=foo=bar"),
-                true));
+        assertThat(value.getBuildableUnits()).containsKey("default")
+        assertThat(value.getBuildableUnits().get("default"))
+            .isEqualTo(
+                ProjectValue.BuildableUnit.create(
+                    "default",
+                    com.google.common.collect.ImmutableList.of<E?>("//test/..."),
+                    "default",
+                    com.google.common.collect.ImmutableList.of<E?>("--define=foo=bar"),
+                    true
+                )
+            )
 
-    assertThat(value.getBuildableUnits()).containsKey("non_default");
+        assertThat(value.getBuildableUnits()).containsKey("non_default")
 
-    assertThat(value.getBuildableUnits().get("non_default"))
-        .isEqualTo(
-            ProjectValue.BuildableUnit.create(
-                "non_default",
-                ImmutableList.of("//test/..."),
-                "non default",
-                ImmutableList.of("--define=bar=baz"),
-                false));
-  }
+        assertThat(value.getBuildableUnits().get("non_default"))
+            .isEqualTo(
+                ProjectValue.BuildableUnit.create(
+                    "non_default",
+                    com.google.common.collect.ImmutableList.of<E?>("//test/..."),
+                    "non default",
+                    com.google.common.collect.ImmutableList.of<E?>("--define=bar=baz"),
+                    false
+                )
+            )
+    }
 
-  @Test
-  public void duplicateBuildableUnitNames() throws Exception {
-    scratch.file(
-        "test/PROJECT.scl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun duplicateBuildableUnitNames() {
+        scratch.file(
+            "test/PROJECT.scl",
+            """
         load(
             "//test:project_proto.scl",
             "buildable_unit_pb2",
@@ -316,25 +334,29 @@ public class ProjectFunctionTest extends BuildViewTestCase {
               buildable_unit_pb2.BuildableUnit.create(name = "foo"),
           ],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file("test/BUILD");
-    ProjectValue.Key key = new ProjectValue.Key(Label.parseCanonical("//test:PROJECT.scl"));
-    EvaluationResult<ProjectValue> result =
-        SkyframeExecutorTestUtils.evaluate(skyframeExecutor, key, false, reporter);
+        scratch.file("test/BUILD")
+        val key: ProjectValue.Key = Key(Label.parseCanonical("//test:PROJECT.scl"))
+        val result: EvaluationResult<ProjectValue?> =
+            SkyframeExecutorTestUtils.evaluate<T?>(skyframeExecutor, key, false, reporter)
 
-    assertThat(result.hasError()).isTrue();
-    assertThat(result.getError().getException())
-        .hasMessageThat()
-        .isEqualTo(
-            "buildable_unit name='foo' is repeated. Buildable units must have unique names.");
-  }
+        assertThat(result.hasError()).isTrue()
+        assertThat(result.getError().getException())
+            .hasMessageThat()
+            .isEqualTo(
+                "buildable_unit name='foo' is repeated. Buildable units must have unique names."
+            )
+    }
 
-  @Test
-  public void buildableUnitSchemaDefaults() throws Exception {
-    scratch.file(
-        "test/PROJECT.scl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun buildableUnitSchemaDefaults() {
+        scratch.file(
+            "test/PROJECT.scl",
+            """
         load(
             "//test:project_proto.scl",
             "buildable_unit_pb2",
@@ -346,50 +368,54 @@ public class ProjectFunctionTest extends BuildViewTestCase {
               buildable_unit_pb2.BuildableUnit.create(name = "foo"),
           ],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file("test/BUILD");
-    ProjectValue.Key key = new ProjectValue.Key(Label.parseCanonical("//test:PROJECT.scl"));
-    EvaluationResult<ProjectValue> result =
-        SkyframeExecutorTestUtils.evaluate(skyframeExecutor, key, false, reporter);
+        scratch.file("test/BUILD")
+        val key: ProjectValue.Key = Key(Label.parseCanonical("//test:PROJECT.scl"))
+        val result: EvaluationResult<ProjectValue?> =
+            SkyframeExecutorTestUtils.evaluate<T?>(skyframeExecutor, key, false, reporter)
 
-    assertThat(result.hasError()).isFalse();
+        assertThat(result.hasError()).isFalse()
 
-    // Project-wide defaults:
-    assertThat(result.get(key).enforcementPolicy)
-        .isEqualTo(ProjectValue.EnforcementPolicy.WARN);
-    assertThat(result.get(key).getAlwaysAllowedConfigs()).isNull();
-    assertThat(result.get(key).getProjectDirectories()).hasSize(1);
-    assertThat(result.get(key).getProjectDirectories().get("default")).isEmpty();
+        // Project-wide defaults:
+        assertThat(result.get(key).enforcementPolicy)
+            .isEqualTo(ProjectValue.EnforcementPolicy.WARN)
+        assertThat(result.get(key).getAlwaysAllowedConfigs()).isNull()
+        assertThat(result.get(key).getProjectDirectories()).hasSize(1)
+        assertThat(result.get(key).getProjectDirectories().get("default")).isEmpty()
 
-    // Buildable unit defaults:
-    assertThat(result.get(key).getBuildableUnits().get("foo").targetPatternMatcher().isEmpty())
-        .isTrue();
-    assertThat(result.get(key).getBuildableUnits().get("foo").flags()).isEmpty();
-    assertThat(result.get(key).getBuildableUnits().get("foo").description()).isEqualTo("foo");
-    assertThat(result.get(key).getBuildableUnits().get("foo").isDefault).isFalse();
-  }
+        // Buildable unit defaults:
+        assertThat(result.get(key).getBuildableUnits().get("foo").targetPatternMatcher().isEmpty())
+            .isTrue()
+        assertThat(result.get(key).getBuildableUnits().get("foo").flags()).isEmpty()
+        assertThat(result.get(key).getBuildableUnits().get("foo").description()).isEqualTo("foo")
+        assertThat(result.get(key).getBuildableUnits().get("foo").isDefault).isFalse()
+    }
 
-  /** Asserts that a PROJECT.scl with the given contexts fails with the given message. */
-  private void assertParseError(String projectFileContents, String expectedError) throws Exception {
-    scratch.file("test/PROJECT.scl", projectFileContents);
-    scratch.file("test/BUILD");
+    /** Asserts that a PROJECT.scl with the given contexts fails with the given message.  */
+    @Throws(java.lang.Exception::class)
+    private fun assertParseError(projectFileContents: String?, expectedError: String?) {
+        scratch.file("test/PROJECT.scl", projectFileContents)
+        scratch.file("test/BUILD")
 
-    ProjectValue.Key key = new ProjectValue.Key(Label.parseCanonical("//test:PROJECT.scl"));
-    EvaluationResult<ProjectValue> result =
-        SkyframeExecutorTestUtils.evaluate(skyframeExecutor, key, false, reporter);
+        val key: ProjectValue.Key = Key(Label.parseCanonical("//test:PROJECT.scl"))
+        val result: EvaluationResult<ProjectValue?> =
+            SkyframeExecutorTestUtils.evaluate<T?>(skyframeExecutor, key, false, reporter)
 
-    assertThat(result.hasError()).isTrue();
-    assertThat(result.getError().getException()).hasMessageThat().matches(expectedError);
-  }
+        assertThat(result.hasError()).isTrue()
+        assertThat(result.getError().getException()).hasMessageThat().matches(expectedError)
+    }
 
-  @Test
-  public void projectNameTypeError_notCurrentlyParsedSoNotYetAnError() throws Exception {
-    // TODO: b/415068036 - update when/if we start reading project(name = "foo") to catch type
-    // errors.
-    scratch.file(
-        "test/PROJECT.scl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun projectNameTypeError_notCurrentlyParsedSoNotYetAnError() {
+        // TODO: b/415068036 - update when/if we start reading project(name = "foo") to catch type
+        // errors.
+        scratch.file(
+            "test/PROJECT.scl",
+            """
         load(
             "//test:project_proto.scl",
             "buildable_unit_pb2",
@@ -399,20 +425,23 @@ public class ProjectFunctionTest extends BuildViewTestCase {
           name = 123,
           buildable_units = [],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file("test/BUILD");
-    ProjectValue.Key key = new ProjectValue.Key(Label.parseCanonical("//test:PROJECT.scl"));
-    EvaluationResult<ProjectValue> result =
-        SkyframeExecutorTestUtils.evaluate(skyframeExecutor, key, false, reporter);
+        scratch.file("test/BUILD")
+        val key: ProjectValue.Key = Key(Label.parseCanonical("//test:PROJECT.scl"))
+        val result: EvaluationResult<ProjectValue?> =
+            SkyframeExecutorTestUtils.evaluate<T?>(skyframeExecutor, key, false, reporter)
 
-    assertThat(result.hasError()).isFalse();
-  }
+        assertThat(result.hasError()).isFalse()
+    }
 
-  @Test
-  public void buildableUnitFieldTypeError() throws Exception {
-    assertParseError(
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun buildableUnitFieldTypeError() {
+        assertParseError(
+            """
         load(
             "//test:project_proto.scl",
             "buildable_unit_pb2",
@@ -422,14 +451,17 @@ public class ProjectFunctionTest extends BuildViewTestCase {
           name = "test",
           buildable_units = "bad value",
         )
-        """,
-        "buildable_units must be a list of buildable unit definitions, got .*String");
-  }
+        
+        """.trimIndent(),
+            "buildable_units must be a list of buildable unit definitions, got .*String"
+        )
+    }
 
-  @Test
-  public void builableUnitEntryTypeError() throws Exception {
-    assertParseError(
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun builableUnitEntryTypeError() {
+        assertParseError(
+            """
         load(
             "//test:project_proto.scl",
             "buildable_unit_pb2",
@@ -441,14 +473,17 @@ public class ProjectFunctionTest extends BuildViewTestCase {
               "bad value",
           ],
         )
-        """,
-        "buildable_units entries must be structured objects, got .*String");
-  }
+        
+        """.trimIndent(),
+            "buildable_units entries must be structured objects, got .*String"
+        )
+    }
 
-  @Test
-  public void buildableUnitNameTypeError() throws Exception {
-    assertParseError(
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun buildableUnitNameTypeError() {
+        assertParseError(
+            """
         load(
             "//test:project_proto.scl",
             "buildable_unit_pb2",
@@ -468,14 +503,17 @@ public class ProjectFunctionTest extends BuildViewTestCase {
               ),
           ],
         )
-        """,
-        "buildable_unit names must be strings, got .*Int32");
-  }
+        
+        """.trimIndent(),
+            "buildable_unit names must be strings, got .*Int32"
+        )
+    }
 
-  @Test
-  public void buildableUnitTargetPatternsFieldTypeError() throws Exception {
-    assertParseError(
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun buildableUnitTargetPatternsFieldTypeError() {
+        assertParseError(
+            """
         load(
             "//test:project_proto.scl",
             "buildable_unit_pb2",
@@ -493,14 +531,17 @@ public class ProjectFunctionTest extends BuildViewTestCase {
               ),
           ],
         )
-        """,
-        "target_patterns must be a list of strings, got .*Int32");
-  }
+        
+        """.trimIndent(),
+            "target_patterns must be a list of strings, got .*Int32"
+        )
+    }
 
-  @Test
-  public void buildableUnitTargetPatternsEntryTypeError() throws Exception {
-    assertParseError(
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun buildableUnitTargetPatternsEntryTypeError() {
+        assertParseError(
+            """
         load(
             "//test:project_proto.scl",
             "buildable_unit_pb2",
@@ -518,14 +559,17 @@ public class ProjectFunctionTest extends BuildViewTestCase {
               ),
           ],
         )
-        """,
-        "target_patterns entries must be strings, got .*Int32");
-  }
+        
+        """.trimIndent(),
+            "target_patterns entries must be strings, got .*Int32"
+        )
+    }
 
-  @Test
-  public void buildableUnitDescriptionTypeError() throws Exception {
-    assertParseError(
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun buildableUnitDescriptionTypeError() {
+        assertParseError(
+            """
         load(
             "//test:project_proto.scl",
             "buildable_unit_pb2",
@@ -545,14 +589,17 @@ public class ProjectFunctionTest extends BuildViewTestCase {
               ),
           ],
         )
-        """,
-        "buildable_unit descriptions must be strings, got .*Int32");
-  }
+        
+        """.trimIndent(),
+            "buildable_unit descriptions must be strings, got .*Int32"
+        )
+    }
 
-  @Test
-  public void buildableUnitFlagsFieldTypeError() throws Exception {
-    assertParseError(
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun buildableUnitFlagsFieldTypeError() {
+        assertParseError(
+            """
         load(
             "//test:project_proto.scl",
             "buildable_unit_pb2",
@@ -572,14 +619,17 @@ public class ProjectFunctionTest extends BuildViewTestCase {
               ),
           ],
         )
-        """,
-        "flags must be a list of strings, got .*String");
-  }
+        
+        """.trimIndent(),
+            "flags must be a list of strings, got .*String"
+        )
+    }
 
-  @Test
-  public void buildableUnitFlagsEntryTypeError() throws Exception {
-    assertParseError(
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun buildableUnitFlagsEntryTypeError() {
+        assertParseError(
+            """
         load(
             "//test:project_proto.scl",
             "buildable_unit_pb2",
@@ -599,14 +649,17 @@ public class ProjectFunctionTest extends BuildViewTestCase {
               ),
           ],
         )
-        """,
-        "flags entries must be strings, got .*Int32");
-  }
+        
+        """.trimIndent(),
+            "flags entries must be strings, got .*Int32"
+        )
+    }
 
-  @Test
-  public void buildableUnitIsDefaultTypeError() throws Exception {
-    assertParseError(
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun buildableUnitIsDefaultTypeError() {
+        assertParseError(
+            """
         load(
             "//test:project_proto.scl",
             "buildable_unit_pb2",
@@ -626,15 +679,18 @@ public class ProjectFunctionTest extends BuildViewTestCase {
               ),
           ],
         )
-        """,
-        "is_default must be a boolean, got .*String");
-  }
+        
+        """.trimIndent(),
+            "is_default must be a boolean, got .*String"
+        )
+    }
 
-  @Test
-  public void unknownProjectFieldError() throws Exception {
-    reporter.removeHandler(failFastHandler); // expect errors
-    assertParseError(
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun unknownProjectFieldError() {
+        reporter.removeHandler(failFastHandler) // expect errors
+        assertParseError(
+            """
         load(
             "//test:project_proto.scl",
             "buildable_unit_pb2",
@@ -649,17 +705,19 @@ public class ProjectFunctionTest extends BuildViewTestCase {
               ),
           ],
         )
-        """,
-        // The direct exception doesn't explain the cause but actual builds fail with more context:
-        // "Error: project_project_Project() got unexpected keyword argument: invalid_field"
-        "initialization of module 'test/PROJECT.scl' failed");
-  }
+        
+        """.trimIndent(),  // The direct exception doesn't explain the cause but actual builds fail with more context:
+            // "Error: project_project_Project() got unexpected keyword argument: invalid_field"
+            "initialization of module 'test/PROJECT.scl' failed"
+        )
+    }
 
-  @Test
-  public void unknownBuildableUntFieldError() throws Exception {
-    reporter.removeHandler(failFastHandler); // expect errors
-    assertParseError(
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun unknownBuildableUntFieldError() {
+        reporter.removeHandler(failFastHandler) // expect errors
+        assertParseError(
+            """
         load(
             "//test:project_proto.scl",
             "buildable_unit_pb2",
@@ -674,27 +732,37 @@ public class ProjectFunctionTest extends BuildViewTestCase {
               ),
           ],
         )
-        """,
-        // The direct exception doesn't explain the cause but actual builds fail with more context:
-        // "Error: project_project_Project() got unexpected keyword argument: invalid_field"
-        "initialization of module 'test/PROJECT.scl' failed");
-  }
+        
+        """.trimIndent(),  // The direct exception doesn't explain the cause but actual builds fail with more context:
+            // "Error: project_project_Project() got unexpected keyword argument: invalid_field"
+            "initialization of module 'test/PROJECT.scl' failed"
+        )
+    }
 
-  @Test
-  public void projectFunction_catchSyntaxError() throws Exception {
-    scratch.file(
-        "test/PROJECT.scl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun projectFunction_catchSyntaxError() {
+        scratch.file(
+            "test/PROJECT.scl",
+            """
         something_is_wrong =
-        """);
-    scratch.file("test/BUILD");
-    ProjectValue.Key key = new ProjectValue.Key(Label.parseCanonical("//test:PROJECT.scl"));
+        
+        """.trimIndent()
+        )
+        scratch.file("test/BUILD")
+        val key: ProjectValue.Key = Key(Label.parseCanonical("//test:PROJECT.scl"))
 
-    AssertionError e =
-        assertThrows(
-            AssertionError.class,
-            () -> SkyframeExecutorTestUtils.evaluate(skyframeExecutor, key, false, reporter));
-    assertThat(e).hasMessageThat().contains("syntax error at 'newline': expected expression");
-  }
-
+        val e: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable {
+                    SkyframeExecutorTestUtils.evaluate<T?>(
+                        skyframeExecutor,
+                        key,
+                        false,
+                        reporter
+                    )
+                })
+        Truth.assertThat(e).hasMessageThat().contains("syntax error at 'newline': expected expression")
+    }
 }

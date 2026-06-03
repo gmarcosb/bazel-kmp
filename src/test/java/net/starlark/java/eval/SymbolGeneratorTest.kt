@@ -11,103 +11,97 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package net.starlark.java.eval;
+package net.starlark.java.eval
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.common.testing.EqualsTester
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.analysis.util.ConfigurationTestCase.create
+import com.google.devtools.build.lib.packages.util.MockToolsConfig.create
+import com.google.devtools.common.options.testing.ConverterTester.addEqualityGroup
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import com.google.common.testing.EqualsTester;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [SymbolGenerator].  */
+@RunWith(JUnit4::class)
+class SymbolGeneratorTest {
+    @org.junit.Test
+    fun localSymbol_equalityAndHashCode() {
+        val owner1 = Any()
+        val owner2 = Any()
 
-/** Tests for {@link SymbolGenerator}. */
-@RunWith(JUnit4.class)
-public final class SymbolGeneratorTest {
+        val generator1: SymbolGenerator<Any?> = SymbolGenerator.create(owner1)
+        val generator2: SymbolGenerator<Any?> = SymbolGenerator.create(owner2)
 
-  @Test
-  public void localSymbol_equalityAndHashCode() {
-    Object owner1 = new Object();
-    Object owner2 = new Object();
+        val s1a: SymbolGenerator.Symbol<Any?>? = generator1.generate() // owner1, index 0
+        val s1b: SymbolGenerator.Symbol<Any?>? = generator1.generate() // owner1, index 1
+        val s2a: SymbolGenerator.Symbol<Any?>? = generator2.generate() // owner2, index 0
 
-    SymbolGenerator<Object> generator1 = SymbolGenerator.create(owner1);
-    SymbolGenerator<Object> generator2 = SymbolGenerator.create(owner2);
+        // Create another generator with the same owner object
+        val generator1Prime: SymbolGenerator<Any?> = SymbolGenerator.create(owner1)
+        val s1aPrime: SymbolGenerator.Symbol<Any?>? = generator1Prime.generate() // owner1, index 0
 
-    SymbolGenerator.Symbol<Object> s1a = generator1.generate(); // owner1, index 0
-    SymbolGenerator.Symbol<Object> s1b = generator1.generate(); // owner1, index 1
-    SymbolGenerator.Symbol<Object> s2a = generator2.generate(); // owner2, index 0
+        EqualsTester()
+            .addEqualityGroup(s1a, s1a) // Reflexive
+            .addEqualityGroup(s1b)
+            .addEqualityGroup(s2a)
+            .addEqualityGroup(s1aPrime) // Different generator instance, same owner and index
+            .testEquals()
 
-    // Create another generator with the same owner object
-    SymbolGenerator<Object> generator1Prime = SymbolGenerator.create(owner1);
-    SymbolGenerator.Symbol<Object> s1aPrime = generator1Prime.generate(); // owner1, index 0
+        assertThat(s1a).isNotEqualTo(s1b)
+        assertThat(s1a).isNotEqualTo(s2a)
+        assertThat(s1b).isNotEqualTo(s2a)
 
-    new EqualsTester()
-        .addEqualityGroup(s1a, s1a) // Reflexive
-        .addEqualityGroup(s1b)
-        .addEqualityGroup(s2a)
-        .addEqualityGroup(s1aPrime) // Different generator instance, same owner and index
-        .testEquals();
-
-    assertThat(s1a).isNotEqualTo(s1b);
-    assertThat(s1a).isNotEqualTo(s2a);
-    assertThat(s1b).isNotEqualTo(s2a);
-
-    // These should not be equal because the index will be different
-    assertThat(s1a).isNotEqualTo(s1aPrime);
-  }
-
-  @Test
-  public void localSymbol_hashCode_isMemoized() {
-    class HashCounter {
-      private int hashCodeCalls = 0;
-      private final int hash;
-
-      HashCounter(int hash) {
-        this.hash = hash;
-      }
-
-      @Override
-      public int hashCode() {
-        hashCodeCalls++;
-        return hash;
-      }
+        // These should not be equal because the index will be different
+        assertThat(s1a).isNotEqualTo(s1aPrime)
     }
 
-    HashCounter owner = new HashCounter(123);
-    SymbolGenerator<HashCounter> generator = SymbolGenerator.create(owner);
-    SymbolGenerator.Symbol<HashCounter> symbol = generator.generate();
+    @org.junit.Test
+    fun localSymbol_hashCode_isMemoized() {
+        class HashCounter internal constructor(private val hash: Int) {
+            private var hashCodeCalls = 0
 
-    int hash1 = symbol.hashCode();
-    assertThat(owner.hashCodeCalls).isEqualTo(1);
+            override fun hashCode(): Int {
+                hashCodeCalls++
+                return hash
+            }
+        }
 
-    int hash2 = symbol.hashCode();
-    assertThat(hash1).isEqualTo(hash2);
-    assertThat(owner.hashCodeCalls).isEqualTo(1); // Should not have incremented
+        val owner = HashCounter(123)
+        val generator: SymbolGenerator<HashCounter?> = SymbolGenerator.create(owner)
+        val symbol: SymbolGenerator.Symbol<HashCounter?> = generator.generate()
 
-    int hash3 = symbol.hashCode();
-    assertThat(hash1).isEqualTo(hash3);
-    assertThat(owner.hashCodeCalls).isEqualTo(1); // Should still be 1
-  }
+        val hash1: Int = symbol.hashCode()
+        Truth.assertThat(owner.hashCodeCalls).isEqualTo(1)
 
-  @Test
-  public void globalSymbol_equalityAndHashCode() {
-    Object owner1 = new Object();
-    Object owner2 = new Object();
+        val hash2: Int = symbol.hashCode()
+        Truth.assertThat(hash1).isEqualTo(hash2)
+        Truth.assertThat(owner.hashCodeCalls).isEqualTo(1) // Should not have incremented
 
-    SymbolGenerator<Object> generator1 = SymbolGenerator.create(owner1);
-    SymbolGenerator<Object> generator2 = SymbolGenerator.create(owner2);
+        val hash3: Int = symbol.hashCode()
+        Truth.assertThat(hash1).isEqualTo(hash3)
+        Truth.assertThat(owner.hashCodeCalls).isEqualTo(1) // Should still be 1
+    }
 
-    SymbolGenerator.Symbol<Object> local1 = generator1.generate();
-    SymbolGenerator.Symbol<Object> local2 = generator2.generate();
+    @org.junit.Test
+    fun globalSymbol_equalityAndHashCode() {
+        val owner1 = Any()
+        val owner2 = Any()
 
-    SymbolGenerator.Symbol<Object> g1a = local1.exportAs("name1");
-    SymbolGenerator.Symbol<Object> g1aDup = local1.exportAs("name1");
-    SymbolGenerator.Symbol<Object> g1b = local1.exportAs("name2");
-    SymbolGenerator.Symbol<Object> g2a = local2.exportAs("name1");
+        val generator1: SymbolGenerator<Any?> = SymbolGenerator.create(owner1)
+        val generator2: SymbolGenerator<Any?> = SymbolGenerator.create(owner2)
 
-    new EqualsTester()
-        .addEqualityGroup(g1a, g1aDup)
-        .addEqualityGroup(g1b)
-        .addEqualityGroup(g2a)
-        .testEquals();
-  }
+        val local1: SymbolGenerator.Symbol<Any?> = generator1.generate()
+        val local2: SymbolGenerator.Symbol<Any?> = generator2.generate()
+
+        val g1a: SymbolGenerator.Symbol<Any?>? = local1.exportAs("name1")
+        val g1aDup: SymbolGenerator.Symbol<Any?>? = local1.exportAs("name1")
+        val g1b: SymbolGenerator.Symbol<Any?>? = local1.exportAs("name2")
+        val g2a: SymbolGenerator.Symbol<Any?>? = local2.exportAs("name1")
+
+        EqualsTester()
+            .addEqualityGroup(g1a, g1aDup)
+            .addEqualityGroup(g1b)
+            .addEqualityGroup(g2a)
+            .testEquals()
+    }
 }

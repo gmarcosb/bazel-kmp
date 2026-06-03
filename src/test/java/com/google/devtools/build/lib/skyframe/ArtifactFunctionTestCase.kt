@@ -11,157 +11,131 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.base.Suppliers;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.actions.ActionAnalysisMetadata;
-import com.google.devtools.build.lib.actions.ActionKeyContext;
-import com.google.devtools.build.lib.actions.ActionLookupKey;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.util.InjectedActionLookupKey;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.analysis.ServerDirectories;
-import com.google.devtools.build.lib.clock.BlazeClock;
-import com.google.devtools.build.lib.pkgcache.PathPackageLocator;
-import com.google.devtools.build.lib.skyframe.ExternalFilesHelper.ExternalFileAction;
-import com.google.devtools.build.lib.skyframe.PackageLookupFunction.CrossRepositoryLabelViolationStrategy;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.RemoteAnalysisCacheDeps;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import com.google.devtools.build.lib.testutil.TestUtils;
-import com.google.devtools.build.lib.util.io.TimestampGranularityMonitor;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileStateKey;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import com.google.devtools.build.skyframe.InMemoryMemoizingEvaluator;
-import com.google.devtools.build.skyframe.MemoizingEvaluator;
-import com.google.devtools.build.skyframe.RecordingDifferencer;
-import com.google.devtools.build.skyframe.SequencedRecordingDifferencer;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionException;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.io.IOException;
-import java.util.LinkedHashSet;
-import java.util.UUID;
-import java.util.concurrent.atomic.AtomicReference;
-import org.junit.Before;
+import com.google.devtools.build.lib.actions.ActionAnalysisMetadata
 
-abstract class ArtifactFunctionTestCase {
-  static final ActionLookupKey ALL_OWNER = new InjectedActionLookupKey("all_owner");
+internal abstract class ArtifactFunctionTestCase {
+    protected var actions: LinkedHashSet<ActionAnalysisMetadata?>? = null
+    protected var fastDigest: Boolean = false
+    protected var differencer: RecordingDifferencer = SequencedRecordingDifferencer()
+    protected var evaluator: MemoizingEvaluator? = null
+    protected var root: Path? = null
+    protected val actionKeyContext: ActionKeyContext = ActionKeyContext()
 
-  protected LinkedHashSet<ActionAnalysisMetadata> actions;
-  protected boolean fastDigest = false;
-  protected RecordingDifferencer differencer = new SequencedRecordingDifferencer();
-  protected MemoizingEvaluator evaluator;
-  protected Path root;
-  protected final ActionKeyContext actionKeyContext = new ActionKeyContext();
+    /**
+     * The test action execution function. The Skyframe evaluator's action execution function
+     * delegates to this one.
+     */
+    protected var delegateActionExecutionFunction: SkyFunction? = null
 
-  /**
-   * The test action execution function. The Skyframe evaluator's action execution function
-   * delegates to this one.
-   */
-  protected SkyFunction delegateActionExecutionFunction;
-
-  @Before
-  public void baseSetUp() throws Exception {
-    CustomInMemoryFs fs = new CustomInMemoryFs();
-    setupRoot(fs);
-    AtomicReference<PathPackageLocator> pkgLocator =
-        new AtomicReference<>(
-            new PathPackageLocator(
-                root.getFileSystem().getPath("/outputbase"),
-                ImmutableList.of(Root.fromPath(root)),
-                BazelSkyframeExecutorConstants.BUILD_FILES_BY_PRIORITY));
-    BlazeDirectories directories =
-        new BlazeDirectories(
-            new ServerDirectories(root, root, root), root, TestConstants.PRODUCT_NAME);
-    ExternalFilesHelper externalFilesHelper =
-        ExternalFilesHelper.createForTesting(
-            pkgLocator,
-            ExternalFileAction.DEPEND_ON_EXTERNAL_PKG_FOR_EXTERNAL_REPO_PATHS,
-            directories);
-    differencer = new SequencedRecordingDifferencer();
-    evaluator =
-        new InMemoryMemoizingEvaluator(
-            ImmutableMap.<SkyFunctionName, SkyFunction>builder()
-                .put(
-                    FileStateKey.FILE_STATE,
-                    new FileStateFunction(
-                        Suppliers.ofInstance(
-                            new TimestampGranularityMonitor(BlazeClock.instance())),
-                        SyscallCache.NO_CACHE,
-                        externalFilesHelper))
-                .put(SkyFunctions.FILE, new FileFunction(pkgLocator, directories))
-                .put(
-                    Artifact.ARTIFACT,
-                    new ArtifactFunction(
-                        () -> true,
-                        MetadataConsumerForMetrics.NO_OP,
-                        SyscallCache.NO_CACHE,
-                        /* actionExecutor= */ null, // only used by remote analysis caching
-                        () -> RemoteAnalysisCacheDeps.createDisabled()))
-                .put(SkyFunctions.ACTION_EXECUTION, new SimpleActionExecutionFunction())
-                .put(SkyFunctions.PACKAGE, PackageFunction.newBuilder().build())
-                .put(
-                    SkyFunctions.PACKAGE_LOOKUP,
-                    new PackageLookupFunction(
-                        null,
-                        CrossRepositoryLabelViolationStrategy.ERROR,
-                        BazelSkyframeExecutorConstants.BUILD_FILES_BY_PRIORITY))
-                .put(
-                    SkyFunctions.ACTION_TEMPLATE_EXPANSION,
-                    new ActionTemplateExpansionFunction(actionKeyContext))
-                .build(),
-            differencer);
-    PrecomputedValue.BUILD_ID.set(differencer, UUID.randomUUID());
-    PrecomputedValue.PATH_PACKAGE_LOCATOR.set(differencer, pkgLocator.get());
-    actions = new LinkedHashSet<>();
-  }
-
-  protected void setupRoot(CustomInMemoryFs fs) throws IOException {
-    Path tmpDir = fs.getPath(TestUtils.tmpDir());
-    root = tmpDir.getChild("root");
-    root.createDirectoryAndParents();
-    FileSystemUtils.createEmptyFile(root.getRelative("WORKSPACE"));
-  }
-
-  protected static void writeFile(Path path, String contents) throws IOException {
-    path.getParentDirectory().createDirectoryAndParents();
-    FileSystemUtils.writeContentAsLatin1(path, contents);
-  }
-
-  /** ActionExecutionFunction that delegates to our delegate. */
-  private class SimpleActionExecutionFunction implements SkyFunction {
-    @Override
-    public SkyValue compute(SkyKey skyKey, Environment env)
-        throws SkyFunctionException, InterruptedException {
-      return delegateActionExecutionFunction.compute(skyKey, env);
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun baseSetUp() {
+        val fs: CustomInMemoryFs = com.google.devtools.build.lib.skyframe.ArtifactFunctionTestCase.CustomInMemoryFs()
+        setupRoot(fs)
+        val pkgLocator: AtomicReference<PathPackageLocator?> =
+            AtomicReference<PathPackageLocator?>(
+                PathPackageLocator(
+                    root.getFileSystem().getPath("/outputbase"),
+                    com.google.common.collect.ImmutableList.of<E?>(Root.fromPath(root)),
+                    BazelSkyframeExecutorConstants.BUILD_FILES_BY_PRIORITY
+                )
+            )
+        val directories: BlazeDirectories =
+            BlazeDirectories(
+                ServerDirectories(root, root, root), root, TestConstants.PRODUCT_NAME
+            )
+        val externalFilesHelper: ExternalFilesHelper? =
+            ExternalFilesHelper.createForTesting(
+                pkgLocator,
+                ExternalFileAction.DEPEND_ON_EXTERNAL_PKG_FOR_EXTERNAL_REPO_PATHS,
+                directories
+            )
+        differencer = SequencedRecordingDifferencer()
+        evaluator =
+            InMemoryMemoizingEvaluator(
+                com.google.common.collect.ImmutableMap.builder<SkyFunctionName?, SkyFunction?>()
+                    .put(
+                        FileStateKey.FILE_STATE,
+                        FileStateFunction(
+                            com.google.common.base.Suppliers.ofInstance<T?>(
+                                TimestampGranularityMonitor(com.google.devtools.build.lib.clock.BlazeClock.instance())
+                            ),
+                            SyscallCache.NO_CACHE,
+                            externalFilesHelper
+                        )
+                    )
+                    .put(SkyFunctions.FILE, FileFunction(pkgLocator, directories))
+                    .put(
+                        Artifact.ARTIFACT,
+                        ArtifactFunction(
+                            { true },
+                            MetadataConsumerForMetrics.NO_OP,
+                            SyscallCache.NO_CACHE,  /* actionExecutor= */
+                            null,  // only used by remote analysis caching
+                            { RemoteAnalysisCacheDeps.createDisabled() })
+                    )
+                    .put(
+                        SkyFunctions.ACTION_EXECUTION,
+                        com.google.devtools.build.lib.skyframe.ArtifactFunctionTestCase.SimpleActionExecutionFunction()
+                    )
+                    .put(SkyFunctions.PACKAGE, PackageFunction.newBuilder().build())
+                    .put(
+                        SkyFunctions.PACKAGE_LOOKUP,
+                        PackageLookupFunction(
+                            null,
+                            CrossRepositoryLabelViolationStrategy.ERROR,
+                            BazelSkyframeExecutorConstants.BUILD_FILES_BY_PRIORITY
+                        )
+                    )
+                    .put(
+                        SkyFunctions.ACTION_TEMPLATE_EXPANSION,
+                        ActionTemplateExpansionFunction(actionKeyContext)
+                    )
+                    .build(),
+                differencer
+            )
+        PrecomputedValue.BUILD_ID.set(differencer, UUID.randomUUID())
+        PrecomputedValue.PATH_PACKAGE_LOCATOR.set(differencer, pkgLocator.get())
+        actions = LinkedHashSet<ActionAnalysisMetadata?>()
     }
 
-    @Override
-    public String extractTag(SkyKey skyKey) {
-      return delegateActionExecutionFunction.extractTag(skyKey);
-    }
-  }
-
-  /** InMemoryFileSystem that can pretend to do a fast digest. */
-  protected class CustomInMemoryFs extends InMemoryFileSystem {
-    CustomInMemoryFs() {
-      super(DigestHashFunction.SHA256);
+    @Throws(IOException::class)
+    protected fun setupRoot(fs: CustomInMemoryFs) {
+        val tmpDir: Path = fs.getPath(com.google.devtools.build.lib.testutil.TestUtils.tmpDir())
+        root = tmpDir.getChild("root")
+        root.createDirectoryAndParents()
+        FileSystemUtils.createEmptyFile(root.getRelative("WORKSPACE"))
     }
 
-    @Override
-    @SuppressWarnings("UnsynchronizedOverridesSynchronized")
-    public byte[] getFastDigest(PathFragment path) throws IOException {
-      return fastDigest ? getDigest(path) : null;
+    /** ActionExecutionFunction that delegates to our delegate.  */
+    private inner class SimpleActionExecutionFunction : SkyFunction {
+        @Throws(SkyFunctionException::class, java.lang.InterruptedException::class)
+        public override fun compute(skyKey: SkyKey?, env: Environment?): SkyValue {
+            return delegateActionExecutionFunction.compute(skyKey, env)
+        }
+
+        public override fun extractTag(skyKey: SkyKey?): String {
+            return delegateActionExecutionFunction.extractTag(skyKey)
+        }
     }
-  }
+
+    /** InMemoryFileSystem that can pretend to do a fast digest.  */
+    protected open inner class CustomInMemoryFs internal constructor() : InMemoryFileSystem(DigestHashFunction.SHA256) {
+        @Throws(IOException::class)
+        public override fun getFastDigest(path: PathFragment?): ByteArray? {
+            return if (fastDigest) getDigest(path) else null
+        }
+    }
+
+    companion object {
+        val ALL_OWNER: ActionLookupKey = InjectedActionLookupKey("all_owner")
+
+        @Throws(IOException::class)
+        protected fun writeFile(path: Path, contents: String?) {
+            path.getParentDirectory().createDirectoryAndParents()
+            FileSystemUtils.writeContentAsLatin1(path, contents)
+        }
+    }
 }

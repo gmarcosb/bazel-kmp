@@ -11,23 +11,21 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester
 
-import com.google.common.hash.HashCode;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** A test for {@link HashCodeCodec} */
-@RunWith(JUnit4.class)
-public class HashCodeCodecTest {
-
-  @Test
-  public void testHashCodeCodec() throws Exception {
-    new SerializationTester(
-            HashCode.fromString("f00ba7"), HashCode.fromInt(456789), HashCode.fromLong(9001L))
-        .runTests();
-  }
+/** A test for [HashCodeCodec]  */
+@RunWith(JUnit4::class)
+class HashCodeCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testHashCodeCodec() {
+        SerializationTester(
+            com.google.common.hash.HashCode.fromString("f00ba7"),
+            com.google.common.hash.HashCode.fromInt(456789),
+            com.google.common.hash.HashCode.fromLong(9001L)
+        )
+            .runTests()
+    }
 }

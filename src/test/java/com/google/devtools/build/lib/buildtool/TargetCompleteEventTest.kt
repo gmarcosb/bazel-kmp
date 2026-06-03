@@ -11,86 +11,51 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.buildtool;
+package com.google.devtools.build.lib.buildtool
 
-import static com.google.common.truth.Truth.assertThat;
-import static java.nio.charset.StandardCharsets.UTF_8;
+import com.google.devtools.build.lib.actions.Artifact
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.MoreCollectors;
-import com.google.common.eventbus.Subscribe;
-import com.google.common.io.BaseEncoding;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.FileArtifactValue;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.OutputGroupInfo;
-import com.google.devtools.build.lib.analysis.TargetCompleteEvent;
-import com.google.devtools.build.lib.analysis.configuredtargets.RuleConfiguredTarget;
-import com.google.devtools.build.lib.analysis.util.AnalysisMock;
-import com.google.devtools.build.lib.authandtls.credentialhelper.CredentialModule;
-import com.google.devtools.build.lib.buildeventservice.BazelBuildEventServiceModule;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEvent;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId.IdCase;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.NamedSetOfFiles;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.OutputGroup;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.TargetComplete;
-import com.google.devtools.build.lib.buildtool.util.BuildIntegrationTestCase;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.runtime.BlazeRuntime;
-import com.google.devtools.build.lib.runtime.NoSpawnCacheModule;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.Collection;
-import java.util.concurrent.atomic.AtomicReference;
-import javax.annotation.Nullable;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Verifies TargetCompleteEvent behavior during a complete build.  */
+@RunWith(JUnit4::class)
+class TargetCompleteEventTest : BuildIntegrationTestCase() {
+    @org.junit.Rule
+    val tmpFolder: TemporaryFolder = TemporaryFolder()
 
-/** Verifies TargetCompleteEvent behavior during a complete build. */
-@RunWith(JUnit4.class)
-public final class TargetCompleteEventTest extends BuildIntegrationTestCase {
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun stageEmbeddedTools() {
+        AnalysisMock.get().setupMockToolsRepository(mockToolsConfig)
+    }
 
-  @Rule public final TemporaryFolder tmpFolder = new TemporaryFolder();
+    @get:Throws(java.lang.Exception::class)
+    val runtimeBuilder: BlazeRuntime.Builder
+        get() = super.getRuntimeBuilder()
+            .addBlazeModule(NoSpawnCacheModule())
+            .addBlazeModule(CredentialModule())
+            .addBlazeModule(BazelBuildEventServiceModule())
 
-  @Before
-  public void stageEmbeddedTools() throws Exception {
-    AnalysisMock.get().setupMockToolsRepository(mockToolsConfig);
-  }
+    @Throws(java.lang.Exception::class)
+    private fun afterBuildCommand() {
+        runtimeWrapper.newCommand()
+    }
 
-  @Override
-  protected BlazeRuntime.Builder getRuntimeBuilder() throws Exception {
-    return super.getRuntimeBuilder()
-        .addBlazeModule(new NoSpawnCacheModule())
-        .addBlazeModule(new CredentialModule())
-        .addBlazeModule(new BazelBuildEventServiceModule());
-  }
-
-  private void afterBuildCommand() throws Exception {
-    runtimeWrapper.newCommand();
-  }
-
-  /**
-   * Validates that TargetCompleteEvents do not keep a map of action output metadata for the
-   * _validation output group, which can be quite large.
-   */
-  @Test
-  public void artifactsNotRetained() throws Exception {
-    write(
-        "validation_actions/defs.bzl",
-        """
+    /**
+     * Validates that TargetCompleteEvents do not keep a map of action output metadata for the
+     * _validation output group, which can be quite large.
+     */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun artifactsNotRetained() {
+        write(
+            "validation_actions/defs.bzl",
+            """
         def _rule_with_implicit_outs_and_validation_impl(ctx):
-            ctx.actions.write(ctx.outputs.main, "main output\\n")
+            ctx.actions.write(ctx.outputs.main, "main output\
+            ")
 
-            ctx.actions.write(ctx.outputs.implicit, "implicit output\\n")
+            ctx.actions.write(ctx.outputs.implicit, "implicit output\
+
+            ")
 
             validation_output = ctx.actions.declare_file(ctx.attr.name + ".validation")
 
@@ -122,81 +87,90 @@ public final class TargetCompleteEventTest extends BuildIntegrationTestCase {
                 ),
             },
         )
-        """);
-    write("validation_actions/validation_tool", "#!/bin/bash", "echo \"validation output\" > $1")
-        .setExecutable(true);
-    write(
-        "validation_actions/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        write("validation_actions/validation_tool", "#!/bin/bash", "echo \"validation output\" > $1")
+            .setExecutable(true)
+        write(
+            "validation_actions/BUILD",
+            """
         load(
             ":defs.bzl",
             "rule_with_implicit_outs_and_validation",
         )
 
         rule_with_implicit_outs_and_validation(name = "foo0")
-        """);
+        
+        """.trimIndent()
+        )
 
-    AtomicReference<TargetCompleteEvent> targetCompleteEventRef = new AtomicReference<>();
-    runtimeWrapper.registerSubscriber(
-        new Object() {
-          @SuppressWarnings("unused")
-          @Subscribe
-          public void accept(TargetCompleteEvent event) {
-            targetCompleteEventRef.set(event);
-          }
-        });
+        val targetCompleteEventRef: AtomicReference<TargetCompleteEvent?> = AtomicReference<TargetCompleteEvent?>()
+        runtimeWrapper.registerSubscriber(
+            object : Any() {
+                @Suppress("unused")
+                @com.google.common.eventbus.Subscribe
+                fun accept(event: TargetCompleteEvent?) {
+                    targetCompleteEventRef.set(event)
+                }
+            })
 
-    addOptions("--run_validations");
-    BuildResult buildResult = buildTarget("//validation_actions:foo0");
+        addOptions("--run_validations")
+        val buildResult: BuildResult = buildTarget("//validation_actions:foo0")
 
-    Collection<ConfiguredTarget> successfulTargets = buildResult.getSuccessfulTargets();
-    ConfiguredTarget fooTarget = Iterables.getOnlyElement(successfulTargets);
+        val successfulTargets: MutableCollection<ConfiguredTarget?> = buildResult.getSuccessfulTargets()
+        val fooTarget: ConfiguredTarget? =
+            com.google.common.collect.Iterables.getOnlyElement<ConfiguredTarget?>(successfulTargets)
 
-    // Check that the primary output, :foo0.main, has its metadata retained.
-    Artifact main =
-        ((RuleConfiguredTarget) fooTarget)
-            .findArtifactByOutputLabel(
-                Label.parseCanonicalUnchecked("//validation_actions:foo0.main"));
-    FileArtifactValue mainMetadata =
-        targetCompleteEventRef.get().getCompletionContext().getFileArtifactValue(main);
-    assertThat(mainMetadata).isNotNull();
+        // Check that the primary output, :foo0.main, has its metadata retained.
+        val main: Artifact? =
+            (fooTarget as RuleConfiguredTarget)
+                .findArtifactByOutputLabel(
+                    Label.parseCanonicalUnchecked("//validation_actions:foo0.main")
+                )
+        val mainMetadata: FileArtifactValue? =
+            targetCompleteEventRef.get().getCompletionContext().getFileArtifactValue(main)
+        assertThat(mainMetadata).isNotNull()
 
-    // Check that the validation output, :foo0.validation, does not have its metadata retained.
-    OutputGroupInfo outputGroups = fooTarget.get(OutputGroupInfo.STARLARK_CONSTRUCTOR);
-    NestedSet<Artifact> validationArtifacts =
-        outputGroups.getOutputGroup(OutputGroupInfo.VALIDATION);
-    assertThat(validationArtifacts.isEmpty()).isFalse();
+        // Check that the validation output, :foo0.validation, does not have its metadata retained.
+        val outputGroups: OutputGroupInfo = fooTarget.get(OutputGroupInfo.STARLARK_CONSTRUCTOR)
+        val validationArtifacts: NestedSet<Artifact?> =
+            outputGroups.getOutputGroup(OutputGroupInfo.VALIDATION)
+        assertThat(validationArtifacts.isEmpty()).isFalse()
 
-    Artifact validationArtifact = Iterables.getOnlyElement(validationArtifacts.toList());
+        val validationArtifact: Artifact? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(validationArtifacts.toList())
 
-    FileArtifactValue validationArtifactMetadata =
-        targetCompleteEventRef
-            .get()
-            .getCompletionContext()
-            .getFileArtifactValue(validationArtifact);
-    assertThat(validationArtifactMetadata).isNull();
-  }
+        val validationArtifactMetadata: FileArtifactValue? =
+            targetCompleteEventRef
+                .get()
+                .getCompletionContext()
+                .getFileArtifactValue(validationArtifact)
+        assertThat(validationArtifactMetadata).isNull()
+    }
 
-  @Test
-  public void outputFile() throws Exception {
-    write("foo/BUILD", "genrule(name = 'foobin', outs = ['out.txt'], cmd = 'echo -n Hello > $@')");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun outputFile() {
+        write("foo/BUILD", "genrule(name = 'foobin', outs = ['out.txt'], cmd = 'echo -n Hello > $@')")
 
-    addOptions("--experimental_build_event_output_group_mode=default=named_set_of_files_only");
-    File bep = buildTargetAndCaptureBEP("//foo:foobin");
+        addOptions("--experimental_build_event_output_group_mode=default=named_set_of_files_only")
+        val bep: java.io.File = buildTargetAndCaptureBEP("//foo:foobin")
 
-    BuildEventStreamProtos.File outFile = findOutputFileInBEPStream(bep, "out.txt");
-    assertThat(outFile).isNotNull();
-    assertThat(outFile.getUri()).startsWith("file://");
-    assertThat(outFile.getUri()).endsWith("/bin/foo/out.txt");
-    assertThat(outFile.getLength()).isEqualTo("Hello".length());
-    assertDigest("Hello", BaseEncoding.base16().lowerCase().decode(outFile.getDigest()));
-  }
+        val outFile: BuildEventStreamProtos.File? = findOutputFileInBEPStream(bep, "out.txt")
+        assertThat(outFile).isNotNull()
+        assertThat(outFile.getUri()).startsWith("file://")
+        assertThat(outFile.getUri()).endsWith("/bin/foo/out.txt")
+        assertThat(outFile.getLength()).isEqualTo("Hello".length)
+        assertDigest("Hello", com.google.common.io.BaseEncoding.base16().lowerCase().decode(outFile.getDigest()))
+    }
 
-  @Test
-  public void outputDirectory() throws Exception {
-    write(
-        "foo/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun outputDirectory() {
+        write(
+            "foo/defs.bzl",
+            """
         def _impl(ctx):
             dir = ctx.actions.declare_directory(ctx.label.name)
             ctx.actions.run_shell(
@@ -206,110 +180,122 @@ public final class TargetCompleteEventTest extends BuildIntegrationTestCase {
             return DefaultInfo(files = depset([dir]))
 
         directory = rule(implementation = _impl)
-        """);
-    write(
-        "foo/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        write(
+            "foo/BUILD",
+            """
         load(":defs.bzl", "directory")
 
         directory(name = "dir")
-        """);
+        
+        """.trimIndent()
+        )
 
-    addOptions("--experimental_build_event_output_group_mode=default=named_set_of_files_only");
-    File bep = buildTargetAndCaptureBEP("//foo:dir");
+        addOptions("--experimental_build_event_output_group_mode=default=named_set_of_files_only")
+        val bep: java.io.File = buildTargetAndCaptureBEP("//foo:dir")
 
-    BuildEventStreamProtos.TargetComplete targetComplete = findTargetCompleteEventInBEPStream(bep);
-    assertThat(targetComplete.getDirectoryOutputList()).hasSize(1);
-    BuildEventStreamProtos.File dir = targetComplete.getDirectoryOutputList().get(0);
-    assertThat(dir.getName()).endsWith("/dir");
-    assertThat(dir.getUri()).isEmpty();
-    assertThat(dir.getContents()).isEmpty();
-    assertThat(dir.getSymlinkTargetPath()).isEmpty();
+        val targetComplete: BuildEventStreamProtos.TargetComplete? = findTargetCompleteEventInBEPStream(bep)
+        assertThat(targetComplete.getDirectoryOutputList()).hasSize(1)
+        val dir: BuildEventStreamProtos.File = targetComplete.getDirectoryOutputList().get(0)
+        assertThat(dir.getName()).endsWith("/dir")
+        assertThat(dir.getUri()).isEmpty()
+        assertThat(dir.getContents()).isEmpty()
+        assertThat(dir.getSymlinkTargetPath()).isEmpty()
 
-    BuildEventStreamProtos.File outFile = findOutputFileInBEPStream(bep, "file.txt");
-    assertThat(outFile).isNotNull();
-    assertThat(outFile.getUri()).startsWith("file://");
-    assertThat(outFile.getUri()).endsWith("/bin/foo/dir/file.txt");
-    assertThat(outFile.getLength()).isEqualTo("Hello".length());
-    assertDigest("Hello", BaseEncoding.base16().lowerCase().decode(outFile.getDigest()));
-  }
+        val outFile: BuildEventStreamProtos.File? = findOutputFileInBEPStream(bep, "file.txt")
+        assertThat(outFile).isNotNull()
+        assertThat(outFile.getUri()).startsWith("file://")
+        assertThat(outFile.getUri()).endsWith("/bin/foo/dir/file.txt")
+        assertThat(outFile.getLength()).isEqualTo("Hello".length)
+        assertDigest("Hello", com.google.common.io.BaseEncoding.base16().lowerCase().decode(outFile.getDigest()))
+    }
 
-  @Test
-  public void outputSymlink() throws Exception {
-    write(
-        "foo/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun outputSymlink() {
+        write(
+            "foo/defs.bzl",
+            """
         def _impl(ctx):
             sym = ctx.actions.declare_symlink(ctx.label.name)
             ctx.actions.symlink(output = sym, target_path = "/some/path")
             return DefaultInfo(files = depset([sym]))
 
         symlink = rule(implementation = _impl)
-        """);
-    write(
-        "foo/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        write(
+            "foo/BUILD",
+            """
         load(":defs.bzl", "symlink")
 
         symlink(name = "sym")
-        """);
+        
+        """.trimIndent()
+        )
 
-    addOptions("--experimental_build_event_output_group_mode=default=named_set_of_files_only");
-    File bep = buildTargetAndCaptureBEP("//foo:sym");
+        addOptions("--experimental_build_event_output_group_mode=default=named_set_of_files_only")
+        val bep: java.io.File = buildTargetAndCaptureBEP("//foo:sym")
 
-    BuildEventStreamProtos.File outFile = findOutputFileInBEPStream(bep, "sym");
-    assertThat(outFile).isNotNull();
-    assertThat(outFile.getSymlinkTargetPath()).isEqualTo("/some/path");
-    assertThat(outFile.getLength()).isEqualTo(0);
-    assertThat(outFile.getDigest()).isEmpty();
-  }
+        val outFile: BuildEventStreamProtos.File? = findOutputFileInBEPStream(bep, "sym")
+        assertThat(outFile).isNotNull()
+        assertThat(outFile.getSymlinkTargetPath()).isEqualTo("/some/path")
+        assertThat(outFile.getLength()).isEqualTo(0)
+        assertThat(outFile.getDigest()).isEmpty()
+    }
 
-  @Test
-  public void outputFile_inlineOutputGroup() throws Exception {
-    write("foo/BUILD", "genrule(name = 'foobin', outs = ['out.txt'], cmd = 'echo -n Hello > $@')");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun outputFile_inlineOutputGroup() {
+        write("foo/BUILD", "genrule(name = 'foobin', outs = ['out.txt'], cmd = 'echo -n Hello > $@')")
 
-    addOptions("--experimental_build_event_output_group_mode=default=inline_only");
-    File bep = buildTargetAndCaptureBEP("//foo:foobin");
+        addOptions("--experimental_build_event_output_group_mode=default=inline_only")
+        val bep: java.io.File = buildTargetAndCaptureBEP("//foo:foobin")
 
-    BuildEventStreamProtos.File outFileFromNestedSet = findOutputFileInBEPStream(bep, "out.txt");
-    assertThat(outFileFromNestedSet).isNull();
+        val outFileFromNestedSet: BuildEventStreamProtos.File? = findOutputFileInBEPStream(bep, "out.txt")
+        assertThat(outFileFromNestedSet).isNull()
 
-    TargetComplete completeEvent = findTargetCompleteEventInBEPStream(bep);
-    assertThat(completeEvent).isNotNull();
-    assertThat(completeEvent.getOutputGroupCount()).isEqualTo(1);
-    assertThat(completeEvent.getOutputGroup(0).getInlineFilesCount()).isEqualTo(1);
+        val completeEvent: TargetComplete? = findTargetCompleteEventInBEPStream(bep)
+        assertThat(completeEvent).isNotNull()
+        assertThat(completeEvent.getOutputGroupCount()).isEqualTo(1)
+        assertThat(completeEvent.getOutputGroup(0).getInlineFilesCount()).isEqualTo(1)
 
-    BuildEventStreamProtos.File outFile = completeEvent.getOutputGroup(0).getInlineFiles(0);
-    assertThat(outFile.getUri()).startsWith("file://");
-    assertThat(outFile.getUri()).endsWith("/bin/foo/out.txt");
-    assertThat(outFile.getLength()).isEqualTo("Hello".length());
-    assertDigest("Hello", BaseEncoding.base16().lowerCase().decode(outFile.getDigest()));
-  }
+        val outFile: BuildEventStreamProtos.File = completeEvent.getOutputGroup(0).getInlineFiles(0)
+        assertThat(outFile.getUri()).startsWith("file://")
+        assertThat(outFile.getUri()).endsWith("/bin/foo/out.txt")
+        assertThat(outFile.getLength()).isEqualTo("Hello".length)
+        assertDigest("Hello", com.google.common.io.BaseEncoding.base16().lowerCase().decode(outFile.getDigest()))
+    }
 
-  @Test
-  public void outputFile_outputGroupFileModeOptionRepeated_lastValueTaken() throws Exception {
-    write("foo/BUILD", "genrule(name = 'foobin', outs = ['out.txt'], cmd = 'echo -n Hello > $@')");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun outputFile_outputGroupFileModeOptionRepeated_lastValueTaken() {
+        write("foo/BUILD", "genrule(name = 'foobin', outs = ['out.txt'], cmd = 'echo -n Hello > $@')")
 
-    addOptions("--experimental_build_event_output_group_mode=default=named_set_of_files_only");
-    addOptions("--experimental_build_event_output_group_mode=default=inline_only");
-    File bep = buildTargetAndCaptureBEP("//foo:foobin");
+        addOptions("--experimental_build_event_output_group_mode=default=named_set_of_files_only")
+        addOptions("--experimental_build_event_output_group_mode=default=inline_only")
+        val bep: java.io.File = buildTargetAndCaptureBEP("//foo:foobin")
 
-    BuildEventStreamProtos.File outFileFromNestedSet = findOutputFileInBEPStream(bep, "out.txt");
-    assertThat(outFileFromNestedSet).isNull();
+        val outFileFromNestedSet: BuildEventStreamProtos.File? = findOutputFileInBEPStream(bep, "out.txt")
+        assertThat(outFileFromNestedSet).isNull()
 
-    TargetComplete completeEvent = findTargetCompleteEventInBEPStream(bep);
-    assertThat(completeEvent).isNotNull();
-    assertThat(completeEvent.getOutputGroupCount()).isEqualTo(1);
-    assertThat(completeEvent.getOutputGroup(0).getInlineFilesCount()).isEqualTo(1);
-    BuildEventStreamProtos.File outFile = completeEvent.getOutputGroup(0).getInlineFiles(0);
-    assertDigest("Hello", BaseEncoding.base16().lowerCase().decode(outFile.getDigest()));
-  }
+        val completeEvent: TargetComplete? = findTargetCompleteEventInBEPStream(bep)
+        assertThat(completeEvent).isNotNull()
+        assertThat(completeEvent.getOutputGroupCount()).isEqualTo(1)
+        assertThat(completeEvent.getOutputGroup(0).getInlineFilesCount()).isEqualTo(1)
+        val outFile: BuildEventStreamProtos.File = completeEvent.getOutputGroup(0).getInlineFiles(0)
+        assertDigest("Hello", com.google.common.io.BaseEncoding.base16().lowerCase().decode(outFile.getDigest()))
+    }
 
-  @Test
-  public void outputFile_multipleOutputGroups() throws Exception {
-    write(
-        "foo/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun outputFile_multipleOutputGroups() {
+        write(
+            "foo/defs.bzl",
+            """
         def _impl(ctx):
             inline_out = ctx.actions.declare_file(ctx.label.name + '.inline.txt')
             ctx.actions.write(output = inline_out, content = 'Hello')
@@ -327,119 +313,129 @@ public final class TargetCompleteEventTest extends BuildIntegrationTestCase {
             ]
 
         multiple_groups = rule(implementation = _impl)
-        """);
-    write(
-        "foo/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        write(
+            "foo/BUILD",
+            """
         load(":defs.bzl", "multiple_groups")
 
         multiple_groups(name = "myrule")
-        """);
+        
+        """.trimIndent()
+        )
 
-    addOptions("--experimental_build_event_output_group_mode=inlinegroup=inline_only");
-    addOptions("--experimental_build_event_output_group_mode=filesetgroup=named_set_of_files_only");
-    addOptions("--experimental_build_event_output_group_mode=bothgroup=both");
-    addOptions("--output_groups=+inlinegroup,+filesetgroup,+bothgroup");
-    File bep = buildTargetAndCaptureBEP("//foo:myrule");
+        addOptions("--experimental_build_event_output_group_mode=inlinegroup=inline_only")
+        addOptions("--experimental_build_event_output_group_mode=filesetgroup=named_set_of_files_only")
+        addOptions("--experimental_build_event_output_group_mode=bothgroup=both")
+        addOptions("--output_groups=+inlinegroup,+filesetgroup,+bothgroup")
+        val bep: java.io.File = buildTargetAndCaptureBEP("//foo:myrule")
 
-    TargetComplete completeEvent = findTargetCompleteEventInBEPStream(bep);
-    assertThat(completeEvent).isNotNull();
-    assertThat(completeEvent.getOutputGroupCount()).isEqualTo(3);
-    OutputGroup inlineOutputGroup = findOutputGroupWithName(completeEvent, "inlinegroup");
-    OutputGroup filesetOutputGroup = findOutputGroupWithName(completeEvent, "filesetgroup");
-    OutputGroup bothOutputGroup = findOutputGroupWithName(completeEvent, "bothgroup");
+        val completeEvent: TargetComplete? = findTargetCompleteEventInBEPStream(bep)
+        assertThat(completeEvent).isNotNull()
+        assertThat(completeEvent.getOutputGroupCount()).isEqualTo(3)
+        val inlineOutputGroup: OutputGroup = findOutputGroupWithName(completeEvent, "inlinegroup")
+        val filesetOutputGroup: OutputGroup = findOutputGroupWithName(completeEvent, "filesetgroup")
+        val bothOutputGroup: OutputGroup = findOutputGroupWithName(completeEvent, "bothgroup")
 
-    assertThat(inlineOutputGroup.getInlineFilesCount()).isEqualTo(1);
-    assertThat(findOutputFileInBEPStream(bep, "myrule.inline.txt")).isNull();
-    BuildEventStreamProtos.File inlineOutFile = inlineOutputGroup.getInlineFiles(0);
-    assertThat(inlineOutFile.getUri()).startsWith("file://");
-    assertThat(inlineOutFile.getUri()).endsWith("/bin/foo/myrule.inline.txt");
-    assertThat(inlineOutFile.getLength()).isEqualTo("Hello".length());
-    assertDigest("Hello", BaseEncoding.base16().lowerCase().decode(inlineOutFile.getDigest()));
+        assertThat(inlineOutputGroup.getInlineFilesCount()).isEqualTo(1)
+        assertThat(findOutputFileInBEPStream(bep, "myrule.inline.txt")).isNull()
+        val inlineOutFile: BuildEventStreamProtos.File = inlineOutputGroup.getInlineFiles(0)
+        assertThat(inlineOutFile.getUri()).startsWith("file://")
+        assertThat(inlineOutFile.getUri()).endsWith("/bin/foo/myrule.inline.txt")
+        assertThat(inlineOutFile.getLength()).isEqualTo("Hello".length)
+        assertDigest("Hello", com.google.common.io.BaseEncoding.base16().lowerCase().decode(inlineOutFile.getDigest()))
 
-    assertThat(filesetOutputGroup.getInlineFilesCount()).isEqualTo(0);
-    BuildEventStreamProtos.File filesetOutFile =
-        findOutputFileInBEPStream(bep, "myrule.fileset.txt");
-    assertThat(filesetOutFile.getUri()).startsWith("file://");
-    assertThat(filesetOutFile.getUri()).endsWith("/bin/foo/myrule.fileset.txt");
-    assertThat(filesetOutFile.getLength()).isEqualTo("Hola".length());
-    assertDigest("Hola", BaseEncoding.base16().lowerCase().decode(filesetOutFile.getDigest()));
+        assertThat(filesetOutputGroup.getInlineFilesCount()).isEqualTo(0)
+        val filesetOutFile: BuildEventStreamProtos.File? =
+            findOutputFileInBEPStream(bep, "myrule.fileset.txt")
+        assertThat(filesetOutFile.getUri()).startsWith("file://")
+        assertThat(filesetOutFile.getUri()).endsWith("/bin/foo/myrule.fileset.txt")
+        assertThat(filesetOutFile.getLength()).isEqualTo("Hola".length)
+        assertDigest("Hola", com.google.common.io.BaseEncoding.base16().lowerCase().decode(filesetOutFile.getDigest()))
 
-    assertThat(bothOutputGroup.getInlineFilesCount()).isEqualTo(1);
-    BuildEventStreamProtos.File bothOutFileInline = bothOutputGroup.getInlineFiles(0);
-    BuildEventStreamProtos.File bothOutFileInFileset =
-        findOutputFileInBEPStream(bep, "myrule.both.txt");
-    for (var outfile : ImmutableList.of(bothOutFileInline, bothOutFileInFileset)) {
-      assertThat(outfile.getUri()).startsWith("file://");
-      assertThat(outfile.getUri()).endsWith("/bin/foo/myrule.both.txt");
-      assertThat(outfile.getLength()).isEqualTo("Bonjour".length());
-      assertDigest("Bonjour", BaseEncoding.base16().lowerCase().decode(outfile.getDigest()));
-    }
-  }
-
-  private File buildTargetAndCaptureBEP(String target) throws Exception {
-    File bep = tmpFolder.newFile();
-    // We use WAIT_FOR_UPLOAD_COMPLETE because it's the easiest way to force the BES module to
-    // wait until the BEP binary file has been written.
-    addOptions(
-        "--build_event_binary_file=" + bep.getAbsolutePath(),
-        "--bes_upload_mode=WAIT_FOR_UPLOAD_COMPLETE");
-    buildTarget(target);
-    // We need to wait for all events to be written to the file, which is done in #afterCommand()
-    // if --bes_upload_mode=WAIT_FOR_UPLOAD_COMPLETE.
-    afterBuildCommand();
-    return bep;
-  }
-
-  private static OutputGroup findOutputGroupWithName(
-      TargetComplete completeEvent, String bothgroup) {
-    return completeEvent.getOutputGroupList().stream()
-        .filter(og -> og.getName().equals(bothgroup))
-        .collect(MoreCollectors.onlyElement());
-  }
-
-  private void assertDigest(String contents, byte[] bepDigest) {
-    assertThat(
-            fileSystem.getDigestFunction().getHashFunction().hashString(contents, UTF_8).asBytes())
-        .isEqualTo(bepDigest);
-  }
-
-  private static ImmutableList<BuildEvent> parseBuildEventsFromBEPStream(File bep)
-      throws IOException {
-    ImmutableList.Builder<BuildEvent> buildEvents = ImmutableList.builder();
-    try (InputStream in = new FileInputStream(bep)) {
-      BuildEvent ev;
-      while ((ev = BuildEvent.parseDelimitedFrom(in)) != null) {
-        buildEvents.add(ev);
-      }
-    }
-    return buildEvents.build();
-  }
-
-  @Nullable
-  private static BuildEventStreamProtos.TargetComplete findTargetCompleteEventInBEPStream(File bep)
-      throws IOException {
-    for (BuildEvent buildEvent : parseBuildEventsFromBEPStream(bep)) {
-      if (buildEvent.getId().getIdCase() == IdCase.TARGET_COMPLETED) {
-        return buildEvent.getCompleted();
-      }
-    }
-    return null;
-  }
-
-  @Nullable
-  private static BuildEventStreamProtos.File findOutputFileInBEPStream(File bep, String name)
-      throws IOException {
-    for (BuildEvent buildEvent : parseBuildEventsFromBEPStream(bep)) {
-      if (buildEvent.getId().getIdCase() == IdCase.NAMED_SET) {
-        NamedSetOfFiles namedSetOfFiles = buildEvent.getNamedSetOfFiles();
-        for (BuildEventStreamProtos.File file : namedSetOfFiles.getFilesList()) {
-          if (file.getName().contains(name)) {
-            return file;
-          }
+        assertThat(bothOutputGroup.getInlineFilesCount()).isEqualTo(1)
+        val bothOutFileInline: BuildEventStreamProtos.File? = bothOutputGroup.getInlineFiles(0)
+        val bothOutFileInFileset: BuildEventStreamProtos.File? =
+            findOutputFileInBEPStream(bep, "myrule.both.txt")
+        for (outfile in com.google.common.collect.ImmutableList.of<Any?>(bothOutFileInline, bothOutFileInFileset)) {
+            assertThat(outfile.getUri()).startsWith("file://")
+            assertThat(outfile.getUri()).endsWith("/bin/foo/myrule.both.txt")
+            assertThat(outfile.getLength()).isEqualTo("Bonjour".length)
+            assertDigest("Bonjour", com.google.common.io.BaseEncoding.base16().lowerCase().decode(outfile.getDigest()))
         }
-      }
     }
-    return null;
-  }
+
+    @Throws(java.lang.Exception::class)
+    private fun buildTargetAndCaptureBEP(target: String?): java.io.File {
+        val bep: java.io.File = tmpFolder.newFile()
+        // We use WAIT_FOR_UPLOAD_COMPLETE because it's the easiest way to force the BES module to
+        // wait until the BEP binary file has been written.
+        addOptions(
+            "--build_event_binary_file=" + bep.getAbsolutePath(),
+            "--bes_upload_mode=WAIT_FOR_UPLOAD_COMPLETE"
+        )
+        buildTarget(target)
+        // We need to wait for all events to be written to the file, which is done in #afterCommand()
+        // if --bes_upload_mode=WAIT_FOR_UPLOAD_COMPLETE.
+        afterBuildCommand()
+        return bep
+    }
+
+    private fun assertDigest(contents: String?, bepDigest: ByteArray?) {
+        assertThat(
+            fileSystem.getDigestFunction().getHashFunction()
+                .hashString(contents, java.nio.charset.StandardCharsets.UTF_8).asBytes()
+        )
+            .isEqualTo(bepDigest)
+    }
+
+    companion object {
+        private fun findOutputGroupWithName(
+            completeEvent: TargetComplete, bothgroup: String?
+        ): OutputGroup {
+            return completeEvent.getOutputGroupList().stream()
+                .filter({ og -> og.getName().equals(bothgroup) })
+                .collect(com.google.common.collect.MoreCollectors.onlyElement<T?>())
+        }
+
+        @Throws(IOException::class)
+        private fun parseBuildEventsFromBEPStream(bep: java.io.File): com.google.common.collect.ImmutableList<BuildEvent> {
+            val buildEvents: com.google.common.collect.ImmutableList.Builder<BuildEvent?> =
+                com.google.common.collect.ImmutableList.builder<BuildEvent?>()
+            FileInputStream(bep).use { `in` ->
+                var ev: BuildEvent?
+                while ((BuildEvent.parseDelimitedFrom(`in`).also { ev = it }) != null) {
+                    buildEvents.add(ev)
+                }
+            }
+            return buildEvents.build()
+        }
+
+        @Throws(IOException::class)
+        private fun findTargetCompleteEventInBEPStream(bep: java.io.File): BuildEventStreamProtos.TargetComplete? {
+            for (buildEvent in parseBuildEventsFromBEPStream(bep)) {
+                if (buildEvent.getId().getIdCase() === IdCase.TARGET_COMPLETED) {
+                    return buildEvent.getCompleted()
+                }
+            }
+            return null
+        }
+
+        @Throws(IOException::class)
+        private fun findOutputFileInBEPStream(bep: java.io.File, name: String?): BuildEventStreamProtos.File? {
+            for (buildEvent in parseBuildEventsFromBEPStream(bep)) {
+                if (buildEvent.getId().getIdCase() === IdCase.NAMED_SET) {
+                    val namedSetOfFiles: NamedSetOfFiles = buildEvent.getNamedSetOfFiles()
+                    for (file in namedSetOfFiles.getFilesList()) {
+                        if (file.getName().contains(name)) {
+                            return file
+                        }
+                    }
+                }
+            }
+            return null
+        }
+    }
 }

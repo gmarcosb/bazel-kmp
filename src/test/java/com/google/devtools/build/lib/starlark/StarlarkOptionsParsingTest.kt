@@ -11,82 +11,59 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlark
 
-package com.google.devtools.build.lib.starlark;
+import com.google.devtools.build.lib.pkgcache.TargetParsingCompleteEvent
 
-import static com.google.common.truth.Truth.assertThat;
-import static java.util.stream.Collectors.joining;
-import static org.junit.Assert.assertThrows;
+/** Unit test for the `StarlarkOptionsParser`.  */
+@RunWith(TestParameterInjector::class)
+class StarlarkOptionsParsingTest : StarlarkOptionsTestCase() {
+    private var postedEvents: MutableList<Postable?>? = null
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable;
-import com.google.devtools.build.lib.pkgcache.TargetParsingCompleteEvent;
-import com.google.devtools.build.lib.starlark.util.StarlarkOptionsTestCase;
-import com.google.devtools.common.options.OptionsParsingException;
-import com.google.devtools.common.options.OptionsParsingResult;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import com.google.testing.junit.testparameterinjector.TestParameters;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.stream.Collectors;
-import net.starlark.java.eval.StarlarkInt;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+    @Before
+    fun addPostableEventHandler() {
+        postedEvents = java.util.ArrayList<Postable?>()
+        reporter.addHandler(
+            object : ExtendedEventHandler {
+                override fun post(obj: Postable?) {
+                    postedEvents!!.add(obj)
+                }
 
-/** Unit test for the {@code StarlarkOptionsParser}. */
-@RunWith(TestParameterInjector.class)
-public class StarlarkOptionsParsingTest extends StarlarkOptionsTestCase {
+                override fun handle(event: com.google.devtools.build.lib.events.Event?) {}
+            })
+    }
 
-  private List<Postable> postedEvents;
+    /** Returns only the posted events of the given class.  */
+    private fun eventsOfType(clazz: java.lang.Class<out Postable?>?): MutableList<Postable?> {
+        return postedEvents.stream()
+            .filter { event: Postable? -> event.javaClass == clazz }
+            .collect(Collectors.toList())
+    }
 
-  @Before
-  public void addPostableEventHandler() {
-    postedEvents = new ArrayList<>();
-    reporter.addHandler(
-        new ExtendedEventHandler() {
-          @Override
-          public void post(Postable obj) {
-            postedEvents.add(obj);
-          }
+    // test --flag=value
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFlagEqualsValueForm() {
+        writeBasicIntFlag()
 
-          @Override
-          public void handle(Event event) {}
-        });
-  }
+        val result: OptionsParsingResult = parseStarlarkOptions("--//test:my_int_setting=666")
 
-  /** Returns only the posted events of the given class. */
-  private List<Postable> eventsOfType(Class<? extends Postable> clazz) {
-    return postedEvents.stream()
-        .filter(event -> event.getClass().equals(clazz))
-        .collect(Collectors.toList());
-  }
+        Truth.assertThat(result.getStarlarkOptions()).hasSize(1)
+        Truth.assertThat(result.getStarlarkOptions().get("//test:my_int_setting"))
+            .isEqualTo(StarlarkInt.of(666))
+        Truth.assertThat(result.getResidue()).isEmpty()
+    }
 
-  // test --flag=value
-  @Test
-  public void testFlagEqualsValueForm() throws Exception {
-    writeBasicIntFlag();
-
-    OptionsParsingResult result = parseStarlarkOptions("--//test:my_int_setting=666");
-
-    assertThat(result.getStarlarkOptions()).hasSize(1);
-    assertThat(result.getStarlarkOptions().get("//test:my_int_setting"))
-        .isEqualTo(StarlarkInt.of(666));
-    assertThat(result.getResidue()).isEmpty();
-  }
-
-  // test --@main_workspace//flag=value parses out to //flag=value
-  // test --@other_workspace//flag=value parses out to @other_workspace//flag=value
-  @Test
-  public void testFlagNameWithExternalRepo() throws Exception {
-    writeBasicIntFlag();
-    scratch.file("test/repo2/MODULE.bazel", "module(name = 'repo2')");
-    scratch.file(
-        "test/repo2/defs.bzl",
-        """
+    // test --@main_workspace//flag=value parses out to //flag=value
+    // test --@other_workspace//flag=value parses out to @other_workspace//flag=value
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFlagNameWithExternalRepo() {
+        writeBasicIntFlag()
+        scratch.file("test/repo2/MODULE.bazel", "module(name = 'repo2')")
+        scratch.file(
+            "test/repo2/defs.bzl",
+            """
         def _impl(ctx):
             pass
 
@@ -94,20 +71,24 @@ public class StarlarkOptionsParsingTest extends StarlarkOptionsTestCase {
             implementation = _impl,
             build_setting = config.int(flag = True),
         )
-        """);
-    scratch.file(
-        "test/repo2/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/repo2/BUILD",
+            """
         load(":defs.bzl", "my_flag")
 
         my_flag(
             name = "flag2",
             build_setting_default = 2,
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    rewriteModuleDotBazel(
-        """
+        rewriteModuleDotBazel(
+            """
         module(name = "starlark_options_test")
 
         bazel_dep(name = "repo2")
@@ -116,79 +97,95 @@ public class StarlarkOptionsParsingTest extends StarlarkOptionsTestCase {
             module_name = "repo2",
             path = "test/repo2",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    OptionsParsingResult result =
-        parseStarlarkOptions(
-            "--@starlark_options_test//test:my_int_setting=666 --@repo2//:flag2=222",
-            /* onlyStarlarkParser= */ true);
+        val result: OptionsParsingResult =
+            parseStarlarkOptions(
+                "--@starlark_options_test//test:my_int_setting=666 --@repo2//:flag2=222",  /* onlyStarlarkParser= */
+                true
+            )
 
-    assertThat(result.getStarlarkOptions()).hasSize(2);
-    assertThat(result.getStarlarkOptions().get("//test:my_int_setting"))
-        .isEqualTo(StarlarkInt.of(666));
-    assertThat(result.getStarlarkOptions().get("@@repo2+//:flag2")).isEqualTo(StarlarkInt.of(222));
-    assertThat(result.getResidue()).isEmpty();
-  }
+        Truth.assertThat(result.getStarlarkOptions()).hasSize(2)
+        Truth.assertThat(result.getStarlarkOptions().get("//test:my_int_setting"))
+            .isEqualTo(StarlarkInt.of(666))
+        Truth.assertThat(result.getStarlarkOptions().get("@@repo2+//:flag2")).isEqualTo(StarlarkInt.of(222))
+        Truth.assertThat(result.getResidue()).isEmpty()
+    }
 
-  // test --fake_flag=value
-  @Test
-  public void testBadFlag_equalsForm() throws Exception {
-    scratch.file("test/BUILD");
-    reporter.removeHandler(failFastHandler);
+    // test --fake_flag=value
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBadFlag_equalsForm() {
+        scratch.file("test/BUILD")
+        reporter.removeHandler(failFastHandler)
 
-    OptionsParsingException e =
-        assertThrows(
-            OptionsParsingException.class,
-            () -> parseStarlarkOptions("--//fake_flag=blahblahblah"));
+        val e: OptionsParsingException =
+            org.junit.Assert.assertThrows<OptionsParsingException>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable { parseStarlarkOptions("--//fake_flag=blahblahblah") })
 
-    assertThat(e).hasMessageThat().contains("Error loading option //fake_flag");
-    assertThat(e.invalidArgument).isEqualTo("//fake_flag");
-  }
+        Truth.assertThat(e).hasMessageThat().contains("Error loading option //fake_flag")
+        assertThat(e.invalidArgument).isEqualTo("//fake_flag")
+    }
 
-  // test --fake_flag
-  @Test
-  public void testBadFlag_boolForm() throws Exception {
-    scratch.file("test/BUILD");
-    reporter.removeHandler(failFastHandler);
+    // test --fake_flag
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBadFlag_boolForm() {
+        scratch.file("test/BUILD")
+        reporter.removeHandler(failFastHandler)
 
-    OptionsParsingException e =
-        assertThrows(OptionsParsingException.class, () -> parseStarlarkOptions("--//fake_flag"));
+        val e: OptionsParsingException =
+            org.junit.Assert.assertThrows<OptionsParsingException>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable { parseStarlarkOptions("--//fake_flag") })
 
-    assertThat(e).hasMessageThat().contains("Error loading option //fake_flag");
-    assertThat(e.invalidArgument).isEqualTo("//fake_flag");
-  }
+        Truth.assertThat(e).hasMessageThat().contains("Error loading option //fake_flag")
+        assertThat(e.invalidArgument).isEqualTo("//fake_flag")
+    }
 
-  @Test
-  public void testBadFlag_keepGoing() throws Exception {
-    optionsParser.parse("--keep_going");
-    scratch.file("test/BUILD");
-    reporter.removeHandler(failFastHandler);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBadFlag_keepGoing() {
+        optionsParser.parse("--keep_going")
+        scratch.file("test/BUILD")
+        reporter.removeHandler(failFastHandler)
 
-    OptionsParsingException e =
-        assertThrows(OptionsParsingException.class, () -> parseStarlarkOptions("--//fake_flag"));
+        val e: OptionsParsingException =
+            org.junit.Assert.assertThrows<OptionsParsingException>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable { parseStarlarkOptions("--//fake_flag") })
 
-    assertThat(e).hasMessageThat().contains("Error loading option //fake_flag");
-    assertThat(e.invalidArgument).isEqualTo("//fake_flag");
-  }
+        Truth.assertThat(e).hasMessageThat().contains("Error loading option //fake_flag")
+        assertThat(e.invalidArgument).isEqualTo("//fake_flag")
+    }
 
-  @Test
-  public void testSingleDash_notAllowed() throws Exception {
-    writeBasicIntFlag();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSingleDash_notAllowed() {
+        writeBasicIntFlag()
 
-    OptionsParsingException e =
-        assertThrows(
-            OptionsParsingException.class,
-            () ->
-                parseStarlarkOptions("-//test:my_int_setting=666", /* onlyStarlarkParser= */ true));
-    assertThat(e).hasMessageThat().isEqualTo("Invalid options syntax: -//test:my_int_setting=666");
-  }
+        val e: OptionsParsingException? =
+            org.junit.Assert.assertThrows<OptionsParsingException?>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    parseStarlarkOptions(
+                        "-//test:my_int_setting=666",  /* onlyStarlarkParser= */
+                        true
+                    )
+                })
+        Truth.assertThat(e).hasMessageThat().isEqualTo("Invalid options syntax: -//test:my_int_setting=666")
+    }
 
-  // test --non_flag_setting=value
-  @Test
-  public void testNonFlagParsing() throws Exception {
-    scratch.file(
-        "test/build_setting.bzl",
-        """
+    // test --non_flag_setting=value
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNonFlagParsing() {
+        scratch.file(
+            "test/build_setting.bzl",
+            """
         def _build_setting_impl(ctx):
             return []
 
@@ -196,108 +193,121 @@ public class StarlarkOptionsParsingTest extends StarlarkOptionsTestCase {
             implementation = _build_setting_impl,
             build_setting = config.int(flag = False),
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load("//test:build_setting.bzl", "int_flag")
 
         int_flag(
             name = "my_int_setting",
             build_setting_default = 42,
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    OptionsParsingException e =
-        assertThrows(
-            OptionsParsingException.class,
-            () -> parseStarlarkOptions("--//test:my_int_setting=666"));
+        val e: OptionsParsingException? =
+            org.junit.Assert.assertThrows<OptionsParsingException?>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable { parseStarlarkOptions("--//test:my_int_setting=666") })
 
-    assertThat(e).hasMessageThat().isEqualTo("Unrecognized option: //test:my_int_setting=666");
-  }
+        Truth.assertThat(e).hasMessageThat().isEqualTo("Unrecognized option: //test:my_int_setting=666")
+    }
 
-  // test --bool_flag
-  @Test
-  public void testBooleanFlag() throws Exception {
-    writeBasicBoolFlag();
+    // test --bool_flag
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBooleanFlag() {
+        writeBasicBoolFlag()
 
-    OptionsParsingResult result = parseStarlarkOptions("--//test:my_bool_setting=false");
+        val result: OptionsParsingResult = parseStarlarkOptions("--//test:my_bool_setting=false")
 
-    assertThat(result.getStarlarkOptions()).hasSize(1);
-    assertThat(result.getStarlarkOptions().get("//test:my_bool_setting")).isEqualTo(false);
-    assertThat(result.getResidue()).isEmpty();
-  }
+        Truth.assertThat(result.getStarlarkOptions()).hasSize(1)
+        Truth.assertThat(result.getStarlarkOptions().get("//test:my_bool_setting")).isEqualTo(false)
+        Truth.assertThat(result.getResidue()).isEmpty()
+    }
 
-  // test --nobool_flag
-  @Test
-  public void testNoPrefixedBooleanFlag() throws Exception {
-    writeBasicBoolFlag();
+    // test --nobool_flag
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNoPrefixedBooleanFlag() {
+        writeBasicBoolFlag()
 
-    OptionsParsingResult result = parseStarlarkOptions("--no//test:my_bool_setting");
+        val result: OptionsParsingResult = parseStarlarkOptions("--no//test:my_bool_setting")
 
-    assertThat(result.getStarlarkOptions()).hasSize(1);
-    assertThat(result.getStarlarkOptions().get("//test:my_bool_setting")).isEqualTo(false);
-    assertThat(result.getResidue()).isEmpty();
-  }
+        Truth.assertThat(result.getStarlarkOptions()).hasSize(1)
+        Truth.assertThat(result.getStarlarkOptions().get("//test:my_bool_setting")).isEqualTo(false)
+        Truth.assertThat(result.getResidue()).isEmpty()
+    }
 
-  // test --no@main_workspace//:bool_flag
-  @Test
-  public void testNoPrefixedBooleanFlag_withWorkspace() throws Exception {
-    writeBasicBoolFlag();
+    // test --no@main_workspace//:bool_flag
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNoPrefixedBooleanFlag_withWorkspace() {
+        writeBasicBoolFlag()
 
-    OptionsParsingResult result = parseStarlarkOptions("--no@//test:my_bool_setting");
+        val result: OptionsParsingResult = parseStarlarkOptions("--no@//test:my_bool_setting")
 
-    assertThat(result.getStarlarkOptions()).hasSize(1);
-    assertThat(result.getStarlarkOptions().get("//test:my_bool_setting")).isEqualTo(false);
-    assertThat(result.getResidue()).isEmpty();
-  }
+        Truth.assertThat(result.getStarlarkOptions()).hasSize(1)
+        Truth.assertThat(result.getStarlarkOptions().get("//test:my_bool_setting")).isEqualTo(false)
+        Truth.assertThat(result.getResidue()).isEmpty()
+    }
 
-  // test --noint_flag
-  @Test
-  public void testNoPrefixedNonBooleanFlag() throws Exception {
-    writeBasicIntFlag();
+    // test --noint_flag
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNoPrefixedNonBooleanFlag() {
+        writeBasicIntFlag()
 
-    OptionsParsingException e =
-        assertThrows(
-            OptionsParsingException.class, () -> parseStarlarkOptions("--no//test:my_int_setting"));
+        val e: OptionsParsingException? =
+            org.junit.Assert.assertThrows<OptionsParsingException?>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable { parseStarlarkOptions("--no//test:my_int_setting") })
 
-    assertThat(e)
-        .hasMessageThat()
-        .isEqualTo("Illegal use of 'no' prefix on non-boolean option: //test:my_int_setting");
-  }
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .isEqualTo("Illegal use of 'no' prefix on non-boolean option: //test:my_int_setting")
+    }
 
-  // test --int_flag
-  @Test
-  public void testFlagWithoutValue() throws Exception {
-    writeBasicIntFlag();
+    // test --int_flag
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFlagWithoutValue() {
+        writeBasicIntFlag()
 
-    OptionsParsingException e =
-        assertThrows(
-            OptionsParsingException.class, () -> parseStarlarkOptions("--//test:my_int_setting"));
+        val e: OptionsParsingException? =
+            org.junit.Assert.assertThrows<OptionsParsingException?>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable { parseStarlarkOptions("--//test:my_int_setting") })
 
-    assertThat(e).hasMessageThat().isEqualTo("Expected value after --//test:my_int_setting");
-  }
+        Truth.assertThat(e).hasMessageThat().isEqualTo("Expected value after --//test:my_int_setting")
+    }
 
-  // test --flag --flag
-  @Test
-  public void testRepeatFlagLastOneWins() throws Exception {
-    writeBasicIntFlag();
+    // test --flag --flag
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRepeatFlagLastOneWins() {
+        writeBasicIntFlag()
 
-    OptionsParsingResult result =
-        parseStarlarkOptions("--//test:my_int_setting=4 --//test:my_int_setting=7");
+        val result: OptionsParsingResult =
+            parseStarlarkOptions("--//test:my_int_setting=4 --//test:my_int_setting=7")
 
-    assertThat(result.getStarlarkOptions()).hasSize(1);
-    assertThat(result.getStarlarkOptions().get("//test:my_int_setting"))
-        .isEqualTo(StarlarkInt.of(7));
-    assertThat(result.getResidue()).isEmpty();
-  }
+        Truth.assertThat(result.getStarlarkOptions()).hasSize(1)
+        Truth.assertThat(result.getStarlarkOptions().get("//test:my_int_setting"))
+            .isEqualTo(StarlarkInt.of(7))
+        Truth.assertThat(result.getResidue()).isEmpty()
+    }
 
-  // test --flagA=valueA --flagB=valueB
-  @Test
-  public void testMultipleFlags() throws Exception {
-    scratch.file(
-        "test/build_setting.bzl",
-        """
+    // test --flagA=valueA --flagB=valueB
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMultipleFlags() {
+        scratch.file(
+            "test/build_setting.bzl",
+            """
         def _build_setting_impl(ctx):
             return []
 
@@ -305,10 +315,12 @@ public class StarlarkOptionsParsingTest extends StarlarkOptionsTestCase {
             implementation = _build_setting_impl,
             build_setting = config.int(flag = True),
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load("//test:build_setting.bzl", "int_flag")
 
         int_flag(
@@ -320,176 +332,204 @@ public class StarlarkOptionsParsingTest extends StarlarkOptionsTestCase {
             name = "my_other_int_setting",
             build_setting_default = 77,
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    OptionsParsingResult result =
-        parseStarlarkOptions("--//test:my_int_setting=0 --//test:my_other_int_setting=0");
+        val result: OptionsParsingResult =
+            parseStarlarkOptions("--//test:my_int_setting=0 --//test:my_other_int_setting=0")
 
-    assertThat(result.getResidue()).isEmpty();
-    assertThat(result.getStarlarkOptions()).hasSize(2);
-    assertThat(result.getStarlarkOptions().get("//test:my_int_setting"))
-        .isEqualTo(StarlarkInt.of(0));
-    assertThat(result.getStarlarkOptions().get("//test:my_other_int_setting"))
-        .isEqualTo(StarlarkInt.of(0));
-  }
+        Truth.assertThat(result.getResidue()).isEmpty()
+        Truth.assertThat(result.getStarlarkOptions()).hasSize(2)
+        Truth.assertThat(result.getStarlarkOptions().get("//test:my_int_setting"))
+            .isEqualTo(StarlarkInt.of(0))
+        Truth.assertThat(result.getStarlarkOptions().get("//test:my_other_int_setting"))
+            .isEqualTo(StarlarkInt.of(0))
+    }
 
-  // test --non_build_setting
-  @Test
-  public void testNonBuildSetting() throws Exception {
-    scratch.file(
-        "test/rules.bzl",
-        """
+    // test --non_build_setting
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNonBuildSetting() {
+        scratch.file(
+            "test/rules.bzl",
+            """
         def _impl(ctx):
             return []
 
         my_rule = rule(
             implementation = _impl,
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load("//test:rules.bzl", "my_rule")
 
         my_rule(name = "my_rule")
-        """);
-    OptionsParsingException e =
-        assertThrows(OptionsParsingException.class, () -> parseStarlarkOptions("--//test:my_rule"));
-    assertThat(e).hasMessageThat().isEqualTo("Unrecognized option: //test:my_rule");
-  }
+        
+        """.trimIndent()
+        )
+        val e: OptionsParsingException? =
+            org.junit.Assert.assertThrows<OptionsParsingException?>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable { parseStarlarkOptions("--//test:my_rule") })
+        Truth.assertThat(e).hasMessageThat().isEqualTo("Unrecognized option: //test:my_rule")
+    }
 
-  // test --non_rule_configured_target
-  @Test
-  public void testNonRuleConfiguredTarget() throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
+    // test --non_rule_configured_target
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNonRuleConfiguredTarget() {
+        scratch.file(
+            "test/BUILD",
+            """
         genrule(
             name = "my_gen",
             srcs = ["x.in"],
             outs = ["x.cc"],
-            cmd = "$(locations :tool) $< >$@",
+            cmd = "${'$'}(locations :tool) ${'$'}< >${'$'}@",
             tools = [":tool"],
         )
 
         filegroup(name = "tool-dep")
-        """);
-    OptionsParsingException e =
-        assertThrows(OptionsParsingException.class, () -> parseStarlarkOptions("--//test:x.in"));
-    assertThat(e).hasMessageThat().isEqualTo("Unrecognized option: //test:x.in");
-  }
+        
+        """.trimIndent()
+        )
+        val e: OptionsParsingException? =
+            org.junit.Assert.assertThrows<OptionsParsingException?>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable { parseStarlarkOptions("--//test:x.in") })
+        Truth.assertThat(e).hasMessageThat().isEqualTo("Unrecognized option: //test:x.in")
+    }
 
-  // test --int_flag=non_int_value
-  @Test
-  public void testWrongValueType_int() throws Exception {
-    writeBasicIntFlag();
+    // test --int_flag=non_int_value
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testWrongValueType_int() {
+        writeBasicIntFlag()
 
-    OptionsParsingException e =
-        assertThrows(
-            OptionsParsingException.class,
-            () -> parseStarlarkOptions("--//test:my_int_setting=woohoo"));
+        val e: OptionsParsingException? =
+            org.junit.Assert.assertThrows<OptionsParsingException?>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable { parseStarlarkOptions("--//test:my_int_setting=woohoo") })
 
-    assertThat(e)
-        .hasMessageThat()
-        .isEqualTo("While parsing option //test:my_int_setting=woohoo: 'woohoo' is not a int");
-  }
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .isEqualTo("While parsing option //test:my_int_setting=woohoo: 'woohoo' is not a int")
+    }
 
-  // test --bool_flag=non_bool_value
-  @Test
-  public void testWrongValueType_bool() throws Exception {
-    writeBasicBoolFlag();
+    // test --bool_flag=non_bool_value
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testWrongValueType_bool() {
+        writeBasicBoolFlag()
 
-    OptionsParsingException e =
-        assertThrows(
-            OptionsParsingException.class,
-            () -> parseStarlarkOptions("--//test:my_bool_setting=woohoo"));
+        val e: OptionsParsingException? =
+            org.junit.Assert.assertThrows<OptionsParsingException?>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable { parseStarlarkOptions("--//test:my_bool_setting=woohoo") })
 
-    assertThat(e)
-        .hasMessageThat()
-        .isEqualTo("While parsing option //test:my_bool_setting=woohoo: 'woohoo' is not a boolean");
-  }
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .isEqualTo("While parsing option //test:my_bool_setting=woohoo: 'woohoo' is not a boolean")
+    }
 
-  // test --int-flag=same value as default
-  @Test
-  public void testDontStoreDefaultValue() throws Exception {
-    // build_setting_default = 42
-    writeBasicIntFlag();
+    // test --int-flag=same value as default
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDontStoreDefaultValue() {
+        // build_setting_default = 42
+        writeBasicIntFlag()
 
-    OptionsParsingResult result = parseStarlarkOptions("--//test:my_int_setting=42");
+        val result: OptionsParsingResult = parseStarlarkOptions("--//test:my_int_setting=42")
 
-    assertThat(result.getStarlarkOptions()).isEmpty();
-  }
+        Truth.assertThat(result.getStarlarkOptions()).isEmpty()
+    }
 
-  @Test
-  public void testOptionsAreParsedWithBuildTestsOnly() throws Exception {
-    writeBasicIntFlag();
-    optionsParser.parse("--build_tests_only");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testOptionsAreParsedWithBuildTestsOnly() {
+        writeBasicIntFlag()
+        optionsParser.parse("--build_tests_only")
 
-    OptionsParsingResult result = parseStarlarkOptions("--//test:my_int_setting=15");
+        val result: OptionsParsingResult = parseStarlarkOptions("--//test:my_int_setting=15")
 
-    assertThat(result.getStarlarkOptions().get("//test:my_int_setting"))
-        .isEqualTo(StarlarkInt.of(15));
-  }
+        Truth.assertThat(result.getStarlarkOptions().get("//test:my_int_setting"))
+            .isEqualTo(StarlarkInt.of(15))
+    }
 
-  /**
-   * When Starlark flags are only set as flags, they shouldn't produce {@link
-   * TargetParsingCompleteEvent}s. That's intended to communicate (to the build event protocol)
-   * which of the targets in {@code blaze build //foo:all //bar:all} were built.
-   */
-  @Test
-  public void testExpectedBuildEventOutput_asFlag() throws Exception {
-    writeBasicIntFlag();
-    scratch.file(
-        "blah/BUILD",
-        "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
-        "cc_library(name = 'mylib')");
-    useConfiguration("--//test:my_int_setting=15");
-    update(
-        ImmutableList.of("//blah:mylib"),
-        /*keepGoing=*/ false,
-        /*loadingPhaseThreads=*/ LOADING_PHASE_THREADS,
-        /*doAnalysis*/ true,
-        eventBus);
-    List<Postable> targetParsingCompleteEvents = eventsOfType(TargetParsingCompleteEvent.class);
-    assertThat(targetParsingCompleteEvents).hasSize(1);
-    assertThat(
-            ((TargetParsingCompleteEvent) targetParsingCompleteEvents.get(0))
-                .getOriginalTargetPattern())
-        .containsExactly("//blah:mylib");
-  }
+    /**
+     * When Starlark flags are only set as flags, they shouldn't produce [ ]s. That's intended to communicate (to the build event protocol)
+     * which of the targets in `blaze build //foo:all //bar:all` were built.
+     */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExpectedBuildEventOutput_asFlag() {
+        writeBasicIntFlag()
+        scratch.file(
+            "blah/BUILD",
+            "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
+            "cc_library(name = 'mylib')"
+        )
+        useConfiguration("--//test:my_int_setting=15")
+        update(
+            com.google.common.collect.ImmutableList.of<String?>("//blah:mylib"),  /*keepGoing=*/
+            false,  /*loadingPhaseThreads=*/
+            BuildViewTestCase.Companion.LOADING_PHASE_THREADS,  /*doAnalysis*/
+            true,
+            eventBus
+        )
+        val targetParsingCompleteEvents: MutableList<Postable?> = eventsOfType(TargetParsingCompleteEvent::class.java)
+        Truth.assertThat(targetParsingCompleteEvents).hasSize(1)
+        assertThat(
+            (targetParsingCompleteEvents.get(0) as TargetParsingCompleteEvent)
+                .getOriginalTargetPattern()
+        )
+            .containsExactly("//blah:mylib")
+    }
 
-  /**
-   * But Starlark are also targets. When they're requested as normal build targets they should
-   * produce {@link TargetParsingCompleteEvent} just like any other target.
-   */
-  @Test
-  public void testExpectedBuildEventOutput_asTarget() throws Exception {
-    writeBasicIntFlag();
-    scratch.file(
-        "blah/BUILD",
-        "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
-        "cc_library(name = 'mylib')");
-    useConfiguration("--//test:my_int_setting=15");
-    update(
-        ImmutableList.of("//blah:mylib", "//test:my_int_setting"),
-        /*keepGoing=*/ false,
-        /*loadingPhaseThreads=*/ LOADING_PHASE_THREADS,
-        /*doAnalysis*/ true,
-        eventBus);
-    List<Postable> targetParsingCompleteEvents = eventsOfType(TargetParsingCompleteEvent.class);
-    assertThat(targetParsingCompleteEvents).hasSize(1);
-    assertThat(
-            ((TargetParsingCompleteEvent) targetParsingCompleteEvents.get(0))
-                .getOriginalTargetPattern())
-        .containsExactly("//blah:mylib", "//test:my_int_setting");
-  }
+    /**
+     * But Starlark are also targets. When they're requested as normal build targets they should
+     * produce [TargetParsingCompleteEvent] just like any other target.
+     */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExpectedBuildEventOutput_asTarget() {
+        writeBasicIntFlag()
+        scratch.file(
+            "blah/BUILD",
+            "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
+            "cc_library(name = 'mylib')"
+        )
+        useConfiguration("--//test:my_int_setting=15")
+        update(
+            com.google.common.collect.ImmutableList.of<String?>(
+                "//blah:mylib",
+                "//test:my_int_setting"
+            ),  /*keepGoing=*/
+            false,  /*loadingPhaseThreads=*/
+            BuildViewTestCase.Companion.LOADING_PHASE_THREADS,  /*doAnalysis*/
+            true,
+            eventBus
+        )
+        val targetParsingCompleteEvents: MutableList<Postable?> = eventsOfType(TargetParsingCompleteEvent::class.java)
+        Truth.assertThat(targetParsingCompleteEvents).hasSize(1)
+        assertThat(
+            (targetParsingCompleteEvents.get(0) as TargetParsingCompleteEvent)
+                .getOriginalTargetPattern()
+        )
+            .containsExactly("//blah:mylib", "//test:my_int_setting")
+    }
 
-  @Test
-  @SuppressWarnings("unchecked")
-  public void testAllowMultipleStringFlag() throws Exception {
-    scratch.file(
-        "test/build_setting.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAllowMultipleStringFlag() {
+        scratch.file(
+            "test/build_setting.bzl",
+            """
         def _build_setting_impl(ctx):
             return []
 
@@ -497,31 +537,35 @@ public class StarlarkOptionsParsingTest extends StarlarkOptionsTestCase {
             implementation = _build_setting_impl,
             build_setting = config.string(flag = True, allow_multiple = True),
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load("//test:build_setting.bzl", "allow_multiple_flag")
 
         allow_multiple_flag(
             name = "cats",
             build_setting_default = "tabby",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    OptionsParsingResult result = parseStarlarkOptions("--//test:cats=calico --//test:cats=bengal");
+        val result: OptionsParsingResult = parseStarlarkOptions("--//test:cats=calico --//test:cats=bengal")
 
-    assertThat(result.getStarlarkOptions().keySet()).containsExactly("//test:cats");
-    assertThat((List<String>) result.getStarlarkOptions().get("//test:cats"))
-        .containsExactly("calico", "bengal");
-  }
+        Truth.assertThat(result.getStarlarkOptions().keys).containsExactly("//test:cats")
+        Truth.assertThat(result.getStarlarkOptions().get("//test:cats") as MutableList<String?>?)
+            .containsExactly("calico", "bengal")
+    }
 
-  @Test
-  @SuppressWarnings("unchecked")
-  public void testRepeatedStringListFlag() throws Exception {
-    scratch.file(
-        "test/build_setting.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRepeatedStringListFlag() {
+        scratch.file(
+            "test/build_setting.bzl",
+            """
         def _build_setting_impl(ctx):
             return []
 
@@ -529,38 +573,45 @@ public class StarlarkOptionsParsingTest extends StarlarkOptionsTestCase {
             implementation = _build_setting_impl,
             build_setting = config.string_list(flag = True, repeatable = True),
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load("//test:build_setting.bzl", "repeated_flag")
 
         repeated_flag(
             name = "cats",
             build_setting_default = ["tabby"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    OptionsParsingResult result = parseStarlarkOptions("--//test:cats=calico --//test:cats=bengal");
+        val result: OptionsParsingResult = parseStarlarkOptions("--//test:cats=calico --//test:cats=bengal")
 
-    assertThat(result.getStarlarkOptions().keySet()).containsExactly("//test:cats");
-    assertThat((List<String>) result.getStarlarkOptions().get("//test:cats"))
-        .containsExactly("calico", "bengal");
-  }
+        Truth.assertThat(result.getStarlarkOptions().keys).containsExactly("//test:cats")
+        Truth.assertThat(result.getStarlarkOptions().get("//test:cats") as MutableList<String?>?)
+            .containsExactly("calico", "bengal")
+    }
 
-  @Test
-  public void flagReferencesExactlyOneTarget() throws Exception {
-    scratch.file(
-        "test/build_setting.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun flagReferencesExactlyOneTarget() {
+        scratch.file(
+            "test/build_setting.bzl",
+            """
         string_flag = rule(
             implementation = lambda ctx, attr: [],
             build_setting = config.string(flag = True),
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load("//test:build_setting.bzl", "string_flag")
 
         string_flag(
@@ -572,29 +623,36 @@ public class StarlarkOptionsParsingTest extends StarlarkOptionsTestCase {
             name = "two",
             build_setting_default = "",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    OptionsParsingException e =
-        assertThrows(OptionsParsingException.class, () -> parseStarlarkOptions("--//test:all"));
+        val e: OptionsParsingException? =
+            org.junit.Assert.assertThrows<OptionsParsingException?>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable { parseStarlarkOptions("--//test:all") })
 
-    assertThat(e)
-        .hasMessageThat()
-        .contains("//test:all: user-defined flags must reference exactly one target");
-  }
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("//test:all: user-defined flags must reference exactly one target")
+    }
 
-  @Test
-  public void flagIsAlias() throws Exception {
-    scratch.file(
-        "test/build_setting.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun flagIsAlias() {
+        scratch.file(
+            "test/build_setting.bzl",
+            """
         string_flag = rule(
             implementation = lambda ctx: [],
             build_setting = config.string(flag = True),
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load("//test:build_setting.bzl", "string_flag")
 
         alias(
@@ -606,26 +664,31 @@ public class StarlarkOptionsParsingTest extends StarlarkOptionsTestCase {
             name = "three",
             build_setting_default = "",
         )
-        """);
-    scratch.file(
-        "test/pkg/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/pkg/BUILD",
+            """
         alias(
             name = "two",
             actual = "//test:three",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    OptionsParsingResult result = parseStarlarkOptions("--//test:one=one --//test/pkg:two=two");
+        val result: OptionsParsingResult = parseStarlarkOptions("--//test:one=one --//test/pkg:two=two")
 
-    assertThat(result.getStarlarkOptions()).containsExactly("//test:three", "two");
-  }
+        Truth.assertThat(result.getStarlarkOptions()).containsExactly("//test:three", "two")
+    }
 
-  @Test
-  public void flagIsAlias_cycle() throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun flagIsAlias_cycle() {
+        scratch.file(
+            "test/BUILD",
+            """
         alias(
             name = "one",
             actual = "//test/pkg:two",
@@ -635,31 +698,39 @@ public class StarlarkOptionsParsingTest extends StarlarkOptionsTestCase {
             name = "three",
             actual = ":one",
         )
-        """);
-    scratch.file(
-        "test/pkg/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/pkg/BUILD",
+            """
         alias(
             name = "two",
             actual = "//test:three",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    OptionsParsingException e =
-        assertThrows(OptionsParsingException.class, () -> parseStarlarkOptions("--//test:one=one"));
+        val e: OptionsParsingException? =
+            org.junit.Assert.assertThrows<OptionsParsingException?>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable { parseStarlarkOptions("--//test:one=one") })
 
-    assertThat(e)
-        .hasMessageThat()
-        .isEqualTo(
-            "Failed to load build setting '//test:one' due to a cycle in alias chain: //test:one"
-                + " -> //test/pkg:two -> //test:three -> //test:one");
-  }
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .isEqualTo(
+                "Failed to load build setting '//test:one' due to a cycle in alias chain: //test:one"
+                        + " -> //test/pkg:two -> //test:three -> //test:one"
+            )
+    }
 
-  @Test
-  public void flagIsAlias_usesSelect() throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun flagIsAlias_usesSelect() {
+        scratch.file(
+            "test/BUILD",
+            """
         alias(
             name = "one",
             actual = "//test/pkg:two",
@@ -669,10 +740,12 @@ public class StarlarkOptionsParsingTest extends StarlarkOptionsTestCase {
             name = "three",
             actual = ":one",
         )
-        """);
-    scratch.file(
-        "test/pkg/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/pkg/BUILD",
+            """
         # Needed to avoid select() being eliminated as trivial.
         config_setting(
             name = "config",
@@ -686,25 +759,31 @@ public class StarlarkOptionsParsingTest extends StarlarkOptionsTestCase {
                 "//conditions:default": "//test:three",
             }),
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    OptionsParsingException e =
-        assertThrows(OptionsParsingException.class, () -> parseStarlarkOptions("--//test:one=one"));
+        val e: OptionsParsingException? =
+            org.junit.Assert.assertThrows<OptionsParsingException?>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable { parseStarlarkOptions("--//test:one=one") })
 
-    assertThat(e)
-        .hasMessageThat()
-        .isEqualTo(
-            "Failed to load build setting '//test:one' as it resolves to an alias with an actual"
-                + " value that uses select(): //test:one -> //test/pkg:two. This is not supported"
-                + " as build settings are needed to determine the configuration the select is"
-                + " evaluated in.");
-  }
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .isEqualTo(
+                ("Failed to load build setting '//test:one' as it resolves to an alias with an actual"
+                        + " value that uses select(): //test:one -> //test/pkg:two. This is not supported"
+                        + " as build settings are needed to determine the configuration the select is"
+                        + " evaluated in.")
+            )
+    }
 
-  @Test
-  public void flagIsAlias_resolvesToNonBuildSettingTarget() throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun flagIsAlias_resolvesToNonBuildSettingTarget() {
+        scratch.file(
+            "test/BUILD",
+            """
         alias(
             name = "one",
             actual = "//test/pkg:two",
@@ -713,51 +792,54 @@ public class StarlarkOptionsParsingTest extends StarlarkOptionsTestCase {
         genrule(
             name = "three",
             outs = ["out"],
-            cmd = "echo hello > $@",
+            cmd = "echo hello > ${'$'}@",
         )
-        """);
-    scratch.file(
-        "test/pkg/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/pkg/BUILD",
+            """
         alias(
             name = "two",
             actual = "//test:three",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    OptionsParsingException e =
-        assertThrows(OptionsParsingException.class, () -> parseStarlarkOptions("--//test:one=one"));
+        val e: OptionsParsingException? =
+            org.junit.Assert.assertThrows<OptionsParsingException?>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable { parseStarlarkOptions("--//test:one=one") })
 
-    assertThat(e)
-        .hasMessageThat()
-        .isEqualTo("Unrecognized option: //test:one -> //test/pkg:two -> //test:three");
-  }
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .isEqualTo("Unrecognized option: //test:one -> //test/pkg:two -> //test:three")
+    }
 
-  @Test
-  @TestParameters({
-    // Not repeatable, flag value is not the same as the default, flag added to options.
-    "{defaultValue: ['default'], repeatable: false, cmdValue:"
-        + " ['v1,v4,v3,v2,v3,v1,v4,v1'], expectedValue: ['v1', 'v2', 'v3', 'v4']}",
-    // Repeatable, flag value is not the same as the default, flag added to options.
-    "{defaultValue: ['default'], repeatable: true, cmdValue: ['v2', 'v2', 'v1', 'v3', 'v4', 'v1'],"
-        + " expectedValue: ['v1', 'v2', 'v3', 'v4']}",
-    // Not repeatable, flag value is the same as the default, flag not added to options.
-    "{defaultValue: ['v2','v1','v1', 'v3', 'v2', 'v3', 'v4'], repeatable: false, cmdValue:"
-        + " ['v1,v4,v3,v2,v3,v1,v4,v1'], expectedValue: null}",
-    // Repeatable, flag value is the same as the default, flag not added to options.
-    "{defaultValue: ['v2','v1','v1', 'v3', 'v2', 'v3', 'v4'], repeatable: true, cmdValue: ['v2',"
-        + " 'v2', 'v1', 'v3', 'v4', 'v1'], expectedValue: null}"
-  })
-  public void testStringSetFlag(
-      List<String> defaultValue,
-      boolean repeatable,
-      List<String> cmdValue,
-      List<String> expectedValue)
-      throws Exception {
-    scratch.file(
-        "test/build_setting.bzl",
-        String.format(
-            """
+    @org.junit.Test
+    @TestParameters( // Not repeatable, flag value is not the same as the default, flag added to options.
+        ("{defaultValue: ['default'], repeatable: false, cmdValue:"
+                + " ['v1,v4,v3,v2,v3,v1,v4,v1'], expectedValue: ['v1', 'v2', 'v3', 'v4']}") // Repeatable, flag value is not the same as the default, flag added to options.
+        , ("{defaultValue: ['default'], repeatable: true, cmdValue: ['v2', 'v2', 'v1', 'v3', 'v4', 'v1'],"
+                + " expectedValue: ['v1', 'v2', 'v3', 'v4']}") // Not repeatable, flag value is the same as the default, flag not added to options.
+        , ("{defaultValue: ['v2','v1','v1', 'v3', 'v2', 'v3', 'v4'], repeatable: false, cmdValue:"
+                + " ['v1,v4,v3,v2,v3,v1,v4,v1'], expectedValue: null}") // Repeatable, flag value is the same as the default, flag not added to options.
+        , ("{defaultValue: ['v2','v1','v1', 'v3', 'v2', 'v3', 'v4'], repeatable: true, cmdValue: ['v2',"
+                + " 'v2', 'v1', 'v3', 'v4', 'v1'], expectedValue: null}")
+    )
+    @Throws(java.lang.Exception::class)
+    fun testStringSetFlag(
+        defaultValue: MutableList<String?>,
+        repeatable: Boolean,
+        cmdValue: MutableList<String?>,
+        expectedValue: MutableList<String?>?
+    ) {
+        scratch.file(
+            "test/build_setting.bzl",
+            String.format(
+                """
             def _build_setting_impl(ctx):
                 return []
 
@@ -765,33 +847,38 @@ public class StarlarkOptionsParsingTest extends StarlarkOptionsTestCase {
                 implementation = _build_setting_impl,
                 build_setting = config.string_set(flag = True, repeatable = %s),
             )
-            """,
-            repeatable ? "True" : "False"));
-    scratch.file(
-        "test/BUILD",
-        String.format(
-            """
+            
+            """.trimIndent(),
+                if (repeatable) "True" else "False"
+            )
+        )
+        scratch.file(
+            "test/BUILD",
+            String.format(
+                """
             load("//test:build_setting.bzl", "string_set_flag")
 
             string_set_flag(
                 name = "my_flag",
                 build_setting_default = set([%s]),
             )
-            """,
-            defaultValue.stream().map(v -> String.format("'%s'", v)).collect(joining(","))));
+            
+            """.trimIndent(),
+                defaultValue.stream().map<String?> { v: String? -> String.format("'%s'", v) }
+                    .collect(Collectors.joining(","))))
 
-    OptionsParsingResult result =
-        parseStarlarkOptions(
-            cmdValue.stream()
-                .map(v -> String.format("--//test:my_flag=%s", v))
-                .collect(joining(" ")));
+        val result: OptionsParsingResult =
+            parseStarlarkOptions(
+                cmdValue.stream()
+                    .map<String?> { v: String? -> String.format("--//test:my_flag=%s", v) }
+                    .collect(Collectors.joining(" ")))
 
-    if (expectedValue == null) {
-      assertThat(result.getStarlarkOptions()).isEmpty();
-    } else {
-      assertThat(result.getStarlarkOptions().keySet()).containsExactly("//test:my_flag");
-      assertThat(result.getStarlarkOptions().get("//test:my_flag"))
-          .isEqualTo(ImmutableSet.copyOf(expectedValue));
+        if (expectedValue == null) {
+            Truth.assertThat(result.getStarlarkOptions()).isEmpty()
+        } else {
+            Truth.assertThat(result.getStarlarkOptions().keys).containsExactly("//test:my_flag")
+            Truth.assertThat(result.getStarlarkOptions().get("//test:my_flag"))
+                .isEqualTo(com.google.common.collect.ImmutableSet.copyOf<String?>(expectedValue))
+        }
     }
-  }
 }

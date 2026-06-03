@@ -11,112 +11,95 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.util.concurrent.Futures.immediateFuture;
-import static org.junit.Assert.assertThrows;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import com.google.devtools.build.lib.buildeventstream.BuildEvent.LocalFile.LocalFileType
 
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.devtools.build.lib.buildeventstream.BuildEvent.LocalFile.LocalFileType;
-import com.google.devtools.build.lib.buildeventstream.BuildEventArtifactUploader;
-import com.google.devtools.build.lib.buildeventstream.BuildEventArtifactUploader.UploadContext;
-import com.google.devtools.build.lib.buildtool.BuildResult.BuildToolLogCollection;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.util.concurrent.ExecutionException;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+@RunWith(JUnit4::class)
+class BuildEventArtifactInstrumentationOutputTest {
+    private var bepInstrumentationOutputBuilder: BuildEventArtifactInstrumentationOutput.Builder? = null
 
-@RunWith(JUnit4.class)
-public class BuildEventArtifactInstrumentationOutputTest {
-  private BuildEventArtifactInstrumentationOutput.Builder bepInstrumentationOutputBuilder;
+    @Before
+    fun setup() {
+        bepInstrumentationOutputBuilder = Builder()
+    }
 
-  @Before
-  public void setup() {
-    bepInstrumentationOutputBuilder = new BuildEventArtifactInstrumentationOutput.Builder();
-  }
+    @org.junit.Test
+    fun testBepInstrumentationBuilder_failToBuildWhenMissingName() {
+        val throwable: Throwable? =
+            org.junit.Assert.assertThrows<java.lang.NullPointerException?>(
+                java.lang.NullPointerException::class.java,
+                bepInstrumentationOutputBuilder.setUploader(< T > mock < T ? > (BuildEventArtifactUploader::class.java)
+            )
+        ::build)
+        Truth.assertThat(throwable)
+            .hasMessageThat()
+            .isEqualTo("Cannot create BuildEventArtifactInstrumentationOutput without name")
+    }
 
-  @Test
-  public void testBepInstrumentationBuilder_failToBuildWhenMissingName() {
-    Throwable throwable =
-        assertThrows(
-            NullPointerException.class,
-            bepInstrumentationOutputBuilder.setUploader(mock(BuildEventArtifactUploader.class))
-                ::build);
-    assertThat(throwable)
-        .hasMessageThat()
-        .isEqualTo("Cannot create BuildEventArtifactInstrumentationOutput without name");
-  }
+    @org.junit.Test
+    fun testBepInstrumentationBuilder_failToBuildWhenMissingBepUploader() {
+        val throwable: Throwable? =
+            org.junit.Assert.assertThrows<java.lang.NullPointerException?>(
+                java.lang.NullPointerException::class.java, bepInstrumentationOutputBuilder.setName("bep")::build
+            )
+        Truth.assertThat(throwable)
+            .hasMessageThat()
+            .isEqualTo("Cannot create BuildEventArtifactInstrumentationOutput without bepUploader")
+    }
 
-  @Test
-  public void testBepInstrumentationBuilder_failToBuildWhenMissingBepUploader() {
-    Throwable throwable =
-        assertThrows(
-            NullPointerException.class, bepInstrumentationOutputBuilder.setName("bep")::build);
-    assertThat(throwable)
-        .hasMessageThat()
-        .isEqualTo("Cannot create BuildEventArtifactInstrumentationOutput without bepUploader");
-  }
+    @org.junit.Test
+    fun testBepInstrumentation_cannotPublishIfUploadNeverStarts() {
+        val fakeBuildEventArtifactUploader: BuildEventArtifactUploader? =
+            Mockito.mock<BuildEventArtifactUploader?>(BuildEventArtifactUploader::class.java)
+        val bepInstrumentationOutput: InstrumentationOutput =
+            bepInstrumentationOutputBuilder
+                .setName("bep")
+                .setUploader(fakeBuildEventArtifactUploader)
+                .build()
 
-  @Test
-  public void testBepInstrumentation_cannotPublishIfUploadNeverStarts() {
-    BuildEventArtifactUploader fakeBuildEventArtifactUploader =
-        mock(BuildEventArtifactUploader.class);
-    InstrumentationOutput bepInstrumentationOutput =
-        bepInstrumentationOutputBuilder
-            .setName("bep")
-            .setUploader(fakeBuildEventArtifactUploader)
-            .build();
+        val buildToolLogCollection: BuildToolLogCollection = BuildToolLogCollection()
+        org.junit.Assert.assertThrows<java.lang.NullPointerException?>(
+            java.lang.NullPointerException::class.java,
+            org.junit.function.ThrowingRunnable { bepInstrumentationOutput.publish(buildToolLogCollection) })
+    }
 
-    BuildToolLogCollection buildToolLogCollection = new BuildToolLogCollection();
-    assertThrows(
-        NullPointerException.class, () -> bepInstrumentationOutput.publish(buildToolLogCollection));
-  }
+    @org.junit.Test
+    @Throws(ExecutionException::class, java.lang.InterruptedException::class, IOException::class)
+    fun testBepInstrumentation_publishNameAndUriFuture() {
+        val fakeUploadLoadContext: UploadContext =
+            object : UploadContext() {
+                val outputStream: java.io.OutputStream
+                    get() = java.io.ByteArrayOutputStream()
 
-  @Test
-  public void testBepInstrumentation_publishNameAndUriFuture()
-      throws ExecutionException, InterruptedException, IOException {
-    UploadContext fakeUploadLoadContext =
-        new UploadContext() {
-          @Override
-          public OutputStream getOutputStream() {
-            return new ByteArrayOutputStream();
-          }
+                public override fun uriFuture(): com.google.common.util.concurrent.ListenableFuture<String?> {
+                    return com.google.common.util.concurrent.Futures.immediateFuture<String?>("uri/abc12345")
+                }
+            }
+        val fakeBuildEventArtifactUploader: BuildEventArtifactUploader =
+            Mockito.mock<BuildEventArtifactUploader>(BuildEventArtifactUploader::class.java)
+        Mockito.`when`<T?>(fakeBuildEventArtifactUploader.startUpload(LocalFileType.LOG, null))
+            .thenReturn(fakeUploadLoadContext)
 
-          @Override
-          public ListenableFuture<String> uriFuture() {
-            return immediateFuture("uri/abc12345");
-          }
-        };
-    BuildEventArtifactUploader fakeBuildEventArtifactUploader =
-        mock(BuildEventArtifactUploader.class);
-    when(fakeBuildEventArtifactUploader.startUpload(LocalFileType.LOG, null))
-        .thenReturn(fakeUploadLoadContext);
+        val bepInstrumentationOutput: InstrumentationOutput =
+            bepInstrumentationOutputBuilder
+                .setName("bep")
+                .setUploader(fakeBuildEventArtifactUploader)
+                .build()
+        // Create the OutputStream will enforce fakeBuildEventArtifactUploader to create the
+        // uploadContext.
+        val unused: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            bepInstrumentationOutput.createOutputStream()
+        assertThat(bepInstrumentationOutput)
+            .isInstanceOf(BuildEventArtifactInstrumentationOutput::class.java)
 
-    InstrumentationOutput bepInstrumentationOutput =
-        bepInstrumentationOutputBuilder
-            .setName("bep")
-            .setUploader(fakeBuildEventArtifactUploader)
-            .build();
-    // Create the OutputStream will enforce fakeBuildEventArtifactUploader to create the
-    // uploadContext.
-    var unused = bepInstrumentationOutput.createOutputStream();
-    assertThat(bepInstrumentationOutput)
-        .isInstanceOf(BuildEventArtifactInstrumentationOutput.class);
+        val buildToolLogCollection: BuildToolLogCollection = BuildToolLogCollection()
+        bepInstrumentationOutput.publish(buildToolLogCollection)
+        buildToolLogCollection.freeze()
 
-    BuildToolLogCollection buildToolLogCollection = new BuildToolLogCollection();
-    bepInstrumentationOutput.publish(buildToolLogCollection);
-    buildToolLogCollection.freeze();
-
-    assertThat(buildToolLogCollection.toEvent().remoteUploads()).hasSize(1);
-    ListenableFuture<String> soleRemoteUploadUri =
-        buildToolLogCollection.toEvent().remoteUploads().get(0);
-    assertThat(soleRemoteUploadUri.get()).isEqualTo("uri/abc12345");
-  }
+        assertThat(buildToolLogCollection.toEvent().remoteUploads()).hasSize(1)
+        val soleRemoteUploadUri: com.google.common.util.concurrent.ListenableFuture<String?> =
+            buildToolLogCollection.toEvent().remoteUploads().get(0)
+        Truth.assertThat(soleRemoteUploadUri.get()).isEqualTo("uri/abc12345")
+    }
 }

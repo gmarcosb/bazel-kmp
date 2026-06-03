@@ -11,115 +11,119 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.java
 
-package com.google.devtools.build.lib.rules.java;
-
-import static java.util.Objects.requireNonNull;
-
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.collect.compacthashset.CompactHashSet;
-import com.google.devtools.build.lib.collect.nestedset.Depset;
-import com.google.devtools.build.lib.collect.nestedset.Depset.TypeException;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
-import com.google.devtools.build.lib.packages.StructImpl;
-import com.google.devtools.build.lib.rules.java.JavaInfo.JavaInfoInternalProvider;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.SerializationConstant;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.Collection;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.Sequence;
-import net.starlark.java.eval.StarlarkList;
+import com.google.devtools.build.lib.actions.Artifact
 
 /**
  * The collection of source jars from the transitive closure.
- *
+ * 
  * @param transitiveSourceJars Returns all the source jars in the transitive closure, that can be
- *     reached by a chain of JavaSourceJarsProvider instances.
+ * reached by a chain of JavaSourceJarsProvider instances.
  * @param sourceJars Return the source jars that are to be built when the target is on the command
- *     line.
+ * line.
  */
-@Immutable
+@com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable
 @AutoCodec
-public record JavaSourceJarsProvider(
-    NestedSet<Artifact> transitiveSourceJars, ImmutableList<Artifact> sourceJars)
-    implements JavaInfoInternalProvider {
-  public JavaSourceJarsProvider {
-    requireNonNull(transitiveSourceJars, "transitiveSourceJars");
-    requireNonNull(sourceJars, "sourceJars");
-  }
+class JavaSourceJarsProvider(
+    transitiveSourceJars: NestedSet<Artifact?>?,
+    sourceJars: com.google.common.collect.ImmutableList<Artifact?>?
+) : JavaInfoInternalProvider {
+    /** A builder for [JavaSourceJarsProvider].  */
+    class Builder {
+        // CompactHashSet preserves insertion order here since we never perform any removals
+        private val sourceJars: com.google.devtools.build.lib.collect.compacthashset.CompactHashSet<Artifact?> =
+            com.google.devtools.build.lib.collect.compacthashset.CompactHashSet.create<Artifact?>()
+        private val transitiveSourceJars: NestedSetBuilder<Artifact?> = NestedSetBuilder.stableOrder()
 
-  @SerializationConstant
-  public static final JavaSourceJarsProvider EMPTY =
-      create(NestedSetBuilder.emptySet(Order.STABLE_ORDER), ImmutableList.of());
+        /** Add a source jar that is to be built when the target is on the command line.  */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addSourceJar(sourceJar: Artifact?): Builder {
+            sourceJars.add(com.google.common.base.Preconditions.checkNotNull<Artifact?>(sourceJar))
+            return this
+        }
 
-  public static JavaSourceJarsProvider create(
-      NestedSet<Artifact> transitiveSourceJars, Iterable<Artifact> sourceJars) {
-    return new JavaSourceJarsProvider(transitiveSourceJars, ImmutableList.copyOf(sourceJars));
-  }
+        /** Add source jars to be built when the target is on the command line.  */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addAllSourceJars(sourceJars: MutableCollection<Artifact?>?): Builder {
+            this.sourceJars.addAll(
+                com.google.common.base.Preconditions.checkNotNull<MutableCollection<Artifact?>?>(
+                    sourceJars
+                )
+            )
+            return this
+        }
 
-  /** Returns a builder for a {@link JavaSourceJarsProvider}. */
-  public static Builder builder() {
-    return new Builder();
-  }
+        /**
+         * Add a source jar in the transitive closure, that can be reached by a chain of
+         * JavaSourceJarsProvider instances.
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addTransitiveSourceJar(transitiveSourceJar: Artifact?): Builder {
+            transitiveSourceJars.add(com.google.common.base.Preconditions.checkNotNull<T?>(transitiveSourceJar))
+            return this
+        }
 
-  /** A builder for {@link JavaSourceJarsProvider}. */
-  public static final class Builder {
+        /**
+         * Add source jars in the transitive closure, that can be reached by a chain of
+         * JavaSourceJarsProvider instances.
+         */
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addAllTransitiveSourceJars(transitiveSourceJars: NestedSet<Artifact?>?): Builder {
+            this.transitiveSourceJars.addTransitive(
+                com.google.common.base.Preconditions.checkNotNull<T?>(
+                    transitiveSourceJars
+                )
+            )
+            return this
+        }
 
-    // CompactHashSet preserves insertion order here since we never perform any removals
-    private final CompactHashSet<Artifact> sourceJars = CompactHashSet.create();
-    private final NestedSetBuilder<Artifact> transitiveSourceJars = NestedSetBuilder.stableOrder();
-
-    /** Add a source jar that is to be built when the target is on the command line. */
-    @CanIgnoreReturnValue
-    public Builder addSourceJar(Artifact sourceJar) {
-      sourceJars.add(Preconditions.checkNotNull(sourceJar));
-      return this;
+        fun build(): JavaSourceJarsProvider {
+            return create(
+                transitiveSourceJars.build(), com.google.common.collect.ImmutableList.copyOf<Artifact?>(sourceJars)
+            )
+        }
     }
 
-    /** Add source jars to be built when the target is on the command line. */
-    @CanIgnoreReturnValue
-    public Builder addAllSourceJars(Collection<Artifact> sourceJars) {
-      this.sourceJars.addAll(Preconditions.checkNotNull(sourceJars));
-      return this;
+    val transitiveSourceJars: NestedSet<Artifact?>?
+    val sourceJars: com.google.common.collect.ImmutableList<Artifact?>?
+
+    init {
+        this.sourceJars = sourceJars
+        this.transitiveSourceJars = transitiveSourceJars
+        java.util.Objects.requireNonNull<Any?>(transitiveSourceJars, "transitiveSourceJars")
+        java.util.Objects.requireNonNull<com.google.common.collect.ImmutableList<Artifact?>?>(sourceJars, "sourceJars")
     }
 
-    /**
-     * Add a source jar in the transitive closure, that can be reached by a chain of
-     * JavaSourceJarsProvider instances.
-     */
-    @CanIgnoreReturnValue
-    public Builder addTransitiveSourceJar(Artifact transitiveSourceJar) {
-      transitiveSourceJars.add(Preconditions.checkNotNull(transitiveSourceJar));
-      return this;
-    }
+    companion object {
+        @SerializationConstant
+        val EMPTY: JavaSourceJarsProvider = create(
+            NestedSetBuilder.emptySet(Order.STABLE_ORDER),
+            com.google.common.collect.ImmutableList.of<Artifact?>()
+        )
 
-    /**
-     * Add source jars in the transitive closure, that can be reached by a chain of
-     * JavaSourceJarsProvider instances.
-     */
-    @CanIgnoreReturnValue
-    public Builder addAllTransitiveSourceJars(NestedSet<Artifact> transitiveSourceJars) {
-      this.transitiveSourceJars.addTransitive(Preconditions.checkNotNull(transitiveSourceJars));
-      return this;
-    }
+        fun create(
+            transitiveSourceJars: NestedSet<Artifact?>?, sourceJars: Iterable<Artifact?>
+        ): JavaSourceJarsProvider {
+            return JavaSourceJarsProvider(
+                transitiveSourceJars,
+                com.google.common.collect.ImmutableList.copyOf<Artifact?>(sourceJars)
+            )
+        }
 
-    public JavaSourceJarsProvider build() {
-      return JavaSourceJarsProvider.create(
-          transitiveSourceJars.build(), ImmutableList.copyOf(sourceJars));
-    }
-  }
+        /** Returns a builder for a [JavaSourceJarsProvider].  */
+        fun builder(): Builder {
+            return com.google.devtools.build.lib.rules.java.JavaSourceJarsProvider.Builder()
+        }
 
-  static JavaSourceJarsProvider fromStarlarkJavaInfo(StructImpl javaInfo)
-      throws EvalException, TypeException {
-    return JavaSourceJarsProvider.create(
-        javaInfo.getValue("transitive_source_jars", Depset.class).getSet(Artifact.class),
-        Sequence.cast(
-            javaInfo.getValue("source_jars", StarlarkList.class), Artifact.class, "source_jars"));
-  }
+        @Throws(net.starlark.java.eval.EvalException::class, TypeException::class)
+        fun fromStarlarkJavaInfo(javaInfo: StructImpl): JavaSourceJarsProvider {
+            return create(
+                javaInfo.getValue("transitive_source_jars", Depset::class.java).getSet(Artifact::class.java),
+                net.starlark.java.eval.Sequence.cast<T?>(
+                    javaInfo.getValue("source_jars", StarlarkList::class.java), Artifact::class.java, "source_jars"
+                )
+            )
+        }
+    }
 }

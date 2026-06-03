@@ -11,362 +11,352 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlark
 
-package com.google.devtools.build.lib.starlark;
+import com.google.devtools.build.lib.actions.Action
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.actions.util.ActionsTestUtil.NULL_ACTION_OWNER;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+/** Tests for [StarlarkAction] using the shadowed action parameter.  */
+@RunWith(JUnit4::class)
+class StarlarkActionWithShadowedActionTest : BuildViewTestCase() {
+    private var executionContext: ActionExecutionContext? = null
+    private var collectingAnalysisEnvironment: CollectingAnalysisEnvironment? = null
+    private var starlarkActionInputs: NestedSet<Artifact?>? = null
+    private var shadowedActionInputs: NestedSet<Artifact?>? = null
+    private var discoveredInputs: NestedSet<Artifact?>? = null
+    private var starlarkActionEnvironment: com.google.common.collect.ImmutableMap<String?, String?>? = null
+    private var shadowedActionEnvironment: com.google.common.collect.ImmutableMap<String?, String?>? = null
 
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Sets;
-import com.google.devtools.build.lib.actions.Action;
-import com.google.devtools.build.lib.actions.ActionExecutionContext;
-import com.google.devtools.build.lib.actions.ActionExecutionContext.LostInputsCheck;
-import com.google.devtools.build.lib.actions.ActionInputPrefetcher;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.DiscoveredModulesPruner;
-import com.google.devtools.build.lib.actions.Executor;
-import com.google.devtools.build.lib.actions.ThreadStateReceiver;
-import com.google.devtools.build.lib.analysis.actions.StarlarkAction;
-import com.google.devtools.build.lib.analysis.util.AnalysisTestUtil;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.exec.util.TestExecutorBuilder;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import java.util.LinkedHashMap;
-import java.util.Optional;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-import org.mockito.ArgumentMatchers;
+    private var output: Artifact? = null
+    private var executable: PathFragment? = null
 
-/** Tests for {@link StarlarkAction} using the shadowed action parameter. */
-@RunWith(JUnit4.class)
-public final class StarlarkActionWithShadowedActionTest extends BuildViewTestCase {
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun createArtifacts() {
+        collectingAnalysisEnvironment =
+            CollectingAnalysisEnvironment(testAnalysisEnvironment)
+        starlarkActionInputs =
+            NestedSetBuilder.create(
+                Order.STABLE_ORDER,
+                getSourceArtifact("pkg/shadowed_action_inp1"),
+                getSourceArtifact("pkg/discovered_inp2"),
+                getSourceArtifact("pkg/starlark_action_inp3")
+            )
+        shadowedActionInputs =
+            NestedSetBuilder.create(
+                Order.STABLE_ORDER,
+                getSourceArtifact("pkg/shadowed_action_inp1"),
+                getSourceArtifact("pkg/shadowed_action_inp2"),
+                getSourceArtifact("pkg/shadowed_action_inp3")
+            )
+        discoveredInputs =
+            NestedSetBuilder.create(
+                Order.STABLE_ORDER,
+                getSourceArtifact("pkg/shadowed_action_inp1"),
+                getSourceArtifact("pkg/discovered_inp2"),
+                getSourceArtifact("pkg/discovered_inp3")
+            )
+        output = getBinArtifactWithNoOwner("output")
+        executable = scratch.file("/bin/xxx").asFragment()
+        starlarkActionEnvironment =
+            com.google.common.collect.ImmutableMap.of<String?, String?>(
+                "repeated_var", "starlark_val",
+                "a_var", "a_val",
+                "b_var", "b_val"
+            )
+        shadowedActionEnvironment =
+            com.google.common.collect.ImmutableMap.of<String?, String?>(
+                "repeated_var", "shadowed_val",
+                "c_var", "c_val",
+                "d_var", "d_val"
+            )
+    }
 
-  private ActionExecutionContext executionContext;
-  private AnalysisTestUtil.CollectingAnalysisEnvironment collectingAnalysisEnvironment;
-  private NestedSet<Artifact> starlarkActionInputs;
-  private NestedSet<Artifact> shadowedActionInputs;
-  private NestedSet<Artifact> discoveredInputs;
-  private ImmutableMap<String, String> starlarkActionEnvironment;
-  private ImmutableMap<String, String> shadowedActionEnvironment;
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun createExecutorAndContext() {
+        val executor: Executor = TestExecutorBuilder(fileSystem, directories).build()
+        executionContext =
+            ActionExecutionContext(
+                executor,  /* inputMetadataProvider= */
+                null,
+                ActionInputPrefetcher.NONE,
+                actionKeyContext,  /* outputMetadataStore= */
+                null,  /* rewindingEnabled= */
+                false,
+                LostInputsCheck.NONE,  /* fileOutErr= */
+                null,  /* eventHandler= */
+                null,  /* clientEnv= */
+                com.google.common.collect.ImmutableMap.of<K?, V?>(),  /* actionFileSystem= */
+                null,
+                DiscoveredModulesPruner.DEFAULT,
+                SyscallCache.NO_CACHE,
+                ThreadStateReceiver.NULL_INSTANCE
+            )
+    }
 
-  private Artifact output;
-  private PathFragment executable;
-
-  @Before
-  public void createArtifacts() throws Exception {
-    collectingAnalysisEnvironment =
-        new AnalysisTestUtil.CollectingAnalysisEnvironment(getTestAnalysisEnvironment());
-    starlarkActionInputs =
-        NestedSetBuilder.create(
-            Order.STABLE_ORDER,
-            getSourceArtifact("pkg/shadowed_action_inp1"),
-            getSourceArtifact("pkg/discovered_inp2"),
-            getSourceArtifact("pkg/starlark_action_inp3"));
-    shadowedActionInputs =
-        NestedSetBuilder.create(
-            Order.STABLE_ORDER,
-            getSourceArtifact("pkg/shadowed_action_inp1"),
-            getSourceArtifact("pkg/shadowed_action_inp2"),
-            getSourceArtifact("pkg/shadowed_action_inp3"));
-    discoveredInputs =
-        NestedSetBuilder.create(
-            Order.STABLE_ORDER,
-            getSourceArtifact("pkg/shadowed_action_inp1"),
-            getSourceArtifact("pkg/discovered_inp2"),
-            getSourceArtifact("pkg/discovered_inp3"));
-    output = getBinArtifactWithNoOwner("output");
-    executable = scratch.file("/bin/xxx").asFragment();
-    starlarkActionEnvironment =
-        ImmutableMap.of(
-            "repeated_var", "starlark_val",
-            "a_var", "a_val",
-            "b_var", "b_val");
-    shadowedActionEnvironment =
-        ImmutableMap.of(
-            "repeated_var", "shadowed_val",
-            "c_var", "c_val",
-            "d_var", "d_val");
-  }
-
-  @Before
-  public void createExecutorAndContext() throws Exception {
-    Executor executor = new TestExecutorBuilder(fileSystem, directories).build();
-    executionContext =
-        new ActionExecutionContext(
-            executor,
-            /* inputMetadataProvider= */ null,
-            ActionInputPrefetcher.NONE,
-            actionKeyContext,
-            /* outputMetadataStore= */ null,
-            /* rewindingEnabled= */ false,
-            LostInputsCheck.NONE,
-            /* fileOutErr= */ null,
-            /* eventHandler= */ null,
-            /* clientEnv= */ ImmutableMap.of(),
-            /* actionFileSystem= */ null,
-            DiscoveredModulesPruner.DEFAULT,
-            SyscallCache.NO_CACHE,
-            ThreadStateReceiver.NULL_INSTANCE);
-  }
-
-  @Test
-  public void testUsingOnlyShadowedActionInputs() throws Exception {
-    // If both starlark action and the shadowed action do not have inputs, then getInputs of both of
-    // them should return empty set
-    Action shadowedAction =
-        createShadowedAction(
-            NestedSetBuilder.emptySet(Order.STABLE_ORDER), /*discoversInputs=*/ false, null);
-    StarlarkAction starlarkAction =
-        (StarlarkAction)
-            new StarlarkAction.Builder()
-                .setShadowedAction(Optional.of(shadowedAction))
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testUsingOnlyShadowedActionInputs() {
+        // If both starlark action and the shadowed action do not have inputs, then getInputs of both of
+        // them should return empty set
+        var shadowedAction: Action =
+            createShadowedAction(
+                NestedSetBuilder.emptySet(Order.STABLE_ORDER),  /*discoversInputs=*/false, null
+            )
+        var starlarkAction: StarlarkAction =
+            Builder()
+                .setShadowedAction(java.util.Optional.of<T?>(shadowedAction))
                 .setExecutable(executable)
                 .addOutput(output)
-                .build(NULL_ACTION_OWNER, targetConfig);
-    collectingAnalysisEnvironment.registerAction(starlarkAction);
+                .build(ActionsTestUtil.Companion.NULL_ACTION_OWNER, targetConfig) as StarlarkAction
+        collectingAnalysisEnvironment.registerAction(starlarkAction)
 
-    assertThat(starlarkAction.getInputs().toList()).isEmpty();
-    assertThat(starlarkAction.discoversInputs()).isFalse();
-    assertThat(starlarkAction.getUnusedInputsList()).isEmpty();
-    assertThat(starlarkAction.getAllowedDerivedInputs().toList()).isEmpty();
+        assertThat(starlarkAction.getInputs().toList()).isEmpty()
+        assertThat(starlarkAction.discoversInputs()).isFalse()
+        assertThat(starlarkAction.getUnusedInputsList()).isEmpty()
+        assertThat(starlarkAction.getAllowedDerivedInputs().toList()).isEmpty()
 
-    // If the starlark action does not have any inputs, then it will use the shadowed action inputs
-    shadowedAction = createShadowedAction(shadowedActionInputs, false, null);
-    starlarkAction =
-        (StarlarkAction)
-            new StarlarkAction.Builder()
-                .setShadowedAction(Optional.of(shadowedAction))
+        // If the starlark action does not have any inputs, then it will use the shadowed action inputs
+        shadowedAction = createShadowedAction(shadowedActionInputs, false, null)
+        starlarkAction =
+            Builder()
+                .setShadowedAction(java.util.Optional.of<T?>(shadowedAction))
                 .setExecutable(executable)
                 .addOutput(output)
-                .build(NULL_ACTION_OWNER, targetConfig);
-    collectingAnalysisEnvironment.registerAction(starlarkAction);
+                .build(ActionsTestUtil.Companion.NULL_ACTION_OWNER, targetConfig) as StarlarkAction
+        collectingAnalysisEnvironment.registerAction(starlarkAction)
 
-    assertThat(starlarkAction.getInputs().toList())
-        .containsExactlyElementsIn(shadowedActionInputs.toList());
-    assertThat(starlarkAction.discoversInputs()).isFalse();
-    assertThat(starlarkAction.getUnusedInputsList()).isEmpty();
-    assertThat(starlarkAction.getAllowedDerivedInputs().toList())
-        .containsExactlyElementsIn(shadowedActionInputs.toList());
-  }
+        assertThat(starlarkAction.getInputs().toList())
+            .containsExactlyElementsIn(shadowedActionInputs.toList())
+        assertThat(starlarkAction.discoversInputs()).isFalse()
+        assertThat(starlarkAction.getUnusedInputsList()).isEmpty()
+        assertThat(starlarkAction.getAllowedDerivedInputs().toList())
+            .containsExactlyElementsIn(shadowedActionInputs.toList())
+    }
 
-  @Test
-  public void testUsingOnlyShadowedActionWithDiscoveredInputs() throws Exception {
-    // Test that the shadowed action's discovered inputs are passed to the starlark action
-    Action shadowedAction =
-        createShadowedAction(
-            NestedSetBuilder.emptySet(Order.STABLE_ORDER),
-            /*discoversInputs=*/ true,
-            discoveredInputs);
-    StarlarkAction starlarkAction =
-        (StarlarkAction)
-            new StarlarkAction.Builder()
-                .setShadowedAction(Optional.of(shadowedAction))
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testUsingOnlyShadowedActionWithDiscoveredInputs() {
+        // Test that the shadowed action's discovered inputs are passed to the starlark action
+        var shadowedAction: Action =
+            createShadowedAction(
+                NestedSetBuilder.emptySet(Order.STABLE_ORDER),  /*discoversInputs=*/
+                true,
+                discoveredInputs
+            )
+        var starlarkAction: StarlarkAction =
+            Builder()
+                .setShadowedAction(java.util.Optional.of<T?>(shadowedAction))
                 .setExecutable(executable)
                 .addOutput(output)
-                .build(NULL_ACTION_OWNER, targetConfig);
-    collectingAnalysisEnvironment.registerAction(starlarkAction);
+                .build(ActionsTestUtil.Companion.NULL_ACTION_OWNER, targetConfig) as StarlarkAction
+        collectingAnalysisEnvironment.registerAction(starlarkAction)
 
-    assertThat(starlarkAction.getInputs().toList()).isEmpty();
-    assertThat(starlarkAction.getUnusedInputsList()).isEmpty();
-    assertThat(starlarkAction.getAllowedDerivedInputs().toList()).isEmpty();
-    assertThat(starlarkAction.discoversInputs()).isTrue();
-    assertThat(starlarkAction.discoverInputs(executionContext).toList())
-        .containsExactlyElementsIn(discoveredInputs.toList());
-    // after discovering inputs, the starlark action inputs should be updated
-    assertThat(starlarkAction.inputsKnown()).isTrue();
-    assertThat(starlarkAction.getInputs().toList())
-        .containsExactlyElementsIn(discoveredInputs.toList());
+        assertThat(starlarkAction.getInputs().toList()).isEmpty()
+        assertThat(starlarkAction.getUnusedInputsList()).isEmpty()
+        assertThat(starlarkAction.getAllowedDerivedInputs().toList()).isEmpty()
+        assertThat(starlarkAction.discoversInputs()).isTrue()
+        assertThat(starlarkAction.discoverInputs(executionContext).toList())
+            .containsExactlyElementsIn(discoveredInputs.toList())
+        // after discovering inputs, the starlark action inputs should be updated
+        assertThat(starlarkAction.inputsKnown()).isTrue()
+        assertThat(starlarkAction.getInputs().toList())
+            .containsExactlyElementsIn(discoveredInputs.toList())
 
-    // Test that both inputs and discovered inputs of the shadowed action are passed to the starlark
-    // action
-    shadowedAction = createShadowedAction(shadowedActionInputs, true, discoveredInputs);
-    starlarkAction =
-        (StarlarkAction)
-            new StarlarkAction.Builder()
-                .setShadowedAction(Optional.of(shadowedAction))
+        // Test that both inputs and discovered inputs of the shadowed action are passed to the starlark
+        // action
+        shadowedAction = createShadowedAction(shadowedActionInputs, true, discoveredInputs)
+        starlarkAction =
+            Builder()
+                .setShadowedAction(java.util.Optional.of<T?>(shadowedAction))
                 .setExecutable(executable)
                 .addOutput(output)
-                .build(NULL_ACTION_OWNER, targetConfig);
-    collectingAnalysisEnvironment.registerAction(starlarkAction);
+                .build(ActionsTestUtil.Companion.NULL_ACTION_OWNER, targetConfig) as StarlarkAction
+        collectingAnalysisEnvironment.registerAction(starlarkAction)
 
-    assertThat(starlarkAction.getInputs().toList())
-        .containsExactlyElementsIn(shadowedActionInputs.toList());
-    assertThat(starlarkAction.getUnusedInputsList()).isEmpty();
-    assertThat(starlarkAction.getAllowedDerivedInputs().toList())
-        .containsExactlyElementsIn(shadowedActionInputs.toList());
-    assertThat(starlarkAction.discoversInputs()).isTrue();
-    assertThat(starlarkAction.discoverInputs(executionContext).toList())
-        .containsExactlyElementsIn(
-            Sets.difference(discoveredInputs.toSet(), shadowedActionInputs.toSet()));
-    // after discovering inputs, the starlark action inputs should be updated
-    assertThat(starlarkAction.inputsKnown()).isTrue();
-    assertThat(starlarkAction.getInputs().toList())
-        .containsExactlyElementsIn(
-            Sets.union(shadowedActionInputs.toSet(), discoveredInputs.toSet()));
-  }
+        assertThat(starlarkAction.getInputs().toList())
+            .containsExactlyElementsIn(shadowedActionInputs.toList())
+        assertThat(starlarkAction.getUnusedInputsList()).isEmpty()
+        assertThat(starlarkAction.getAllowedDerivedInputs().toList())
+            .containsExactlyElementsIn(shadowedActionInputs.toList())
+        assertThat(starlarkAction.discoversInputs()).isTrue()
+        assertThat(starlarkAction.discoverInputs(executionContext).toList())
+            .containsExactlyElementsIn(
+                com.google.common.collect.Sets.difference<E?>(discoveredInputs.toSet(), shadowedActionInputs.toSet())
+            )
+        // after discovering inputs, the starlark action inputs should be updated
+        assertThat(starlarkAction.inputsKnown()).isTrue()
+        assertThat(starlarkAction.getInputs().toList())
+            .containsExactlyElementsIn(
+                com.google.common.collect.Sets.union<E?>(shadowedActionInputs.toSet(), discoveredInputs.toSet())
+            )
+    }
 
-  @Test
-  public void testUsingShadowedActionWithStarlarkActionInputs() throws Exception {
-    // Test using Starlark action's inputs without using a shadowed action
-    StarlarkAction starlarkAction =
-        (StarlarkAction)
-            new StarlarkAction.Builder()
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testUsingShadowedActionWithStarlarkActionInputs() {
+        // Test using Starlark action's inputs without using a shadowed action
+        var starlarkAction: StarlarkAction =
+            Builder()
                 .setExecutable(executable)
                 .addInput(starlarkActionInputs.toList().get(0))
                 .addInput(starlarkActionInputs.toList().get(1))
                 .addInput(starlarkActionInputs.toList().get(2))
                 .addOutput(output)
-                .build(NULL_ACTION_OWNER, targetConfig);
-    collectingAnalysisEnvironment.registerAction(starlarkAction);
+                .build(ActionsTestUtil.Companion.NULL_ACTION_OWNER, targetConfig) as StarlarkAction
+        collectingAnalysisEnvironment.registerAction(starlarkAction)
 
-    assertThat(starlarkAction.getInputs().toList())
-        .containsExactlyElementsIn(starlarkActionInputs.toList());
-    assertThat(starlarkAction.getUnusedInputsList()).isEmpty();
-    assertThat(starlarkAction.discoversInputs()).isFalse();
+        assertThat(starlarkAction.getInputs().toList())
+            .containsExactlyElementsIn(starlarkActionInputs.toList())
+        assertThat(starlarkAction.getUnusedInputsList()).isEmpty()
+        assertThat(starlarkAction.discoversInputs()).isFalse()
 
-    // Test using Starlark actions's inputs with shadowed action's inputs
-    Action shadowedAction =
-        createShadowedAction(
-            shadowedActionInputs, /*discoversInputs=*/ false, /*discoveredInputs=*/ null);
-    starlarkAction =
-        (StarlarkAction)
-            new StarlarkAction.Builder()
-                .setShadowedAction(Optional.of(shadowedAction))
+        // Test using Starlark actions's inputs with shadowed action's inputs
+        var shadowedAction: Action =
+            createShadowedAction(
+                shadowedActionInputs,  /*discoversInputs=*/false,  /*discoveredInputs=*/null
+            )
+        starlarkAction =
+            Builder()
+                .setShadowedAction(java.util.Optional.of<T?>(shadowedAction))
                 .setExecutable(executable)
                 .addInput(starlarkActionInputs.toList().get(0))
                 .addInput(starlarkActionInputs.toList().get(1))
                 .addInput(starlarkActionInputs.toList().get(2))
                 .addOutput(output)
-                .build(NULL_ACTION_OWNER, targetConfig);
-    collectingAnalysisEnvironment.registerAction(starlarkAction);
+                .build(ActionsTestUtil.Companion.NULL_ACTION_OWNER, targetConfig) as StarlarkAction
+        collectingAnalysisEnvironment.registerAction(starlarkAction)
 
-    assertThat(starlarkAction.getInputs().toList())
-        .containsExactlyElementsIn(
-            Sets.union(shadowedActionInputs.toSet(), starlarkActionInputs.toSet()));
-    assertThat(starlarkAction.getUnusedInputsList()).isEmpty();
-    assertThat(starlarkAction.getAllowedDerivedInputs().toList())
-        .containsExactlyElementsIn(
-            Sets.union(shadowedActionInputs.toSet(), starlarkActionInputs.toSet()));
-    assertThat(starlarkAction.discoversInputs()).isFalse();
+        assertThat(starlarkAction.getInputs().toList())
+            .containsExactlyElementsIn(
+                com.google.common.collect.Sets.union<E?>(shadowedActionInputs.toSet(), starlarkActionInputs.toSet())
+            )
+        assertThat(starlarkAction.getUnusedInputsList()).isEmpty()
+        assertThat(starlarkAction.getAllowedDerivedInputs().toList())
+            .containsExactlyElementsIn(
+                com.google.common.collect.Sets.union<E?>(shadowedActionInputs.toSet(), starlarkActionInputs.toSet())
+            )
+        assertThat(starlarkAction.discoversInputs()).isFalse()
 
-    // Test using Starlark actions's inputs with shadowed action's inputs and discovered inputs
-    shadowedAction = createShadowedAction(shadowedActionInputs, true, discoveredInputs);
-    starlarkAction =
-        (StarlarkAction)
-            new StarlarkAction.Builder()
-                .setShadowedAction(Optional.of(shadowedAction))
+        // Test using Starlark actions's inputs with shadowed action's inputs and discovered inputs
+        shadowedAction = createShadowedAction(shadowedActionInputs, true, discoveredInputs)
+        starlarkAction =
+            Builder()
+                .setShadowedAction(java.util.Optional.of<T?>(shadowedAction))
                 .setExecutable(executable)
                 .addInput(starlarkActionInputs.toList().get(0))
                 .addInput(starlarkActionInputs.toList().get(1))
                 .addInput(starlarkActionInputs.toList().get(2))
                 .addOutput(output)
-                .build(NULL_ACTION_OWNER, targetConfig);
-    collectingAnalysisEnvironment.registerAction(starlarkAction);
+                .build(ActionsTestUtil.Companion.NULL_ACTION_OWNER, targetConfig) as StarlarkAction
+        collectingAnalysisEnvironment.registerAction(starlarkAction)
 
-    assertThat(starlarkAction.getInputs().toList())
-        .containsExactlyElementsIn(
-            Sets.union(shadowedActionInputs.toSet(), starlarkActionInputs.toSet()));
-    assertThat(starlarkAction.getUnusedInputsList()).isEmpty();
-    assertThat(starlarkAction.getAllowedDerivedInputs().toList())
-        .containsExactlyElementsIn(
-            Sets.union(shadowedActionInputs.toSet(), starlarkActionInputs.toSet()));
-    assertThat(starlarkAction.discoversInputs()).isTrue();
-    assertThat(starlarkAction.discoverInputs(executionContext).toList())
-        .containsExactly(discoveredInputs.toList().get(2));
-    // after discovering inputs, the starlark action inputs should be updated
-    assertThat(starlarkAction.inputsKnown()).isTrue();
-    assertThat(starlarkAction.getInputs().toList())
-        .containsExactlyElementsIn(
-            Sets.union(
-                NestedSetBuilder.wrap(
+        assertThat(starlarkAction.getInputs().toList())
+            .containsExactlyElementsIn(
+                com.google.common.collect.Sets.union<E?>(shadowedActionInputs.toSet(), starlarkActionInputs.toSet())
+            )
+        assertThat(starlarkAction.getUnusedInputsList()).isEmpty()
+        assertThat(starlarkAction.getAllowedDerivedInputs().toList())
+            .containsExactlyElementsIn(
+                com.google.common.collect.Sets.union<E?>(shadowedActionInputs.toSet(), starlarkActionInputs.toSet())
+            )
+        assertThat(starlarkAction.discoversInputs()).isTrue()
+        assertThat(starlarkAction.discoverInputs(executionContext).toList())
+            .containsExactly(discoveredInputs.toList().get(2))
+        // after discovering inputs, the starlark action inputs should be updated
+        assertThat(starlarkAction.inputsKnown()).isTrue()
+        assertThat(starlarkAction.getInputs().toList())
+            .containsExactlyElementsIn(
+                com.google.common.collect.Sets.union<E?>(
+                    NestedSetBuilder.wrap(
                         Order.STABLE_ORDER,
-                        Sets.union(shadowedActionInputs.toSet(), starlarkActionInputs.toSet()))
-                    .toSet(),
-                discoveredInputs.toSet()));
-  }
+                        com.google.common.collect.Sets.union<E?>(
+                            shadowedActionInputs.toSet(),
+                            starlarkActionInputs.toSet()
+                        )
+                    )
+                        .toSet(),
+                    discoveredInputs.toSet()
+                )
+            )
+    }
 
-  @Test
-  public void testPassingShadowedActionEnvironment() throws Exception {
-    // Test using Starlark action's environment without using a shadowed action
-    StarlarkAction starlarkAction =
-        (StarlarkAction)
-            new StarlarkAction.Builder()
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testPassingShadowedActionEnvironment() {
+        // Test using Starlark action's environment without using a shadowed action
+        var starlarkAction: StarlarkAction =
+            Builder()
                 .setExecutable(executable)
                 .addInput(starlarkActionInputs.toList().get(0))
                 .addOutput(output)
                 .setEnvironment(starlarkActionEnvironment)
-                .build(NULL_ACTION_OWNER, targetConfig);
-    collectingAnalysisEnvironment.registerAction(starlarkAction);
+                .build(ActionsTestUtil.Companion.NULL_ACTION_OWNER, targetConfig) as StarlarkAction
+        collectingAnalysisEnvironment.registerAction(starlarkAction)
 
-    assertThat(starlarkAction.getEffectiveEnvironment(ImmutableMap.of()))
-        .containsExactlyEntriesIn(starlarkActionEnvironment);
+        assertThat(starlarkAction.getEffectiveEnvironment(com.google.common.collect.ImmutableMap.of<K?, V?>()))
+            .containsExactlyEntriesIn(starlarkActionEnvironment)
 
-    // Test using shadowed action's environment without Starlark actions's environment
-    Action shadowedAction =
-        createShadowedAction(
-            shadowedActionInputs, /*discoversInputs=*/ false, /*discoveredInputs=*/ null);
-    starlarkAction =
-        (StarlarkAction)
-            new StarlarkAction.Builder()
-                .setShadowedAction(Optional.of(shadowedAction))
+        // Test using shadowed action's environment without Starlark actions's environment
+        val shadowedAction: Action =
+            createShadowedAction(
+                shadowedActionInputs,  /*discoversInputs=*/false,  /*discoveredInputs=*/null
+            )
+        starlarkAction =
+            Builder()
+                .setShadowedAction(java.util.Optional.of<T?>(shadowedAction))
                 .setExecutable(executable)
                 .addInput(starlarkActionInputs.toList().get(0))
                 .addOutput(output)
-                .build(NULL_ACTION_OWNER, targetConfig);
-    collectingAnalysisEnvironment.registerAction(starlarkAction);
+                .build(ActionsTestUtil.Companion.NULL_ACTION_OWNER, targetConfig) as StarlarkAction
+        collectingAnalysisEnvironment.registerAction(starlarkAction)
 
-    assertThat(starlarkAction.getEffectiveEnvironment(ImmutableMap.of()))
-        .containsExactlyEntriesIn(shadowedActionEnvironment);
+        assertThat(starlarkAction.getEffectiveEnvironment(com.google.common.collect.ImmutableMap.of<K?, V?>()))
+            .containsExactlyEntriesIn(shadowedActionEnvironment)
 
-    // Test using Starlark actions's environment with shadowed action's environment
-    starlarkAction =
-        (StarlarkAction)
-            new StarlarkAction.Builder()
-                .setShadowedAction(Optional.of(shadowedAction))
+        // Test using Starlark actions's environment with shadowed action's environment
+        starlarkAction =
+            Builder()
+                .setShadowedAction(java.util.Optional.of<T?>(shadowedAction))
                 .setExecutable(executable)
                 .addInput(starlarkActionInputs.toList().get(0))
                 .addOutput(output)
                 .setEnvironment(starlarkActionEnvironment)
-                .build(NULL_ACTION_OWNER, targetConfig);
-    collectingAnalysisEnvironment.registerAction(starlarkAction);
+                .build(ActionsTestUtil.Companion.NULL_ACTION_OWNER, targetConfig) as StarlarkAction
+        collectingAnalysisEnvironment.registerAction(starlarkAction)
 
-    LinkedHashMap<String, String> expectedEnvironment = new LinkedHashMap<>();
-    expectedEnvironment.putAll(shadowedActionEnvironment);
-    expectedEnvironment.putAll(starlarkActionEnvironment);
+        val expectedEnvironment: LinkedHashMap<String?, String?> = LinkedHashMap<String?, String?>()
+        expectedEnvironment.putAll(shadowedActionEnvironment)
+        expectedEnvironment.putAll(starlarkActionEnvironment)
 
-    ImmutableMap<String, String> actualEnvironment =
-        starlarkAction.getEffectiveEnvironment(ImmutableMap.of());
-    assertThat(actualEnvironment).hasSize(5);
-    // Starlark action's env overwrites any repeated variable from the shadowed action env
-    assertThat(actualEnvironment).containsEntry("repeated_var", "starlark_val");
-    assertThat(actualEnvironment).containsExactlyEntriesIn(expectedEnvironment);
-  }
+        val actualEnvironment: com.google.common.collect.ImmutableMap<String?, String?>? =
+            starlarkAction.getEffectiveEnvironment(com.google.common.collect.ImmutableMap.of<K?, V?>())
+        Truth.assertThat(actualEnvironment).hasSize(5)
+        // Starlark action's env overwrites any repeated variable from the shadowed action env
+        Truth.assertThat(actualEnvironment).containsEntry("repeated_var", "starlark_val")
+        Truth.assertThat(actualEnvironment).containsExactlyEntriesIn(expectedEnvironment)
+    }
 
-  private Action createShadowedAction(
-      NestedSet<Artifact> inputs, boolean discoversInputs, NestedSet<Artifact> discoveredInputs)
-      throws Exception {
-    Action shadowedAction = mock(Action.class);
-    when(shadowedAction.discoversInputs()).thenReturn(discoversInputs);
-    when(shadowedAction.getInputs()).thenReturn(inputs);
-    when(shadowedAction.getMandatoryInputs()).thenReturn(inputs);
-    when(shadowedAction.getAllowedDerivedInputs()).thenReturn(inputs);
-    when(shadowedAction.getInputFilesForExtraAction(
-            ArgumentMatchers.any(ActionExecutionContext.class)))
-        .thenReturn(discoveredInputs);
-    when(shadowedAction.inputsKnown()).thenReturn(true);
-    when(shadowedAction.getOwner()).thenReturn(NULL_ACTION_OWNER);
-    when(shadowedAction.getEffectiveEnvironment(ArgumentMatchers.anyMap()))
-        .thenReturn(ImmutableMap.copyOf(shadowedActionEnvironment));
+    @Throws(java.lang.Exception::class)
+    private fun createShadowedAction(
+        inputs: NestedSet<Artifact?>?, discoversInputs: Boolean, discoveredInputs: NestedSet<Artifact?>?
+    ): Action {
+        val shadowedAction: Action = Mockito.mock<Action>(Action::class.java)
+        Mockito.`when`<T?>(shadowedAction.discoversInputs()).thenReturn(discoversInputs)
+        Mockito.`when`<T?>(shadowedAction.getInputs()).thenReturn(inputs)
+        Mockito.`when`<T?>(shadowedAction.getMandatoryInputs()).thenReturn(inputs)
+        Mockito.`when`<T?>(shadowedAction.getAllowedDerivedInputs()).thenReturn(inputs)
+        Mockito.`when`<T?>(
+            shadowedAction.getInputFilesForExtraAction(
+                ArgumentMatchers.any<T?>(ActionExecutionContext::class.java)
+            )
+        )
+            .thenReturn(discoveredInputs)
+        Mockito.`when`<T?>(shadowedAction.inputsKnown()).thenReturn(true)
+        Mockito.`when`<T?>(shadowedAction.getOwner()).thenReturn(ActionsTestUtil.Companion.NULL_ACTION_OWNER)
+        Mockito.`when`<T?>(shadowedAction.getEffectiveEnvironment(ArgumentMatchers.anyMap<K?, V?>()))
+            .thenReturn(com.google.common.collect.ImmutableMap.< K, V > copyOf<K?, V?>(shadowedActionEnvironment))
 
-    return shadowedAction;
-  }
+        return shadowedAction
+    }
 }

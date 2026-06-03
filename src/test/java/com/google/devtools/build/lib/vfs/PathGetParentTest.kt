@@ -11,75 +11,78 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.vfs;
+package com.google.devtools.build.lib.vfs
 
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.devtools.build.lib.testutil.TestUtils;
-import com.google.devtools.build.lib.vfs.util.FileSystems;
-import java.io.IOException;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.analysis.util.ConfigurationTestCase.create
+import com.google.devtools.build.lib.exec.util.SpawnBuilder.build
+import com.google.devtools.build.lib.packages.util.MockToolsConfig.create
+import com.google.devtools.common.options.testing.ConverterTesterMap.Builder.build
+import net.starlark.java.syntax.FileOptions.Builder.build
+import org.junit.Before
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.io.IOException
+import java.nio.file.Path
 
 /**
- * A test for {@link Path}.
+ * A test for [Path].
  */
-@RunWith(JUnit4.class)
-public class PathGetParentTest {
+@RunWith(JUnit4::class)
+class PathGetParentTest {
+    private var fs: FileSystem? = null
+    private var testRoot: Path? = null
 
-  private FileSystem fs;
-  private Path testRoot;
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun createTestRoot() {
+        fs = com.google.devtools.build.lib.vfs.util.FileSystems.getNativeFileSystem()
+        testRoot =
+            fs.getPath(com.google.devtools.build.lib.testutil.TestUtils.tmpDir()).getRelative("UnixPathGetParentTest")
+        testRoot.createDirectoryAndParents()
+    }
 
-  @Before
-  public final void createTestRoot() throws Exception  {
-    fs = FileSystems.getNativeFileSystem();
-    testRoot = fs.getPath(TestUtils.tmpDir()).getRelative("UnixPathGetParentTest");
-    testRoot.createDirectoryAndParents();
-  }
+    @org.junit.After
+    @Throws(java.lang.Exception::class)
+    fun deleteTestRoot() {
+        testRoot.deleteTree() // (comment out during debugging)
+    }
 
-  @After
-  public final void deleteTestRoot() throws Exception  {
-    testRoot.deleteTree(); // (comment out during debugging)
-  }
+    private fun getParent(path: String?): Path {
+        return fs.getPath(path).getParentDirectory()
+    }
 
-  private Path getParent(String path) {
-    return fs.getPath(path).getParentDirectory();
-  }
+    @org.junit.Test
+    fun testAbsoluteRootHasNoParent() {
+        assertThat(getParent("/")).isNull()
+    }
 
-  @Test
-  public void testAbsoluteRootHasNoParent() {
-    assertThat(getParent("/")).isNull();
-  }
+    @org.junit.Test
+    fun testParentOfSimpleDirectory() {
+        assertThat(getParent("/foo/bar").getPathString()).isEqualTo("/foo")
+    }
 
-  @Test
-  public void testParentOfSimpleDirectory() {
-    assertThat(getParent("/foo/bar").getPathString()).isEqualTo("/foo");
-  }
+    @org.junit.Test
+    fun testParentOfDotDotInMiddleOfPathname() {
+        assertThat(getParent("/foo/../bar").getPathString()).isEqualTo("/")
+    }
 
-  @Test
-  public void testParentOfDotDotInMiddleOfPathname() {
-    assertThat(getParent("/foo/../bar").getPathString()).isEqualTo("/");
-  }
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun testGetPathDoesNormalizationWithoutIO() {
+        val tmp: Path = testRoot.getChild("tmp")
+        val tmpWiz: Path = tmp.getChild("wiz")
 
-  @Test
-  public void testGetPathDoesNormalizationWithoutIO() throws IOException {
-    Path tmp = testRoot.getChild("tmp");
-    Path tmpWiz = tmp.getChild("wiz");
+        tmp.createDirectory()
 
-    tmp.createDirectory();
+        // ln -sf /tmp /tmp/wiz
+        tmpWiz.createSymbolicLink(tmp)
 
-    // ln -sf /tmp /tmp/wiz
-    tmpWiz.createSymbolicLink(tmp);
+        assertThat(tmp.getParentDirectory()).isEqualTo(testRoot)
 
-    assertThat(tmp.getParentDirectory()).isEqualTo(testRoot);
+        assertThat(tmpWiz.getParentDirectory()).isEqualTo(tmp)
 
-    assertThat(tmpWiz.getParentDirectory()).isEqualTo(tmp);
-
-    // Under UNIX, inode(/tmp/wiz/..) == inode(/).  However getPath() does not
-    // perform I/O, only string operations, so it disagrees:
-    assertThat(tmp.getRelative(PathFragment.create("wiz/.."))).isEqualTo(tmp);
-  }
+        // Under UNIX, inode(/tmp/wiz/..) == inode(/).  However getPath() does not
+        // perform I/O, only string operations, so it disagrees:
+        assertThat(tmp.getRelative(PathFragment.create("wiz/.."))).isEqualTo(tmp)
+    }
 }

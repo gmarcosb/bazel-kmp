@@ -11,185 +11,179 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util.io;
+package com.google.devtools.build.lib.util.io
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.util.io.FileOutErr.FileRecordingOutputStream
+import org.junit.Assert
+import org.junit.Test
+import java.io.ByteArrayOutputStream
+import java.nio.charset.StandardCharsets
 
-import com.google.devtools.build.lib.util.io.FileOutErr.FileRecordingOutputStream;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests [OutErr].  */
+@RunWith(JUnit4::class)
+class FileOutErrTest {
+    private var fs: FileSystem? = null
 
-/** Tests {@link OutErr}. */
-@RunWith(JUnit4.class)
-public class FileOutErrTest {
-
-  private FileSystem fs;
-
-  @Before
-  public void setUp() {
-    fs = new InMemoryFileSystem(DigestHashFunction.SHA256);
-  }
-
-  private FileRecordingOutputStream newFileRecordingOutputStream(String path) {
-    Path outputFile = fs.getPath(path);
-    return new FileRecordingOutputStream(outputFile);
-  }
-
-  @Test
-  public void testFileRecordingOutputStream_doesNotExistByDefault() throws Exception {
-    FileRecordingOutputStream os = newFileRecordingOutputStream("/some-file.txt");
-
-    assertThat(os.hasRecordedOutput()).isFalse();
-    assertThat(os.getRecordedOutput()).isEmpty();
-    assertThat(os.getRecordedOutputSize()).isEqualTo(0);
-
-    ByteArrayOutputStream recorder = new ByteArrayOutputStream();
-    os.dumpOut(recorder);
-    assertThat(recorder.toByteArray()).isEmpty();
-
-    // Existence and error checks must come last to ensure previous calls have no side-effects.
-    assertThat(os.getFileUnsafe().exists()).isFalse();
-    assertThat(os.hadError()).isFalse();
-  }
-
-  @Test
-  public void testFileRecordingOutputStream_createOutOfBandAsEmpty() throws Exception {
-    FileRecordingOutputStream os = newFileRecordingOutputStream("/some-file.txt");
-    Path path = os.getFile();
-    path.getOutputStream().close();
-
-    assertThat(os.hasRecordedOutput()).isFalse();
-    assertThat(os.getRecordedOutput()).isEmpty();
-    assertThat(os.getRecordedOutputSize()).isEqualTo(0);
-
-    ByteArrayOutputStream recorder = new ByteArrayOutputStream();
-    os.dumpOut(recorder);
-    assertThat(recorder.toByteArray()).isEmpty();
-
-    // Existence and error checks must come last to ensure previous calls have no side-effects.
-    assertThat(os.getFileUnsafe().exists()).isTrue();
-    assertThat(os.hadError()).isFalse();
-  }
-
-  @Test
-  public void testFileRecordingOutputStream_createOutOfBandWithContents() throws Exception {
-    FileRecordingOutputStream os = newFileRecordingOutputStream("/some-file.txt");
-    Path path = os.getFile();
-    byte[] data = "12345".getBytes(StandardCharsets.ISO_8859_1);
-    try (OutputStream writer = path.getOutputStream()) {
-      writer.write(data);
+    @Before
+    fun setUp() {
+        fs = InMemoryFileSystem(DigestHashFunction.SHA256)
     }
 
-    assertThat(os.hasRecordedOutput()).isTrue();
-    assertThat(os.getRecordedOutput()).isEqualTo(data);
-    assertThat(os.getRecordedOutputSize()).isEqualTo(data.length);
-
-    ByteArrayOutputStream recorder = new ByteArrayOutputStream();
-    os.dumpOut(recorder);
-    assertThat(recorder.toByteArray()).isEqualTo(data);
-
-    // Existence and error checks must come last to ensure previous calls have no side-effects.
-    assertThat(os.getFileUnsafe().exists()).isTrue();
-    assertThat(os.hadError()).isFalse();
-  }
-
-  @Test
-  public void testFileRecordingOutputStream_write() throws Exception {
-    FileRecordingOutputStream os = newFileRecordingOutputStream("/some-file.txt");
-    byte[] data = "12345".getBytes(StandardCharsets.ISO_8859_1);
-    try {
-      os.write(data);
-    } finally {
-      os.close();
+    private fun newFileRecordingOutputStream(path: String?): FileRecordingOutputStream {
+        val outputFile: Path? = fs.getPath(path)
+        return FileRecordingOutputStream(outputFile)
     }
 
-    assertThat(os.hasRecordedOutput()).isTrue();
-    assertThat(os.getRecordedOutput()).isEqualTo(data);
-    assertThat(os.getRecordedOutputSize()).isEqualTo(data.length);
+    @Test
+    @Throws(Exception::class)
+    fun testFileRecordingOutputStream_doesNotExistByDefault() {
+        val os: FileRecordingOutputStream = newFileRecordingOutputStream("/some-file.txt")
 
-    ByteArrayOutputStream recorder = new ByteArrayOutputStream();
-    os.dumpOut(recorder);
-    assertThat(recorder.toByteArray()).isEqualTo(data);
+        assertThat(os.hasRecordedOutput()).isFalse()
+        assertThat(os.getRecordedOutput()).isEmpty()
+        assertThat(os.getRecordedOutputSize()).isEqualTo(0)
 
-    // Existence and error checks must come last to ensure previous calls have no side-effects.
-    assertThat(os.getFileUnsafe().exists()).isTrue();
-    assertThat(os.hadError()).isFalse();
-  }
+        val recorder = ByteArrayOutputStream()
+        os.dumpOut(recorder)
+        Truth.assertThat(recorder.toByteArray()).isEmpty()
 
-  @Test
-  public void testFileRecordingOutputStream_clearAfterCreation() throws Exception {
-    FileRecordingOutputStream os = newFileRecordingOutputStream("/some-file.txt");
-    Path path = os.getFile();
-    try {
-      os.write("12345".getBytes(StandardCharsets.ISO_8859_1));
-    } finally {
-      os.close();
+        // Existence and error checks must come last to ensure previous calls have no side-effects.
+        assertThat(os.getFileUnsafe().exists()).isFalse()
+        assertThat(os.hadError()).isFalse()
     }
 
-    assertThat(path.exists()).isTrue();
-    assertThat(os.getRecordedOutputSize()).isGreaterThan(0);
-    assertThat(os.hadError()).isFalse();
-    os.clear();
-    assertThat(path.exists()).isFalse();
-    assertThat(os.getRecordedOutputSize()).isEqualTo(0);
-    assertThat(os.hadError()).isFalse();
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testFileRecordingOutputStream_createOutOfBandAsEmpty() {
+        val os: FileRecordingOutputStream = newFileRecordingOutputStream("/some-file.txt")
+        val path: Path = os.getFile()
+        path.getOutputStream().close()
 
-  @Test
-  public void testFileRecordingOutputStream_errorDuringSizeCheck() throws Exception {
-    fs.getPath("/dir").createDirectory();
-    FileRecordingOutputStream os = newFileRecordingOutputStream("/dir/some-file.txt");
-    Path path = os.getFile();
-    path.getOutputStream().close();
-    fs.getPath("/dir").setReadable(false);
-    fs.getPath("/dir").setExecutable(false);
+        assertThat(os.hasRecordedOutput()).isFalse()
+        assertThat(os.getRecordedOutput()).isEmpty()
+        assertThat(os.getRecordedOutputSize()).isEqualTo(0)
 
-    IOException expected = assertThrows(IOException.class, os::getRecordedOutputSize);
-    assertThat(expected.toString()).contains("Permission denied");
+        val recorder = ByteArrayOutputStream()
+        os.dumpOut(recorder)
+        Truth.assertThat(recorder.toByteArray()).isEmpty()
 
-    ByteArrayOutputStream recorder = new ByteArrayOutputStream();
-    os.dumpOut(recorder);
-    assertThat(new String(recorder.toByteArray(), StandardCharsets.ISO_8859_1))
-        .contains("Permission denied");
+        // Existence and error checks must come last to ensure previous calls have no side-effects.
+        assertThat(os.getFileUnsafe().exists()).isTrue()
+        assertThat(os.hadError()).isFalse()
+    }
 
-    // Restore directory permissions so our existence check works.
-    fs.getPath("/dir").setReadable(true);
-    fs.getPath("/dir").setExecutable(true);
-    // Existence and error checks must come last to ensure previous calls have no side-effects.
-    assertThat(os.getFileUnsafe().exists()).isTrue();
-    assertThat(os.hadError()).isTrue();
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testFileRecordingOutputStream_createOutOfBandWithContents() {
+        val os: FileRecordingOutputStream = newFileRecordingOutputStream("/some-file.txt")
+        val path: Path = os.getFile()
+        val data: ByteArray = "12345".toByteArray(StandardCharsets.ISO_8859_1)
+        path.getOutputStream().use { writer ->
+            writer.write(data)
+        }
+        assertThat(os.hasRecordedOutput()).isTrue()
+        assertThat(os.getRecordedOutput()).isEqualTo(data)
+        assertThat(os.getRecordedOutputSize()).isEqualTo(data.size)
 
-  @Test
-  public void testFileRecordingOutputStream_errorDuringRead() throws Exception {
-    FileRecordingOutputStream os = newFileRecordingOutputStream("/some-file.txt");
-    Path path = os.getFile();
-    path.getOutputStream().close();
-    path.setReadable(false);
+        val recorder = ByteArrayOutputStream()
+        os.dumpOut(recorder)
+        Truth.assertThat(recorder.toByteArray()).isEqualTo(data)
 
-    String error = new String(os.getRecordedOutput(), StandardCharsets.ISO_8859_1);
-    // The error message comes from the system so we cannot be too specific about what we look for.
-    assertThat(error).contains("Permission denied");
-    assertThat(os.getRecordedOutputSize()).isGreaterThan(0);
+        // Existence and error checks must come last to ensure previous calls have no side-effects.
+        assertThat(os.getFileUnsafe().exists()).isTrue()
+        assertThat(os.hadError()).isFalse()
+    }
 
-    ByteArrayOutputStream recorder = new ByteArrayOutputStream();
-    os.dumpOut(recorder);
-    assertThat(recorder.toByteArray())
-        .isEqualTo((error + "\n" + error).getBytes(StandardCharsets.ISO_8859_1));
+    @Test
+    @Throws(Exception::class)
+    fun testFileRecordingOutputStream_write() {
+        val os: FileRecordingOutputStream = newFileRecordingOutputStream("/some-file.txt")
+        val data: ByteArray = "12345".toByteArray(StandardCharsets.ISO_8859_1)
+        try {
+            os.write(data)
+        } finally {
+            os.close()
+        }
 
-    // Existence and error checks must come last to ensure previous calls have no side-effects.
-    assertThat(os.getFileUnsafe().exists()).isTrue();
-    assertThat(os.hadError()).isTrue();
-  }
+        assertThat(os.hasRecordedOutput()).isTrue()
+        assertThat(os.getRecordedOutput()).isEqualTo(data)
+        assertThat(os.getRecordedOutputSize()).isEqualTo(data.size)
+
+        val recorder = ByteArrayOutputStream()
+        os.dumpOut(recorder)
+        Truth.assertThat(recorder.toByteArray()).isEqualTo(data)
+
+        // Existence and error checks must come last to ensure previous calls have no side-effects.
+        assertThat(os.getFileUnsafe().exists()).isTrue()
+        assertThat(os.hadError()).isFalse()
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testFileRecordingOutputStream_clearAfterCreation() {
+        val os: FileRecordingOutputStream = newFileRecordingOutputStream("/some-file.txt")
+        val path: Path = os.getFile()
+        try {
+            os.write("12345".toByteArray(StandardCharsets.ISO_8859_1))
+        } finally {
+            os.close()
+        }
+
+        assertThat(path.exists()).isTrue()
+        assertThat(os.getRecordedOutputSize()).isGreaterThan(0)
+        assertThat(os.hadError()).isFalse()
+        os.clear()
+        assertThat(path.exists()).isFalse()
+        assertThat(os.getRecordedOutputSize()).isEqualTo(0)
+        assertThat(os.hadError()).isFalse()
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testFileRecordingOutputStream_errorDuringSizeCheck() {
+        fs.getPath("/dir").createDirectory()
+        val os: FileRecordingOutputStream = newFileRecordingOutputStream("/dir/some-file.txt")
+        val path: Path = os.getFile()
+        path.getOutputStream().close()
+        fs.getPath("/dir").setReadable(false)
+        fs.getPath("/dir").setExecutable(false)
+
+        val expected: IOException = Assert.assertThrows<IOException>(IOException::class.java, os::getRecordedOutputSize)
+        Truth.assertThat(expected.toString()).contains("Permission denied")
+
+        val recorder = ByteArrayOutputStream()
+        os.dumpOut(recorder)
+        Truth.assertThat(String(recorder.toByteArray(), StandardCharsets.ISO_8859_1))
+            .contains("Permission denied")
+
+        // Restore directory permissions so our existence check works.
+        fs.getPath("/dir").setReadable(true)
+        fs.getPath("/dir").setExecutable(true)
+        // Existence and error checks must come last to ensure previous calls have no side-effects.
+        assertThat(os.getFileUnsafe().exists()).isTrue()
+        assertThat(os.hadError()).isTrue()
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testFileRecordingOutputStream_errorDuringRead() {
+        val os: FileRecordingOutputStream = newFileRecordingOutputStream("/some-file.txt")
+        val path: Path = os.getFile()
+        path.getOutputStream().close()
+        path.setReadable(false)
+
+        val error = String(os.getRecordedOutput(), StandardCharsets.ISO_8859_1)
+        // The error message comes from the system so we cannot be too specific about what we look for.
+        Truth.assertThat(error).contains("Permission denied")
+        assertThat(os.getRecordedOutputSize()).isGreaterThan(0)
+
+        val recorder = ByteArrayOutputStream()
+        os.dumpOut(recorder)
+        Truth.assertThat(recorder.toByteArray())
+            .isEqualTo((error + "\n" + error).toByteArray(StandardCharsets.ISO_8859_1))
+
+        // Existence and error checks must come last to ensure previous calls have no side-effects.
+        assertThat(os.getFileUnsafe().exists()).isTrue()
+        assertThat(os.hadError()).isTrue()
+    }
 }

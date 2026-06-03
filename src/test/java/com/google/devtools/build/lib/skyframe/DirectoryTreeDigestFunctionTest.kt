@@ -11,311 +11,314 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe
 
-package com.google.devtools.build.lib.skyframe;
+import com.google.devtools.build.lib.analysis.BlazeDirectories
 
-import static com.google.common.truth.Truth.assertThat;
+@RunWith(JUnit4::class)
+class DirectoryTreeDigestFunctionTest : FoundationTestCase() {
+    private var differencer: RecordingDifferencer? = null
+    private var skyFunctions: com.google.common.collect.ImmutableMap<SkyFunctionName?, SkyFunction?>? = null
+    private var evaluationContext: EvaluationContext? = null
 
-import com.google.common.base.Suppliers;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.analysis.ServerDirectories;
-import com.google.devtools.build.lib.analysis.util.AnalysisMock;
-import com.google.devtools.build.lib.clock.BlazeClock;
-import com.google.devtools.build.lib.pkgcache.PathPackageLocator;
-import com.google.devtools.build.lib.skyframe.ExternalFilesHelper.ExternalFileAction;
-import com.google.devtools.build.lib.testutil.FoundationTestCase;
-import com.google.devtools.build.lib.util.io.TimestampGranularityMonitor;
-import com.google.devtools.build.lib.vfs.FileStateKey;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.lib.vfs.RootedPath;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import com.google.devtools.build.skyframe.EvaluationContext;
-import com.google.devtools.build.skyframe.InMemoryMemoizingEvaluator;
-import com.google.devtools.build.skyframe.MemoizingEvaluator;
-import com.google.devtools.build.skyframe.RecordingDifferencer;
-import com.google.devtools.build.skyframe.SequencedRecordingDifferencer;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import java.util.concurrent.atomic.AtomicReference;
-import net.starlark.java.eval.StarlarkSemantics;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @Before
+    fun setup() {
+        differencer = SequencedRecordingDifferencer()
+        evaluationContext =
+            EvaluationContext.newBuilder().setParallelism(8).setEventHandler(reporter).build()
+        val packageLocator: AtomicReference<PathPackageLocator?> =
+            AtomicReference<PathPackageLocator?>(
+                PathPackageLocator(
+                    outputBase,
+                    com.google.common.collect.ImmutableList.of<E?>(Root.fromPath(rootDirectory)),
+                    BazelSkyframeExecutorConstants.BUILD_FILES_BY_PRIORITY
+                )
+            )
+        val directories: BlazeDirectories =
+            BlazeDirectories(
+                ServerDirectories(rootDirectory, outputBase, rootDirectory),
+                rootDirectory,
+                AnalysisMock.get().getProductName()
+            )
+        val externalFilesHelper: ExternalFilesHelper? =
+            ExternalFilesHelper.createForTesting(
+                packageLocator,
+                ExternalFileAction.DEPEND_ON_EXTERNAL_PKG_FOR_EXTERNAL_REPO_PATHS,
+                directories
+            )
 
-@RunWith(JUnit4.class)
-public class DirectoryTreeDigestFunctionTest extends FoundationTestCase {
+        skyFunctions =
+            com.google.common.collect.ImmutableMap.builder<SkyFunctionName?, SkyFunction?>()
+                .put(SkyFunctions.FILE, FileFunction(packageLocator, directories))
+                .put(
+                    FileStateKey.FILE_STATE,
+                    FileStateFunction(
+                        com.google.common.base.Suppliers.ofInstance<T?>(TimestampGranularityMonitor(com.google.devtools.build.lib.clock.BlazeClock.instance())),
+                        SyscallCache.NO_CACHE,
+                        externalFilesHelper
+                    )
+                )
+                .put(SkyFunctions.PRECOMPUTED, PrecomputedFunction())
+                .put(SkyFunctions.DIRECTORY_LISTING, DirectoryListingFunction())
+                .put(
+                    SkyFunctions.DIRECTORY_LISTING_STATE,
+                    DirectoryListingStateFunction(externalFilesHelper, SyscallCache.NO_CACHE)
+                )
+                .put(SkyFunctions.DIRECTORY_TREE_DIGEST, DirectoryTreeDigestFunction())
+                .buildOrThrow()
 
-  private RecordingDifferencer differencer;
-  private ImmutableMap<SkyFunctionName, SkyFunction> skyFunctions;
-  private EvaluationContext evaluationContext;
-
-  @Before
-  public void setup() {
-    differencer = new SequencedRecordingDifferencer();
-    evaluationContext =
-        EvaluationContext.newBuilder().setParallelism(8).setEventHandler(reporter).build();
-    AtomicReference<PathPackageLocator> packageLocator =
-        new AtomicReference<>(
-            new PathPackageLocator(
-                outputBase,
-                ImmutableList.of(Root.fromPath(rootDirectory)),
-                BazelSkyframeExecutorConstants.BUILD_FILES_BY_PRIORITY));
-    BlazeDirectories directories =
-        new BlazeDirectories(
-            new ServerDirectories(rootDirectory, outputBase, rootDirectory),
-            rootDirectory,
-            AnalysisMock.get().getProductName());
-    ExternalFilesHelper externalFilesHelper =
-        ExternalFilesHelper.createForTesting(
-            packageLocator,
-            ExternalFileAction.DEPEND_ON_EXTERNAL_PKG_FOR_EXTERNAL_REPO_PATHS,
-            directories);
-
-    skyFunctions =
-        ImmutableMap.<SkyFunctionName, SkyFunction>builder()
-            .put(SkyFunctions.FILE, new FileFunction(packageLocator, directories))
-            .put(
-                FileStateKey.FILE_STATE,
-                new FileStateFunction(
-                    Suppliers.ofInstance(new TimestampGranularityMonitor(BlazeClock.instance())),
-                    SyscallCache.NO_CACHE,
-                    externalFilesHelper))
-            .put(SkyFunctions.PRECOMPUTED, new PrecomputedFunction())
-            .put(SkyFunctions.DIRECTORY_LISTING, new DirectoryListingFunction())
-            .put(
-                SkyFunctions.DIRECTORY_LISTING_STATE,
-                new DirectoryListingStateFunction(externalFilesHelper, SyscallCache.NO_CACHE))
-            .put(SkyFunctions.DIRECTORY_TREE_DIGEST, new DirectoryTreeDigestFunction())
-            .buildOrThrow();
-
-    PrecomputedValue.STARLARK_SEMANTICS.set(differencer, StarlarkSemantics.DEFAULT);
-    PrecomputedValue.PATH_PACKAGE_LOCATOR.set(differencer, packageLocator.get());
-  }
-
-  private String getTreeDigest(String path) throws Exception {
-    return getTreeDigest(path, ImmutableList.of());
-  }
-
-  private String getTreeDigest(String path, ImmutableList<String> excludes) throws Exception {
-    RootedPath rootedPath =
-        RootedPath.toRootedPath(Root.absoluteRoot(fileSystem), scratch.resolve(path));
-    SkyKey key = DirectoryTreeDigestValue.key(rootedPath, rootedPath, excludes);
-    MemoizingEvaluator evaluator = new InMemoryMemoizingEvaluator(skyFunctions, differencer);
-    var result = evaluator.evaluate(ImmutableList.of(key), evaluationContext);
-    if (result.hasError()) {
-      throw result.getError().getException();
+        PrecomputedValue.STARLARK_SEMANTICS.set(differencer, StarlarkSemantics.DEFAULT)
+        PrecomputedValue.PATH_PACKAGE_LOCATOR.set(differencer, packageLocator.get())
     }
-    return ((DirectoryTreeDigestValue) result.get(key)).hexDigest;
-  }
 
-  @Test
-  public void basic() throws Exception {
-    scratch.file("a", "a");
-    scratch.file("b/b", "b");
-    scratch.file("c", "c");
-    String oldDigest = getTreeDigest("/");
+    @Throws(java.lang.Exception::class)
+    private fun getTreeDigest(path: String?): String {
+        return getTreeDigest(path, com.google.common.collect.ImmutableList.of<String?>())
+    }
 
-    scratch.overwriteFile("b/b", "something else");
-    assertThat(getTreeDigest("/")).isNotEqualTo(oldDigest);
-  }
+    @Throws(java.lang.Exception::class)
+    private fun getTreeDigest(path: String?, excludes: com.google.common.collect.ImmutableList<String?>?): String {
+        val rootedPath: RootedPath? =
+            RootedPath.toRootedPath(Root.absoluteRoot(fileSystem), scratch.resolve(path))
+        val key: SkyKey = DirectoryTreeDigestValue.key(rootedPath, rootedPath, excludes)
+        val evaluator: MemoizingEvaluator = InMemoryMemoizingEvaluator(skyFunctions, differencer)
+        val result: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            evaluator.evaluate(com.google.common.collect.ImmutableList.of<E?>(key), evaluationContext)
+        if (result.hasError()) {
+            throw result.getError().getException()
+        }
+        return (result.get(key) as DirectoryTreeDigestValue).hexDigest
+    }
 
-  @Test
-  public void basicExcludes() throws Exception {
-    scratch.file("a", "a");
-    scratch.file("b/b", "b");
-    scratch.file("c", "c");
-    String excludeB = "**/b/b";
-    String oldDigest = getTreeDigest("/", ImmutableList.of(excludeB));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun basic() {
+        scratch.file("a", "a")
+        scratch.file("b/b", "b")
+        scratch.file("c", "c")
+        val oldDigest = getTreeDigest("/")
 
-    scratch.overwriteFile("b/b", "something else");
-    assertThat(getTreeDigest("/", ImmutableList.of(excludeB))).isEqualTo(oldDigest);
-  }
+        scratch.overwriteFile("b/b", "something else")
+        Truth.assertThat(getTreeDigest("/")).isNotEqualTo(oldDigest)
+    }
 
-  @Test
-  public void addFile() throws Exception {
-    scratch.file("a", "a");
-    scratch.file("b/b", "b");
-    scratch.file("c", "c");
-    String oldDigest = getTreeDigest("/");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun basicExcludes() {
+        scratch.file("a", "a")
+        scratch.file("b/b", "b")
+        scratch.file("c", "c")
+        val excludeB = "**/b/b"
+        val oldDigest = getTreeDigest("/", com.google.common.collect.ImmutableList.of<String?>(excludeB))
 
-    scratch.file("b/d", "something else");
-    String updatedDigest = getTreeDigest("/");
-    assertThat(updatedDigest).isNotEqualTo(oldDigest);
+        scratch.overwriteFile("b/b", "something else")
+        Truth.assertThat(getTreeDigest("/", com.google.common.collect.ImmutableList.of<String?>(excludeB)))
+            .isEqualTo(oldDigest)
+    }
 
-    scratch.file("b/ignoredFile", "ignored");
-    assertThat(getTreeDigest("/", ImmutableList.of("**/ignoredFile"))).isEqualTo(updatedDigest);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun addFile() {
+        scratch.file("a", "a")
+        scratch.file("b/b", "b")
+        scratch.file("c", "c")
+        val oldDigest = getTreeDigest("/")
 
-  @Test
-  public void removeFile() throws Exception {
-    scratch.file("a", "a");
-    scratch.file("b/b", "b");
-    scratch.file("c", "c");
-    scratch.file("ignoredFile", "ignored");
-    String ignorePattern = "**/ignoredFile";
-    String oldDigest = getTreeDigest("/", ImmutableList.of(ignorePattern));
+        scratch.file("b/d", "something else")
+        val updatedDigest = getTreeDigest("/")
+        Truth.assertThat(updatedDigest).isNotEqualTo(oldDigest)
 
-    scratch.deleteFile("ignoredFile");
-    assertThat(getTreeDigest("/", ImmutableList.of(ignorePattern))).isEqualTo(oldDigest);
+        scratch.file("b/ignoredFile", "ignored")
+        Truth.assertThat(getTreeDigest("/", com.google.common.collect.ImmutableList.of<String?>("**/ignoredFile")))
+            .isEqualTo(updatedDigest)
+    }
 
-    scratch.deleteFile("b/b");
-    assertThat(getTreeDigest("/", ImmutableList.of(ignorePattern))).isNotEqualTo(oldDigest);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun removeFile() {
+        scratch.file("a", "a")
+        scratch.file("b/b", "b")
+        scratch.file("c", "c")
+        scratch.file("ignoredFile", "ignored")
+        val ignorePattern = "**/ignoredFile"
+        val oldDigest = getTreeDigest("/", com.google.common.collect.ImmutableList.of<String?>(ignorePattern))
 
-  @Test
-  public void renameFile() throws Exception {
-    scratch.file("a", "a");
-    scratch.file("b/b", "b");
-    scratch.file("c", "c");
-    scratch.file("ignoredFile", "ignored");
-    String ignorePattern = "**/ignored*";
-    String oldDigest = getTreeDigest("/", ImmutableList.of(ignorePattern));
+        scratch.deleteFile("ignoredFile")
+        Truth.assertThat(getTreeDigest("/", com.google.common.collect.ImmutableList.of<String?>(ignorePattern)))
+            .isEqualTo(oldDigest)
 
-    scratch.deleteFile("ignoredFile");
-    scratch.file("ignoredFileRenamed", "ignored");
-    assertThat(getTreeDigest("/", ImmutableList.of(ignorePattern))).isEqualTo(oldDigest);
+        scratch.deleteFile("b/b")
+        Truth.assertThat(getTreeDigest("/", com.google.common.collect.ImmutableList.of<String?>(ignorePattern)))
+            .isNotEqualTo(oldDigest)
+    }
 
-    scratch.deleteFile("b/b");
-    scratch.file("b/b1", "b");
-    assertThat(getTreeDigest("/", ImmutableList.of(ignorePattern))).isNotEqualTo(oldDigest);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun renameFile() {
+        scratch.file("a", "a")
+        scratch.file("b/b", "b")
+        scratch.file("c", "c")
+        scratch.file("ignoredFile", "ignored")
+        val ignorePattern = "**/ignored*"
+        val oldDigest = getTreeDigest("/", com.google.common.collect.ImmutableList.of<String?>(ignorePattern))
 
-  @Test
-  public void swapDirAndFile() throws Exception {
-    scratch.file("a", "a");
-    scratch.file("b", "b");
-    scratch.file("c/inner", "inner");
-    String oldDigest = getTreeDigest("/");
+        scratch.deleteFile("ignoredFile")
+        scratch.file("ignoredFileRenamed", "ignored")
+        Truth.assertThat(getTreeDigest("/", com.google.common.collect.ImmutableList.of<String?>(ignorePattern)))
+            .isEqualTo(oldDigest)
 
-    scratch.resolve("c").deleteTree();
-    scratch.deleteFile("b");
-    scratch.file("b/inner", "inner");
-    scratch.file("c", "b");
-    assertThat(getTreeDigest("/")).isNotEqualTo(oldDigest);
-  }
+        scratch.deleteFile("b/b")
+        scratch.file("b/b1", "b")
+        Truth.assertThat(getTreeDigest("/", com.google.common.collect.ImmutableList.of<String?>(ignorePattern)))
+            .isNotEqualTo(oldDigest)
+    }
 
-  @Test
-  public void changeMtime() throws Exception {
-    scratch.file("a", "a");
-    scratch.file("b", "b");
-    scratch.file("c", "c");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun swapDirAndFile() {
+        scratch.file("a", "a")
+        scratch.file("b", "b")
+        scratch.file("c/inner", "inner")
+        val oldDigest = getTreeDigest("/")
 
-    String oldDigest = getTreeDigest("/");
+        scratch.resolve("c").deleteTree()
+        scratch.deleteFile("b")
+        scratch.file("b/inner", "inner")
+        scratch.file("c", "b")
+        Truth.assertThat(getTreeDigest("/")).isNotEqualTo(oldDigest)
+    }
 
-    // We don't digest mtimes so this shouldn't affect anything.
-    scratch.resolve("c").setLastModifiedTime(2024L);
-    assertThat(getTreeDigest("/")).isEqualTo(oldDigest);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun changeMtime() {
+        scratch.file("a", "a")
+        scratch.file("b", "b")
+        scratch.file("c", "c")
 
-  @Test
-  public void symlink() throws Exception {
-    scratch.file("dir/a", "a");
-    scratch.resolve("dir/b").createSymbolicLink(scratch.resolve("otherdir"));
-    scratch.file("dir/c", "c");
-    scratch.file("otherdir/b", "b");
-    scratch.file("otherdir/sub/sub", "sub");
-    String oldDigest = getTreeDigest("dir");
+        val oldDigest = getTreeDigest("/")
 
-    scratch.deleteFile("dir/b");
-    scratch.resolve("dir/b").createSymbolicLink(scratch.resolve("yetotherdir"));
-    scratch.file("yetotherdir/crazy", "stuff");
-    assertThat(getTreeDigest("dir")).isNotEqualTo(oldDigest);
-  }
+        // We don't digest mtimes so this shouldn't affect anything.
+        scratch.resolve("c").setLastModifiedTime(2024L)
+        Truth.assertThat(getTreeDigest("/")).isEqualTo(oldDigest)
+    }
 
-  @Test
-  public void danglingSymlink() throws Exception {
-    scratch.file("dir/a", "a");
-    scratch.resolve("dir/b").createSymbolicLink(scratch.resolve("otherdir"));
-    scratch.file("dir/c", "c");
-    String oldDigest = getTreeDigest("dir");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun symlink() {
+        scratch.file("dir/a", "a")
+        scratch.resolve("dir/b").createSymbolicLink(scratch.resolve("otherdir"))
+        scratch.file("dir/c", "c")
+        scratch.file("otherdir/b", "b")
+        scratch.file("otherdir/sub/sub", "sub")
+        val oldDigest = getTreeDigest("dir")
 
-    scratch.file("otherdir/b", "b");
-    assertThat(getTreeDigest("dir")).isNotEqualTo(oldDigest);
-  }
+        scratch.deleteFile("dir/b")
+        scratch.resolve("dir/b").createSymbolicLink(scratch.resolve("yetotherdir"))
+        scratch.file("yetotherdir/crazy", "stuff")
+        Truth.assertThat(getTreeDigest("dir")).isNotEqualTo(oldDigest)
+    }
 
-  @Test
-  public void symlinkPointingToSameContents() throws Exception {
-    scratch.file("dir/a", "a");
-    scratch.file("dir/b/b", "b");
-    scratch.file("dir/b/sub/sub", "sub");
-    scratch.file("dir/c", "c");
-    String oldDigest = getTreeDigest("dir");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun danglingSymlink() {
+        scratch.file("dir/a", "a")
+        scratch.resolve("dir/b").createSymbolicLink(scratch.resolve("otherdir"))
+        scratch.file("dir/c", "c")
+        val oldDigest = getTreeDigest("dir")
 
-    // replace dir/b with a symlink pointing to otherdir/, which contains the same contents.
-    // this shouldn't affect the tree digest.
-    scratch.resolve("dir/b").deleteTree();
-    scratch.resolve("dir/b").createSymbolicLink(scratch.resolve("otherdir"));
-    scratch.file("otherdir/b", "b");
-    scratch.file("otherdir/sub/sub", "sub");
-    assertThat(getTreeDigest("dir")).isEqualTo(oldDigest);
-  }
+        scratch.file("otherdir/b", "b")
+        Truth.assertThat(getTreeDigest("dir")).isNotEqualTo(oldDigest)
+    }
 
-  public static boolean excludes(DirectoryTreeDigestValue.Key key, String path) {
-    return DirectoryTreeDigestFunction.excludes(path, key.globBase(), key.excludes(), null);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun symlinkPointingToSameContents() {
+        scratch.file("dir/a", "a")
+        scratch.file("dir/b/b", "b")
+        scratch.file("dir/b/sub/sub", "sub")
+        scratch.file("dir/c", "c")
+        val oldDigest = getTreeDigest("dir")
 
-  public static boolean excludes(DirectoryTreeDigestValue.Key key, RootedPath path) {
-    return DirectoryTreeDigestFunction.excludes(path, key.globBase(), key.excludes(), null);
-  }
+        // replace dir/b with a symlink pointing to otherdir/, which contains the same contents.
+        // this shouldn't affect the tree digest.
+        scratch.resolve("dir/b").deleteTree()
+        scratch.resolve("dir/b").createSymbolicLink(scratch.resolve("otherdir"))
+        scratch.file("otherdir/b", "b")
+        scratch.file("otherdir/sub/sub", "sub")
+        Truth.assertThat(getTreeDigest("dir")).isEqualTo(oldDigest)
+    }
 
-  @Test
-  public void keyBasicExcludes() {
-    Path pkg = root.getRelative("pkg");
-    RootedPath rootedPath =
-        RootedPath.toRootedPath(Root.fromPath(pkg), PathFragment.create("foo/bar"));
-    DirectoryTreeDigestValue.Key key =
-        DirectoryTreeDigestValue.key(
-            rootedPath, rootedPath, ImmutableList.of("ignoredFile", "**/*.tmp"));
+    @org.junit.Test
+    fun keyBasicExcludes() {
+        val pkg: Path? = root.getRelative("pkg")
+        val rootedPath: RootedPath? =
+            RootedPath.toRootedPath(Root.fromPath(pkg), PathFragment.create("foo/bar"))
+        val key: DirectoryTreeDigestValue.Key =
+            DirectoryTreeDigestValue.key(
+                rootedPath, rootedPath, com.google.common.collect.ImmutableList.of<E?>("ignoredFile", "**/*.tmp")
+            )
 
-    assertThat(excludes(key, "foo/bar/ignoredFile")).isTrue();
-    assertThat(excludes(key, "foo/bar/anything.ending.in.tmp")).isTrue();
-    assertThat(excludes(key, "foo/bar/anything/ending/in/file.tmp")).isTrue();
-    assertThat(excludes(key, "foo/bar/notIgnored")).isFalse();
-  }
+        Truth.assertThat(Companion.excludes(key, "foo/bar/ignoredFile")).isTrue()
+        Truth.assertThat(Companion.excludes(key, "foo/bar/anything.ending.in.tmp")).isTrue()
+        Truth.assertThat(Companion.excludes(key, "foo/bar/anything/ending/in/file.tmp")).isTrue()
+        Truth.assertThat(Companion.excludes(key, "foo/bar/notIgnored")).isFalse()
+    }
 
-  @Test
-  public void keyDifferentRoots() {
-    Path pkg1 = root.getRelative("pkg");
-    RootedPath rootedPath =
-        RootedPath.toRootedPath(Root.fromPath(pkg1), PathFragment.create("foo/bar"));
+    @org.junit.Test
+    fun keyDifferentRoots() {
+        val pkg1: Path? = root.getRelative("pkg")
+        val rootedPath: RootedPath? =
+            RootedPath.toRootedPath(Root.fromPath(pkg1), PathFragment.create("foo/bar"))
 
-    Path pkg2 = root.getRelative("pkg2");
-    RootedPath differentRoot =
-        RootedPath.toRootedPath(Root.fromPath(pkg2), PathFragment.create("foo/bar/ignoredFile"));
+        val pkg2: Path? = root.getRelative("pkg2")
+        val differentRoot: RootedPath? =
+            RootedPath.toRootedPath(Root.fromPath(pkg2), PathFragment.create("foo/bar/ignoredFile"))
 
-    DirectoryTreeDigestValue.Key key =
-        DirectoryTreeDigestValue.key(rootedPath, rootedPath, ImmutableList.of("ignoredFile"));
+        val key: DirectoryTreeDigestValue.Key =
+            DirectoryTreeDigestValue.key(
+                rootedPath,
+                rootedPath,
+                com.google.common.collect.ImmutableList.of<E?>("ignoredFile")
+            )
 
-    assertThat(excludes(key, differentRoot)).isFalse();
-  }
+        Truth.assertThat(Companion.excludes(key, differentRoot)).isFalse()
+    }
 
-  @Test
-  public void keySameRoots() {
-    Path pkg = root.getRelative("pkg");
-    RootedPath rootedPath =
-        RootedPath.toRootedPath(Root.fromPath(pkg), PathFragment.create("foo/bar"));
-    RootedPath sameRootIgnoredFile =
-        RootedPath.toRootedPath(Root.fromPath(pkg), PathFragment.create("foo/bar/ignoredFile"));
+    @org.junit.Test
+    fun keySameRoots() {
+        val pkg: Path? = root.getRelative("pkg")
+        val rootedPath: RootedPath? =
+            RootedPath.toRootedPath(Root.fromPath(pkg), PathFragment.create("foo/bar"))
+        val sameRootIgnoredFile: RootedPath? =
+            RootedPath.toRootedPath(Root.fromPath(pkg), PathFragment.create("foo/bar/ignoredFile"))
 
-    DirectoryTreeDigestValue.Key key =
-        DirectoryTreeDigestValue.key(rootedPath, rootedPath, ImmutableList.of("ignoredFile"));
-    assertThat(excludes(key, sameRootIgnoredFile)).isTrue();
-  }
+        val key: DirectoryTreeDigestValue.Key =
+            DirectoryTreeDigestValue.key(
+                rootedPath,
+                rootedPath,
+                com.google.common.collect.ImmutableList.of<E?>("ignoredFile")
+            )
+        Truth.assertThat(Companion.excludes(key, sameRootIgnoredFile)).isTrue()
+    }
 
-  @Test
-  public void keyEmptyExcludes() {
-    Path pkg = root.getRelative("pkg");
-    RootedPath rootedPath =
-        RootedPath.toRootedPath(Root.fromPath(pkg), PathFragment.create("foo/bar"));
+    @org.junit.Test
+    fun keyEmptyExcludes() {
+        val pkg: Path? = root.getRelative("pkg")
+        val rootedPath: RootedPath? =
+            RootedPath.toRootedPath(Root.fromPath(pkg), PathFragment.create("foo/bar"))
 
-    DirectoryTreeDigestValue.Key key =
-        DirectoryTreeDigestValue.key(rootedPath, rootedPath, ImmutableList.of());
-    assertThat(excludes(key, "/pkg/foo/bar")).isFalse();
-  }
+        val key: DirectoryTreeDigestValue.Key =
+            DirectoryTreeDigestValue.key(rootedPath, rootedPath, com.google.common.collect.ImmutableList.of<E?>())
+        Truth.assertThat(Companion.excludes(key, "/pkg/foo/bar")).isFalse()
+    }
+
+    companion object {
+        fun excludes(key: DirectoryTreeDigestValue.Key, path: String?): Boolean {
+            return DirectoryTreeDigestFunction.excludes(path, key.globBase(), key.excludes(), null)
+        }
+
+        fun excludes(key: DirectoryTreeDigestValue.Key, path: RootedPath?): Boolean {
+            return DirectoryTreeDigestFunction.excludes(path, key.globBase(), key.excludes(), null)
+        }
+    }
 }

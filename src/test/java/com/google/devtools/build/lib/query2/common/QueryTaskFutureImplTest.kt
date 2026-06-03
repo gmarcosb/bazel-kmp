@@ -11,85 +11,85 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.common;
+package com.google.devtools.build.lib.query2.common
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.util.concurrent.Futures.immediateVoidFuture;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.query2.common.AbstractBlazeQueryEnvironment.QueryTaskFutureImpl
 
-import com.google.common.util.concurrent.MoreExecutors;
-import com.google.common.util.concurrent.SettableFuture;
-import com.google.devtools.build.lib.query2.common.AbstractBlazeQueryEnvironment.QueryTaskFutureImpl;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.QueryTaskFuture;
-import com.google.devtools.build.lib.query2.engine.QueryException;
-import com.google.devtools.build.lib.server.FailureDetails.ActionQuery.Code;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executors;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+@RunWith(JUnit4::class)
+class QueryTaskFutureImplTest {
+    @org.junit.Test
+    @Throws(java.lang.InterruptedException::class, ExecutionException::class)
+    fun whenSucceedsOrIsCancelledCall_inputFutureSuccess() {
+        val inputFuture: com.google.common.util.concurrent.SettableFuture<java.lang.Void?> =
+            com.google.common.util.concurrent.SettableFuture.create<java.lang.Void?>()
 
-@RunWith(JUnit4.class)
-public class QueryTaskFutureImplTest {
-  @Test
-  public void whenSucceedsOrIsCancelledCall_inputFutureSuccess()
-      throws InterruptedException, ExecutionException {
-    SettableFuture<Void> inputFuture = SettableFuture.create();
+        val nextFuture: QueryTaskFuture<String?> =
+            QueryTaskFutureImpl.whenSucceedsOrIsCancelledCall(
+                QueryTaskFutureImpl.ofDelegate(inputFuture),
+                { "Callback Return" },
+                com.google.common.util.concurrent.MoreExecutors.listeningDecorator(Executors.newSingleThreadExecutor())
+            )
 
-    QueryTaskFuture<String> nextFuture =
-        QueryTaskFutureImpl.whenSucceedsOrIsCancelledCall(
-            QueryTaskFutureImpl.ofDelegate(inputFuture),
-            () -> "Callback Return",
-            MoreExecutors.listeningDecorator(Executors.newSingleThreadExecutor()));
+        inputFuture.setFuture(com.google.common.util.concurrent.Futures.immediateVoidFuture())
+        val unused: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            (nextFuture as QueryTaskFutureImpl<String?>).get()
+        Truth.assertThat(nextFuture.ifSuccessful).isEqualTo("Callback Return")
+    }
 
-    inputFuture.setFuture(immediateVoidFuture());
-    var unused = ((QueryTaskFutureImpl<String>) nextFuture).get();
-    assertThat(nextFuture.getIfSuccessful()).isEqualTo("Callback Return");
-  }
+    @org.junit.Test
+    @Throws(java.lang.InterruptedException::class, ExecutionException::class)
+    fun whenSucceedsOrCancelsCall_inputFutureCancels() {
+        val inputQueryTaskFutureImpl: QueryTaskFutureImpl<java.lang.Void?> =
+            QueryTaskFutureImpl.ofDelegate(com.google.common.util.concurrent.SettableFuture.create<V?>())
 
-  @Test
-  public void whenSucceedsOrCancelsCall_inputFutureCancels()
-      throws InterruptedException, ExecutionException {
-    QueryTaskFutureImpl<Void> inputQueryTaskFutureImpl =
-        QueryTaskFutureImpl.ofDelegate(SettableFuture.create());
+        val nextFuture: QueryTaskFuture<String?> =
+            QueryTaskFutureImpl.whenSucceedsOrIsCancelledCall(
+                inputQueryTaskFutureImpl,
+                { "Callback Return" },
+                com.google.common.util.concurrent.MoreExecutors.listeningDecorator(Executors.newSingleThreadExecutor())
+            )
 
-    QueryTaskFuture<String> nextFuture =
-        QueryTaskFutureImpl.whenSucceedsOrIsCancelledCall(
-            inputQueryTaskFutureImpl,
-            () -> "Callback Return",
-            MoreExecutors.listeningDecorator(Executors.newSingleThreadExecutor()));
+        val unused1: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            inputQueryTaskFutureImpl.cancel(true)
+        val unused2: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            (nextFuture as QueryTaskFutureImpl<String?>).get()
+        Truth.assertThat(nextFuture.ifSuccessful).isEqualTo("Callback Return")
+    }
 
-    var unused1 = inputQueryTaskFutureImpl.cancel(true);
-    var unused2 = ((QueryTaskFutureImpl<String>) nextFuture).get();
-    assertThat(nextFuture.getIfSuccessful()).isEqualTo("Callback Return");
-  }
+    @org.junit.Test
+    @Throws(java.lang.InterruptedException::class, ExecutionException::class)
+    fun whenSucceedsOrCancelsCall_inputFutureFails() {
+        val inputFuture: com.google.common.util.concurrent.SettableFuture<java.lang.Void?> =
+            com.google.common.util.concurrent.SettableFuture.create<java.lang.Void?>()
 
-  @Test
-  public void whenSucceedsOrCancelsCall_inputFutureFails()
-      throws InterruptedException, ExecutionException {
-    SettableFuture<Void> inputFuture = SettableFuture.create();
+        val nextFuture: QueryTaskFuture<String?> =
+            QueryTaskFutureImpl.whenSucceedsOrIsCancelledCall(
+                QueryTaskFutureImpl.ofDelegate(inputFuture),
+                { "Callback Return" },
+                com.google.common.util.concurrent.MoreExecutors.listeningDecorator(Executors.newSingleThreadExecutor())
+            )
 
-    QueryTaskFuture<String> nextFuture =
-        QueryTaskFutureImpl.whenSucceedsOrIsCancelledCall(
-            QueryTaskFutureImpl.ofDelegate(inputFuture),
-            () -> "Callback Return",
-            MoreExecutors.listeningDecorator(Executors.newSingleThreadExecutor()));
+        val queryException: com.google.devtools.build.lib.query2.engine.QueryException =
+            com.google.devtools.build.lib.query2.engine.QueryException("Deliberate failure", Code.ACTION_QUERY_UNKNOWN)
+        inputFuture.setException(queryException)
 
-    QueryException queryException =
-        new QueryException("Deliberate failure", Code.ACTION_QUERY_UNKNOWN);
-    inputFuture.setException(queryException);
+        val thrownFromDirectGet: ExecutionException =
+            org.junit.Assert.assertThrows<ExecutionException>(
+                ExecutionException::class.java,
+                (nextFuture as QueryTaskFutureImpl<String?>?)::get
+            )
+        val cause: Throwable? = thrownFromDirectGet.cause
+        Truth.assertThat(cause).isInstanceOf(com.google.devtools.build.lib.query2.engine.QueryException::class.java)
+        Truth.assertThat(thrownFromDirectGet).hasMessageThat().contains("Deliberate failure")
 
-    ExecutionException thrownFromDirectGet =
-        assertThrows(ExecutionException.class, ((QueryTaskFutureImpl<String>) nextFuture)::get);
-    Throwable cause = thrownFromDirectGet.getCause();
-    assertThat(cause).isInstanceOf(QueryException.class);
-    assertThat(thrownFromDirectGet).hasMessageThat().contains("Deliberate failure");
-
-    IllegalStateException thrownFromGetIfSuccessful =
-        assertThrows(IllegalStateException.class, nextFuture::getIfSuccessful);
-    assertThat(thrownFromGetIfSuccessful)
-        .hasCauseThat()
-        .hasMessageThat()
-        .isEqualTo(thrownFromDirectGet.getMessage());
-  }
+        val thrownFromGetIfSuccessful: java.lang.IllegalStateException? =
+            org.junit.Assert.assertThrows<java.lang.IllegalStateException?>(
+                java.lang.IllegalStateException::class.java,
+                nextFuture::ifSuccessful
+            )
+        Truth.assertThat(thrownFromGetIfSuccessful)
+            .hasCauseThat()
+            .hasMessageThat()
+            .isEqualTo(thrownFromDirectGet.message)
+    }
 }

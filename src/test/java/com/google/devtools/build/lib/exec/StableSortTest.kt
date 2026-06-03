@@ -12,367 +12,601 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-package com.google.devtools.build.lib.exec;
+package com.google.devtools.build.lib.exec
 
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.exec.Protos.File
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.exec.Protos.File;
-import com.google.devtools.build.lib.exec.Protos.SpawnExec;
-import com.google.devtools.build.lib.util.io.MessageInputStream;
-import com.google.devtools.build.lib.util.io.MessageInputStreamWrapper.BinaryInputStreamWrapper;
-import com.google.devtools.build.lib.util.io.MessageOutputStream;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [StableSort].  */
+@RunWith(JUnit4::class)
+class StableSortTest {
+    private class ListOutput : MessageOutputStream<SpawnExec?> {
+        var list: java.util.ArrayList<SpawnExec?>
 
-/** Tests for {@link StableSort}. */
-@RunWith(JUnit4.class)
-public final class StableSortTest {
+        init {
+            list = java.util.ArrayList<SpawnExec?>()
+        }
 
-  private static class ListOutput implements MessageOutputStream<SpawnExec> {
-    public ArrayList<SpawnExec> list;
+        @Throws(IOException::class)
+        public override fun write(m: SpawnExec?) {
+            list.add(com.google.common.base.Preconditions.checkNotNull<SpawnExec?>(m))
+        }
 
-    ListOutput() {
-      list = new ArrayList<>();
+        @Throws(IOException::class)
+        public override fun close() {
+        }
     }
 
-    @Override
-    public void write(SpawnExec m) throws IOException {
-      list.add(checkNotNull(m));
+    @Throws(java.lang.Exception::class)
+    private fun testStableSort(list: MutableList<SpawnExec>): MutableList<SpawnExec?> {
+        val baos: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        for (spawn in list) {
+            spawn.writeDelimitedTo(baos)
+        }
+
+        val `in`: MessageInputStream<SpawnExec?> =
+            BinaryInputStreamWrapper(
+                ByteArrayInputStream(baos.toByteArray()), SpawnExec.getDefaultInstance()
+            )
+
+        val out = ListOutput()
+
+        StableSort.stableSort(`in`, out)
+        return out.list
     }
 
-    @Override
-    public void close() throws IOException {}
-  }
-
-  private List<SpawnExec> testStableSort(List<SpawnExec> list) throws Exception {
-    ByteArrayOutputStream baos = new ByteArrayOutputStream();
-    for (SpawnExec spawn : list) {
-      spawn.writeDelimitedTo(baos);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun stableSortEmpty() {
+        val l: MutableList<SpawnExec?> = testStableSort(com.google.common.collect.ImmutableList.of<SpawnExec?>())
+        Truth.assertThat(l).isEmpty()
     }
 
-    MessageInputStream<SpawnExec> in =
-        new BinaryInputStreamWrapper<>(
-            new ByteArrayInputStream(baos.toByteArray()), SpawnExec.getDefaultInstance());
-
-    ListOutput out = new ListOutput();
-
-    StableSort.stableSort(in, out);
-    return out.list;
-  }
-
-  private static SpawnExec.Builder createSpawnExecBuilder(
-      List<String> inputs, List<String> outputs) {
-    SpawnExec.Builder e = SpawnExec.newBuilder();
-    for (String output : outputs) {
-      e.addActualOutputsBuilder().setPath(output);
-      e.addListedOutputs(output);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun stableSortOne() {
+        val e1: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>(),
+            com.google.common.collect.ImmutableList.of<String?>("output")
+        )
+        val l: MutableList<SpawnExec?> = testStableSort(com.google.common.collect.ImmutableList.of<SpawnExec?>(e1))
+        Truth.assertThat(l).containsExactly(e1).inOrder()
     }
-    for (String s : inputs) {
-      e.addInputs(File.newBuilder().setPath(s).build());
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun stableSortTwo_unlinkedLexicographic() {
+        val e1: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("leaf1"),
+            com.google.common.collect.ImmutableList.of<String?>("a")
+        )
+        val e2: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("leaf2"),
+            com.google.common.collect.ImmutableList.of<String?>("b")
+        )
+
+        val l: MutableList<SpawnExec?> = testStableSort(com.google.common.collect.ImmutableList.of<SpawnExec?>(e1, e2))
+        Truth.assertThat(l).containsExactly(e1, e2).inOrder()
     }
-    return e;
-  }
 
-  private static SpawnExec createSpawnExec(List<String> inputs, List<String> outputs) {
-    return createSpawnExecBuilder(inputs, outputs).build();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun stableSortTwo_unlinkedLexicographic_reverse() {
+        val e1: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("leaf1"),
+            com.google.common.collect.ImmutableList.of<String?>("b")
+        )
+        val e2: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("leaf2"),
+            com.google.common.collect.ImmutableList.of<String?>("a")
+        )
 
-  @Test
-  public void stableSortEmpty() throws Exception {
-    List<SpawnExec> l = testStableSort(ImmutableList.of());
-    assertThat(l).isEmpty();
-  }
+        val l: MutableList<SpawnExec?> = testStableSort(com.google.common.collect.ImmutableList.of<SpawnExec?>(e1, e2))
+        Truth.assertThat(l).containsExactly(e2, e1).inOrder()
+    }
 
-  @Test
-  public void stableSortOne() throws Exception {
-    SpawnExec e1 = createSpawnExec(ImmutableList.of(), ImmutableList.of("output"));
-    List<SpawnExec> l = testStableSort(ImmutableList.of(e1));
-    assertThat(l).containsExactly(e1).inOrder();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun stableSortTwo_linked() {
+        val e1: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("leaf1"),
+            com.google.common.collect.ImmutableList.of<String?>("b")
+        )
+        val e2: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("b"),
+            com.google.common.collect.ImmutableList.of<String?>("a")
+        )
 
-  @Test
-  public void stableSortTwo_unlinkedLexicographic() throws Exception {
-    SpawnExec e1 = createSpawnExec(ImmutableList.of("leaf1"), ImmutableList.of("a"));
-    SpawnExec e2 = createSpawnExec(ImmutableList.of("leaf2"), ImmutableList.of("b"));
+        val l: MutableList<SpawnExec?> = testStableSort(com.google.common.collect.ImmutableList.of<SpawnExec?>(e1, e2))
+        Truth.assertThat(l).containsExactly(e1, e2).inOrder()
+    }
 
-    List<SpawnExec> l = testStableSort(ImmutableList.of(e1, e2));
-    assertThat(l).containsExactly(e1, e2).inOrder();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun stableSortTwo_linked_inputOrderDoesNotMatter() {
+        val e1: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("leaf1"),
+            com.google.common.collect.ImmutableList.of<String?>("b")
+        )
+        val e2: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("b"),
+            com.google.common.collect.ImmutableList.of<String?>("a")
+        )
 
-  @Test
-  public void stableSortTwo_unlinkedLexicographic_reverse() throws Exception {
-    SpawnExec e1 = createSpawnExec(ImmutableList.of("leaf1"), ImmutableList.of("b"));
-    SpawnExec e2 = createSpawnExec(ImmutableList.of("leaf2"), ImmutableList.of("a"));
+        val l: MutableList<SpawnExec?> = testStableSort(com.google.common.collect.ImmutableList.of<SpawnExec?>(e2, e1))
+        Truth.assertThat(l).containsExactly(e1, e2).inOrder()
+    }
 
-    List<SpawnExec> l = testStableSort(ImmutableList.of(e1, e2));
-    assertThat(l).containsExactly(e2, e1).inOrder();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun stableSortTwo_oneOfMultipleInputs() {
+        val e1: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("leaf1"),
+            com.google.common.collect.ImmutableList.of<String?>("b1", "b2", "b3")
+        )
+        val e2: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("b2"),
+            com.google.common.collect.ImmutableList.of<String?>("a")
+        )
 
-  @Test
-  public void stableSortTwo_linked() throws Exception {
-    SpawnExec e1 = createSpawnExec(ImmutableList.of("leaf1"), ImmutableList.of("b"));
-    SpawnExec e2 = createSpawnExec(ImmutableList.of("b"), ImmutableList.of("a"));
+        val l: MutableList<SpawnExec?> = testStableSort(com.google.common.collect.ImmutableList.of<SpawnExec?>(e2, e1))
+        Truth.assertThat(l).containsExactly(e1, e2).inOrder()
+    }
 
-    List<SpawnExec> l = testStableSort(ImmutableList.of(e1, e2));
-    assertThat(l).containsExactly(e1, e2).inOrder();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun stableSortTwo_manyOfMultipleInputs() {
+        val e1: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("leaf1"),
+            com.google.common.collect.ImmutableList.of<String?>("b1", "b2", "b3")
+        )
+        val e2: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("b2", "b3"),
+            com.google.common.collect.ImmutableList.of<String?>("a")
+        )
 
-  @Test
-  public void stableSortTwo_linked_inputOrderDoesNotMatter() throws Exception {
-    SpawnExec e1 = createSpawnExec(ImmutableList.of("leaf1"), ImmutableList.of("b"));
-    SpawnExec e2 = createSpawnExec(ImmutableList.of("b"), ImmutableList.of("a"));
+        val l: MutableList<SpawnExec?> = testStableSort(com.google.common.collect.ImmutableList.of<SpawnExec?>(e2, e1))
+        Truth.assertThat(l).containsExactly(e1, e2).inOrder()
+    }
 
-    List<SpawnExec> l = testStableSort(ImmutableList.of(e2, e1));
-    assertThat(l).containsExactly(e1, e2).inOrder();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun stableSortTwo_IrrelevantInputs() {
+        val e1: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("leaf1"),
+            com.google.common.collect.ImmutableList.of<String?>("b1", "b2", "b3")
+        )
+        val e2: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("z", "b2", "1"),
+            com.google.common.collect.ImmutableList.of<String?>("a")
+        )
 
-  @Test
-  public void stableSortTwo_oneOfMultipleInputs() throws Exception {
-    SpawnExec e1 = createSpawnExec(ImmutableList.of("leaf1"), ImmutableList.of("b1", "b2", "b3"));
-    SpawnExec e2 = createSpawnExec(ImmutableList.of("b2"), ImmutableList.of("a"));
+        val l: MutableList<SpawnExec?> = testStableSort(com.google.common.collect.ImmutableList.of<SpawnExec?>(e2, e1))
+        Truth.assertThat(l).containsExactly(e1, e2).inOrder()
+    }
 
-    List<SpawnExec> l = testStableSort(ImmutableList.of(e2, e1));
-    assertThat(l).containsExactly(e1, e2).inOrder();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun stableSortTwo_ABC() {
+        val a: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>(""),
+            com.google.common.collect.ImmutableList.of<String?>("a")
+        )
+        val b: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>(""),
+            com.google.common.collect.ImmutableList.of<String?>("b")
+        )
+        val c: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>(""),
+            com.google.common.collect.ImmutableList.of<String?>("c")
+        )
 
-  @Test
-  public void stableSortTwo_manyOfMultipleInputs() throws Exception {
-    SpawnExec e1 = createSpawnExec(ImmutableList.of("leaf1"), ImmutableList.of("b1", "b2", "b3"));
-    SpawnExec e2 = createSpawnExec(ImmutableList.of("b2", "b3"), ImmutableList.of("a"));
+        val l: MutableList<SpawnExec?> = testStableSort(com.google.common.collect.ImmutableList.of<SpawnExec?>(a, b, c))
+        Truth.assertThat(l).containsExactly(a, b, c).inOrder()
+    }
 
-    List<SpawnExec> l = testStableSort(ImmutableList.of(e2, e1));
-    assertThat(l).containsExactly(e1, e2).inOrder();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun stableSortTwo_CBA() {
+        val a: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("b"),
+            com.google.common.collect.ImmutableList.of<String?>("a")
+        )
+        val b: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("c"),
+            com.google.common.collect.ImmutableList.of<String?>("b")
+        )
+        val c: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>(""),
+            com.google.common.collect.ImmutableList.of<String?>("c")
+        )
 
-  @Test
-  public void stableSortTwo_IrrelevantInputs() throws Exception {
-    SpawnExec e1 = createSpawnExec(ImmutableList.of("leaf1"), ImmutableList.of("b1", "b2", "b3"));
-    SpawnExec e2 = createSpawnExec(ImmutableList.of("z", "b2", "1"), ImmutableList.of("a"));
+        val l: MutableList<SpawnExec?> = testStableSort(com.google.common.collect.ImmutableList.of<SpawnExec?>(a, b, c))
+        Truth.assertThat(l).containsExactly(c, b, a).inOrder()
+    }
 
-    List<SpawnExec> l = testStableSort(ImmutableList.of(e2, e1));
-    assertThat(l).containsExactly(e1, e2).inOrder();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun stableSortTwo_ACB() {
+        val a: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>(""),
+            com.google.common.collect.ImmutableList.of<String?>("a")
+        )
+        val b: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("a", "c"),
+            com.google.common.collect.ImmutableList.of<String?>("b")
+        )
+        val c: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>(""),
+            com.google.common.collect.ImmutableList.of<String?>("c")
+        )
 
-  @Test
-  public void stableSortTwo_ABC() throws Exception {
-    SpawnExec a = createSpawnExec(ImmutableList.of(""), ImmutableList.of("a"));
-    SpawnExec b = createSpawnExec(ImmutableList.of(""), ImmutableList.of("b"));
-    SpawnExec c = createSpawnExec(ImmutableList.of(""), ImmutableList.of("c"));
+        val l: MutableList<SpawnExec?> = testStableSort(com.google.common.collect.ImmutableList.of<SpawnExec?>(a, b, c))
+        Truth.assertThat(l).containsExactly(a, c, b).inOrder()
+    }
 
-    List<SpawnExec> l = testStableSort(ImmutableList.of(a, b, c));
-    assertThat(l).containsExactly(a, b, c).inOrder();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun stableSortTwo_CAB() {
+        val a: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("c"),
+            com.google.common.collect.ImmutableList.of<String?>("a")
+        )
+        val b: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("c"),
+            com.google.common.collect.ImmutableList.of<String?>("b")
+        )
+        val c: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>(""),
+            com.google.common.collect.ImmutableList.of<String?>("c")
+        )
 
-  @Test
-  public void stableSortTwo_CBA() throws Exception {
-    SpawnExec a = createSpawnExec(ImmutableList.of("b"), ImmutableList.of("a"));
-    SpawnExec b = createSpawnExec(ImmutableList.of("c"), ImmutableList.of("b"));
-    SpawnExec c = createSpawnExec(ImmutableList.of(""), ImmutableList.of("c"));
+        val l: MutableList<SpawnExec?> = testStableSort(com.google.common.collect.ImmutableList.of<SpawnExec?>(a, b, c))
+        Truth.assertThat(l).containsExactly(c, a, b).inOrder()
+    }
 
-    List<SpawnExec> l = testStableSort(ImmutableList.of(a, b, c));
-    assertThat(l).containsExactly(c, b, a).inOrder();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun stableSortTwo_CAB2() {
+        val a: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("c1"),
+            com.google.common.collect.ImmutableList.of<String?>("a")
+        )
+        val b: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("c2"),
+            com.google.common.collect.ImmutableList.of<String?>("b")
+        )
+        val c: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>(""),
+            com.google.common.collect.ImmutableList.of<String?>("c1", "c2")
+        )
 
-  @Test
-  public void stableSortTwo_ACB() throws Exception {
-    SpawnExec a = createSpawnExec(ImmutableList.of(""), ImmutableList.of("a"));
-    SpawnExec b = createSpawnExec(ImmutableList.of("a", "c"), ImmutableList.of("b"));
-    SpawnExec c = createSpawnExec(ImmutableList.of(""), ImmutableList.of("c"));
+        val l: MutableList<SpawnExec?> = testStableSort(com.google.common.collect.ImmutableList.of<SpawnExec?>(a, b, c))
+        Truth.assertThat(l).containsExactly(c, a, b).inOrder()
+    }
 
-    List<SpawnExec> l = testStableSort(ImmutableList.of(a, b, c));
-    assertThat(l).containsExactly(a, c, b).inOrder();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun stableSortTwo_CBAFED() {
+        val a: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("b"),
+            com.google.common.collect.ImmutableList.of<String?>("a")
+        )
+        val b: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("c"),
+            com.google.common.collect.ImmutableList.of<String?>("b")
+        )
+        val c: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>(""),
+            com.google.common.collect.ImmutableList.of<String?>("c")
+        )
+        val d: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("e"),
+            com.google.common.collect.ImmutableList.of<String?>("d")
+        )
+        val e: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("f"),
+            com.google.common.collect.ImmutableList.of<String?>("e")
+        )
+        val f: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>(""),
+            com.google.common.collect.ImmutableList.of<String?>("f")
+        )
 
-  @Test
-  public void stableSortTwo_CAB() throws Exception {
-    SpawnExec a = createSpawnExec(ImmutableList.of("c"), ImmutableList.of("a"));
-    SpawnExec b = createSpawnExec(ImmutableList.of("c"), ImmutableList.of("b"));
-    SpawnExec c = createSpawnExec(ImmutableList.of(""), ImmutableList.of("c"));
+        val l: MutableList<SpawnExec?> =
+            testStableSort(com.google.common.collect.ImmutableList.of<SpawnExec?>(a, b, c, d, e, f))
+        Truth.assertThat(l).containsExactly(c, b, a, f, e, d).inOrder()
+    }
 
-    List<SpawnExec> l = testStableSort(ImmutableList.of(a, b, c));
-    assertThat(l).containsExactly(c, a, b).inOrder();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun stableSortTwo_InterleavedPaths() {
+        val a: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("c"),
+            com.google.common.collect.ImmutableList.of<String?>("a")
+        )
+        val b: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>(""),
+            com.google.common.collect.ImmutableList.of<String?>("b")
+        )
+        val c: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>(""),
+            com.google.common.collect.ImmutableList.of<String?>("c")
+        )
+        val d: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("a"),
+            com.google.common.collect.ImmutableList.of<String?>("d")
+        )
+        val e: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("f"),
+            com.google.common.collect.ImmutableList.of<String?>("e")
+        )
+        val f: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("b"),
+            com.google.common.collect.ImmutableList.of<String?>("f")
+        )
 
-  @Test
-  public void stableSortTwo_CAB2() throws Exception {
-    SpawnExec a = createSpawnExec(ImmutableList.of("c1"), ImmutableList.of("a"));
-    SpawnExec b = createSpawnExec(ImmutableList.of("c2"), ImmutableList.of("b"));
-    SpawnExec c = createSpawnExec(ImmutableList.of(""), ImmutableList.of("c1", "c2"));
+        val l: MutableList<SpawnExec?> =
+            testStableSort(com.google.common.collect.ImmutableList.of<SpawnExec?>(a, b, c, d, e, f))
+        Truth.assertThat(l).containsExactly(b, c, a, d, f, e).inOrder()
+    }
 
-    List<SpawnExec> l = testStableSort(ImmutableList.of(a, b, c));
-    assertThat(l).containsExactly(c, a, b).inOrder();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun stableSortTwo_ManyDependencies() {
+        val a: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("b", "c", "f"),
+            com.google.common.collect.ImmutableList.of<String?>("a")
+        )
+        val b: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("d", "e"),
+            com.google.common.collect.ImmutableList.of<String?>("b")
+        )
+        val c: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("e", "d", "f"),
+            com.google.common.collect.ImmutableList.of<String?>("c")
+        )
+        val d: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>(""),
+            com.google.common.collect.ImmutableList.of<String?>("d")
+        )
+        val e: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("f"),
+            com.google.common.collect.ImmutableList.of<String?>("e")
+        )
+        val f: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>(""),
+            com.google.common.collect.ImmutableList.of<String?>("f")
+        )
 
-  @Test
-  public void stableSortTwo_CBAFED() throws Exception {
-    SpawnExec a = createSpawnExec(ImmutableList.of("b"), ImmutableList.of("a"));
-    SpawnExec b = createSpawnExec(ImmutableList.of("c"), ImmutableList.of("b"));
-    SpawnExec c = createSpawnExec(ImmutableList.of(""), ImmutableList.of("c"));
-    SpawnExec d = createSpawnExec(ImmutableList.of("e"), ImmutableList.of("d"));
-    SpawnExec e = createSpawnExec(ImmutableList.of("f"), ImmutableList.of("e"));
-    SpawnExec f = createSpawnExec(ImmutableList.of(""), ImmutableList.of("f"));
+        val l: MutableList<SpawnExec?> =
+            testStableSort(com.google.common.collect.ImmutableList.of<SpawnExec?>(a, b, c, d, e, f))
+        Truth.assertThat(l).containsExactly(d, f, e, b, c, a).inOrder()
+    }
 
-    List<SpawnExec> l = testStableSort(ImmutableList.of(a, b, c, d, e, f));
-    assertThat(l).containsExactly(c, b, a, f, e, d).inOrder();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun stableSort_NoOutputs() {
+        val a: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("a"),
+            com.google.common.collect.ImmutableList.of<String?>()
+        )
+        val b: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("b"),
+            com.google.common.collect.ImmutableList.of<String?>()
+        )
 
-  @Test
-  public void stableSortTwo_InterleavedPaths() throws Exception {
-    SpawnExec a = createSpawnExec(ImmutableList.of("c"), ImmutableList.of("a"));
-    SpawnExec b = createSpawnExec(ImmutableList.of(""), ImmutableList.of("b"));
-    SpawnExec c = createSpawnExec(ImmutableList.of(""), ImmutableList.of("c"));
-    SpawnExec d = createSpawnExec(ImmutableList.of("a"), ImmutableList.of("d"));
-    SpawnExec e = createSpawnExec(ImmutableList.of("f"), ImmutableList.of("e"));
-    SpawnExec f = createSpawnExec(ImmutableList.of("b"), ImmutableList.of("f"));
+        val l: MutableList<SpawnExec?> = testStableSort(com.google.common.collect.ImmutableList.of<SpawnExec?>(a, b))
+        Truth.assertThat(l).containsExactly(a, b).inOrder()
+    }
 
-    List<SpawnExec> l = testStableSort(ImmutableList.of(a, b, c, d, e, f));
-    assertThat(l).containsExactly(b, c, a, d, f, e).inOrder();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun stableSort_NoOutputs_reversed() {
+        val a: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("a"),
+            com.google.common.collect.ImmutableList.of<String?>()
+        )
+        val b: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("b"),
+            com.google.common.collect.ImmutableList.of<String?>()
+        )
 
-  @Test
-  public void stableSortTwo_ManyDependencies() throws Exception {
-    SpawnExec a = createSpawnExec(ImmutableList.of("b", "c", "f"), ImmutableList.of("a"));
-    SpawnExec b = createSpawnExec(ImmutableList.of("d", "e"), ImmutableList.of("b"));
-    SpawnExec c = createSpawnExec(ImmutableList.of("e", "d", "f"), ImmutableList.of("c"));
-    SpawnExec d = createSpawnExec(ImmutableList.of(""), ImmutableList.of("d"));
-    SpawnExec e = createSpawnExec(ImmutableList.of("f"), ImmutableList.of("e"));
-    SpawnExec f = createSpawnExec(ImmutableList.of(""), ImmutableList.of("f"));
+        val l: MutableList<SpawnExec?> = testStableSort(com.google.common.collect.ImmutableList.of<SpawnExec?>(b, a))
+        Truth.assertThat(l).containsExactly(a, b).inOrder()
+    }
 
-    List<SpawnExec> l = testStableSort(ImmutableList.of(a, b, c, d, e, f));
-    assertThat(l).containsExactly(d, f, e, b, c, a).inOrder();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun stableSort_ListedOutputs() {
+        val a: SpawnExec? =
+            createSpawnExecBuilder(
+                com.google.common.collect.ImmutableList.of<String?>(),
+                com.google.common.collect.ImmutableList.of<String?>("a")
+            )
+                .addCommandArgs("a")
+                .build()
+        val b: SpawnExec? =
+            createSpawnExecBuilder(
+                com.google.common.collect.ImmutableList.of<String?>(),
+                com.google.common.collect.ImmutableList.of<String?>()
+            ).addCommandArgs("b").build()
+        val c: SpawnExec? =
+            createSpawnExecBuilder(
+                com.google.common.collect.ImmutableList.of<String?>(),
+                com.google.common.collect.ImmutableList.of<String?>("c")
+            )
+                .addCommandArgs("c")
+                .build()
+        val d: SpawnExec? =
+            createSpawnExecBuilder(
+                com.google.common.collect.ImmutableList.of<String?>(),
+                com.google.common.collect.ImmutableList.of<String?>("d")
+            )
+                .addCommandArgs("d")
+                .build()
+        val e: SpawnExec? =
+            createSpawnExecBuilder(
+                com.google.common.collect.ImmutableList.of<String?>(),
+                com.google.common.collect.ImmutableList.of<String?>()
+            ).addCommandArgs("e").build()
+        val f: SpawnExec? =
+            createSpawnExecBuilder(
+                com.google.common.collect.ImmutableList.of<String?>(),
+                com.google.common.collect.ImmutableList.of<String?>()
+            ).addCommandArgs("f").build()
 
-  @Test
-  public void stableSort_NoOutputs() throws Exception {
-    SpawnExec a = createSpawnExec(ImmutableList.of("a"), ImmutableList.of());
-    SpawnExec b = createSpawnExec(ImmutableList.of("b"), ImmutableList.of());
+        val l: MutableList<SpawnExec?> =
+            testStableSort(com.google.common.collect.ImmutableList.of<SpawnExec?>(a, b, c, d, e, f))
+        Truth.assertThat(l)
+            .containsExactly( // sorted elements with actual outputs
+                a,
+                c,
+                d,  // sorted elements without listed outputs
+                b,
+                e,
+                f
+            )
+            .inOrder()
+    }
 
-    List<SpawnExec> l = testStableSort(ImmutableList.of(a, b));
-    assertThat(l).containsExactly(a, b).inOrder();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun stableSort_ListedOutputs_reordered() {
+        val a: SpawnExec? =
+            createSpawnExecBuilder(
+                com.google.common.collect.ImmutableList.of<String?>(),
+                com.google.common.collect.ImmutableList.of<String?>("a")
+            )
+                .addCommandArgs("a")
+                .build()
+        val b: SpawnExec? =
+            createSpawnExecBuilder(
+                com.google.common.collect.ImmutableList.of<String?>(),
+                com.google.common.collect.ImmutableList.of<String?>()
+            ).addCommandArgs("b").build()
+        val c: SpawnExec? =
+            createSpawnExecBuilder(
+                com.google.common.collect.ImmutableList.of<String?>(),
+                com.google.common.collect.ImmutableList.of<String?>("c")
+            )
+                .addCommandArgs("c")
+                .build()
+        val d: SpawnExec? =
+            createSpawnExecBuilder(
+                com.google.common.collect.ImmutableList.of<String?>(),
+                com.google.common.collect.ImmutableList.of<String?>("d")
+            )
+                .addCommandArgs("d")
+                .build()
+        val e: SpawnExec? =
+            createSpawnExecBuilder(
+                com.google.common.collect.ImmutableList.of<String?>(),
+                com.google.common.collect.ImmutableList.of<String?>()
+            ).addCommandArgs("e").build()
+        val f: SpawnExec? =
+            createSpawnExecBuilder(
+                com.google.common.collect.ImmutableList.of<String?>(),
+                com.google.common.collect.ImmutableList.of<String?>()
+            ).addCommandArgs("f").build()
 
-  @Test
-  public void stableSort_NoOutputs_reversed() throws Exception {
-    SpawnExec a = createSpawnExec(ImmutableList.of("a"), ImmutableList.of());
-    SpawnExec b = createSpawnExec(ImmutableList.of("b"), ImmutableList.of());
+        // Reordering the input from the previous test does not change the resulting order
+        val l: MutableList<SpawnExec?> =
+            testStableSort(com.google.common.collect.ImmutableList.of<SpawnExec?>(f, e, d, c, b, a))
+        Truth.assertThat(l)
+            .containsExactly( // sorted elements with actual outputs
+                a,
+                c,
+                d,  // sorted elements without listed outputs
+                b,
+                e,
+                f
+            )
+            .inOrder()
+    }
 
-    List<SpawnExec> l = testStableSort(ImmutableList.of(b, a));
-    assertThat(l).containsExactly(a, b).inOrder();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun stableSort_ListedOutputs_dependencies() {
+        // Dependencies are respected
+        val a: SpawnExec? =
+            createSpawnExecBuilder(
+                com.google.common.collect.ImmutableList.of<String?>("d"),
+                com.google.common.collect.ImmutableList.of<String?>("a")
+            )
+                .addCommandArgs("a")
+                .build()
+        val b: SpawnExec? =
+            createSpawnExecBuilder(
+                com.google.common.collect.ImmutableList.of<String?>(),
+                com.google.common.collect.ImmutableList.of<String?>()
+            ).addCommandArgs("b").build()
+        val c: SpawnExec? =
+            createSpawnExecBuilder(
+                com.google.common.collect.ImmutableList.of<String?>("d"),
+                com.google.common.collect.ImmutableList.of<String?>("c")
+            )
+                .addCommandArgs("c")
+                .build()
+        val d: SpawnExec? =
+            createSpawnExecBuilder(
+                com.google.common.collect.ImmutableList.of<String?>(),
+                com.google.common.collect.ImmutableList.of<String?>("d")
+            )
+                .addCommandArgs("d")
+                .build()
+        val e: SpawnExec? =
+            createSpawnExecBuilder(
+                com.google.common.collect.ImmutableList.of<String?>(),
+                com.google.common.collect.ImmutableList.of<String?>()
+            ).addCommandArgs("e").build()
+        val f: SpawnExec? =
+            createSpawnExecBuilder(
+                com.google.common.collect.ImmutableList.of<String?>(),
+                com.google.common.collect.ImmutableList.of<String?>()
+            ).addCommandArgs("f").build()
 
-  @Test
-  public void stableSort_ListedOutputs() throws Exception {
+        val l: MutableList<SpawnExec?> =
+            testStableSort(com.google.common.collect.ImmutableList.of<SpawnExec?>(f, e, d, c, b, a))
+        Truth.assertThat(l).containsExactly(d, a, c, b, e, f).inOrder()
+    }
 
-    SpawnExec a =
-        createSpawnExecBuilder(ImmutableList.of(), ImmutableList.of("a"))
-            .addCommandArgs("a")
-            .build();
-    SpawnExec b =
-        createSpawnExecBuilder(ImmutableList.of(), ImmutableList.of()).addCommandArgs("b").build();
-    SpawnExec c =
-        createSpawnExecBuilder(ImmutableList.of(), ImmutableList.of("c"))
-            .addCommandArgs("c")
-            .build();
-    SpawnExec d =
-        createSpawnExecBuilder(ImmutableList.of(), ImmutableList.of("d"))
-            .addCommandArgs("d")
-            .build();
-    SpawnExec e =
-        createSpawnExecBuilder(ImmutableList.of(), ImmutableList.of()).addCommandArgs("e").build();
-    SpawnExec f =
-        createSpawnExecBuilder(ImmutableList.of(), ImmutableList.of()).addCommandArgs("f").build();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun stableSort_execsWithDuplicateOutputs() {
+        val a: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("a"),
+            com.google.common.collect.ImmutableList.of<String?>("c")
+        )
+        val b: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("b"),
+            com.google.common.collect.ImmutableList.of<String?>("c")
+        )
+        val c: SpawnExec = createSpawnExec(
+            com.google.common.collect.ImmutableList.of<String?>("c"),
+            com.google.common.collect.ImmutableList.of<String?>("d")
+        )
 
-    List<SpawnExec> l = testStableSort(ImmutableList.of(a, b, c, d, e, f));
-    assertThat(l)
-        .containsExactly(
-            // sorted elements with actual outputs
-            a,
-            c,
-            d,
-            // sorted elements without listed outputs
-            b,
-            e,
-            f)
-        .inOrder();
-  }
+        val l: MutableList<SpawnExec?> = testStableSort(com.google.common.collect.ImmutableList.of<SpawnExec?>(a, b, c))
+        Truth.assertThat(l).containsExactly(a, b, c).inOrder()
+    }
 
-  @Test
-  public void stableSort_ListedOutputs_reordered() throws Exception {
-    SpawnExec a =
-        createSpawnExecBuilder(ImmutableList.of(), ImmutableList.of("a"))
-            .addCommandArgs("a")
-            .build();
-    SpawnExec b =
-        createSpawnExecBuilder(ImmutableList.of(), ImmutableList.of()).addCommandArgs("b").build();
-    SpawnExec c =
-        createSpawnExecBuilder(ImmutableList.of(), ImmutableList.of("c"))
-            .addCommandArgs("c")
-            .build();
-    SpawnExec d =
-        createSpawnExecBuilder(ImmutableList.of(), ImmutableList.of("d"))
-            .addCommandArgs("d")
-            .build();
-    SpawnExec e =
-        createSpawnExecBuilder(ImmutableList.of(), ImmutableList.of()).addCommandArgs("e").build();
-    SpawnExec f =
-        createSpawnExecBuilder(ImmutableList.of(), ImmutableList.of()).addCommandArgs("f").build();
+    companion object {
+        private fun createSpawnExecBuilder(
+            inputs: MutableList<String?>, outputs: MutableList<String?>
+        ): SpawnExec.Builder {
+            val e: SpawnExec.Builder = SpawnExec.newBuilder()
+            for (output in outputs) {
+                e.addActualOutputsBuilder().setPath(output)
+                e.addListedOutputs(output)
+            }
+            for (s in inputs) {
+                e.addInputs(File.newBuilder().setPath(s).build())
+            }
+            return e
+        }
 
-    // Reordering the input from the previous test does not change the resulting order
-    List<SpawnExec> l = testStableSort(ImmutableList.of(f, e, d, c, b, a));
-    assertThat(l)
-        .containsExactly(
-            // sorted elements with actual outputs
-            a,
-            c,
-            d,
-            // sorted elements without listed outputs
-            b,
-            e,
-            f)
-        .inOrder();
-  }
-
-  @Test
-  public void stableSort_ListedOutputs_dependencies() throws Exception {
-    // Dependencies are respected
-    SpawnExec a =
-        createSpawnExecBuilder(ImmutableList.of("d"), ImmutableList.of("a"))
-            .addCommandArgs("a")
-            .build();
-    SpawnExec b =
-        createSpawnExecBuilder(ImmutableList.of(), ImmutableList.of()).addCommandArgs("b").build();
-    SpawnExec c =
-        createSpawnExecBuilder(ImmutableList.of("d"), ImmutableList.of("c"))
-            .addCommandArgs("c")
-            .build();
-    SpawnExec d =
-        createSpawnExecBuilder(ImmutableList.of(), ImmutableList.of("d"))
-            .addCommandArgs("d")
-            .build();
-    SpawnExec e =
-        createSpawnExecBuilder(ImmutableList.of(), ImmutableList.of()).addCommandArgs("e").build();
-    SpawnExec f =
-        createSpawnExecBuilder(ImmutableList.of(), ImmutableList.of()).addCommandArgs("f").build();
-
-    List<SpawnExec> l = testStableSort(ImmutableList.of(f, e, d, c, b, a));
-    assertThat(l).containsExactly(d, a, c, b, e, f).inOrder();
-  }
-
-  @Test
-  public void stableSort_execsWithDuplicateOutputs() throws Exception {
-    SpawnExec a = createSpawnExec(ImmutableList.of("a"), ImmutableList.of("c"));
-    SpawnExec b = createSpawnExec(ImmutableList.of("b"), ImmutableList.of("c"));
-    SpawnExec c = createSpawnExec(ImmutableList.of("c"), ImmutableList.of("d"));
-
-    List<SpawnExec> l = testStableSort(ImmutableList.of(a, b, c));
-    assertThat(l).containsExactly(a, b, c).inOrder();
-  }
+        private fun createSpawnExec(inputs: MutableList<String?>, outputs: MutableList<String?>): SpawnExec {
+            return createSpawnExecBuilder(inputs, outputs).build()
+        }
+    }
 }

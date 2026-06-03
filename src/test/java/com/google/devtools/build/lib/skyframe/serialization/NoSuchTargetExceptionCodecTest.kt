@@ -11,46 +11,39 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import com.google.devtools.build.lib.cmdline.Label
 
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.LabelSyntaxException;
-import com.google.devtools.build.lib.packages.NoSuchTargetException;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [NoSuchTargetException] serialization.  */
+@RunWith(JUnit4::class)
+class NoSuchTargetExceptionCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun smoke() {
+        SerializationTester(
+            NoSuchTargetException("sup"),
+            NoSuchTargetException(Label.parseCanonical("//foo:bar"), "busted"),
+            NoSuchTargetException(mockTarget("//broken:target"))
+        )
+            .makeMemoizing()
+            .setVerificationFunction(verifyDeserialization)
+            .runTests()
+    }
 
-/** Tests for {@link NoSuchTargetException} serialization. */
-@RunWith(JUnit4.class)
-public class NoSuchTargetExceptionCodecTest {
-  @Test
-  public void smoke() throws Exception {
-    new SerializationTester(
-            new NoSuchTargetException("sup"),
-            new NoSuchTargetException(Label.parseCanonical("//foo:bar"), "busted"),
-            new NoSuchTargetException(mockTarget("//broken:target")))
-        .makeMemoizing()
-        .setVerificationFunction(verifyDeserialization)
-        .runTests();
-  }
+    companion object {
+        @Throws(LabelSyntaxException::class)
+        private fun mockTarget(label: String?): Target {
+            val mockTarget: Target = Mockito.mock<Target>(Target::class.java)
+            Mockito.`when`<T?>(mockTarget.getLabel()).thenReturn(Label.parseCanonical(label))
+            return mockTarget
+        }
 
-  private static Target mockTarget(String label) throws LabelSyntaxException {
-    Target mockTarget = mock(Target.class);
-    when(mockTarget.getLabel()).thenReturn(Label.parseCanonical(label));
-    return mockTarget;
-  }
-
-  private static final SerializationTester.VerificationFunction<NoSuchTargetException>
-      verifyDeserialization =
-          (deserialized, subject) -> {
-            assertThat(deserialized).hasMessageThat().isEqualTo(subject.getMessage());
-            assertThat(deserialized.getLabel()).isEqualTo(subject.getLabel());
-            assertThat(deserialized.hasTarget()).isEqualTo(subject.hasTarget());
-          };
+        private val verifyDeserialization: SerializationTester.VerificationFunction<NoSuchTargetException?> =
+            SerializationTester.VerificationFunction { deserialized, subject ->
+                assertThat(deserialized).hasMessageThat().isEqualTo(subject.getMessage())
+                assertThat(deserialized.getLabel()).isEqualTo(subject.getLabel())
+                assertThat(deserialized.hasTarget()).isEqualTo(subject.hasTarget())
+            }
+    }
 }

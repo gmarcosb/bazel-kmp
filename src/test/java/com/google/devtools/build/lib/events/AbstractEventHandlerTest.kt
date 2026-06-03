@@ -11,32 +11,31 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.events;
+package com.google.devtools.build.lib.events
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.events.AbstractEventHandler
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import java.util.Set;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests [AbstractEventHandler].  */
+@RunWith(JUnit4::class)
+class AbstractEventHandlerTest {
+    @org.junit.Test
+    fun retainsEventMask() {
+        Truth.assertThat(create(com.google.devtools.build.lib.events.EventKind.ALL_EVENTS).getEventMask())
+            .isEqualTo(com.google.devtools.build.lib.events.EventKind.ALL_EVENTS)
+        Truth.assertThat(create(com.google.devtools.build.lib.events.EventKind.ERRORS_AND_WARNINGS).getEventMask())
+            .isEqualTo(com.google.devtools.build.lib.events.EventKind.ERRORS_AND_WARNINGS)
+        Truth.assertThat(create(com.google.devtools.build.lib.events.EventKind.ERRORS).getEventMask())
+            .isEqualTo(com.google.devtools.build.lib.events.EventKind.ERRORS)
+    }
 
-/** Tests {@link AbstractEventHandler}. */
-@RunWith(JUnit4.class)
-public class AbstractEventHandlerTest {
-
-  private static AbstractEventHandler create(Set<EventKind> mask) {
-    return new AbstractEventHandler(mask) {
-        @Override
-        public void handle(Event event) {}
-      };
-  }
-
-  @Test
-  public void retainsEventMask() {
-    assertThat(create(EventKind.ALL_EVENTS).getEventMask()).isEqualTo(EventKind.ALL_EVENTS);
-    assertThat(create(EventKind.ERRORS_AND_WARNINGS).getEventMask())
-        .isEqualTo(EventKind.ERRORS_AND_WARNINGS);
-    assertThat(create(EventKind.ERRORS).getEventMask()).isEqualTo(EventKind.ERRORS);
-  }
-
+    companion object {
+        private fun create(mask: MutableSet<com.google.devtools.build.lib.events.EventKind?>?): AbstractEventHandler {
+            return object : AbstractEventHandler(mask) {
+                override fun handle(event: com.google.devtools.build.lib.events.Event?) {}
+            }
+        }
+    }
 }

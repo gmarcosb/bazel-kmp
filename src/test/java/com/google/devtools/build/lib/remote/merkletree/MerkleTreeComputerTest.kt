@@ -11,386 +11,336 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.merkletree;
+package com.google.devtools.build.lib.remote.merkletree
 
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.util.concurrent.Futures.immediateVoidFuture;
+import build.bazel.remote.execution.v2.Digest
+import com.google.common.base.Preconditions
+import com.google.common.collect.ImmutableClassToInstanceMap
+import com.google.common.collect.ImmutableMap
+import com.google.common.collect.ImmutableSet
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
+import com.google.devtools.build.lib.clock.JavaClock
+import com.google.devtools.build.lib.exec.util.FakeActionInputFileCache
+import org.junit.Test
+import java.time.Duration
+import kotlin.collections.ArrayList
 
-import build.bazel.remote.execution.v2.Digest;
-import com.google.common.collect.ImmutableClassToInstanceMap;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.devtools.build.lib.actions.ActionInput;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.ArtifactRoot;
-import com.google.devtools.build.lib.actions.DelegatingPairInputMetadataProvider;
-import com.google.devtools.build.lib.actions.FileArtifactValue;
-import com.google.devtools.build.lib.actions.FilesetOutputTree;
-import com.google.devtools.build.lib.actions.InputMetadataProvider;
-import com.google.devtools.build.lib.actions.RunfilesArtifactValue;
-import com.google.devtools.build.lib.actions.RunfilesTree;
-import com.google.devtools.build.lib.actions.Spawn;
-import com.google.devtools.build.lib.actions.VirtualActionInput;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
-import com.google.devtools.build.lib.clock.JavaClock;
-import com.google.devtools.build.lib.exec.util.FakeActionInputFileCache;
-import com.google.devtools.build.lib.exec.util.SpawnBuilder;
-import com.google.devtools.build.lib.remote.common.RemoteActionExecutionContext;
-import com.google.devtools.build.lib.remote.common.RemotePathResolver;
-import com.google.devtools.build.lib.remote.util.DigestUtil;
-import com.google.devtools.build.lib.remote.util.FakeSpawnExecutionContext;
-import com.google.devtools.build.lib.skyframe.TreeArtifactValue;
-import com.google.devtools.build.lib.util.io.FileOutErr;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import java.io.IOException;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
-import javax.annotation.Nullable;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+@RunWith(JUnit4::class)
+class MerkleTreeComputerTest {
+    private var execRoot: Path? = null
+    private var artifactRoot: ArtifactRoot? = null
 
-@RunWith(JUnit4.class)
-public class MerkleTreeComputerTest {
-  private Path execRoot;
-  private ArtifactRoot artifactRoot;
+    @Before
+    @Throws(IOException::class)
+    fun setUp() {
+        val fs: InMemoryFileSystem = InMemoryFileSystem(JavaClock(), DigestHashFunction.SHA256)
+        execRoot = fs.getPath("/execroot/_main")
+        execRoot.createDirectoryAndParents()
+        artifactRoot = ArtifactRoot.asDerivedRoot(execRoot, ArtifactRoot.RootType.OUTPUT, "outputs")
+        Preconditions.checkNotNull<T?>(artifactRoot.getRoot().asPath()).createDirectoryAndParents()
+    }
 
-  @Before
-  public void setUp() throws IOException {
-    var fs = new InMemoryFileSystem(new JavaClock(), DigestHashFunction.SHA256);
-    execRoot = fs.getPath("/execroot/_main");
-    execRoot.createDirectoryAndParents();
-    artifactRoot = ArtifactRoot.asDerivedRoot(execRoot, ArtifactRoot.RootType.OUTPUT, "outputs");
-    checkNotNull(artifactRoot.getRoot().asPath()).createDirectoryAndParents();
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testSubtreeComputationCancelled_subsequentReusingCallNotAffected() {
+        val fakeFileCache = FakeActionInputFileCache()
+        val treeArtifactInput: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            ActionsTestUtil.createTreeArtifactWithGeneratingAction(
+                artifactRoot, "dir/subdir/tree_artifact"
+            )
+        treeArtifactInput.getPath().createDirectoryAndParents()
+        val treeArtifactBuilder: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            TreeArtifactValue.newBuilder(treeArtifactInput)
+        val treeFileArtifact: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            Artifact.TreeFileArtifact.createTreeOutput(treeArtifactInput, "file")
+        FileSystemUtils.writeContentAsLatin1(treeFileArtifact.getPath(), "file content")
+        treeArtifactBuilder.putChild(
+            treeFileArtifact, FileArtifactValue.createForTesting(treeFileArtifact)
+        )
+        fakeFileCache.putTreeArtifact(treeArtifactInput, treeArtifactBuilder.build())
+        val spawn: @NotNull Spawn = SpawnBuilder().withInputs(treeArtifactInput).build()
+        val merkleTreeComputer = createMerkleTreeComputer( /* uploader= */null)
 
-  @Test
-  public void testSubtreeComputationCancelled_subsequentReusingCallNotAffected() throws Exception {
-    var fakeFileCache = new FakeActionInputFileCache();
-    var treeArtifactInput =
-        ActionsTestUtil.createTreeArtifactWithGeneratingAction(
-            artifactRoot, "dir/subdir/tree_artifact");
-    treeArtifactInput.getPath().createDirectoryAndParents();
-    var treeArtifactBuilder = TreeArtifactValue.newBuilder(treeArtifactInput);
-    var treeFileArtifact = Artifact.TreeFileArtifact.createTreeOutput(treeArtifactInput, "file");
-    FileSystemUtils.writeContentAsLatin1(treeFileArtifact.getPath(), "file content");
-    treeArtifactBuilder.putChild(
-        treeFileArtifact, FileArtifactValue.createForTesting(treeFileArtifact));
-    fakeFileCache.putTreeArtifact(treeArtifactInput, treeArtifactBuilder.build());
-    var spawn = new SpawnBuilder().withInputs(treeArtifactInput).build();
-    var merkleTreeComputer = createMerkleTreeComputer(/* uploader= */ null);
+        val treeFileMetadataAccessed: CountDownLatch = CountDownLatch(1)
+        val delayedMetadataProvider: DelegatingPairInputMetadataProvider =
+            DelegatingPairInputMetadataProvider(
+                object : InputMetadataProvider() {
+                    @Throws(InterruptedException::class)
+                    public override fun getInputMetadataChecked(input: ActionInput?): FileArtifactValue? {
+                        if (input != treeFileArtifact || treeFileMetadataAccessed.getCount() == 0L) {
+                            return null
+                        }
+                        treeFileMetadataAccessed.countDown()
+                        Thread.sleep(Long.Companion.MAX_VALUE)
+                        throw IllegalStateException("not reached")
+                    }
 
-    var treeFileMetadataAccessed = new CountDownLatch(1);
-    var delayedMetadataProvider =
-        new DelegatingPairInputMetadataProvider(
-            new InputMetadataProvider() {
-              @Nullable
-              @Override
-              public FileArtifactValue getInputMetadataChecked(ActionInput input)
-                  throws InterruptedException {
-                if (input != treeFileArtifact || treeFileMetadataAccessed.getCount() == 0) {
-                  return null;
-                }
-                treeFileMetadataAccessed.countDown();
-                Thread.sleep(Long.MAX_VALUE);
-                throw new IllegalStateException("not reached");
-              }
+                    public override fun getTreeMetadata(input: ActionInput?): TreeArtifactValue? {
+                        return null
+                    }
 
-              @Nullable
-              @Override
-              public TreeArtifactValue getTreeMetadata(ActionInput input) {
-                return null;
-              }
+                    public override fun getEnclosingTreeMetadata(execPath: PathFragment?): TreeArtifactValue? {
+                        return null
+                    }
 
-              @Nullable
-              @Override
-              public TreeArtifactValue getEnclosingTreeMetadata(PathFragment execPath) {
-                return null;
-              }
+                    public override fun getFileset(input: ActionInput?): FilesetOutputTree? {
+                        return null
+                    }
 
-              @Nullable
-              @Override
-              public FilesetOutputTree getFileset(ActionInput input) {
-                return null;
-              }
+                    val filesets: ImmutableMap<Artifact, FilesetOutputTree>
+                        get() = ImmutableMap.of<Artifact?, FilesetOutputTree?>()
 
-              @Override
-              public ImmutableMap<Artifact, FilesetOutputTree> getFilesets() {
-                return ImmutableMap.of();
-              }
+                    public override fun getRunfilesMetadata(input: ActionInput?): RunfilesArtifactValue? {
+                        return null
+                    }
 
-              @Nullable
-              @Override
-              public RunfilesArtifactValue getRunfilesMetadata(ActionInput input) {
-                return null;
-              }
+                    val runfilesTrees: ImmutableList<RunfilesTree>?
+                        get() = null
 
-              @Nullable
-              @Override
-              public ImmutableList<RunfilesTree> getRunfilesTrees() {
-                return null;
-              }
+                    public override fun getInput(execPath: PathFragment?): ActionInput? {
+                        return null
+                    }
+                },
+                fakeFileCache
+            )
+        val capturedThrowable: AtomicReference<Throwable?> = AtomicReference<Throwable?>()
+        val buildThread =
+            Thread(
+                Runnable {
+                    try {
+                        val unused =
+                            merkleTreeComputer.buildForSpawn(
+                                spawn,
+                                ImmutableSet.of<PathFragment>(),  /* scrubber= */
+                                null,
+                                createSpawnExecutionContext(spawn, delayedMetadataProvider),
+                                RemotePathResolver.createDefault(execRoot),
+                                MerkleTreeComputer.BlobPolicy.KEEP
+                            )
+                    } catch (t: Throwable) {
+                        if (t is InterruptedException) {
+                            Thread.currentThread().interrupt()
+                        }
+                        capturedThrowable.set(t)
+                    }
+                })
+        buildThread.start()
+        // Wait until the Merkle subtree for the tree artifact started to build, then interrupt it.
+        treeFileMetadataAccessed.await()
+        buildThread.interrupt()
+        buildThread.join()
+        Truth.assertThat(capturedThrowable.get()).isInstanceOf(InterruptedException::class.java)
 
-              @Nullable
-              @Override
-              public ActionInput getInput(PathFragment execPath) {
-                return null;
-              }
-            },
-            fakeFileCache);
-    var capturedThrowable = new AtomicReference<Throwable>();
-    var buildThread =
-        new Thread(
-            () -> {
-              try {
-                var unused =
-                    merkleTreeComputer.buildForSpawn(
-                        spawn,
-                        ImmutableSet.of(),
-                        /* scrubber= */ null,
-                        createSpawnExecutionContext(spawn, delayedMetadataProvider),
-                        RemotePathResolver.createDefault(execRoot),
-                        MerkleTreeComputer.BlobPolicy.KEEP);
-              } catch (Throwable t) {
-                if (t instanceof InterruptedException) {
-                  Thread.currentThread().interrupt();
-                }
-                capturedThrowable.set(t);
-              }
-            });
-    buildThread.start();
-    // Wait until the Merkle subtree for the tree artifact started to build, then interrupt it.
-    treeFileMetadataAccessed.await();
-    buildThread.interrupt();
-    buildThread.join();
-    assertThat(capturedThrowable.get()).isInstanceOf(InterruptedException.class);
+        // Expected to succeed despite the subtree computation having been canceled.
+        val unused =
+            merkleTreeComputer.buildForSpawn(
+                spawn,
+                ImmutableSet.of<PathFragment>(),  /* scrubber= */
+                null,
+                createSpawnExecutionContext(spawn, fakeFileCache),
+                RemotePathResolver.createDefault(execRoot),
+                MerkleTreeComputer.BlobPolicy.KEEP
+            )
+    }
 
-    // Expected to succeed despite the subtree computation having been canceled.
-    var unused =
-        merkleTreeComputer.buildForSpawn(
+    @Test
+    @Throws(Throwable::class)
+    fun testSubtreeComputationCancelled_concurrentReusingCallNotAffected() {
+        val fakeFileCache = FakeActionInputFileCache()
+        val treeArtifactInput: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            ActionsTestUtil.createTreeArtifactWithGeneratingAction(
+                artifactRoot, "dir/subdir/tree_artifact"
+            )
+        treeArtifactInput.getPath().createDirectoryAndParents()
+        val treeArtifactBuilder: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            TreeArtifactValue.newBuilder(treeArtifactInput)
+        val treeFileArtifact: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            Artifact.TreeFileArtifact.createTreeOutput(treeArtifactInput, "file")
+        FileSystemUtils.writeContentAsLatin1(treeFileArtifact.getPath(), "file content")
+        treeArtifactBuilder.putChild(
+            treeFileArtifact, FileArtifactValue.createForTesting(treeFileArtifact)
+        )
+        fakeFileCache.putTreeArtifact(treeArtifactInput, treeArtifactBuilder.build())
+        val spawn: @NotNull Spawn = SpawnBuilder().withInputs(treeArtifactInput).build()
+        val ensureInputsPresentCount: AtomicInteger = AtomicInteger()
+        val merkleTreeComputer =
+            createMerkleTreeComputer(
+                object : MerkleTreeUploader() {
+                    override fun uploadBlob(
+                        context: RemoteActionExecutionContext?, digest: Digest?, data: ByteArray?
+                    ): ListenableFuture<Void?>? {
+                        return Futures.immediateVoidFuture()
+                    }
+
+                    override fun uploadFile(
+                        context: RemoteActionExecutionContext?,
+                        remotePathResolver: RemotePathResolver?,
+                        digest: Digest?,
+                        path: Path?,
+                        force: Boolean
+                    ): ListenableFuture<Void?>? {
+                        return Futures.immediateVoidFuture()
+                    }
+
+                    override fun uploadVirtualActionInput(
+                        context: RemoteActionExecutionContext?,
+                        digest: Digest?,
+                        virtualActionInput: VirtualActionInput?
+                    ): ListenableFuture<Void?>? {
+                        return Futures.immediateVoidFuture()
+                    }
+
+                    public override fun ensureInputsPresent(
+                        context: RemoteActionExecutionContext?,
+                        merkleTree: Uploadable?,
+                        force: Boolean,
+                        remotePathResolver: RemotePathResolver?
+                    ) {
+                        ensureInputsPresentCount.incrementAndGet()
+                    }
+                })
+
+        val treeFileMetadataAccessed: CountDownLatch = CountDownLatch(1)
+        val treeFileMetadataContinue: CountDownLatch = CountDownLatch(1)
+        val delayedMetadataProvider: DelegatingPairInputMetadataProvider =
+            DelegatingPairInputMetadataProvider(
+                object : InputMetadataProvider() {
+                    @Throws(InterruptedException::class)
+                    public override fun getInputMetadataChecked(input: ActionInput?): FileArtifactValue? {
+                        if (input == treeFileArtifact && treeFileMetadataAccessed.getCount() >= 0) {
+                            treeFileMetadataAccessed.countDown()
+                            treeFileMetadataContinue.await()
+                        }
+                        return null
+                    }
+
+                    public override fun getTreeMetadata(input: ActionInput?): TreeArtifactValue? {
+                        return null
+                    }
+
+                    public override fun getEnclosingTreeMetadata(execPath: PathFragment?): TreeArtifactValue? {
+                        return null
+                    }
+
+                    public override fun getFileset(input: ActionInput?): FilesetOutputTree? {
+                        return null
+                    }
+
+                    val filesets: ImmutableMap<Artifact, FilesetOutputTree>
+                        get() = ImmutableMap.of<Artifact?, FilesetOutputTree?>()
+
+                    public override fun getRunfilesMetadata(input: ActionInput?): RunfilesArtifactValue? {
+                        return null
+                    }
+
+                    val runfilesTrees: ImmutableList<RunfilesTree>?
+                        get() = null
+
+                    public override fun getInput(execPath: PathFragment?): ActionInput? {
+                        return null
+                    }
+                },
+                fakeFileCache
+            )
+        val interruptedThreadThrowable: AtomicReference<Throwable?> = AtomicReference<Throwable?>()
+        val interruptedThread =
+            Thread(
+                Runnable {
+                    try {
+                        val unused =
+                            merkleTreeComputer.buildForSpawn(
+                                spawn,
+                                ImmutableSet.of<PathFragment>(),  /* scrubber= */
+                                null,
+                                createSpawnExecutionContext(spawn, delayedMetadataProvider),
+                                RemotePathResolver.createDefault(execRoot),
+                                MerkleTreeComputer.BlobPolicy.KEEP
+                            )
+                    } catch (t: Throwable) {
+                        if (t is InterruptedException) {
+                            Thread.currentThread().interrupt()
+                        }
+                        interruptedThreadThrowable.set(t)
+                    }
+                })
+        interruptedThread.start()
+        // Wait until the Merkle subtree for the tree artifact started to build.
+        treeFileMetadataAccessed.await()
+
+        val unrelatedThreads = ArrayList<Thread>()
+        val unrelatedThreadThrowables: ArrayList<AtomicReference<Throwable?>> = ArrayList<AtomicReference<Throwable?>>()
+        for (i in 0..9) {
+            val capturedThrowable: AtomicReference<Throwable?> = AtomicReference<Throwable?>()
+            unrelatedThreadThrowables.add(capturedThrowable)
+            val thread =
+                Thread(
+                    Runnable {
+                        try {
+                            val unused =
+                                merkleTreeComputer.buildForSpawn(
+                                    spawn,
+                                    ImmutableSet.of<PathFragment>(),  /* scrubber= */
+                                    null,
+                                    createSpawnExecutionContext(spawn, fakeFileCache),
+                                    RemotePathResolver.createDefault(execRoot),
+                                    MerkleTreeComputer.BlobPolicy.KEEP
+                                )
+                        } catch (t: Throwable) {
+                            if (t is InterruptedException) {
+                                Thread.currentThread().interrupt()
+                            }
+                            capturedThrowable.set(t)
+                        }
+                    })
+            thread.start()
+            unrelatedThreads.add(thread)
+            // Wait for the new subtree build to block on the first one.
+            while (thread.getState() == Thread.State.RUNNABLE || thread.getState() == Thread.State.NEW) {
+                Thread.sleep(Duration.ofMillis(10))
+            }
+        }
+
+        // Interrupting the first build does not result in its subtree build future being canceled since
+        // other threads are also waiting for it.
+        interruptedThread.interrupt()
+        treeFileMetadataContinue.countDown()
+        interruptedThread.join()
+        for (thread in unrelatedThreads) {
+            thread.join()
+        }
+
+        Truth.assertThat(interruptedThreadThrowable.get()).isInstanceOf(InterruptedException::class.java)
+        for (capturedThrowable in unrelatedThreadThrowables) {
+            if (capturedThrowable.get() != null) {
+                throw capturedThrowable.get()
+            }
+        }
+
+        // All threads share a single upload of the subtree.
+        Truth.assertThat(ensureInputsPresentCount.get()).isEqualTo(1)
+    }
+
+    private fun createMerkleTreeComputer(uploader: MerkleTreeUploader?): MerkleTreeComputer {
+        return MerkleTreeComputer(
+            DigestUtil(SyscallCache.NO_CACHE, DigestHashFunction.SHA256),
+            uploader,
+            "buildRequestId",
+            "commandId",
+            "_main"
+        )
+    }
+
+    private fun createSpawnExecutionContext(
+        spawn: Spawn?, inputMetadataProvider: InputMetadataProvider?
+    ): FakeSpawnExecutionContext {
+        return FakeSpawnExecutionContext(
             spawn,
-            ImmutableSet.of(),
-            /* scrubber= */ null,
-            createSpawnExecutionContext(spawn, fakeFileCache),
-            RemotePathResolver.createDefault(execRoot),
-            MerkleTreeComputer.BlobPolicy.KEEP);
-  }
-
-  @Test
-  public void testSubtreeComputationCancelled_concurrentReusingCallNotAffected() throws Throwable {
-    var fakeFileCache = new FakeActionInputFileCache();
-    var treeArtifactInput =
-        ActionsTestUtil.createTreeArtifactWithGeneratingAction(
-            artifactRoot, "dir/subdir/tree_artifact");
-    treeArtifactInput.getPath().createDirectoryAndParents();
-    var treeArtifactBuilder = TreeArtifactValue.newBuilder(treeArtifactInput);
-    var treeFileArtifact = Artifact.TreeFileArtifact.createTreeOutput(treeArtifactInput, "file");
-    FileSystemUtils.writeContentAsLatin1(treeFileArtifact.getPath(), "file content");
-    treeArtifactBuilder.putChild(
-        treeFileArtifact, FileArtifactValue.createForTesting(treeFileArtifact));
-    fakeFileCache.putTreeArtifact(treeArtifactInput, treeArtifactBuilder.build());
-    var spawn = new SpawnBuilder().withInputs(treeArtifactInput).build();
-    var ensureInputsPresentCount = new AtomicInteger();
-    var merkleTreeComputer =
-        createMerkleTreeComputer(
-            new MerkleTreeUploader() {
-              @Override
-              public ListenableFuture<Void> uploadBlob(
-                  RemoteActionExecutionContext context, Digest digest, byte[] data) {
-                return immediateVoidFuture();
-              }
-
-              @Override
-              public ListenableFuture<Void> uploadFile(
-                  RemoteActionExecutionContext context,
-                  RemotePathResolver remotePathResolver,
-                  Digest digest,
-                  Path path,
-                  boolean force) {
-                return immediateVoidFuture();
-              }
-
-              @Override
-              public ListenableFuture<Void> uploadVirtualActionInput(
-                  RemoteActionExecutionContext context,
-                  Digest digest,
-                  VirtualActionInput virtualActionInput) {
-                return immediateVoidFuture();
-              }
-
-              @Override
-              public void ensureInputsPresent(
-                  RemoteActionExecutionContext context,
-                  MerkleTree.Uploadable merkleTree,
-                  boolean force,
-                  RemotePathResolver remotePathResolver) {
-                ensureInputsPresentCount.incrementAndGet();
-              }
-            });
-
-    var treeFileMetadataAccessed = new CountDownLatch(1);
-    var treeFileMetadataContinue = new CountDownLatch(1);
-    var delayedMetadataProvider =
-        new DelegatingPairInputMetadataProvider(
-            new InputMetadataProvider() {
-              @Nullable
-              @Override
-              public FileArtifactValue getInputMetadataChecked(ActionInput input)
-                  throws InterruptedException {
-                if (input == treeFileArtifact && treeFileMetadataAccessed.getCount() >= 0) {
-                  treeFileMetadataAccessed.countDown();
-                  treeFileMetadataContinue.await();
-                }
-                return null;
-              }
-
-              @Nullable
-              @Override
-              public TreeArtifactValue getTreeMetadata(ActionInput input) {
-                return null;
-              }
-
-              @Nullable
-              @Override
-              public TreeArtifactValue getEnclosingTreeMetadata(PathFragment execPath) {
-                return null;
-              }
-
-              @Nullable
-              @Override
-              public FilesetOutputTree getFileset(ActionInput input) {
-                return null;
-              }
-
-              @Override
-              public ImmutableMap<Artifact, FilesetOutputTree> getFilesets() {
-                return ImmutableMap.of();
-              }
-
-              @Nullable
-              @Override
-              public RunfilesArtifactValue getRunfilesMetadata(ActionInput input) {
-                return null;
-              }
-
-              @Nullable
-              @Override
-              public ImmutableList<RunfilesTree> getRunfilesTrees() {
-                return null;
-              }
-
-              @Nullable
-              @Override
-              public ActionInput getInput(PathFragment execPath) {
-                return null;
-              }
-            },
-            fakeFileCache);
-    var interruptedThreadThrowable = new AtomicReference<Throwable>();
-    var interruptedThread =
-        new Thread(
-            () -> {
-              try {
-                var unused =
-                    merkleTreeComputer.buildForSpawn(
-                        spawn,
-                        ImmutableSet.of(),
-                        /* scrubber= */ null,
-                        createSpawnExecutionContext(spawn, delayedMetadataProvider),
-                        RemotePathResolver.createDefault(execRoot),
-                        MerkleTreeComputer.BlobPolicy.KEEP);
-              } catch (Throwable t) {
-                if (t instanceof InterruptedException) {
-                  Thread.currentThread().interrupt();
-                }
-                interruptedThreadThrowable.set(t);
-              }
-            });
-    interruptedThread.start();
-    // Wait until the Merkle subtree for the tree artifact started to build.
-    treeFileMetadataAccessed.await();
-
-    var unrelatedThreads = new ArrayList<Thread>();
-    var unrelatedThreadThrowables = new ArrayList<AtomicReference<Throwable>>();
-    for (int i = 0; i < 10; i++) {
-      var capturedThrowable = new AtomicReference<Throwable>();
-      unrelatedThreadThrowables.add(capturedThrowable);
-      var thread =
-          new Thread(
-              () -> {
-                try {
-                  var unused =
-                      merkleTreeComputer.buildForSpawn(
-                          spawn,
-                          ImmutableSet.of(),
-                          /* scrubber= */ null,
-                          createSpawnExecutionContext(spawn, fakeFileCache),
-                          RemotePathResolver.createDefault(execRoot),
-                          MerkleTreeComputer.BlobPolicy.KEEP);
-                } catch (Throwable t) {
-                  if (t instanceof InterruptedException) {
-                    Thread.currentThread().interrupt();
-                  }
-                  capturedThrowable.set(t);
-                }
-              });
-      thread.start();
-      unrelatedThreads.add(thread);
-      // Wait for the new subtree build to block on the first one.
-      while (thread.getState() == Thread.State.RUNNABLE || thread.getState() == Thread.State.NEW) {
-        Thread.sleep(Duration.ofMillis(10));
-      }
+            inputMetadataProvider,
+            execRoot,
+            FileOutErr(),
+            ImmutableClassToInstanceMap.of<ActionContext?>(),  /* actionFileSystem= */
+            null
+        )
     }
-
-    // Interrupting the first build does not result in its subtree build future being canceled since
-    // other threads are also waiting for it.
-    interruptedThread.interrupt();
-    treeFileMetadataContinue.countDown();
-    interruptedThread.join();
-    for (var thread : unrelatedThreads) {
-      thread.join();
-    }
-
-    assertThat(interruptedThreadThrowable.get()).isInstanceOf(InterruptedException.class);
-    for (var capturedThrowable : unrelatedThreadThrowables) {
-      if (capturedThrowable.get() != null) {
-        throw capturedThrowable.get();
-      }
-    }
-
-    // All threads share a single upload of the subtree.
-    assertThat(ensureInputsPresentCount.get()).isEqualTo(1);
-  }
-
-  private MerkleTreeComputer createMerkleTreeComputer(MerkleTreeUploader uploader) {
-    return new MerkleTreeComputer(
-        new DigestUtil(SyscallCache.NO_CACHE, DigestHashFunction.SHA256),
-        uploader,
-        "buildRequestId",
-        "commandId",
-        "_main");
-  }
-
-  private FakeSpawnExecutionContext createSpawnExecutionContext(
-      Spawn spawn, InputMetadataProvider inputMetadataProvider) {
-    return new FakeSpawnExecutionContext(
-        spawn,
-        inputMetadataProvider,
-        execRoot,
-        new FileOutErr(),
-        ImmutableClassToInstanceMap.of(),
-        /* actionFileSystem= */ null);
-  }
 }

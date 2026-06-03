@@ -11,23 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
+import com.google.devtools.build.lib.query2.proto.proto2api.Build
 
-import com.google.devtools.build.lib.query2.proto.proto2api.Build;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link LazyStringListCodec}. */
-@RunWith(JUnit4.class)
-public class OnDemandStringListCodecTest {
-  @Test
-  public void testCodec() throws Exception {
-    new SerializationTester(
-            // Tests empty list as well, since license has two repeated string fields.
-            Build.License.newBuilder().addLicenseType("first").addLicenseType("second").build())
-        .runTests();
-  }
+/** Tests for [LazyStringListCodec].  */
+@RunWith(JUnit4::class)
+class OnDemandStringListCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCodec() {
+        SerializationTester( // Tests empty list as well, since license has two repeated string fields.
+            Build.License.newBuilder().addLicenseType("first").addLicenseType("second").build()
+        )
+            .runTests()
+    }
 }

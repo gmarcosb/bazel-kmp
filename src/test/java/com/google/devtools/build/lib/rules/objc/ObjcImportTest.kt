@@ -11,85 +11,71 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.objc
 
-package com.google.devtools.build.lib.rules.objc;
+import com.google.common.base.Joiner
+import com.google.common.base.Optional
+import com.google.common.truth.Subject
+import com.google.devtools.build.lib.actions.Artifact
+import org.junit.Test
+import kotlin.collections.ArrayList
+import kotlin.collections.Iterable
+import kotlin.collections.MutableList
+import kotlin.collections.MutableSet
 
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.common.base.Joiner;
-import com.google.common.base.Optional;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.CommandAction;
-import com.google.devtools.build.lib.rules.cpp.CcLinkingContext;
-import com.google.devtools.build.lib.testutil.Scratch;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Test case for objc_import. */
-@RunWith(JUnit4.class)
-public class ObjcImportTest extends ObjcRuleTestCase {
-  protected static final RuleType RULE_TYPE =
-      new RuleType("objc_import") {
-        @Override
-        Iterable<String> requiredAttributes(
-            Scratch scratch, String packageDir, Set<String> alreadyAdded) throws IOException {
-          List<String> attributes = new ArrayList<>();
-          if (!alreadyAdded.contains("archives")) {
-            scratch.file(packageDir + "/precomp_library.a");
-            attributes.add("archives = ['precomp_library.a']");
-          }
-          return attributes;
-        }
-      };
-
-  private void addTrivialImportLibrary() throws IOException {
-    scratch.file("imp/precomp_lib.a");
-    scratch.file(
-        "imp/BUILD",
-        """
+/** Test case for objc_import.  */
+@RunWith(JUnit4::class)
+class ObjcImportTest : ObjcRuleTestCase() {
+    @Throws(IOException::class)
+    private fun addTrivialImportLibrary() {
+        scratch.file("imp/precomp_lib.a")
+        scratch.file(
+            "imp/BUILD",
+            """
         load("@rules_cc//cc:objc_import.bzl", "objc_import")
         objc_import(
             name = "imp",
             archives = ["precomp_lib.a"],
         )
-        """);
-  }
+        
+        """.trimIndent()
+        )
+    }
 
-  @Test
-  public void testImportLibrariesProvidedTransitively() throws Exception {
-    scratch.file("imp/this_library.a");
-    addTrivialImportLibrary();
-    scratch.file(
-        "lib/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testImportLibrariesProvidedTransitively() {
+        scratch.file("imp/this_library.a")
+        addTrivialImportLibrary()
+        scratch.file(
+            "lib/BUILD",
+            """
         load("@rules_cc//cc:objc_library.bzl", "objc_library")
         objc_library(
             name = "lib",
             deps = ["//imp"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    Artifact library =
-        ccInfoForTarget("//lib:lib")
-            .getCcLinkingContext()
-            .getLibraries()
-            .getSingleton()
-            .getStaticLibrary();
-    assertThat(library.getRunfilesPath().toString()).isEqualTo("imp/precomp_lib.a");
-  }
+        val library: Artifact =
+            ccInfoForTarget("//lib:lib")
+                .getCcLinkingContext()
+                .getLibraries()
+                .getSingleton()
+                .getStaticLibrary()
+        assertThat(library.getRunfilesPath().toString()).isEqualTo("imp/precomp_lib.a")
+    }
 
-  @Test
-  public void testImportLibrariesLinkedToFinalBinary() throws Exception {
-    addTrivialImportLibrary();
-    addAppleBinaryStarlarkRule(scratch);
-    scratch.file(
-        "bin/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testImportLibrariesLinkedToFinalBinary() {
+        addTrivialImportLibrary()
+        ObjcRuleTestCase.Companion.addAppleBinaryStarlarkRule(scratch)
+        scratch.file(
+            "bin/BUILD",
+            """
         load("//test_starlark:apple_binary_starlark.bzl", "apple_binary_starlark")
 
         apple_binary_starlark(
@@ -97,20 +83,23 @@ public class ObjcImportTest extends ObjcRuleTestCase {
             platform_type = "ios",
             deps = ["//imp"],
         )
-        """);
-    CommandAction linkBinAction = linkAction("//bin:bin");
-    verifyObjlist(linkBinAction, "imp/precomp_lib.a");
-    assertThat(Artifact.asExecPaths(linkBinAction.getInputs())).contains("imp/precomp_lib.a");
-  }
+        
+        """.trimIndent()
+        )
+        val linkBinAction: CommandAction = linkAction("//bin:bin")
+        verifyObjlist(linkBinAction, "imp/precomp_lib.a")
+        Subject.contains("imp/precomp_lib.a")
+    }
 
-  @Test
-  public void testAlwaysLinkDefaultFalse() throws Exception {
-    useConfiguration("--incompatible_objc_alwayslink_by_default=false");
-    addTrivialImportLibrary();
-    addAppleBinaryStarlarkRule(scratch);
-    scratch.file(
-        "bin/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testAlwaysLinkDefaultFalse() {
+        useConfiguration("--incompatible_objc_alwayslink_by_default=false")
+        addTrivialImportLibrary()
+        ObjcRuleTestCase.Companion.addAppleBinaryStarlarkRule(scratch)
+        scratch.file(
+            "bin/BUILD",
+            """
         load("//test_starlark:apple_binary_starlark.bzl", "apple_binary_starlark")
 
         apple_binary_starlark(
@@ -118,19 +107,22 @@ public class ObjcImportTest extends ObjcRuleTestCase {
             platform_type = "ios",
             deps = ["//imp"],
         )
-        """);
-    CommandAction linkBinAction = linkAction("//bin:bin");
-    assertThat(Joiner.on("").join(linkBinAction.getArguments())).doesNotContain("-force_load");
-  }
+        
+        """.trimIndent()
+        )
+        val linkBinAction: CommandAction = linkAction("//bin:bin")
+        Truth.assertThat(Joiner.on("").join(linkBinAction.getArguments())).doesNotContain("-force_load")
+    }
 
-  @Test
-  public void testAlwaysLinkDefaultTrue() throws Exception {
-    useConfiguration("--incompatible_objc_alwayslink_by_default");
-    addTrivialImportLibrary();
-    addAppleBinaryStarlarkRule(scratch);
-    scratch.file(
-        "bin/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testAlwaysLinkDefaultTrue() {
+        useConfiguration("--incompatible_objc_alwayslink_by_default")
+        addTrivialImportLibrary()
+        ObjcRuleTestCase.Companion.addAppleBinaryStarlarkRule(scratch)
+        scratch.file(
+            "bin/BUILD",
+            """
         load("//test_starlark:apple_binary_starlark.bzl", "apple_binary_starlark")
 
         apple_binary_starlark(
@@ -138,31 +130,36 @@ public class ObjcImportTest extends ObjcRuleTestCase {
             platform_type = "ios",
             deps = ["//imp"],
         )
-        """);
-    CommandAction linkBinAction = linkAction("//bin:bin");
-    assertThat(Joiner.on("").join(linkBinAction.getArguments()))
-        .contains("-force_load imp/precomp_lib.a");
-  }
+        
+        """.trimIndent()
+        )
+        val linkBinAction: CommandAction = linkAction("//bin:bin")
+        Truth.assertThat(Joiner.on("").join(linkBinAction.getArguments()))
+            .contains("-force_load imp/precomp_lib.a")
+    }
 
-  @Test
-  public void testAlwaysLinkTrueDefaultFalse() throws Exception {
-    useConfiguration("--incompatible_objc_alwayslink_by_default=false");
-    addAppleBinaryStarlarkRule(scratch);
+    @Test
+    @Throws(Exception::class)
+    fun testAlwaysLinkTrueDefaultFalse() {
+        useConfiguration("--incompatible_objc_alwayslink_by_default=false")
+        ObjcRuleTestCase.Companion.addAppleBinaryStarlarkRule(scratch)
 
-    scratch.file("imp/precomp_lib.a");
-    scratch.file(
-        "imp/BUILD",
-        """
+        scratch.file("imp/precomp_lib.a")
+        scratch.file(
+            "imp/BUILD",
+            """
         load("@rules_cc//cc:objc_import.bzl", "objc_import")
         objc_import(
             name = "imp",
             archives = ["precomp_lib.a"],
             alwayslink = True,
         )
-        """);
-    scratch.file(
-        "bin/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "bin/BUILD",
+            """
         load("//test_starlark:apple_binary_starlark.bzl", "apple_binary_starlark")
 
         apple_binary_starlark(
@@ -170,31 +167,36 @@ public class ObjcImportTest extends ObjcRuleTestCase {
             platform_type = "ios",
             deps = ["//imp"],
         )
-        """);
-    CommandAction linkBinAction = linkAction("//bin:bin");
-    assertThat(Joiner.on("").join(linkBinAction.getArguments()))
-        .contains("-force_load imp/precomp_lib.a");
-  }
+        
+        """.trimIndent()
+        )
+        val linkBinAction: CommandAction = linkAction("//bin:bin")
+        Truth.assertThat(Joiner.on("").join(linkBinAction.getArguments()))
+            .contains("-force_load imp/precomp_lib.a")
+    }
 
-  @Test
-  public void testAlwaysLinkFalseDefaultTrue() throws Exception {
-    useConfiguration("--incompatible_objc_alwayslink_by_default");
-    addAppleBinaryStarlarkRule(scratch);
+    @Test
+    @Throws(Exception::class)
+    fun testAlwaysLinkFalseDefaultTrue() {
+        useConfiguration("--incompatible_objc_alwayslink_by_default")
+        ObjcRuleTestCase.Companion.addAppleBinaryStarlarkRule(scratch)
 
-    scratch.file("imp/precomp_lib.a");
-    scratch.file(
-        "imp/BUILD",
-        """
+        scratch.file("imp/precomp_lib.a")
+        scratch.file(
+            "imp/BUILD",
+            """
         load("@rules_cc//cc:objc_import.bzl", "objc_import")
         objc_import(
             name = "imp",
             archives = ["precomp_lib.a"],
             alwayslink = False,
         )
-        """);
-    scratch.file(
-        "bin/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "bin/BUILD",
+            """
         load("//test_starlark:apple_binary_starlark.bzl", "apple_binary_starlark")
 
         apple_binary_starlark(
@@ -202,30 +204,35 @@ public class ObjcImportTest extends ObjcRuleTestCase {
             platform_type = "ios",
             deps = ["//imp"],
         )
-        """);
-    CommandAction linkBinAction = linkAction("//bin:bin");
-    assertThat(Joiner.on("").join(linkBinAction.getArguments())).doesNotContain("-force_load");
-  }
+        
+        """.trimIndent()
+        )
+        val linkBinAction: CommandAction = linkAction("//bin:bin")
+        Truth.assertThat(Joiner.on("").join(linkBinAction.getArguments())).doesNotContain("-force_load")
+    }
 
-  @Test
-  public void testArchiveRequiresDotInName() throws Exception {
-    checkError(
-        "x",
-        "x",
-        "'//x:fooa' does not produce any objc_import archives files (expected .a)",
-        "load('@rules_cc//cc:objc_import.bzl', 'objc_import')",
-        "objc_import(",
-        "    name = 'x',",
-        "    archives = ['fooa'],",
-        ")");
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testArchiveRequiresDotInName() {
+        checkError(
+            "x",
+            "x",
+            "'//x:fooa' does not produce any objc_import archives files (expected .a)",
+            "load('@rules_cc//cc:objc_import.bzl', 'objc_import')",
+            "objc_import(",
+            "    name = 'x',",
+            "    archives = ['fooa'],",
+            ")"
+        )
+    }
 
-  @Test
-  public void testDylibsProvided() throws Exception {
-    scratch.file("imp/imp.a");
-    scratch.file(
-        "imp/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testDylibsProvided() {
+        scratch.file("imp/imp.a")
+        scratch.file(
+            "imp/BUILD",
+            """
         load("@rules_cc//cc:objc_import.bzl", "objc_import")
         objc_import(
             name = "imp",
@@ -235,44 +242,52 @@ public class ObjcImportTest extends ObjcRuleTestCase {
                 "libdy2",
             ],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    CcLinkingContext ccLinkingContext = ccInfoForTarget("//imp:imp").getCcLinkingContext();
-    assertThat(ccLinkingContext.getFlattenedUserLinkFlags()).containsExactly("-ldy1", "-ldy2");
-  }
+        val ccLinkingContext: CcLinkingContext = ccInfoForTarget("//imp:imp").getCcLinkingContext()
+        assertThat(ccLinkingContext.getFlattenedUserLinkFlags()).containsExactly("-ldy1", "-ldy2")
+    }
 
-  @Test
-  public void testProvidesHdrsAndIncludes() throws Exception {
-    checkProvidesHdrsAndIncludes(RULE_TYPE, Optional.absent());
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testProvidesHdrsAndIncludes() {
+        checkProvidesHdrsAndIncludes(RULE_TYPE, Optional.absent<String?>())
+    }
 
-  @Test
-  public void testSdkIncludesUsedInCompileActionsOfDependers() throws Exception {
-    checkSdkIncludesUsedInCompileActionsOfDependers(RULE_TYPE);
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testSdkIncludesUsedInCompileActionsOfDependers() {
+        checkSdkIncludesUsedInCompileActionsOfDependers(RULE_TYPE)
+    }
 
-  @Test
-  public void testObjcImportLoadedThroughMacro() throws Exception {
-    setupTestObjcImportLoadedThroughMacro(/* loadMacro= */ true);
-    assertThat(getConfiguredTarget("//a:a")).isNotNull();
-    assertNoEvents();
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testObjcImportLoadedThroughMacro() {
+        setupTestObjcImportLoadedThroughMacro( /* loadMacro= */true)
+        assertThat(getConfiguredTarget("//a:a")).isNotNull()
+        assertNoEvents()
+    }
 
-  private void setupTestObjcImportLoadedThroughMacro(boolean loadMacro) throws Exception {
-    scratch.file(
-        "a/BUILD",
-        getAnalysisMock().ccSupport().getMacroLoadStatement(loadMacro, "objc_import"),
-        "objc_import(name='a', archives=['a.a'])");
-  }
+    @Throws(Exception::class)
+    private fun setupTestObjcImportLoadedThroughMacro(loadMacro: Boolean) {
+        scratch.file(
+            "a/BUILD",
+            getAnalysisMock().ccSupport().getMacroLoadStatement(loadMacro, "objc_import"),
+            "objc_import(name='a', archives=['a.a'])"
+        )
+    }
 
-  @Test
-  public void testDependency() throws Exception {
-    scratch.file("imp/precomp_dep.a");
-    scratch.file("imp/precomp_dep.h");
-    scratch.file("imp/precomp_lib.a");
-    scratch.file(
-        "imp/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testDependency() {
+        scratch.file("imp/precomp_dep.a")
+        scratch.file("imp/precomp_dep.h")
+        scratch.file("imp/precomp_lib.a")
+        scratch.file(
+            "imp/BUILD",
+            """
         load("@rules_cc//cc:objc_import.bzl", "objc_import")
         objc_import(
             name = "imp_dep",
@@ -285,11 +300,29 @@ public class ObjcImportTest extends ObjcRuleTestCase {
             archives = ["precomp_lib.a"],
             deps = [":imp_dep"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertThat(getArifactPathsOfLibraries(getConfiguredTarget("//imp:imp")))
-        .containsExactly("imp/precomp_lib.a", "imp/precomp_dep.a");
-    assertThat(getArifactPathsOfHeaders(getConfiguredTarget("//imp:imp")))
-        .containsExactly("imp/precomp_dep.h");
-  }
+        Truth.assertThat(ObjcRuleTestCase.Companion.getArifactPathsOfLibraries(getConfiguredTarget("//imp:imp")))
+            .containsExactly("imp/precomp_lib.a", "imp/precomp_dep.a")
+        Truth.assertThat(ObjcRuleTestCase.Companion.getArifactPathsOfHeaders(getConfiguredTarget("//imp:imp")))
+            .containsExactly("imp/precomp_dep.h")
+    }
+
+    companion object {
+        protected val RULE_TYPE: RuleType = object : RuleType("objc_import") {
+            @Throws(IOException::class)
+            override fun requiredAttributes(
+                scratch: Scratch, packageDir: String?, alreadyAdded: MutableSet<String?>
+            ): Iterable<String?> {
+                val attributes: MutableList<String?> = ArrayList<String?>()
+                if (!alreadyAdded.contains("archives")) {
+                    scratch.file(packageDir + "/precomp_library.a")
+                    attributes.add("archives = ['precomp_library.a']")
+                }
+                return attributes
+            }
+        }
+    }
 }

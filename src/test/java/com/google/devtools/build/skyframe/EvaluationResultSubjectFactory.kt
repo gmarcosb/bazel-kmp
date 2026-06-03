@@ -11,26 +11,30 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import com.google.common.truth.FailureMetadata;
-import com.google.common.truth.Subject;
-import com.google.common.truth.Truth;
+import com.google.common.truth.FailureMetadata
+import com.google.common.truth.Truth
+import com.google.devtools.build.skyframe.EvaluationResultSubject
 
 /**
- * {@link Subject.Factory} for {@link EvaluationResult} objects, providing {@link
- * EvaluationResultSubject}s.
+ * [Subject.Factory] for [EvaluationResult] objects, providing [ ]s.
  */
-public class EvaluationResultSubjectFactory
-    implements Subject.Factory<EvaluationResultSubject, EvaluationResult<?>> {
-  public static EvaluationResultSubject assertThatEvaluationResult(
-      EvaluationResult<?> evaluationResult) {
-    return Truth.assertAbout(new EvaluationResultSubjectFactory()).that(evaluationResult);
-  }
+class EvaluationResultSubjectFactory
 
-  @Override
-  public EvaluationResultSubject createSubject(
-      FailureMetadata failureMetadata, EvaluationResult<?> evaluationResult) {
-    return new EvaluationResultSubject(failureMetadata, evaluationResult);
-  }
+    : com.google.common.truth.Subject.Factory<EvaluationResultSubject?, EvaluationResult<*>?> {
+    override fun createSubject(
+        failureMetadata: FailureMetadata?, evaluationResult: EvaluationResult<*>?
+    ): EvaluationResultSubject {
+        return EvaluationResultSubject(failureMetadata, evaluationResult)
+    }
+
+    companion object {
+        fun assertThatEvaluationResult(
+            evaluationResult: EvaluationResult<*>?
+        ): EvaluationResultSubject? {
+            return Truth.assertAbout<EvaluationResultSubject?, EvaluationResult<*>?>(EvaluationResultSubjectFactory())
+                .that(evaluationResult)
+        }
+    }
 }

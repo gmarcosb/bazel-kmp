@@ -11,30 +11,27 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.annot.processor.testsources
 
-package net.starlark.java.annot.processor.testsources;
-
-import net.starlark.java.annot.Param;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.StarlarkInt;
-import net.starlark.java.eval.StarlarkThread;
-import net.starlark.java.eval.StarlarkValue;
+import net.starlark.java.eval.StarlarkInt
 
 /**
  * Test case for a StarlarkCallable method which specifies StarlarkThread before other parameters.
  */
-public class StarlarkInfoBeforeParams implements StarlarkValue {
-
-  @StarlarkMethod(
-      name = "skylark_info_wrong_order",
-      documented = false,
-      parameters = {
-        @Param(name = "one", named = true),
-        @Param(name = "two", named = true),
-        @Param(name = "three", named = true)
-      },
-      useStarlarkThread = true)
-  public String threeArgMethod(StarlarkThread thread, String one, StarlarkInt two, String three) {
-    return "bar";
-  }
+class StarlarkInfoBeforeParams : StarlarkValue {
+    @StarlarkMethod(
+        name = "skylark_info_wrong_order",
+        documented = false,
+        parameters = [net.starlark.java.annot.Param(
+            name = "one",
+            named = true
+        ), net.starlark.java.annot.Param(name = "two", named = true), net.starlark.java.annot.Param(
+            name = "three",
+            named = true
+        )],
+        useStarlarkThread = true
+    )
+    fun threeArgMethod(thread: StarlarkThread?, one: String?, two: StarlarkInt?, three: String?): String {
+        return "bar"
+    }
 }

@@ -11,85 +11,92 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.testutil;
+package com.google.devtools.build.lib.testutil
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.testutil.MoreAsserts.assertContainsSublist;
-import static com.google.devtools.build.lib.testutil.MoreAsserts.assertDoesNotContainSublist;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.testutil.MoreAsserts.assertContainsSublist
 
-import java.util.Arrays;
-import java.util.List;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests [com.google.devtools.build.lib.testutil.MoreAsserts].  */
+@RunWith(JUnit4::class)
+class MoreAssertsTest {
+    @org.junit.Test
+    fun testAssertContainsSublistSuccess() {
+        val actual: MutableList<String?> = mutableListOf<String?>("a", "b", "c")
 
-/** Tests {@link com.google.devtools.build.lib.testutil.MoreAsserts}. */
-@RunWith(JUnit4.class)
-public class MoreAssertsTest {
+        // All single-string combinations.
+        assertContainsSublist(actual, "a")
+        assertContainsSublist(actual, "b")
+        assertContainsSublist(actual, "c")
 
-  @Test
-  public void testAssertContainsSublistSuccess() {
-    List<String> actual = Arrays.asList("a", "b", "c");
+        // All two-string combinations.
+        assertContainsSublist(actual, "a", "b")
+        assertContainsSublist(actual, "b", "c")
 
-    // All single-string combinations.
-    assertContainsSublist(actual, "a");
-    assertContainsSublist(actual, "b");
-    assertContainsSublist(actual, "c");
+        // The whole list.
+        assertContainsSublist(actual, "a", "b", "c")
+    }
 
-    // All two-string combinations.
-    assertContainsSublist(actual, "a", "b");
-    assertContainsSublist(actual, "b", "c");
+    @org.junit.Test
+    fun testAssertContainsSublistFailure() {
+        val actual: MutableList<String?> = mutableListOf<String?>("a", "b", "c")
 
-    // The whole list.
-    assertContainsSublist(actual, "a", "b", "c");
-  }
+        var e: java.lang.AssertionError? = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { assertContainsSublist(actual, "d") })
+        Truth.assertThat(e).hasMessageThat().startsWith("Did not find [d] as a sublist of [a, b, c]")
 
-  @Test
-  public void testAssertContainsSublistFailure() {
-    List<String> actual = Arrays.asList("a", "b", "c");
+        e = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { assertContainsSublist(actual, "a", "c") })
+        Truth.assertThat(e).hasMessageThat().startsWith("Did not find [a, c] as a sublist of [a, b, c]")
 
-    AssertionError e = assertThrows(AssertionError.class, () -> assertContainsSublist(actual, "d"));
-    assertThat(e).hasMessageThat().startsWith("Did not find [d] as a sublist of [a, b, c]");
+        e = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { assertContainsSublist(actual, "b", "c", "d") })
+        Truth.assertThat(e).hasMessageThat().startsWith("Did not find [b, c, d] as a sublist of [a, b, c]")
+    }
 
-    e = assertThrows(AssertionError.class, () -> assertContainsSublist(actual, "a", "c"));
-    assertThat(e).hasMessageThat().startsWith("Did not find [a, c] as a sublist of [a, b, c]");
+    @org.junit.Test
+    fun testAssertDoesNotContainSublistSuccess() {
+        val actual: MutableList<String?> = mutableListOf<String?>("a", "b", "c")
+        assertDoesNotContainSublist(actual, "d")
+        assertDoesNotContainSublist(actual, "a", "c")
+        assertDoesNotContainSublist(actual, "b", "c", "d")
+    }
 
-    e = assertThrows(AssertionError.class, () -> assertContainsSublist(actual, "b", "c", "d"));
-    assertThat(e).hasMessageThat().startsWith("Did not find [b, c, d] as a sublist of [a, b, c]");
-  }
+    @org.junit.Test
+    fun testAssertDoesNotContainSublistFailure() {
+        val actual: MutableList<String?> = mutableListOf<String?>("a", "b", "c")
 
-  @Test
-  public void testAssertDoesNotContainSublistSuccess() {
-    List<String> actual = Arrays.asList("a", "b", "c");
-    assertDoesNotContainSublist(actual, "d");
-    assertDoesNotContainSublist(actual, "a", "c");
-    assertDoesNotContainSublist(actual, "b", "c", "d");
-  }
+        // All single-string combinations.
+        var e: java.lang.AssertionError? =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { assertDoesNotContainSublist(actual, "a") })
+        Truth.assertThat(e).hasMessageThat().isEqualTo("Found [a] as a sublist of [a, b, c]")
+        e = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { assertDoesNotContainSublist(actual, "b") })
+        Truth.assertThat(e).hasMessageThat().isEqualTo("Found [b] as a sublist of [a, b, c]")
+        e = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { assertDoesNotContainSublist(actual, "c") })
+        Truth.assertThat(e).hasMessageThat().isEqualTo("Found [c] as a sublist of [a, b, c]")
 
-  @Test
-  public void testAssertDoesNotContainSublistFailure() {
-    List<String> actual = Arrays.asList("a", "b", "c");
+        // All two-string combinations.
+        e = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { assertDoesNotContainSublist(actual, "a", "b") })
+        Truth.assertThat(e).hasMessageThat().isEqualTo("Found [a, b] as a sublist of [a, b, c]")
+        e = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { assertDoesNotContainSublist(actual, "b", "c") })
+        Truth.assertThat(e).hasMessageThat().isEqualTo("Found [b, c] as a sublist of [a, b, c]")
 
-    // All single-string combinations.
-    AssertionError e =
-        assertThrows(AssertionError.class, () -> assertDoesNotContainSublist(actual, "a"));
-    assertThat(e).hasMessageThat().isEqualTo("Found [a] as a sublist of [a, b, c]");
-    e = assertThrows(AssertionError.class, () -> assertDoesNotContainSublist(actual, "b"));
-    assertThat(e).hasMessageThat().isEqualTo("Found [b] as a sublist of [a, b, c]");
-    e = assertThrows(AssertionError.class, () -> assertDoesNotContainSublist(actual, "c"));
-    assertThat(e).hasMessageThat().isEqualTo("Found [c] as a sublist of [a, b, c]");
-
-    // All two-string combinations.
-    e = assertThrows(AssertionError.class, () -> assertDoesNotContainSublist(actual, "a", "b"));
-    assertThat(e).hasMessageThat().isEqualTo("Found [a, b] as a sublist of [a, b, c]");
-    e = assertThrows(AssertionError.class, () -> assertDoesNotContainSublist(actual, "b", "c"));
-    assertThat(e).hasMessageThat().isEqualTo("Found [b, c] as a sublist of [a, b, c]");
-
-    // The whole list.
-    e =
-        assertThrows(
-            AssertionError.class, () -> assertDoesNotContainSublist(actual, "a", "b", "c"));
-    assertThat(e).hasMessageThat().isEqualTo("Found [a, b, c] as a sublist of [a, b, c]");
-  }
+        // The whole list.
+        e =
+            org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+                java.lang.AssertionError::class.java,
+                org.junit.function.ThrowingRunnable { assertDoesNotContainSublist(actual, "a", "b", "c") })
+        Truth.assertThat(e).hasMessageThat().isEqualTo("Found [a, b, c] as a sublist of [a, b, c]")
+    }
 }

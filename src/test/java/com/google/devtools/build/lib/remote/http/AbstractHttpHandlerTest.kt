@@ -11,169 +11,181 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.remote.http
 
-package com.google.devtools.build.lib.remote.http;
+import build.bazel.remote.execution.v2.Digest
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.Maps
+import io.netty.channel.embedded.EmbeddedChannel
+import io.netty.handler.codec.http.HttpHeaderNames
+import io.netty.handler.codec.http.HttpRequest
+import org.junit.Test
+import java.io.ByteArrayOutputStream
+import java.net.URI
 
-import static com.google.common.truth.Truth.assertThat;
+/** Tests for [AbstractHttpHandlerTest].  */
+@RunWith(JUnit4::class)
+abstract class AbstractHttpHandlerTest {
+    @Test
+    @Throws(Exception::class)
+    fun basicAuthShouldWork() {
+        val uri = URI("http://user:password@does.not.exist/foo")
+        val ch =
+            EmbeddedChannel(HttpDownloadHandler(null, ImmutableList.of<MutableMap.MutableEntry<String?, String?>?>()))
+        val cmd = DownloadCommand(uri, true, DIGEST, ByteArrayOutputStream())
+        val writePromise = ch.newPromise()
+        ch.writeOneOutbound(cmd, writePromise)
 
-import build.bazel.remote.execution.v2.Digest;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Maps;
-import com.google.devtools.build.lib.remote.util.DigestUtil;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import io.netty.channel.ChannelPromise;
-import io.netty.channel.embedded.EmbeddedChannel;
-import io.netty.handler.codec.http.HttpHeaderNames;
-import io.netty.handler.codec.http.HttpRequest;
-import java.io.ByteArrayOutputStream;
-import java.net.URI;
-import java.util.Arrays;
-import java.util.Map.Entry;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+        val request = ch.readOutbound<HttpRequest>()
+        Truth.assertThat(request.headers().get(HttpHeaderNames.AUTHORIZATION))
+            .isEqualTo("Basic dXNlcjpwYXNzd29yZA==")
+    }
 
-/** Tests for {@link AbstractHttpHandlerTest}. */
-@RunWith(JUnit4.class)
-@SuppressWarnings("FutureReturnValueIgnored")
-public abstract class AbstractHttpHandlerTest {
-  private static final DigestUtil DIGEST_UTIL =
-      new DigestUtil(SyscallCache.NO_CACHE, DigestHashFunction.SHA256);
-  private static final Digest DIGEST = DIGEST_UTIL.computeAsUtf8("foo");
+    @Test
+    @Throws(Exception::class)
+    fun basicAuthShouldNotEnabled() {
+        val uri = URI("http://does.not.exist/foo")
+        val ch =
+            EmbeddedChannel(HttpDownloadHandler(null, ImmutableList.of<MutableMap.MutableEntry<String?, String?>?>()))
+        val cmd = DownloadCommand(uri, true, DIGEST, ByteArrayOutputStream())
+        val writePromise = ch.newPromise()
+        ch.writeOneOutbound(cmd, writePromise)
 
-  @Test
-  public void basicAuthShouldWork() throws Exception {
-    URI uri = new URI("http://user:password@does.not.exist/foo");
-    EmbeddedChannel ch = new EmbeddedChannel(new HttpDownloadHandler(null, ImmutableList.of()));
-    DownloadCommand cmd = new DownloadCommand(uri, true, DIGEST, new ByteArrayOutputStream());
-    ChannelPromise writePromise = ch.newPromise();
-    ch.writeOneOutbound(cmd, writePromise);
+        val request = ch.readOutbound<HttpRequest>()
+        Truth.assertThat(request.headers().contains(HttpHeaderNames.AUTHORIZATION)).isFalse()
+    }
 
-    HttpRequest request = ch.readOutbound();
-    assertThat(request.headers().get(HttpHeaderNames.AUTHORIZATION))
-        .isEqualTo("Basic dXNlcjpwYXNzd29yZA==");
-  }
+    @Test
+    @Throws(Exception::class)
+    fun hostDoesntIncludePortHttp() {
+        val uri = URI("http://does.not.exist/foo")
+        val ch =
+            EmbeddedChannel(HttpDownloadHandler(null, ImmutableList.of<MutableMap.MutableEntry<String?, String?>?>()))
+        val cmd = DownloadCommand(uri, true, DIGEST, ByteArrayOutputStream())
+        val writePromise = ch.newPromise()
+        ch.writeOneOutbound(cmd, writePromise)
 
-  @Test
-  public void basicAuthShouldNotEnabled() throws Exception {
-    URI uri = new URI("http://does.not.exist/foo");
-    EmbeddedChannel ch = new EmbeddedChannel(new HttpDownloadHandler(null, ImmutableList.of()));
-    DownloadCommand cmd = new DownloadCommand(uri, true, DIGEST, new ByteArrayOutputStream());
-    ChannelPromise writePromise = ch.newPromise();
-    ch.writeOneOutbound(cmd, writePromise);
+        val request = ch.readOutbound<HttpRequest>()
+        Truth.assertThat(request.headers().get(HttpHeaderNames.HOST)).isEqualTo("does.not.exist")
+    }
 
-    HttpRequest request = ch.readOutbound();
-    assertThat(request.headers().contains(HttpHeaderNames.AUTHORIZATION)).isFalse();
-  }
+    @Test
+    @Throws(Exception::class)
+    fun hostDoesntIncludePortHttps() {
+        val uri = URI("https://does.not.exist/foo")
+        val ch =
+            EmbeddedChannel(HttpDownloadHandler(null, ImmutableList.of<MutableMap.MutableEntry<String?, String?>?>()))
+        val cmd = DownloadCommand(uri, true, DIGEST, ByteArrayOutputStream())
+        val writePromise = ch.newPromise()
+        ch.writeOneOutbound(cmd, writePromise)
 
-  @Test
-  public void hostDoesntIncludePortHttp() throws Exception {
-    URI uri = new URI("http://does.not.exist/foo");
-    EmbeddedChannel ch = new EmbeddedChannel(new HttpDownloadHandler(null, ImmutableList.of()));
-    DownloadCommand cmd = new DownloadCommand(uri, true, DIGEST, new ByteArrayOutputStream());
-    ChannelPromise writePromise = ch.newPromise();
-    ch.writeOneOutbound(cmd, writePromise);
+        val request = ch.readOutbound<HttpRequest>()
+        Truth.assertThat(request.headers().get(HttpHeaderNames.HOST)).isEqualTo("does.not.exist")
+    }
 
-    HttpRequest request = ch.readOutbound();
-    assertThat(request.headers().get(HttpHeaderNames.HOST)).isEqualTo("does.not.exist");
-  }
+    @Test
+    @Throws(Exception::class)
+    fun hostDoesIncludePort() {
+        val uri = URI("http://does.not.exist:8080/foo")
+        val ch =
+            EmbeddedChannel(HttpDownloadHandler(null, ImmutableList.of<MutableMap.MutableEntry<String?, String?>?>()))
+        val cmd = DownloadCommand(uri, true, DIGEST, ByteArrayOutputStream())
+        val writePromise = ch.newPromise()
+        ch.writeOneOutbound(cmd, writePromise)
 
-  @Test
-  public void hostDoesntIncludePortHttps() throws Exception {
-    URI uri = new URI("https://does.not.exist/foo");
-    EmbeddedChannel ch = new EmbeddedChannel(new HttpDownloadHandler(null, ImmutableList.of()));
-    DownloadCommand cmd = new DownloadCommand(uri, true, DIGEST, new ByteArrayOutputStream());
-    ChannelPromise writePromise = ch.newPromise();
-    ch.writeOneOutbound(cmd, writePromise);
+        val request = ch.readOutbound<HttpRequest>()
+        Truth.assertThat(request.headers().get(HttpHeaderNames.HOST)).isEqualTo("does.not.exist:8080")
+    }
 
-    HttpRequest request = ch.readOutbound();
-    assertThat(request.headers().get(HttpHeaderNames.HOST)).isEqualTo("does.not.exist");
-  }
+    @Test
+    @Throws(Exception::class)
+    fun headersDoIncludeUserAgent() {
+        val uri = URI("http://does.not.exist:8080/foo")
+        val ch =
+            EmbeddedChannel(
+                HttpDownloadHandler( /* credentials= */null,
+                    ImmutableList.of<MutableMap.MutableEntry<String?, String?>?>()
+                )
+            )
+        val cmd =
+            DownloadCommand(uri,  /* casDownload= */true, DIGEST, ByteArrayOutputStream())
+        val writePromise = ch.newPromise()
+        ch.writeOneOutbound(cmd, writePromise)
 
-  @Test
-  public void hostDoesIncludePort() throws Exception {
-    URI uri = new URI("http://does.not.exist:8080/foo");
-    EmbeddedChannel ch = new EmbeddedChannel(new HttpDownloadHandler(null, ImmutableList.of()));
-    DownloadCommand cmd = new DownloadCommand(uri, true, DIGEST, new ByteArrayOutputStream());
-    ChannelPromise writePromise = ch.newPromise();
-    ch.writeOneOutbound(cmd, writePromise);
+        val request = ch.readOutbound<HttpRequest>()
+        Truth.assertThat(request.headers().get(HttpHeaderNames.USER_AGENT)).isEqualTo("bazel/")
+    }
 
-    HttpRequest request = ch.readOutbound();
-    assertThat(request.headers().get(HttpHeaderNames.HOST)).isEqualTo("does.not.exist:8080");
-  }
+    @Test
+    @Throws(Exception::class)
+    fun extraHeadersAreIncluded() {
+        val uri = URI("http://does.not.exist:8080/foo")
+        val remoteHeaders =
+            ImmutableList.of<MutableMap.MutableEntry<String?, String?>?>(
+                Maps.immutableEntry<String?, String?>("key1", "value1"),
+                Maps.immutableEntry<String?, String?>("key2", "value2")
+            )
 
-  @Test
-  public void headersDoIncludeUserAgent() throws Exception {
-    URI uri = new URI("http://does.not.exist:8080/foo");
-    EmbeddedChannel ch =
-        new EmbeddedChannel(new HttpDownloadHandler(/* credentials= */ null, ImmutableList.of()));
-    DownloadCommand cmd =
-        new DownloadCommand(uri, /* casDownload= */ true, DIGEST, new ByteArrayOutputStream());
-    ChannelPromise writePromise = ch.newPromise();
-    ch.writeOneOutbound(cmd, writePromise);
+        val ch =
+            EmbeddedChannel(HttpDownloadHandler( /* credentials= */null, remoteHeaders))
+        val cmd =
+            DownloadCommand(uri,  /* casDownload= */true, DIGEST, ByteArrayOutputStream())
+        val writePromise = ch.newPromise()
+        ch.writeOneOutbound(cmd, writePromise)
 
-    HttpRequest request = ch.readOutbound();
-    assertThat(request.headers().get(HttpHeaderNames.USER_AGENT)).isEqualTo("bazel/");
-  }
+        val request = ch.readOutbound<HttpRequest>()
+        Truth.assertThat(request.headers().get("key1")).isEqualTo("value1")
+        Truth.assertThat(request.headers().get("key2")).isEqualTo("value2")
+        Truth.assertThat(request.headers().get(HttpHeaderNames.ACCEPT)).isEqualTo("*/*")
+    }
 
-  @Test
-  public void extraHeadersAreIncluded() throws Exception {
-    URI uri = new URI("http://does.not.exist:8080/foo");
-    ImmutableList<Entry<String, String>> remoteHeaders =
-        ImmutableList.of(
-            Maps.immutableEntry("key1", "value1"), Maps.immutableEntry("key2", "value2"));
+    @Test
+    @Throws(Exception::class)
+    fun extraHeadersOverridesDefaultAccept() {
+        val uri = URI("http://does.not.exist:8080/foo")
+        val remoteHeaders =
+            ImmutableList.of<MutableMap.MutableEntry<String?, String?>?>(
+                Maps.immutableEntry<String?, String?>("key1", "value1"),
+                Maps.immutableEntry<String?, String?>("key2", "value2"),
+                Maps.immutableEntry<String?, String?>("Accept", "application/octet-stream")
+            )
 
-    EmbeddedChannel ch =
-        new EmbeddedChannel(new HttpDownloadHandler(/* credentials= */ null, remoteHeaders));
-    DownloadCommand cmd =
-        new DownloadCommand(uri, /* casDownload= */ true, DIGEST, new ByteArrayOutputStream());
-    ChannelPromise writePromise = ch.newPromise();
-    ch.writeOneOutbound(cmd, writePromise);
+        val ch =
+            EmbeddedChannel(HttpDownloadHandler( /* credentials= */null, remoteHeaders))
+        val cmd =
+            DownloadCommand(uri,  /* casDownload= */true, DIGEST, ByteArrayOutputStream())
+        val writePromise = ch.newPromise()
+        ch.writeOneOutbound(cmd, writePromise)
 
-    HttpRequest request = ch.readOutbound();
-    assertThat(request.headers().get("key1")).isEqualTo("value1");
-    assertThat(request.headers().get("key2")).isEqualTo("value2");
-    assertThat(request.headers().get(HttpHeaderNames.ACCEPT)).isEqualTo("*/*");
-  }
+        val request = ch.readOutbound<HttpRequest>()
+        Truth.assertThat(request.headers().get("key1")).isEqualTo("value1")
+        Truth.assertThat(request.headers().get("key2")).isEqualTo("value2")
+        Truth.assertThat(request.headers().get(HttpHeaderNames.ACCEPT)).isEqualTo("application/octet-stream")
+    }
 
-  @Test
-  public void extraHeadersOverridesDefaultAccept() throws Exception {
-    URI uri = new URI("http://does.not.exist:8080/foo");
-    ImmutableList<Entry<String, String>> remoteHeaders =
-        ImmutableList.of(
-            Maps.immutableEntry("key1", "value1"),
-            Maps.immutableEntry("key2", "value2"),
-            Maps.immutableEntry("Accept", "application/octet-stream"));
+    @Test
+    @Throws(Exception::class)
+    fun multipleExtraHeadersAreSupported() {
+        val uri = URI("http://does.not.exist:8080/foo")
+        val remoteHeaders =
+            ImmutableList.of<MutableMap.MutableEntry<String?, String?>?>(
+                Maps.immutableEntry<String?, String?>("key", "value1"),
+                Maps.immutableEntry<String?, String?>("key", "value2")
+            )
 
-    EmbeddedChannel ch =
-        new EmbeddedChannel(new HttpDownloadHandler(/* credentials= */ null, remoteHeaders));
-    DownloadCommand cmd =
-        new DownloadCommand(uri, /* casDownload= */ true, DIGEST, new ByteArrayOutputStream());
-    ChannelPromise writePromise = ch.newPromise();
-    ch.writeOneOutbound(cmd, writePromise);
+        val ch =
+            EmbeddedChannel(HttpDownloadHandler( /* credentials= */null, remoteHeaders))
+        val cmd =
+            DownloadCommand(uri,  /* casDownload= */true, DIGEST, ByteArrayOutputStream())
+        val writePromise = ch.newPromise()
+        ch.writeOneOutbound(cmd, writePromise)
 
-    HttpRequest request = ch.readOutbound();
-    assertThat(request.headers().get("key1")).isEqualTo("value1");
-    assertThat(request.headers().get("key2")).isEqualTo("value2");
-    assertThat(request.headers().get(HttpHeaderNames.ACCEPT)).isEqualTo("application/octet-stream");
-  }
+        val request = ch.readOutbound<HttpRequest>()
+        Truth.assertThat(request.headers().getAll("key")).isEqualTo(mutableListOf<String?>("value1", "value2"))
+    }
 
-  @Test
-  public void multipleExtraHeadersAreSupported() throws Exception {
-    URI uri = new URI("http://does.not.exist:8080/foo");
-    ImmutableList<Entry<String, String>> remoteHeaders =
-        ImmutableList.of(
-            Maps.immutableEntry("key", "value1"), Maps.immutableEntry("key", "value2"));
-
-    EmbeddedChannel ch =
-        new EmbeddedChannel(new HttpDownloadHandler(/* credentials= */ null, remoteHeaders));
-    DownloadCommand cmd =
-        new DownloadCommand(uri, /* casDownload= */ true, DIGEST, new ByteArrayOutputStream());
-    ChannelPromise writePromise = ch.newPromise();
-    ch.writeOneOutbound(cmd, writePromise);
-
-    HttpRequest request = ch.readOutbound();
-    assertThat(request.headers().getAll("key")).isEqualTo(Arrays.asList("value1", "value2"));
-  }
+    companion object {
+        private val DIGEST_UTIL: DigestUtil = DigestUtil(SyscallCache.NO_CACHE, DigestHashFunction.SHA256)
+        private val DIGEST: Digest = DIGEST_UTIL.computeAsUtf8("foo")
+    }
 }

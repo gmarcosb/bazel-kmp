@@ -11,563 +11,634 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.truth.Truth.assertWithMessage;
-import static com.google.common.util.concurrent.Futures.immediateFailedFuture;
-import static com.google.common.util.concurrent.MoreExecutors.directExecutor;
-import static com.google.devtools.build.lib.skyframe.serialization.FutureHelpers.waitForSerializationFuture;
-import static com.google.devtools.build.lib.skyframe.serialization.strings.UnsafeStringCodec.stringCodec;
-import static java.util.concurrent.ForkJoinPool.commonPool;
+import com.google.devtools.build.lib.skyframe.serialization.FutureHelpers.waitForSerializationFuture
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.util.concurrent.Futures;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.errorprone.annotations.Keep;
-import com.google.perftools.profiles.ProfileProto;
-import com.google.perftools.profiles.ProfileProto.Line;
-import com.google.perftools.profiles.ProfileProto.Location;
-import com.google.perftools.profiles.ProfileProto.Profile;
-import com.google.perftools.profiles.ProfileProto.ValueType;
-import com.google.protobuf.ByteString;
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.atomic.AtomicInteger;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+@RunWith(JUnit4::class)
+class ProfileCollectorTest {
+    @org.junit.Test
+    fun toProto_hasExpectedMetadata() {
+        val collector: ProfileCollector = ProfileCollector()
+        collector.recordSample(com.google.common.collect.ImmutableList.of<E?>(codecA(), codecB()), 10)
+        collector.recordSample(com.google.common.collect.ImmutableList.of<E?>(codecA()), 20)
 
-@RunWith(JUnit4.class)
-public final class ProfileCollectorTest {
+        val profile: Profile = collector.toProto()
 
-  @Test
-  public void toProto_hasExpectedMetadata() {
-    var collector = new ProfileCollector();
-    collector.recordSample(ImmutableList.of(codecA(), codecB()), 10);
-    collector.recordSample(ImmutableList.of(codecA()), 20);
+        val stringTable: MutableList<String?>? = profile.getStringTableList()
+        Truth.assertThat(stringTable).hasSize(7)
+        Truth.assertThat(stringTable!!.subList(0, 5))
+            .isEqualTo(
+                com.google.common.collect.ImmutableList.of<String?>(
+                    "",  // empty, required by the schema
+                    ProfileCollector.SAMPLES,
+                    ProfileCollector.COUNT,
+                    ProfileCollector.STORAGE,
+                    ProfileCollector.BYTES
+                )
+            )
+        // The records are traversed in a non-deterministic order. Depending on which one comes first,
+        // "a" or "b" might be the earlier entry in the string table.
+        Truth.assertThat(stringTable.subList(5, 7)).containsExactly(CODEC_A_TEXT, CODEC_B_TEXT)
 
-    Profile profile = collector.toProto();
+        assertThat(profile.getSampleTypeList())
+            .containsExactly( // ProfileCollector.SAMPLES with units ProfileCollector.COUNT
+                ValueType.newBuilder().setType(1).setUnit(2)
+                    .build(),  // ProfileCollector.STORAGE with units ProfileCollector.BYTES
+                ValueType.newBuilder().setType(3).setUnit(4).build()
+            )
+            .inOrder()
 
-    List<String> stringTable = profile.getStringTableList();
-    assertThat(stringTable).hasSize(7);
-    assertThat(stringTable.subList(0, 5))
-        .isEqualTo(
-            ImmutableList.of(
-                "", // empty, required by the schema
-                ProfileCollector.SAMPLES,
-                ProfileCollector.COUNT,
-                ProfileCollector.STORAGE,
-                ProfileCollector.BYTES));
-    // The records are traversed in a non-deterministic order. Depending on which one comes first,
-    // "a" or "b" might be the earlier entry in the string table.
-    assertThat(stringTable.subList(5, 7)).containsExactly(CODEC_A_TEXT, CODEC_B_TEXT);
-
-    assertThat(profile.getSampleTypeList())
-        .containsExactly(
-            // ProfileCollector.SAMPLES with units ProfileCollector.COUNT
-            ValueType.newBuilder().setType(1).setUnit(2).build(),
-            // ProfileCollector.STORAGE with units ProfileCollector.BYTES
-            ValueType.newBuilder().setType(3).setUnit(4).build())
-        .inOrder();
-
-    assertThat(getSamples(profile))
-        .containsExactly(
-            // The stack trace is reversed with the leaf is position 0, as per the proto spec.
-            new Sample(ImmutableList.of(CODEC_B_TEXT, CODEC_A_TEXT), 1, 10),
-            // This was originally 20 but became 10 by subtracting the child.
-            new Sample(ImmutableList.of(CODEC_A_TEXT), 1, 10));
-  }
-
-  @Test
-  public void toProto_aggregatesSamples() {
-    var collector = new ProfileCollector();
-    collector.recordSample(ImmutableList.of(codecA(), codecB(), codecC()), 10);
-    collector.recordSample(ImmutableList.of(codecA(), codecB(), codecD()), 7);
-    collector.recordSample(ImmutableList.of(codecA(), codecB()), 20);
-    collector.recordSample(ImmutableList.of(codecA()), 25);
-
-    collector.recordSample(ImmutableList.of(codecA(), codecB(), codecD()), 2);
-    collector.recordSample(ImmutableList.of(codecA(), codecB()), 5);
-    collector.recordSample(ImmutableList.of(codecA()), 10);
-
-    collector.recordSample(ImmutableList.of(codecA()), 1);
-
-    assertThat(getSamples(collector.toProto()))
-        .containsExactly(
-            // Only 1 entry. The stack trace is reversed with the leaf in position, as per the proto
-            // spec.
-            new Sample(getStackText(codecC(), codecB(), codecA()), 1, 10),
-            // 2 samples, bytes = 2 + 7.
-            new Sample(getStackText(codecD(), codecB(), codecA()), 2, 9),
-            // 2 samples, bytes = 20 + 5 - (9 + 10) = 6.
-            new Sample(getStackText(codecB(), codecA()), 2, 6),
-            // 3 samples, bytes = 25 + 10 + 1 - (20 + 5) = 11.
-            new Sample(getStackText(codecA()), 3, 11));
-  }
-
-  @Test
-  public void recordSamples_mergesBatchesAndSubtractsAncestors() {
-    var collector = new ProfileCollector();
-
-    var batch = new HashMap<ImmutableList<ProfilerLocationProvider>, ProfileCollector.Counts>();
-    @SuppressWarnings("IdentifierName") // false positive
-    ImmutableList<ProfilerLocationProvider> stackAB = ImmutableList.of(codecA(), codecB());
-    batch.put(
-        stackAB,
-        new ProfileCollector.Counts(stackAB, new AtomicInteger(1), new AtomicInteger(100)));
-    @SuppressWarnings("IdentifierName") // false positive
-    ImmutableList<ProfilerLocationProvider> stackABC =
-        ImmutableList.of(codecA(), codecB(), codecC());
-    batch.put(
-        stackABC,
-        new ProfileCollector.Counts(stackABC, new AtomicInteger(1), new AtomicInteger(40)));
-
-    collector.recordSamples(batch);
-
-    assertThat(getSamples(collector.toProto()))
-        .containsExactly(
-            new Sample(getStackText(codecC(), codecB(), codecA()), 1, 40),
-            new Sample(getStackText(codecB(), codecA()), 1, 60),
-            new Sample(getStackText(codecA()), 0, -100));
-  }
-
-  private static CodecA codecA() {
-    return CodecA.INSTANCE;
-  }
-
-  private static final String CODEC_A_TEXT =
-      codecA().getEncodedClass().getCanonicalName()
-          + "("
-          + codecA().getClass().getCanonicalName()
-          + ")";
-
-  private static CodecB codecB() {
-    return CodecB.INSTANCE;
-  }
-
-  private static final String CODEC_B_TEXT =
-      codecB().getEncodedClass().getCanonicalName()
-          + "("
-          + codecB().getClass().getCanonicalName()
-          + ")";
-
-  private static CodecC codecC() {
-    return CodecC.INSTANCE;
-  }
-
-  private static CodecD codecD() {
-    return CodecD.INSTANCE;
-  }
-
-  @Test
-  public void getDisplayText_convertsLambdas() {
-    Runnable anon = () -> {};
-    // Anonymous classes have no canonical name.
-    assertThat(anon.getClass().getCanonicalName()).isNull();
-
-    var codec = new DynamicCodec(anon.getClass());
-    String text = codec.getLocationText();
-    assertThat(text)
-        .isEqualTo(anon.getClass().getName() + "(" + DynamicCodec.class.getCanonicalName() + ")");
-  }
-
-  @Test
-  public void memoizingCodec_profilingCorrectlyAccountsForBackreferences() throws Exception {
-    // This test verifies that with the MemoizingSerializationContext, profiling correctly accounts
-    // for memoized backreferences in the leaf and non-leaf case and nulls.
-
-    // The example memoizes in a couple different places.
-    var subject = new ArrayList<ExampleLeaf>();
-    // 1. Initial item.
-    subject.add(new ExampleLeaf("a", "b"));
-    // 2. "a" is a memoized backreference to the 1st item's leaf "a".
-    subject.add(new ExampleLeaf("a", "c"));
-    // 3. Entire item will be a memoized backreference to the 1st item.
-    subject.add(new ExampleLeaf("a", "b"));
-    // 4. Exercises null leaves.
-    subject.add(new ExampleLeaf(null, null));
-    // 5. Exercises a null non-leaf.
-    subject.add(null);
-
-    var codecs = new ObjectCodecs();
-    var profileCollector = new ProfileCollector();
-
-    byte[] bytes =
-        codecs.serializeMemoizedToBytes(
-            subject, /* outputCapacity= */ 32, /* bufferSize= */ 32, profileCollector);
-    assertThat(codecs.deserializeMemoized(bytes)).isEqualTo(subject); // sanity check
-
-    ImmutableList<Sample> samples = getSamples(profileCollector.toProto());
-
-    // Verifies the object counts of the samples. Exact byte counts are omitted to avoid
-    // brittleness.
-    ImmutableList<Sample> bytesErasedSamples =
-        samples.stream()
-            .map(sample -> new Sample(sample.stack(), sample.count(), 0))
-            .collect(toImmutableList());
-    ArrayListCodec arrayListCodec = new ArrayListCodec();
-    ExampleLeafCodec exampleLeafCodec = new ExampleLeafCodec();
-    assertThat(bytesErasedSamples)
-        .containsExactly(
-            new Sample(
-                getStackText(arrayListCodec),
-                1, // There's exactly 1 ArrayList.
-                0),
-            new Sample(
-                getStackText(exampleLeafCodec, arrayListCodec),
-                // The 4 samples here are the 1st-4th items. The null item doesn't increment the
-                // count.
-                4,
-                0),
-            new Sample(
-                getStackText(stringCodec(), exampleLeafCodec, arrayListCodec),
-                // The 6 samples here are 2 each from the 1st, 2nd and 4th list items. Memoized
-                // leaves count as distinct samples. The 2 nulls in the 4th item can be counted as
-                // two Strings because their type is known to the parent codec. The Strings in the
-                // 3rd item are fully memoized away at the ExampleLeaf level.
-                6,
-                0));
-
-    // Verifies that the profiler sees exactly the same number of bytes as output.
-    int profiledBytes = samples.stream().mapToInt(Sample::bytes).sum();
-    assertThat(profiledBytes).isEqualTo(bytes.length);
-  }
-
-  private record ExampleLeaf(String first, String second) {}
-
-  @Keep
-  private static class ExampleLeafCodec extends LeafObjectCodec<ExampleLeaf> {
-    @Override
-    public Class<ExampleLeaf> getEncodedClass() {
-      return ExampleLeaf.class;
+        Truth.assertThat(getSamples(profile))
+            .containsExactly( // The stack trace is reversed with the leaf is position 0, as per the proto spec.
+                com.google.devtools.build.lib.skyframe.serialization.ProfileCollectorTest.Sample(
+                    com.google.common.collect.ImmutableList.of<String?>(
+                        CODEC_B_TEXT, CODEC_A_TEXT
+                    ), 1, 10
+                ),  // This was originally 20 but became 10 by subtracting the child.
+                com.google.devtools.build.lib.skyframe.serialization.ProfileCollectorTest.Sample(
+                    com.google.common.collect.ImmutableList.of<String?>(
+                        CODEC_A_TEXT
+                    ), 1, 10
+                )
+            )
     }
 
-    @Override
-    public void serialize(
-        LeafSerializationContext context, ExampleLeaf obj, CodedOutputStream codedOut)
-        throws SerializationException, IOException {
-      context.serializeLeaf(obj.first(), stringCodec(), codedOut);
-      context.serializeLeaf(obj.second(), stringCodec(), codedOut);
+    @org.junit.Test
+    fun toProto_aggregatesSamples() {
+        val collector: ProfileCollector = ProfileCollector()
+        collector.recordSample(com.google.common.collect.ImmutableList.of<E?>(codecA(), codecB(), codecC()), 10)
+        collector.recordSample(com.google.common.collect.ImmutableList.of<E?>(codecA(), codecB(), codecD()), 7)
+        collector.recordSample(com.google.common.collect.ImmutableList.of<E?>(codecA(), codecB()), 20)
+        collector.recordSample(com.google.common.collect.ImmutableList.of<E?>(codecA()), 25)
+
+        collector.recordSample(com.google.common.collect.ImmutableList.of<E?>(codecA(), codecB(), codecD()), 2)
+        collector.recordSample(com.google.common.collect.ImmutableList.of<E?>(codecA(), codecB()), 5)
+        collector.recordSample(com.google.common.collect.ImmutableList.of<E?>(codecA()), 10)
+
+        collector.recordSample(com.google.common.collect.ImmutableList.of<E?>(codecA()), 1)
+
+        Truth.assertThat(getSamples(collector.toProto()))
+            .containsExactly( // Only 1 entry. The stack trace is reversed with the leaf in position, as per the proto
+                // spec.
+                com.google.devtools.build.lib.skyframe.serialization.ProfileCollectorTest.Sample(
+                    getStackText(
+                        codecC(),
+                        codecB(),
+                        codecA()
+                    ), 1, 10
+                ),  // 2 samples, bytes = 2 + 7.
+                com.google.devtools.build.lib.skyframe.serialization.ProfileCollectorTest.Sample(
+                    getStackText(
+                        codecD(),
+                        codecB(),
+                        codecA()
+                    ), 2, 9
+                ),  // 2 samples, bytes = 20 + 5 - (9 + 10) = 6.
+                com.google.devtools.build.lib.skyframe.serialization.ProfileCollectorTest.Sample(
+                    getStackText(
+                        codecB(),
+                        codecA()
+                    ), 2, 6
+                ),  // 3 samples, bytes = 25 + 10 + 1 - (20 + 5) = 11.
+                com.google.devtools.build.lib.skyframe.serialization.ProfileCollectorTest.Sample(
+                    getStackText(codecA()),
+                    3,
+                    11
+                )
+            )
     }
 
-    @Override
-    public ExampleLeaf deserialize(LeafDeserializationContext context, CodedInputStream codedIn)
-        throws SerializationException, IOException {
-      return new ExampleLeaf(
-          context.deserializeLeaf(codedIn, stringCodec()),
-          context.deserializeLeaf(codedIn, stringCodec()));
-    }
-  }
+    @org.junit.Test
+    fun recordSamples_mergesBatchesAndSubtractsAncestors() {
+        val collector: ProfileCollector = ProfileCollector()
 
-  @Test
-  public void sharedValue_isOnlySerializedOnceAndInANewStack() throws Exception {
-    var subject = new ExampleLeafSharer();
-    subject.leaf = new ExampleLeaf("abc", "def");
+        val batch: HashMap<com.google.common.collect.ImmutableList<ProfilerLocationProvider?>?, ProfileCollector.Counts?> =
+            HashMap<com.google.common.collect.ImmutableList<ProfilerLocationProvider?>?, ProfileCollector.Counts?>()
+        val stackAB:  // false positive
+                com.google.common.collect.ImmutableList<ProfilerLocationProvider?> =
+            com.google.common.collect.ImmutableList.of<E?>(
+                codecA(), codecB()
+            )
+        batch.put(
+            stackAB,
+            Counts(stackAB, AtomicInteger(1), AtomicInteger(100))
+        )
+        val stackABC:  // false positive
+                com.google.common.collect.ImmutableList<ProfilerLocationProvider?> =
+            com.google.common.collect.ImmutableList.of<E?>(codecA(), codecB(), codecC())
+        batch.put(
+            stackABC,
+            Counts(stackABC, AtomicInteger(1), AtomicInteger(40))
+        )
 
-    var codecs = new ObjectCodecs();
-    var fingerprintValueService = FingerprintValueService.createForTesting();
-    var profileCollector = new ProfileCollector();
+        collector.recordSamples(batch)
 
-    final int runCount = 20;
-
-    AtomicInteger totalBytes = new AtomicInteger();
-    var writeStatuses = Collections.synchronizedList(new ArrayList<ListenableFuture<?>>());
-
-    var allRunsDone = new CountDownLatch(runCount);
-    for (int i = 0; i < runCount; i++) {
-      commonPool()
-          .execute(
-              () -> {
-                try {
-                  SerializationResult<ByteString> result;
-                  try {
-                    AsyncSerializationTask asyncTask =
-                        codecs.serializeMemoizedAsync(
-                            fingerprintValueService, subject, profileCollector);
-                    asyncTask.run();
-                    asyncTask.registerWriteStatus(WriteStatuses.immediateWriteStatus());
-                    result = waitForSerializationFuture(asyncTask);
-                  } catch (SerializationException e) {
-                    writeStatuses.add(immediateFailedFuture(e));
-                    return;
-                  }
-                  totalBytes.getAndAdd(result.getObject().size());
-
-                  ListenableFuture<?> writeStatus = result.getFutureToBlockWritesOn();
-                  if (writeStatus != null) {
-                    writeStatuses.add(writeStatus);
-                  }
-                } finally {
-                  allRunsDone.countDown();
-                }
-              });
-    }
-    allRunsDone.await();
-
-    var unused = Futures.whenAllSucceed(writeStatuses).call(() -> null, directExecutor()).get();
-
-    ImmutableList<Sample> samples = getSamples(profileCollector.toProto());
-
-    ImmutableList<String> topStack = getStackText(ExampleLeafSharerCodec.INSTANCE);
-    // Erases the bytes except for the top of the stack which is recorded in `totalBytes`. The other
-    // bytes could be brittle to run assertions aren't easily recorded and would be brittle to
-    // assert on.
-    ImmutableList<Sample> bytesErasedSamples =
-        samples.stream()
-            .map(
-                sample ->
-                    sample.stack().equals(topStack)
-                        ? sample
-                        : new Sample(sample.stack(), sample.count(), 0))
-            .collect(toImmutableList());
-    assertThat(bytesErasedSamples)
-        .containsExactly(
-            //  The top level value is serialized runCount times and the bytes are precisely tracked
-            //  in `totalBytes`.
-            new Sample(topStack, runCount, totalBytes.get()),
-            // The shared ExampleLeaf instance is only serialized once. Note that this is a shared
-            // value, it is serialized under a new, independent stack.
-            new Sample(getStackText(DeferredExampleLeafCodec.INSTANCE), 1, 0),
-            new Sample(
-                getStackText(stringCodec(), DeferredExampleLeafCodec.INSTANCE),
-                2, // "abc" and "def" in `subject.leaf`
-                0));
-  }
-
-  private static class ExampleLeafSharer {
-    private ExampleLeaf leaf; // mutable simplifies deserialization code
-
-    private static void setLeaf(ExampleLeafSharer sharer, Object obj) {
-      sharer.leaf = (ExampleLeaf) obj;
-    }
-  }
-
-  @Keep
-  private static class ExampleLeafSharerCodec extends AsyncObjectCodec<ExampleLeafSharer> {
-    private static final ExampleLeafSharerCodec INSTANCE = new ExampleLeafSharerCodec();
-
-    @Override
-    public Class<ExampleLeafSharer> getEncodedClass() {
-      return ExampleLeafSharer.class;
+        Truth.assertThat(getSamples(collector.toProto()))
+            .containsExactly(
+                com.google.devtools.build.lib.skyframe.serialization.ProfileCollectorTest.Sample(
+                    getStackText(
+                        codecC(),
+                        codecB(),
+                        codecA()
+                    ), 1, 40
+                ),
+                com.google.devtools.build.lib.skyframe.serialization.ProfileCollectorTest.Sample(
+                    getStackText(
+                        codecB(),
+                        codecA()
+                    ), 1, 60
+                ),
+                com.google.devtools.build.lib.skyframe.serialization.ProfileCollectorTest.Sample(
+                    getStackText(codecA()),
+                    0,
+                    -100
+                )
+            )
     }
 
-    @Override
-    public void serialize(
-        SerializationContext context, ExampleLeafSharer obj, CodedOutputStream codedOut)
-        throws SerializationException, IOException {
-      context.putSharedValue(
-          obj.leaf, /* distinguisher= */ null, DeferredExampleLeafCodec.INSTANCE, codedOut);
+    @get:org.junit.Test
+    val displayText_convertsLambdas: Unit
+        get() {
+            val anon: java.lang.Runnable = java.lang.Runnable {}
+            // Anonymous classes have no canonical name.
+            Truth.assertThat(anon.getClass().getCanonicalName()).isNull()
+
+            val codec: DynamicCodec = DynamicCodec(anon.getClass())
+            val text: String? = codec.getLocationText()
+            Truth.assertThat(text)
+                .isEqualTo(anon.getClass().getName() + "(" + DynamicCodec::class.java.getCanonicalName() + ")")
+        }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun memoizingCodec_profilingCorrectlyAccountsForBackreferences() {
+        // This test verifies that with the MemoizingSerializationContext, profiling correctly accounts
+        // for memoized backreferences in the leaf and non-leaf case and nulls.
+
+        // The example memoizes in a couple different places.
+
+        val subject: java.util.ArrayList<ExampleLeaf?> = java.util.ArrayList<ExampleLeaf?>()
+        // 1. Initial item.
+        subject.add(ExampleLeaf("a", "b"))
+        // 2. "a" is a memoized backreference to the 1st item's leaf "a".
+        subject.add(ExampleLeaf("a", "c"))
+        // 3. Entire item will be a memoized backreference to the 1st item.
+        subject.add(ExampleLeaf("a", "b"))
+        // 4. Exercises null leaves.
+        subject.add(ExampleLeaf(null, null))
+        // 5. Exercises a null non-leaf.
+        subject.add(null)
+
+        val codecs: ObjectCodecs = ObjectCodecs()
+        val profileCollector: ProfileCollector = ProfileCollector()
+
+        val bytes: ByteArray =
+            codecs.serializeMemoizedToBytes(
+                subject,  /* outputCapacity= */32,  /* bufferSize= */32, profileCollector
+            )
+        assertThat(codecs.deserializeMemoized(bytes)).isEqualTo(subject) // sanity check
+
+        val samples: com.google.common.collect.ImmutableList<Sample?> = getSamples(profileCollector.toProto())
+
+        // Verifies the object counts of the samples. Exact byte counts are omitted to avoid
+        // brittleness.
+        val bytesErasedSamples: com.google.common.collect.ImmutableList<Sample?> =
+            samples.stream()
+                .map<Sample?>(java.util.function.Function { sample: Sample? ->
+                    com.google.devtools.build.lib.skyframe.serialization.ProfileCollectorTest.Sample(
+                        sample!!.stack,
+                        sample.count,
+                        0
+                    )
+                })
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<Sample?>())
+        val arrayListCodec: ArrayListCodec = ArrayListCodec()
+        val exampleLeafCodec = ExampleLeafCodec()
+        Truth.assertThat(bytesErasedSamples)
+            .containsExactly(
+                com.google.devtools.build.lib.skyframe.serialization.ProfileCollectorTest.Sample(
+                    getStackText(arrayListCodec),
+                    1,  // There's exactly 1 ArrayList.
+                    0
+                ),
+                com.google.devtools.build.lib.skyframe.serialization.ProfileCollectorTest.Sample(
+                    getStackText(
+                        exampleLeafCodec,
+                        arrayListCodec
+                    ),  // The 4 samples here are the 1st-4th items. The null item doesn't increment the
+                    // count.
+                    4,
+                    0
+                ),
+                com.google.devtools.build.lib.skyframe.serialization.ProfileCollectorTest.Sample(
+                    getStackText(
+                        stringCodec(),
+                        exampleLeafCodec,
+                        arrayListCodec
+                    ),  // The 6 samples here are 2 each from the 1st, 2nd and 4th list items. Memoized
+                    // leaves count as distinct samples. The 2 nulls in the 4th item can be counted as
+                    // two Strings because their type is known to the parent codec. The Strings in the
+                    // 3rd item are fully memoized away at the ExampleLeaf level.
+                    6,
+                    0
+                )
+            )
+
+        // Verifies that the profiler sees exactly the same number of bytes as output.
+        val profiledBytes: Int = samples.stream()
+            .mapToInt(com.google.devtools.build.lib.skyframe.serialization.ProfileCollectorTest.Sample::bytes).sum()
+        Truth.assertThat(profiledBytes).isEqualTo(bytes.size)
     }
 
-    @Override
-    public ExampleLeafSharer deserializeAsync(
-        AsyncDeserializationContext context, CodedInputStream codedIn)
-        throws SerializationException, IOException {
-      ExampleLeafSharer result = new ExampleLeafSharer();
-      context.registerInitialValue(result);
-      context.getSharedValue(
-          codedIn,
-          /* distinguisher= */ null,
-          DeferredExampleLeafCodec.INSTANCE,
-          result,
-          ExampleLeafSharer::setLeaf);
-      return result;
-    }
-  }
+    @kotlin.jvm.JvmRecord
+    private data class ExampleLeaf(val first: String?, val second: String?)
 
-  /** As {@link DeferredObjectCodec} as required by {@link SerializationContext#putSharedValue}. */
-  private static class DeferredExampleLeafCodec extends DeferredObjectCodec<ExampleLeaf> {
-    private static final DeferredExampleLeafCodec INSTANCE = new DeferredExampleLeafCodec();
+    @com.google.errorprone.annotations.Keep
+    private class ExampleLeafCodec : LeafObjectCodec<ExampleLeaf?>() {
+        val encodedClass: java.lang.Class<ExampleLeaf?>
+            get() = ExampleLeaf::class.java
 
-    @Override
-    public Class<ExampleLeaf> getEncodedClass() {
-      return ExampleLeaf.class;
-    }
+        @Throws(SerializationException::class, IOException::class)
+        public override fun serialize(
+            context: LeafSerializationContext, obj: ExampleLeaf, codedOut: CodedOutputStream?
+        ) {
+            context.serializeLeaf(obj.first, stringCodec(), codedOut)
+            context.serializeLeaf(obj.second, stringCodec(), codedOut)
+        }
 
-    @Override
-    public boolean autoRegister() {
-      return false;
+        @Throws(SerializationException::class, IOException::class)
+        public override fun deserialize(context: LeafDeserializationContext, codedIn: CodedInputStream?): ExampleLeaf {
+            return ExampleLeaf(
+                context.deserializeLeaf(codedIn, stringCodec()),
+                context.deserializeLeaf(codedIn, stringCodec())
+            )
+        }
     }
 
-    @Override
-    public void serialize(SerializationContext context, ExampleLeaf obj, CodedOutputStream codedOut)
-        throws IOException, SerializationException {
-      context.serializeLeaf(obj.first(), stringCodec(), codedOut);
-      context.serializeLeaf(obj.second(), stringCodec(), codedOut);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun sharedValue_isOnlySerializedOnceAndInANewStack() {
+        val subject = ExampleLeafSharer()
+        subject.leaf = ExampleLeaf("abc", "def")
+
+        val codecs: ObjectCodecs = ObjectCodecs()
+        val fingerprintValueService: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            FingerprintValueService.createForTesting()
+        val profileCollector: ProfileCollector = ProfileCollector()
+
+        val runCount = 20
+
+        val totalBytes: AtomicInteger = AtomicInteger()
+        val writeStatuses: MutableList<com.google.common.util.concurrent.ListenableFuture<*>?> =
+            Collections.synchronizedList<com.google.common.util.concurrent.ListenableFuture<*>?>(java.util.ArrayList<com.google.common.util.concurrent.ListenableFuture<*>?>())
+
+        val allRunsDone: CountDownLatch = CountDownLatch(runCount)
+        for (i in 0..<runCount) {
+            ForkJoinPool.commonPool()
+                .execute(
+                    java.lang.Runnable {
+                        try {
+                            val result: SerializationResult<ByteString?>
+                            try {
+                                val asyncTask: AsyncSerializationTask =
+                                    codecs.serializeMemoizedAsync(
+                                        fingerprintValueService, subject, profileCollector
+                                    )
+                                asyncTask.run()
+                                asyncTask.registerWriteStatus(WriteStatuses.immediateWriteStatus())
+                                result = waitForSerializationFuture(asyncTask)
+                            } catch (e: SerializationException) {
+                                writeStatuses.add(com.google.common.util.concurrent.Futures.immediateFailedFuture<V?>(e))
+                                return@execute
+                            }
+                            totalBytes.getAndAdd(result.getObject().size())
+
+                            val writeStatus: com.google.common.util.concurrent.ListenableFuture<*>? =
+                                result.getFutureToBlockWritesOn()
+                            if (writeStatus != null) {
+                                writeStatuses.add(writeStatus)
+                            }
+                        } finally {
+                            allRunsDone.countDown()
+                        }
+                    })
+        }
+        allRunsDone.await()
+
+        val unused: Any? = com.google.common.util.concurrent.Futures.whenAllSucceed<Any?>(writeStatuses).call<Any?>(
+            java.util.concurrent.Callable { null },
+            com.google.common.util.concurrent.MoreExecutors.directExecutor()
+        ).get()
+
+        val samples: com.google.common.collect.ImmutableList<Sample?> = getSamples(profileCollector.toProto())
+
+        val topStack: com.google.common.collect.ImmutableList<String?>? =
+            getStackText(ExampleLeafSharerCodec.Companion.INSTANCE)
+        // Erases the bytes except for the top of the stack which is recorded in `totalBytes`. The other
+        // bytes could be brittle to run assertions aren't easily recorded and would be brittle to
+        // assert on.
+        val bytesErasedSamples: com.google.common.collect.ImmutableList<Sample?> =
+            samples.stream()
+                .map<Sample?>(
+                    java.util.function.Function { sample: Sample? ->
+                        if (sample!!.stack == topStack)
+                            sample
+                        else
+                            com.google.devtools.build.lib.skyframe.serialization.ProfileCollectorTest.Sample(
+                                sample.stack,
+                                sample.count,
+                                0
+                            )
+                    })
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<Sample?>())
+        Truth.assertThat(bytesErasedSamples)
+            .containsExactly( //  The top level value is serialized runCount times and the bytes are precisely tracked
+                //  in `totalBytes`.
+                com.google.devtools.build.lib.skyframe.serialization.ProfileCollectorTest.Sample(
+                    topStack,
+                    runCount,
+                    totalBytes.get()
+                ),  // The shared ExampleLeaf instance is only serialized once. Note that this is a shared
+                // value, it is serialized under a new, independent stack.
+                com.google.devtools.build.lib.skyframe.serialization.ProfileCollectorTest.Sample(
+                    getStackText(
+                        DeferredExampleLeafCodec.Companion.INSTANCE
+                    ), 1, 0
+                ),
+                com.google.devtools.build.lib.skyframe.serialization.ProfileCollectorTest.Sample(
+                    getStackText(stringCodec(), DeferredExampleLeafCodec.Companion.INSTANCE),
+                    2,  // "abc" and "def" in `subject.leaf`
+                    0
+                )
+            )
     }
 
-    @Override
-    public DeferredValue<ExampleLeaf> deserializeDeferred(
-        AsyncDeserializationContext context, CodedInputStream codedIn)
-        throws SerializationException, IOException {
-      var result =
-          new ExampleLeaf(
-              context.deserializeLeaf(codedIn, stringCodec()),
-              context.deserializeLeaf(codedIn, stringCodec()));
-      return () -> result;
-    }
-  }
+    private class ExampleLeafSharer {
+        private var leaf: ExampleLeaf? = null // mutable simplifies deserialization code
 
-  private static ImmutableList<String> getStackText(ObjectCodec<?>... codecs) {
-    var text = ImmutableList.<String>builder();
-    for (var codec : codecs) {
-      text.add(codec.getLocationText());
-    }
-    return text.build();
-  }
-
-  private record Sample(ImmutableList<String> stack, int count, int bytes) {}
-
-  /** Converts the {@code profile} message into an easily inspectable list of {@link Sample}s. */
-  private static ImmutableList<Sample> getSamples(Profile profile) {
-    List<String> strings = profile.getStringTableList();
-    var functionNames = new HashMap<Integer, String>();
-    for (var function : profile.getFunctionList()) {
-      int id = (int) function.getId();
-      String previous = functionNames.putIfAbsent(id, strings.get((int) function.getName()));
-      assertWithMessage("duplicate function ID %s in %s", id, profile.getFunctionList())
-          .that(previous)
-          .isNull();
-    }
-    var locationNames = new HashMap<Integer, String>();
-    for (Location location : profile.getLocationList()) {
-      int id = (int) location.getId();
-      List<Line> lines = location.getLineList();
-      assertWithMessage("location with unexpected number of lines: %s", location)
-          .that(lines)
-          .hasSize(1);
-      assertWithMessage("location with id different from function id: %s", location)
-          .that(lines.get(0).getFunctionId())
-          .isEqualTo(id);
-      String previous = locationNames.putIfAbsent(id, functionNames.get(id));
-      assertWithMessage("duplicate location ID %s in %s", id, profile.getLocationList())
-          .that(previous)
-          .isNull();
-    }
-    assertThat(locationNames).isEqualTo(functionNames);
-
-    var samples = ImmutableList.<Sample>builder();
-    for (ProfileProto.Sample sample : profile.getSampleList()) {
-      var stack =
-          sample.getLocationIdList().stream()
-              .map(id -> locationNames.get((int) (long) id))
-              .collect(toImmutableList());
-      var values = sample.getValueList();
-      assertThat(values).hasSize(2);
-      samples.add(new Sample(stack, (int) (long) values.get(0), (int) (long) values.get(1)));
-    }
-    return samples.build();
-  }
-
-  private record A() {}
-
-  private static class CodecA extends AsyncObjectCodec<A> {
-    private static final CodecA INSTANCE = new CodecA();
-
-    @Override
-    public Class<A> getEncodedClass() {
-      return A.class;
+        companion object {
+            private fun setLeaf(sharer: ExampleLeafSharer, obj: Any?) {
+                sharer.leaf = obj as ExampleLeaf?
+            }
+        }
     }
 
-    @Override
-    public boolean autoRegister() {
-      return false;
+    @com.google.errorprone.annotations.Keep
+    private class ExampleLeafSharerCodec : AsyncObjectCodec<ExampleLeafSharer?>() {
+        val encodedClass: java.lang.Class<ExampleLeafSharer?>
+            get() = ExampleLeafSharer::class.java
+
+        @Throws(SerializationException::class, IOException::class)
+        public override fun serialize(
+            context: SerializationContext, obj: ExampleLeafSharer, codedOut: CodedOutputStream?
+        ) {
+            context.putSharedValue(
+                obj.leaf,  /* distinguisher= */null, DeferredExampleLeafCodec.Companion.INSTANCE, codedOut
+            )
+        }
+
+        @Throws(SerializationException::class, IOException::class)
+        public override fun deserializeAsync(
+            context: AsyncDeserializationContext, codedIn: CodedInputStream?
+        ): ExampleLeafSharer {
+            val result = ExampleLeafSharer()
+            context.registerInitialValue(result)
+            context.getSharedValue(
+                codedIn,  /* distinguisher= */
+                null,
+                DeferredExampleLeafCodec.Companion.INSTANCE,
+                result,
+                { sharer: ExampleLeafSharer, obj: Any? -> ExampleLeafSharer.Companion.setLeaf(sharer, obj) })
+            return result
+        }
+
+        companion object {
+            private val INSTANCE = ExampleLeafSharerCodec()
+        }
     }
 
-    @Override
-    public void serialize(SerializationContext context, A obj, CodedOutputStream codedOut) {
-      throw new UnsupportedOperationException();
+    /** As [DeferredObjectCodec] as required by [SerializationContext.putSharedValue].  */
+    private class DeferredExampleLeafCodec : DeferredObjectCodec<ExampleLeaf?>() {
+        val encodedClass: java.lang.Class<ExampleLeaf?>
+            get() = ExampleLeaf::class.java
+
+        public override fun autoRegister(): Boolean {
+            return false
+        }
+
+        @Throws(IOException::class, SerializationException::class)
+        public override fun serialize(context: SerializationContext, obj: ExampleLeaf, codedOut: CodedOutputStream?) {
+            context.serializeLeaf(obj.first, stringCodec(), codedOut)
+            context.serializeLeaf(obj.second, stringCodec(), codedOut)
+        }
+
+        @Throws(SerializationException::class, IOException::class)
+        public override fun deserializeDeferred(
+            context: AsyncDeserializationContext, codedIn: CodedInputStream?
+        ): DeferredValue<ExampleLeaf?> {
+            val result =
+                ExampleLeaf(
+                    context.deserializeLeaf(codedIn, stringCodec()),
+                    context.deserializeLeaf(codedIn, stringCodec())
+                )
+            return DeferredValue { result }
+        }
+
+        companion object {
+            private val INSTANCE = DeferredExampleLeafCodec()
+        }
     }
 
-    @Override
-    public A deserializeAsync(AsyncDeserializationContext context, CodedInputStream codedIn) {
-      throw new UnsupportedOperationException();
-    }
-  }
+    private class Sample(stack: com.google.common.collect.ImmutableList<String?>?, count: Int, bytes: Int) {
+        val stack: com.google.common.collect.ImmutableList<String?>?
+        val count: Int
+        val bytes: Int
 
-  private record B() {}
-
-  private static class CodecB extends AsyncObjectCodec<B> {
-    private static final CodecB INSTANCE = new CodecB();
-
-    @Override
-    public Class<B> getEncodedClass() {
-      return B.class;
+        init {
+            this.stack = stack
+            this.count = count
+            this.bytes = bytes
+        }
     }
 
-    @Override
-    public boolean autoRegister() {
-      return false;
+    private class A
+
+    private class CodecA : AsyncObjectCodec<A?>() {
+        val encodedClass: java.lang.Class<A?>
+            get() = com.google.devtools.build.lib.skyframe.serialization.ProfileCollectorTest.A::class.java
+
+        public override fun autoRegister(): Boolean {
+            return false
+        }
+
+        public override fun serialize(context: SerializationContext?, obj: A?, codedOut: CodedOutputStream?) {
+            throw java.lang.UnsupportedOperationException()
+        }
+
+        public override fun deserializeAsync(context: AsyncDeserializationContext?, codedIn: CodedInputStream?): A? {
+            throw java.lang.UnsupportedOperationException()
+        }
+
+        companion object {
+            private val INSTANCE: CodecA =
+                com.google.devtools.build.lib.skyframe.serialization.ProfileCollectorTest.CodecA()
+        }
     }
 
-    @Override
-    public void serialize(SerializationContext context, B obj, CodedOutputStream codedOut) {
-      throw new UnsupportedOperationException();
+    private class B
+
+    private class CodecB : AsyncObjectCodec<B?>() {
+        val encodedClass: java.lang.Class<B?>
+            get() = com.google.devtools.build.lib.skyframe.serialization.ProfileCollectorTest.B::class.java
+
+        public override fun autoRegister(): Boolean {
+            return false
+        }
+
+        public override fun serialize(context: SerializationContext?, obj: B?, codedOut: CodedOutputStream?) {
+            throw java.lang.UnsupportedOperationException()
+        }
+
+        public override fun deserializeAsync(context: AsyncDeserializationContext?, codedIn: CodedInputStream?): B? {
+            throw java.lang.UnsupportedOperationException()
+        }
+
+        companion object {
+            private val INSTANCE: CodecB =
+                com.google.devtools.build.lib.skyframe.serialization.ProfileCollectorTest.CodecB()
+        }
     }
 
-    @Override
-    public B deserializeAsync(AsyncDeserializationContext context, CodedInputStream codedIn) {
-      throw new UnsupportedOperationException();
-    }
-  }
+    private class C
 
-  private record C() {}
+    private class CodecC : AsyncObjectCodec<C?>() {
+        val encodedClass: java.lang.Class<C?>
+            get() = com.google.devtools.build.lib.skyframe.serialization.ProfileCollectorTest.C::class.java
 
-  private static class CodecC extends AsyncObjectCodec<C> {
-    private static final CodecC INSTANCE = new CodecC();
+        public override fun autoRegister(): Boolean {
+            return false
+        }
 
-    @Override
-    public Class<C> getEncodedClass() {
-      return C.class;
-    }
+        public override fun serialize(context: SerializationContext?, obj: C?, codedOut: CodedOutputStream?) {
+            throw java.lang.UnsupportedOperationException()
+        }
 
-    @Override
-    public boolean autoRegister() {
-      return false;
-    }
+        public override fun deserializeAsync(context: AsyncDeserializationContext?, codedIn: CodedInputStream?): C? {
+            throw java.lang.UnsupportedOperationException()
+        }
 
-    @Override
-    public void serialize(SerializationContext context, C obj, CodedOutputStream codedOut) {
-      throw new UnsupportedOperationException();
+        companion object {
+            private val INSTANCE = CodecC()
+        }
     }
 
-    @Override
-    public C deserializeAsync(AsyncDeserializationContext context, CodedInputStream codedIn) {
-      throw new UnsupportedOperationException();
-    }
-  }
+    private class D
 
-  private record D() {}
+    private class CodecD : AsyncObjectCodec<D?>() {
+        val encodedClass: java.lang.Class<D?>
+            get() = D::class.java
 
-  private static class CodecD extends AsyncObjectCodec<D> {
-    private static final CodecD INSTANCE = new CodecD();
+        public override fun autoRegister(): Boolean {
+            return false
+        }
 
-    @Override
-    public Class<D> getEncodedClass() {
-      return D.class;
-    }
+        public override fun serialize(context: SerializationContext?, obj: D?, codedOut: CodedOutputStream?) {
+            throw java.lang.UnsupportedOperationException()
+        }
 
-    @Override
-    public boolean autoRegister() {
-      return false;
-    }
+        public override fun deserializeAsync(context: AsyncDeserializationContext?, codedIn: CodedInputStream?): D? {
+            throw java.lang.UnsupportedOperationException()
+        }
 
-    @Override
-    public void serialize(SerializationContext context, D obj, CodedOutputStream codedOut) {
-      throw new UnsupportedOperationException();
+        companion object {
+            private val INSTANCE = CodecD()
+        }
     }
 
-    @Override
-    public D deserializeAsync(AsyncDeserializationContext context, CodedInputStream codedIn) {
-      throw new UnsupportedOperationException();
+    companion object {
+        private fun codecA(): CodecA {
+            return com.google.devtools.build.lib.skyframe.serialization.ProfileCollectorTest.CodecA.Companion.INSTANCE
+        }
+
+        private val CODEC_A_TEXT = (codecA().encodedClass.getCanonicalName()
+                + "("
+                + codecA().getClass().getCanonicalName()
+                + ")")
+
+        private fun codecB(): CodecB {
+            return com.google.devtools.build.lib.skyframe.serialization.ProfileCollectorTest.CodecB.Companion.INSTANCE
+        }
+
+        private val CODEC_B_TEXT = (codecB().encodedClass.getCanonicalName()
+                + "("
+                + codecB().getClass().getCanonicalName()
+                + ")")
+
+        private fun codecC(): CodecC {
+            return CodecC.Companion.INSTANCE
+        }
+
+        private fun codecD(): CodecD {
+            return CodecD.Companion.INSTANCE
+        }
+
+        private fun getStackText(vararg codecs: ObjectCodec<*>): com.google.common.collect.ImmutableList<String?> {
+            val text: com.google.common.collect.ImmutableList.Builder<String?> =
+                com.google.common.collect.ImmutableList.builder<String?>()
+            for (codec in codecs) {
+                text.add(codec.getLocationText())
+            }
+            return text.build()
+        }
+
+        /** Converts the `profile` message into an easily inspectable list of [Sample]s.  */
+        private fun getSamples(profile: Profile): com.google.common.collect.ImmutableList<Sample?> {
+            val strings: MutableList<String?> = profile.getStringTableList()
+            val functionNames: HashMap<Int?, String?> = HashMap<Int?, String?>()
+            for (function in profile.getFunctionList()) {
+                val id = function.getId() as Int
+                val previous: String? = functionNames.putIfAbsent(id, strings.get(function.getName() as Int))
+                Truth.assertWithMessage("duplicate function ID %s in %s", id, profile.getFunctionList())
+                    .that(previous)
+                    .isNull()
+            }
+            val locationNames: HashMap<Int?, String?> = HashMap<Int?, String?>()
+            for (location in profile.getLocationList()) {
+                val id = location.getId() as Int
+                val lines: MutableList<Line?> = location.getLineList()
+                Truth.assertWithMessage("location with unexpected number of lines: %s", location)
+                    .that(lines)
+                    .hasSize(1)
+                Truth.assertWithMessage("location with id different from function id: %s", location)
+                    .that(lines.get(0).getFunctionId())
+                    .isEqualTo(id)
+                val previous: String? = locationNames.putIfAbsent(id, functionNames.get(id))
+                Truth.assertWithMessage("duplicate location ID %s in %s", id, profile.getLocationList())
+                    .that(previous)
+                    .isNull()
+            }
+            Truth.assertThat(locationNames).isEqualTo(functionNames)
+
+            val samples: com.google.common.collect.ImmutableList.Builder<Sample?> =
+                com.google.common.collect.ImmutableList.builder<Sample?>()
+            for (sample in profile.getSampleList()) {
+                val stack: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+                    sample.getLocationIdList().stream()
+                        .map({ id -> locationNames.get((id as Long).toInt()) })
+                        .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
+                val values: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+                    sample.getValueList()
+                assertThat(values).hasSize(2)
+                samples.add(
+                    com.google.devtools.build.lib.skyframe.serialization.ProfileCollectorTest.Sample(
+                        stack,
+                        (values.get(0) as Long).toInt(),
+                        (values.get(1) as Long).toInt()
+                    )
+                )
+            }
+            return samples.build()
+        }
     }
-  }
 }

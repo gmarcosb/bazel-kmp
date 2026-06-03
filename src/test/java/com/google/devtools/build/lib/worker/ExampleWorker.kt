@@ -11,312 +11,294 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.worker;
+package com.google.devtools.build.lib.worker
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static java.nio.charset.StandardCharsets.UTF_8;
+import com.google.devtools.build.lib.actions.ExecutionRequirements.WorkerProtocolFormat
 
-import com.google.common.base.Ascii;
-import com.google.common.base.Joiner;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.actions.ExecutionRequirements.WorkerProtocolFormat;
-import com.google.devtools.build.lib.worker.ExampleWorkerOptions.ExampleWorkOptions;
-import com.google.devtools.build.lib.worker.WorkRequestHandler.WorkerMessageProcessor;
-import com.google.devtools.build.lib.worker.WorkerProtocol.Input;
-import com.google.devtools.build.lib.worker.WorkerProtocol.WorkRequest;
-import com.google.devtools.common.options.OptionsParser;
-import com.google.gson.stream.JsonReader;
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
-import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
-import java.io.PrintStream;
-import java.io.PrintWriter;
-import java.nio.file.Files;
-import java.nio.file.LinkOption;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Random;
-import java.util.UUID;
-import java.util.function.BiFunction;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.stream.Stream;
+/** An example implementation of a worker process that is used for integration tests.  */
+object ExampleWorker {
+    val FLAG_FILE_PATTERN: java.util.regex.Pattern = java.util.regex.Pattern.compile("(?:@|--?flagfile=)(.+)")
 
-/** An example implementation of a worker process that is used for integration tests. */
-public final class ExampleWorker {
+    // A UUID that uniquely identifies this running worker process.
+    val WORKER_UUID: UUID = UUID.randomUUID()
 
-  static final Pattern FLAG_FILE_PATTERN = Pattern.compile("(?:@|--?flagfile=)(.+)");
+    // A counter that increases with each work unit processed.
+    var workUnitCounter: Int = 1
 
-  // A UUID that uniquely identifies this running worker process.
-  static final UUID WORKER_UUID = UUID.randomUUID();
+    // If true, returns corrupt responses instead of correct protobufs.
+    var poisoned: Boolean = false
 
-  // A counter that increases with each work unit processed.
-  static int workUnitCounter = 1;
+    val inputs: LinkedHashMap<String?, String?> = LinkedHashMap<String?, String?>()
 
-  // If true, returns corrupt responses instead of correct protobufs.
-  static boolean poisoned = false;
+    // Contains the request currently being worked on.
+    private var currentRequest: WorkRequest? = null
 
-  static final LinkedHashMap<String, String> inputs = new LinkedHashMap<>();
+    // The options passed to this worker on a per-worker-lifetime basis.
+    var workerOptions: ExampleWorkerOptions? = null
+    private var messageProcessor: WorkerMessageProcessor? = null
 
-  // Contains the request currently being worked on.
-  private static WorkRequest currentRequest;
+    @Throws(java.lang.Exception::class)
+    @kotlin.jvm.JvmStatic
+    fun main(args: Array<String>) {
+        if (com.google.common.collect.ImmutableSet.copyOf<String?>(args).contains("--persistent_worker")) {
+            java.lang.System.err.printf("Worker args: %s\n", java.lang.String.join(" ", *args))
+            val parser: OptionsParser =
+                OptionsParser.builder()
+                    .optionsClasses(ExampleWorkerOptions::class.java)
+                    .allowResidue(false)
+                    .build()
+            parser.parse(args)
+            workerOptions = parser.getOptions(ExampleWorkerOptions::class.java)
+            val protocolFormat: WorkerProtocolFormat = workerOptions.getWorkerProtocol()
+            messageProcessor = null
+            when (protocolFormat) {
+                JSON -> messageProcessor =
+                    JsonWorkerMessageProcessor(
+                        JsonReader(
+                            BufferedReader(
+                                java.io.InputStreamReader(
+                                    java.lang.System.`in`,
+                                    java.nio.charset.StandardCharsets.UTF_8
+                                )
+                            )
+                        ),
+                        BufferedWriter(
+                            OutputStreamWriter(
+                                java.lang.System.out,
+                                java.nio.charset.StandardCharsets.UTF_8
+                            )
+                        )
+                    )
 
-  // The options passed to this worker on a per-worker-lifetime basis.
-  static ExampleWorkerOptions workerOptions;
-  private static WorkerMessageProcessor messageProcessor;
-
-  private static class InterruptableWorkRequestHandler extends WorkRequestHandler {
-
-    InterruptableWorkRequestHandler(
-        BiFunction<List<String>, PrintWriter, Integer> callback,
-        PrintStream stderr,
-        WorkerMessageProcessor messageProcessor) {
-      super(callback, stderr, messageProcessor);
-    }
-
-    @Override
-    @SuppressWarnings("SystemExitOutsideMain")
-    public void processRequests() throws IOException {
-      ByteArrayOutputStream captured = new ByteArrayOutputStream();
-      WorkerIO workerIO = new WorkerIO(System.in, System.out, System.err, captured, captured);
-
-      while (true) {
-        WorkRequest request = messageProcessor.readWorkRequest();
-        if (request == null) {
-          break;
-        }
-
-        currentRequest = request;
-        inputs.clear();
-        for (Input input : request.getInputsList()) {
-          inputs.put(input.getPath(), input.getDigest().toStringUtf8());
-        }
-        if (poisoned && workerOptions.getHardPoison()) {
-          throw new IllegalStateException("I'm a very poisoned worker and will just crash.");
-        }
-        if (request.getCancel()) {
-          respondToCancelRequest(request);
+                PROTO -> messageProcessor = ProtoWorkerMessageProcessor(java.lang.System.`in`, java.lang.System.out)
+            }
+            com.google.common.base.Preconditions.checkNotNull<Any?>(messageProcessor)
+            val workRequestHandler: WorkRequestHandler =
+                InterruptableWorkRequestHandler(java.util.function.BiFunction { obj: MutableList<String?>?, args: PrintWriter? ->
+                    ExampleWorker.doWork(
+                        args
+                    )
+                }, java.lang.System.err, messageProcessor)
+            workRequestHandler.processRequests()
         } else {
-          startResponseThread(workerIO, request);
+            // This is a single invocation of the example that exits after it processed the request.
+            parseOptionsAndLog(com.google.common.collect.ImmutableList.copyOf<String?>(args))
         }
-        if (workerOptions.getExitAfter() > 0 && workUnitCounter > workerOptions.getExitAfter()) {
-          System.exit(0);
-        }
-      }
-
-      try {
-        // Unwrap the system streams placing the original streams back
-        workerIO.close();
-      } catch (Exception e) {
-        workerIO.getOriginalErrorStream().println(e.getMessage());
-      }
     }
-  }
 
-  public static void main(String[] args) throws Exception {
-    if (ImmutableSet.copyOf(args).contains("--persistent_worker")) {
-      System.err.printf("Worker args: %s\n", String.join(" ", args));
-      OptionsParser parser =
-          OptionsParser.builder()
-              .optionsClasses(ExampleWorkerOptions.class)
-              .allowResidue(false)
-              .build();
-      parser.parse(args);
-      workerOptions = parser.getOptions(ExampleWorkerOptions.class);
-      WorkerProtocolFormat protocolFormat = workerOptions.getWorkerProtocol();
-      messageProcessor = null;
-      switch (protocolFormat) {
-        case JSON:
-          messageProcessor =
-              new JsonWorkerMessageProcessor(
-                  new JsonReader(new BufferedReader(new InputStreamReader(System.in, UTF_8))),
-                  new BufferedWriter(new OutputStreamWriter(System.out, UTF_8)));
-          break;
-        case PROTO:
-          messageProcessor = new ProtoWorkerMessageProcessor(System.in, System.out);
-          break;
-      }
-      Preconditions.checkNotNull(messageProcessor);
-      WorkRequestHandler workRequestHandler =
-          new InterruptableWorkRequestHandler(ExampleWorker::doWork, System.err, messageProcessor);
-      workRequestHandler.processRequests();
+    private fun doWork(args: MutableList<String>, err: PrintWriter?): Int {
+        val baos: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
 
-    } else {
-      // This is a single invocation of the example that exits after it processed the request.
-      parseOptionsAndLog(ImmutableList.copyOf(args));
-    }
-  }
+        val originalStdOut: PrintStream? = java.lang.System.out
+        val originalStdErr: PrintStream = java.lang.System.err
 
-  private static int doWork(List<String> args, PrintWriter err) {
-    ByteArrayOutputStream baos = new ByteArrayOutputStream();
-
-    PrintStream originalStdOut = System.out;
-    PrintStream originalStdErr = System.err;
-
-    if (workerOptions.getWaitForCancel()) {
-      try {
-        WorkRequest workRequest = messageProcessor.readWorkRequest();
-        if (workRequest.getRequestId() != currentRequest.getRequestId()) {
-          System.err.format(
-              "Got cancel request for %d while expecting cancel request for %d%n",
-              workRequest.getRequestId(), currentRequest.getRequestId());
-          return 1;
+        if (workerOptions.getWaitForCancel()) {
+            try {
+                val workRequest: WorkRequest = messageProcessor.readWorkRequest()
+                if (workRequest.getRequestId() !== currentRequest.getRequestId()) {
+                    java.lang.System.err.format(
+                        "Got cancel request for %d while expecting cancel request for %d%n",
+                        workRequest.getRequestId(), currentRequest.getRequestId()
+                    )
+                    return 1
+                }
+                if (!workRequest.getCancel()) {
+                    java.lang.System.err.format(
+                        "Got non-cancel request for %d while expecting cancel request%n",
+                        workRequest.getRequestId()
+                    )
+                    return 1
+                }
+            } catch (e: IOException) {
+                throw java.lang.RuntimeException("Exception while waiting for cancel request", e)
+            }
         }
-        if (!workRequest.getCancel()) {
-          System.err.format(
-              "Got non-cancel request for %d while expecting cancel request%n",
-              workRequest.getRequestId());
-          return 1;
-        }
-      } catch (IOException e) {
-        throw new RuntimeException("Exception while waiting for cancel request", e);
-      }
-    }
-    try (PrintStream ps = new PrintStream(baos)) {
-      System.setOut(ps);
-      System.setErr(ps);
-      if (poisoned) {
-        System.out.println("I'm a poisoned worker and this is not a protobuf.");
-        System.out.println("Here's a fake stack trace for you:");
-        System.out.println("    at com.example.Something(Something.java:83)");
-        System.out.println("    at java.lang.Thread.run(Thread.java:745)");
-        System.out.print("And now, 8k of random bytes: ");
-        byte[] b = new byte[8192];
-        new Random().nextBytes(b);
         try {
-          System.out.write(b);
-        } catch (IOException e) {
-          e.printStackTrace();
-          return 1;
+            PrintStream(baos).use { ps ->
+                java.lang.System.setOut(ps)
+                java.lang.System.setErr(ps)
+                if (poisoned) {
+                    println("I'm a poisoned worker and this is not a protobuf.")
+                    println("Here's a fake stack trace for you:")
+                    println("    at com.example.Something(Something.java:83)")
+                    println("    at java.lang.Thread.run(Thread.java:745)")
+                    print("And now, 8k of random bytes: ")
+                    val b = ByteArray(8192)
+                    Random().nextBytes(b)
+                    try {
+                        java.lang.System.out.write(b)
+                    } catch (e: IOException) {
+                        e.printStackTrace()
+                        return 1
+                    }
+                } else {
+                    try {
+                        if (currentRequest.getVerbosity() > 0) {
+                            originalStdErr.println("VERBOSE: Pretending to do work.")
+                            originalStdErr.println("VERBOSE: Running in " + java.io.File(".").getAbsolutePath())
+                        }
+                        parseOptionsAndLog(args)
+                    } catch (e: java.lang.Exception) {
+                        e.printStackTrace()
+                        return 1
+                    }
+                }
+            }
+        } finally {
+            java.lang.System.setOut(originalStdOut)
+            java.lang.System.setErr(originalStdErr)
+            currentRequest = null
         }
-      } else {
-        try {
-          if (currentRequest.getVerbosity() > 0) {
-            originalStdErr.println("VERBOSE: Pretending to do work.");
-            originalStdErr.println("VERBOSE: Running in " + new File(".").getAbsolutePath());
-          }
-          parseOptionsAndLog(args);
-        } catch (Exception e) {
-          e.printStackTrace();
-          return 1;
+
+        if (workerOptions.getExitDuring() > 0 && workUnitCounter > workerOptions.getExitDuring()) {
+            java.lang.System.exit(0)
         }
-      }
-    } finally {
-      System.setOut(originalStdOut);
-      System.setErr(originalStdErr);
-      currentRequest = null;
-    }
 
-    if (workerOptions.getExitDuring() > 0 && workUnitCounter > workerOptions.getExitDuring()) {
-      System.exit(0);
-    }
-
-    if (poisoned) {
-      try {
-        baos.writeTo(System.out);
-        System.out.flush();
-        System.exit(1);
-      } catch (IOException e) {
-        e.printStackTrace();
-        System.exit(1);
-      }
-    }
-    if (workerOptions.getPoisonAfter() > 0 && workUnitCounter > workerOptions.getPoisonAfter()) {
-      poisoned = true;
-    }
-    return 0;
-  }
-
-  private static void parseOptionsAndLog(List<String> args) throws Exception {
-    ImmutableList.Builder<String> expandedArgs = ImmutableList.builder();
-    for (String arg : args) {
-      Matcher flagFileMatcher = FLAG_FILE_PATTERN.matcher(arg);
-      if (flagFileMatcher.matches()) {
-        expandedArgs.addAll(Files.readAllLines(Paths.get(flagFileMatcher.group(1)), UTF_8));
-      } else {
-        expandedArgs.add(arg);
-      }
-    }
-
-    OptionsParser parser =
-        OptionsParser.builder().optionsClasses(ExampleWorkOptions.class).allowResidue(true).build();
-    parser.parse(expandedArgs.build());
-    ExampleWorkOptions options = parser.getOptions(ExampleWorkOptions.class);
-
-    List<String> outputs = new ArrayList<>();
-
-    if (options.getWriteUUID()) {
-      outputs.add("UUID " + WORKER_UUID);
-    }
-
-    if (options.getWriteCounter()) {
-      outputs.add("COUNTER " + workUnitCounter++);
-    }
-
-    String residueStr = Joiner.on(' ').join(parser.getResidue());
-    if (options.getUppercase()) {
-      residueStr = Ascii.toUpperCase(residueStr);
-    }
-    outputs.add(residueStr);
-
-    if (options.getPrintInputs()) {
-      for (Map.Entry<String, String> input : inputs.entrySet()) {
-        outputs.add("INPUT " + input.getKey() + " " + input.getValue());
-      }
-    }
-
-    if (!options.getPrintDirListing().isEmpty()) {
-      Path rootDir = Path.of(options.getPrintDirListing());
-      try (Stream<Path> paths = Files.walk(rootDir, Integer.MAX_VALUE)) {
-        for (Path path : paths.collect(toImmutableList())) {
-          outputs.add(String.format("DIRENT %s %s", rootDir.relativize(path), getInode(path)));
+        if (poisoned) {
+            try {
+                baos.writeTo(java.lang.System.out)
+                java.lang.System.out.flush()
+                java.lang.System.exit(1)
+            } catch (e: IOException) {
+                e.printStackTrace()
+                java.lang.System.exit(1)
+            }
         }
-      }
+        if (workerOptions.getPoisonAfter() > 0 && workUnitCounter > workerOptions.getPoisonAfter()) {
+            poisoned = true
+        }
+        return 0
     }
 
-    if (options.getPrintRequests()) {
-      outputs.add("REQUEST: " + currentRequest);
+    @Throws(java.lang.Exception::class)
+    private fun parseOptionsAndLog(args: MutableList<String>) {
+        val expandedArgs: com.google.common.collect.ImmutableList.Builder<String?> =
+            com.google.common.collect.ImmutableList.builder<String?>()
+        for (arg in args) {
+            val flagFileMatcher: java.util.regex.Matcher = FLAG_FILE_PATTERN.matcher(arg)
+            if (flagFileMatcher.matches()) {
+                expandedArgs.addAll(
+                    java.nio.file.Files.readAllLines(
+                        Paths.get(flagFileMatcher.group(1)),
+                        java.nio.charset.StandardCharsets.UTF_8
+                    )
+                )
+            } else {
+                expandedArgs.add(arg)
+            }
+        }
+
+        val parser: OptionsParser =
+            OptionsParser.builder().optionsClasses(ExampleWorkOptions::class.java).allowResidue(true).build()
+        parser.parse(expandedArgs.build())
+        val options: ExampleWorkOptions = parser.getOptions(ExampleWorkOptions::class.java)
+
+        val outputs: MutableList<String?> = java.util.ArrayList<String?>()
+
+        if (options.getWriteUUID()) {
+            outputs.add("UUID " + WORKER_UUID)
+        }
+
+        if (options.getWriteCounter()) {
+            outputs.add("COUNTER " + workUnitCounter++)
+        }
+
+        var residueStr: String = com.google.common.base.Joiner.on(' ').join(parser.getResidue())
+        if (options.getUppercase()) {
+            residueStr = com.google.common.base.Ascii.toUpperCase(residueStr)
+        }
+        outputs.add(residueStr)
+
+        if (options.getPrintInputs()) {
+            for (input in inputs.entries) {
+                outputs.add("INPUT " + input.key + " " + input.value)
+            }
+        }
+
+        if (!options.getPrintDirListing().isEmpty()) {
+            val rootDir: Path = Path.of(options.getPrintDirListing())
+            java.nio.file.Files.walk(rootDir, Int.Companion.MAX_VALUE).use { paths ->
+                for (path in paths.collect(com.google.common.collect.ImmutableList.toImmutableList<Path?>())) {
+                    outputs.add(String.format("DIRENT %s %s", rootDir.relativize(path), getInode(path)))
+                }
+            }
+        }
+
+        if (options.getPrintRequests()) {
+            outputs.add("REQUEST: " + currentRequest)
+        }
+
+        if (options.getPrintEnv()) {
+            for (entry in java.lang.System.getenv().entries) {
+                outputs.add(entry.key + "=" + entry.value)
+            }
+        }
+
+        if (options.getWorkTime() != null) {
+            try {
+                java.lang.Thread.sleep(options.getWorkTime().toMillis())
+            } catch (e: java.lang.InterruptedException) {
+                java.lang.System.err.printf(
+                    "Interrupted while pretending to work for %d millis%n",
+                    options.getWorkTime().toMillis()
+                )
+            }
+        }
+
+        val outputStr: String = com.google.common.base.Joiner.on('\n').join(outputs)
+        if (options.getOutputFile().isEmpty()) {
+            println(outputStr)
+        } else {
+            PrintStream(options.getOutputFile()).use { outputFile ->
+                outputFile.println(outputStr)
+            }
+        }
     }
 
-    if (options.getPrintEnv()) {
-      for (Map.Entry<String, String> entry : System.getenv().entrySet()) {
-        outputs.add(entry.getKey() + "=" + entry.getValue());
-      }
+    @Throws(IOException::class)
+    private fun getInode(path: Path): Long {
+        return java.nio.file.Files.getAttribute(path, "unix:ino", LinkOption.NOFOLLOW_LINKS) as Long
     }
 
-    if (options.getWorkTime() != null) {
-      try {
-        Thread.sleep(options.getWorkTime().toMillis());
-      } catch (InterruptedException e) {
-        System.err.printf(
-            "Interrupted while pretending to work for %d millis%n",
-            options.getWorkTime().toMillis());
-      }
+    private class InterruptableWorkRequestHandler(
+        callback: java.util.function.BiFunction<MutableList<String?>?, PrintWriter?, Int?>?,
+        stderr: PrintStream?,
+        messageProcessor: WorkerMessageProcessor?
+    ) : WorkRequestHandler(callback, stderr, messageProcessor) {
+        @Throws(IOException::class)
+        public override fun processRequests() {
+            val captured: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+            val workerIO: WorkerIO =
+                WorkerIO(java.lang.System.`in`, java.lang.System.out, java.lang.System.err, captured, captured)
+
+            while (true) {
+                val request: WorkRequest? = messageProcessor.readWorkRequest()
+                if (request == null) {
+                    break
+                }
+
+                currentRequest = request
+                inputs.clear()
+                for (input in request.getInputsList()) {
+                    inputs.put(input.getPath(), input.getDigest().toStringUtf8())
+                }
+                check(!(poisoned && workerOptions.getHardPoison())) { "I'm a very poisoned worker and will just crash." }
+                if (request.getCancel()) {
+                    respondToCancelRequest(request)
+                } else {
+                    startResponseThread(workerIO, request)
+                }
+                if (workerOptions.getExitAfter() > 0 && workUnitCounter > workerOptions.getExitAfter()) {
+                    java.lang.System.exit(0)
+                }
+            }
+
+            try {
+                // Unwrap the system streams placing the original streams back
+                workerIO.close()
+            } catch (e: java.lang.Exception) {
+                workerIO.getOriginalErrorStream().println(e.message)
+            }
+        }
     }
-
-    String outputStr = Joiner.on('\n').join(outputs);
-    if (options.getOutputFile().isEmpty()) {
-      System.out.println(outputStr);
-    } else {
-      try (PrintStream outputFile = new PrintStream(options.getOutputFile())) {
-        outputFile.println(outputStr);
-      }
-    }
-  }
-
-  private static long getInode(Path path) throws IOException {
-    return (long) Files.getAttribute(path, "unix:ino", LinkOption.NOFOLLOW_LINKS);
-  }
-
-  private ExampleWorker() {}
 }

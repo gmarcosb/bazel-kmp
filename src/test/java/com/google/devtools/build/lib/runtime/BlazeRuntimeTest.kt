@@ -11,419 +11,415 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.util.io.CommandExtensionReporter.NO_OP_COMMAND_EXTENSION_REPORTER;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
+import com.google.devtools.build.lib.util.io.CommandExtensionReporter.NO_OP_COMMAND_EXTENSION_REPORTER
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.eventbus.EventBus;
-import com.google.devtools.build.lib.actions.ResourceManager;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.analysis.ServerDirectories;
-import com.google.devtools.build.lib.exec.BinTools;
-import com.google.devtools.build.lib.runtime.BlazeWorkspace.ActionCacheGarbageCollectorIdleTask;
-import com.google.devtools.build.lib.runtime.commands.VersionCommand;
-import com.google.devtools.build.lib.runtime.proto.InvocationPolicyOuterClass.InvocationPolicy;
-import com.google.devtools.build.lib.server.FailureDetails.Crash;
-import com.google.devtools.build.lib.server.FailureDetails.Crash.Code;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.server.GcAndInternerShrinkingIdleTask;
-import com.google.devtools.build.lib.server.IdleTask;
-import com.google.devtools.build.lib.server.InstallBaseGarbageCollectorIdleTask;
-import com.google.devtools.build.lib.testutil.ManualClock;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.Dirent;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Symlinks;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import com.google.devtools.common.options.Options;
-import com.google.devtools.common.options.OptionsParser;
-import com.google.devtools.common.options.OptionsParsingResult;
-import com.google.protobuf.Any;
-import com.google.protobuf.ByteString;
-import com.google.protobuf.BytesValue;
-import com.google.protobuf.StringValue;
-import java.time.Duration;
-import java.util.Arrays;
-import java.util.concurrent.atomic.AtomicReference;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [BlazeRuntime] static methods.  */
+@RunWith(JUnit4::class)
+class BlazeRuntimeTest {
+    private val clock: com.google.devtools.build.lib.testutil.ManualClock =
+        com.google.devtools.build.lib.testutil.ManualClock()
+    private val fs: FileSystem = InMemoryFileSystem(clock, DigestHashFunction.SHA256)
+    private val serverDirectories: ServerDirectories = ServerDirectories(
+        fs.getPath("/install"), fs.getPath("/output"), fs.getPath("/output_user")
+    )
+    private val blazeDirectories: BlazeDirectories =
+        BlazeDirectories(serverDirectories, fs.getPath("/workspace"), "blaze")
+    private val optionsParser: OptionsParser = OptionsParser.builder()
+        .optionsClasses(
+            com.google.common.collect.ImmutableList.of<E?>(
+                CommonCommandOptions::class.java, KeepStateAfterBuildOption::class.java, ClientOptions::class.java
+            )
+        )
+        .build()
+    private val commandThread: java.lang.Thread? = Mockito.mock<java.lang.Thread?>(java.lang.Thread::class.java)
+    private val shutdownReason: AtomicReference<String?> = AtomicReference<String?>()
 
-/** Tests for {@link BlazeRuntime} static methods. */
-@RunWith(JUnit4.class)
-public class BlazeRuntimeTest {
-
-  private final ManualClock clock = new ManualClock();
-  private final FileSystem fs = new InMemoryFileSystem(clock, DigestHashFunction.SHA256);
-  private final ServerDirectories serverDirectories =
-      new ServerDirectories(
-          fs.getPath("/install"), fs.getPath("/output"), fs.getPath("/output_user"));
-  private final BlazeDirectories blazeDirectories =
-      new BlazeDirectories(serverDirectories, fs.getPath("/workspace"), "blaze");
-  private final OptionsParser optionsParser =
-      OptionsParser.builder()
-          .optionsClasses(
-              ImmutableList.of(
-                  CommonCommandOptions.class, KeepStateAfterBuildOption.class, ClientOptions.class))
-          .build();
-  private final Thread commandThread = mock(Thread.class);
-  private final AtomicReference<String> shutdownReason = new AtomicReference<>();
-
-  @Test
-  public void manageProfiles() throws Exception {
-    var dir = fs.getPath("/output");
-    dir.createDirectory();
-    dir.getChild("foo").createDirectory();
-    dir.getChild("bar").getOutputStream().close();
-    clock.advanceMillis(10);
-    var p1 = BlazeRuntime.manageProfiles(dir, "p1", 3);
-    assertThat(p1.getBaseName()).isEqualTo("command-p1.profile.gz");
-    p1.getOutputStream().close();
-    clock.advanceMillis(10);
-    var p2 = BlazeRuntime.manageProfiles(dir, "p2", 3);
-    assertThat(p2.getBaseName()).isEqualTo("command-p2.profile.gz");
-    p2.getOutputStream().close();
-    clock.advanceMillis(10);
-    var p3 = BlazeRuntime.manageProfiles(dir, "p3", 3);
-    assertThat(p3.getBaseName()).isEqualTo("command-p3.profile.gz");
-    p3.getOutputStream().close();
-    clock.advanceMillis(10);
-    var p4 = BlazeRuntime.manageProfiles(dir, "p4", 3);
-    assertThat(p4.getBaseName()).isEqualTo("command-p4.profile.gz");
-    p4.getOutputStream().close();
-    assertThat(dir.readdir(Symlinks.FOLLOW).stream().map(Dirent::getName))
-        .containsExactly(
-            "foo",
-            "bar",
-            "command-p2.profile.gz",
-            "command-p3.profile.gz",
-            "command-p4.profile.gz");
-    clock.advanceMillis(10);
-    var p5 = BlazeRuntime.manageProfiles(dir, "p5", 1);
-    assertThat(p5.getBaseName()).isEqualTo("command-p5.profile.gz");
-    p5.getOutputStream().close();
-    assertThat(dir.readdir(Symlinks.FOLLOW).stream().map(Dirent::getName))
-        .containsExactly("foo", "bar", "command-p5.profile.gz");
-  }
-
-  @Test
-  public void optionSplitting() {
-    BlazeRuntime.CommandLineOptions options =
-        BlazeRuntime.splitStartupOptions(
-            ImmutableList.of(),
-            "--install_base=/foo --host_jvm_args=-Xmx1B",
-            "build",
-            "//foo:bar",
-            "--nobuild");
-    assertThat(options.getStartupArgs())
-        .containsExactly("--install_base=/foo --host_jvm_args=-Xmx1B");
-    assertThat(options.getOtherArgs()).isEqualTo(Arrays.asList("build", "//foo:bar", "--nobuild"));
-  }
-
-  // A regression test to make sure that the 'no' prefix is handled correctly.
-  @Test
-  public void optionSplittingNoPrefix() {
-    BlazeRuntime.CommandLineOptions options =
-        BlazeRuntime.splitStartupOptions(ImmutableList.of(), "--nobatch", "build");
-    assertThat(options.getStartupArgs()).containsExactly("--nobatch");
-    assertThat(options.getOtherArgs()).containsExactly("build");
-  }
-
-  @Test
-  public void crashTest() throws Exception {
-    BlazeRuntime runtime = createRuntime();
-    CommandEnvironment env = createCommandEnvironment(runtime);
-    runtime.beforeCommand(env, optionsParser.getOptions(CommonCommandOptions.class));
-    DetailedExitCode oom =
-        DetailedExitCode.of(
-            FailureDetail.newBuilder()
-                .setCrash(Crash.newBuilder().setCode(Code.CRASH_OOM))
-                .build());
-    runtime.cleanUpForCrash(oom);
-    BlazeCommandResult mainThreadCrash =
-        BlazeCommandResult.failureDetail(
-            FailureDetail.newBuilder()
-                .setCrash(Crash.newBuilder().setCode(Code.CRASH_UNKNOWN))
-                .build());
-    assertThat(
-            runtime
-                .afterCommand(/* forceKeepStateForTesting= */ false, env, mainThreadCrash)
-                .getDetailedExitCode())
-        .isEqualTo(oom);
-    // Confirm that runtime interrupted the command thread.
-    verify(commandThread).interrupt();
-    assertThat(shutdownReason.get()).isEqualTo("foo product is crashing: ");
-  }
-
-  @Test
-  public void addsResponseExtensions() throws Exception {
-    BlazeRuntime runtime = createRuntime();
-    CommandEnvironment env = createCommandEnvironment(runtime);
-    Any anyFoo = Any.pack(StringValue.of("foo"));
-    Any anyBar = Any.pack(BytesValue.of(ByteString.copyFromUtf8("bar")));
-    env.addResponseExtensions(ImmutableList.of(anyFoo, anyBar));
-    assertThat(
-            runtime
-                .afterCommand(
-                    /* forceKeepStateForTesting= */ false, env, BlazeCommandResult.success())
-                .getResponseExtensions())
-        .containsExactly(anyFoo, anyBar);
-  }
-
-  @Test
-  public void addsGcAndInternerShrinkingIdleTask_noStateKeptAfterBuild() throws Exception {
-    BlazeRuntime runtime = createRuntime();
-    optionsParser.parse("--nokeep_state_after_build");
-    CommandEnvironment env = createCommandEnvironment(runtime);
-    CommonCommandOptions options = Options.getDefaults(CommonCommandOptions.class);
-    runtime.beforeCommand(env, options);
-
-    ImmutableList<IdleTask> gcIdleTasks =
-        env.getIdleTasks().stream()
-            .filter(t -> t instanceof GcAndInternerShrinkingIdleTask)
-            .collect(toImmutableList());
-    assertThat(gcIdleTasks).hasSize(1);
-    var idleTask = (GcAndInternerShrinkingIdleTask) gcIdleTasks.get(0);
-    assertThat(idleTask.delay()).isEqualTo(Duration.ZERO);
-  }
-
-  @Test
-  public void addsGcAndInternerShrinkingIdleTask_stateKeptAfterBuild() throws Exception {
-    BlazeRuntime runtime = createRuntime();
-    optionsParser.parse("--keep_state_after_build");
-    CommandEnvironment env = createCommandEnvironment(runtime);
-    env.getOptions().getOptions(KeepStateAfterBuildOption.class).setKeepStateAfterBuild(true);
-    CommonCommandOptions options = Options.getDefaults(CommonCommandOptions.class);
-
-    runtime.beforeCommand(env, options);
-
-    ImmutableList<IdleTask> gcIdleTasks =
-        env.getIdleTasks().stream()
-            .filter(t -> t instanceof GcAndInternerShrinkingIdleTask)
-            .collect(toImmutableList());
-    assertThat(gcIdleTasks).hasSize(1);
-    var idleTask = (GcAndInternerShrinkingIdleTask) gcIdleTasks.get(0);
-    assertThat(idleTask.delay()).isGreaterThan(Duration.ZERO);
-  }
-
-  @Test
-  public void doesNotAddInstallBaseGcIdleTaskWhenDisabled() throws Exception {
-    BlazeRuntime runtime = createRuntime();
-    CommandEnvironment env = createCommandEnvironment(runtime);
-    CommonCommandOptions options = Options.getDefaults(CommonCommandOptions.class);
-    options.setInstallBaseGcMaxAge(Duration.ZERO);
-
-    runtime.beforeCommand(env, options);
-
-    ImmutableList<IdleTask> gcIdleTasks =
-        env.getIdleTasks().stream()
-            .filter(t -> t instanceof InstallBaseGarbageCollectorIdleTask)
-            .collect(toImmutableList());
-    assertThat(gcIdleTasks).isEmpty();
-  }
-
-  @Test
-  public void addsInstallBaseGcIdleTaskWhenEnabled() throws Exception {
-    BlazeRuntime runtime = createRuntime();
-    CommandEnvironment env = createCommandEnvironment(runtime);
-    CommonCommandOptions options = Options.getDefaults(CommonCommandOptions.class);
-    options.setInstallBaseGcMaxAge(Duration.ofDays(365));
-
-    runtime.beforeCommand(env, options);
-
-    ImmutableList<IdleTask> gcIdleTasks =
-        env.getIdleTasks().stream()
-            .filter(t -> t instanceof InstallBaseGarbageCollectorIdleTask)
-            .collect(toImmutableList());
-    assertThat(gcIdleTasks).hasSize(1);
-    var idleTask = (InstallBaseGarbageCollectorIdleTask) gcIdleTasks.get(0);
-    assertThat(idleTask.delay()).isEqualTo(Duration.ZERO);
-    assertThat(idleTask.getGarbageCollector().getRoot())
-        .isEqualTo(blazeDirectories.getInstallBase().getParentDirectory());
-    assertThat(idleTask.getGarbageCollector().getOwnInstallBase())
-        .isEqualTo(blazeDirectories.getInstallBase());
-    assertThat(idleTask.getGarbageCollector().getMaxAge()).isEqualTo(Duration.ofDays(365));
-  }
-
-  @Test
-  public void doesNotAddActionCacheGcIdleTaskWhenDisabled() throws Exception {
-    BlazeRuntime runtime = createRuntime();
-    CommandEnvironment env = createCommandEnvironment(runtime);
-    CommonCommandOptions options = Options.getDefaults(CommonCommandOptions.class);
-    options.setActionCacheGcMaxAge(Duration.ZERO);
-    options.setActionCacheGcIdleDelay(Duration.ofMinutes(5));
-    options.setActionCacheGcThreshold(10);
-
-    runtime.beforeCommand(env, options);
-
-    ImmutableList<IdleTask> gcIdleTasks =
-        env.getIdleTasks().stream()
-            .filter(t -> t instanceof ActionCacheGarbageCollectorIdleTask)
-            .collect(toImmutableList());
-    assertThat(gcIdleTasks).isEmpty();
-  }
-
-  @Test
-  public void addsActionCacheGcIdleTaskWhenEnabled() throws Exception {
-    BlazeRuntime runtime = createRuntime();
-    CommandEnvironment env = createCommandEnvironment(runtime);
-    CommonCommandOptions options = Options.getDefaults(CommonCommandOptions.class);
-    options.setActionCacheGcMaxAge(Duration.ofDays(7));
-    options.setActionCacheGcIdleDelay(Duration.ofMinutes(5));
-    options.setActionCacheGcThreshold(10);
-
-    runtime.beforeCommand(env, options);
-
-    ImmutableList<IdleTask> gcIdleTasks =
-        env.getIdleTasks().stream()
-            .filter(t -> t instanceof ActionCacheGarbageCollectorIdleTask)
-            .collect(toImmutableList());
-    assertThat(gcIdleTasks).hasSize(1);
-    var idleTask = (ActionCacheGarbageCollectorIdleTask) gcIdleTasks.get(0);
-    assertThat(idleTask.delay()).isEqualTo(Duration.ofMinutes(5));
-    assertThat(idleTask.threshold).isEqualTo(0.1f);
-    assertThat(idleTask.getMaxAge()).isEqualTo(Duration.ofDays(7));
-  }
-
-  @Test
-  public void addsIdleTasksFromModules() throws Exception {
-    BlazeRuntime runtime = createRuntime();
-    CommandEnvironment env = createCommandEnvironment(runtime);
-    IdleTask fooTask =
-        new IdleTask() {
-          @Override
-          public String displayName() {
-            return "foo";
-          }
-
-          @Override
-          public void run() {}
-        };
-    IdleTask barTask =
-        new IdleTask() {
-          @Override
-          public String displayName() {
-            return "bar";
-          }
-
-          @Override
-          public void run() {}
-        };
-    env.addIdleTask(fooTask);
-    env.addIdleTask(barTask);
-    assertThat(
-            runtime
-                .afterCommand(
-                    /* forceKeepStateForTesting= */ false, env, BlazeCommandResult.success())
-                .getIdleTasks())
-        .containsAtLeast(fooTask, barTask);
-  }
-
-  @Test
-  public void addsCommandsFromModules() throws Exception {
-    BlazeRuntime runtime =
-        createRuntime(
-            ImmutableList.of(new FooCommandModule(), new BarCommandModule()), ImmutableList.of());
-
-    assertThat(runtime.getCommandMap().keySet()).containsExactly("foo", "bar").inOrder();
-    assertThat(runtime.getCommandMap().get("foo")).isInstanceOf(FooCommandModule.FooCommand.class);
-    assertThat(runtime.getCommandMap().get("bar")).isInstanceOf(BarCommandModule.BarCommand.class);
-  }
-
-  @Test
-  public void returnsBothModulesAndServicesAsOptionsSuppliers() throws Exception {
-    var module = new BlazeModule() {};
-    var service = new BlazeService() {};
-
-    BlazeRuntime runtime = createRuntime(ImmutableList.of(module), ImmutableList.of(service));
-
-    assertThat(runtime.getOptionsSuppliers()).containsExactly(module, service);
-  }
-
-  private BlazeRuntime createRuntime() throws Exception {
-    return createRuntime(ImmutableList.of(), ImmutableList.of());
-  }
-
-  private BlazeRuntime createRuntime(Iterable<BlazeModule> modules, Iterable<BlazeService> services)
-      throws Exception {
-    var builder =
-        new BlazeRuntime.Builder()
-            .setFileSystem(fs)
-            .setProductName("foo product")
-            .setServerDirectories(serverDirectories)
-            .setStartupOptionsProvider(mock(OptionsParsingResult.class));
-    for (var module : modules) {
-      builder.addBlazeModule(module);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun manageProfiles() {
+        val dir: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? = fs.getPath("/output")
+        dir.createDirectory()
+        dir.getChild("foo").createDirectory()
+        dir.getChild("bar").getOutputStream().close()
+        clock.advanceMillis(10)
+        val p1: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            BlazeRuntime.manageProfiles(dir, "p1", 3)
+        assertThat(p1.getBaseName()).isEqualTo("command-p1.profile.gz")
+        p1.getOutputStream().close()
+        clock.advanceMillis(10)
+        val p2: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            BlazeRuntime.manageProfiles(dir, "p2", 3)
+        assertThat(p2.getBaseName()).isEqualTo("command-p2.profile.gz")
+        p2.getOutputStream().close()
+        clock.advanceMillis(10)
+        val p3: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            BlazeRuntime.manageProfiles(dir, "p3", 3)
+        assertThat(p3.getBaseName()).isEqualTo("command-p3.profile.gz")
+        p3.getOutputStream().close()
+        clock.advanceMillis(10)
+        val p4: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            BlazeRuntime.manageProfiles(dir, "p4", 3)
+        assertThat(p4.getBaseName()).isEqualTo("command-p4.profile.gz")
+        p4.getOutputStream().close()
+        assertThat(dir.readdir(Symlinks.FOLLOW).stream().map(Dirent::getName))
+            .containsExactly(
+                "foo",
+                "bar",
+                "command-p2.profile.gz",
+                "command-p3.profile.gz",
+                "command-p4.profile.gz"
+            )
+        clock.advanceMillis(10)
+        val p5: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            BlazeRuntime.manageProfiles(dir, "p5", 1)
+        assertThat(p5.getBaseName()).isEqualTo("command-p5.profile.gz")
+        p5.getOutputStream().close()
+        assertThat(dir.readdir(Symlinks.FOLLOW).stream().map(Dirent::getName))
+            .containsExactly("foo", "bar", "command-p5.profile.gz")
     }
-    for (var service : services) {
-      builder.addBlazeService(service);
-    }
-    return builder.build();
-  }
 
-  private CommandEnvironment createCommandEnvironment(BlazeRuntime runtime) throws Exception {
-    BlazeWorkspace workspace =
-        runtime.initWorkspace(blazeDirectories, BinTools.empty(blazeDirectories));
-    return new CommandEnvironment(
-        runtime,
-        workspace,
-        mock(EventBus.class),
+    @org.junit.Test
+    fun optionSplitting() {
+        val options: BlazeRuntime.CommandLineOptions =
+            BlazeRuntime.splitStartupOptions(
+                com.google.common.collect.ImmutableList.of<E?>(),
+                "--install_base=/foo --host_jvm_args=-Xmx1B",
+                "build",
+                "//foo:bar",
+                "--nobuild"
+            )
+        assertThat(options.getStartupArgs())
+            .containsExactly("--install_base=/foo --host_jvm_args=-Xmx1B")
+        assertThat(options.getOtherArgs()).isEqualTo(mutableListOf<String?>("build", "//foo:bar", "--nobuild"))
+    }
+
+    // A regression test to make sure that the 'no' prefix is handled correctly.
+    @org.junit.Test
+    fun optionSplittingNoPrefix() {
+        val options: BlazeRuntime.CommandLineOptions =
+            BlazeRuntime.splitStartupOptions(com.google.common.collect.ImmutableList.of<E?>(), "--nobatch", "build")
+        assertThat(options.getStartupArgs()).containsExactly("--nobatch")
+        assertThat(options.getOtherArgs()).containsExactly("build")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun crashTest() {
+        val runtime: BlazeRuntime = createRuntime()
+        val env: CommandEnvironment = createCommandEnvironment(runtime)
+        runtime.beforeCommand(env, optionsParser.getOptions<O?>(CommonCommandOptions::class.java))
+        val oom: DetailedExitCode? =
+            DetailedExitCode.of(
+                FailureDetail.newBuilder()
+                    .setCrash(Crash.newBuilder().setCode(Code.CRASH_OOM))
+                    .build()
+            )
+        runtime.cleanUpForCrash(oom)
+        val mainThreadCrash: BlazeCommandResult? =
+            BlazeCommandResult.failureDetail(
+                FailureDetail.newBuilder()
+                    .setCrash(Crash.newBuilder().setCode(Code.CRASH_UNKNOWN))
+                    .build()
+            )
+        assertThat(
+            runtime
+                .afterCommand( /* forceKeepStateForTesting= */false, env, mainThreadCrash)
+                .getDetailedExitCode()
+        )
+            .isEqualTo(oom)
+        // Confirm that runtime interrupted the command thread.
+        Mockito.verify<java.lang.Thread?>(commandThread).interrupt()
+        Truth.assertThat(shutdownReason.get()).isEqualTo("foo product is crashing: ")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun addsResponseExtensions() {
+        val runtime: BlazeRuntime = createRuntime()
+        val env: CommandEnvironment = createCommandEnvironment(runtime)
+        val anyFoo: Any? = Any.pack(StringValue.of("foo"))
+        val anyBar: Any? = Any.pack(BytesValue.of(ByteString.copyFromUtf8("bar")))
+        env.addResponseExtensions(com.google.common.collect.ImmutableList.of<E?>(anyFoo, anyBar))
+        assertThat(
+            runtime
+                .afterCommand( /* forceKeepStateForTesting= */
+                    false, env, BlazeCommandResult.success()
+                )
+                .getResponseExtensions()
+        )
+            .containsExactly(anyFoo, anyBar)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun addsGcAndInternerShrinkingIdleTask_noStateKeptAfterBuild() {
+        val runtime: BlazeRuntime = createRuntime()
+        optionsParser.parse("--nokeep_state_after_build")
+        val env: CommandEnvironment = createCommandEnvironment(runtime)
+        val options: CommonCommandOptions? =
+            com.google.devtools.common.options.Options.getDefaults<O?>(CommonCommandOptions::class.java)
+        runtime.beforeCommand(env, options)
+
+        val gcIdleTasks: com.google.common.collect.ImmutableList<IdleTask?>? =
+            env.getIdleTasks().stream()
+                .filter({ t -> t is GcAndInternerShrinkingIdleTask })
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
+        Truth.assertThat(gcIdleTasks).hasSize(1)
+        val idleTask: GcAndInternerShrinkingIdleTask = gcIdleTasks.get(0) as GcAndInternerShrinkingIdleTask
+        assertThat(idleTask.delay()).isEqualTo(java.time.Duration.ZERO)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun addsGcAndInternerShrinkingIdleTask_stateKeptAfterBuild() {
+        val runtime: BlazeRuntime = createRuntime()
+        optionsParser.parse("--keep_state_after_build")
+        val env: CommandEnvironment = createCommandEnvironment(runtime)
+        env.getOptions().getOptions(KeepStateAfterBuildOption::class.java).setKeepStateAfterBuild(true)
+        val options: CommonCommandOptions? =
+            com.google.devtools.common.options.Options.getDefaults<O?>(CommonCommandOptions::class.java)
+
+        runtime.beforeCommand(env, options)
+
+        val gcIdleTasks: com.google.common.collect.ImmutableList<IdleTask?>? =
+            env.getIdleTasks().stream()
+                .filter({ t -> t is GcAndInternerShrinkingIdleTask })
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
+        Truth.assertThat(gcIdleTasks).hasSize(1)
+        val idleTask: GcAndInternerShrinkingIdleTask = gcIdleTasks.get(0) as GcAndInternerShrinkingIdleTask
+        assertThat(idleTask.delay()).isGreaterThan(java.time.Duration.ZERO)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun doesNotAddInstallBaseGcIdleTaskWhenDisabled() {
+        val runtime: BlazeRuntime = createRuntime()
+        val env: CommandEnvironment = createCommandEnvironment(runtime)
+        val options: CommonCommandOptions =
+            com.google.devtools.common.options.Options.getDefaults<O>(CommonCommandOptions::class.java)
+        options.setInstallBaseGcMaxAge(java.time.Duration.ZERO)
+
+        runtime.beforeCommand(env, options)
+
+        val gcIdleTasks: com.google.common.collect.ImmutableList<IdleTask?>? =
+            env.getIdleTasks().stream()
+                .filter({ t -> t is InstallBaseGarbageCollectorIdleTask })
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
+        Truth.assertThat(gcIdleTasks).isEmpty()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun addsInstallBaseGcIdleTaskWhenEnabled() {
+        val runtime: BlazeRuntime = createRuntime()
+        val env: CommandEnvironment = createCommandEnvironment(runtime)
+        val options: CommonCommandOptions =
+            com.google.devtools.common.options.Options.getDefaults<O>(CommonCommandOptions::class.java)
+        options.setInstallBaseGcMaxAge(java.time.Duration.ofDays(365))
+
+        runtime.beforeCommand(env, options)
+
+        val gcIdleTasks: com.google.common.collect.ImmutableList<IdleTask?>? =
+            env.getIdleTasks().stream()
+                .filter({ t -> t is InstallBaseGarbageCollectorIdleTask })
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
+        Truth.assertThat(gcIdleTasks).hasSize(1)
+        val idleTask: InstallBaseGarbageCollectorIdleTask = gcIdleTasks.get(0) as InstallBaseGarbageCollectorIdleTask
+        assertThat(idleTask.delay()).isEqualTo(java.time.Duration.ZERO)
+        assertThat(idleTask.getGarbageCollector().getRoot())
+            .isEqualTo(blazeDirectories.getInstallBase().getParentDirectory())
+        assertThat(idleTask.getGarbageCollector().getOwnInstallBase())
+            .isEqualTo(blazeDirectories.getInstallBase())
+        assertThat(idleTask.getGarbageCollector().getMaxAge()).isEqualTo(java.time.Duration.ofDays(365))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun doesNotAddActionCacheGcIdleTaskWhenDisabled() {
+        val runtime: BlazeRuntime = createRuntime()
+        val env: CommandEnvironment = createCommandEnvironment(runtime)
+        val options: CommonCommandOptions =
+            com.google.devtools.common.options.Options.getDefaults<O>(CommonCommandOptions::class.java)
+        options.setActionCacheGcMaxAge(java.time.Duration.ZERO)
+        options.setActionCacheGcIdleDelay(java.time.Duration.ofMinutes(5))
+        options.setActionCacheGcThreshold(10)
+
+        runtime.beforeCommand(env, options)
+
+        val gcIdleTasks: com.google.common.collect.ImmutableList<IdleTask?>? =
+            env.getIdleTasks().stream()
+                .filter({ t -> t is ActionCacheGarbageCollectorIdleTask })
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
+        Truth.assertThat(gcIdleTasks).isEmpty()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun addsActionCacheGcIdleTaskWhenEnabled() {
+        val runtime: BlazeRuntime = createRuntime()
+        val env: CommandEnvironment = createCommandEnvironment(runtime)
+        val options: CommonCommandOptions =
+            com.google.devtools.common.options.Options.getDefaults<O>(CommonCommandOptions::class.java)
+        options.setActionCacheGcMaxAge(java.time.Duration.ofDays(7))
+        options.setActionCacheGcIdleDelay(java.time.Duration.ofMinutes(5))
+        options.setActionCacheGcThreshold(10)
+
+        runtime.beforeCommand(env, options)
+
+        val gcIdleTasks: com.google.common.collect.ImmutableList<IdleTask?>? =
+            env.getIdleTasks().stream()
+                .filter({ t -> t is ActionCacheGarbageCollectorIdleTask })
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
+        Truth.assertThat(gcIdleTasks).hasSize(1)
+        val idleTask: ActionCacheGarbageCollectorIdleTask = gcIdleTasks.get(0) as ActionCacheGarbageCollectorIdleTask
+        assertThat(idleTask.delay()).isEqualTo(java.time.Duration.ofMinutes(5))
+        assertThat(idleTask.threshold).isEqualTo(0.1f)
+        assertThat(idleTask.getMaxAge()).isEqualTo(java.time.Duration.ofDays(7))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun addsIdleTasksFromModules() {
+        val runtime: BlazeRuntime = createRuntime()
+        val env: CommandEnvironment = createCommandEnvironment(runtime)
+        val fooTask: IdleTask =
+            object : IdleTask() {
+                override fun displayName(): String {
+                    return "foo"
+                }
+
+                override fun run() {}
+            }
+        val barTask: IdleTask =
+            object : IdleTask() {
+                override fun displayName(): String {
+                    return "bar"
+                }
+
+                override fun run() {}
+            }
+        env.addIdleTask(fooTask)
+        env.addIdleTask(barTask)
+        assertThat(
+            runtime
+                .afterCommand( /* forceKeepStateForTesting= */
+                    false, env, BlazeCommandResult.success()
+                )
+                .getIdleTasks()
+        )
+            .containsAtLeast(fooTask, barTask)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun addsCommandsFromModules() {
+        val runtime: BlazeRuntime =
+            createRuntime(
+                com.google.common.collect.ImmutableList.of<E?>(FooCommandModule(), BarCommandModule()),
+                com.google.common.collect.ImmutableList.of<BlazeService?>()
+            )
+
+        assertThat(runtime.getCommandMap().keySet()).containsExactly("foo", "bar").inOrder()
+        assertThat(
+            runtime.getCommandMap().get("foo")
+        ).isInstanceOf(com.google.devtools.build.lib.runtime.BlazeRuntimeTest.FooCommandModule.FooCommand::class.java)
+        assertThat(
+            runtime.getCommandMap().get("bar")
+        ).isInstanceOf(com.google.devtools.build.lib.runtime.BlazeRuntimeTest.BarCommandModule.BarCommand::class.java)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun returnsBothModulesAndServicesAsOptionsSuppliers() {
+        val module: BlazeModule? = object : BlazeModule() {}
+        val service: BlazeService? = object : BlazeService() {}
+
+        val runtime: BlazeRuntime = createRuntime(
+            com.google.common.collect.ImmutableList.of<E?>(module),
+            com.google.common.collect.ImmutableList.of<BlazeService?>(service)
+        )
+
+        assertThat(runtime.getOptionsSuppliers()).containsExactly(module, service)
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun createRuntime(): BlazeRuntime {
+        return createRuntime(
+            com.google.common.collect.ImmutableList.of<BlazeModule?>(),
+            com.google.common.collect.ImmutableList.of<BlazeService?>()
+        )
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun createRuntime(modules: Iterable<BlazeModule?>, services: Iterable<BlazeService?>): BlazeRuntime {
+        val builder: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            Builder()
+                .setFileSystem(fs)
+                .setProductName("foo product")
+                .setServerDirectories(serverDirectories)
+                .setStartupOptionsProvider(< T > mock < T ? > (OptionsParsingResult::class.java))
+        for (module in modules) {
+            builder.addBlazeModule(module)
+        }
+        for (service in services) {
+            builder.addBlazeService(service)
+        }
+        return builder.build()
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun createCommandEnvironment(runtime: BlazeRuntime): CommandEnvironment {
+        val workspace: BlazeWorkspace? =
+            runtime.initWorkspace(blazeDirectories, BinTools.empty(blazeDirectories))
+        return CommandEnvironment(
+            runtime,
+            workspace,
+            < T > mock < T ? > (com.google.common.eventbus.EventBus::class.java),
         commandThread,
-        VersionCommand.class.getAnnotation(Command.class),
+        VersionCommand::class.java.getAnnotation<A?>(Command::class.java),
         optionsParser,
-        InvocationPolicy.getDefaultInstance(),
-        /* packageLocator= */ null,
+        InvocationPolicy.getDefaultInstance(),  /* packageLocator= */
+        null,
         SyscallCache.NO_CACHE,
-        QuiescingExecutorsImpl.forTesting(),
-        /* warnings= */ ImmutableList.of(),
-        /* waitTimeInMs= */ 0L,
-        /* commandStartTime= */ 0L,
-        /* idleTaskResultsFromPreviousIdlePeriod= */ ImmutableList.of(),
-        /* shutdownReasonConsumer= */ shutdownReason::set,
-        /* commandExtensions= */ ImmutableList.of(),
-        NO_OP_COMMAND_EXTENSION_REPORTER,
-        /* attemptNumber= */ 1,
-        /* buildRequestIdOverride= */ null,
+        QuiescingExecutorsImpl.forTesting(),  /* warnings= */
+        com.google.common.collect.ImmutableList.of<E?>(),  /* waitTimeInMs= */
+        0L,  /* commandStartTime= */
+        0L,  /* idleTaskResultsFromPreviousIdlePeriod= */
+        com.google.common.collect.ImmutableList.of<E?>(),  /* shutdownReasonConsumer= */
+        { newValue: V? -> shutdownReason.set(newValue) },  /* commandExtensions= */
+        com.google.common.collect.ImmutableList.of<E?>(),
+        NO_OP_COMMAND_EXTENSION_REPORTER,  /* attemptNumber= */
+        1,  /* buildRequestIdOverride= */
+        null,
         ConfigFlagDefinitions.NONE,
-        new ResourceManager());
-  }
-
-  private static class FooCommandModule extends BlazeModule {
-    @Command(name = "foo", shortDescription = "", help = "")
-    private static class FooCommand implements BlazeCommand {
-
-      @Override
-      public BlazeCommandResult exec(CommandEnvironment env, OptionsParsingResult options) {
-        return null;
-      }
+        ResourceManager())
     }
 
-    @Override
-    public void serverInit(OptionsParsingResult startupOptions, ServerBuilder builder) {
-      builder.addCommands(new FooCommand());
-    }
-  }
+    private class FooCommandModule : BlazeModule() {
+        @Command(name = "foo", shortDescription = "", help = "")
+        private class FooCommand : BlazeCommand {
+            public override fun exec(env: CommandEnvironment?, options: OptionsParsingResult?): BlazeCommandResult? {
+                return null
+            }
+        }
 
-  private static class BarCommandModule extends BlazeModule {
-    @Command(name = "bar", shortDescription = "", help = "")
-    private static class BarCommand implements BlazeCommand {
-
-      @Override
-      public BlazeCommandResult exec(CommandEnvironment env, OptionsParsingResult options) {
-        return null;
-      }
+        public override fun serverInit(startupOptions: OptionsParsingResult?, builder: ServerBuilder) {
+            builder.addCommands(com.google.devtools.build.lib.runtime.BlazeRuntimeTest.FooCommandModule.FooCommand())
+        }
     }
 
-    @Override
-    public void serverInit(OptionsParsingResult startupOptions, ServerBuilder builder) {
-      builder.addCommands(new BarCommand());
+    private class BarCommandModule : BlazeModule() {
+        @Command(name = "bar", shortDescription = "", help = "")
+        private class BarCommand : BlazeCommand {
+            public override fun exec(env: CommandEnvironment?, options: OptionsParsingResult?): BlazeCommandResult? {
+                return null
+            }
+        }
+
+        public override fun serverInit(startupOptions: OptionsParsingResult?, builder: ServerBuilder) {
+            builder.addCommands(com.google.devtools.build.lib.runtime.BlazeRuntimeTest.BarCommandModule.BarCommand())
+        }
     }
-  }
 }

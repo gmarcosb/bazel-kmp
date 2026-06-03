@@ -11,46 +11,36 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.testutil;
+package com.google.devtools.build.lib.testutil
 
-import static com.google.common.base.Preconditions.checkArgument;
-import static com.google.common.base.Preconditions.checkNotNull;
-
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.actions.SpawnStrategy;
-import com.google.devtools.build.lib.exec.SpawnStrategyRegistry;
-import com.google.devtools.build.lib.runtime.BlazeModule;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.util.AbruptExitException;
+import com.google.devtools.build.lib.actions.SpawnStrategy
 
 /**
- * A {@link BlazeModule} that uses {@link SpawnController} to inject custom behavior.
- *
- * <p>The identifiers of strategies to make controllable are passed to the constructor. These
- * strategies are expected to already exist in the {@link SpawnStrategyRegistry.Builder} when {@link
- * #registerSpawnStrategies} is called, so the modules responsible for registering them should be
- * added to the runtime builder <em>before</em> the {@code ControllableActionStrategyModule}. Each
- * strategy corresponding to a specified identifier is replaced in the {@link
- * SpawnStrategyRegistry.Builder} with a {@linkplain SpawnController#wrap controllable wrapper}.
+ * A [BlazeModule] that uses [SpawnController] to inject custom behavior.
+ * 
+ * 
+ * The identifiers of strategies to make controllable are passed to the constructor. These
+ * strategies are expected to already exist in the [SpawnStrategyRegistry.Builder] when [ ][.registerSpawnStrategies] is called, so the modules responsible for registering them should be
+ * added to the runtime builder *before* the `ControllableActionStrategyModule`. Each
+ * strategy corresponding to a specified identifier is replaced in the [ ] with a [controllable wrapper][SpawnController.wrap].
  */
-public final class ControllableActionStrategyModule extends BlazeModule {
+class ControllableActionStrategyModule(spawnController: SpawnController?, vararg identifiers: String?) : BlazeModule() {
+    private val spawnController: SpawnController
+    private val identifiers: com.google.common.collect.ImmutableList<String?>
 
-  private final SpawnController spawnController;
-  private final ImmutableList<String> identifiers;
-
-  public ControllableActionStrategyModule(SpawnController spawnController, String... identifiers) {
-    checkArgument(identifiers.length > 0, "No identifiers given");
-    this.spawnController = checkNotNull(spawnController);
-    this.identifiers = ImmutableList.copyOf(identifiers);
-  }
-
-  @Override
-  public void registerSpawnStrategies(
-      SpawnStrategyRegistry.Builder registryBuilder, CommandEnvironment env)
-      throws AbruptExitException {
-    for (String identifier : identifiers) {
-      SpawnStrategy delegate = registryBuilder.toStrategy(identifier, getClass().getSimpleName());
-      registryBuilder.registerStrategy(spawnController.wrap(delegate), identifier);
+    init {
+        com.google.common.base.Preconditions.checkArgument(identifiers.size > 0, "No identifiers given")
+        this.spawnController = com.google.common.base.Preconditions.checkNotNull<SpawnController>(spawnController)
+        this.identifiers = com.google.common.collect.ImmutableList.copyOf<String?>(identifiers)
     }
-  }
+
+    @Throws(AbruptExitException::class)
+    public override fun registerSpawnStrategies(
+        registryBuilder: SpawnStrategyRegistry.Builder, env: CommandEnvironment?
+    ) {
+        for (identifier in identifiers) {
+            val delegate: SpawnStrategy? = registryBuilder.toStrategy(identifier, javaClass.getSimpleName())
+            registryBuilder.registerStrategy(spawnController.wrap(delegate), identifier)
+        }
+    }
 }

@@ -11,130 +11,141 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.util
 
-package com.google.devtools.build.lib.util;
+import com.google.devtools.build.lib.actions.LocalHostCapacity
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+/** Tests [ResourceConverter].  */
+@RunWith(JUnit4::class)
+class ResourceConverterTest {
+    private var resourceConverter: ResourceConverter<*>? = null
 
-import com.google.devtools.build.lib.actions.LocalHostCapacity;
-import com.google.devtools.build.lib.actions.ResourceSet;
-import com.google.devtools.common.options.OptionsParsingException;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun convertNumber_returnsInt() {
+        resourceConverter = IntegerConverter({ null }, 1, Int.Companion.MAX_VALUE)
+        assertThat(resourceConverter.convert("6")).isEqualTo(6)
+    }
 
-/** Tests {@link ResourceConverter}. */
-@RunWith(JUnit4.class)
-public class ResourceConverterTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun convertNumber_returnsDouble() {
+        resourceConverter = DoubleConverter({ null }, 1.0, Double.Companion.MAX_VALUE)
+        assertThat(resourceConverter.convert("6.3")).isEqualTo(6.3)
+    }
 
-  private ResourceConverter<?> resourceConverter;
+    @org.junit.Test
+    fun convertNumber_greaterThanMax_throwsException() {
+        resourceConverter = IntegerConverter({ null }, 0, 1)
+        val thrown: OptionsParsingException? =
+            org.junit.Assert.assertThrows<OptionsParsingException?>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable { resourceConverter.convert("2") })
+        Truth.assertThat(thrown).hasMessageThat().contains("cannot be greater than 1")
+    }
 
-  @Test
-  public void convertNumber_returnsInt() throws Exception {
-    resourceConverter = new ResourceConverter.IntegerConverter(() -> null, 1, Integer.MAX_VALUE);
-    assertThat(resourceConverter.convert("6")).isEqualTo(6);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun convertNumber_lessThanMin_throwsException() {
+        resourceConverter = IntegerConverter({ null }, -1, 1)
+        assertThat(resourceConverter.convert("0")).isEqualTo(0)
+        val thrown: OptionsParsingException? =
+            org.junit.Assert.assertThrows<OptionsParsingException?>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable { resourceConverter.convert("-2") })
+        Truth.assertThat(thrown).hasMessageThat().contains("must be at least -1")
+    }
 
-  @Test
-  public void convertNumber_returnsDouble() throws Exception {
-    resourceConverter = new ResourceConverter.DoubleConverter(() -> null, 1.0, Double.MAX_VALUE);
-    assertThat(resourceConverter.convert("6.3")).isEqualTo(6.3);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun convertAuto_returnsSuppliedAutoValue() {
+        resourceConverter = IntegerConverter({ 5 }, 1, Int.Companion.MAX_VALUE)
+        assertThat(resourceConverter.convert("auto")).isEqualTo(5)
+    }
 
-  @Test
-  public void convertNumber_greaterThanMax_throwsException() {
-    resourceConverter = new ResourceConverter.IntegerConverter(() -> null, 0, 1);
-    OptionsParsingException thrown =
-        assertThrows(OptionsParsingException.class, () -> resourceConverter.convert("2"));
-    assertThat(thrown).hasMessageThat().contains("cannot be greater than 1");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun convertAuto_withOperator_appliesOperatorToAuto() {
+        resourceConverter = IntegerConverter({ 5 }, 1, Int.Companion.MAX_VALUE)
+        assertThat(resourceConverter.convert("auto-1")).isEqualTo(4)
+    }
 
-  @Test
-  public void convertNumber_lessThanMin_throwsException() throws Exception {
-    resourceConverter = new ResourceConverter.IntegerConverter(() -> null, -1, 1);
-    assertThat(resourceConverter.convert("0")).isEqualTo(0);
-    OptionsParsingException thrown =
-        assertThrows(OptionsParsingException.class, () -> resourceConverter.convert("-2"));
-    assertThat(thrown).hasMessageThat().contains("must be at least -1");
-  }
+    @org.junit.Test
+    fun convertAuto_withInvalidOperator_throwsException() {
+        resourceConverter = IntegerConverter({ null }, 1, Int.Companion.MAX_VALUE)
+        val thrown: OptionsParsingException? =
+            org.junit.Assert.assertThrows<OptionsParsingException?>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable { resourceConverter.convert("auto/2") })
+        Truth.assertThat(thrown).hasMessageThat().contains("does not follow correct syntax")
+    }
 
-  @Test
-  public void convertAuto_returnsSuppliedAutoValue() throws Exception {
-    resourceConverter = new ResourceConverter.IntegerConverter(() -> 5, 1, Integer.MAX_VALUE);
-    assertThat(resourceConverter.convert("auto")).isEqualTo(5);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun convertAuto_isFloat_returnsRoundedInt() {
+        resourceConverter = IntegerConverter({ 5 }, 1, Int.Companion.MAX_VALUE)
+        assertThat(resourceConverter.convert("auto*.51")).isEqualTo(3)
+    }
 
-  @Test
-  public void convertAuto_withOperator_appliesOperatorToAuto() throws Exception {
-    resourceConverter = new ResourceConverter.IntegerConverter(() -> 5, 1, Integer.MAX_VALUE);
-    assertThat(resourceConverter.convert("auto-1")).isEqualTo(4);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun convertHostCpus_returnsCpuSetting() {
+        LocalHostCapacity.setLocalHostCapacity(ResourceSet.createWithRamCpu(1, 15))
+        resourceConverter = IntegerConverter({ 5 }, 1, Int.Companion.MAX_VALUE)
+        assertThat(resourceConverter.convert("HOST_CPUS")).isEqualTo(15)
+    }
 
-  @Test
-  public void convertAuto_withInvalidOperator_throwsException() {
-    resourceConverter = new ResourceConverter.IntegerConverter(() -> null, 1, Integer.MAX_VALUE);
-    OptionsParsingException thrown =
-        assertThrows(OptionsParsingException.class, () -> resourceConverter.convert("auto/2"));
-    assertThat(thrown).hasMessageThat().contains("does not follow correct syntax");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun convertRam_returnsRamSetting() {
+        LocalHostCapacity.setLocalHostCapacity(ResourceSet.createWithRamCpu(10, 0))
+        resourceConverter = IntegerConverter({ 5 }, 1, Int.Companion.MAX_VALUE)
+        assertThat(resourceConverter.convert("HOST_RAM")).isEqualTo(10)
+    }
 
-  @Test
-  public void convertAuto_isFloat_returnsRoundedInt() throws Exception {
-    resourceConverter = new ResourceConverter.IntegerConverter(() -> 5, 1, Integer.MAX_VALUE);
-    assertThat(resourceConverter.convert("auto*.51")).isEqualTo(3);
-  }
+    @org.junit.Test
+    fun convertFloat_throwsException() {
+        resourceConverter = IntegerConverter({ null }, 1, Int.Companion.MAX_VALUE)
+        val thrown: OptionsParsingException? =
+            org.junit.Assert.assertThrows<OptionsParsingException?>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable { resourceConverter.convert(".5") })
+        Truth.assertThat(thrown).hasMessageThat().contains("This flag takes an integer")
+    }
 
-  @Test
-  public void convertHostCpus_returnsCpuSetting() throws Exception {
-    LocalHostCapacity.setLocalHostCapacity(ResourceSet.createWithRamCpu(1, 15));
-    resourceConverter = new ResourceConverter.IntegerConverter(() -> 5, 1, Integer.MAX_VALUE);
-    assertThat(resourceConverter.convert("HOST_CPUS")).isEqualTo(15);
-  }
+    @org.junit.Test
+    fun convertWrongKeyword_throwsException() {
+        resourceConverter = IntegerConverter({ null }, 1, Int.Companion.MAX_VALUE)
+        val thrown: OptionsParsingException? =
+            org.junit.Assert.assertThrows<OptionsParsingException?>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable { resourceConverter.convert("invalid_keyword") })
+        Truth.assertThat(thrown)
+            .hasMessageThat()
+            .isEqualTo(
+                ("Parameter 'invalid_keyword' does not follow correct syntax. "
+                        + "This flag takes an integer, or a keyword "
+                        + "(\"auto\", \"HOST_CPUS\", \"HOST_RAM\"),"
+                        + " optionally followed by an operation ([-|*]<float>) eg. \"auto\", "
+                        + "\"HOST_CPUS*.5\".")
+            )
+    }
 
-  @Test
-  public void convertRam_returnsRamSetting() throws Exception {
-    LocalHostCapacity.setLocalHostCapacity(ResourceSet.createWithRamCpu(10, 0));
-    resourceConverter = new ResourceConverter.IntegerConverter(() -> 5, 1, Integer.MAX_VALUE);
-    assertThat(resourceConverter.convert("HOST_RAM")).isEqualTo(10);
-  }
+    @org.junit.Test
+    fun convertAlmostValidKeyword_throwsException() {
+        resourceConverter = IntegerConverter({ null }, 1, Int.Companion.MAX_VALUE)
+        val thrown: OptionsParsingException? =
+            org.junit.Assert.assertThrows<OptionsParsingException?>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable { resourceConverter.convert("aut") })
+        Truth.assertThat(thrown).hasMessageThat().contains("does not follow correct syntax")
+    }
 
-  @Test
-  public void convertFloat_throwsException() {
-    resourceConverter = new ResourceConverter.IntegerConverter(() -> null, 1, Integer.MAX_VALUE);
-    OptionsParsingException thrown =
-        assertThrows(OptionsParsingException.class, () -> resourceConverter.convert(".5"));
-    assertThat(thrown).hasMessageThat().contains("This flag takes an integer");
-  }
-
-  @Test
-  public void convertWrongKeyword_throwsException() {
-    resourceConverter = new ResourceConverter.IntegerConverter(() -> null, 1, Integer.MAX_VALUE);
-    OptionsParsingException thrown =
-        assertThrows(
-            OptionsParsingException.class, () -> resourceConverter.convert("invalid_keyword"));
-    assertThat(thrown)
-        .hasMessageThat()
-        .isEqualTo(
-            "Parameter 'invalid_keyword' does not follow correct syntax. "
-                + "This flag takes an integer, or a keyword "
-                + "(\"auto\", \"HOST_CPUS\", \"HOST_RAM\"),"
-                + " optionally followed by an operation ([-|*]<float>) eg. \"auto\", "
-                + "\"HOST_CPUS*.5\".");
-  }
-
-  @Test
-  public void convertAlmostValidKeyword_throwsException() {
-    resourceConverter = new ResourceConverter.IntegerConverter(() -> null, 1, Integer.MAX_VALUE);
-    OptionsParsingException thrown =
-        assertThrows(OptionsParsingException.class, () -> resourceConverter.convert("aut"));
-    assertThat(thrown).hasMessageThat().contains("does not follow correct syntax");
-  }
-
-  @Test
-  public void buildConverter_beforeResources_usesResources() throws Exception {
-    resourceConverter = new ResourceConverter.IntegerConverter(() -> null, 1, Integer.MAX_VALUE);
-    LocalHostCapacity.setLocalHostCapacity(ResourceSet.createWithRamCpu(0, 15));
-    assertThat(resourceConverter.convert("HOST_CPUS")).isEqualTo(15);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun buildConverter_beforeResources_usesResources() {
+        resourceConverter = IntegerConverter({ null }, 1, Int.Companion.MAX_VALUE)
+        LocalHostCapacity.setLocalHostCapacity(ResourceSet.createWithRamCpu(0, 15))
+        assertThat(resourceConverter.convert("HOST_CPUS")).isEqualTo(15)
+    }
 }

@@ -11,102 +11,89 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import com.google.devtools.build.lib.actions.ActionLookupKey
 
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.actions.ActionLookupKey;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.RemoteAnalysisCacheReaderDepsProvider;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.RemoteAnalysisCachingOptions.RemoteAnalysisCacheMode;
-import com.google.devtools.build.skyframe.AbstractSkyFunctionEnvironmentForTesting;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.devtools.build.skyframe.ValueOrUntypedException;
-import java.util.HashMap;
-import java.util.Map;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [ActionLookupConflictFindingFunction].  */
+@RunWith(JUnit4::class)
+class ActionLookupConflictFindingFunctionTest {
+    private class TestEnvironment : AbstractSkyFunctionEnvironmentForTesting() {
+        private val values: MutableMap<SkyKey?, SkyValue?> = HashMap<SkyKey?, SkyValue?>()
 
-/** Tests for {@link ActionLookupConflictFindingFunction}. */
-@RunWith(JUnit4.class)
-public final class ActionLookupConflictFindingFunctionTest {
-
-  private static final class TestEnvironment extends AbstractSkyFunctionEnvironmentForTesting {
-    private final Map<SkyKey, SkyValue> values = new HashMap<>();
-
-    @Override
-    protected ImmutableMap<SkyKey, ValueOrUntypedException> getValueOrUntypedExceptions(
-        Iterable<? extends SkyKey> depKeys) {
-      ImmutableMap.Builder<SkyKey, ValueOrUntypedException> builder = ImmutableMap.builder();
-      for (SkyKey key : depKeys) {
-        SkyValue val = values.get(key);
-        if (val == null) {
-          this.valuesMissing = true;
+        override fun getValueOrUntypedExceptions(
+            depKeys: Iterable<out SkyKey?>
+        ): com.google.common.collect.ImmutableMap<SkyKey?, ValueOrUntypedException?> {
+            val builder: com.google.common.collect.ImmutableMap.Builder<SkyKey?, ValueOrUntypedException?> =
+                com.google.common.collect.ImmutableMap.builder<SkyKey?, ValueOrUntypedException?>()
+            for (key in depKeys) {
+                val `val`: SkyValue? = values.get(key)
+                if (`val` == null) {
+                    this.valuesMissing = true
+                }
+                builder.put(key, ValueOrUntypedException.ofValueUntyped(`val`))
+            }
+            return builder.buildOrThrow()
         }
-        builder.put(key, ValueOrUntypedException.ofValueUntyped(val));
-      }
-      return builder.buildOrThrow();
+
+        val listener: ExtendedEventHandler?
+            get() = Mockito.mock<ExtendedEventHandler?>(ExtendedEventHandler::class.java)
     }
 
-    @Override
-    public ExtendedEventHandler getListener() {
-      return mock(ExtendedEventHandler.class);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun compute_missingValue_isRetrievalEnabled_noBugReport() {
+        val provider: RemoteAnalysisCacheReaderDepsProvider =
+            Mockito.mock<RemoteAnalysisCacheReaderDepsProvider>(RemoteAnalysisCacheReaderDepsProvider::class.java)
+        Mockito.`when`<T?>(provider.mode()).thenReturn(RemoteAnalysisCacheMode.DOWNLOAD)
+
+        val function: ActionLookupConflictFindingFunction =
+            ActionLookupConflictFindingFunction({ provider })
+
+        val lookupKey: ActionLookupKey? =
+            ConfiguredTargetKey.builder().setLabel(Label.parseCanonicalUnchecked("//foo:foo")).build()
+        val key: SkyKey? = ActionLookupConflictFindingValue.key(lookupKey)
+
+        val env = TestEnvironment()
+        // ActionLookupConflictFindingFunction calls ACTION_CONFLICTS.get(env)
+        env.values.put(
+            ArtifactConflictFinder.ACTION_CONFLICTS.getKey(),
+            PrecomputedValue(com.google.common.collect.ImmutableMap.of<K?, V?>())
+        )
+
+        val result: SkyValue? = function.compute(key, env)
+
+        assertThat(result).isNull()
+        assertThat(env.valuesMissing()).isTrue()
+        // No exception thrown means no bug report sent.
     }
-  }
 
-  @Test
-  public void compute_missingValue_isRetrievalEnabled_noBugReport() throws Exception {
-    RemoteAnalysisCacheReaderDepsProvider provider =
-        mock(RemoteAnalysisCacheReaderDepsProvider.class);
-    when(provider.mode()).thenReturn(RemoteAnalysisCacheMode.DOWNLOAD);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun compute_missingValue_isRetrievalDisabled_bugReport() {
+        val provider: RemoteAnalysisCacheReaderDepsProvider =
+            Mockito.mock<RemoteAnalysisCacheReaderDepsProvider>(RemoteAnalysisCacheReaderDepsProvider::class.java)
+        Mockito.`when`<T?>(provider.mode()).thenReturn(RemoteAnalysisCacheMode.OFF)
 
-    ActionLookupConflictFindingFunction function =
-        new ActionLookupConflictFindingFunction(() -> provider);
+        val function: ActionLookupConflictFindingFunction =
+            ActionLookupConflictFindingFunction({ provider })
 
-    ActionLookupKey lookupKey =
-        ConfiguredTargetKey.builder().setLabel(Label.parseCanonicalUnchecked("//foo:foo")).build();
-    SkyKey key = ActionLookupConflictFindingValue.key(lookupKey);
+        val lookupKey: ActionLookupKey? =
+            ConfiguredTargetKey.builder().setLabel(Label.parseCanonicalUnchecked("//bar:bar")).build()
+        val key: SkyKey? = ActionLookupConflictFindingValue.key(lookupKey)
 
-    TestEnvironment env = new TestEnvironment();
-    // ActionLookupConflictFindingFunction calls ACTION_CONFLICTS.get(env)
-    env.values.put(
-        ArtifactConflictFinder.ACTION_CONFLICTS.getKey(), new PrecomputedValue(ImmutableMap.of()));
+        val env = TestEnvironment()
+        env.values.put(
+            ArtifactConflictFinder.ACTION_CONFLICTS.getKey(),
+            PrecomputedValue(com.google.common.collect.ImmutableMap.of<K?, V?>())
+        )
 
-    SkyValue result = function.compute(key, env);
-
-    assertThat(result).isNull();
-    assertThat(env.valuesMissing()).isTrue();
-    // No exception thrown means no bug report sent.
-  }
-
-  @Test
-  public void compute_missingValue_isRetrievalDisabled_bugReport() throws Exception {
-    RemoteAnalysisCacheReaderDepsProvider provider =
-        mock(RemoteAnalysisCacheReaderDepsProvider.class);
-    when(provider.mode()).thenReturn(RemoteAnalysisCacheMode.OFF);
-
-    ActionLookupConflictFindingFunction function =
-        new ActionLookupConflictFindingFunction(() -> provider);
-
-    ActionLookupKey lookupKey =
-        ConfiguredTargetKey.builder().setLabel(Label.parseCanonicalUnchecked("//bar:bar")).build();
-    SkyKey key = ActionLookupConflictFindingValue.key(lookupKey);
-
-    TestEnvironment env = new TestEnvironment();
-    env.values.put(
-        ArtifactConflictFinder.ACTION_CONFLICTS.getKey(), new PrecomputedValue(ImmutableMap.of()));
-
-    // BugReport.sendNonFatalBugReport throws IllegalStateException in tests.
-    var thrown = assertThrows(IllegalStateException.class, () -> function.compute(key, env));
-    assertThat(thrown)
-        .hasMessageThat()
-        .contains("Unexpected missing action lookup value during action conflict finding");
-  }
+        // BugReport.sendNonFatalBugReport throws IllegalStateException in tests.
+        val thrown: java.lang.IllegalStateException? = org.junit.Assert.assertThrows<java.lang.IllegalStateException?>(
+            java.lang.IllegalStateException::class.java,
+            org.junit.function.ThrowingRunnable { function.compute(key, env) })
+        Truth.assertThat(thrown)
+            .hasMessageThat()
+            .contains("Unexpected missing action lookup value during action conflict finding")
+    }
 }

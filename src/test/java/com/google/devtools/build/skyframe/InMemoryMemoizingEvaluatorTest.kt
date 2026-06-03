@@ -11,31 +11,31 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import com.google.common.collect.ImmutableMap;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.skyframe.MemoizingEvaluatorTest
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-/** Tests for {@link InMemoryMemoizingEvaluator}. */
-@RunWith(JUnit4.class)
-public final class InMemoryMemoizingEvaluatorTest extends MemoizingEvaluatorTest {
-
-  @Override
-  protected InMemoryMemoizingEvaluator getMemoizingEvaluator(
-      ImmutableMap<SkyFunctionName, SkyFunction> functions,
-      Differencer differencer,
-      EvaluationProgressReceiver progressReceiver,
-      GraphInconsistencyReceiver graphInconsistencyReceiver,
-      EventFilter eventFilter) {
-    return new InMemoryMemoizingEvaluator(
-        functions,
-        differencer,
-        progressReceiver,
-        graphInconsistencyReceiver,
-        eventFilter,
-        emittedEventState,
-        /* keepEdges= */ true,
-        /* usePooledInterning= */ true);
-  }
+/** Tests for [InMemoryMemoizingEvaluator].  */
+@RunWith(JUnit4::class)
+class InMemoryMemoizingEvaluatorTest : MemoizingEvaluatorTest() {
+    override fun getMemoizingEvaluator(
+        functions: com.google.common.collect.ImmutableMap<SkyFunctionName?, SkyFunction?>?,
+        differencer: Differencer?,
+        progressReceiver: EvaluationProgressReceiver?,
+        graphInconsistencyReceiver: GraphInconsistencyReceiver?,
+        eventFilter: EventFilter?
+    ): InMemoryMemoizingEvaluator {
+        return InMemoryMemoizingEvaluator(
+            functions,
+            differencer,
+            progressReceiver,
+            graphInconsistencyReceiver,
+            eventFilter,
+            emittedEventState,  /* keepEdges= */
+            true,  /* usePooledInterning= */
+            true
+        )
+    }
 }

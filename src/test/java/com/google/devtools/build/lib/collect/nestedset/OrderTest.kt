@@ -11,40 +11,41 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.collect.nestedset;
+package com.google.devtools.build.lib.collect.nestedset
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.common.truth.Truth
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
 /**
- * Tests for {@link com.google.devtools.build.lib.collect.nestedset.Order}.
+ * Tests for [com.google.devtools.build.lib.collect.nestedset.Order].
  */
-@RunWith(JUnit4.class)
-public class OrderTest {
-
-  @Test
-  public void testParsing() throws Exception {
-    for (Order current : Order.values()) {
-      assertThat(Order.parse(current.starlarkName)).isEqualTo(current);
+@RunWith(JUnit4::class)
+class OrderTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testParsing() {
+        for (current in Order.values()) {
+            assertThat(Order.parse(current.starlarkName)).isEqualTo(current)
+        }
     }
-  }
 
-  @Test
-  public void testForErrors() throws Exception {
-    causeError(null);
-    causeError("");
-    causeError("lol");
-    causeError("naive");
-    causeError("naivelink");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testForErrors() {
+        causeError(null)
+        causeError("")
+        causeError("lol")
+        causeError("naive")
+        causeError("naivelink")
+    }
 
-  private void causeError(String invalidName) throws Exception {
-    IllegalArgumentException ex =
-        assertThrows(IllegalArgumentException.class, () -> Order.parse(invalidName));
-    assertThat(ex).hasMessageThat().startsWith("Invalid order");
-  }
+    @Throws(java.lang.Exception::class)
+    private fun causeError(invalidName: String?) {
+        val ex: java.lang.IllegalArgumentException? =
+            org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+                java.lang.IllegalArgumentException::class.java,
+                org.junit.function.ThrowingRunnable { Order.parse(invalidName) })
+        Truth.assertThat(ex).hasMessageThat().startsWith("Invalid order")
+    }
 }

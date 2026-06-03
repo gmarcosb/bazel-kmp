@@ -11,56 +11,60 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static com.google.common.collect.Maps.immutableEntry;
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester
 
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import java.util.Map;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [ImmutableEntryCodec].  */
+@RunWith(JUnit4::class)
+class ImmutableEntryCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStringStringEntry_roundTripsSuccessfully() {
+        val original: MutableMap.MutableEntry<String?, String?> =
+            com.google.common.collect.Maps.immutableEntry<String?, String?>("foo", "bar")
+        SerializationTester(original)
+            .setVerificationFunction(
+                { `in`, out ->
+                    assertThat(out).isEqualTo(`in`)
+                    // Verify it's the same specific class type.
+                    assertThat(out.getClass()).isEqualTo(`in`.getClass())
+                })
+            .runTests()
+    }
 
-/** Tests for {@link ImmutableEntryCodec}. */
-@RunWith(JUnit4.class)
-public class ImmutableEntryCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun roundTripsSuccessfully() {
+        SerializationTester(
+            com.google.common.collect.Maps.immutableEntry<K?, V?>(123, "baz"),
+            com.google.common.collect.Maps.immutableEntry<K?, V?>(null, "value"),
+            com.google.common.collect.Maps.immutableEntry<K?, V?>("key", null),
+            com.google.common.collect.Maps.immutableEntry<K?, V?>(null, null)
+        )
+            .runTests()
+    }
 
-  @Test
-  public void testStringStringEntry_roundTripsSuccessfully() throws Exception {
-    Map.Entry<String, String> original = immutableEntry("foo", "bar");
-    new SerializationTester(original)
-        .setVerificationFunction(
-            (in, out) -> {
-              assertThat(out).isEqualTo(in);
-              // Verify it's the same specific class type.
-              assertThat(out.getClass()).isEqualTo(in.getClass());
-            })
-        .runTests();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNestedEntry_roundTripsSuccessfully() {
+        val original: MutableMap.MutableEntry<String?, MutableMap.MutableEntry<Int?, String?>?>?
+        TODO(
+            """
+            |Cannot convert element
+            |With text:
+            |String, Map.Entry<Integer, String>>immutableEntry("outer", <Integer, String>immutableEntry(1, "inner")
+            """.trimMargin()
+        )
 
-  @Test
-  public void roundTripsSuccessfully() throws Exception {
-    new SerializationTester(
-            immutableEntry(123, "baz"),
-            immutableEntry(null, "value"),
-            immutableEntry("key", null),
-            immutableEntry(null, null))
-        .runTests();
-  }
-
-  @Test
-  public void testNestedEntry_roundTripsSuccessfully() throws Exception {
-    Map.Entry<String, Map.Entry<Integer, String>> original =
-        immutableEntry("outer", immutableEntry(1, "inner"));
-    new SerializationTester(original)
-        .setVerificationFunction(
-            (in, out) -> {
-              assertThat(out).isEqualTo(in);
-              assertThat(out.getClass()).isEqualTo(in.getClass());
-              assertThat(((Map.Entry) out).getValue().getClass())
-                  .isEqualTo(((Map.Entry) in).getValue().getClass());
-            })
-        .runTests();
-  }
+        SerializationTester(original)
+            .setVerificationFunction(
+                { `in`, out ->
+                    assertThat(out).isEqualTo(`in`)
+                    assertThat(out.getClass()).isEqualTo(`in`.getClass())
+                    Truth.assertThat((out as MutableMap.MutableEntry<*, *>).getValue().getClass())
+                        .isEqualTo((`in` as MutableMap.MutableEntry<*, *>).getValue().getClass())
+                })
+            .runTests()
+    }
 }

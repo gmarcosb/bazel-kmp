@@ -11,113 +11,117 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.supplier;
+package com.google.devtools.build.lib.supplier
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.common.testing.GcFinalization
+import com.google.common.truth.Truth
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.lang.ref.WeakReference
 
-import com.google.common.testing.GcFinalization;
-import java.lang.ref.WeakReference;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [MemoizingInterruptibleSupplier].  */
+@RunWith(JUnit4::class)
+class MemoizingInterruptibleSupplierTest {
+    private var callCount = 0
+    private var returnVal = ""
+    private var callCounter: CallCounter? = MemoizingInterruptibleSupplierTest.CallCounter()
 
-/** Tests for {@link MemoizingInterruptibleSupplier}. */
-@RunWith(JUnit4.class)
-public final class MemoizingInterruptibleSupplierTest {
-
-  private int callCount = 0;
-  private String returnVal = "";
-  private CallCounter callCounter = new CallCounter();
-
-  private final class CallCounter {
-    public String call() {
-      ++callCount;
-      return returnVal;
+    private inner class CallCounter {
+        fun call(): String {
+            ++callCount
+            return returnVal
+        }
     }
-  }
 
-  @Test
-  public void getReturnsCorrectResult() throws Exception {
-    MemoizingInterruptibleSupplier<String> supplier =
-        MemoizingInterruptibleSupplier.of(callCounter::call);
-    returnVal = "abc";
+    @Test
+    @Throws(Exception::class)
+    fun getReturnsCorrectResult() {
+        val supplier =
+            MemoizingInterruptibleSupplier.of({ callCounter!!.call() })
+        returnVal = "abc"
 
-    String result = supplier.get();
+        val result = supplier.get()
 
-    assertThat(result).isEqualTo("abc");
-  }
+        Truth.assertThat(result).isEqualTo("abc")
+    }
 
-  @Test
-  public void subsequentCallToGetReturnsCorrectResult() throws Exception {
-    MemoizingInterruptibleSupplier<String> supplier =
-        MemoizingInterruptibleSupplier.of(callCounter::call);
-    returnVal = "abc";
+    @Test
+    @Throws(Exception::class)
+    fun subsequentCallToGetReturnsCorrectResult() {
+        val supplier =
+            MemoizingInterruptibleSupplier.of({ callCounter!!.call() })
+        returnVal = "abc"
 
-    supplier.get();
-    String result = supplier.get();
+        supplier.get()
+        val result = supplier.get()
 
-    assertThat(result).isEqualTo("abc");
-  }
+        Truth.assertThat(result).isEqualTo("abc")
+    }
 
-  @Test
-  public void onlyCallsDelegateOnce() throws Exception {
-    MemoizingInterruptibleSupplier<String> supplier =
-        MemoizingInterruptibleSupplier.of(callCounter::call);
+    @Test
+    @Throws(Exception::class)
+    fun onlyCallsDelegateOnce() {
+        val supplier =
+            MemoizingInterruptibleSupplier.of({ callCounter!!.call() })
 
-    supplier.get();
-    supplier.get();
+        supplier.get()
+        supplier.get()
 
-    assertThat(callCount).isEqualTo(1);
-  }
+        Truth.assertThat(callCount).isEqualTo(1)
+    }
 
-  @Test
-  public void freesReferenceToDelegeteAfterGet() throws Exception {
-    MemoizingInterruptibleSupplier<String> supplier =
-        MemoizingInterruptibleSupplier.of(callCounter::call);
-    WeakReference<Object> ref = new WeakReference<>(callCounter);
-    callCounter = null;
+    @Test
+    @Throws(Exception::class)
+    fun freesReferenceToDelegeteAfterGet() {
+        val supplier =
+            MemoizingInterruptibleSupplier.of({ callCounter!!.call() })
+        val ref = WeakReference<Any?>(callCounter)
+        callCounter = null
 
-    supplier.get();
+        supplier.get()
 
-    GcFinalization.awaitClear(ref);
-  }
+        GcFinalization.awaitClear(ref)
+    }
 
-  @Test
-  public void notInitializedBeforeCallingGet() {
-    MemoizingInterruptibleSupplier<String> supplier =
-        MemoizingInterruptibleSupplier.of(callCounter::call);
+    @Test
+    fun notInitializedBeforeCallingGet() {
+        val supplier =
+            MemoizingInterruptibleSupplier.of({ callCounter!!.call() })
 
-    boolean initialized = supplier.isInitialized;
+        val initialized = supplier.isInitialized
 
-    assertThat(initialized).isFalse();
-  }
+        Truth.assertThat(initialized).isFalse()
+    }
 
-  @Test
-  public void isInitializedAfterCallingGet() throws Exception {
-    MemoizingInterruptibleSupplier<String> supplier =
-        MemoizingInterruptibleSupplier.of(callCounter::call);
+    @Test
+    @Throws(Exception::class)
+    fun isInitializedAfterCallingGet() {
+        val supplier =
+            MemoizingInterruptibleSupplier.of({ callCounter!!.call() })
 
-    supplier.get();
-    boolean initialized = supplier.isInitialized;
+        supplier.get()
+        val initialized = supplier.isInitialized
 
-    assertThat(initialized).isTrue();
-  }
+        Truth.assertThat(initialized).isTrue()
+    }
 
-  @Test
-  public void isStillInitializedAfterSubsequentCallToGet() throws Exception {
-    MemoizingInterruptibleSupplier<String> supplier =
-        MemoizingInterruptibleSupplier.of(callCounter::call);
+    @Test
+    @Throws(Exception::class)
+    fun isStillInitializedAfterSubsequentCallToGet() {
+        val supplier =
+            MemoizingInterruptibleSupplier.of({ callCounter!!.call() })
 
-    supplier.get();
-    supplier.get();
-    boolean initialized = supplier.isInitialized;
+        supplier.get()
+        supplier.get()
+        val initialized = supplier.isInitialized
 
-    assertThat(initialized).isTrue();
-  }
+        Truth.assertThat(initialized).isTrue()
+    }
 
-  @Test
-  public void of_returnsSameInstanceIfAlreadyMemoizing() {
-    InterruptibleSupplier<String> supplier = MemoizingInterruptibleSupplier.of(callCounter::call);
-    assertThat(MemoizingInterruptibleSupplier.of(supplier)).isSameInstanceAs(supplier);
-  }
+    @Test
+    fun of_returnsSameInstanceIfAlreadyMemoizing() {
+        val supplier: InterruptibleSupplier<String?>? = MemoizingInterruptibleSupplier.of({ callCounter!!.call() })
+        assertThat(MemoizingInterruptibleSupplier.of(supplier)).isSameInstanceAs(supplier)
+    }
 }

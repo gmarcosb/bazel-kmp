@@ -11,86 +11,73 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.Sets;
-import com.google.devtools.build.skyframe.NodeEntry.DirtyType;
-import java.util.Set;
-import java.util.concurrent.atomic.AtomicReference;
-import javax.annotation.Nullable;
+import com.google.devtools.build.skyframe.NodeEntry.DirtyType
 
-/** A testing utility to keep track of evaluation. */
-public class TrackingProgressReceiver implements EvaluationProgressReceiver {
-  private final boolean checkEvaluationResults;
+/** A testing utility to keep track of evaluation.  */
+class TrackingProgressReceiver(private val checkEvaluationResults: Boolean) : EvaluationProgressReceiver {
+    /**
+     * Callback to be executed on a next [.dirtied] or [.deleted] call. It will be
+     * run once and is expected to be run if set.
+     */
+    private val nextInvalidationCallback: AtomicReference<java.lang.Runnable?> = AtomicReference<java.lang.Runnable?>()
 
-  /**
-   * Callback to be executed on a next {@link #dirtied} or {@link #deleted(SkyKey)} call. It will be
-   * run once and is expected to be run if set.
-   */
-  private final AtomicReference<Runnable> nextInvalidationCallback = new AtomicReference<>();
+    val dirty: MutableSet<SkyKey?> = com.google.common.collect.Sets.newConcurrentHashSet<SkyKey?>()
+    val deleted: MutableSet<SkyKey?> = com.google.common.collect.Sets.newConcurrentHashSet<SkyKey?>()
+    val enqueued: MutableSet<SkyKey?> = com.google.common.collect.Sets.newConcurrentHashSet<SkyKey?>()
+    val evaluated: MutableSet<SkyKey?> = com.google.common.collect.Sets.newConcurrentHashSet<SkyKey?>()
 
-  public final Set<SkyKey> dirty = Sets.newConcurrentHashSet();
-  public final Set<SkyKey> deleted = Sets.newConcurrentHashSet();
-  public final Set<SkyKey> enqueued = Sets.newConcurrentHashSet();
-  public final Set<SkyKey> evaluated = Sets.newConcurrentHashSet();
-
-  public TrackingProgressReceiver(boolean checkEvaluationResults) {
-    this.checkEvaluationResults = checkEvaluationResults;
-  }
-
-  @Override
-  public void dirtied(SkyKey skyKey, DirtyType dirtyType) {
-    runInvalidationCallbackIfPresent();
-    dirty.add(skyKey);
-    Preconditions.checkState(!deleted.contains(skyKey), skyKey);
-  }
-
-  @Override
-  public void deleted(SkyKey skyKey) {
-    runInvalidationCallbackIfPresent();
-    dirty.remove(skyKey);
-    deleted.add(skyKey);
-  }
-
-  private void runInvalidationCallbackIfPresent() {
-    Runnable callback = nextInvalidationCallback.getAndSet(null);
-    if (callback != null) {
-      callback.run();
+    public override fun dirtied(skyKey: SkyKey?, dirtyType: DirtyType?) {
+        runInvalidationCallbackIfPresent()
+        dirty.add(skyKey)
+        com.google.common.base.Preconditions.checkState(!deleted.contains(skyKey), skyKey)
     }
-  }
 
-  @Override
-  public void enqueueing(SkyKey skyKey) {
-    enqueued.add(skyKey);
-  }
-
-  @Override
-  public void evaluated(
-      SkyKey skyKey,
-      EvaluationState state,
-      @Nullable SkyValue value,
-      @Nullable ErrorInfo error,
-      @Nullable GroupedDeps directDeps) {
-    evaluated.add(skyKey);
-    if (checkEvaluationResults && state.succeeded()) {
-      deleted.remove(skyKey);
-      if (!state.versionChanged()) {
-        dirty.remove(skyKey);
-      }
+    public override fun deleted(skyKey: SkyKey?) {
+        runInvalidationCallbackIfPresent()
+        dirty.remove(skyKey)
+        deleted.add(skyKey)
     }
-  }
 
-  public void clear() {
-    dirty.clear();
-    deleted.clear();
-    enqueued.clear();
-    evaluated.clear();
-  }
+    private fun runInvalidationCallbackIfPresent() {
+        val callback: java.lang.Runnable? = nextInvalidationCallback.getAndSet(null)
+        if (callback != null) {
+            callback.run()
+        }
+    }
 
-  void setNextInvalidationCallback(Runnable runnable) {
-    Runnable oldCallback = nextInvalidationCallback.getAndSet(runnable);
-    Preconditions.checkState(
-        oldCallback == null, "Overwriting a left-over callback: %s", oldCallback);
-  }
+    public override fun enqueueing(skyKey: SkyKey?) {
+        enqueued.add(skyKey)
+    }
+
+    public override fun evaluated(
+        skyKey: SkyKey?,
+        state: EvaluationState,
+        value: SkyValue?,
+        error: ErrorInfo?,
+        directDeps: GroupedDeps?
+    ) {
+        evaluated.add(skyKey)
+        if (checkEvaluationResults && state.succeeded()) {
+            deleted.remove(skyKey)
+            if (!state.versionChanged()) {
+                dirty.remove(skyKey)
+            }
+        }
+    }
+
+    fun clear() {
+        dirty.clear()
+        deleted.clear()
+        enqueued.clear()
+        evaluated.clear()
+    }
+
+    fun setNextInvalidationCallback(runnable: java.lang.Runnable?) {
+        val oldCallback: java.lang.Runnable? = nextInvalidationCallback.getAndSet(runnable)
+        com.google.common.base.Preconditions.checkState(
+            oldCallback == null, "Overwriting a left-over callback: %s", oldCallback
+        )
+    }
 }

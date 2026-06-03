@@ -11,143 +11,148 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.Iterables;
-import java.util.Collection;
-import java.util.Comparator;
-import java.util.Map;
-import java.util.Set;
-import java.util.TreeMap;
-import java.util.TreeSet;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.exec.util.FakeActionInputFileCache.put
+import com.google.devtools.build.lib.exec.util.SpawnBuilder.build
+import com.google.devtools.build.skyframe.DeterministicInMemoryGraph
+import com.google.devtools.build.skyframe.NotifyingHelper
+import com.google.devtools.build.skyframe.NotifyingHelper.NotifyingNodeEntry
+import com.google.devtools.build.skyframe.NotifyingHelper.NotifyingProcessableGraph
+import com.google.devtools.common.options.testing.ConverterTesterMap.Builder.addAll
+import com.google.devtools.common.options.testing.ConverterTesterMap.Builder.build
+import net.starlark.java.syntax.FileOptions.Builder.build
+import java.util.TreeMap
+import java.util.TreeSet
 
 /**
- * {@link NotifyingHelper} that returns reverse deps, temporary direct deps, and the results of
+ * [NotifyingHelper] that returns reverse deps, temporary direct deps, and the results of
  * batch requests ordered alphabetically by sky key string representation.
  */
-public final class DeterministicHelper extends NotifyingHelper {
-  public static final MemoizingEvaluator.GraphTransformerForTesting MAKE_DETERMINISTIC =
-      makeTransformer(Listener.NULL_LISTENER, /*deterministic=*/ true);
+class DeterministicHelper private constructor(listener: com.google.devtools.build.skyframe.NotifyingHelper.Listener?) :
+    NotifyingHelper(listener) {
+    override fun wrapEntry(key: SkyKey?, entry: NodeEntry?): DeterministicNodeEntry? {
+        return if (entry == null) null else DeterministicNodeEntry(key, entry)
+    }
 
-  public static MemoizingEvaluator.GraphTransformerForTesting makeTransformer(
-      Listener listener, boolean deterministic) {
-    if (deterministic) {
-      return new MemoizingEvaluator.GraphTransformerForTesting() {
-        @Override
-        public InMemoryGraph transform(InMemoryGraph graph) {
-          return new DeterministicInMemoryGraph(graph, listener);
+    internal open class DeterministicProcessableGraph(
+        delegate: ProcessableGraph?,
+        graphListener: com.google.devtools.build.skyframe.NotifyingHelper.Listener?
+    ) : NotifyingProcessableGraph(delegate, DeterministicHelper(graphListener)) {
+        constructor(delegate: ProcessableGraph?) : this(
+            delegate,
+            com.google.devtools.build.skyframe.NotifyingHelper.Listener.Companion.NULL_LISTENER
+        )
+
+        @Throws(java.lang.InterruptedException::class)
+        override fun getBatch(
+            requestor: SkyKey?, reason: Reason?, keys: Iterable<out SkyKey?>
+        ): NodeBatch? {
+            val batch: NodeBatch = super.getBatch(requestor, reason, keys)
+            val result: TreeMap<SkyKey?, NodeEntry?> = TreeMap<SkyKey?, NodeEntry?>(ALPHABETICAL_SKYKEY_COMPARATOR)
+            for (key in keys) {
+                val entry: NodeEntry? = batch.get(key)
+                if (entry != null) {
+                    result.put(key, entry)
+                }
+            }
+            return result::get
         }
 
-        @Override
-        public ProcessableGraph transform(ProcessableGraph graph) {
-          return new DeterministicProcessableGraph(graph, listener);
+        @Throws(java.lang.InterruptedException::class)
+        override fun getBatchMap(
+            requestor: SkyKey?, reason: Reason?, keys: Iterable<out SkyKey?>
+        ): MutableMap<SkyKey?, out NodeEntry?> {
+            return makeDeterministic(super.getBatchMap(requestor, reason, keys))
         }
-      };
-    } else {
-      return NotifyingHelper.makeNotifyingTransformer(listener);
-    }
-  }
-
-  /** Compare using SkyKey argument first, so that tests can easily order keys. */
-  private static final Comparator<SkyKey> ALPHABETICAL_SKYKEY_COMPARATOR =
-      Comparator.<SkyKey, String>comparing(key -> key.argument().toString())
-          .thenComparing(key -> key.functionName().toString());
-
-  private DeterministicHelper(Listener listener) {
-    super(listener);
-  }
-
-  @Nullable
-  @Override
-  DeterministicNodeEntry wrapEntry(SkyKey key, @Nullable NodeEntry entry) {
-    return entry == null ? null : new DeterministicNodeEntry(key, entry);
-  }
-
-  private static Map<SkyKey, ? extends NodeEntry> makeDeterministic(
-      Map<SkyKey, ? extends NodeEntry> map) {
-    Map<SkyKey, NodeEntry> result = new TreeMap<>(ALPHABETICAL_SKYKEY_COMPARATOR);
-    result.putAll(map);
-    Preconditions.checkState(
-        map.size() == result.size(),
-        "Different sky keys with identical toString results! Before=%s After=%s",
-        result,
-        map);
-    return result;
-  }
-
-  static class DeterministicProcessableGraph extends NotifyingProcessableGraph {
-    DeterministicProcessableGraph(ProcessableGraph delegate, Listener graphListener) {
-      super(delegate, new DeterministicHelper(graphListener));
     }
 
-    DeterministicProcessableGraph(ProcessableGraph delegate) {
-      this(delegate, Listener.NULL_LISTENER);
-    }
+    /**
+     * This class uses TreeSet to store reverse dependencies of NodeEntry. As a result all values are
+     * lexicographically sorted.
+     */
+    private inner class DeterministicNodeEntry(myKey: SkyKey?, delegate: NodeEntry?) :
+        NotifyingNodeEntry(myKey, delegate) {
+        @get:Throws(java.lang.InterruptedException::class)
+        @get:kotlin.jvm.Synchronized
+        val reverseDepsForDoneEntry: MutableCollection<SkyKey>
+            get() {
+                val result: TreeSet<SkyKey?> =
+                    TreeSet<SkyKey?>(ALPHABETICAL_SKYKEY_COMPARATOR)
+                com.google.common.collect.Iterables.addAll<T?>(result, super.getReverseDepsForDoneEntry())
+                return result
+            }
 
-    @Override
-    public NodeBatch getBatch(
-        @Nullable SkyKey requestor, Reason reason, Iterable<? extends SkyKey> keys)
-        throws InterruptedException {
-      NodeBatch batch = super.getBatch(requestor, reason, keys);
-      var result = new TreeMap<SkyKey, NodeEntry>(ALPHABETICAL_SKYKEY_COMPARATOR);
-      for (SkyKey key : keys) {
-        NodeEntry entry = batch.get(key);
-        if (entry != null) {
-          result.put(key, entry);
+        @get:kotlin.jvm.Synchronized
+        val inProgressReverseDeps: MutableSet<SkyKey>
+            get() {
+                val result: TreeSet<SkyKey?> =
+                    TreeSet<SkyKey?>(ALPHABETICAL_SKYKEY_COMPARATOR)
+                result.addAll(super.getInProgressReverseDeps())
+                return result
+            }
+
+        @Throws(java.lang.InterruptedException::class)
+        override fun setValue(
+            value: SkyValue?, graphVersion: Version?, maxTransitiveSourceVersion: Version?
+        ): MutableSet<SkyKey?> {
+            val result: TreeSet<SkyKey?> = TreeSet<SkyKey?>(ALPHABETICAL_SKYKEY_COMPARATOR)
+            result.addAll(super.setValue(value, graphVersion, maxTransitiveSourceVersion))
+            return result
         }
-      }
-      return result::get;
+
+        @Throws(java.lang.InterruptedException::class)
+        override fun markClean(): NodeValueAndRdepsToSignal {
+            val result: TreeSet<SkyKey?> = TreeSet<SkyKey?>(ALPHABETICAL_SKYKEY_COMPARATOR)
+            val nodeValueAndRdepsToSignal: NodeValueAndRdepsToSignal = super.markClean()
+            result.addAll(nodeValueAndRdepsToSignal.getRdepsToSignal())
+            return NodeValueAndRdepsToSignal(nodeValueAndRdepsToSignal.getValue(), result)
+        }
     }
 
-    @Override
-    public Map<SkyKey, ? extends NodeEntry> getBatchMap(
-        @Nullable SkyKey requestor, Reason reason, Iterable<? extends SkyKey> keys)
-        throws InterruptedException {
-      return makeDeterministic(super.getBatchMap(requestor, reason, keys));
-    }
-  }
+    companion object {
+        val MAKE_DETERMINISTIC: MemoizingEvaluator.GraphTransformerForTesting = makeTransformer(
+            com.google.devtools.build.skyframe.NotifyingHelper.Listener.Companion.NULL_LISTENER,  /*deterministic=*/
+            true
+        )
 
-  /**
-   * This class uses TreeSet to store reverse dependencies of NodeEntry. As a result all values are
-   * lexicographically sorted.
-   */
-  private class DeterministicNodeEntry extends NotifyingNodeEntry {
-    private DeterministicNodeEntry(SkyKey myKey, NodeEntry delegate) {
-      super(myKey, delegate);
-    }
+        fun makeTransformer(
+            listener: com.google.devtools.build.skyframe.NotifyingHelper.Listener?, deterministic: Boolean
+        ): MemoizingEvaluator.GraphTransformerForTesting {
+            if (deterministic) {
+                return object : GraphTransformerForTesting() {
+                    public override fun transform(graph: InMemoryGraph?): InMemoryGraph? {
+                        return DeterministicInMemoryGraph(graph, listener)
+                    }
 
-    @Override
-    public synchronized Collection<SkyKey> getReverseDepsForDoneEntry()
-        throws InterruptedException {
-      TreeSet<SkyKey> result = new TreeSet<>(ALPHABETICAL_SKYKEY_COMPARATOR);
-      Iterables.addAll(result, super.getReverseDepsForDoneEntry());
-      return result;
-    }
+                    public override fun transform(graph: ProcessableGraph?): ProcessableGraph? {
+                        return DeterministicProcessableGraph(graph, listener)
+                    }
+                }
+            } else {
+                return NotifyingHelper.Companion.makeNotifyingTransformer(listener)
+            }
+        }
 
-    @Override
-    public synchronized Set<SkyKey> getInProgressReverseDeps() {
-      TreeSet<SkyKey> result = new TreeSet<>(ALPHABETICAL_SKYKEY_COMPARATOR);
-      result.addAll(super.getInProgressReverseDeps());
-      return result;
-    }
+        /** Compare using SkyKey argument first, so that tests can easily order keys.  */
+        private val ALPHABETICAL_SKYKEY_COMPARATOR: java.util.Comparator<SkyKey?>? =
+            java.util.Comparator.comparing<SkyKey?, String?>(java.util.function.Function { key: SkyKey? ->
+                key.argument().toString()
+            })
+                .thenComparing<Any?>(java.util.function.Function { key: SkyKey? -> key.functionName().toString() })
 
-    @Override
-    public Set<SkyKey> setValue(
-        SkyValue value, Version graphVersion, @Nullable Version maxTransitiveSourceVersion)
-        throws InterruptedException {
-      TreeSet<SkyKey> result = new TreeSet<>(ALPHABETICAL_SKYKEY_COMPARATOR);
-      result.addAll(super.setValue(value, graphVersion, maxTransitiveSourceVersion));
-      return result;
+        private fun makeDeterministic(
+            map: MutableMap<SkyKey?, out NodeEntry?>
+        ): MutableMap<SkyKey?, out NodeEntry?> {
+            val result: MutableMap<SkyKey?, NodeEntry?> = TreeMap<SkyKey?, NodeEntry?>(ALPHABETICAL_SKYKEY_COMPARATOR)
+            result.putAll(map)
+            com.google.common.base.Preconditions.checkState(
+                map.size == result.size,
+                "Different sky keys with identical toString results! Before=%s After=%s",
+                result,
+                map
+            )
+            return result
+        }
     }
-
-    @Override
-    public NodeValueAndRdepsToSignal markClean() throws InterruptedException {
-      TreeSet<SkyKey> result = new TreeSet<>(ALPHABETICAL_SKYKEY_COMPARATOR);
-      NodeValueAndRdepsToSignal nodeValueAndRdepsToSignal = super.markClean();
-      result.addAll(nodeValueAndRdepsToSignal.getRdepsToSignal());
-      return new NodeValueAndRdepsToSignal(nodeValueAndRdepsToSignal.getValue(), result);
-    }
-  }
 }

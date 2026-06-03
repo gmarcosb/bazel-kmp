@@ -11,33 +11,33 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import java.lang.reflect.Method;
-import java.util.List;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link MethodCodec}. */
-@RunWith(JUnit4.class)
-public class MethodCodecTest {
-  @Test
-  public void smoke() throws Exception {
-    var methods = new ImmutableList.Builder<Method>();
-    getMethods(String.class, methods);
-    getMethods(List.class, methods);
-    new SerializationTester(methods.build()).runTests();
-  }
-
-  private static void getMethods(Class<?> clazz, ImmutableList.Builder<Method> out)
-      throws NoSuchMethodException {
-    for (var method : clazz.getMethods()) {
-      Class<?> declaringClass = method.getDeclaringClass();
-      out.add(declaringClass.getDeclaredMethod(method.getName(), method.getParameterTypes()));
+/** Tests for [MethodCodec].  */
+@RunWith(JUnit4::class)
+class MethodCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun smoke() {
+        val methods: com.google.common.collect.ImmutableList.Builder<java.lang.reflect.Method?> =
+            com.google.common.collect.ImmutableList.Builder<java.lang.reflect.Method?>()
+        getMethods(String::class.java, methods)
+        getMethods(MutableList::class.java, methods)
+        SerializationTester(methods.build()).runTests()
     }
-  }
+
+    companion object {
+        @Throws(java.lang.NoSuchMethodException::class)
+        private fun getMethods(
+            clazz: java.lang.Class<*>,
+            out: com.google.common.collect.ImmutableList.Builder<java.lang.reflect.Method?>
+        ) {
+            for (method in clazz.getMethods()) {
+                val declaringClass: java.lang.Class<*> = method.getDeclaringClass()
+                out.add(declaringClass.getDeclaredMethod(method.getName(), *method.getParameterTypes()))
+            }
+        }
+    }
 }

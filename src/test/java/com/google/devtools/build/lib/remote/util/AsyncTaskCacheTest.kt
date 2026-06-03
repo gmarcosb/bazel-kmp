@@ -11,472 +11,509 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.util;
+package com.google.devtools.build.lib.remote.util
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.graph.Digraph.equals
+import com.google.devtools.build.lib.query2.engine.QueryEnvironment.functions
+import com.google.devtools.build.lib.remote.grpc.ConnectionFactory.create
+import com.google.devtools.build.lib.remote.grpc.DynamicConnectionPool.create
+import com.google.devtools.build.lib.remote.grpc.SharedConnectionFactory.create
+import com.google.devtools.build.lib.remote.util.RxNoGlobalErrorsRule
+import io.reactivex.rxjava3.core.Completable
+import io.reactivex.rxjava3.core.Single
+import io.reactivex.rxjava3.core.SingleEmitter
+import io.reactivex.rxjava3.core.SingleOnSubscribe
+import io.reactivex.rxjava3.observers.TestObserver
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.io.IOException
+import java.util.Random
+import java.util.concurrent.CancellationException
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.Semaphore
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
-import com.google.common.util.concurrent.SettableFuture;
-import io.reactivex.rxjava3.core.Completable;
-import io.reactivex.rxjava3.core.Single;
-import io.reactivex.rxjava3.core.SingleEmitter;
-import io.reactivex.rxjava3.observers.TestObserver;
-import java.io.IOException;
-import java.util.Random;
-import java.util.concurrent.CancellationException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.Semaphore;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [AsyncTaskCache].  */
+@RunWith(JUnit4::class)
+class AsyncTaskCacheTest {
+    @org.junit.Rule
+    val rxNoGlobalErrorsRule: RxNoGlobalErrorsRule = RxNoGlobalErrorsRule()
 
-/** Tests for {@link AsyncTaskCache}. */
-@RunWith(JUnit4.class)
-public class AsyncTaskCacheTest {
+    @org.junit.Test
+    fun execute_noSubscription_noExecution() {
+        val cache: AsyncTaskCache<String?, String?> = AsyncTaskCache.create()
+        val executed: AtomicBoolean = AtomicBoolean(false)
 
-  @Rule public final RxNoGlobalErrorsRule rxNoGlobalErrorsRule = new RxNoGlobalErrorsRule();
-
-  @Test
-  public void execute_noSubscription_noExecution() {
-    AsyncTaskCache<String, String> cache = AsyncTaskCache.create();
-    AtomicBoolean executed = new AtomicBoolean(false);
-
-    cache.executeIfNot(
-        "key1",
-        Single.create(
-            emitter -> {
-              executed.set(true);
-              emitter.onSuccess("value1");
-            }));
-
-    assertThat(executed.get()).isFalse();
-    assertThat(cache.getInProgressTasks()).isEmpty();
-    assertThat(cache.getFinishedTasks()).isEmpty();
-  }
-
-  @Test
-  public void execute_taskFinished_completed() {
-    AsyncTaskCache<String, String> cache = AsyncTaskCache.create();
-    AtomicReference<SingleEmitter<String>> emitterRef = new AtomicReference<>(null);
-    TestObserver<String> observer =
-        cache.executeIfNot("key1", Single.create(emitterRef::set)).test();
-    SingleEmitter<String> emitter = emitterRef.get();
-    assertThat(emitter).isNotNull();
-
-    emitter.onSuccess("value1");
-
-    observer.assertValue("value1");
-    assertThat(cache.getInProgressTasks()).isEmpty();
-    assertThat(cache.getFinishedTasks()).containsExactly("key1");
-  }
-
-  @Test
-  public void execute_taskHasError_propagateError() {
-    AsyncTaskCache<String, String> cache = AsyncTaskCache.create();
-    AtomicReference<SingleEmitter<String>> emitterRef = new AtomicReference<>(null);
-    TestObserver<String> observer =
-        cache.executeIfNot("key1", Single.create(emitterRef::set)).test();
-    SingleEmitter<String> emitter = emitterRef.get();
-    assertThat(emitter).isNotNull();
-    Throwable error = new IllegalStateException("error");
-
-    emitter.onError(error);
-
-    observer.assertError(error);
-    assertThat(cache.getInProgressTasks()).isEmpty();
-    assertThat(cache.getFinishedTasks()).isEmpty();
-  }
-
-  @Test
-  public void execute_taskInProgress_noReExecution() {
-    AsyncTaskCache<String, String> cache = AsyncTaskCache.create();
-    AtomicReference<SingleEmitter<String>> emitterRef = new AtomicReference<>(null);
-    AtomicInteger executionTimes = new AtomicInteger(0);
-    Single<String> single =
         cache.executeIfNot(
             "key1",
-            Single.create(
-                emitter -> {
-                  executionTimes.incrementAndGet();
-                  emitterRef.set(emitter);
-                }));
-    TestObserver<String> ob1 = single.test();
-    ob1.assertEmpty();
-    SingleEmitter<String> emitter = emitterRef.get();
-    assertThat(emitter).isNotNull();
-    assertThat(cache.getInProgressTasks()).containsExactly("key1");
-    assertThat(cache.getFinishedTasks()).isEmpty();
+            Single.create<T?>(
+                SingleOnSubscribe { emitter: SingleEmitter<T?>? ->
+                    executed.set(true)
+                    emitter.onSuccess("value1")
+                })
+        )
 
-    TestObserver<String> ob2 = single.test();
-    ob2.assertEmpty();
-    emitter.onSuccess("value1");
-
-    ob1.assertValue("value1");
-    ob2.assertValue("value1");
-    assertThat(executionTimes.get()).isEqualTo(1);
-    assertThat(cache.getInProgressTasks()).isEmpty();
-    assertThat(cache.getFinishedTasks()).containsExactly("key1");
-  }
-
-  @Test
-  public void executeForcibly_taskInProgress_noReExecution() {
-    AsyncTaskCache<String, String> cache = AsyncTaskCache.create();
-    AtomicReference<SingleEmitter<String>> emitterRef = new AtomicReference<>(null);
-    AtomicInteger executionTimes = new AtomicInteger(0);
-    Single<String> single =
-        cache.execute(
-            "key1",
-            Single.create(
-                emitter -> {
-                  executionTimes.incrementAndGet();
-                  emitterRef.set(emitter);
-                }),
-            /* force= */ true);
-    TestObserver<String> ob1 = single.test();
-    ob1.assertEmpty();
-    SingleEmitter<String> emitter = emitterRef.get();
-    assertThat(emitter).isNotNull();
-    assertThat(cache.getInProgressTasks()).containsExactly("key1");
-    assertThat(cache.getFinishedTasks()).isEmpty();
-
-    TestObserver<String> ob2 = single.test();
-    ob2.assertEmpty();
-    emitter.onSuccess("value1");
-
-    ob1.assertValue("value1");
-    ob2.assertValue("value1");
-    assertThat(executionTimes.get()).isEqualTo(1);
-    assertThat(cache.getInProgressTasks()).isEmpty();
-    assertThat(cache.getFinishedTasks()).containsExactly("key1");
-  }
-
-  @Test
-  public void execute_taskFinished_noReExecution() {
-    AsyncTaskCache<String, String> cache = AsyncTaskCache.create();
-    AtomicReference<SingleEmitter<String>> emitterRef = new AtomicReference<>(null);
-    AtomicInteger executionTimes = new AtomicInteger(0);
-    Single<String> single =
-        cache.executeIfNot(
-            "key1",
-            Single.create(
-                emitter -> {
-                  executionTimes.incrementAndGet();
-                  emitterRef.set(emitter);
-                }));
-    TestObserver<String> ob1 = single.test();
-    SingleEmitter<String> emitter = emitterRef.get();
-    assertThat(emitter).isNotNull();
-    emitter.onSuccess("value1");
-    ob1.assertValue("value1");
-    assertThat(cache.getFinishedTasks()).containsExactly("key1");
-
-    TestObserver<String> ob2 = single.test();
-
-    ob2.assertValue("value1");
-    assertThat(executionTimes.get()).isEqualTo(1);
-  }
-
-  @Test
-  public void executeForcibly_taskFinished_reExecution() {
-    AsyncTaskCache<String, String> cache = AsyncTaskCache.create();
-    AtomicReference<SingleEmitter<String>> emitterRef = new AtomicReference<>(null);
-    AtomicInteger executionTimes = new AtomicInteger(0);
-    Single<String> single =
-        cache.execute(
-            "key1",
-            Single.create(
-                emitter -> {
-                  executionTimes.incrementAndGet();
-                  emitterRef.set(emitter);
-                }),
-            /* force= */ true);
-    TestObserver<String> ob1 = single.test();
-    SingleEmitter<String> emitter = emitterRef.get();
-    assertThat(emitter).isNotNull();
-    emitter.onSuccess("value1");
-    ob1.assertValue("value1");
-    assertThat(cache.getFinishedTasks()).containsExactly("key1");
-
-    TestObserver<String> ob2 = single.test();
-
-    ob2.assertEmpty();
-    assertThat(executionTimes.get()).isEqualTo(2);
-    assertThat(cache.getInProgressTasks()).containsExactly("key1");
-    assertThat(cache.getFinishedTasks()).isEmpty();
-  }
-
-  @Test
-  public void execute_dispose_cancelled() {
-    AsyncTaskCache<String, String> cache = AsyncTaskCache.create();
-    AtomicReference<SingleEmitter<String>> emitterRef = new AtomicReference<>(null);
-    TestObserver<String> observer =
-        cache.executeIfNot("key1", Single.create(emitterRef::set)).test();
-    SingleEmitter<String> emitter = emitterRef.get();
-    assertThat(emitter).isNotNull();
-    AtomicBoolean disposed = new AtomicBoolean(false);
-    emitter.setCancellable(() -> disposed.set(true));
-
-    observer.dispose();
-
-    assertThat(disposed.get()).isTrue();
-    assertThat(cache.getInProgressTasks()).isEmpty();
-    assertThat(cache.getFinishedTasks()).isEmpty();
-  }
-
-  @Test
-  public void execute_disposeWhenMultipleSubscriptions_notCancelled() {
-    AsyncTaskCache<String, String> cache = AsyncTaskCache.create();
-    AtomicReference<SingleEmitter<String>> emitterRef = new AtomicReference<>(null);
-    Single<String> single = cache.executeIfNot("key1", Single.create(emitterRef::set));
-    TestObserver<String> ob1 = single.test();
-    TestObserver<String> ob2 = single.test();
-    SingleEmitter<String> emitter = emitterRef.get();
-    assertThat(emitter).isNotNull();
-    AtomicBoolean disposed = new AtomicBoolean(false);
-    emitter.setCancellable(() -> disposed.set(true));
-
-    ob1.dispose();
-
-    ob2.assertEmpty();
-    assertThat(disposed.get()).isFalse();
-    assertThat(cache.getInProgressTasks()).containsExactly("key1");
-    assertThat(cache.getFinishedTasks()).isEmpty();
-  }
-
-  @Test
-  public void execute_disposeWhenMultipleSubscriptions_cancelled() {
-    AsyncTaskCache<String, String> cache = AsyncTaskCache.create();
-    AtomicReference<SingleEmitter<String>> emitterRef = new AtomicReference<>(null);
-    Single<String> single = cache.executeIfNot("key1", Single.create(emitterRef::set));
-    TestObserver<String> ob1 = single.test();
-    TestObserver<String> ob2 = single.test();
-    SingleEmitter<String> emitter = emitterRef.get();
-    assertThat(emitter).isNotNull();
-    AtomicBoolean disposed = new AtomicBoolean(false);
-    emitter.setCancellable(() -> disposed.set(true));
-
-    ob1.dispose();
-    ob2.dispose();
-
-    assertThat(disposed.get()).isTrue();
-    assertThat(cache.getInProgressTasks()).isEmpty();
-    assertThat(cache.getFinishedTasks()).isEmpty();
-  }
-
-  @Test
-  public void execute_multipleTasks_completeOne() {
-    AsyncTaskCache<String, String> cache = AsyncTaskCache.create();
-    AtomicReference<SingleEmitter<String>> emitterRef1 = new AtomicReference<>(null);
-    TestObserver<String> observer1 =
-        cache.executeIfNot("key1", Single.create(emitterRef1::set)).test();
-    SingleEmitter<String> emitter1 = emitterRef1.get();
-    assertThat(emitter1).isNotNull();
-    AtomicReference<SingleEmitter<String>> emitterRef2 = new AtomicReference<>(null);
-    TestObserver<String> observer2 =
-        cache.executeIfNot("key2", Single.create(emitterRef2::set)).test();
-    SingleEmitter<String> emitter2 = emitterRef1.get();
-    assertThat(emitter2).isNotNull();
-
-    emitter1.onSuccess("value1");
-
-    observer1.assertValue("value1");
-    observer2.assertEmpty();
-    assertThat(cache.getInProgressTasks()).containsExactly("key2");
-    assertThat(cache.getFinishedTasks()).containsExactly("key1");
-  }
-
-  private Completable newTask(ExecutorService executorService) {
-    return RxFutures.toCompletable(
-        () -> {
-          SettableFuture<Void> future = SettableFuture.create();
-          executorService.execute(
-              () -> {
-                try {
-                  Thread.sleep((long) (Math.random() * 1000));
-                  future.set(null);
-                } catch (InterruptedException e) {
-                  future.setException(new IOException(e));
-                }
-              });
-          return future;
-        },
-        executorService);
-  }
-
-  @Test
-  public void execute_executeAndDisposeLoop_noErrors() throws Throwable {
-    int taskCount = 1000;
-    int maxKey = 20;
-    Random random = new Random();
-    ExecutorService executorService = Executors.newFixedThreadPool(taskCount);
-    AsyncTaskCache.NoResult<String> cache = AsyncTaskCache.NoResult.create();
-    AtomicReference<Throwable> error = new AtomicReference<>(null);
-    Semaphore semaphore = new Semaphore(0);
-
-    for (int i = 0; i < taskCount; ++i) {
-      executorService.execute(
-          () -> {
-            try {
-              Completable task =
-                  cache.execute("key" + random.nextInt(maxKey), newTask(executorService), true);
-              TestObserver<Void> observer = task.test();
-              observer.assertNoErrors();
-              if (random.nextBoolean()) {
-                observer.dispose();
-              } else {
-                observer.await();
-                observer.assertNoErrors();
-              }
-            } catch (Throwable e) {
-              if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-              }
-              error.set(e);
-            } finally {
-              semaphore.release();
-            }
-          });
+        Truth.assertThat(executed.get()).isFalse()
+        assertThat(cache.getInProgressTasks()).isEmpty()
+        assertThat(cache.getFinishedTasks()).isEmpty()
     }
-    semaphore.acquire(taskCount);
 
-    if (error.get() != null) {
-      throw error.get();
+    @org.junit.Test
+    fun execute_taskFinished_completed() {
+        val cache: AsyncTaskCache<String?, String?> = AsyncTaskCache.create()
+        val emitterRef: AtomicReference<SingleEmitter<String?>?> = AtomicReference<SingleEmitter<String?>?>(null)
+        val observer: TestObserver<String?> =
+            cache.executeIfNot(
+                "key1",
+                Single.create<T?>(SingleOnSubscribe { newValue: SingleEmitter<T?>? -> emitterRef.set(newValue) })
+            ).test()
+        val emitter: SingleEmitter<String?>? = emitterRef.get()
+        Truth.assertThat(emitter).isNotNull()
+
+        emitter.onSuccess("value1")
+
+        observer.assertValue("value1")
+        assertThat(cache.getInProgressTasks()).isEmpty()
+        assertThat(cache.getFinishedTasks()).containsExactly("key1")
     }
-  }
 
-  @Test
-  public void execute_executeWithFutureAndCancelLoop_noErrors() throws Throwable {
-    int taskCount = 1000;
-    int maxKey = 20;
-    Random random = new Random();
-    ExecutorService executorService = Executors.newFixedThreadPool(taskCount);
-    AsyncTaskCache.NoResult<String> cache = AsyncTaskCache.NoResult.create();
-    AtomicReference<Throwable> error = new AtomicReference<>(null);
-    Semaphore semaphore = new Semaphore(0);
+    @org.junit.Test
+    fun execute_taskHasError_propagateError() {
+        val cache: AsyncTaskCache<String?, String?> = AsyncTaskCache.create()
+        val emitterRef: AtomicReference<SingleEmitter<String?>?> = AtomicReference<SingleEmitter<String?>?>(null)
+        val observer: TestObserver<String?> =
+            cache.executeIfNot(
+                "key1",
+                Single.create<T?>(SingleOnSubscribe { newValue: SingleEmitter<T?>? -> emitterRef.set(newValue) })
+            ).test()
+        val emitter: SingleEmitter<String?>? = emitterRef.get()
+        Truth.assertThat(emitter).isNotNull()
+        val error: Throwable = java.lang.IllegalStateException("error")
 
-    for (int i = 0; i < taskCount; ++i) {
-      executorService.execute(
-          () -> {
-            try {
-              Completable download =
-                  cache.execute("key" + random.nextInt(maxKey), newTask(executorService), true);
-              Future<Void> future = RxFutures.toListenableFuture(download);
-              if (!future.isDone() && random.nextBoolean()) {
-                future.cancel(true);
-              } else {
-                future.get();
-              }
-            } catch (Throwable e) {
-              if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-              }
-              error.set(e);
-            } finally {
-              semaphore.release();
-            }
-          });
+        emitter.onError(error)
+
+        observer.assertError(error)
+        assertThat(cache.getInProgressTasks()).isEmpty()
+        assertThat(cache.getFinishedTasks()).isEmpty()
     }
-    semaphore.acquire(taskCount);
 
-    if (error.get() != null) {
-      throw error.get();
+    @org.junit.Test
+    fun execute_taskInProgress_noReExecution() {
+        val cache: AsyncTaskCache<String?, String?> = AsyncTaskCache.create()
+        val emitterRef: AtomicReference<SingleEmitter<String?>?> = AtomicReference<SingleEmitter<String?>?>(null)
+        val executionTimes: AtomicInteger = AtomicInteger(0)
+        val single: Single<String?> =
+            cache.executeIfNot(
+                "key1",
+                Single.create<T?>(
+                    SingleOnSubscribe { emitter: SingleEmitter<T?>? ->
+                        executionTimes.incrementAndGet()
+                        emitterRef.set(emitter)
+                    })
+            )
+        val ob1: TestObserver<String?> = single.test()
+        ob1.assertEmpty()
+        val emitter: SingleEmitter<String?>? = emitterRef.get()
+        Truth.assertThat(emitter).isNotNull()
+        assertThat(cache.getInProgressTasks()).containsExactly("key1")
+        assertThat(cache.getFinishedTasks()).isEmpty()
+
+        val ob2: TestObserver<String?> = single.test()
+        ob2.assertEmpty()
+        emitter.onSuccess("value1")
+
+        ob1.assertValue("value1")
+        ob2.assertValue("value1")
+        Truth.assertThat(executionTimes.get()).isEqualTo(1)
+        assertThat(cache.getInProgressTasks()).isEmpty()
+        assertThat(cache.getFinishedTasks()).containsExactly("key1")
     }
-  }
 
-  @Test
-  public void execute_pendingShutdown_getCancellationError() {
-    AsyncTaskCache<String, String> cache = AsyncTaskCache.create();
-    cache
-        .executeIfNot(
+    @org.junit.Test
+    fun executeForcibly_taskInProgress_noReExecution() {
+        val cache: AsyncTaskCache<String?, String?> = AsyncTaskCache.create()
+        val emitterRef: AtomicReference<SingleEmitter<String?>?> = AtomicReference<SingleEmitter<String?>?>(null)
+        val executionTimes: AtomicInteger = AtomicInteger(0)
+        val single: Single<String?> =
+            cache.execute(
+                "key1",
+                Single.create<T?>(
+                    SingleOnSubscribe { emitter: SingleEmitter<T?>? ->
+                        executionTimes.incrementAndGet()
+                        emitterRef.set(emitter)
+                    }),  /* force= */
+                true
+            )
+        val ob1: TestObserver<String?> = single.test()
+        ob1.assertEmpty()
+        val emitter: SingleEmitter<String?>? = emitterRef.get()
+        Truth.assertThat(emitter).isNotNull()
+        assertThat(cache.getInProgressTasks()).containsExactly("key1")
+        assertThat(cache.getFinishedTasks()).isEmpty()
+
+        val ob2: TestObserver<String?> = single.test()
+        ob2.assertEmpty()
+        emitter.onSuccess("value1")
+
+        ob1.assertValue("value1")
+        ob2.assertValue("value1")
+        Truth.assertThat(executionTimes.get()).isEqualTo(1)
+        assertThat(cache.getInProgressTasks()).isEmpty()
+        assertThat(cache.getFinishedTasks()).containsExactly("key1")
+    }
+
+    @org.junit.Test
+    fun execute_taskFinished_noReExecution() {
+        val cache: AsyncTaskCache<String?, String?> = AsyncTaskCache.create()
+        val emitterRef: AtomicReference<SingleEmitter<String?>?> = AtomicReference<SingleEmitter<String?>?>(null)
+        val executionTimes: AtomicInteger = AtomicInteger(0)
+        val single: Single<String?> =
+            cache.executeIfNot(
+                "key1",
+                Single.create<T?>(
+                    SingleOnSubscribe { emitter: SingleEmitter<T?>? ->
+                        executionTimes.incrementAndGet()
+                        emitterRef.set(emitter)
+                    })
+            )
+        val ob1: TestObserver<String?> = single.test()
+        val emitter: SingleEmitter<String?>? = emitterRef.get()
+        Truth.assertThat(emitter).isNotNull()
+        emitter.onSuccess("value1")
+        ob1.assertValue("value1")
+        assertThat(cache.getFinishedTasks()).containsExactly("key1")
+
+        val ob2: TestObserver<String?> = single.test()
+
+        ob2.assertValue("value1")
+        Truth.assertThat(executionTimes.get()).isEqualTo(1)
+    }
+
+    @org.junit.Test
+    fun executeForcibly_taskFinished_reExecution() {
+        val cache: AsyncTaskCache<String?, String?> = AsyncTaskCache.create()
+        val emitterRef: AtomicReference<SingleEmitter<String?>?> = AtomicReference<SingleEmitter<String?>?>(null)
+        val executionTimes: AtomicInteger = AtomicInteger(0)
+        val single: Single<String?> =
+            cache.execute(
+                "key1",
+                Single.create<T?>(
+                    SingleOnSubscribe { emitter: SingleEmitter<T?>? ->
+                        executionTimes.incrementAndGet()
+                        emitterRef.set(emitter)
+                    }),  /* force= */
+                true
+            )
+        val ob1: TestObserver<String?> = single.test()
+        val emitter: SingleEmitter<String?>? = emitterRef.get()
+        Truth.assertThat(emitter).isNotNull()
+        emitter.onSuccess("value1")
+        ob1.assertValue("value1")
+        assertThat(cache.getFinishedTasks()).containsExactly("key1")
+
+        val ob2: TestObserver<String?> = single.test()
+
+        ob2.assertEmpty()
+        Truth.assertThat(executionTimes.get()).isEqualTo(2)
+        assertThat(cache.getInProgressTasks()).containsExactly("key1")
+        assertThat(cache.getFinishedTasks()).isEmpty()
+    }
+
+    @org.junit.Test
+    fun execute_dispose_cancelled() {
+        val cache: AsyncTaskCache<String?, String?> = AsyncTaskCache.create()
+        val emitterRef: AtomicReference<SingleEmitter<String?>?> = AtomicReference<SingleEmitter<String?>?>(null)
+        val observer: TestObserver<String?> =
+            cache.executeIfNot(
+                "key1",
+                Single.create<T?>(SingleOnSubscribe { newValue: SingleEmitter<T?>? -> emitterRef.set(newValue) })
+            ).test()
+        val emitter: SingleEmitter<String?>? = emitterRef.get()
+        Truth.assertThat(emitter).isNotNull()
+        val disposed: AtomicBoolean = AtomicBoolean(false)
+        emitter.setCancellable(io.reactivex.rxjava3.functions.Cancellable { disposed.set(true) })
+
+        observer.dispose()
+
+        Truth.assertThat(disposed.get()).isTrue()
+        assertThat(cache.getInProgressTasks()).isEmpty()
+        assertThat(cache.getFinishedTasks()).isEmpty()
+    }
+
+    @org.junit.Test
+    fun execute_disposeWhenMultipleSubscriptions_notCancelled() {
+        val cache: AsyncTaskCache<String?, String?> = AsyncTaskCache.create()
+        val emitterRef: AtomicReference<SingleEmitter<String?>?> = AtomicReference<SingleEmitter<String?>?>(null)
+        val single: Single<String?> = cache.executeIfNot(
             "key1",
-            Single.create(
-                emitter -> {
-                  // never complete
-                }))
-        .test()
-        .assertNotComplete();
-    cache.shutdown();
-    assertThat(cache.isShutdown()).isTrue();
-    assertThat(cache.isTerminated()).isFalse();
+            Single.create<T?>(SingleOnSubscribe { newValue: SingleEmitter<T?>? -> emitterRef.set(newValue) })
+        )
+        val ob1: TestObserver<String?> = single.test()
+        val ob2: TestObserver<String?> = single.test()
+        val emitter: SingleEmitter<String?>? = emitterRef.get()
+        Truth.assertThat(emitter).isNotNull()
+        val disposed: AtomicBoolean = AtomicBoolean(false)
+        emitter.setCancellable(io.reactivex.rxjava3.functions.Cancellable { disposed.set(true) })
 
-    TestObserver<String> ob = cache.executeIfNot("key2", Single.just("value2")).test();
+        ob1.dispose()
 
-    ob.assertError(e -> e instanceof CancellationException);
-  }
+        ob2.assertEmpty()
+        Truth.assertThat(disposed.get()).isFalse()
+        assertThat(cache.getInProgressTasks()).containsExactly("key1")
+        assertThat(cache.getFinishedTasks()).isEmpty()
+    }
 
-  @Test
-  public void execute_afterShutdown_getCancellationError() throws InterruptedException {
-    AsyncTaskCache<String, String> cache = AsyncTaskCache.create();
-    cache.shutdown();
-    cache.awaitTermination();
+    @org.junit.Test
+    fun execute_disposeWhenMultipleSubscriptions_cancelled() {
+        val cache: AsyncTaskCache<String?, String?> = AsyncTaskCache.create()
+        val emitterRef: AtomicReference<SingleEmitter<String?>?> = AtomicReference<SingleEmitter<String?>?>(null)
+        val single: Single<String?> = cache.executeIfNot(
+            "key1",
+            Single.create<T?>(SingleOnSubscribe { newValue: SingleEmitter<T?>? -> emitterRef.set(newValue) })
+        )
+        val ob1: TestObserver<String?> = single.test()
+        val ob2: TestObserver<String?> = single.test()
+        val emitter: SingleEmitter<String?>? = emitterRef.get()
+        Truth.assertThat(emitter).isNotNull()
+        val disposed: AtomicBoolean = AtomicBoolean(false)
+        emitter.setCancellable(io.reactivex.rxjava3.functions.Cancellable { disposed.set(true) })
 
-    TestObserver<String> ob = cache.executeIfNot("key", Single.just("value")).test();
+        ob1.dispose()
+        ob2.dispose()
 
-    ob.assertError(e -> e instanceof CancellationException);
-  }
+        Truth.assertThat(disposed.get()).isTrue()
+        assertThat(cache.getInProgressTasks()).isEmpty()
+        assertThat(cache.getFinishedTasks()).isEmpty()
+    }
 
-  @Test
-  public void shutdownNow_cancelInProgressTasks() throws InterruptedException {
-    AsyncTaskCache<String, String> cache = AsyncTaskCache.create();
-    TestObserver<String> ob =
+    @org.junit.Test
+    fun execute_multipleTasks_completeOne() {
+        val cache: AsyncTaskCache<String?, String?> = AsyncTaskCache.create()
+        val emitterRef1: AtomicReference<SingleEmitter<String?>?> = AtomicReference<SingleEmitter<String?>?>(null)
+        val observer1: TestObserver<String?> =
+            cache.executeIfNot(
+                "key1",
+                Single.create<T?>(SingleOnSubscribe { newValue: SingleEmitter<T?>? -> emitterRef1.set(newValue) })
+            ).test()
+        val emitter1: SingleEmitter<String?>? = emitterRef1.get()
+        Truth.assertThat(emitter1).isNotNull()
+        val emitterRef2: AtomicReference<SingleEmitter<String?>?> = AtomicReference<SingleEmitter<String?>?>(null)
+        val observer2: TestObserver<String?> =
+            cache.executeIfNot(
+                "key2",
+                Single.create<T?>(SingleOnSubscribe { newValue: SingleEmitter<T?>? -> emitterRef2.set(newValue) })
+            ).test()
+        val emitter2: SingleEmitter<String?>? = emitterRef1.get()
+        Truth.assertThat(emitter2).isNotNull()
+
+        emitter1.onSuccess("value1")
+
+        observer1.assertValue("value1")
+        observer2.assertEmpty()
+        assertThat(cache.getInProgressTasks()).containsExactly("key2")
+        assertThat(cache.getFinishedTasks()).containsExactly("key1")
+    }
+
+    private fun newTask(executorService: ExecutorService): Completable {
+        return RxFutures.toCompletable(
+            {
+                val future: com.google.common.util.concurrent.SettableFuture<java.lang.Void?> =
+                    com.google.common.util.concurrent.SettableFuture.create<java.lang.Void?>()
+                executorService.execute(
+                    java.lang.Runnable {
+                        try {
+                            java.lang.Thread.sleep((java.lang.Math.random() * 1000).toLong())
+                            future.set(null)
+                        } catch (e: java.lang.InterruptedException) {
+                            future.setException(IOException(e))
+                        }
+                    })
+                future
+            },
+            executorService
+        )
+    }
+
+    @org.junit.Test
+    @Throws(Throwable::class)
+    fun execute_executeAndDisposeLoop_noErrors() {
+        val taskCount = 1000
+        val maxKey = 20
+        val random: Random = Random()
+        val executorService: ExecutorService = Executors.newFixedThreadPool(taskCount)
+        val cache: AsyncTaskCache.NoResult<String?> = AsyncTaskCache.NoResult.create()
+        val error: AtomicReference<Throwable?> = AtomicReference<Throwable?>(null)
+        val semaphore: Semaphore = Semaphore(0)
+
+        for (i in 0..<taskCount) {
+            executorService.execute(
+                java.lang.Runnable {
+                    try {
+                        val task: Completable =
+                            cache.execute("key" + random.nextInt(maxKey), newTask(executorService), true)
+                        val observer: TestObserver<java.lang.Void?> = task.test()
+                        observer.assertNoErrors()
+                        if (random.nextBoolean()) {
+                            observer.dispose()
+                        } else {
+                            observer.await()
+                            observer.assertNoErrors()
+                        }
+                    } catch (e: Throwable) {
+                        if (e is java.lang.InterruptedException) {
+                            java.lang.Thread.currentThread().interrupt()
+                        }
+                        error.set(e)
+                    } finally {
+                        semaphore.release()
+                    }
+                })
+        }
+        semaphore.acquire(taskCount)
+
+        if (error.get() != null) {
+            throw error.get()
+        }
+    }
+
+    @org.junit.Test
+    @Throws(Throwable::class)
+    fun execute_executeWithFutureAndCancelLoop_noErrors() {
+        val taskCount = 1000
+        val maxKey = 20
+        val random: Random = Random()
+        val executorService: ExecutorService = Executors.newFixedThreadPool(taskCount)
+        val cache: AsyncTaskCache.NoResult<String?> = AsyncTaskCache.NoResult.create()
+        val error: AtomicReference<Throwable?> = AtomicReference<Throwable?>(null)
+        val semaphore: Semaphore = Semaphore(0)
+
+        for (i in 0..<taskCount) {
+            executorService.execute(
+                java.lang.Runnable {
+                    try {
+                        val download: Completable? =
+                            cache.execute("key" + random.nextInt(maxKey), newTask(executorService), true)
+                        val future: java.util.concurrent.Future<java.lang.Void?> =
+                            RxFutures.toListenableFuture(download)
+                        if (!future.isDone() && random.nextBoolean()) {
+                            future.cancel(true)
+                        } else {
+                            future.get()
+                        }
+                    } catch (e: Throwable) {
+                        if (e is java.lang.InterruptedException) {
+                            java.lang.Thread.currentThread().interrupt()
+                        }
+                        error.set(e)
+                    } finally {
+                        semaphore.release()
+                    }
+                })
+        }
+        semaphore.acquire(taskCount)
+
+        if (error.get() != null) {
+            throw error.get()
+        }
+    }
+
+    @org.junit.Test
+    fun execute_pendingShutdown_getCancellationError() {
+        val cache: AsyncTaskCache<String?, String?> = AsyncTaskCache.create()
         cache
             .executeIfNot(
+                "key1",
+                Single.create<T?>(
+                    SingleOnSubscribe { emitter: SingleEmitter<T?>? -> })
+            )
+            .test()
+            .assertNotComplete()
+        cache.shutdown()
+        assertThat(cache.isShutdown()).isTrue()
+        assertThat(cache.isTerminated()).isFalse()
+
+        val ob: TestObserver<String?> = cache.executeIfNot("key2", Single.just<T?>("value2")).test()
+
+        ob.assertError(io.reactivex.rxjava3.functions.Predicate { e: Throwable? -> e is CancellationException })
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.InterruptedException::class)
+    fun execute_afterShutdown_getCancellationError() {
+        val cache: AsyncTaskCache<String?, String?> = AsyncTaskCache.create()
+        cache.shutdown()
+        cache.awaitTermination()
+
+        val ob: TestObserver<String?> = cache.executeIfNot("key", Single.just<T?>("value")).test()
+
+        ob.assertError(io.reactivex.rxjava3.functions.Predicate { e: Throwable? -> e is CancellationException })
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.InterruptedException::class)
+    fun shutdownNow_cancelInProgressTasks() {
+        val cache: AsyncTaskCache<String?, String?> = AsyncTaskCache.create()
+        val ob: TestObserver<String?> =
+            cache
+                .executeIfNot(
+                    "key",
+                    Single.create<T?>(
+                        SingleOnSubscribe { emitter: SingleEmitter<T?>? -> })
+                )
+                .test()
+        cache.shutdown()
+        assertThat(cache.isShutdown()).isTrue()
+        assertThat(cache.isTerminated()).isFalse()
+        ob.assertNotComplete()
+
+        cache.shutdownNow()
+        cache.awaitTermination()
+
+        assertThat(cache.isShutdown()).isTrue()
+        assertThat(cache.isTerminated()).isTrue()
+        ob.assertError(io.reactivex.rxjava3.functions.Predicate { e: Throwable? -> e is CancellationException })
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.InterruptedException::class)
+    fun awaitTermination_pendingShutdown_completeAfterTaskFinished() {
+        val cache: AsyncTaskCache<String?, String?> = AsyncTaskCache.create()
+        val emitterRef: AtomicReference<SingleEmitter<String?>?> = AtomicReference<SingleEmitter<String?>?>(null)
+        val ob: TestObserver<String?> =
+            cache.executeIfNot(
                 "key",
-                Single.create(
-                    emitter -> {
-                      // never complete
-                    }))
-            .test();
-    cache.shutdown();
-    assertThat(cache.isShutdown()).isTrue();
-    assertThat(cache.isTerminated()).isFalse();
-    ob.assertNotComplete();
+                Single.create<T?>(SingleOnSubscribe { newValue: SingleEmitter<T?>? -> emitterRef.set(newValue) })
+            ).test().assertNotComplete()
+        Truth.assertThat(emitterRef.get()).isNotNull()
+        cache.shutdown()
+        assertThat(cache.isShutdown()).isTrue()
+        assertThat(cache.isTerminated()).isFalse()
 
-    cache.shutdownNow();
-    cache.awaitTermination();
+        emitterRef.get().onSuccess("value")
+        cache.awaitTermination()
 
-    assertThat(cache.isShutdown()).isTrue();
-    assertThat(cache.isTerminated()).isTrue();
-    ob.assertError(e -> e instanceof CancellationException);
-  }
+        assertThat(cache.isShutdown()).isTrue()
+        assertThat(cache.isTerminated()).isTrue()
+        ob.assertValue("value")
 
-  @Test
-  public void awaitTermination_pendingShutdown_completeAfterTaskFinished()
-      throws InterruptedException {
-    AsyncTaskCache<String, String> cache = AsyncTaskCache.create();
-    AtomicReference<SingleEmitter<String>> emitterRef = new AtomicReference<>(null);
-    TestObserver<String> ob =
-        cache.executeIfNot("key", Single.create(emitterRef::set)).test().assertNotComplete();
-    assertThat(emitterRef.get()).isNotNull();
-    cache.shutdown();
-    assertThat(cache.isShutdown()).isTrue();
-    assertThat(cache.isTerminated()).isFalse();
+        assertThat(cache.getInProgressTasks()).isEmpty()
+        assertThat(cache.getFinishedTasks()).isEmpty()
+    }
 
-    emitterRef.get().onSuccess("value");
-    cache.awaitTermination();
+    @org.junit.Test
+    @Throws(java.lang.InterruptedException::class)
+    fun awaitTermination_afterShutdown_complete() {
+        val cache: AsyncTaskCache<String?, String?> = AsyncTaskCache.create()
+        cache.shutdownNow()
+        cache.awaitTermination()
 
-    assertThat(cache.isShutdown()).isTrue();
-    assertThat(cache.isTerminated()).isTrue();
-    ob.assertValue("value");
+        cache.awaitTermination()
 
-    assertThat(cache.getInProgressTasks()).isEmpty();
-    assertThat(cache.getFinishedTasks()).isEmpty();
-  }
-
-  @Test
-  public void awaitTermination_afterShutdown_complete() throws InterruptedException {
-    AsyncTaskCache<String, String> cache = AsyncTaskCache.create();
-    cache.shutdownNow();
-    cache.awaitTermination();
-
-    cache.awaitTermination();
-
-    assertThat(cache.isShutdown()).isTrue();
-    assertThat(cache.isTerminated()).isTrue();
-  }
+        assertThat(cache.isShutdown()).isTrue()
+        assertThat(cache.isTerminated()).isTrue()
+    }
 }

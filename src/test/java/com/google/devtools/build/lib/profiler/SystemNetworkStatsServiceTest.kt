@@ -11,20 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.profiler;
+package com.google.devtools.build.lib.profiler
 
-import java.io.IOException;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.io.IOException
 
-/** Tests for {@link SystemNetworkStatsServiceImpl}. */
-@RunWith(JUnit4.class)
-public class SystemNetworkStatsServiceTest {
-
-  @SuppressWarnings("CheckReturnValue")
-  @Test
-  public void getNetIoCounters_doesNotCrash() throws IOException {
-    new SystemNetworkStatsServiceImpl().getNetIoCounters();
-  }
+/** Tests for [SystemNetworkStatsServiceImpl].  */
+@RunWith(JUnit4::class)
+class SystemNetworkStatsServiceTest {
+    @get:Throws(IOException::class)
+    @get:org.junit.Test
+    val netIoCounters_doesNotCrash: Unit
+        get() {
+            SystemNetworkStatsServiceImpl().getNetIoCounters()
+        }
 }

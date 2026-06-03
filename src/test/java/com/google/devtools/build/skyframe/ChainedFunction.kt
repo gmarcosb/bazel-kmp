@@ -11,143 +11,144 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.skyframe.GraphTester.ValueComputer;
-import com.google.devtools.build.skyframe.SkyFunctionException.Transience;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.concurrent.CountDownLatch;
-import javax.annotation.Nullable;
+import com.google.devtools.build.skyframe.SkyFunctionException.Transience
 
 /**
- * {@link ValueComputer} that can be chained together with others of its type to synchronize the
+ * [ValueComputer] that can be chained together with others of its type to synchronize the
  * order in which builders finish.
  */
-public final class ChainedFunction implements SkyFunction {
-  @Nullable private final SkyValue value;
-  private final Runnable notifyStart;
-  @Nullable private final CountDownLatch waitToFinish;
-  private final Runnable notifyFinish;
-  private final boolean waitForException;
-  private final Iterable<SkyKey> deps;
+class ChainedFunction private constructor(
+    notifyStart: java.lang.Runnable,
+    waitToFinish: CountDownLatch?,
+    notifyFinish: java.lang.Runnable,
+    waitForException: Boolean,
+    value: SkyValue?,
+    deps: Iterable<SkyKey?>
+) : SkyFunction {
+    private val value: SkyValue?
+    private val notifyStart: java.lang.Runnable
+    private val waitToFinish: CountDownLatch?
+    private val notifyFinish: java.lang.Runnable
+    private val waitForException: Boolean
+    private val deps: Iterable<SkyKey?>
 
-  /** Do not use! Use {@link Builder} instead. */
-  ChainedFunction(
-      @Nullable CountDownLatch notifyStart,
-      @Nullable CountDownLatch waitToFinish,
-      @Nullable CountDownLatch notifyFinish,
-      boolean waitForException,
-      @Nullable SkyValue value,
-      Iterable<SkyKey> deps) {
-    this(
+    /** Do not use! Use [Builder] instead.  */
+    internal constructor(
+        notifyStart: CountDownLatch?,
+        waitToFinish: CountDownLatch?,
+        notifyFinish: CountDownLatch?,
+        waitForException: Boolean,
+        value: SkyValue?,
+        deps: Iterable<SkyKey?>
+    ) : this(
         makeRunnable(notifyStart),
         waitToFinish,
         makeRunnable(notifyFinish),
         waitForException,
         value,
-        deps);
-  }
+        deps
+    )
 
-  private ChainedFunction(
-      Runnable notifyStart,
-      @Nullable CountDownLatch waitToFinish,
-      Runnable notifyFinish,
-      boolean waitForException,
-      @Nullable SkyValue value,
-      Iterable<SkyKey> deps) {
-    this.notifyStart = notifyStart;
-    this.waitToFinish = waitToFinish;
-    this.notifyFinish = notifyFinish;
-    this.waitForException = waitForException;
-    Preconditions.checkState(this.waitToFinish != null || !this.waitForException, value);
-    this.value = value;
-    this.deps = deps;
-  }
+    init {
+        this.notifyStart = notifyStart
+        this.waitToFinish = waitToFinish
+        this.notifyFinish = notifyFinish
+        this.waitForException = waitForException
+        com.google.common.base.Preconditions.checkState(this.waitToFinish != null || !this.waitForException, value)
+        this.value = value
+        this.deps = deps
+    }
 
-  @Override
-  public SkyValue compute(SkyKey key, SkyFunction.Environment env) throws GenericFunctionException,
-      InterruptedException {
-    try {
-      notifyStart.run();
-      if (waitToFinish != null) {
-        TrackingAwaiter.INSTANCE.awaitLatchAndTrackExceptions(
-            waitToFinish, key + " timed out waiting to finish");
-        if (waitForException) {
-          SkyFunctionEnvironment skyEnv = (SkyFunctionEnvironment) env;
-          TrackingAwaiter.INSTANCE.awaitLatchAndTrackExceptions(
-              skyEnv.getExceptionLatchForTesting(), key + " timed out waiting for exception");
+    @Throws(GenericFunctionException::class, java.lang.InterruptedException::class)
+    public override fun compute(key: SkyKey?, env: SkyFunction.Environment): SkyValue? {
+        try {
+            notifyStart.run()
+            if (waitToFinish != null) {
+                TrackingAwaiter.Companion.INSTANCE.awaitLatchAndTrackExceptions(
+                    waitToFinish, key.toString() + " timed out waiting to finish"
+                )
+                if (waitForException) {
+                    val skyEnv: SkyFunctionEnvironment = env as SkyFunctionEnvironment
+                    TrackingAwaiter.Companion.INSTANCE.awaitLatchAndTrackExceptions(
+                        skyEnv.getExceptionLatchForTesting(), key.toString() + " timed out waiting for exception"
+                    )
+                }
+            }
+            for (dep in deps) {
+                env.getValue(dep)
+            }
+            if (value == null) {
+                throw GenericFunctionException(
+                    SomeErrorException("oops"),
+                    Transience.PERSISTENT
+                )
+            }
+            if (env.valuesMissing()) {
+                return null
+            }
+            return value
+        } finally {
+            notifyFinish.run()
         }
-      }
-      for (SkyKey dep : deps) {
-        env.getValue(dep);
-      }
-      if (value == null) {
-        throw new GenericFunctionException(new SomeErrorException("oops"),
-            Transience.PERSISTENT);
-      }
-      if (env.valuesMissing()) {
-        return null;
-      }
-      return value;
-    } finally {
-      notifyFinish.run();
-    }
-  }
-
-  private static Runnable makeRunnable(@Nullable CountDownLatch latch) {
-    return latch != null ? latch::countDown : () -> {};
-  }
-
-  /** Builder for {@link ChainedFunction} objects. */
-  public static class Builder {
-    @Nullable private SkyValue value;
-    Runnable notifyStart = makeRunnable(null);
-    @Nullable private CountDownLatch waitToFinish;
-    private Runnable notifyFinish = makeRunnable(null);
-    private boolean waitForException;
-    private Iterable<SkyKey> deps = ImmutableList.of();
-
-    @CanIgnoreReturnValue
-    public Builder setValue(SkyValue value) {
-      this.value = value;
-      return this;
     }
 
-    @CanIgnoreReturnValue
-    public Builder setNotifyStart(Runnable notifyStart) {
-      this.notifyStart = notifyStart;
-      return this;
+    /** Builder for [ChainedFunction] objects.  */
+    class Builder {
+        private var value: SkyValue? = null
+        var notifyStart: java.lang.Runnable = makeRunnable(null)
+        private var waitToFinish: CountDownLatch? = null
+        private var notifyFinish: java.lang.Runnable = makeRunnable(null)
+        private var waitForException = false
+        private var deps: Iterable<SkyKey?> = com.google.common.collect.ImmutableList.of<SkyKey?>()
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setValue(value: SkyValue?): Builder {
+            this.value = value
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setNotifyStart(notifyStart: java.lang.Runnable): Builder {
+            this.notifyStart = notifyStart
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setWaitToFinish(waitToFinish: CountDownLatch?): Builder {
+            this.waitToFinish = waitToFinish
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setNotifyFinish(notifyFinish: java.lang.Runnable): Builder {
+            this.notifyFinish = notifyFinish
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setWaitForException(waitForException: Boolean): Builder {
+            this.waitForException = waitForException
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun setDeps(deps: Iterable<SkyKey?>?): Builder {
+            this.deps = com.google.common.base.Preconditions.checkNotNull<Iterable<SkyKey?>>(deps)
+            return this
+        }
+
+        fun build(): SkyFunction? {
+            return ChainedFunction(
+                notifyStart, waitToFinish, notifyFinish, waitForException, value, deps
+            )
+        }
     }
 
-    @CanIgnoreReturnValue
-    public Builder setWaitToFinish(CountDownLatch waitToFinish) {
-      this.waitToFinish = waitToFinish;
-      return this;
+    companion object {
+        private fun makeRunnable(latch: CountDownLatch?): java.lang.Runnable {
+            return if (latch != null) java.lang.Runnable { latch.countDown() } else java.lang.Runnable {}
+        }
     }
-
-    @CanIgnoreReturnValue
-    public Builder setNotifyFinish(Runnable notifyFinish) {
-      this.notifyFinish = notifyFinish;
-      return this;
-    }
-
-    @CanIgnoreReturnValue
-    public Builder setWaitForException(boolean waitForException) {
-      this.waitForException = waitForException;
-      return this;
-    }
-
-    @CanIgnoreReturnValue
-    public Builder setDeps(Iterable<SkyKey> deps) {
-      this.deps = Preconditions.checkNotNull(deps);
-      return this;
-    }
-
-    public SkyFunction build() {
-      return new ChainedFunction(
-          notifyStart, waitToFinish, notifyFinish, waitForException, value, deps);
-    }
-  }
 }

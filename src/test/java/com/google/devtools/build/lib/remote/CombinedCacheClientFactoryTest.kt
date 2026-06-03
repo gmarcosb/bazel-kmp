@@ -11,276 +11,279 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.remote
 
-package com.google.devtools.build.lib.remote;
+import com.google.devtools.build.lib.authandtls.AuthAndTLSOptions
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-import static org.junit.Assume.assumeTrue;
+/** Tests for [CombinedCacheClientFactory].  */
+@RunWith(JUnit4::class)
+class CombinedCacheClientFactoryTest {
+    private val digestUtil: DigestUtil = DigestUtil(SyscallCache.NO_CACHE, DigestHashFunction.SHA256)
 
-import com.google.common.util.concurrent.ListeningScheduledExecutorService;
-import com.google.common.util.concurrent.MoreExecutors;
-import com.google.devtools.build.lib.authandtls.AuthAndTLSOptions;
-import com.google.devtools.build.lib.clock.JavaClock;
-import com.google.devtools.build.lib.remote.Retrier.ResultClassifier.Result;
-import com.google.devtools.build.lib.remote.http.HttpCacheClient;
-import com.google.devtools.build.lib.remote.options.RemoteOptions;
-import com.google.devtools.build.lib.remote.util.DigestUtil;
-import com.google.devtools.build.lib.util.OS;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import com.google.devtools.common.options.Options;
-import java.io.IOException;
-import java.util.concurrent.Executors;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    private var remoteOptions: RemoteOptions? = null
+    private val authAndTlsOptions: AuthAndTLSOptions? =
+        com.google.devtools.common.options.Options.getDefaults<O?>(AuthAndTLSOptions::class.java)
+    private var workingDirectory: Path? = null
+    private var fs: InMemoryFileSystem? = null
+    private val retryScheduler: com.google.common.util.concurrent.ListeningScheduledExecutorService =
+        com.google.common.util.concurrent.MoreExecutors.listeningDecorator(Executors.newScheduledThreadPool(1))
+    private val retrier: RemoteRetrier = RemoteRetrier(
+        { RemoteRetrier.RETRIES_DISABLED },
+        { e -> Result.SUCCESS },
+        retryScheduler,
+        Retrier.ALLOW_ALL_CALLS
+    )
 
-/** Tests for {@link CombinedCacheClientFactory}. */
-@RunWith(JUnit4.class)
-public class CombinedCacheClientFactoryTest {
-  private final DigestUtil digestUtil =
-      new DigestUtil(SyscallCache.NO_CACHE, DigestHashFunction.SHA256);
+    @Before
+    fun setUp() {
+        fs = InMemoryFileSystem(com.google.devtools.build.lib.clock.JavaClock(), DigestHashFunction.SHA256)
+        workingDirectory = fs.getPath("/etc/something")
+        remoteOptions = com.google.devtools.common.options.Options.getDefaults<O>(RemoteOptions::class.java)
+    }
 
-  private RemoteOptions remoteOptions;
-  private final AuthAndTLSOptions authAndTlsOptions = Options.getDefaults(AuthAndTLSOptions.class);
-  private Path workingDirectory;
-  private InMemoryFileSystem fs;
-  private ListeningScheduledExecutorService retryScheduler =
-      MoreExecutors.listeningDecorator(Executors.newScheduledThreadPool(1));
-  private RemoteRetrier retrier =
-      new RemoteRetrier(
-          () -> RemoteRetrier.RETRIES_DISABLED,
-          (e) -> Result.SUCCESS,
-          retryScheduler,
-          Retrier.ALLOW_ALL_CALLS);
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun createCombinedCacheWithExistingWorkingDirectory() {
+        remoteOptions.remoteCache = "http://doesnotexist.com"
+        remoteOptions.diskCache = PathFragment.create("/etc/something/cache/here")
+        fs.getPath("/etc/something/cache/here").createDirectoryAndParents()
 
-  @Before
-  public final void setUp() {
-    fs = new InMemoryFileSystem(new JavaClock(), DigestHashFunction.SHA256);
-    workingDirectory = fs.getPath("/etc/something");
-    remoteOptions = Options.getDefaults(RemoteOptions.class);
-  }
-
-  @Test
-  public void createCombinedCacheWithExistingWorkingDirectory() throws IOException {
-    remoteOptions.setRemoteCache("http://doesnotexist.com");
-    remoteOptions.setDiskCache(PathFragment.create("/etc/something/cache/here"));
-    fs.getPath("/etc/something/cache/here").createDirectoryAndParents();
-
-    var blobStore =
-        CombinedCacheClientFactory.create(
-            remoteOptions,
-            remoteOptions.getDiskCachePath(workingDirectory),
-            /* creds= */ null,
-            authAndTlsOptions,
-            workingDirectory,
-            digestUtil,
-            retrier);
-
-    assertThat(blobStore.remoteCacheClient()).isInstanceOf(HttpCacheClient.class);
-    assertThat(blobStore.diskCacheClient()).isNotNull();
-  }
-
-  @Test
-  public void createCombinedCacheWithNotExistingWorkingDirectory() throws IOException {
-    remoteOptions.setRemoteCache("http://doesnotexist.com");
-    remoteOptions.setDiskCache(PathFragment.create("/etc/something/cache/here"));
-    assertThat(workingDirectory.exists()).isFalse();
-
-    var blobStore =
-        CombinedCacheClientFactory.create(
-            remoteOptions,
-            remoteOptions.getDiskCachePath(workingDirectory),
-            /* creds= */ null,
-            authAndTlsOptions,
-            workingDirectory,
-            digestUtil,
-            retrier);
-
-    assertThat(blobStore.remoteCacheClient()).isInstanceOf(HttpCacheClient.class);
-    assertThat(blobStore.diskCacheClient()).isNotNull();
-    assertThat(workingDirectory.exists()).isTrue();
-  }
-
-  @Test
-  public void createCombinedCacheWithMissingWorkingDirectoryShouldThrowException() {
-    // interesting case: workingDirectory = null -> NPE.
-    remoteOptions.setRemoteCache("http://doesnotexist.com");
-    remoteOptions.setDiskCache(PathFragment.create("/etc/something/cache/here"));
-
-    assertThrows(
-        NullPointerException.class,
-        () ->
+        val blobStore: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
             CombinedCacheClientFactory.create(
                 remoteOptions,
-                remoteOptions.getDiskCache() != null
-                    ? remoteOptions.getDiskCachePath(/* outputUserRoot= */ null)
-                    : null,
-                /* creds= */ null,
+                remoteOptions.getDiskCachePath(workingDirectory),  /* creds= */
+                null,
                 authAndTlsOptions,
-                /* workingDirectory= */ null,
+                workingDirectory,
                 digestUtil,
-                retrier));
-  }
+                retrier
+            )
 
-  @Test
-  public void createHttpCacheWithProxy() throws IOException {
-    // Unix domain sockets are not supported on Windows.
-    assumeTrue(OS.getCurrent() != OS.WINDOWS);
+        assertThat(blobStore.remoteCacheClient()).isInstanceOf(HttpCacheClient::class.java)
+        assertThat(blobStore.diskCacheClient()).isNotNull()
+    }
 
-    remoteOptions.setRemoteCache("http://doesnotexist.com");
-    remoteOptions.setRemoteProxy("unix://some-proxy");
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun createCombinedCacheWithNotExistingWorkingDirectory() {
+        remoteOptions.remoteCache = "http://doesnotexist.com"
+        remoteOptions.diskCache = PathFragment.create("/etc/something/cache/here")
+        assertThat(workingDirectory.exists()).isFalse()
 
-    var blobStore =
-        CombinedCacheClientFactory.create(
-            remoteOptions,
-            remoteOptions.getDiskCachePath(workingDirectory),
-            /* creds= */ null,
-            authAndTlsOptions,
-            workingDirectory,
-            digestUtil,
-            retrier);
+        val blobStore: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            CombinedCacheClientFactory.create(
+                remoteOptions,
+                remoteOptions.getDiskCachePath(workingDirectory),  /* creds= */
+                null,
+                authAndTlsOptions,
+                workingDirectory,
+                digestUtil,
+                retrier
+            )
 
-    assertThat(blobStore.remoteCacheClient()).isInstanceOf(HttpCacheClient.class);
-    assertThat(blobStore.diskCacheClient()).isNull();
-  }
+        assertThat(blobStore.remoteCacheClient()).isInstanceOf(HttpCacheClient::class.java)
+        assertThat(blobStore.diskCacheClient()).isNotNull()
+        assertThat(workingDirectory.exists()).isTrue()
+    }
 
-  @Test
-  public void createHttpCacheFailsWithUnsupportedProxyProtocol() {
-    remoteOptions.setRemoteCache("http://doesnotexist.com");
-    remoteOptions.setRemoteProxy("bad-proxy");
+    @org.junit.Test
+    fun createCombinedCacheWithMissingWorkingDirectoryShouldThrowException() {
+        // interesting case: workingDirectory = null -> NPE.
+        remoteOptions.remoteCache = "http://doesnotexist.com"
+        remoteOptions.diskCache = PathFragment.create("/etc/something/cache/here")
 
-    assertThat(
-            assertThrows(
-                RuntimeException.class,
-                () ->
+        org.junit.Assert.assertThrows<java.lang.NullPointerException?>(
+            java.lang.NullPointerException::class.java,
+            org.junit.function.ThrowingRunnable {
+                CombinedCacheClientFactory.create(
+                    remoteOptions,
+                    if (remoteOptions.diskCache != null)
+                        remoteOptions.getDiskCachePath( /* outputUserRoot= */null)
+                    else
+                        null,  /* creds= */
+                    null,
+                    authAndTlsOptions,  /* workingDirectory= */
+                    null,
+                    digestUtil,
+                    retrier
+                )
+            })
+    }
+
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun createHttpCacheWithProxy() {
+        // Unix domain sockets are not supported on Windows.
+        Assume.assumeTrue(com.google.devtools.build.lib.util.OS.getCurrent() != com.google.devtools.build.lib.util.OS.WINDOWS)
+
+        remoteOptions.remoteCache = "http://doesnotexist.com"
+        remoteOptions.remoteProxy = "unix://some-proxy"
+
+        val blobStore: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            CombinedCacheClientFactory.create(
+                remoteOptions,
+                remoteOptions.getDiskCachePath(workingDirectory),  /* creds= */
+                null,
+                authAndTlsOptions,
+                workingDirectory,
+                digestUtil,
+                retrier
+            )
+
+        assertThat(blobStore.remoteCacheClient()).isInstanceOf(HttpCacheClient::class.java)
+        assertThat(blobStore.diskCacheClient()).isNull()
+    }
+
+    @org.junit.Test
+    fun createHttpCacheFailsWithUnsupportedProxyProtocol() {
+        remoteOptions.remoteCache = "http://doesnotexist.com"
+        remoteOptions.remoteProxy = "bad-proxy"
+
+        Truth.assertThat(
+            org.junit.Assert.assertThrows<java.lang.RuntimeException?>(
+                java.lang.RuntimeException::class.java,
+                org.junit.function.ThrowingRunnable {
                     CombinedCacheClientFactory.create(
                         remoteOptions,
-                        remoteOptions.getDiskCachePath(workingDirectory),
-                        /* creds= */ null,
+                        remoteOptions.getDiskCachePath(workingDirectory),  /* creds= */
+                        null,
                         authAndTlsOptions,
                         workingDirectory,
                         digestUtil,
-                        retrier)))
-        .hasMessageThat()
-        .contains("Remote cache proxy unsupported: bad-proxy");
-  }
+                        retrier
+                    )
+                })
+        )
+            .hasMessageThat()
+            .contains("Remote cache proxy unsupported: bad-proxy")
+    }
 
-  @Test
-  public void createHttpCacheWithoutProxy() throws IOException {
-    remoteOptions.setRemoteCache("http://doesnotexist.com");
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun createHttpCacheWithoutProxy() {
+        remoteOptions.remoteCache = "http://doesnotexist.com"
 
-    var blobStore =
-        CombinedCacheClientFactory.create(
-            remoteOptions,
-            remoteOptions.getDiskCachePath(workingDirectory),
-            /* creds= */ null,
-            authAndTlsOptions,
-            workingDirectory,
-            digestUtil,
-            retrier);
+        val blobStore: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            CombinedCacheClientFactory.create(
+                remoteOptions,
+                remoteOptions.getDiskCachePath(workingDirectory),  /* creds= */
+                null,
+                authAndTlsOptions,
+                workingDirectory,
+                digestUtil,
+                retrier
+            )
 
-    assertThat(blobStore.remoteCacheClient()).isInstanceOf(HttpCacheClient.class);
-    assertThat(blobStore.diskCacheClient()).isNull();
-  }
+        assertThat(blobStore.remoteCacheClient()).isInstanceOf(HttpCacheClient::class.java)
+        assertThat(blobStore.diskCacheClient()).isNull()
+    }
 
-  @Test
-  public void createDiskCache() throws IOException {
-    remoteOptions.setDiskCache(PathFragment.create("/etc/something/cache/here"));
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun createDiskCache() {
+        remoteOptions.diskCache = PathFragment.create("/etc/something/cache/here")
 
-    var blobStore =
-        CombinedCacheClientFactory.create(
-            remoteOptions,
-            remoteOptions.getDiskCachePath(workingDirectory),
-            /* creds= */ null,
-            authAndTlsOptions,
-            workingDirectory,
-            digestUtil,
-            retrier);
+        val blobStore: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            CombinedCacheClientFactory.create(
+                remoteOptions,
+                remoteOptions.getDiskCachePath(workingDirectory),  /* creds= */
+                null,
+                authAndTlsOptions,
+                workingDirectory,
+                digestUtil,
+                retrier
+            )
 
-    assertThat(blobStore.remoteCacheClient()).isNull();
-    assertThat(blobStore.diskCacheClient()).isNotNull();
-  }
+        assertThat(blobStore.remoteCacheClient()).isNull()
+        assertThat(blobStore.diskCacheClient()).isNotNull()
+    }
 
-  @Test
-  public void isRemoteCacheOptions_httpCacheEnabled() {
-    remoteOptions.setRemoteCache("http://doesnotexist:90");
-    assertThat(CombinedCacheClientFactory.isRemoteCacheOptions(remoteOptions)).isTrue();
-  }
+    @get:org.junit.Test
+    val isRemoteCacheOptions_httpCacheEnabled: Unit
+        get() {
+            remoteOptions.remoteCache = "http://doesnotexist:90"
+            assertThat(CombinedCacheClientFactory.isRemoteCacheOptions(remoteOptions)).isTrue()
+        }
 
-  @Test
-  public void isRemoteCacheOptions_httpCacheEnabledInUpperCase() {
-    remoteOptions.setRemoteCache("HTTP://doesnotexist:90");
-    assertThat(CombinedCacheClientFactory.isRemoteCacheOptions(remoteOptions)).isTrue();
-  }
+    @get:org.junit.Test
+    val isRemoteCacheOptions_httpCacheEnabledInUpperCase: Unit
+        get() {
+            remoteOptions.remoteCache = "HTTP://doesnotexist:90"
+            assertThat(CombinedCacheClientFactory.isRemoteCacheOptions(remoteOptions)).isTrue()
+        }
 
-  @Test
-  public void isRemoteCacheOptions_httpsCacheEnabled() {
-    remoteOptions.setRemoteCache("https://doesnotexist:90");
-    assertThat(CombinedCacheClientFactory.isRemoteCacheOptions(remoteOptions)).isTrue();
-  }
+    @get:org.junit.Test
+    val isRemoteCacheOptions_httpsCacheEnabled: Unit
+        get() {
+            remoteOptions.remoteCache = "https://doesnotexist:90"
+            assertThat(CombinedCacheClientFactory.isRemoteCacheOptions(remoteOptions)).isTrue()
+        }
 
-  @Test
-  public void isRemoteCacheOptions_badProtocolStartsWithHttp() {
-    remoteOptions.setRemoteCache("httplolol://doesnotexist:90");
-    assertThat(CombinedCacheClientFactory.isRemoteCacheOptions(remoteOptions)).isFalse();
-  }
+    @get:org.junit.Test
+    val isRemoteCacheOptions_badProtocolStartsWithHttp: Unit
+        get() {
+            remoteOptions.remoteCache = "httplolol://doesnotexist:90"
+            assertThat(CombinedCacheClientFactory.isRemoteCacheOptions(remoteOptions)).isFalse()
+        }
 
-  @Test
-  public void isRemoteCacheOptions_diskCacheEnabled() {
-    remoteOptions.setDiskCache(PathFragment.create("/etc/something/cache/here"));
-    assertThat(CombinedCacheClientFactory.isRemoteCacheOptions(remoteOptions)).isTrue();
-  }
+    @get:org.junit.Test
+    val isRemoteCacheOptions_diskCacheEnabled: Unit
+        get() {
+            remoteOptions.diskCache = PathFragment.create("/etc/something/cache/here")
+            assertThat(CombinedCacheClientFactory.isRemoteCacheOptions(remoteOptions)).isTrue()
+        }
 
-  @Test
-  public void isRemoteCacheOptions_httpAndDiskCacheEnabled() {
-    remoteOptions.setRemoteCache("http://doesnotexist:90");
-    remoteOptions.setDiskCache(PathFragment.create("/etc/something/cache/here"));
+    @get:org.junit.Test
+    val isRemoteCacheOptions_httpAndDiskCacheEnabled: Unit
+        get() {
+            remoteOptions.remoteCache = "http://doesnotexist:90"
+            remoteOptions.diskCache = PathFragment.create("/etc/something/cache/here")
 
-    assertThat(CombinedCacheClientFactory.isRemoteCacheOptions(remoteOptions)).isTrue();
-  }
+            assertThat(CombinedCacheClientFactory.isRemoteCacheOptions(remoteOptions)).isTrue()
+        }
 
-  @Test
-  public void isRemoteCacheOptions_httpsAndDiskCacheEnabled() {
-    remoteOptions.setRemoteCache("https://doesnotexist:90");
-    remoteOptions.setDiskCache(PathFragment.create("/etc/something/cache/here"));
+    @get:org.junit.Test
+    val isRemoteCacheOptions_httpsAndDiskCacheEnabled: Unit
+        get() {
+            remoteOptions.remoteCache = "https://doesnotexist:90"
+            remoteOptions.diskCache = PathFragment.create("/etc/something/cache/here")
 
-    assertThat(CombinedCacheClientFactory.isRemoteCacheOptions(remoteOptions)).isTrue();
-  }
+            assertThat(CombinedCacheClientFactory.isRemoteCacheOptions(remoteOptions)).isTrue()
+        }
 
-  @Test
-  public void isRemoteCacheOptions_httpCacheDisabledWhenGrpcEnabled() {
-    remoteOptions.setRemoteCache("grpc://doesnotexist:90");
+    @get:org.junit.Test
+    val isRemoteCacheOptions_httpCacheDisabledWhenGrpcEnabled: Unit
+        get() {
+            remoteOptions.remoteCache = "grpc://doesnotexist:90"
 
-    assertThat(CombinedCacheClientFactory.isRemoteCacheOptions(remoteOptions)).isFalse();
-  }
+            assertThat(CombinedCacheClientFactory.isRemoteCacheOptions(remoteOptions)).isFalse()
+        }
 
-  @Test
-  public void isRemoteCacheOptions_httpCacheDisabledWhenNoProtocol() {
-    remoteOptions.setRemoteCache("doesnotexist:90");
+    @get:org.junit.Test
+    val isRemoteCacheOptions_httpCacheDisabledWhenNoProtocol: Unit
+        get() {
+            remoteOptions.remoteCache = "doesnotexist:90"
 
-    assertThat(CombinedCacheClientFactory.isRemoteCacheOptions(remoteOptions)).isFalse();
-  }
+            assertThat(CombinedCacheClientFactory.isRemoteCacheOptions(remoteOptions)).isFalse()
+        }
 
-  @Test
-  public void isRemoteCacheOptions_diskCacheOptionNull() {
-    remoteOptions.setDiskCache(null);
-    assertThat(CombinedCacheClientFactory.isRemoteCacheOptions(remoteOptions)).isFalse();
-  }
+    @get:org.junit.Test
+    val isRemoteCacheOptions_diskCacheOptionNull: Unit
+        get() {
+            remoteOptions.diskCache = null
+            assertThat(CombinedCacheClientFactory.isRemoteCacheOptions(remoteOptions)).isFalse()
+        }
 
-  @Test
-  public void isRemoteCacheOptions_remoteHttpCacheOptionEmpty() {
-    remoteOptions.setRemoteCache("");
-    assertThat(CombinedCacheClientFactory.isRemoteCacheOptions(remoteOptions)).isFalse();
-  }
+    @get:org.junit.Test
+    val isRemoteCacheOptions_remoteHttpCacheOptionEmpty: Unit
+        get() {
+            remoteOptions.remoteCache = ""
+            assertThat(CombinedCacheClientFactory.isRemoteCacheOptions(remoteOptions)).isFalse()
+        }
 
-  @Test
-  public void isRemoteCacheOptions_defaultOptions() {
-    assertThat(CombinedCacheClientFactory.isRemoteCacheOptions(remoteOptions)).isFalse();
-  }
+    @get:org.junit.Test
+    val isRemoteCacheOptions_defaultOptions: Unit
+        get() {
+            assertThat(CombinedCacheClientFactory.isRemoteCacheOptions(remoteOptions)).isFalse()
+        }
 }

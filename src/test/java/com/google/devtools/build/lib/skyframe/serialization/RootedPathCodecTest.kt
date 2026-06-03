@@ -11,23 +11,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import com.google.devtools.build.lib.skyframe.serialization.testutils.FsUtils;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import com.google.devtools.build.lib.vfs.RootedPath;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.FsUtils
 
-/** Basic tests for {@link RootedPath}'s codec. */
-@RunWith(JUnit4.class)
-public class RootedPathCodecTest {
-
-  @Test
-  public void testCodec() throws Exception {
-    SerializationTester serializationTester = new SerializationTester(FsUtils.TEST_ROOTED_PATH);
-    FsUtils.addDependencies(serializationTester);
-    serializationTester.runTests();
-  }
+/** Basic tests for [RootedPath]'s codec.  */
+@RunWith(JUnit4::class)
+class RootedPathCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCodec() {
+        val serializationTester: SerializationTester = SerializationTester(FsUtils.TEST_ROOTED_PATH)
+        FsUtils.addDependencies(serializationTester)
+        serializationTester.runTests()
+    }
 }

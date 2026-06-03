@@ -11,98 +11,95 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.platform
 
-package com.google.devtools.build.lib.rules.platform;
+import com.google.devtools.build.lib.analysis.platform.ConstraintSettingInfo
 
-import static com.google.common.truth.Truth.assertThat;
+/** Tests Starlark API for [PlatformInfo] providers.  */
+@RunWith(JUnit4::class)
+class PlatformInfoApiTest : PlatformTestCase() {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun constructor() {
+        constraintBuilder("//foo:basic").addConstraintValue("value1").write()
+        platformBuilder("//foo:my_platform").addConstraint("value1").write()
+        assertNoEvents()
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.analysis.platform.ConstraintSettingInfo;
-import com.google.devtools.build.lib.analysis.platform.ConstraintValueInfo;
-import com.google.devtools.build.lib.analysis.platform.PlatformInfo;
-import com.google.devtools.build.lib.cmdline.Label;
-import java.util.List;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+        val platformInfo: PlatformInfo? = fetchPlatformInfo("//foo:my_platform")
+        assertThat(platformInfo).isNotNull()
+        val constraintSetting: ConstraintSettingInfo? =
+            ConstraintSettingInfo.create(Label.parseCanonicalUnchecked("//foo:basic"))
+        val constraintValue: ConstraintValueInfo? =
+            ConstraintValueInfo.create(
+                constraintSetting, Label.parseCanonicalUnchecked("//foo:value1")
+            )
+        assertThat(platformInfo.constraints().get(constraintSetting)).isEqualTo(constraintValue)
+    }
 
-/** Tests Starlark API for {@link PlatformInfo} providers. */
-@RunWith(JUnit4.class)
-public class PlatformInfoApiTest extends PlatformTestCase {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun tooManyParentsError() {
+        val lines: MutableList<String?> =
+            com.google.common.collect.ImmutableList.Builder<String?>()
+                .addAll(platformBuilder("//foo:parent_platform1").lines())
+                .addAll(platformBuilder("//foo:parent_platform2").lines())
+                .addAll(
+                    com.google.common.collect.ImmutableList.of<String?>(
+                        "platform(name = 'my_platform',\n",
+                        "  parents = [\n",
+                        "    ':parent_platform1',\n",
+                        "    ':parent_platform2',\n",
+                        "  ])"
+                    )
+                )
+                .build()
 
-  @Test
-  public void constructor() throws Exception {
-    constraintBuilder("//foo:basic").addConstraintValue("value1").write();
-    platformBuilder("//foo:my_platform").addConstraint("value1").write();
-    assertNoEvents();
+        checkError(
+            "foo",
+            "my_platform",
+            "in parents attribute of platform rule //foo:my_platform: "
+                    + "parents attribute must have a single value",
+            *lines.toArray<String?>(arrayOf<String?>())
+        )
+    }
 
-    PlatformInfo platformInfo = fetchPlatformInfo("//foo:my_platform");
-    assertThat(platformInfo).isNotNull();
-    ConstraintSettingInfo constraintSetting =
-        ConstraintSettingInfo.create(Label.parseCanonicalUnchecked("//foo:basic"));
-    ConstraintValueInfo constraintValue =
-        ConstraintValueInfo.create(
-            constraintSetting, Label.parseCanonicalUnchecked("//foo:value1"));
-    assertThat(platformInfo.constraints().get(constraintSetting)).isEqualTo(constraintValue);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun constraints_overlappingError() {
+        val lines: com.google.common.collect.ImmutableList<String?> =
+            com.google.common.collect.ImmutableList.Builder<String?>()
+                .addAll(
+                    constraintBuilder("//foo:basic")
+                        .addConstraintValue("value1")
+                        .addConstraintValue("value2")
+                        .lines()
+                )
+                .addAll(
+                    platformBuilder("//foo:my_platform")
+                        .addConstraint("value1")
+                        .addConstraint("value2")
+                        .lines()
+                )
+                .build()
 
-  @Test
-  public void tooManyParentsError() throws Exception {
-    List<String> lines =
-        new ImmutableList.Builder<String>()
-            .addAll(platformBuilder("//foo:parent_platform1").lines())
-            .addAll(platformBuilder("//foo:parent_platform2").lines())
-            .addAll(
-                ImmutableList.of(
-                    "platform(name = 'my_platform',\n",
-                    "  parents = [\n",
-                    "    ':parent_platform1',\n",
-                    "    ':parent_platform2',\n",
-                    "  ])"))
-            .build();
+        checkError(
+            "foo",
+            "my_platform",
+            "Duplicate constraint values detected: "
+                    + "constraint_setting //foo:basic has [//foo:value1, //foo:value2]",
+            *lines.toArray<String?>(arrayOf<String?>())
+        )
+    }
 
-    checkError(
-        "foo",
-        "my_platform",
-        "in parents attribute of platform rule //foo:my_platform: "
-            + "parents attribute must have a single value",
-        lines.toArray(new String[] {}));
-  }
-
-  @Test
-  public void constraints_overlappingError() throws Exception {
-    ImmutableList<String> lines =
-        new ImmutableList.Builder<String>()
-            .addAll(
-                constraintBuilder("//foo:basic")
-                    .addConstraintValue("value1")
-                    .addConstraintValue("value2")
-                    .lines())
-            .addAll(
-                platformBuilder("//foo:my_platform")
-                    .addConstraint("value1")
-                    .addConstraint("value2")
-                    .lines())
-            .build();
-
-    checkError(
-        "foo",
-        "my_platform",
-        "Duplicate constraint values detected: "
-            + "constraint_setting //foo:basic has [//foo:value1, //foo:value2]",
-        lines.toArray(new String[] {}));
-  }
-
-  @Test
-  public void constraints_invalidTarget_error() throws Exception {
-    checkError(
-        "foo",
-        "my_platform",
-        // TODO: https://github.com/bazelbuild/bazel/issues/23126 - Have a better error message.
-        // Something like "Invalid dependency :lib does not provide ConstraintValueInfo"
-        "errors encountered while analyzing target",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun constraints_invalidTarget_error() {
+        checkError(
+            "foo",
+            "my_platform",  // TODO: https://github.com/bazelbuild/bazel/issues/23126 - Have a better error message.
+            // Something like "Invalid dependency :lib does not provide ConstraintValueInfo"
+            "errors encountered while analyzing target",
+            """
         filegroup(name = "lib")
 
         platform(
@@ -111,136 +108,154 @@ public class PlatformInfoApiTest extends PlatformTestCase {
                 ":lib",
             ],
         )
-        """);
-  }
+        
+        """.trimIndent()
+        )
+    }
 
-  @Test
-  public void constraints_parent() throws Exception {
-    constraintBuilder("//foo:setting1").addConstraintValue("value1").write();
-    constraintBuilder("//foo:setting2").addConstraintValue("value2").write();
-    platformBuilder("//foo:parent_platform").addConstraint("value1").write();
-    platformBuilder("//foo:my_platform")
-        .setParent("//foo:parent_platform")
-        .addConstraint("value2")
-        .write();
-    assertNoEvents();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun constraints_parent() {
+        constraintBuilder("//foo:setting1").addConstraintValue("value1").write()
+        constraintBuilder("//foo:setting2").addConstraintValue("value2").write()
+        platformBuilder("//foo:parent_platform").addConstraint("value1").write()
+        platformBuilder("//foo:my_platform")
+            .setParent("//foo:parent_platform")
+            .addConstraint("value2")
+            .write()
+        assertNoEvents()
 
-    PlatformInfo platformInfo = fetchPlatformInfo("//foo:my_platform");
-    assertThat(platformInfo).isNotNull();
-    ConstraintSettingInfo constraintSetting1 =
-        ConstraintSettingInfo.create(Label.parseCanonicalUnchecked("//foo:setting1"));
-    ConstraintValueInfo constraintValue1 =
-        ConstraintValueInfo.create(
-            constraintSetting1, Label.parseCanonicalUnchecked("//foo:value1"));
-    assertThat(platformInfo.constraints().get(constraintSetting1)).isEqualTo(constraintValue1);
-    ConstraintSettingInfo constraintSetting2 =
-        ConstraintSettingInfo.create(Label.parseCanonicalUnchecked("//foo:setting2"));
-    ConstraintValueInfo constraintValue2 =
-        ConstraintValueInfo.create(
-            constraintSetting2, Label.parseCanonicalUnchecked("//foo:value2"));
-    assertThat(platformInfo.constraints().get(constraintSetting2)).isEqualTo(constraintValue2);
-  }
+        val platformInfo: PlatformInfo? = fetchPlatformInfo("//foo:my_platform")
+        assertThat(platformInfo).isNotNull()
+        val constraintSetting1: ConstraintSettingInfo? =
+            ConstraintSettingInfo.create(Label.parseCanonicalUnchecked("//foo:setting1"))
+        val constraintValue1: ConstraintValueInfo? =
+            ConstraintValueInfo.create(
+                constraintSetting1, Label.parseCanonicalUnchecked("//foo:value1")
+            )
+        assertThat(platformInfo.constraints().get(constraintSetting1)).isEqualTo(constraintValue1)
+        val constraintSetting2: ConstraintSettingInfo? =
+            ConstraintSettingInfo.create(Label.parseCanonicalUnchecked("//foo:setting2"))
+        val constraintValue2: ConstraintValueInfo? =
+            ConstraintValueInfo.create(
+                constraintSetting2, Label.parseCanonicalUnchecked("//foo:value2")
+            )
+        assertThat(platformInfo.constraints().get(constraintSetting2)).isEqualTo(constraintValue2)
+    }
 
-  @Test
-  public void constraints_parent_override() throws Exception {
-    constraintBuilder("//foo:setting1")
-        .addConstraintValue("value1a")
-        .addConstraintValue("value1b")
-        .write();
-    platformBuilder("//foo:parent_platform").addConstraint("value1a").write();
-    platformBuilder("//foo:my_platform").addConstraint("value1b").write();
-    assertNoEvents();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun constraints_parent_override() {
+        constraintBuilder("//foo:setting1")
+            .addConstraintValue("value1a")
+            .addConstraintValue("value1b")
+            .write()
+        platformBuilder("//foo:parent_platform").addConstraint("value1a").write()
+        platformBuilder("//foo:my_platform").addConstraint("value1b").write()
+        assertNoEvents()
 
-    PlatformInfo platformInfo = fetchPlatformInfo("//foo:my_platform");
-    assertThat(platformInfo).isNotNull();
-    ConstraintSettingInfo constraintSetting1 =
-        ConstraintSettingInfo.create(Label.parseCanonicalUnchecked("//foo:setting1"));
-    ConstraintValueInfo constraintValue1 =
-        ConstraintValueInfo.create(
-            constraintSetting1, Label.parseCanonicalUnchecked("//foo:value1b"));
-    assertThat(platformInfo.constraints().get(constraintSetting1)).isEqualTo(constraintValue1);
-  }
+        val platformInfo: PlatformInfo? = fetchPlatformInfo("//foo:my_platform")
+        assertThat(platformInfo).isNotNull()
+        val constraintSetting1: ConstraintSettingInfo? =
+            ConstraintSettingInfo.create(Label.parseCanonicalUnchecked("//foo:setting1"))
+        val constraintValue1: ConstraintValueInfo? =
+            ConstraintValueInfo.create(
+                constraintSetting1, Label.parseCanonicalUnchecked("//foo:value1b")
+            )
+        assertThat(platformInfo.constraints().get(constraintSetting1)).isEqualTo(constraintValue1)
+    }
 
-  @Test
-  public void execProperties() throws Exception {
-    ImmutableMap<String, String> props = ImmutableMap.of("k1", "v1", "k2", "v2");
-    platformBuilder("//foo:my_platform").setExecProperties(props).write();
-    assertNoEvents();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun execProperties() {
+        val props: com.google.common.collect.ImmutableMap<String?, String?> =
+            com.google.common.collect.ImmutableMap.of<String?, String?>("k1", "v1", "k2", "v2")
+        platformBuilder("//foo:my_platform").setExecProperties(props).write()
+        assertNoEvents()
 
-    PlatformInfo platformInfo = fetchPlatformInfo("//foo:my_platform");
-    assertThat(platformInfo).isNotNull();
-    assertThat(platformInfo.execProperties()).isEqualTo(props);
-  }
+        val platformInfo: PlatformInfo? = fetchPlatformInfo("//foo:my_platform")
+        assertThat(platformInfo).isNotNull()
+        assertThat(platformInfo.execProperties()).isEqualTo(props)
+    }
 
-  @Test
-  public void execProperties_parent() throws Exception {
-    ImmutableMap<String, String> props = ImmutableMap.of("k1", "v1", "k2", "v2");
-    platformBuilder("//foo:parent_platform").setExecProperties(props).write();
-    platformBuilder("//foo:my_platform").setParent("//foo:parent_platform").write();
-    assertNoEvents();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun execProperties_parent() {
+        val props: com.google.common.collect.ImmutableMap<String?, String?> =
+            com.google.common.collect.ImmutableMap.of<String?, String?>("k1", "v1", "k2", "v2")
+        platformBuilder("//foo:parent_platform").setExecProperties(props).write()
+        platformBuilder("//foo:my_platform").setParent("//foo:parent_platform").write()
+        assertNoEvents()
 
-    PlatformInfo platformInfo = fetchPlatformInfo("//foo:my_platform");
-    assertThat(platformInfo).isNotNull();
-    assertThat(platformInfo.execProperties()).isEqualTo(props);
-  }
+        val platformInfo: PlatformInfo? = fetchPlatformInfo("//foo:my_platform")
+        assertThat(platformInfo).isNotNull()
+        assertThat(platformInfo.execProperties()).isEqualTo(props)
+    }
 
-  @Test
-  public void execProperties_parent_merged() throws Exception {
-    ImmutableMap<String, String> propsParent = ImmutableMap.of("k1", "v1", "k2", "v2");
-    ImmutableMap<String, String> propsChild = ImmutableMap.of("k2", "child_v2", "k3", "child_v3");
-    platformBuilder("//foo:parent_platform").setExecProperties(propsParent).write();
-    platformBuilder("//foo:my_platform")
-        .setParent("//foo:parent_platform")
-        .setExecProperties(propsChild)
-        .write();
-    assertNoEvents();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun execProperties_parent_merged() {
+        val propsParent: com.google.common.collect.ImmutableMap<String?, String?> =
+            com.google.common.collect.ImmutableMap.of<String?, String?>("k1", "v1", "k2", "v2")
+        val propsChild: com.google.common.collect.ImmutableMap<String?, String?> =
+            com.google.common.collect.ImmutableMap.of<String?, String?>("k2", "child_v2", "k3", "child_v3")
+        platformBuilder("//foo:parent_platform").setExecProperties(propsParent).write()
+        platformBuilder("//foo:my_platform")
+            .setParent("//foo:parent_platform")
+            .setExecProperties(propsChild)
+            .write()
+        assertNoEvents()
 
-    PlatformInfo platformInfo = fetchPlatformInfo("//foo:my_platform");
-    assertThat(platformInfo).isNotNull();
-    ImmutableMap<String, String> expected =
-        ImmutableMap.of("k1", "v1", "k2", "child_v2", "k3", "child_v3");
-    assertThat(platformInfo.execProperties()).isEqualTo(expected);
-  }
+        val platformInfo: PlatformInfo? = fetchPlatformInfo("//foo:my_platform")
+        assertThat(platformInfo).isNotNull()
+        val expected: com.google.common.collect.ImmutableMap<String?, String?> =
+            com.google.common.collect.ImmutableMap.of<String?, String?>("k1", "v1", "k2", "child_v2", "k3", "child_v3")
+        assertThat(platformInfo.execProperties()).isEqualTo(expected)
+    }
 
-  @Test
-  public void flags() throws Exception {
-    platformBuilder("//foo:basic").addFlags("--cpu=k8", "--//starlark:flag=other").write();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun flags() {
+        platformBuilder("//foo:basic").addFlags("--cpu=k8", "--//starlark:flag=other").write()
 
-    PlatformInfo platformInfo = fetchPlatformInfo("//foo:basic");
-    assertThat(platformInfo).isNotNull();
-    assertThat(platformInfo.flags()).containsExactly("--cpu=k8", "--//starlark:flag=other");
-  }
+        val platformInfo: PlatformInfo? = fetchPlatformInfo("//foo:basic")
+        assertThat(platformInfo).isNotNull()
+        assertThat(platformInfo.flags()).containsExactly("--cpu=k8", "--//starlark:flag=other")
+    }
 
-  @Test
-  public void flags_parent() throws Exception {
-    platformBuilder("//foo:parent").addFlags("--cpu=k8").write();
-    platformBuilder("//foo:basic").setParent("//foo:parent").write();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun flags_parent() {
+        platformBuilder("//foo:parent").addFlags("--cpu=k8").write()
+        platformBuilder("//foo:basic").setParent("//foo:parent").write()
 
-    PlatformInfo platformInfo = fetchPlatformInfo("//foo:basic");
-    assertThat(platformInfo).isNotNull();
-    assertThat(platformInfo.flags()).containsExactly("--cpu=k8");
-  }
+        val platformInfo: PlatformInfo? = fetchPlatformInfo("//foo:basic")
+        assertThat(platformInfo).isNotNull()
+        assertThat(platformInfo.flags()).containsExactly("--cpu=k8")
+    }
 
-  @Test
-  public void flags_parent_merged() throws Exception {
-    platformBuilder("//foo:parent").addFlags("--cpu=k8").write();
-    platformBuilder("//foo:basic")
-        .setParent("//foo:parent")
-        .addFlags("--//starlark:flag=other")
-        .write();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun flags_parent_merged() {
+        platformBuilder("//foo:parent").addFlags("--cpu=k8").write()
+        platformBuilder("//foo:basic")
+            .setParent("//foo:parent")
+            .addFlags("--//starlark:flag=other")
+            .write()
 
-    PlatformInfo platformInfo = fetchPlatformInfo("//foo:basic");
-    assertThat(platformInfo).isNotNull();
-    assertThat(platformInfo.flags()).containsExactly("--cpu=k8", "--//starlark:flag=other");
-  }
+        val platformInfo: PlatformInfo? = fetchPlatformInfo("//foo:basic")
+        assertThat(platformInfo).isNotNull()
+        assertThat(platformInfo.flags()).containsExactly("--cpu=k8", "--//starlark:flag=other")
+    }
 
-  @Test
-  public void flags_parent_override() throws Exception {
-    platformBuilder("//foo:parent").addFlags("--cpu=arm").write();
-    platformBuilder("//foo:basic").setParent("//foo:parent").addFlags("--cpu=k8").write();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun flags_parent_override() {
+        platformBuilder("//foo:parent").addFlags("--cpu=arm").write()
+        platformBuilder("//foo:basic").setParent("//foo:parent").addFlags("--cpu=k8").write()
 
-    PlatformInfo platformInfo = fetchPlatformInfo("//foo:basic");
-    assertThat(platformInfo).isNotNull();
-    assertThat(platformInfo.flags()).containsExactly("--cpu=arm", "--cpu=k8").inOrder();
-  }
+        val platformInfo: PlatformInfo? = fetchPlatformInfo("//foo:basic")
+        assertThat(platformInfo).isNotNull()
+        assertThat(platformInfo.flags()).containsExactly("--cpu=arm", "--cpu=k8").inOrder()
+    }
 }

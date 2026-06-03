@@ -11,361 +11,327 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.worker
 
-package com.google.devtools.build.lib.worker;
+import com.google.devtools.build.lib.actions.ExecutionRequirements
+import com.google.devtools.build.lib.worker.WorkerTestUtils.createWorkerKey
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.ImmutableSortedMap;
-import com.google.common.hash.HashCode;
-import com.google.devtools.build.lib.actions.ExecutionRequirements;
-import com.google.devtools.build.lib.actions.ExecutionRequirements.WorkerProtocolFormat;
-import com.google.devtools.build.lib.actions.ResourceSet;
-import com.google.devtools.build.lib.actions.SimpleSpawn;
-import com.google.devtools.build.lib.actions.Spawn;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.shell.Subprocess;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.common.options.Options;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.Closeable;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-
-/** Utilities that come in handy when unit-testing the worker code. */
-public class WorkerTestUtils {
-
-  private WorkerTestUtils() {}
-
-  /** A helper method to create a fake Spawn with the given execution info. */
-  static Spawn createSpawn(ImmutableMap<String, String> executionInfo) {
-    return createSpawn(ImmutableList.of(), executionInfo);
-  }
-
-  static Spawn createSpawn(
-      ImmutableList<String> arguments, ImmutableMap<String, String> executionInfo) {
-    return new SimpleSpawn(
-        new ActionsTestUtil.NullAction(),
-        arguments,
-        /* environment= */ ImmutableMap.of(),
-        executionInfo,
-        /* inputs= */ NestedSetBuilder.emptySet(Order.STABLE_ORDER),
-        /* outputs= */ ImmutableSet.of(),
-        ResourceSet.ZERO);
-  }
-
-  /** A helper method to create a WorkerKey through WorkerParser. */
-  static WorkerKey createWorkerKey(
-      WorkerProtocolFormat protocolFormat,
-      FileSystem fs,
-      String mnemonic,
-      boolean multiplex,
-      boolean sandboxed,
-      boolean dynamic,
-      String... args) {
-    WorkerOptions workerOptions = Options.getDefaults(WorkerOptions.class);
-    workerOptions.workerMultiplex = multiplex;
-    workerOptions.workerSandboxing = sandboxed;
-
-    return createWorkerKeyFromOptions(
-        protocolFormat,
-        fs.getPath("/outputbase"),
-        workerOptions,
-        dynamic,
-        createSpawn(execRequirementsBuilder(mnemonic).buildOrThrow()),
-        args);
-  }
-
-  static WorkerKey createWorkerKey(
-      FileSystem fileSystem, String mnemonic, boolean proxied, String... args) {
-    return createWorkerKey(
-        WorkerProtocolFormat.PROTO,
-        fileSystem,
-        mnemonic,
-        proxied,
-        /* sandboxed= */ false,
-        /* dynamic= */ false,
-        args);
-  }
-
-  static WorkerKey createWorkerKey(WorkerProtocolFormat protocolFormat, FileSystem fs) {
-    return createWorkerKey(protocolFormat, fs, false);
-  }
-
-  static WorkerKey createWorkerKey(
-      String mnemonic, FileSystem fs, boolean multiplex, boolean sandboxed) {
-    return createWorkerKey(
-        WorkerProtocolFormat.PROTO, fs, mnemonic, multiplex, sandboxed, /* dynamic= */ false);
-  }
-
-  static WorkerKey createWorkerKey(String mnemonic, FileSystem fs, boolean sandboxed) {
-    return createWorkerKey(
-        WorkerProtocolFormat.PROTO,
-        fs,
-        mnemonic,
-        /* multiplex= */ false,
-        sandboxed,
-        /* dynamic= */ false);
-  }
-
-  static WorkerKey createWorkerKey(String mnemonic, FileSystem fs) {
-    return createWorkerKey(
-        WorkerProtocolFormat.PROTO,
-        fs,
-        mnemonic,
-        /* multiplex= */ false,
-        /* sandboxed= */ false,
-        /* dynamic= */ false);
-  }
-
-  static WorkerKey createWorkerKey(
-      WorkerProtocolFormat protocolFormat, FileSystem fs, boolean dynamic) {
-    return createWorkerKey(
-        protocolFormat,
-        fs,
-        /* mnemonic= */ "dummy",
-        /* multiplex= */ true,
-        /* sandboxed= */ true,
-        dynamic,
-        /* args...= */ "arg1",
-        "arg2",
-        "arg3");
-  }
-
-  static WorkerKey createWorkerKey(
-      FileSystem fs, boolean multiplex, boolean sandboxed, boolean dynamic) {
-    return createWorkerKey(
-        WorkerProtocolFormat.PROTO,
-        fs,
-        /* mnemonic= */ "dummy",
-        multiplex,
-        sandboxed,
-        dynamic,
-        /* args...= */ "arg1",
-        "arg2",
-        "arg3");
-  }
-
-  /**
-   * Creates a worker key based on a set of options. The {@code extraRequirements} are added to the
-   * {@link Spawn} execution info with the value "1". The "supports-workers" and
-   * "supports-multiplex-workers" execution requirements are always set.
-   *
-   * @param outputBase Global (for the test) outputBase.
-   */
-  static WorkerKey createWorkerKeyWithRequirements(
-      Path outputBase,
-      WorkerOptions workerOptions,
-      String mnemonic,
-      boolean dynamic,
-      String... extraRequirements) {
-    ImmutableMap.Builder<String, String> builder = execRequirementsBuilder(mnemonic);
-    for (String req : extraRequirements) {
-      builder.put(req, "1");
-    }
-    Spawn spawn = createSpawn(builder.buildOrThrow());
-
-    return WorkerParser.createWorkerKey(
-        spawn,
-        /* workerArgs= */ ImmutableList.of(),
-        /* env= */ ImmutableMap.of("env1", "foo", "env2", "bar"),
-        /* execRoot= */ outputBase.getChild("execroot"),
-        /* workerFilesCombinedHash= */ HashCode.fromInt(0),
-        /* workerFiles= */ ImmutableSortedMap.of(),
-        workerOptions,
-        dynamic,
-        WorkerProtocolFormat.PROTO);
-  }
-
-  static ImmutableMap.Builder<String, String> execRequirementsBuilder(String mnemonic) {
-    return ImmutableMap.<String, String>builder()
-        .put(ExecutionRequirements.WORKER_KEY_MNEMONIC, mnemonic)
-        .put(ExecutionRequirements.REQUIRES_WORKER_PROTOCOL, "proto")
-        .put(ExecutionRequirements.SUPPORTS_WORKERS, "1")
-        .put(ExecutionRequirements.SUPPORTS_MULTIPLEX_WORKERS, "1");
-  }
-
-  static WorkerKey createWorkerKeyFromOptions(
-      WorkerProtocolFormat protocolFormat,
-      Path outputBase,
-      WorkerOptions workerOptions,
-      boolean dynamic,
-      Spawn spawn,
-      String... args) {
-
-    return WorkerParser.createWorkerKey(
-        spawn,
-        /* workerArgs= */ ImmutableList.copyOf(args),
-        /* env= */ ImmutableMap.of("env1", "foo", "env2", "bar"),
-        /* execRoot= */ outputBase.getChild("execroot"),
-        /* workerFilesCombinedHash= */ HashCode.fromInt(0),
-        /* workerFiles= */ ImmutableSortedMap.of(),
-        workerOptions,
-        dynamic,
-        protocolFormat);
-  }
-
-  /** A worker that uses a fake subprocess for I/O. */
-  static class TestWorker extends SingleplexWorker {
-    private final FakeSubprocess fakeSubprocess;
-
-    TestWorker(
-        WorkerKey workerKey,
-        int workerId,
-        final Path workDir,
-        Path logFile,
-        FakeSubprocess fakeSubprocess,
-        WorkerOptions options) {
-      super(workerKey, workerId, workDir, logFile, options, null);
-      this.fakeSubprocess = fakeSubprocess;
+/** Utilities that come in handy when unit-testing the worker code.  */
+object WorkerTestUtils {
+    /** A helper method to create a fake Spawn with the given execution info.  */
+    fun createSpawn(executionInfo: com.google.common.collect.ImmutableMap<String?, String?>?): Spawn {
+        return createSpawn(com.google.common.collect.ImmutableList.of<String?>(), executionInfo)
     }
 
-    @Override
-    protected Subprocess createProcess(ImmutableMap<String, String> clientEnv) {
-      return fakeSubprocess;
+    fun createSpawn(
+        arguments: com.google.common.collect.ImmutableList<String?>?,
+        executionInfo: com.google.common.collect.ImmutableMap<String?, String?>?
+    ): Spawn {
+        return SimpleSpawn(
+            NullAction(),
+            arguments,  /* environment= */
+            com.google.common.collect.ImmutableMap.of<K?, V?>(),
+            executionInfo,  /* inputs= */
+            NestedSetBuilder.emptySet(Order.STABLE_ORDER),  /* outputs= */
+            com.google.common.collect.ImmutableSet.of<E?>(),
+            ResourceSet.ZERO
+        )
     }
 
-    FakeSubprocess getFakeSubprocess() {
-      return fakeSubprocess;
-    }
-  }
+    /** A helper method to create a WorkerKey through WorkerParser.  */
+    fun createWorkerKey(
+        protocolFormat: WorkerProtocolFormat?,
+        fs: FileSystem,
+        mnemonic: String?,
+        multiplex: Boolean,
+        sandboxed: Boolean,
+        dynamic: Boolean,
+        vararg args: String?
+    ): WorkerKey? {
+        val workerOptions: WorkerOptions =
+            com.google.devtools.common.options.Options.getDefaults<O>(WorkerOptions::class.java)
+        workerOptions.workerMultiplex = multiplex
+        workerOptions.workerSandboxing = sandboxed
 
-  /**
-   * The {@link Worker} object uses a {@link Subprocess} to interact with persistent worker
-   * binaries. Since this test is strictly testing {@link Worker} and not any outside persistent
-   * worker binaries, a {@link FakeSubprocess} instance is used to fake the {@link InputStream} and
-   * {@link OutputStream} that normally write and read from a persistent worker.
-   */
-  static class FakeSubprocess implements Subprocess {
-    private final InputStream inputStream;
-    private final ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-    private final ByteArrayInputStream errStream = new ByteArrayInputStream(new byte[0]);
-    private boolean wasDestroyed = false;
-
-    /** Creates a fake Subprocess that writes {@code bytes} to its "stdout". */
-    FakeSubprocess(byte[] bytes) throws IOException {
-      inputStream = new ByteArrayInputStream(bytes);
-    }
-
-    FakeSubprocess(InputStream responseStream) throws IOException {
-      this.inputStream = responseStream;
-    }
-
-    @Override
-    public InputStream getInputStream() {
-      return inputStream;
+        return createWorkerKeyFromOptions(
+            protocolFormat,
+            fs.getPath("/outputbase"),
+            workerOptions,
+            dynamic,
+            createSpawn(execRequirementsBuilder(mnemonic).buildOrThrow()),
+            args
+        )
     }
 
-    @Override
-    public OutputStream getOutputStream() {
-      return outputStream;
+    fun createWorkerKey(
+        fileSystem: FileSystem?, mnemonic: String?, proxied: Boolean, vararg args: String?
+    ): WorkerKey? {
+        return createWorkerKey(
+            WorkerProtocolFormat.PROTO,
+            fileSystem,
+            mnemonic,
+            proxied,  /* sandboxed= */
+            false,  /* dynamic= */
+            false,
+            args
+        )
     }
 
-    @Override
-    public InputStream getErrorStream() {
-      return errStream;
+    fun createWorkerKey(protocolFormat: WorkerProtocolFormat?, fs: FileSystem): WorkerKey? {
+        return WorkerTestUtils.createWorkerKey(protocolFormat, fs, false)
     }
 
-    @Override
-    public synchronized boolean destroy() {
-      for (Closeable stream : new Closeable[] {inputStream, outputStream, errStream}) {
-        try {
-          stream.close();
-        } catch (IOException e) {
-          throw new IllegalStateException(e);
+    fun createWorkerKey(
+        mnemonic: String?, fs: FileSystem?, multiplex: Boolean, sandboxed: Boolean
+    ): WorkerKey? {
+        return createWorkerKey(
+            WorkerProtocolFormat.PROTO, fs, mnemonic, multiplex, sandboxed,  /* dynamic= */false
+        )
+    }
+
+    fun createWorkerKey(mnemonic: String?, fs: FileSystem?, sandboxed: Boolean): WorkerKey? {
+        return createWorkerKey(
+            WorkerProtocolFormat.PROTO,
+            fs,
+            mnemonic,  /* multiplex= */
+            false,
+            sandboxed,  /* dynamic= */
+            false
+        )
+    }
+
+    fun createWorkerKey(mnemonic: String?, fs: FileSystem?): WorkerKey? {
+        return createWorkerKey(
+            WorkerProtocolFormat.PROTO,
+            fs,
+            mnemonic,  /* multiplex= */
+            false,  /* sandboxed= */
+            false,  /* dynamic= */
+            false
+        )
+    }
+
+    fun createWorkerKey(
+        protocolFormat: WorkerProtocolFormat?, fs: FileSystem, dynamic: Boolean
+    ): WorkerKey? {
+        return createWorkerKey(
+            protocolFormat,
+            fs,  /* mnemonic= */
+            "dummy",  /* multiplex= */
+            true,  /* sandboxed= */
+            true,
+            dynamic,  /* args...= */
+            "arg1",
+            "arg2",
+            "arg3"
+        )
+    }
+
+    fun createWorkerKey(
+        fs: FileSystem?, multiplex: Boolean, sandboxed: Boolean, dynamic: Boolean
+    ): WorkerKey? {
+        return createWorkerKey(
+            WorkerProtocolFormat.PROTO,
+            fs,  /* mnemonic= */
+            "dummy",
+            multiplex,
+            sandboxed,
+            dynamic,  /* args...= */
+            "arg1",
+            "arg2",
+            "arg3"
+        )
+    }
+
+    /**
+     * Creates a worker key based on a set of options. The `extraRequirements` are added to the
+     * [Spawn] execution info with the value "1". The "supports-workers" and
+     * "supports-multiplex-workers" execution requirements are always set.
+     * 
+     * @param outputBase Global (for the test) outputBase.
+     */
+    fun createWorkerKeyWithRequirements(
+        outputBase: Path,
+        workerOptions: WorkerOptions?,
+        mnemonic: String?,
+        dynamic: Boolean,
+        vararg extraRequirements: String?
+    ): WorkerKey {
+        val builder: com.google.common.collect.ImmutableMap.Builder<String?, String?> =
+            execRequirementsBuilder(mnemonic)
+        for (req in extraRequirements) {
+            builder.put(req, "1")
         }
-      }
+        val spawn: Spawn = createSpawn(builder.buildOrThrow())
 
-      wasDestroyed = true;
-      return true;
+        return WorkerParser.createWorkerKey(
+            spawn,  /* workerArgs= */
+            com.google.common.collect.ImmutableList.of<E?>(),  /* env= */
+            com.google.common.collect.ImmutableMap.of<K?, V?>("env1", "foo", "env2", "bar"),  /* execRoot= */
+            outputBase.getChild("execroot"),  /* workerFilesCombinedHash= */
+            com.google.common.hash.HashCode.fromInt(0),  /* workerFiles= */
+            com.google.common.collect.ImmutableSortedMap.of<K?, V?>(),
+            workerOptions,
+            dynamic,
+            WorkerProtocolFormat.PROTO
+        )
     }
 
-    @Override
-    public int exitValue() {
-      return 0;
+    fun execRequirementsBuilder(mnemonic: String?): com.google.common.collect.ImmutableMap.Builder<String?, String?> {
+        return com.google.common.collect.ImmutableMap.builder<String?, String?>()
+            .put(ExecutionRequirements.WORKER_KEY_MNEMONIC, mnemonic)
+            .put(ExecutionRequirements.REQUIRES_WORKER_PROTOCOL, "proto")
+            .put(ExecutionRequirements.SUPPORTS_WORKERS, "1")
+            .put(ExecutionRequirements.SUPPORTS_MULTIPLEX_WORKERS, "1")
     }
 
-    @Override
-    public boolean finished() {
-      return true;
+    fun createWorkerKeyFromOptions(
+        protocolFormat: WorkerProtocolFormat?,
+        outputBase: Path,
+        workerOptions: WorkerOptions?,
+        dynamic: Boolean,
+        spawn: Spawn?,
+        vararg args: String?
+    ): WorkerKey {
+        return WorkerParser.createWorkerKey(
+            spawn,  /* workerArgs= */
+            com.google.common.collect.ImmutableList.< E > copyOf < E ? > (args),  /* env= */
+            com.google.common.collect.ImmutableMap.of<K?, V?>("env1", "foo", "env2", "bar"),  /* execRoot= */
+            outputBase.getChild("execroot"),  /* workerFilesCombinedHash= */
+            com.google.common.hash.HashCode.fromInt(0),  /* workerFiles= */
+            com.google.common.collect.ImmutableSortedMap.of<K?, V?>(),
+            workerOptions,
+            dynamic,
+            protocolFormat
+        )
     }
 
-    @Override
-    public boolean timedout() {
-      return false;
+    fun createTestWorkerPool(worker: Worker): WorkerPool {
+        return object : WorkerPool() {
+            public override fun getMaxTotalPerKey(key: WorkerKey?): Int {
+                return 1
+            }
+
+            public override fun getNumActive(key: WorkerKey?): Int {
+                return 0
+            }
+
+            public override fun hasAvailableQuota(key: WorkerKey?): Boolean {
+                return true
+            }
+
+            @Throws(java.lang.InterruptedException::class)
+            public override fun evictWorkers(workerIdsToEvict: com.google.common.collect.ImmutableSet<Int?>?): com.google.common.collect.ImmutableSet<Int?> {
+                return com.google.common.collect.ImmutableSet.of<Int?>()
+            }
+
+            @get:Throws(java.lang.InterruptedException::class)
+            val idleWorkers: com.google.common.collect.ImmutableSet<Int?>
+                get() = com.google.common.collect.ImmutableSet.of<Int?>()
+
+            @Throws(IOException::class, java.lang.InterruptedException::class)
+            public override fun borrowWorker(key: WorkerKey?): Worker {
+                return worker
+            }
+
+            public override fun returnWorker(key: WorkerKey?, worker: Worker?) {}
+
+            @Throws(java.lang.InterruptedException::class)
+            public override fun invalidateWorker(worker: Worker?) {
+            }
+
+            public override fun reset() {}
+
+            public override fun close() {}
+        }
     }
 
-    @Override
-    public void waitFor() throws InterruptedException {
-      // Do nothing.
+    /** A worker that uses a fake subprocess for I/O.  */
+    internal class TestWorker(
+        workerKey: WorkerKey?,
+        workerId: Int,
+        workDir: Path?,
+        logFile: Path?,
+        val fakeSubprocess: FakeSubprocess?,
+        options: WorkerOptions?
+    ) : SingleplexWorker(workerKey, workerId, workDir, logFile, options, null) {
+        protected override fun createProcess(clientEnv: com.google.common.collect.ImmutableMap<String?, String?>?): Subprocess? {
+            return fakeSubprocess
+        }
     }
 
-    @Override
-    public void close() {
-      // Do nothing.
+    /**
+     * The [Worker] object uses a [Subprocess] to interact with persistent worker
+     * binaries. Since this test is strictly testing [Worker] and not any outside persistent
+     * worker binaries, a [FakeSubprocess] instance is used to fake the [InputStream] and
+     * [OutputStream] that normally write and read from a persistent worker.
+     */
+    internal class FakeSubprocess : Subprocess {
+        private val inputStream: java.io.InputStream?
+        private val outputStream: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        private val errStream: ByteArrayInputStream = ByteArrayInputStream(ByteArray(0))
+        private var wasDestroyed = false
+
+        /** Creates a fake Subprocess that writes `bytes` to its "stdout".  */
+        constructor(bytes: ByteArray) {
+            inputStream = ByteArrayInputStream(bytes)
+        }
+
+        constructor(responseStream: java.io.InputStream?) {
+            this.inputStream = responseStream
+        }
+
+        public override fun getInputStream(): java.io.InputStream? {
+            return inputStream
+        }
+
+        public override fun getOutputStream(): java.io.OutputStream {
+            return outputStream
+        }
+
+        val errorStream: java.io.InputStream
+            get() = errStream
+
+        @kotlin.jvm.Synchronized
+        public override fun destroy(): Boolean {
+            for (stream in arrayOf<java.io.Closeable>(inputStream, outputStream, errStream)) {
+                try {
+                    stream.close()
+                } catch (e: IOException) {
+                    throw java.lang.IllegalStateException(e)
+                }
+            }
+
+            wasDestroyed = true
+            return true
+        }
+
+        public override fun exitValue(): Int {
+            return 0
+        }
+
+        public override fun finished(): Boolean {
+            return true
+        }
+
+        public override fun timedout(): Boolean {
+            return false
+        }
+
+        @Throws(java.lang.InterruptedException::class)
+        public override fun waitFor() {
+            // Do nothing.
+        }
+
+        public override fun close() {
+            // Do nothing.
+        }
+
+        @get:kotlin.jvm.Synchronized
+        val isAlive: Boolean
+            get() = !wasDestroyed
+
+        val processId: Long
+            get() = 0
     }
-
-    @Override
-    public synchronized boolean isAlive() {
-      return !wasDestroyed;
-    }
-
-    @Override
-    public long getProcessId() {
-      return 0;
-    }
-  }
-
-  public static WorkerPool createTestWorkerPool(Worker worker) {
-    return new WorkerPool() {
-      @Override
-      public int getMaxTotalPerKey(WorkerKey key) {
-        return 1;
-      }
-
-      @Override
-      public int getNumActive(WorkerKey key) {
-        return 0;
-      }
-
-      @Override
-      public boolean hasAvailableQuota(WorkerKey key) {
-        return true;
-      }
-
-      @Override
-      public ImmutableSet<Integer> evictWorkers(ImmutableSet<Integer> workerIdsToEvict)
-          throws InterruptedException {
-        return ImmutableSet.of();
-      }
-
-      @Override
-      public ImmutableSet<Integer> getIdleWorkers() throws InterruptedException {
-        return ImmutableSet.of();
-      }
-
-      @Override
-      public Worker borrowWorker(WorkerKey key) throws IOException, InterruptedException {
-        return worker;
-      }
-
-      @Override
-      public void returnWorker(WorkerKey key, Worker worker) {}
-
-      @Override
-      public void invalidateWorker(Worker worker) throws InterruptedException {}
-
-      @Override
-      public void reset() {}
-
-      @Override
-      public void close() {}
-    };
-  }
 }

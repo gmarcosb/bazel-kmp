@@ -11,240 +11,234 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.config;
+package com.google.devtools.build.lib.skyframe.config
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.analysis.PlatformOptions
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.analysis.PlatformOptions;
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.config.FragmentOptions;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.RepositoryMapping;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.Options;
-import com.google.devtools.common.options.OptionsClass;
-import com.google.devtools.common.options.OptionsParsingException;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.HashMap;
-import java.util.Map;
-import org.junit.BeforeClass;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Unit tests for [PlatformMappingValue].  */
+@RunWith(JUnit4::class)
+class PlatformMappingValueTest {
+    /** Extra options for this test.  */
+    @OptionsClass
+    abstract class DummyTestOptions : FragmentOptions() {
+        @get:Option(
+            name = "str_option",
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "defVal"
+        )
+        abstract val strOption: String?
 
-/** Unit tests for {@link PlatformMappingValue}. */
-@RunWith(JUnit4.class)
-public final class PlatformMappingValueTest {
-
-  private static final Label PLATFORM_ONE = Label.parseCanonicalUnchecked("//platforms:one");
-  private static final Label PLATFORM_TWO =
-      Label.parseCanonicalUnchecked("@dep+1.0//platforms:two");
-  private static final RepositoryMapping REPO_MAPPING =
-      RepositoryMapping.create(
-          ImmutableMap.of(
-              "", RepositoryName.MAIN, "dep", RepositoryName.createUnvalidated("dep+1.0")),
-          RepositoryName.MAIN);
-  private static final Label DEFAULT_TARGET_PLATFORM =
-      Label.parseCanonicalUnchecked("@bazel_tools//tools:host_platform");
-
-  /** Extra options for this test. */
-  @OptionsClass
-  public abstract static class DummyTestOptions extends FragmentOptions {
-    public DummyTestOptions() {}
-
-    @Option(
-        name = "str_option",
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "defVal")
-    public abstract String getStrOption();
-
-    @Option(
-        name = "other_str_option",
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "defVal")
-    public abstract String getOtherStrOption();
-  }
-
-  private static final ImmutableSet<Class<? extends FragmentOptions>> BUILD_CONFIG_OPTIONS =
-      // PlatformOptions is required for mapping.
-      ImmutableSet.of(PlatformOptions.class, DummyTestOptions.class);
-
-  private static BuildOptions createBuildOptions(String... args) throws OptionsParsingException {
-
-    return BuildOptions.of(BUILD_CONFIG_OPTIONS, args);
-  }
-
-  private static PlatformMappingBuilder builder() {
-    return new PlatformMappingBuilder();
-  }
-
-  private static final class PlatformMappingBuilder {
-    private final Map<Label, ParsedFlagsValue> platformsToFlags = new HashMap<>();
-    private final Map<ParsedFlagsValue, Label> flagsToPlatforms = new HashMap<>();
-
-    @CanIgnoreReturnValue
-    PlatformMappingBuilder addPlatform(Label platform, ParsedFlagsValue flags) {
-      this.platformsToFlags.put(platform, flags);
-      return this;
+        @get:Option(
+            name = "other_str_option",
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "defVal"
+        )
+        abstract val otherStrOption: String?
     }
 
-    @CanIgnoreReturnValue
-    PlatformMappingBuilder addPlatform(Label platform, String... nativeFlags)
-        throws OptionsParsingException {
-      return this.addPlatform(platform, createFlags(nativeFlags));
+    private class PlatformMappingBuilder {
+        private val platformsToFlags: MutableMap<Label?, ParsedFlagsValue?> = HashMap<Label?, ParsedFlagsValue?>()
+        private val flagsToPlatforms: MutableMap<ParsedFlagsValue?, Label?> = HashMap<ParsedFlagsValue?, Label?>()
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addPlatform(platform: Label?, flags: ParsedFlagsValue?): PlatformMappingBuilder {
+            this.platformsToFlags.put(platform, flags)
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        @Throws(OptionsParsingException::class)
+        fun addPlatform(platform: Label?, vararg nativeFlags: String?): PlatformMappingBuilder {
+            return this.addPlatform(platform, createFlags(*nativeFlags))
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        fun addFlags(flags: ParsedFlagsValue?, platform: Label?): PlatformMappingBuilder {
+            this.flagsToPlatforms.put(flags, platform)
+            return this
+        }
+
+        @com.google.errorprone.annotations.CanIgnoreReturnValue
+        @Throws(OptionsParsingException::class)
+        fun addFlags(platform: Label?, vararg nativeFlags: String?): PlatformMappingBuilder {
+            return this.addFlags(createFlags(*nativeFlags), platform)
+        }
+
+        fun build(): PlatformMappingValue {
+            return PlatformMappingValue(
+                com.google.common.collect.ImmutableMap.< K, V > copyOf<K?, V?>(platformsToFlags),
+                com.google.common.collect.ImmutableMap.< K, V > copyOf<K?, V?>(flagsToPlatforms),
+                BUILD_CONFIG_OPTIONS
+            )
+        }
+
+        companion object {
+            @Throws(OptionsParsingException::class)
+            private fun createFlags(vararg nativeFlags: String?): ParsedFlagsValue {
+                val flags: NativeAndStarlarkFlags? =
+                    NativeAndStarlarkFlags.builder()
+                        .nativeFlags(com.google.common.collect.ImmutableList.< E > copyOf < E ? > (nativeFlags))
+                        .optionsClasses(BUILD_CONFIG_OPTIONS)
+                        .repoMapping(REPO_MAPPING)
+                        .build()
+                return ParsedFlagsValue.parseAndCreate(flags)
+            }
+        }
     }
 
-    @CanIgnoreReturnValue
-    PlatformMappingBuilder addFlags(ParsedFlagsValue flags, Label platform) {
-      this.flagsToPlatforms.put(flags, platform);
-      return this;
+    @org.junit.Test
+    @Throws(OptionsParsingException::class)
+    fun map_noMappings() {
+        val mappingValue: PlatformMappingValue = builder().build()
+
+        val mapped: BuildOptions = mappingValue.map(createBuildOptions()).getOptions()
+
+        assertThat(mapped.get(PlatformOptions::class.java).getPlatforms())
+            .containsExactly(DEFAULT_TARGET_PLATFORM)
     }
 
-    @CanIgnoreReturnValue
-    PlatformMappingBuilder addFlags(Label platform, String... nativeFlags)
-        throws OptionsParsingException {
-      return this.addFlags(createFlags(nativeFlags), platform);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun map_platformToFlags() {
+        val mappingValue: PlatformMappingValue =
+            builder().addPlatform(PLATFORM_ONE, "--str_option=one", "--other_str_option=dbg").build()
+
+        val modifiedOptions: BuildOptions = createBuildOptions("--platforms=//platforms:one")
+
+        val mapped: BuildOptions = mappingValue.map(modifiedOptions).getOptions()
+
+        assertThat(
+            mapped.get(com.google.devtools.build.lib.skyframe.config.PlatformMappingValueTest.DummyTestOptions::class.java)
+                .getStrOption()
+        ).isEqualTo("one")
     }
 
-    PlatformMappingValue build() {
-      return new PlatformMappingValue(
-          ImmutableMap.copyOf(platformsToFlags),
-          ImmutableMap.copyOf(flagsToPlatforms),
-          BUILD_CONFIG_OPTIONS);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun map_flagsToPlatform() {
+        val mappingValue: PlatformMappingValue =
+            builder().addFlags(PLATFORM_ONE, "--str_option=one", "--other_str_option=dbg").build()
+
+        val modifiedOptions: BuildOptions = createBuildOptions("--str_option=one", "--other_str_option=dbg")
+        val mapped: BuildOptions = mappingValue.map(modifiedOptions).getOptions()
+
+        assertThat(mapped.get(PlatformOptions::class.java).getPlatforms()).containsExactly(PLATFORM_ONE)
     }
 
-    private static ParsedFlagsValue createFlags(String... nativeFlags)
-        throws OptionsParsingException {
-      NativeAndStarlarkFlags flags =
-          NativeAndStarlarkFlags.builder()
-              .nativeFlags(ImmutableList.copyOf(nativeFlags))
-              .optionsClasses(BUILD_CONFIG_OPTIONS)
-              .repoMapping(REPO_MAPPING)
-              .build();
-      return ParsedFlagsValue.parseAndCreate(flags);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun map_flagsToPlatform_checkPriority() {
+        val mappingValue: PlatformMappingValue =
+            builder()
+                .addFlags(PLATFORM_ONE, "--str_option=one", "--other_str_option=dbg")
+                .addFlags(PLATFORM_TWO, "--str_option=two")
+                .build()
+
+        val modifiedOptions: BuildOptions = createBuildOptions("--str_option=two")
+
+        val mapped: BuildOptions = mappingValue.map(modifiedOptions).getOptions()
+
+        assertThat(mapped.get(PlatformOptions::class.java).getPlatforms()).containsExactly(PLATFORM_TWO)
     }
-  }
 
-  /**
-   * Caching of option default values does not consider conversion context (b/365420093). Parse the
-   * default {@link PlatformOptions} up front with no conversion context so that the default value
-   * of {@link PlatformOptions#hostPlatform} is deterministic.
-   */
-  // TODO: b/365420093 - Remove this workaround when the bug is fixed.
-  @BeforeClass
-  public static void computeDefaultPlatformOptions() {
-    var unused = Options.getDefaults(PlatformOptions.class);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun map_flagsToPlatform_noneMatching() {
+        val mappingValue: PlatformMappingValue =
+            builder().addFlags(PLATFORM_ONE, "--str_option=foo", "--other_str_option=dbg").build()
 
-  @Test
-  public void map_noMappings() throws OptionsParsingException {
-    PlatformMappingValue mappingValue = builder().build();
+        val modifiedOptions: BuildOptions = createBuildOptions("--str_option=bar")
 
-    BuildOptions mapped = mappingValue.map(createBuildOptions()).getOptions();
+        val mapped: BuildOptions = mappingValue.map(modifiedOptions).getOptions()
 
-    assertThat(mapped.get(PlatformOptions.class).getPlatforms())
-        .containsExactly(DEFAULT_TARGET_PLATFORM);
-  }
+        assertThat(mapped.get(PlatformOptions::class.java).getPlatforms())
+            .containsExactly(DEFAULT_TARGET_PLATFORM)
+    }
 
-  @Test
-  public void map_platformToFlags() throws Exception {
-    PlatformMappingValue mappingValue =
-        builder().addPlatform(PLATFORM_ONE, "--str_option=one", "--other_str_option=dbg").build();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun map_noPlatformOptions() {
+        val mappingValue: PlatformMappingValue = builder().build()
 
-    BuildOptions modifiedOptions = createBuildOptions("--platforms=//platforms:one");
+        // Does not contain PlatformOptions.
+        val options: BuildOptions? = BuildOptions.of(com.google.common.collect.ImmutableList.of<E?>())
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable { mappingValue.map(options) })
+    }
 
-    BuildOptions mapped = mappingValue.map(modifiedOptions).getOptions();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun map_noMappingIfPlatformIsSetButNotMatching() {
+        val mappingValue: PlatformMappingValue =
+            builder() // Add a mapping for a different platform.
+                .addPlatform(PLATFORM_ONE, "--str_option=one", "--other_str_option=dbg")
+                .build()
 
-    assertThat(mapped.get(DummyTestOptions.class).getStrOption()).isEqualTo("one");
-  }
+        val modifiedOptions: BuildOptions =
+            createBuildOptions("--str_option=one", "--platforms=//platforms:two")
+        val mapped: BuildOptions? = mappingValue.map(modifiedOptions).getOptions()
 
-  @Test
-  public void map_flagsToPlatform() throws Exception {
-    PlatformMappingValue mappingValue =
-        builder().addFlags(PLATFORM_ONE, "--str_option=one", "--other_str_option=dbg").build();
+        // No change because the platform is not in the mapping.
+        assertThat(modifiedOptions).isEqualTo(mapped)
+    }
 
-    BuildOptions modifiedOptions = createBuildOptions("--str_option=one", "--other_str_option=dbg");
-    BuildOptions mapped = mappingValue.map(modifiedOptions).getOptions();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun map_noMappingIfPlatformIsSetAndNoPlatformMapping() {
+        val mappingValue: PlatformMappingValue =
+            builder() // Add a flag mapping that would match.
+                .addFlags(PLATFORM_ONE, "--str_option=one")
+                .build()
 
-    assertThat(mapped.get(PlatformOptions.class).getPlatforms()).containsExactly(PLATFORM_ONE);
-  }
+        val modifiedOptions: BuildOptions =
+            createBuildOptions("--str_option=one", "--platforms=//platforms:two")
 
-  @Test
-  public void map_flagsToPlatform_checkPriority() throws Exception {
-    PlatformMappingValue mappingValue =
-        builder()
-            .addFlags(PLATFORM_ONE, "--str_option=one", "--other_str_option=dbg")
-            .addFlags(PLATFORM_TWO, "--str_option=two")
-            .build();
+        val mapped: BuildOptions? = mappingValue.map(modifiedOptions).getOptions()
 
-    BuildOptions modifiedOptions = createBuildOptions("--str_option=two");
+        // No change because the platform is not in the mapping.
+        assertThat(modifiedOptions).isEqualTo(mapped)
+    }
 
-    BuildOptions mapped = mappingValue.map(modifiedOptions).getOptions();
+    companion object {
+        private val PLATFORM_ONE: Label? = Label.parseCanonicalUnchecked("//platforms:one")
+        private val PLATFORM_TWO: Label? = Label.parseCanonicalUnchecked("@dep+1.0//platforms:two")
+        private val REPO_MAPPING: RepositoryMapping? = RepositoryMapping.create(
+            com.google.common.collect.ImmutableMap.of<K?, V?>(
+                "", RepositoryName.MAIN, "dep", RepositoryName.createUnvalidated("dep+1.0")
+            ),
+            RepositoryName.MAIN
+        )
+        private val DEFAULT_TARGET_PLATFORM: Label? = Label.parseCanonicalUnchecked("@bazel_tools//tools:host_platform")
 
-    assertThat(mapped.get(PlatformOptions.class).getPlatforms()).containsExactly(PLATFORM_TWO);
-  }
+        private val BUILD_CONFIG_OPTIONS: com.google.common.collect.ImmutableSet<java.lang.Class<out FragmentOptions?>?> =
+            // PlatformOptions is required for mapping.
+            com.google.common.collect.ImmutableSet.of<E?>(
+                PlatformOptions::class.java,
+                com.google.devtools.build.lib.skyframe.config.PlatformMappingValueTest.DummyTestOptions::class.java
+            )
 
-  @Test
-  public void map_flagsToPlatform_noneMatching() throws Exception {
-    PlatformMappingValue mappingValue =
-        builder().addFlags(PLATFORM_ONE, "--str_option=foo", "--other_str_option=dbg").build();
+        @Throws(OptionsParsingException::class)
+        private fun createBuildOptions(vararg args: String?): BuildOptions {
+            return BuildOptions.of(BUILD_CONFIG_OPTIONS, args)
+        }
 
-    BuildOptions modifiedOptions = createBuildOptions("--str_option=bar");
+        private fun builder(): PlatformMappingBuilder {
+            return PlatformMappingBuilder()
+        }
 
-    BuildOptions mapped = mappingValue.map(modifiedOptions).getOptions();
-
-    assertThat(mapped.get(PlatformOptions.class).getPlatforms())
-        .containsExactly(DEFAULT_TARGET_PLATFORM);
-  }
-
-  @Test
-  public void map_noPlatformOptions() throws Exception {
-    PlatformMappingValue mappingValue = builder().build();
-
-    // Does not contain PlatformOptions.
-    BuildOptions options = BuildOptions.of(ImmutableList.of());
-    assertThrows(IllegalArgumentException.class, () -> mappingValue.map(options));
-  }
-
-  @Test
-  public void map_noMappingIfPlatformIsSetButNotMatching() throws Exception {
-    PlatformMappingValue mappingValue =
-        builder()
-            // Add a mapping for a different platform.
-            .addPlatform(PLATFORM_ONE, "--str_option=one", "--other_str_option=dbg")
-            .build();
-
-    BuildOptions modifiedOptions =
-        createBuildOptions("--str_option=one", "--platforms=//platforms:two");
-    BuildOptions mapped = mappingValue.map(modifiedOptions).getOptions();
-
-    // No change because the platform is not in the mapping.
-    assertThat(modifiedOptions).isEqualTo(mapped);
-  }
-
-  @Test
-  public void map_noMappingIfPlatformIsSetAndNoPlatformMapping() throws Exception {
-    PlatformMappingValue mappingValue =
-        builder()
-            // Add a flag mapping that would match.
-            .addFlags(PLATFORM_ONE, "--str_option=one")
-            .build();
-
-    BuildOptions modifiedOptions =
-        createBuildOptions("--str_option=one", "--platforms=//platforms:two");
-
-    BuildOptions mapped = mappingValue.map(modifiedOptions).getOptions();
-
-    // No change because the platform is not in the mapping.
-    assertThat(modifiedOptions).isEqualTo(mapped);
-  }
+        /**
+         * Caching of option default values does not consider conversion context (b/365420093). Parse the
+         * default [PlatformOptions] up front with no conversion context so that the default value
+         * of [PlatformOptions.hostPlatform] is deterministic.
+         */
+        // TODO: b/365420093 - Remove this workaround when the bug is fixed.
+        @BeforeClass
+        fun computeDefaultPlatformOptions() {
+            val unused: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+                Options.getDefaults(PlatformOptions::class.java)
+        }
+    }
 }

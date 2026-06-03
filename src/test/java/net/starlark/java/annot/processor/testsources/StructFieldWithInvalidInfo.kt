@@ -11,21 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.annot.processor.testsources
 
-package net.starlark.java.annot.processor.testsources;
+import net.starlark.java.eval.StarlarkValue
 
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.StarlarkValue;
-
-/** Test case which verifies a struct field method cannot specify useStarlarkThread. */
-public class StructFieldWithInvalidInfo implements StarlarkValue {
-
-  @StarlarkMethod(
-      name = "struct_field_method_with_info",
-      documented = false,
-      structField = true,
-      useStarlarkThread = true)
-  public String structFieldMethodWithInfo(StarlarkThread thread) {
-    return "dragon";
-  }
+/** Test case which verifies a struct field method cannot specify useStarlarkThread.  */
+class StructFieldWithInvalidInfo : StarlarkValue {
+    @StarlarkMethod(
+        name = "struct_field_method_with_info",
+        documented = false,
+        structField = true,
+        useStarlarkThread = true
+    )
+    fun structFieldMethodWithInfo(thread: StarlarkThread?): String {
+        return "dragon"
+    }
 }

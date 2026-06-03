@@ -11,80 +11,84 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util.io;
+package com.google.devtools.build.lib.util.io
 
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.devtools.build.lib.testutil.MoreAsserts;
-import com.google.devtools.build.lib.util.io.AnsiTerminalPrinter.Mode;
-import java.io.ByteArrayOutputStream;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.testutil.MoreAsserts
+import org.junit.Test
+import java.io.ByteArrayOutputStream
 
 /**
- * A test for {@link AnsiTerminalPrinter}.
+ * A test for [AnsiTerminalPrinter].
  */
-@RunWith(JUnit4.class)
-public class AnsiTerminalPrinterTest {
-  private ByteArrayOutputStream stream;
-  private AnsiTerminalPrinter printer;
+@RunWith(JUnit4::class)
+class AnsiTerminalPrinterTest {
+    private var stream: ByteArrayOutputStream? = null
+    private var printer: AnsiTerminalPrinter? = null
 
-  @Before
-  public final void createPrinter() throws Exception  {
-    stream = new ByteArrayOutputStream(1000);
-    printer = new AnsiTerminalPrinter(stream, true);
-  }
-
-  private void setPlainPrinter() {
-    printer = new AnsiTerminalPrinter(stream, false);
-  }
-
-  private void assertString(String string) {
-    assertThat(stream.toString()).isEqualTo(string);
-  }
-
-  private void assertRegex(String regex) {
-    MoreAsserts.assertStdoutContainsRegex(regex, stream.toString(), "");
-  }
-
-  @Test
-  public void testPlainPrinter() throws Exception {
-    setPlainPrinter();
-    printer.print("1" + Mode.INFO + "2" + Mode.ERROR + "3" + Mode.WARNING + "4"
-        + Mode.DEFAULT + "5");
-    assertString("12345");
-  }
-
-  @Test
-  public void testDefaultModeIsDefault() throws Exception {
-    printer.print("1" + Mode.DEFAULT + "2");
-    assertString("12");
-  }
-
-  @Test
-  public void testDuplicateMode() throws Exception {
-    printer.print("_A_" + Mode.INFO);
-    printer.print("_B_" + Mode.INFO + "_C_");
-    assertRegex("^_A_.+_B__C_$");
-  }
-
-  @Test
-  public void testModeCodes() throws Exception {
-    printer.print(Mode.INFO + "XXX" + Mode.ERROR + "XXX" + Mode.WARNING +"XXX" + Mode.DEFAULT
-        + "XXX" + Mode.INFO + "XXX" + Mode.ERROR + "XXX" + Mode.WARNING +"XXX" + Mode.DEFAULT);
-    String[] codes = stream.toString().split("XXX");
-    assertThat(codes).hasLength(8);
-    for (int i = 0; i < 4; i++) {
-      assertThat(codes[i]).isNotEmpty();
-      assertThat(codes[i + 4]).isEqualTo(codes[i]);
+    @Before
+    @Throws(Exception::class)
+    fun createPrinter() {
+        stream = ByteArrayOutputStream(1000)
+        printer = AnsiTerminalPrinter(stream, true)
     }
-    assertThat(codes[0].equals(codes[1])).isFalse();
-    assertThat(codes[0].equals(codes[2])).isFalse();
-    assertThat(codes[0].equals(codes[3])).isFalse();
-    assertThat(codes[1].equals(codes[2])).isFalse();
-    assertThat(codes[1].equals(codes[3])).isFalse();
-    assertThat(codes[2].equals(codes[3])).isFalse();
-  }
+
+    private fun setPlainPrinter() {
+        printer = AnsiTerminalPrinter(stream, false)
+    }
+
+    private fun assertString(string: String?) {
+        Truth.assertThat(stream.toString()).isEqualTo(string)
+    }
+
+    private fun assertRegex(regex: String?) {
+        MoreAsserts.assertStdoutContainsRegex(regex, stream.toString(), "")
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testPlainPrinter() {
+        setPlainPrinter()
+        printer.print(
+            ("1" + Mode.INFO + "2" + Mode.ERROR + "3" + Mode.WARNING + "4"
+                    + Mode.DEFAULT + "5")
+        )
+        assertString("12345")
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testDefaultModeIsDefault() {
+        printer.print("1" + Mode.DEFAULT + "2")
+        assertString("12")
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testDuplicateMode() {
+        printer.print("_A_" + Mode.INFO)
+        printer.print("_B_" + Mode.INFO + "_C_")
+        assertRegex("^_A_.+_B__C_$")
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testModeCodes() {
+        printer.print(
+            (Mode.INFO + "XXX" + Mode.ERROR + "XXX" + Mode.WARNING + "XXX" + Mode.DEFAULT
+                    + "XXX" + Mode.INFO + "XXX" + Mode.ERROR + "XXX" + Mode.WARNING + "XXX" + Mode.DEFAULT)
+        )
+        val codes: Array<String?> =
+            stream.toString().split("XXX".toRegex()).dropLastWhile { it.isEmpty() }.toTypedArray()
+        Truth.assertThat<String?>(codes).hasLength(8)
+        for (i in 0..3) {
+            Truth.assertThat(codes[i]).isNotEmpty()
+            Truth.assertThat(codes[i + 4]).isEqualTo(codes[i])
+        }
+        Truth.assertThat(codes[0] == codes[1]).isFalse()
+        Truth.assertThat(codes[0] == codes[2]).isFalse()
+        Truth.assertThat(codes[0] == codes[3]).isFalse()
+        Truth.assertThat(codes[1] == codes[2]).isFalse()
+        Truth.assertThat(codes[1] == codes[3]).isFalse()
+        Truth.assertThat(codes[2] == codes[3]).isFalse()
+    }
 }

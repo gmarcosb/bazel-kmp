@@ -11,56 +11,55 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.view.util;
+package com.google.devtools.build.lib.view.util
 
-import com.google.common.io.Files;
-import com.google.devtools.build.lib.packages.util.MockToolsConfig;
-import com.google.devtools.build.lib.testutil.BlazeTestUtils;
-import com.google.devtools.build.lib.testutil.Scratch;
-import com.google.devtools.build.lib.vfs.Path;
-import java.io.File;
-import java.io.IOException;
-import java.nio.charset.Charset;
-import java.nio.file.Paths;
+import com.google.common.io.Files
+import com.google.devtools.build.lib.vfs.Path
+import java.io.File
+import java.lang.String
+import java.nio.charset.Charset
+import kotlin.plus
 
-/** Utility class to perform Starlark-related setup. */
-public class StarlarkUtil {
-  public static void setup(Scratch scratch) throws IOException {
-    scratch.file("tools/build_rules/BUILD");
-    scratch.file("rules/BUILD");
-    copyExistingStarlarkFiles(scratch, "tools/build_rules", "rules");
-    copyExistingStarlarkFiles(scratch, "third_party/bazel/tools/build_rules", "rules");
-  }
-
-  private static void copyExistingStarlarkFiles(Scratch scratch, String from, String to)
-      throws IOException {
-    File rulesDir = new File(from);
-    if (rulesDir.exists() && rulesDir.isDirectory()) {
-      for (String fileName : rulesDir.list()) {
-        File file = new File(from + "/" + fileName);
-        if (file.isFile() && (fileName.endsWith(".bzl") || fileName.endsWith(".scl"))) {
-          String context = Files.asCharSource(file, Charset.defaultCharset()).read();
-          Path path = scratch.resolve(to + "/" + fileName);
-          if (path.exists()) {
-            scratch.overwriteFile(path.getPathString(), context);
-          } else {
-            scratch.file(path.getPathString(), context);
-          }
-        }
-      }
+/** Utility class to perform Starlark-related setup.  */
+object StarlarkUtil {
+    @Throws(IOException::class)
+    fun setup(scratch: Scratch) {
+        scratch.file("tools/build_rules/BUILD")
+        scratch.file("rules/BUILD")
+        copyExistingStarlarkFiles(scratch, "tools/build_rules", "rules")
+        copyExistingStarlarkFiles(scratch, "third_party/bazel/tools/build_rules", "rules")
     }
-  }
 
-  public static void copyExistingStarlarkFile(MockToolsConfig mockToolsConfig, String bzlPath)
-      throws IOException {
-    String basename = bzlPath.substring(0, bzlPath.lastIndexOf('/'));
-    mockToolsConfig.create(basename + "/BUILD");
-    mockToolsConfig.create(
-        bzlPath,
-        new String(
-            java.nio.file.Files.readString(
-                Paths.get(BlazeTestUtils.runfilesDir(), "io_bazel", bzlPath))));
-  }
+    @Throws(IOException::class)
+    private fun copyExistingStarlarkFiles(scratch: Scratch, from: String, to: String?) {
+        val rulesDir = File(from)
+        if (rulesDir.exists() && rulesDir.isDirectory()) {
+            for (fileName in rulesDir.list()) {
+                val file = File(from + "/" + fileName)
+                if (file.isFile() && (fileName.endsWith(".bzl") || fileName.endsWith(".scl"))) {
+                    val context = Files.asCharSource(file, Charset.defaultCharset()).read()
+                    val path: Path = scratch.resolve(to + "/" + fileName)
+                    if (path.exists()) {
+                        scratch.overwriteFile(path.getPathString(), context)
+                    } else {
+                        scratch.file(path.getPathString(), context)
+                    }
+                }
+            }
+        }
+    }
 
-  private StarlarkUtil() {}
+    @Throws(IOException::class)
+    fun copyExistingStarlarkFile(mockToolsConfig: MockToolsConfig, bzlPath: String) {
+        val basename: String = bzlPath.substring(0, bzlPath.lastIndexOf('/'))
+        mockToolsConfig.create(basename + "/BUILD")
+        mockToolsConfig.create(
+            bzlPath,
+            String(
+                java.nio.file.Files.readString(
+                    Paths.get(BlazeTestUtils.runfilesDir(), "io_bazel", bzlPath)
+                )
+            ) as kotlin.String
+        )
+    }
 }

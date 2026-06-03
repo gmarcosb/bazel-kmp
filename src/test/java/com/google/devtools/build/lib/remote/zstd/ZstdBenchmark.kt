@@ -11,59 +11,59 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.zstd;
+package com.google.devtools.build.lib.remote.zstd
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import org.openjdk.jmh.annotations.Benchmark;
-import org.openjdk.jmh.annotations.BenchmarkMode;
-import org.openjdk.jmh.annotations.Mode;
-import org.openjdk.jmh.annotations.Param;
-import org.openjdk.jmh.annotations.Scope;
-import org.openjdk.jmh.annotations.Setup;
-import org.openjdk.jmh.annotations.State;
+import com.google.devtools.build.lib.buildtool.util.BuildIntegrationTestCase.write
+import com.google.devtools.build.lib.remote.zstd.ZstdCompressingInputStream
+import com.google.devtools.build.lib.remote.zstd.ZstdDecompressingOutputStream
+import com.google.devtools.build.lib.remote.zstd.ZstdDecompressingOutputStream.write
+import org.openjdk.jmh.annotations.BenchmarkMode
+import org.openjdk.jmh.annotations.Setup
+import java.io.ByteArrayInputStream
 
-@BenchmarkMode(Mode.Throughput)
-@State(Scope.Benchmark)
-public class ZstdBenchmark {
-  @Param({"4096", "4194304"})
-  public int size;
+@BenchmarkMode(org.openjdk.jmh.annotations.Mode.Throughput)
+@org.openjdk.jmh.annotations.State(org.openjdk.jmh.annotations.Scope.Benchmark)
+class ZstdBenchmark {
+    @org.openjdk.jmh.annotations.Param("4096", "4194304")
+    var size: Int = 0
 
-  private byte[] uncompressedData;
-  private byte[] compressedData;
+    private var uncompressedData: ByteArray
+    private var compressedData: ByteArray
 
-  @Setup
-  public void setup() {
-    uncompressedData = new byte[size];
-    for (int i = 0; i < size; i++) {
-      uncompressedData[i] = (byte) (i % 256);
+    @Setup
+    fun setup() {
+        uncompressedData = ByteArray(size)
+        for (i in 0..<size) {
+            uncompressedData[i] = (i % 256).toByte()
+        }
+        try {
+            val baos: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+            val zci: ZstdCompressingInputStream =
+                ZstdCompressingInputStream(ByteArrayInputStream(uncompressedData))
+            zci.transferTo(baos)
+            compressedData = baos.toByteArray()
+        } catch (e: java.lang.Exception) {
+            throw java.lang.RuntimeException("Failed to compress data", e)
+        }
     }
-    try {
-      ByteArrayOutputStream baos = new ByteArrayOutputStream();
-      ZstdCompressingInputStream zci =
-          new ZstdCompressingInputStream(new ByteArrayInputStream(uncompressedData));
-      zci.transferTo(baos);
-      compressedData = baos.toByteArray();
-    } catch (Exception e) {
-      throw new RuntimeException("Failed to compress data", e);
-    }
-  }
 
-  @Benchmark
-  public ByteArrayOutputStream compress() throws Exception {
-    ByteArrayOutputStream baos = new ByteArrayOutputStream();
-    try (var zci = new ZstdCompressingInputStream(new ByteArrayInputStream(uncompressedData))) {
-      zci.transferTo(baos);
+    @org.openjdk.jmh.annotations.Benchmark
+    @Throws(java.lang.Exception::class)
+    fun compress(): java.io.ByteArrayOutputStream {
+        val baos: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        ZstdCompressingInputStream(ByteArrayInputStream(uncompressedData)).use { zci ->
+            zci.transferTo(baos)
+        }
+        return baos
     }
-    return baos;
-  }
 
-  @Benchmark
-  public ByteArrayOutputStream decompress() throws Exception {
-    ByteArrayOutputStream baos = new ByteArrayOutputStream();
-    try (var zdos = new ZstdDecompressingOutputStream(baos)) {
-      zdos.write(compressedData);
+    @org.openjdk.jmh.annotations.Benchmark
+    @Throws(java.lang.Exception::class)
+    fun decompress(): java.io.ByteArrayOutputStream {
+        val baos: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        ZstdDecompressingOutputStream(baos).use { zdos ->
+            zdos.write(compressedData)
+        }
+        return baos
     }
-    return baos;
-  }
 }

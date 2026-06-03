@@ -11,43 +11,37 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.testutil
 
-package com.google.devtools.build.lib.testutil;
-
-import com.google.devtools.build.lib.clock.Clock;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.time.Duration;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * A fake clock for testing.
  */
-public final class ManualClock implements Clock {
-  private final AtomicLong currentTimeMillis = new AtomicLong();
+class ManualClock : com.google.devtools.build.lib.clock.Clock {
+    private val currentTimeMillis: AtomicLong = AtomicLong()
 
-  @Override
-  public long currentTimeMillis() {
-    return currentTimeMillis.get();
-  }
+    override fun currentTimeMillis(): Long {
+        return currentTimeMillis.get()
+    }
 
-  /**
-   * Nano time should not be confused with wall time. Nano time is only mean to compute time
-   * differences. Because of this, we shift the time returned by 1000s, to test that the users
-   * of this class do not rely on nanoTime == currentTimeMillis.
-   */
-  @Override
-  public long nanoTime() {
-    return TimeUnit.MILLISECONDS.toNanos(currentTimeMillis.get())
-        + TimeUnit.SECONDS.toNanos(1000);
-  }
+    /**
+     * Nano time should not be confused with wall time. Nano time is only mean to compute time
+     * differences. Because of this, we shift the time returned by 1000s, to test that the users
+     * of this class do not rely on nanoTime == currentTimeMillis.
+     */
+    override fun nanoTime(): Long {
+        return (TimeUnit.MILLISECONDS.toNanos(currentTimeMillis.get())
+                + TimeUnit.SECONDS.toNanos(1000))
+    }
 
-  public long advanceMillis(long time) {
-    return currentTimeMillis.addAndGet(time);
-  }
+    fun advanceMillis(time: Long): Long {
+        return currentTimeMillis.addAndGet(time)
+    }
 
-  @CanIgnoreReturnValue
-  public long advance(Duration duration) {
-    return advanceMillis(duration.toMillis());
-  }
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun advance(duration: java.time.Duration): Long {
+        return advanceMillis(duration.toMillis())
+    }
 }

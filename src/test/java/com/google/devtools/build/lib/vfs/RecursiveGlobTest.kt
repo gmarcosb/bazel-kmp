@@ -11,159 +11,177 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.vfs;
+package com.google.devtools.build.lib.vfs
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.vfs.UnixGlob.FilesystemOps
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
-import com.google.devtools.build.lib.clock.BlazeClock;
-import com.google.devtools.build.lib.vfs.UnixGlob.FilesystemOps;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import com.google.devtools.build.lib.vfs.util.TestUnixGlobPathDiscriminator;
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.Set;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests [UnixGlob] recursive globs.  */
+@RunWith(JUnit4::class)
+class RecursiveGlobTest {
+    private var tmpPath: Path? = null
+    private var fileSystem: FileSystem? = null
 
-/** Tests {@link UnixGlob} recursive globs. */
-@RunWith(JUnit4.class)
-public class RecursiveGlobTest {
-
-  private Path tmpPath;
-  private FileSystem fileSystem;
-
-  @Before
-  public final void initializeFileSystem() throws Exception  {
-    fileSystem = new InMemoryFileSystem(BlazeClock.instance(), DigestHashFunction.SHA256);
-    tmpPath = fileSystem.getPath("/rglobtmp");
-    for (String dir : ImmutableList.of("foo/bar/wiz",
-                         "foo/baz/wiz",
-                         "foo/baz/quip/wiz",
-                         "food/baz/wiz",
-                         "fool/baz/wiz")) {
-      tmpPath.getRelative(dir).createDirectoryAndParents();
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun initializeFileSystem() {
+        fileSystem =
+            InMemoryFileSystem(com.google.devtools.build.lib.clock.BlazeClock.instance(), DigestHashFunction.SHA256)
+        tmpPath = fileSystem.getPath("/rglobtmp")
+        for (dir in com.google.common.collect.ImmutableList.of<String?>(
+            "foo/bar/wiz",
+            "foo/baz/wiz",
+            "foo/baz/quip/wiz",
+            "food/baz/wiz",
+            "fool/baz/wiz"
+        )) {
+            tmpPath.getRelative(dir).createDirectoryAndParents()
+        }
+        FileSystemUtils.createEmptyFile(tmpPath.getRelative("foo/bar/wiz/file"))
     }
-    FileSystemUtils.createEmptyFile(tmpPath.getRelative("foo/bar/wiz/file"));
-  }
 
-  @Test
-  public void testDoubleStar() throws Exception {
-    assertGlobMatches("**", ".", "foo", "foo/bar", "foo/bar/wiz", "foo/baz", "foo/baz/quip",
-                      "foo/baz/quip/wiz", "foo/baz/wiz", "foo/bar/wiz/file", "food", "food/baz",
-                      "food/baz/wiz", "fool", "fool/baz", "fool/baz/wiz");
-  }
-
-  @Test
-  public void testDoubleDoubleStar() throws Exception {
-    assertGlobMatches("**/**", ".", "foo", "foo/bar", "foo/bar/wiz", "foo/baz", "foo/baz/quip",
-                      "foo/baz/quip/wiz", "foo/baz/wiz", "foo/bar/wiz/file", "food", "food/baz",
-                      "food/baz/wiz", "fool", "fool/baz", "fool/baz/wiz");
-  }
-
-  @Test
-  public void testDirectoryWithDoubleStar() throws Exception {
-    assertGlobMatches("foo/**", "foo", "foo/bar", "foo/bar/wiz", "foo/baz", "foo/baz/quip",
-                      "foo/baz/quip/wiz", "foo/baz/wiz", "foo/bar/wiz/file");
-  }
-
-  @Test
-  public void testIllegalPatterns() throws Exception {
-    for (String prefix : Lists.newArrayList("", "*/", "**/", "ba/")) {
-      String suffix = ("/" + prefix).substring(0, prefix.length());
-      for (String pattern : Lists.newArrayList("**fo", "fo**", "**fo**", "fo**fo", "fo**fo**fo")) {
-        assertIllegalWildcard(prefix + pattern);
-        assertIllegalWildcard(pattern + suffix);
-      }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDoubleStar() {
+        assertGlobMatches(
+            "**", ".", "foo", "foo/bar", "foo/bar/wiz", "foo/baz", "foo/baz/quip",
+            "foo/baz/quip/wiz", "foo/baz/wiz", "foo/bar/wiz/file", "food", "food/baz",
+            "food/baz/wiz", "fool", "fool/baz", "fool/baz/wiz"
+        )
     }
-  }
 
-  @Test
-  public void testDoubleStarPatternWithNamedChild() throws Exception {
-    assertGlobMatches("**/bar", "foo/bar");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDoubleDoubleStar() {
+        assertGlobMatches(
+            "**/**", ".", "foo", "foo/bar", "foo/bar/wiz", "foo/baz", "foo/baz/quip",
+            "foo/baz/quip/wiz", "foo/baz/wiz", "foo/bar/wiz/file", "food", "food/baz",
+            "food/baz/wiz", "fool", "fool/baz", "fool/baz/wiz"
+        )
+    }
 
-  @Test
-  public void testDoubleStarPatternWithChildGlob() throws Exception {
-    assertGlobMatches("**/ba*",
-        "foo/bar", "foo/baz", "food/baz", "fool/baz");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDirectoryWithDoubleStar() {
+        assertGlobMatches(
+            "foo/**", "foo", "foo/bar", "foo/bar/wiz", "foo/baz", "foo/baz/quip",
+            "foo/baz/quip/wiz", "foo/baz/wiz", "foo/bar/wiz/file"
+        )
+    }
 
-  @Test
-  public void testDoubleStarAsChildGlob() throws Exception {
-    assertGlobMatches("foo/**/wiz", "foo/bar/wiz", "foo/baz/quip/wiz", "foo/baz/wiz");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testIllegalPatterns() {
+        for (prefix in com.google.common.collect.Lists.newArrayList<String>("", "*/", "**/", "ba/")) {
+            val suffix: String = ("/" + prefix).substring(0, prefix.length)
+            for (pattern in com.google.common.collect.Lists.newArrayList<String?>(
+                "**fo",
+                "fo**",
+                "**fo**",
+                "fo**fo",
+                "fo**fo**fo"
+            )) {
+                assertIllegalWildcard(prefix + pattern)
+                assertIllegalWildcard(pattern + suffix)
+            }
+        }
+    }
 
-  @Test
-  public void testDoubleStarUnderNonexistentDirectory() throws Exception {
-    assertGlobMatches("not-there/**" /* => nothing */);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDoubleStarPatternWithNamedChild() {
+        assertGlobMatches("**/bar", "foo/bar")
+    }
 
-  @Test
-  public void testDoubleStarGlobWithNonExistentBase() throws Exception {
-    Collection<Path> globResult =
-        new UnixGlob.Builder(fileSystem.getPath("/does/not/exist"), FilesystemOps.DIRECT)
-            .addPattern("**")
-            .globInterruptible();
-    assertThat(globResult).isEmpty();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDoubleStarPatternWithChildGlob() {
+        assertGlobMatches(
+            "**/ba*",
+            "foo/bar", "foo/baz", "food/baz", "fool/baz"
+        )
+    }
 
-  @Test
-  public void testDoubleStarUnderFile() throws Exception {
-    assertGlobMatches("foo/bar/wiz/file/**" /* => nothing */);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDoubleStarAsChildGlob() {
+        assertGlobMatches("foo/**/wiz", "foo/bar/wiz", "foo/baz/quip/wiz", "foo/baz/wiz")
+    }
 
-  private void assertGlobMatches(String pattern, String... expecteds)
-      throws Exception {
-    assertThat(
-            new UnixGlob.Builder(tmpPath, FilesystemOps.DIRECT)
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDoubleStarUnderNonexistentDirectory() {
+        assertGlobMatches("not-there/**" /* => nothing */)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDoubleStarGlobWithNonExistentBase() {
+        val globResult: MutableCollection<Path?>? =
+            Builder(fileSystem.getPath("/does/not/exist"), FilesystemOps.DIRECT)
+                .addPattern("**")
+                .globInterruptible()
+        Truth.assertThat(globResult).isEmpty()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDoubleStarUnderFile() {
+        assertGlobMatches("foo/bar/wiz/file/**" /* => nothing */)
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun assertGlobMatches(pattern: String?, vararg expecteds: String) {
+        assertThat(
+            Builder(tmpPath, FilesystemOps.DIRECT)
                 .addPatterns(pattern)
-                .globInterruptible())
-        .containsExactlyElementsIn(resolvePaths(expecteds));
-  }
-
-  private Set<Path> resolvePaths(String... relativePaths) {
-    Set<Path> expectedFiles = new HashSet<>();
-    for (String expected : relativePaths) {
-      Path file = expected.equals(".")
-          ? tmpPath
-          : tmpPath.getRelative(expected);
-      expectedFiles.add(file);
+                .globInterruptible()
+        )
+            .containsExactlyElementsIn(resolvePaths(*expecteds))
     }
-    return expectedFiles;
-  }
 
-  @Test
-  public void testRecursiveGlobsAreOptimized() throws Exception {
-    long numGlobTasks =
-        new UnixGlob.Builder(tmpPath, FilesystemOps.DIRECT)
-            .addPattern("**")
-            .setPathDiscriminator(
-                new TestUnixGlobPathDiscriminator(p -> true, (p, isDir) -> !isDir))
-            .globInterruptibleAndReturnNumGlobTasksForTesting();
+    private fun resolvePaths(vararg relativePaths: String): MutableSet<Path?> {
+        val expectedFiles: MutableSet<Path?> = HashSet<Path?>()
+        for (expected in relativePaths) {
+            val file: Path? = if (expected == ".")
+                tmpPath
+            else
+                tmpPath.getRelative(expected)
+            expectedFiles.add(file)
+        }
+        return expectedFiles
+    }
 
-    // The old glob implementation used to use 41 total glob tasks.
-    // Yes, checking for an exact value here is super brittle, but it lets us catch performance
-    // regressions. In other words, if you're a developer reading this comment because this test
-    // case is failing, you should be very sure you know what you're doing before you change the
-    // expectation of the test.
-    assertThat(numGlobTasks).isEqualTo(28);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRecursiveGlobsAreOptimized() {
+        val numGlobTasks: Long =
+            Builder(tmpPath, FilesystemOps.DIRECT)
+                .addPattern("**")
+                .setPathDiscriminator(
+                    TestUnixGlobPathDiscriminator(
+                        java.util.function.Predicate { p: Path? -> true },
+                        java.util.function.BiPredicate { p: Path?, isDir: Boolean? -> !isDir!! })
+                )
+                .globInterruptibleAndReturnNumGlobTasksForTesting()
 
-  private void assertIllegalWildcard(String pattern)
-      throws Exception {
-    UnixGlob.BadPattern e =
-        assertThrows(
-            UnixGlob.BadPattern.class,
-            () ->
-                new UnixGlob.Builder(tmpPath, FilesystemOps.DIRECT)
-                    .addPattern(pattern)
-                    .globInterruptible());
-    assertThat(e).hasMessageThat().containsMatch("recursive wildcard must be its own segment");
-  }
+        // The old glob implementation used to use 41 total glob tasks.
+        // Yes, checking for an exact value here is super brittle, but it lets us catch performance
+        // regressions. In other words, if you're a developer reading this comment because this test
+        // case is failing, you should be very sure you know what you're doing before you change the
+        // expectation of the test.
+        Truth.assertThat(numGlobTasks).isEqualTo(28)
+    }
 
+    @Throws(java.lang.Exception::class)
+    private fun assertIllegalWildcard(pattern: String?) {
+        val e: UnixGlob.BadPattern? =
+            org.junit.Assert.assertThrows<T?>(
+                UnixGlob.BadPattern::class.java,
+                org.junit.function.ThrowingRunnable {
+                    Builder(tmpPath, FilesystemOps.DIRECT)
+                        .addPattern(pattern)
+                        .globInterruptible()
+                })
+        assertThat(e).hasMessageThat().containsMatch("recursive wildcard must be its own segment")
+    }
 }

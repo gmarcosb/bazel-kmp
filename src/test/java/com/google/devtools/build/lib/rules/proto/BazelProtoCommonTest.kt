@@ -11,41 +11,22 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.proto
 
-package com.google.devtools.build.lib.rules.proto;
+import com.google.devtools.build.lib.actions.ResourceSet
 
-import static com.google.common.truth.Truth.assertThat;
+/** Unit test for proto_common module.  */
+@RunWith(TestParameterInjector::class)
+class BazelProtoCommonTest : BuildViewTestCase() {
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun setup() {
+        MockProtoSupport.setup(mockToolsConfig)
+        invalidatePackages()
 
-import com.google.common.truth.Correspondence;
-import com.google.devtools.build.lib.actions.ResourceSet;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.actions.SpawnAction;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.packages.util.MockProtoSupport;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import com.google.devtools.build.lib.util.OS;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import com.google.testing.junit.testparameterinjector.TestParameters;
-import java.util.List;
-import java.util.regex.Pattern;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-
-/** Unit test for proto_common module. */
-@RunWith(TestParameterInjector.class)
-public class BazelProtoCommonTest extends BuildViewTestCase {
-  private static final Correspondence<String, String> MATCHES_REGEX =
-      Correspondence.from((a, b) -> Pattern.matches(b, a), "matches");
-
-  @Before
-  public final void setup() throws Exception {
-    MockProtoSupport.setup(mockToolsConfig);
-    invalidatePackages();
-
-    scratch.file(
-        "third_party/x/BUILD",
-        """
+        scratch.file(
+            "third_party/x/BUILD",
+            """
         load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
@@ -57,43 +38,48 @@ public class BazelProtoCommonTest extends BuildViewTestCase {
         filegroup(name = 'something', srcs = ['something.proto'])
         proto_library(name = 'mixed', srcs = [':descriptors', ':something'])
         proto_library(name = 'denied', srcs = [':descriptors', ':any'])
-        """);
-    scratch.file(
-        "foo/BUILD",
-        TestConstants.LOAD_PROTO_LANG_TOOLCHAIN,
-        "proto_lang_toolchain(",
-        "    name = 'toolchain',",
-        "    command_line = '--java_out=param1,param2:$(OUT)',",
-        "    plugin_format_flag = '--plugin=%s',",
-        "    plugin = '//third_party/x:plugin',",
-        "    runtime = '//third_party/x:runtime',",
-        "    blacklisted_protos = ['//third_party/x:denied'],",
-        "    progress_message = 'Progress Message %{label}',",
-        "    mnemonic = 'MyMnemonic',",
-        "    allowlist_different_package ="
-            + " '//tools/allowlists/proto_library_allowlists:lang_proto_library_allowed_in_different_package'",
-        ")",
-        "proto_lang_toolchain(",
-        "    name = 'toolchain_noplugin',",
-        "    command_line = '--java_out=param1,param2:$(OUT)',",
-        "    runtime = '//third_party/x:runtime',",
-        "    blacklisted_protos = ['//third_party/x:denied'],",
-        "    progress_message = 'Progress Message %{label}',",
-        "    mnemonic = 'MyMnemonic',",
-        ")");
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "foo/BUILD",
+            TestConstants.LOAD_PROTO_LANG_TOOLCHAIN,
+            "proto_lang_toolchain(",
+            "    name = 'toolchain',",
+            "    command_line = '--java_out=param1,param2:$(OUT)',",
+            "    plugin_format_flag = '--plugin=%s',",
+            "    plugin = '//third_party/x:plugin',",
+            "    runtime = '//third_party/x:runtime',",
+            "    blacklisted_protos = ['//third_party/x:denied'],",
+            "    progress_message = 'Progress Message %{label}',",
+            "    mnemonic = 'MyMnemonic',",
+            "    allowlist_different_package ="
+                    + " '//tools/allowlists/proto_library_allowlists:lang_proto_library_allowed_in_different_package'",
+            ")",
+            "proto_lang_toolchain(",
+            "    name = 'toolchain_noplugin',",
+            "    command_line = '--java_out=param1,param2:$(OUT)',",
+            "    runtime = '//third_party/x:runtime',",
+            "    blacklisted_protos = ['//third_party/x:denied'],",
+            "    progress_message = 'Progress Message %{label}',",
+            "    mnemonic = 'MyMnemonic',",
+            ")"
+        )
 
-    mockToolsConfig.overwrite(
-        "tools/allowlists/proto_library_allowlists/BUILD",
-        """
+        mockToolsConfig.overwrite(
+            "tools/allowlists/proto_library_allowlists/BUILD",
+            """
         package_group(
             name='lang_proto_library_allowed_in_different_package',
             packages=['//...', '-//test/...'],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "foo/generate.bzl",
-"""
+        scratch.file(
+            "foo/generate.bzl",
+            """
 load("@com_google_protobuf//bazel/common:proto_info.bzl", "ProtoInfo")
 load("@com_google_protobuf//bazel/common:proto_common.bzl", "proto_common")
 load("@com_google_protobuf//bazel/common:proto_lang_toolchain_info.bzl", "ProtoLangToolchainInfo")
@@ -138,88 +124,115 @@ compile_rule = rule(_impl,
      'use_resource_set': attr.bool(),
      'progress_message': attr.string(),
   })
-""");
-  }
 
-  /**
-   * Verifies usage of <code>proto_common.compile</code> with <code>resource_set</code> parameter.
-   */
-  @Test
-  public void protoCommonCompile_resourceSet() throws Exception {
-    scratch.file(
-        "bar/BUILD",
-        "load('@com_google_protobuf//bazel:proto_library.bzl', 'proto_library')",
-        "load('//foo:generate.bzl', 'compile_rule')",
-        "proto_library(name = 'proto', srcs = ['A.proto'])",
-        "compile_rule(name = 'simple', proto_dep = ':proto', use_resource_set = True)");
-
-    ConfiguredTarget target = getConfiguredTarget("//bar:simple");
-
-    SpawnAction spawnAction = getGeneratingSpawnAction(getBinArtifact("out", target));
-    assertThat(spawnAction.getResourceSetOrBuilder().buildResourceSet(OS.DARWIN, 0))
-        .isEqualTo(ResourceSet.createWithRamCpu(25, 1));
-    assertThat(spawnAction.getResourceSetOrBuilder().buildResourceSet(OS.LINUX, 2))
-        .isEqualTo(ResourceSet.createWithRamCpu(25.3, 1));
-  }
-
-  /**
-   * Verifies <code>proto_common.compile</code> correctly handles external <code>proto_library
-   * </code>-es.
-   */
-  @Test
-  @TestParameters({
-    "{sibling: false, generated: false, expectedFlags:" + " ['-Iexternal/foo\\+']}",
-    "{sibling: false, generated: true, expectedFlags:"
-        + " ['-Ibl?azel?-out/k8-fastbuild/bin/external/foo\\+']}",
-    "{sibling: true, generated: false,expectedFlags:" + " ['-I../foo\\+']}",
-    "{sibling: true, generated: true, expectedFlags:"
-        + " ['-Ibl?azel?-out/foo\\+/k8-fastbuild/bin']}",
-  })
-  public void protoCommonCompile_externalProtoLibrary(
-      boolean sibling, boolean generated, List<String> expectedFlags) throws Exception {
-    if (!analysisMock.isThisBazel()) {
-      return;
+""".trimIndent()
+        )
     }
-    if (sibling) {
-      setBuildLanguageOptions("--experimental_sibling_repository_layout");
+
+    /**
+     * Verifies usage of `proto_common.compile` with `resource_set` parameter.
+     */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun protoCommonCompile_resourceSet() {
+        scratch.file(
+            "bar/BUILD",
+            "load('@com_google_protobuf//bazel:proto_library.bzl', 'proto_library')",
+            "load('//foo:generate.bzl', 'compile_rule')",
+            "proto_library(name = 'proto', srcs = ['A.proto'])",
+            "compile_rule(name = 'simple', proto_dep = ':proto', use_resource_set = True)"
+        )
+
+        val target: ConfiguredTarget = getConfiguredTarget("//bar:simple")
+
+        val spawnAction: SpawnAction = getGeneratingSpawnAction(getBinArtifact("out", target))
+        assertThat(
+            spawnAction.getResourceSetOrBuilder().buildResourceSet(com.google.devtools.build.lib.util.OS.DARWIN, 0)
+        )
+            .isEqualTo(ResourceSet.createWithRamCpu(25, 1))
+        assertThat(
+            spawnAction.getResourceSetOrBuilder().buildResourceSet(com.google.devtools.build.lib.util.OS.LINUX, 2)
+        )
+            .isEqualTo(ResourceSet.createWithRamCpu(25.3, 1))
     }
-    scratch.appendFile(
-        "MODULE.bazel",
-        "bazel_dep(name = 'foo')",
-        "local_path_override(module_name = 'foo', path = '/foo')");
-    scratch.file("/foo/MODULE.bazel", "module(name = 'foo')");
-    scratch.file(
-        "/foo/e/BUILD",
-        "load('@com_google_protobuf//bazel:proto_library.bzl', 'proto_library')",
-        "proto_library(name='e', srcs=['E.proto'])",
-        generated
-            ? "genrule(name = 'generate', srcs = ['A.txt'], cmd = '', outs = ['E.proto'])"
-            : "");
-    scratch.file(
-        "bar/BUILD",
-        "load('@com_google_protobuf//bazel:proto_library.bzl', 'proto_library')",
-        "load('//foo:generate.bzl', 'compile_rule')",
-        "proto_library(name = 'proto', srcs = ['A.proto'], deps = ['@foo//e:e'])",
-        "compile_rule(name = 'simple', proto_dep = ':proto')");
-    invalidatePackages();
-    useConfiguration(
-        "--platforms=" + TestConstants.PLATFORM_LABEL,
-        "--experimental_platform_in_output_dir",
-        String.format(
-            "--experimental_override_name_platform_in_output_dir=%s=k8",
-            TestConstants.PLATFORM_LABEL));
 
-    ConfiguredTarget target = getConfiguredTarget("//bar:simple");
+    /**
+     * Verifies `proto_common.compile` correctly handles external `proto_library
+    ` * -es.
+     */
+    @org.junit.Test
+    @TestParameters(
+        "{sibling: false, generated: false, expectedFlags:" + " ['-Iexternal/foo\\+']}",
+        ("{sibling: false, generated: true, expectedFlags:"
+                + " ['-Ibl?azel?-out/k8-fastbuild/bin/external/foo\\+']}"),
+        "{sibling: true, generated: false,expectedFlags:" + " ['-I../foo\\+']}",
+        ("{sibling: true, generated: true, expectedFlags:"
+                + " ['-Ibl?azel?-out/foo\\+/k8-fastbuild/bin']}")
+    )
+    @Throws(java.lang.Exception::class)
+    fun protoCommonCompile_externalProtoLibrary(
+        sibling: Boolean, generated: Boolean, expectedFlags: MutableList<String?>
+    ) {
+        if (!analysisMock.isThisBazel) {
+            return
+        }
+        if (sibling) {
+            setBuildLanguageOptions("--experimental_sibling_repository_layout")
+        }
+        scratch.appendFile(
+            "MODULE.bazel",
+            "bazel_dep(name = 'foo')",
+            "local_path_override(module_name = 'foo', path = '/foo')"
+        )
+        scratch.file("/foo/MODULE.bazel", "module(name = 'foo')")
+        scratch.file(
+            "/foo/e/BUILD",
+            "load('@com_google_protobuf//bazel:proto_library.bzl', 'proto_library')",
+            "proto_library(name='e', srcs=['E.proto'])",
+            if (generated)
+                "genrule(name = 'generate', srcs = ['A.txt'], cmd = '', outs = ['E.proto'])"
+            else
+                ""
+        )
+        scratch.file(
+            "bar/BUILD",
+            "load('@com_google_protobuf//bazel:proto_library.bzl', 'proto_library')",
+            "load('//foo:generate.bzl', 'compile_rule')",
+            "proto_library(name = 'proto', srcs = ['A.proto'], deps = ['@foo//e:e'])",
+            "compile_rule(name = 'simple', proto_dep = ':proto')"
+        )
+        invalidatePackages()
+        useConfiguration(
+            "--platforms=" + TestConstants.PLATFORM_LABEL,
+            "--experimental_platform_in_output_dir",
+            String.format(
+                "--experimental_override_name_platform_in_output_dir=%s=k8",
+                TestConstants.PLATFORM_LABEL
+            )
+        )
 
-    SpawnAction spawnAction = getGeneratingSpawnAction(getBinArtifact("out", target));
-    List<String> cmdLine = spawnAction.getRemainingArguments();
-    assertThat(cmdLine)
-        .comparingElementsUsing(MATCHES_REGEX)
-        .containsExactly(
-            "--plugin=bl?azel?-out/[^/]*-exec/bin/third_party/x/plugin",
-            expectedFlags.get(0),
-            "-I.",
-            "bar/A.proto")
-        .inOrder();
-  }
+        val target: ConfiguredTarget = getConfiguredTarget("//bar:simple")
+
+        val spawnAction: SpawnAction = getGeneratingSpawnAction(getBinArtifact("out", target))
+        val cmdLine: MutableList<String?>? = spawnAction.getRemainingArguments()
+        Truth.assertThat(cmdLine)
+            .comparingElementsUsing<String?, String?>(MATCHES_REGEX)
+            .containsExactly(
+                "--plugin=bl?azel?-out/[^/]*-exec/bin/third_party/x/plugin",
+                expectedFlags.get(0),
+                "-I.",
+                "bar/A.proto"
+            )
+            .inOrder()
+    }
+
+    companion object {
+        private val MATCHES_REGEX: Correspondence<String?, String?> =
+            Correspondence.from<String?, String?>(BinaryPredicate { a: String?, b: String? ->
+                java.util.regex.Pattern.matches(
+                    b,
+                    a
+                )
+            }, "matches")
+    }
 }

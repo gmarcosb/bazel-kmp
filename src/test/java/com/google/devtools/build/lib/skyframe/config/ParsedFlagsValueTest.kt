@@ -11,283 +11,311 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.config;
+package com.google.devtools.build.lib.skyframe.config
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.analysis.config.BuildOptions
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.config.BuildOptionsTest;
-import com.google.devtools.build.lib.analysis.config.FragmentOptions;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.common.options.Converters.CommaSeparatedOptionListConverter;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsClass;
-import com.google.devtools.common.options.OptionsParsingResult;
-import java.util.List;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Unit tests for [ParsedFlagsValue].  */
+@RunWith(JUnit4::class)
+class ParsedFlagsValueTest {
+    /** Extra options for this test.  */
+    @OptionsClass
+    abstract class DummyTestOptions : FragmentOptions() {
+        @get:Option(
+            name = "str_option",
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "defVal"
+        )
+        abstract val strOption: String?
 
-/** Unit tests for {@link ParsedFlagsValue}. */
-@RunWith(JUnit4.class)
-public final class ParsedFlagsValueTest {
+        @get:Option(
+            name = "another_str_option",
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "defVal"
+        )
+        abstract val anotherStrOption: String?
 
-  /** Extra options for this test. */
-  @OptionsClass
-  public abstract static class DummyTestOptions extends FragmentOptions {
+        @get:Option(
+            name = "bool_option",
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "false"
+        )
+        abstract val boolOption: Boolean
 
-    @Option(
-        name = "str_option",
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "defVal")
-    public abstract String getStrOption();
+        @get:Option(
+            name = "list_option",
+            converter = CommaSeparatedOptionListConverter::class,
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "null"
+        )
+        abstract val listOption: MutableList<String?>?
 
-    @Option(
-        name = "another_str_option",
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "defVal")
-    public abstract String getAnotherStrOption();
+        @get:Option(
+            name = "null_option",
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "null"
+        )
+        abstract val nullOption: String?
 
-    @Option(
-        name = "bool_option",
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "false")
-    public abstract boolean getBoolOption();
+        @get:Option(
+            name = "accumulating_option",
+            allowMultiple = true,
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "null"
+        )
+        abstract val accumulatingOption: MutableList<String?>?
 
-    @Option(
-        name = "list_option",
-        converter = CommaSeparatedOptionListConverter.class,
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "null")
-    public abstract List<String> getListOption();
+        @get:Option(
+            name = "dummy_option",
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "internal_default",
+            implicitRequirements = ["--implicit_option=set_implicitly"]
+        )
+        abstract val dummyOption: String?
 
-    @Option(
-        name = "null_option",
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "null")
-    public abstract String getNullOption();
+        @get:Option(
+            name = "implicit_option",
+            documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "implicit_default"
+        )
+        abstract val implicitOption: String?
+    }
 
-    @Option(
-        name = "accumulating_option",
-        allowMultiple = true,
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "null")
-    public abstract List<String> getAccumulatingOption();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun parse() {
+        val flags: NativeAndStarlarkFlags? =
+            NativeAndStarlarkFlags.builder()
+                .optionsClasses(BUILD_CONFIG_OPTIONS)
+                .nativeFlags(com.google.common.collect.ImmutableList.of<E?>("--str_option=bar", "--nobool_option"))
+                .starlarkFlags(com.google.common.collect.ImmutableMap.of<K?, V?>("//custom:flag", "hello"))
+                .starlarkFlagDefaults(com.google.common.collect.ImmutableMap.of<K?, V?>("//custom:flag", "default"))
+                .build()
 
-    @Option(
-        name = "dummy_option",
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "internal_default",
-        implicitRequirements = {"--implicit_option=set_implicitly"})
-    public abstract String getDummyOption();
+        val parsedFlags: ParsedFlagsValue = ParsedFlagsValue.parseAndCreate(flags)
 
-    @Option(
-        name = "implicit_option",
-        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "implicit_default")
-    public abstract String getImplicitOption();
-  }
+        val result: OptionsParsingResult = parsedFlags.parsingResult()
+        assertThat(
+            result.getOptions(com.google.devtools.build.lib.skyframe.config.ParsedFlagsValueTest.DummyTestOptions::class.java)
+                .getStrOption()
+        ).isEqualTo("bar")
+        assertThat(
+            result.getOptions(com.google.devtools.build.lib.skyframe.config.ParsedFlagsValueTest.DummyTestOptions::class.java)
+                .getBoolOption()
+        ).isFalse()
+        assertThat(result.getStarlarkOptions()).containsAtLeast("//custom:flag", "hello")
+    }
 
-  private static final ImmutableSet<Class<? extends FragmentOptions>> BUILD_CONFIG_OPTIONS =
-      ImmutableSet.of(DummyTestOptions.class);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun mergeWith() {
+        val original: BuildOptions =
+            BuildOptions.of(BUILD_CONFIG_OPTIONS, "--str_option=foo", "--bool_option")
 
-  @Test
-  public void parse() throws Exception {
-    NativeAndStarlarkFlags flags =
-        NativeAndStarlarkFlags.builder()
-            .optionsClasses(BUILD_CONFIG_OPTIONS)
-            .nativeFlags(ImmutableList.of("--str_option=bar", "--nobool_option"))
-            .starlarkFlags(ImmutableMap.of("//custom:flag", "hello"))
-            .starlarkFlagDefaults(ImmutableMap.of("//custom:flag", "default"))
-            .build();
+        val flags: NativeAndStarlarkFlags? =
+            NativeAndStarlarkFlags.builder()
+                .optionsClasses(BUILD_CONFIG_OPTIONS)
+                .nativeFlags(com.google.common.collect.ImmutableList.of<E?>("--str_option=bar", "--nobool_option"))
+                .starlarkFlags(com.google.common.collect.ImmutableMap.of<K?, V?>("//custom:flag", "hello"))
+                .starlarkFlagDefaults(com.google.common.collect.ImmutableMap.of<K?, V?>("//custom:flag", "default"))
+                .build()
+        val parsedFlags: ParsedFlagsValue = ParsedFlagsValue.parseAndCreate(flags)
 
-    ParsedFlagsValue parsedFlags = ParsedFlagsValue.parseAndCreate(flags);
+        val modified: BuildOptions = parsedFlags.mergeWith(original).getOptions()
 
-    OptionsParsingResult result = parsedFlags.parsingResult();
-    assertThat(result.getOptions(DummyTestOptions.class).getStrOption()).isEqualTo("bar");
-    assertThat(result.getOptions(DummyTestOptions.class).getBoolOption()).isFalse();
-    assertThat(result.getStarlarkOptions()).containsAtLeast("//custom:flag", "hello");
-  }
+        // Ensure the original wasn't modified.
+        assertThat(original.get(com.google.devtools.build.lib.skyframe.config.ParsedFlagsValueTest.DummyTestOptions::class.java))
+            .isNotEqualTo(modified.get(com.google.devtools.build.lib.skyframe.config.ParsedFlagsValueTest.DummyTestOptions::class.java))
 
-  @Test
-  public void mergeWith() throws Exception {
-    BuildOptions original =
-        BuildOptions.of(BUILD_CONFIG_OPTIONS, "--str_option=foo", "--bool_option");
+        // Check the modified values.
+        assertThat(
+            modified.get(com.google.devtools.build.lib.skyframe.config.ParsedFlagsValueTest.DummyTestOptions::class.java)
+                .getStrOption()
+        ).isEqualTo("bar")
+        assertThat(
+            modified.get(com.google.devtools.build.lib.skyframe.config.ParsedFlagsValueTest.DummyTestOptions::class.java)
+                .getBoolOption()
+        ).isFalse()
+        assertThat(modified.getStarlarkOptions())
+            .containsAtLeast(Label.parseCanonicalUnchecked("//custom:flag"), "hello")
+    }
 
-    NativeAndStarlarkFlags flags =
-        NativeAndStarlarkFlags.builder()
-            .optionsClasses(BUILD_CONFIG_OPTIONS)
-            .nativeFlags(ImmutableList.of("--str_option=bar", "--nobool_option"))
-            .starlarkFlags(ImmutableMap.of("//custom:flag", "hello"))
-            .starlarkFlagDefaults(ImmutableMap.of("//custom:flag", "default"))
-            .build();
-    ParsedFlagsValue parsedFlags = ParsedFlagsValue.parseAndCreate(flags);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun mergeWith_unknownNativeFragment() {
+        // Only use the basic flags.
+        val original: BuildOptions? = BuildOptions.of(BUILD_CONFIG_OPTIONS)
 
-    BuildOptions modified = parsedFlags.mergeWith(original).getOptions();
+        // Add another fragment with different flags.
+        val flags: NativeAndStarlarkFlags? =
+            NativeAndStarlarkFlags.builder()
+                .optionsClasses(
+                    com.google.common.collect.ImmutableSet.builder<java.lang.Class<out FragmentOptions?>?>()
+                        .addAll(BUILD_CONFIG_OPTIONS)
+                        .add(BuildOptionsTest.SecondDummyTestOptions::class.java)
+                        .build()
+                )
+                .nativeFlags(com.google.common.collect.ImmutableList.of<E?>("--second_str_option=bar"))
+                .build()
+        val parsedFlags: ParsedFlagsValue = ParsedFlagsValue.parseAndCreate(flags)
 
-    // Ensure the original wasn't modified.
-    assertThat(original.get(DummyTestOptions.class))
-        .isNotEqualTo(modified.get(DummyTestOptions.class));
+        // The native flags that are unknown to the original options should not be present.
+        val modified: BuildOptions = parsedFlags.mergeWith(original).getOptions()
+        assertThat(modified.contains(BuildOptionsTest.SecondDummyTestOptions::class.java)).isFalse()
+    }
 
-    // Check the modified values.
-    assertThat(modified.get(DummyTestOptions.class).getStrOption()).isEqualTo("bar");
-    assertThat(modified.get(DummyTestOptions.class).getBoolOption()).isFalse();
-    assertThat(modified.getStarlarkOptions())
-        .containsAtLeast(Label.parseCanonicalUnchecked("//custom:flag"), "hello");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun mergeWith_illegalStarlarkLabel() {
+        val original: BuildOptions? = BuildOptions.of(BUILD_CONFIG_OPTIONS)
 
-  @Test
-  public void mergeWith_unknownNativeFragment() throws Exception {
-    // Only use the basic flags.
-    BuildOptions original = BuildOptions.of(BUILD_CONFIG_OPTIONS);
+        val flags: NativeAndStarlarkFlags? =
+            NativeAndStarlarkFlags.builder()
+                .optionsClasses(BUILD_CONFIG_OPTIONS)
+                .starlarkFlags(com.google.common.collect.ImmutableMap.of<K?, V?>("@@@", "hello"))
+                .build()
+        val parsedFlagsValue: ParsedFlagsValue = ParsedFlagsValue.parseAndCreate(flags)
 
-    // Add another fragment with different flags.
-    NativeAndStarlarkFlags flags =
-        NativeAndStarlarkFlags.builder()
-            .optionsClasses(
-                ImmutableSet.<Class<? extends FragmentOptions>>builder()
-                    .addAll(BUILD_CONFIG_OPTIONS)
-                    .add(BuildOptionsTest.SecondDummyTestOptions.class)
-                    .build())
-            .nativeFlags(ImmutableList.of("--second_str_option=bar"))
-            .build();
-    ParsedFlagsValue parsedFlags = ParsedFlagsValue.parseAndCreate(flags);
+        // BuildOptions, unlike OptionsParser, uses a Label for the key, so this is the only code path
+        // that validates that a starlark flag is actually a Label.
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable { parsedFlagsValue.mergeWith(original) })
+    }
 
-    // The native flags that are unknown to the original options should not be present.
-    BuildOptions modified = parsedFlags.mergeWith(original).getOptions();
-    assertThat(modified.contains(BuildOptionsTest.SecondDummyTestOptions.class)).isFalse();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun mergeWith_multiValueOption_nonAccumulating() {
+        val original: BuildOptions? = BuildOptions.of(BUILD_CONFIG_OPTIONS, "--list_option=baz,quux")
 
-  @Test
-  public void mergeWith_illegalStarlarkLabel() throws Exception {
-    BuildOptions original = BuildOptions.of(BUILD_CONFIG_OPTIONS);
+        val flags: NativeAndStarlarkFlags? =
+            NativeAndStarlarkFlags.builder()
+                .optionsClasses(BUILD_CONFIG_OPTIONS)
+                .nativeFlags(com.google.common.collect.ImmutableList.of<E?>("--list_option=foo,bar"))
+                .build()
+        val parsedFlags: ParsedFlagsValue = ParsedFlagsValue.parseAndCreate(flags)
 
-    NativeAndStarlarkFlags flags =
-        NativeAndStarlarkFlags.builder()
-            .optionsClasses(BUILD_CONFIG_OPTIONS)
-            .starlarkFlags(ImmutableMap.of("@@@", "hello"))
-            .build();
-    ParsedFlagsValue parsedFlagsValue = ParsedFlagsValue.parseAndCreate(flags);
+        val modified: BuildOptions = parsedFlags.mergeWith(original).getOptions()
 
-    // BuildOptions, unlike OptionsParser, uses a Label for the key, so this is the only code path
-    // that validates that a starlark flag is actually a Label.
-    assertThrows(IllegalArgumentException.class, () -> parsedFlagsValue.mergeWith(original));
-  }
+        assertThat(
+            modified.get(com.google.devtools.build.lib.skyframe.config.ParsedFlagsValueTest.DummyTestOptions::class.java)
+                .getListOption()
+        ) // Because this flag does not allow multiple values the list simply overwrites the previous
+            // value.
+            .containsExactly("foo", "bar")
+            .inOrder()
+    }
 
-  @Test
-  public void mergeWith_multiValueOption_nonAccumulating() throws Exception {
-    BuildOptions original = BuildOptions.of(BUILD_CONFIG_OPTIONS, "--list_option=baz,quux");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun mergeWith_implicitOption() {
+        val original: BuildOptions? = BuildOptions.of(BUILD_CONFIG_OPTIONS)
 
-    NativeAndStarlarkFlags flags =
-        NativeAndStarlarkFlags.builder()
-            .optionsClasses(BUILD_CONFIG_OPTIONS)
-            .nativeFlags(ImmutableList.of("--list_option=foo,bar"))
-            .build();
-    ParsedFlagsValue parsedFlags = ParsedFlagsValue.parseAndCreate(flags);
+        val flags: NativeAndStarlarkFlags? =
+            NativeAndStarlarkFlags.builder()
+                .optionsClasses(BUILD_CONFIG_OPTIONS)
+                .nativeFlags(com.google.common.collect.ImmutableList.of<E?>("--dummy_option=direct"))
+                .build()
+        val parsedFlags: ParsedFlagsValue = ParsedFlagsValue.parseAndCreate(flags)
 
-    BuildOptions modified = parsedFlags.mergeWith(original).getOptions();
+        val modified: BuildOptions = parsedFlags.mergeWith(original).getOptions()
 
-    assertThat(modified.get(DummyTestOptions.class).getListOption())
-        // Because this flag does not allow multiple values the list simply overwrites the previous
-        // value.
-        .containsExactly("foo", "bar")
-        .inOrder();
-  }
+        assertThat(
+            modified.get(com.google.devtools.build.lib.skyframe.config.ParsedFlagsValueTest.DummyTestOptions::class.java)
+                .getDummyOption()
+        ).isEqualTo("direct")
+        assertThat(
+            modified.get(com.google.devtools.build.lib.skyframe.config.ParsedFlagsValueTest.DummyTestOptions::class.java)
+                .getImplicitOption()
+        )
+            .isEqualTo("set_implicitly")
+    }
 
-  @Test
-  public void mergeWith_implicitOption() throws Exception {
-    BuildOptions original = BuildOptions.of(BUILD_CONFIG_OPTIONS);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun mergeWith_accumulating() {
+        val original: BuildOptions? = BuildOptions.of(BUILD_CONFIG_OPTIONS)
 
-    NativeAndStarlarkFlags flags =
-        NativeAndStarlarkFlags.builder()
-            .optionsClasses(BUILD_CONFIG_OPTIONS)
-            .nativeFlags(ImmutableList.of("--dummy_option=direct"))
-            .build();
-    ParsedFlagsValue parsedFlags = ParsedFlagsValue.parseAndCreate(flags);
+        val flags: NativeAndStarlarkFlags? =
+            NativeAndStarlarkFlags.builder()
+                .optionsClasses(BUILD_CONFIG_OPTIONS)
+                .nativeFlags(
+                    com.google.common.collect.ImmutableList.of<E?>(
+                        "--accumulating_option=foo",
+                        "--accumulating_option=bar"
+                    )
+                )
+                .build()
+        val parsedFlags: ParsedFlagsValue = ParsedFlagsValue.parseAndCreate(flags)
 
-    BuildOptions modified = parsedFlags.mergeWith(original).getOptions();
+        val modified: BuildOptions = parsedFlags.mergeWith(original).getOptions()
 
-    assertThat(modified.get(DummyTestOptions.class).getDummyOption()).isEqualTo("direct");
-    assertThat(modified.get(DummyTestOptions.class).getImplicitOption())
-        .isEqualTo("set_implicitly");
-  }
+        assertThat(
+            modified.get(com.google.devtools.build.lib.skyframe.config.ParsedFlagsValueTest.DummyTestOptions::class.java)
+                .getAccumulatingOption()
+        )
+            .containsExactly("foo", "bar")
+            .inOrder()
+    }
 
-  @Test
-  public void mergeWith_accumulating() throws Exception {
-    BuildOptions original = BuildOptions.of(BUILD_CONFIG_OPTIONS);
+    // TODO: https://github.com/bazelbuild/bazel/issues/22453 - Add a test of an accumulating flag
+    // with previous values when that works correctly.
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun mergeWith_starlark() {
+        val original: BuildOptions? =
+            BuildOptions.of(BUILD_CONFIG_OPTIONS).toBuilder()
+                .addStarlarkOption(Label.parseCanonicalUnchecked("//custom:flag"), "direct")
+                .build()
 
-    NativeAndStarlarkFlags flags =
-        NativeAndStarlarkFlags.builder()
-            .optionsClasses(BUILD_CONFIG_OPTIONS)
-            .nativeFlags(ImmutableList.of("--accumulating_option=foo", "--accumulating_option=bar"))
-            .build();
-    ParsedFlagsValue parsedFlags = ParsedFlagsValue.parseAndCreate(flags);
+        val flags: NativeAndStarlarkFlags? =
+            NativeAndStarlarkFlags.builder()
+                .optionsClasses(BUILD_CONFIG_OPTIONS)
+                .starlarkFlags(com.google.common.collect.ImmutableMap.of<K?, V?>("//custom:flag", "override"))
+                .starlarkFlagDefaults(com.google.common.collect.ImmutableMap.of<K?, V?>("//custom:flag", "default"))
+                .build()
+        val parsedFlags: ParsedFlagsValue = ParsedFlagsValue.parseAndCreate(flags)
 
-    BuildOptions modified = parsedFlags.mergeWith(original).getOptions();
+        val modified: BuildOptions = parsedFlags.mergeWith(original).getOptions()
 
-    assertThat(modified.get(DummyTestOptions.class).getAccumulatingOption())
-        .containsExactly("foo", "bar")
-        .inOrder();
-  }
+        // Check the modified values.
+        assertThat(modified.getStarlarkOptions())
+            .containsAtLeast(Label.parseCanonicalUnchecked("//custom:flag"), "override")
+    }
 
-  // TODO: https://github.com/bazelbuild/bazel/issues/22453 - Add a test of an accumulating flag
-  // with previous values when that works correctly.
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun mergeWith_starlark_resetToDefault() {
+        val original: BuildOptions? =
+            BuildOptions.of(BUILD_CONFIG_OPTIONS).toBuilder()
+                .addStarlarkOption(Label.parseCanonicalUnchecked("//custom:flag"), "direct")
+                .build()
 
-  @Test
-  public void mergeWith_starlark() throws Exception {
-    BuildOptions original =
-        BuildOptions.of(BUILD_CONFIG_OPTIONS).toBuilder()
-            .addStarlarkOption(Label.parseCanonicalUnchecked("//custom:flag"), "direct")
-            .build();
+        val flags: NativeAndStarlarkFlags? =
+            NativeAndStarlarkFlags.builder()
+                .optionsClasses(BUILD_CONFIG_OPTIONS)
+                .starlarkFlags(com.google.common.collect.ImmutableMap.of<K?, V?>("//custom:flag", "default"))
+                .starlarkFlagDefaults(com.google.common.collect.ImmutableMap.of<K?, V?>("//custom:flag", "default"))
+                .build()
+        val parsedFlags: ParsedFlagsValue = ParsedFlagsValue.parseAndCreate(flags)
 
-    NativeAndStarlarkFlags flags =
-        NativeAndStarlarkFlags.builder()
-            .optionsClasses(BUILD_CONFIG_OPTIONS)
-            .starlarkFlags(ImmutableMap.of("//custom:flag", "override"))
-            .starlarkFlagDefaults(ImmutableMap.of("//custom:flag", "default"))
-            .build();
-    ParsedFlagsValue parsedFlags = ParsedFlagsValue.parseAndCreate(flags);
+        val modified: BuildOptions = parsedFlags.mergeWith(original).getOptions()
 
-    BuildOptions modified = parsedFlags.mergeWith(original).getOptions();
+        // The Starlark flag should not be present since it was reset to the default value
+        assertThat(modified.getStarlarkOptions())
+            .doesNotContainKey(Label.parseCanonicalUnchecked("//custom:flag"))
+    }
 
-    // Check the modified values.
-    assertThat(modified.getStarlarkOptions())
-        .containsAtLeast(Label.parseCanonicalUnchecked("//custom:flag"), "override");
-  }
-
-  @Test
-  public void mergeWith_starlark_resetToDefault() throws Exception {
-    BuildOptions original =
-        BuildOptions.of(BUILD_CONFIG_OPTIONS).toBuilder()
-            .addStarlarkOption(Label.parseCanonicalUnchecked("//custom:flag"), "direct")
-            .build();
-
-    NativeAndStarlarkFlags flags =
-        NativeAndStarlarkFlags.builder()
-            .optionsClasses(BUILD_CONFIG_OPTIONS)
-            .starlarkFlags(ImmutableMap.of("//custom:flag", "default"))
-            .starlarkFlagDefaults(ImmutableMap.of("//custom:flag", "default"))
-            .build();
-    ParsedFlagsValue parsedFlags = ParsedFlagsValue.parseAndCreate(flags);
-
-    BuildOptions modified = parsedFlags.mergeWith(original).getOptions();
-
-    // The Starlark flag should not be present since it was reset to the default value
-    assertThat(modified.getStarlarkOptions())
-        .doesNotContainKey(Label.parseCanonicalUnchecked("//custom:flag"));
-  }
+    companion object {
+        private val BUILD_CONFIG_OPTIONS: com.google.common.collect.ImmutableSet<java.lang.Class<out FragmentOptions?>?> =
+            com.google.common.collect.ImmutableSet.of<E?>(com.google.devtools.build.lib.skyframe.config.ParsedFlagsValueTest.DummyTestOptions::class.java)
+    }
 }

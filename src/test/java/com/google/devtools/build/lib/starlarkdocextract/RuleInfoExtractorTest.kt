@@ -11,103 +11,92 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.starlarkdocextract;
+package com.google.devtools.build.lib.starlarkdocextract
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.truth.Truth.assertWithMessage;
-import static com.google.devtools.build.lib.packages.Attribute.attr;
-import static com.google.devtools.build.lib.packages.Types.STRING_LIST;
+import com.google.devtools.build.lib.packages.Attribute.attr
 
-import com.google.devtools.build.lib.packages.BuildTypeTestHelper;
-import com.google.devtools.build.lib.packages.RuleClass;
-import com.google.devtools.build.lib.packages.Type;
-import com.google.devtools.build.lib.packages.util.PackageLoadingTestCase;
-import com.google.devtools.build.lib.starlarkdocextract.StardocOutputProtos.AttributeInfo;
-import com.google.devtools.build.lib.starlarkdocextract.StardocOutputProtos.AttributeType;
-import com.google.devtools.build.lib.starlarkdocextract.StardocOutputProtos.OriginKey;
-import com.google.devtools.build.lib.starlarkdocextract.StardocOutputProtos.RuleInfo;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+@RunWith(JUnit4::class)
+class RuleInfoExtractorTest : PackageLoadingTestCase() {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun basicFunctionality() {
+        val ruleClass: RuleClass? =
+            Builder("test_rule", RuleClass.Builder.RuleClassType.NORMAL, false)
+                .factory(DUMMY_CONFIGURED_TARGET_FACTORY)
+                .add(attr("tags", STRING_LIST))
+                .build()
+        val extractorContext: ExtractorContext? =
+            ExtractorContext.builder()
+                .labelRenderer(LabelRenderer.DEFAULT)
+                .extractNativelyDefinedAttrs(true)
+                .build()
+        val ruleInfo: RuleInfo? =
+            RuleInfoExtractor.buildRuleInfo(extractorContext, "namespace.test_rule", ruleClass)
+        assertThat(ruleInfo)
+            .isEqualTo(
+                RuleInfo.newBuilder()
+                    .setRuleName("namespace.test_rule")
+                    .setOriginKey(OriginKey.newBuilder().setName("test_rule").setFile("<native>"))
+                    .addAllAttribute(RuleInfoExtractor.IMPLICIT_RULE_ATTRIBUTES.values())
+                    .addAttribute(
+                        AttributeInfo.newBuilder()
+                            .setName("tags")
+                            .setType(AttributeType.STRING_LIST)
+                            .setDefaultValue("[]")
+                            .setMandatory(false)
+                            .setNativelyDefined(true)
+                            .build()
+                    )
+                    .build()
+            )
+    }
 
-@RunWith(JUnit4.class)
-public final class RuleInfoExtractorTest extends PackageLoadingTestCase {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun allBuiltinAttributeTypesSupported() {
+        val context: ExtractorContext? =
+            ExtractorContext.builder().labelRenderer(LabelRenderer.DEFAULT).build()
+        for (type in BuildTypeTestHelper.getAllBuildTypes( /* publicOnly= */true)) {
+            Truth.assertWithMessage("attr type '%s'", type)
+                .that(AttributeInfoExtractor.getAttributeType(context, type, "test_attr"))
+                .isNotEqualTo(AttributeType.UNKNOWN)
+        }
+    }
 
-  private static final RuleClass.ConfiguredTargetFactory<Object, Object, Exception>
-      DUMMY_CONFIGURED_TARGET_FACTORY =
-          new RuleClass.ConfiguredTargetFactory<Object, Object, Exception>() {
-            @Override
-            public Object create(Object ruleContext) {
-              throw new IllegalStateException();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun allNativeRulesAreSupported() {
+        val extractorContext: ExtractorContext? =
+            ExtractorContext.builder()
+                .labelRenderer(LabelRenderer.DEFAULT)
+                .extractNativelyDefinedAttrs(true)
+                .build()
+        for (ruleClass in ruleClassProvider.getRuleClassMap().values()) {
+            val ruleInfo: RuleInfo =
+                RuleInfoExtractor.buildRuleInfo(extractorContext, ruleClass.getName(), ruleClass)
+            assertThat(ruleInfo.getRuleName()).isEqualTo(ruleClass.getName())
+            assertThat(ruleInfo.getOriginKey().getName()).isEqualTo(ruleClass.getName())
+            assertWithMessage("rule '%s'", ruleClass.getName())
+                .that(ruleInfo.getOriginKey().getFile())
+                .isEqualTo("<native>")
+            assertWithMessage("rule '%s'", ruleClass.getName())
+                .that(ruleInfo.getAttributeList().getFirst())
+                .isEqualTo(RuleInfoExtractor.IMPLICIT_RULE_ATTRIBUTES.get("name"))
+            assertWithMessage("rule '%s'", ruleClass.getName())
+                .that(ruleInfo.getAttributeList().stream().map(AttributeInfo::getName))
+                .containsNoDuplicates()
+            assertWithMessage("rule '%s'", ruleClass.getName())
+                .that(ruleInfo.getAttributeList().stream().map(AttributeInfo::getDefaultValue))
+                .doesNotContain(AttributeInfoExtractor.UNREPRESENTABLE_VALUE)
+        }
+    }
+
+    companion object {
+        private val DUMMY_CONFIGURED_TARGET_FACTORY: RuleClass.ConfiguredTargetFactory<Any?, Any?, java.lang.Exception?> =
+            object : ConfiguredTargetFactory<Any?, Any?, java.lang.Exception?>() {
+                public override fun create(ruleContext: Any?): Any? {
+                    throw java.lang.IllegalStateException()
+                }
             }
-          };
-
-  @Test
-  public void basicFunctionality() throws Exception {
-    RuleClass ruleClass =
-        new RuleClass.Builder("test_rule", RuleClass.Builder.RuleClassType.NORMAL, false)
-            .factory(DUMMY_CONFIGURED_TARGET_FACTORY)
-            .add(attr("tags", STRING_LIST))
-            .build();
-    ExtractorContext extractorContext =
-        ExtractorContext.builder()
-            .labelRenderer(LabelRenderer.DEFAULT)
-            .extractNativelyDefinedAttrs(true)
-            .build();
-    RuleInfo ruleInfo =
-        RuleInfoExtractor.buildRuleInfo(extractorContext, "namespace.test_rule", ruleClass);
-    assertThat(ruleInfo)
-        .isEqualTo(
-            RuleInfo.newBuilder()
-                .setRuleName("namespace.test_rule")
-                .setOriginKey(OriginKey.newBuilder().setName("test_rule").setFile("<native>"))
-                .addAllAttribute(RuleInfoExtractor.IMPLICIT_RULE_ATTRIBUTES.values())
-                .addAttribute(
-                    AttributeInfo.newBuilder()
-                        .setName("tags")
-                        .setType(AttributeType.STRING_LIST)
-                        .setDefaultValue("[]")
-                        .setMandatory(false)
-                        .setNativelyDefined(true)
-                        .build())
-                .build());
-  }
-
-  @Test
-  public void allBuiltinAttributeTypesSupported() throws Exception {
-    ExtractorContext context =
-        ExtractorContext.builder().labelRenderer(LabelRenderer.DEFAULT).build();
-    for (Type<?> type : BuildTypeTestHelper.getAllBuildTypes(/* publicOnly= */ true)) {
-      assertWithMessage("attr type '%s'", type)
-          .that(AttributeInfoExtractor.getAttributeType(context, type, "test_attr"))
-          .isNotEqualTo(AttributeType.UNKNOWN);
     }
-  }
-
-  @Test
-  public void allNativeRulesAreSupported() throws Exception {
-    ExtractorContext extractorContext =
-        ExtractorContext.builder()
-            .labelRenderer(LabelRenderer.DEFAULT)
-            .extractNativelyDefinedAttrs(true)
-            .build();
-    for (RuleClass ruleClass : ruleClassProvider.getRuleClassMap().values()) {
-      RuleInfo ruleInfo =
-          RuleInfoExtractor.buildRuleInfo(extractorContext, ruleClass.getName(), ruleClass);
-      assertThat(ruleInfo.getRuleName()).isEqualTo(ruleClass.getName());
-      assertThat(ruleInfo.getOriginKey().getName()).isEqualTo(ruleClass.getName());
-      assertWithMessage("rule '%s'", ruleClass.getName())
-          .that(ruleInfo.getOriginKey().getFile())
-          .isEqualTo("<native>");
-      assertWithMessage("rule '%s'", ruleClass.getName())
-          .that(ruleInfo.getAttributeList().getFirst())
-          .isEqualTo(RuleInfoExtractor.IMPLICIT_RULE_ATTRIBUTES.get("name"));
-      assertWithMessage("rule '%s'", ruleClass.getName())
-          .that(ruleInfo.getAttributeList().stream().map(AttributeInfo::getName))
-          .containsNoDuplicates();
-      assertWithMessage("rule '%s'", ruleClass.getName())
-          .that(ruleInfo.getAttributeList().stream().map(AttributeInfo::getDefaultValue))
-          .doesNotContain(AttributeInfoExtractor.UNREPRESENTABLE_VALUE);
-    }
-  }
 }

@@ -11,248 +11,252 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.toolchains
 
-package com.google.devtools.build.lib.skyframe.toolchains;
+import com.google.devtools.build.lib.analysis.BlazeDirectories
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.skyframe.EvaluationResultSubjectFactory.assertThatEvaluationResult;
-import static java.util.Objects.requireNonNull;
+/** Tests for [ToolchainTypeLookupUtil].  */
+@RunWith(JUnit4::class)
+class ToolchainTypeLookupUtilTest : ToolchainTestCase() {
+    /**
+     * An [AnalysisMock] that injects [GetToolchainTypeInfoFunction] into the Skyframe
+     * executor.
+     */
+    private class AnalysisMockWithGetToolchainTypeInfoFunction
 
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.analysis.config.ToolchainTypeRequirement;
-import com.google.devtools.build.lib.analysis.platform.ToolchainTypeInfo;
-import com.google.devtools.build.lib.analysis.util.AnalysisMock;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.NoSuchPackageException;
-import com.google.devtools.build.lib.rules.platform.ToolchainTestCase;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.lib.skyframe.toolchains.ToolchainTypeLookupUtil.InvalidToolchainTypeException;
-import com.google.devtools.build.lib.skyframe.util.SkyframeExecutorTestUtils;
-import com.google.devtools.build.skyframe.EvaluationResult;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionException;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.util.Map;
-import javax.annotation.Nullable;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link ToolchainTypeLookupUtil}. */
-@RunWith(JUnit4.class)
-public class ToolchainTypeLookupUtilTest extends ToolchainTestCase {
-
-  /**
-   * An {@link AnalysisMock} that injects {@link GetToolchainTypeInfoFunction} into the Skyframe
-   * executor.
-   */
-  private static final class AnalysisMockWithGetToolchainTypeInfoFunction
-      extends AnalysisMock.Delegate {
-    AnalysisMockWithGetToolchainTypeInfoFunction() {
-      super(AnalysisMock.get());
-    }
-
-    @Override
-    public ImmutableMap<SkyFunctionName, SkyFunction> getSkyFunctions(
-        BlazeDirectories directories) {
-      return ImmutableMap.<SkyFunctionName, SkyFunction>builder()
-          .putAll(super.getSkyFunctions(directories))
-          .put(GET_TOOLCHAIN_TYPE_INFO_FUNCTION, new GetToolchainTypeInfoFunction())
-          .buildOrThrow();
-    }
-  }
-
-  @Override
-  protected AnalysisMock getAnalysisMock() {
-    return new AnalysisMockWithGetToolchainTypeInfoFunction();
-  }
-
-  @Test
-  public void testToolchainTypeLookup() throws Exception {
-    GetToolchainTypeInfoKey key =
-        GetToolchainTypeInfoKey.create(
-            targetConfig, ToolchainTypeRequirement.create(testToolchainTypeLabel));
-
-    EvaluationResult<GetToolchainTypeInfoValue> result = getToolchainTypeInfo(key);
-
-    assertThatEvaluationResult(result).hasNoError();
-    assertThatEvaluationResult(result).hasEntryThat(key).isNotNull();
-
-    Map<Label, ToolchainTypeInfo> toolchainTypes = result.get(key).toolchainTypes();
-    assertThat(toolchainTypes)
-        .containsExactlyEntriesIn(ImmutableMap.of(testToolchainTypeLabel, testToolchainTypeInfo));
-  }
-
-  @Test
-  public void testToolchainTypeLookup_toolchainAlias() throws Exception {
-    scratch.file(
-        "alias/BUILD", "alias(name = 'toolchain_type', actual = '" + testToolchainTypeLabel + "')");
-    Label aliasToolchainTypeLabel = Label.parseCanonicalUnchecked("//alias:toolchain_type");
-    GetToolchainTypeInfoKey key =
-        GetToolchainTypeInfoKey.create(
-            targetConfig, ToolchainTypeRequirement.create(aliasToolchainTypeLabel));
-
-    EvaluationResult<GetToolchainTypeInfoValue> result = getToolchainTypeInfo(key);
-
-    assertThatEvaluationResult(result).hasNoError();
-    assertThatEvaluationResult(result).hasEntryThat(key).isNotNull();
-
-    Map<Label, ToolchainTypeInfo> toolchainTypes = result.get(key).toolchainTypes();
-    assertThat(toolchainTypes)
-        .containsExactlyEntriesIn(
-            ImmutableMap.of(
-                testToolchainTypeLabel,
-                testToolchainTypeInfo,
-                aliasToolchainTypeLabel,
-                testToolchainTypeInfo));
-  }
-
-  @Test
-  public void testToolchainTypeLookup_targetNotToolchainType() throws Exception {
-    scratch.file("invalid/BUILD", "filegroup(name = 'not_a_toolchain_type')");
-
-    GetToolchainTypeInfoKey key =
-        GetToolchainTypeInfoKey.create(
-            targetConfig,
-            ToolchainTypeRequirement.create(
-                Label.parseCanonicalUnchecked("//invalid:not_a_toolchain_type")));
-
-    EvaluationResult<GetToolchainTypeInfoValue> result = getToolchainTypeInfo(key);
-
-    assertThatEvaluationResult(result).hasError();
-    assertThatEvaluationResult(result)
-        .hasErrorEntryForKeyThat(key)
-        .hasExceptionThat()
-        .isInstanceOf(InvalidToolchainTypeException.class);
-    assertThatEvaluationResult(result)
-        .hasErrorEntryForKeyThat(key)
-        .hasExceptionThat()
-        .hasMessageThat()
-        .contains("//invalid:not_a_toolchain_type");
-  }
-
-  @Test
-  public void testToolchainTypeLookup_targetNotToolchainType_ignoreInvalid() throws Exception {
-    scratch.file("invalid/BUILD", "filegroup(name = 'not_a_toolchain_type')");
-
-    GetToolchainTypeInfoKey key =
-        GetToolchainTypeInfoKey.create(
-            targetConfig,
-            ToolchainTypeRequirement.builder(
-                    Label.parseCanonicalUnchecked("//invalid:not_a_toolchain_type"))
-                .ignoreIfInvalid(true)
-                .build());
-
-    EvaluationResult<GetToolchainTypeInfoValue> result = getToolchainTypeInfo(key);
-
-    assertThatEvaluationResult(result).hasNoError();
-    Map<Label, ToolchainTypeInfo> toolchainTypes = result.get(key).toolchainTypes();
-    assertThat(toolchainTypes).isEmpty();
-  }
-
-  @Test
-  public void testToolchainTypeLookup_targetDoesNotExist() throws Exception {
-    GetToolchainTypeInfoKey key =
-        GetToolchainTypeInfoKey.create(
-            targetConfig,
-            ToolchainTypeRequirement.create(Label.parseCanonicalUnchecked("//fake:missing")));
-
-    reporter.removeHandler(failFastHandler);
-    EvaluationResult<GetToolchainTypeInfoValue> result = getToolchainTypeInfo(key);
-
-    assertThatEvaluationResult(result).hasError();
-    assertThatEvaluationResult(result)
-        .hasErrorEntryForKeyThat(key)
-        .hasExceptionThat()
-        .isInstanceOf(InvalidToolchainTypeException.class);
-    assertThatEvaluationResult(result)
-        .hasErrorEntryForKeyThat(key)
-        .hasExceptionThat()
-        .hasCauseThat()
-        .isInstanceOf(NoSuchPackageException.class);
-
-    assertContainsEvent("no such package 'fake': BUILD file not found");
-  }
-
-  // TODO: b/381396141 - Add a regression test for failure to find the second Skyframe value.
-
-  // Calls ToolchainTypeLookupUtil.getToolchainTypeInfo.
-  private static final SkyFunctionName GET_TOOLCHAIN_TYPE_INFO_FUNCTION =
-      SkyFunctionName.createHermetic("GET_TOOLCHAIN_TYPE_INFO_FUNCTION");
-
-  @AutoCodec
-  record GetToolchainTypeInfoKey(
-      ImmutableSet<ToolchainTypeRequirement> toolchainTypes, BuildConfigurationValue configuration)
-      implements SkyKey {
-    GetToolchainTypeInfoKey {
-      requireNonNull(toolchainTypes, "toolchainTypes");
-      requireNonNull(configuration, "configuration");
-    }
-
-    @Override
-    public SkyFunctionName functionName() {
-      return GET_TOOLCHAIN_TYPE_INFO_FUNCTION;
-    }
-
-    public static GetToolchainTypeInfoKey create(
-        BuildConfigurationValue configuration, ToolchainTypeRequirement... toolchainTypes) {
-      return new GetToolchainTypeInfoKey(ImmutableSet.copyOf(toolchainTypes), configuration);
-    }
-  }
-
-  private EvaluationResult<GetToolchainTypeInfoValue> getToolchainTypeInfo(
-      GetToolchainTypeInfoKey key) throws InterruptedException {
-    try {
-      // Must re-enable analysis for Skyframe functions that create configured targets.
-      skyframeExecutor.getSkyframeBuildView().enableAnalysis(true);
-      return SkyframeExecutorTestUtils.evaluate(
-          skyframeExecutor, key, /*keepGoing=*/ false, reporter);
-    } finally {
-      skyframeExecutor.getSkyframeBuildView().enableAnalysis(false);
-    }
-  }
-
-  @AutoCodec
-  record GetToolchainTypeInfoValue(Map<Label, ToolchainTypeInfo> toolchainTypes)
-      implements SkyValue {
-    GetToolchainTypeInfoValue {
-      requireNonNull(toolchainTypes, "toolchainTypes");
-    }
-
-    static GetToolchainTypeInfoValue create(Map<Label, ToolchainTypeInfo> toolchainTypes) {
-      return new GetToolchainTypeInfoValue(toolchainTypes);
-    }
-  }
-
-  private static final class GetToolchainTypeInfoFunction implements SkyFunction {
-
-    @Nullable
-    @Override
-    public SkyValue compute(SkyKey skyKey, Environment env)
-        throws SkyFunctionException, InterruptedException {
-      GetToolchainTypeInfoKey key = (GetToolchainTypeInfoKey) skyKey;
-      try {
-        Map<Label, ToolchainTypeInfo> toolchainTypes =
-            ToolchainTypeLookupUtil.resolveToolchainTypes(
-                env, key.toolchainTypes(), key.configuration());
-        if (env.valuesMissing()) {
-          return null;
+        : com.google.devtools.build.lib.analysis.util.AnalysisMock.Delegate(AnalysisMock.get()) {
+        public override fun getSkyFunctions(
+            directories: BlazeDirectories
+        ): com.google.common.collect.ImmutableMap<SkyFunctionName?, SkyFunction?> {
+            return com.google.common.collect.ImmutableMap.builder<SkyFunctionName?, SkyFunction?>()
+                .putAll(super.getSkyFunctions(directories))
+                .put(GET_TOOLCHAIN_TYPE_INFO_FUNCTION, GetToolchainTypeInfoFunction())
+                .buildOrThrow()
         }
-        return GetToolchainTypeInfoValue.create(toolchainTypes);
-      } catch (InvalidToolchainTypeException e) {
-        throw new GetToolchainTypeInfoFunctionException(e);
-      }
     }
-  }
 
-  private static final class GetToolchainTypeInfoFunctionException extends SkyFunctionException {
-    GetToolchainTypeInfoFunctionException(InvalidToolchainTypeException e) {
-      super(e, Transience.PERSISTENT);
+    protected val analysisMock: AnalysisMock
+        get() = AnalysisMockWithGetToolchainTypeInfoFunction()
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testToolchainTypeLookup() {
+        val key: GetToolchainTypeInfoKey? =
+            create(
+                targetConfig, ToolchainTypeRequirement.create(testToolchainTypeLabel)
+            )
+
+        val result: EvaluationResult<GetToolchainTypeInfoValue?> = getToolchainTypeInfo(key)
+
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasNoError()
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasEntryThat(key).isNotNull()
+
+        val toolchainTypes: MutableMap<Label?, ToolchainTypeInfo?>? = result.get(key).toolchainTypes()
+        Truth.assertThat(toolchainTypes)
+            .containsExactlyEntriesIn(
+                com.google.common.collect.ImmutableMap.of<Any?, Any?>(
+                    testToolchainTypeLabel,
+                    testToolchainTypeInfo
+                )
+            )
     }
-  }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testToolchainTypeLookup_toolchainAlias() {
+        scratch.file(
+            "alias/BUILD", "alias(name = 'toolchain_type', actual = '" + testToolchainTypeLabel + "')"
+        )
+        val aliasToolchainTypeLabel: Label = Label.parseCanonicalUnchecked("//alias:toolchain_type")
+        val key: GetToolchainTypeInfoKey? =
+            create(
+                targetConfig, ToolchainTypeRequirement.create(aliasToolchainTypeLabel)
+            )
+
+        val result: EvaluationResult<GetToolchainTypeInfoValue?> = getToolchainTypeInfo(key)
+
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasNoError()
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasEntryThat(key).isNotNull()
+
+        val toolchainTypes: MutableMap<Label?, ToolchainTypeInfo?>? = result.get(key).toolchainTypes()
+        Truth.assertThat(toolchainTypes)
+            .containsExactlyEntriesIn(
+                com.google.common.collect.ImmutableMap.of<Any?, Any?>(
+                    testToolchainTypeLabel,
+                    testToolchainTypeInfo,
+                    aliasToolchainTypeLabel,
+                    testToolchainTypeInfo
+                )
+            )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testToolchainTypeLookup_targetNotToolchainType() {
+        scratch.file("invalid/BUILD", "filegroup(name = 'not_a_toolchain_type')")
+
+        val key: GetToolchainTypeInfoKey? =
+            create(
+                targetConfig,
+                ToolchainTypeRequirement.create(
+                    Label.parseCanonicalUnchecked("//invalid:not_a_toolchain_type")
+                )
+            )
+
+        val result: EvaluationResult<GetToolchainTypeInfoValue?> = getToolchainTypeInfo(key)
+
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasError()
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result)
+            .hasErrorEntryForKeyThat(key)
+            .hasExceptionThat()
+            .isInstanceOf(InvalidToolchainTypeException::class.java)
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result)
+            .hasErrorEntryForKeyThat(key)
+            .hasExceptionThat()
+            .hasMessageThat()
+            .contains("//invalid:not_a_toolchain_type")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testToolchainTypeLookup_targetNotToolchainType_ignoreInvalid() {
+        scratch.file("invalid/BUILD", "filegroup(name = 'not_a_toolchain_type')")
+
+        val key: GetToolchainTypeInfoKey? =
+            create(
+                targetConfig,
+                ToolchainTypeRequirement.builder(
+                    Label.parseCanonicalUnchecked("//invalid:not_a_toolchain_type")
+                )
+                    .ignoreIfInvalid(true)
+                    .build()
+            )
+
+        val result: EvaluationResult<GetToolchainTypeInfoValue?> = getToolchainTypeInfo(key)
+
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasNoError()
+        val toolchainTypes: MutableMap<Label?, ToolchainTypeInfo?>? = result.get(key).toolchainTypes()
+        Truth.assertThat(toolchainTypes).isEmpty()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testToolchainTypeLookup_targetDoesNotExist() {
+        val key: GetToolchainTypeInfoKey? =
+            create(
+                targetConfig,
+                ToolchainTypeRequirement.create(Label.parseCanonicalUnchecked("//fake:missing"))
+            )
+
+        reporter.removeHandler(failFastHandler)
+        val result: EvaluationResult<GetToolchainTypeInfoValue?> = getToolchainTypeInfo(key)
+
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasError()
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result)
+            .hasErrorEntryForKeyThat(key)
+            .hasExceptionThat()
+            .isInstanceOf(InvalidToolchainTypeException::class.java)
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result)
+            .hasErrorEntryForKeyThat(key)
+            .hasExceptionThat()
+            .hasCauseThat()
+            .isInstanceOf(NoSuchPackageException::class.java)
+
+        assertContainsEvent("no such package 'fake': BUILD file not found")
+    }
+
+    @AutoCodec
+    internal class GetToolchainTypeInfoKey(
+        toolchainTypes: com.google.common.collect.ImmutableSet<ToolchainTypeRequirement?>?,
+        configuration: BuildConfigurationValue?
+    ) : SkyKey {
+        public override fun functionName(): SkyFunctionName? {
+            return GET_TOOLCHAIN_TYPE_INFO_FUNCTION
+        }
+
+        val toolchainTypes: com.google.common.collect.ImmutableSet<ToolchainTypeRequirement?>?
+        val configuration: BuildConfigurationValue?
+
+        init {
+            this.configuration = configuration
+            this.toolchainTypes = toolchainTypes
+            java.util.Objects.requireNonNull<com.google.common.collect.ImmutableSet<ToolchainTypeRequirement?>?>(
+                toolchainTypes,
+                "toolchainTypes"
+            )
+            java.util.Objects.requireNonNull<Any?>(configuration, "configuration")
+        }
+
+        companion object {
+            fun create(
+                configuration: BuildConfigurationValue?, vararg toolchainTypes: ToolchainTypeRequirement?
+            ): GetToolchainTypeInfoKey {
+                return GetToolchainTypeInfoKey(
+                    com.google.common.collect.ImmutableSet.copyOf<ToolchainTypeRequirement?>(
+                        toolchainTypes
+                    ), configuration
+                )
+            }
+        }
+    }
+
+    @Throws(java.lang.InterruptedException::class)
+    private fun getToolchainTypeInfo(
+        key: GetToolchainTypeInfoKey?
+    ): EvaluationResult<GetToolchainTypeInfoValue?> {
+        try {
+            // Must re-enable analysis for Skyframe functions that create configured targets.
+            skyframeExecutor.getSkyframeBuildView().enableAnalysis(true)
+            return SkyframeExecutorTestUtils.evaluate<T?>(
+                skyframeExecutor, key,  /*keepGoing=*/false, reporter
+            )
+        } finally {
+            skyframeExecutor.getSkyframeBuildView().enableAnalysis(false)
+        }
+    }
+
+    @AutoCodec
+    internal class GetToolchainTypeInfoValue(toolchainTypes: MutableMap<Label?, ToolchainTypeInfo?>?) : SkyValue {
+        val toolchainTypes: MutableMap<Label?, ToolchainTypeInfo?>?
+
+        init {
+            this.toolchainTypes = toolchainTypes
+            java.util.Objects.requireNonNull<MutableMap<Label?, ToolchainTypeInfo?>?>(toolchainTypes, "toolchainTypes")
+        }
+
+        companion object {
+            fun create(toolchainTypes: MutableMap<Label?, ToolchainTypeInfo?>?): GetToolchainTypeInfoValue {
+                return GetToolchainTypeInfoValue(toolchainTypes)
+            }
+        }
+    }
+
+    private class GetToolchainTypeInfoFunction : SkyFunction {
+        @Throws(SkyFunctionException::class, java.lang.InterruptedException::class)
+        public override fun compute(skyKey: SkyKey?, env: Environment): SkyValue? {
+            val key = skyKey as GetToolchainTypeInfoKey
+            try {
+                val toolchainTypes: MutableMap<Label?, ToolchainTypeInfo?>? =
+                    ToolchainTypeLookupUtil.resolveToolchainTypes(
+                        env, key.toolchainTypes, key.configuration
+                    )
+                if (env.valuesMissing()) {
+                    return null
+                }
+                return GetToolchainTypeInfoValue.Companion.create(toolchainTypes)
+            } catch (e: InvalidToolchainTypeException) {
+                throw GetToolchainTypeInfoFunctionException(e)
+            }
+        }
+    }
+
+    private class GetToolchainTypeInfoFunctionException(e: InvalidToolchainTypeException?) :
+        SkyFunctionException(e, Transience.PERSISTENT)
+
+    companion object {
+        // TODO: b/381396141 - Add a regression test for failure to find the second Skyframe value.
+        // Calls ToolchainTypeLookupUtil.getToolchainTypeInfo.
+        private val GET_TOOLCHAIN_TYPE_INFO_FUNCTION: SkyFunctionName? =
+            SkyFunctionName.createHermetic("GET_TOOLCHAIN_TYPE_INFO_FUNCTION")
+    }
 }

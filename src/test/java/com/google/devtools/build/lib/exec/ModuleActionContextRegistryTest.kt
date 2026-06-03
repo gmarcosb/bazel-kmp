@@ -11,150 +11,151 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.exec;
+package com.google.devtools.build.lib.exec
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.actions.ActionContext
 
-import com.google.devtools.build.lib.actions.ActionContext;
-import com.google.devtools.build.lib.util.AbruptExitException;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Unit tests for {@link ModuleActionContextRegistry}. */
-@RunWith(JUnit4.class)
-public class ModuleActionContextRegistryTest {
-
-  @Test
-  public void testRegistration() throws Exception {
-    AC2 context = new AC2();
-    ModuleActionContextRegistry contextRegistry =
-        ModuleActionContextRegistry.builder().register(IT1.class, context).build();
-    assertThat(contextRegistry.getContext(IT1.class)).isEqualTo(context);
-  }
-
-  @Test
-  public void testDoubleRegistration() throws Exception {
-    AC2 context = new AC2();
-    ModuleActionContextRegistry contextRegistry =
-        ModuleActionContextRegistry.builder()
-            .register(IT1.class, context)
-            .register(IT1.class, context)
-            .build();
-    assertThat(contextRegistry.getContext(IT1.class)).isEqualTo(context);
-  }
-
-  @Test
-  public void testLastRegisteredHasPriority() throws Exception {
-    AC2 context1 = new AC2();
-    AC2 context2 = new AC2();
-    ModuleActionContextRegistry contextRegistry =
-        ModuleActionContextRegistry.builder()
-            .register(IT1.class, context1)
-            .register(IT1.class, context2)
-            .build();
-    assertThat(contextRegistry.getContext(IT1.class)).isEqualTo(context2);
-  }
-
-  @Test
-  public void testSelfIdentifyingType() throws Exception {
-    AC1 context = new AC1();
-    ModuleActionContextRegistry contextRegistry =
-        ModuleActionContextRegistry.builder().register(AC1.class, context).build();
-    assertThat(contextRegistry.getContext(AC1.class)).isEqualTo(context);
-  }
-
-  @Test
-  public void testIdentifierFilter() throws Exception {
-    AC2 general = new AC2();
-    AC2 specific = new AC2();
-    ModuleActionContextRegistry contextRegistry =
-        ModuleActionContextRegistry.builder()
-            .register(IT1.class, general)
-            .register(IT1.class, specific, "specific", "foo")
-            .register(IT1.class, general)
-            .restrictTo(IT1.class, "specific")
-            .build();
-    assertThat(contextRegistry.getContext(IT1.class)).isEqualTo(specific);
-  }
-
-  @Test
-  public void testLastRegisteredHasPriorityWithIdentifier() throws Exception {
-    AC2 context1 = new AC2();
-    AC2 context2 = new AC2();
-    ModuleActionContextRegistry contextRegistry =
-        ModuleActionContextRegistry.builder()
-            .register(IT1.class, context1, "foo")
-            .register(IT1.class, context2, "foo")
-            .restrictTo(IT1.class, "foo")
-            .build();
-    assertThat(contextRegistry.getContext(IT1.class)).isEqualTo(context2);
-  }
-
-  @Test
-  public void testUsedNotification() throws Exception {
-    RecordingContext context = new RecordingContext();
-    ModuleActionContextRegistry contextRegistry =
-        ModuleActionContextRegistry.builder()
-            .register(RecordingContext.class, context)
-            .register(RecordingContext.class, context)
-            .build();
-
-    contextRegistry.notifyUsed();
-
-    assertThat(context.usedCalls).isEqualTo(1);
-  }
-
-  @Test
-  public void testEmptyRestriction() throws Exception {
-    AC2 general = new AC2();
-    AC2 specific = new AC2();
-    ModuleActionContextRegistry contextRegistry =
-        ModuleActionContextRegistry.builder()
-            .register(IT1.class, general)
-            .register(IT1.class, specific, "specific", "foo")
-            .register(IT1.class, general)
-            .restrictTo(IT1.class, "specific")
-            .restrictTo(IT1.class, "")
-            .build();
-    assertThat(contextRegistry.getContext(IT1.class)).isEqualTo(general);
-  }
-
-  @Test
-  public void testNoMatch() throws Exception {
-    ModuleActionContextRegistry contextRegistry =
-        ModuleActionContextRegistry.builder().register(AC1.class, new AC1()).build();
-
-    assertThat(contextRegistry.getContext(IT1.class)).isNull();
-  }
-
-  @Test
-  public void testUnfulfilledRestriction() {
-    AC2 context1 = new AC2();
-    AC2 context2 = new AC2();
-    ModuleActionContextRegistry.Builder builder =
-        ModuleActionContextRegistry.builder()
-            .register(IT1.class, context1, "foo")
-            .register(IT1.class, context2, "baz", "boz")
-            .restrictTo(IT1.class, "bar");
-
-    AbruptExitException exception = assertThrows(AbruptExitException.class, builder::build);
-    assertThat(exception).hasMessageThat().containsMatch("IT1.*bar.*[foo, baz, boz]");
-  }
-
-  private static class AC1 implements ActionContext {}
-
-  private interface IT1 extends ActionContext {}
-
-  private static class AC2 implements IT1 {}
-
-  private static class RecordingContext implements ActionContext {
-    private int usedCalls = 0;
-
-    @Override
-    public void usedContext(ActionContext.ActionContextRegistry actionContextRegistry) {
-      usedCalls++;
+/** Unit tests for [ModuleActionContextRegistry].  */
+@RunWith(JUnit4::class)
+class ModuleActionContextRegistryTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRegistration() {
+        val context = AC2()
+        val contextRegistry: ModuleActionContextRegistry =
+            ModuleActionContextRegistry.builder().register(IT1::class.java, context).build()
+        assertThat(contextRegistry.getContext(IT1::class.java)).isEqualTo(context)
     }
-  }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDoubleRegistration() {
+        val context = AC2()
+        val contextRegistry: ModuleActionContextRegistry =
+            ModuleActionContextRegistry.builder()
+                .register(IT1::class.java, context)
+                .register(IT1::class.java, context)
+                .build()
+        assertThat(contextRegistry.getContext(IT1::class.java)).isEqualTo(context)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLastRegisteredHasPriority() {
+        val context1 = AC2()
+        val context2 = AC2()
+        val contextRegistry: ModuleActionContextRegistry =
+            ModuleActionContextRegistry.builder()
+                .register(IT1::class.java, context1)
+                .register(IT1::class.java, context2)
+                .build()
+        assertThat(contextRegistry.getContext(IT1::class.java)).isEqualTo(context2)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSelfIdentifyingType() {
+        val context = AC1()
+        val contextRegistry: ModuleActionContextRegistry =
+            ModuleActionContextRegistry.builder().register(AC1::class.java, context).build()
+        assertThat(contextRegistry.getContext(AC1::class.java)).isEqualTo(context)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testIdentifierFilter() {
+        val general = AC2()
+        val specific = AC2()
+        val contextRegistry: ModuleActionContextRegistry =
+            ModuleActionContextRegistry.builder()
+                .register(IT1::class.java, general)
+                .register(IT1::class.java, specific, "specific", "foo")
+                .register(IT1::class.java, general)
+                .restrictTo(IT1::class.java, "specific")
+                .build()
+        assertThat(contextRegistry.getContext(IT1::class.java)).isEqualTo(specific)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLastRegisteredHasPriorityWithIdentifier() {
+        val context1 = AC2()
+        val context2 = AC2()
+        val contextRegistry: ModuleActionContextRegistry =
+            ModuleActionContextRegistry.builder()
+                .register(IT1::class.java, context1, "foo")
+                .register(IT1::class.java, context2, "foo")
+                .restrictTo(IT1::class.java, "foo")
+                .build()
+        assertThat(contextRegistry.getContext(IT1::class.java)).isEqualTo(context2)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testUsedNotification() {
+        val context = RecordingContext()
+        val contextRegistry: ModuleActionContextRegistry =
+            ModuleActionContextRegistry.builder()
+                .register(RecordingContext::class.java, context)
+                .register(RecordingContext::class.java, context)
+                .build()
+
+        contextRegistry.notifyUsed()
+
+        Truth.assertThat(context.usedCalls).isEqualTo(1)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEmptyRestriction() {
+        val general = AC2()
+        val specific = AC2()
+        val contextRegistry: ModuleActionContextRegistry =
+            ModuleActionContextRegistry.builder()
+                .register(IT1::class.java, general)
+                .register(IT1::class.java, specific, "specific", "foo")
+                .register(IT1::class.java, general)
+                .restrictTo(IT1::class.java, "specific")
+                .restrictTo(IT1::class.java, "")
+                .build()
+        assertThat(contextRegistry.getContext(IT1::class.java)).isEqualTo(general)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNoMatch() {
+        val contextRegistry: ModuleActionContextRegistry =
+            ModuleActionContextRegistry.builder().register(AC1::class.java, AC1()).build()
+
+        assertThat(contextRegistry.getContext(IT1::class.java)).isNull()
+    }
+
+    @org.junit.Test
+    fun testUnfulfilledRestriction() {
+        val context1 = AC2()
+        val context2 = AC2()
+        val builder: ModuleActionContextRegistry.Builder =
+            ModuleActionContextRegistry.builder()
+                .register(IT1::class.java, context1, "foo")
+                .register(IT1::class.java, context2, "baz", "boz")
+                .restrictTo(IT1::class.java, "bar")
+
+        val exception: AbruptExitException? =
+            org.junit.Assert.assertThrows<T?>(AbruptExitException::class.java, builder::build)
+        assertThat(exception).hasMessageThat().containsMatch("IT1.*bar.*[foo, baz, boz]")
+    }
+
+    private class AC1 : ActionContext
+
+    private interface IT1 : ActionContext
+
+    private class AC2 : IT1
+
+    private class RecordingContext : ActionContext {
+        private var usedCalls = 0
+
+        public override fun usedContext(actionContextRegistry: ActionContext.ActionContextRegistry?) {
+            usedCalls++
+        }
+    }
 }

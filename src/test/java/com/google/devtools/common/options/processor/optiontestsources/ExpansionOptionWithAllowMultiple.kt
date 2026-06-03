@@ -11,25 +11,26 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.common.options.processor.optiontestsources;
+package com.google.devtools.common.options.processor.optiontestsources
 
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
+import OptionFilters.OptionEffectTag
+import com.google.devtools.common.options.OptionDocumentationCategory
+import com.google.devtools.common.options.OptionEffectTag
+import com.google.devtools.common.options.OptionsBase
+import com.google.devtools.common.options.OptionsClass
 
-/** This example options class should fail to compile. */
+/** This example options class should fail to compile.  */
 @OptionsClass
-public abstract class ExpansionOptionWithAllowMultiple extends OptionsBase {
-  @Option(
-      name = "bad_option",
-      defaultValue = "null",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = OptionEffectTag.AFFECTS_OUTPUTS,
-      expansion = "--foo=bar",
-      allowMultiple = true)
-  public abstract Void getBadOption();
+abstract class ExpansionOptionWithAllowMultiple : OptionsBase() {
+    @get:com.google.devtools.common.options.Option(
+        name = "bad_option",
+        defaultValue = "null",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.AFFECTS_OUTPUTS],
+        expansion = ["--foo=bar"],
+        allowMultiple = true
+    )
+    abstract val badOption: java.lang.Void?
 
-  public abstract void setBadOption(Void value);
+    abstract fun setBadOption(value: java.lang.Void?)
 }

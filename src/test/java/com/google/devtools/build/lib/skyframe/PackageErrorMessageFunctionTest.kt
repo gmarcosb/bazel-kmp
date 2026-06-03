@@ -11,69 +11,60 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.cmdline.PackageIdentifier
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.skyframe.PackageErrorMessageValue.Result;
-import com.google.devtools.build.skyframe.EvaluationContext;
-import com.google.devtools.build.skyframe.EvaluationResult;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [PackageErrorMessageFunction].  */
+@RunWith(JUnit4::class)
+class PackageErrorMessageFunctionTest : BuildViewTestCase() {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNoErrorMessage() {
+        scratch.file("a/BUILD")
+        assertThat(getPackageErrorMessageValue( /*keepGoing=*/false).result)
+            .isEqualTo(Result.NO_ERROR)
+    }
 
-/** Tests for {@link PackageErrorMessageFunction}. */
-@RunWith(JUnit4.class)
-public class PackageErrorMessageFunctionTest extends BuildViewTestCase {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testPackageWithErrors() {
+        // Opt out of failing fast on an error event.
+        reporter.removeHandler(failFastHandler)
 
-  @Test
-  public void testNoErrorMessage() throws Exception {
-    scratch.file("a/BUILD");
-    assertThat(getPackageErrorMessageValue(/*keepGoing=*/ false).result)
-        .isEqualTo(Result.NO_ERROR);
-  }
+        scratch.file("a/BUILD", "imaginary_macro(name = 'this macro is not defined')")
 
-  @Test
-  public void testPackageWithErrors() throws Exception {
-    // Opt out of failing fast on an error event.
-    reporter.removeHandler(failFastHandler);
+        assertThat(getPackageErrorMessageValue( /*keepGoing=*/false).result)
+            .isEqualTo(Result.ERROR)
+    }
 
-    scratch.file("a/BUILD", "imaginary_macro(name = 'this macro is not defined')");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNoSuchPackageException() {
+        scratch.file("a/BUILD", "load('//a:does_not_exist.bzl', 'imaginary_macro')")
 
-    assertThat(getPackageErrorMessageValue(/*keepGoing=*/ false).result)
-        .isEqualTo(Result.ERROR);
-  }
+        val packageErrorMessageValue: PackageErrorMessageValue =
+            getPackageErrorMessageValue( /*keepGoing=*/true)
+        assertThat(packageErrorMessageValue.result).isEqualTo(Result.NO_SUCH_PACKAGE_EXCEPTION)
+        assertThat(packageErrorMessageValue.noSuchPackageExceptionMessage)
+            .isEqualTo("error loading package 'a': cannot load '//a:does_not_exist.bzl': no such file")
+    }
 
-  @Test
-  public void testNoSuchPackageException() throws Exception {
-    scratch.file("a/BUILD", "load('//a:does_not_exist.bzl', 'imaginary_macro')");
-
-    PackageErrorMessageValue packageErrorMessageValue =
-        getPackageErrorMessageValue(/*keepGoing=*/ true);
-    assertThat(packageErrorMessageValue.result).isEqualTo(Result.NO_SUCH_PACKAGE_EXCEPTION);
-    assertThat(packageErrorMessageValue.noSuchPackageExceptionMessage)
-        .isEqualTo("error loading package 'a': cannot load '//a:does_not_exist.bzl': no such file");
-  }
-
-  private PackageErrorMessageValue getPackageErrorMessageValue(boolean keepGoing)
-      throws InterruptedException {
-    SkyKey key = PackageErrorMessageValue.key(PackageIdentifier.createInMainRepo("a"));
-    EvaluationContext evaluationContext =
-        EvaluationContext.newBuilder()
-            .setKeepGoing(keepGoing)
-            .setParallelism(SequencedSkyframeExecutor.DEFAULT_THREAD_COUNT)
-            .setEventHandler(reporter)
-            .build();
-    EvaluationResult<SkyValue> result =
-        skyframeExecutor.getEvaluator().evaluate(ImmutableList.of(key), evaluationContext);
-    assertThat(result.hasError()).isFalse();
-    SkyValue value = result.get(key);
-    assertThat(value).isInstanceOf(PackageErrorMessageValue.class);
-    return (PackageErrorMessageValue) value;
-  }
+    @Throws(java.lang.InterruptedException::class)
+    private fun getPackageErrorMessageValue(keepGoing: Boolean): PackageErrorMessageValue {
+        val key: SkyKey = PackageErrorMessageValue.key(PackageIdentifier.createInMainRepo("a"))
+        val evaluationContext: EvaluationContext? =
+            EvaluationContext.newBuilder()
+                .setKeepGoing(keepGoing)
+                .setParallelism(SequencedSkyframeExecutor.DEFAULT_THREAD_COUNT)
+                .setEventHandler(reporter)
+                .build()
+        val result: EvaluationResult<SkyValue?> =
+            skyframeExecutor.getEvaluator()
+                .evaluate(com.google.common.collect.ImmutableList.of<E?>(key), evaluationContext)
+        assertThat(result.hasError()).isFalse()
+        val value: SkyValue? = result.get(key)
+        assertThat(value).isInstanceOf(PackageErrorMessageValue::class.java)
+        return value as PackageErrorMessageValue
+    }
 }

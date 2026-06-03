@@ -11,23 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester
 
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import java.util.BitSet;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link BitSetCodec}. */
-@RunWith(JUnit4.class)
-public class BitSetCodecTest {
-  @Test
-  public void smoke() throws Exception {
-    BitSet bitSet = new BitSet(4);
-    bitSet.set(0, true);
-    bitSet.set(3, false);
-    new SerializationTester(bitSet).runTests();
-  }
+/** Tests for [BitSetCodec].  */
+@RunWith(JUnit4::class)
+class BitSetCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun smoke() {
+        val bitSet: BitSet = BitSet(4)
+        bitSet.set(0, true)
+        bitSet.set(3, false)
+        SerializationTester(bitSet).runTests()
+    }
 }

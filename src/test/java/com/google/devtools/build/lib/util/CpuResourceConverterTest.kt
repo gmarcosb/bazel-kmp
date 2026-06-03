@@ -11,22 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util;
+package com.google.devtools.build.lib.util
 
-import static com.google.common.truth.Truth.assertThat;
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [CpuResourceConverter].  */
+@RunWith(JUnit4::class)
+class CpuResourceConverterTest {
+    @org.junit.Test
+    fun testConstructor_correctMinAndMaxValues() {
+        val cpuResourceConverter: CpuResourceConverter = CpuResourceConverter()
 
-/** Tests for {@link CpuResourceConverter}. */
-@RunWith(JUnit4.class)
-public class CpuResourceConverterTest {
-  @Test
-  public void testConstructor_correctMinAndMaxValues() {
-    CpuResourceConverter cpuResourceConverter = new CpuResourceConverter();
-
-    assertThat(cpuResourceConverter.minValue).isEqualTo(0);
-    assertThat(cpuResourceConverter.maxValue).isEqualTo(Integer.MAX_VALUE);
-  }
+        assertThat(cpuResourceConverter.minValue).isEqualTo(0)
+        assertThat(cpuResourceConverter.maxValue).isEqualTo(Int.Companion.MAX_VALUE)
+    }
 }

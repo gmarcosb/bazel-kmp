@@ -11,179 +11,160 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.server
 
-package com.google.devtools.build.lib.server;
+import com.google.common.collect.ImmutableList
+import com.google.devtools.build.lib.testutil.TestUtils
+import org.junit.Test
+import java.time.Duration
 
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.server.CommandManager.RunningCommand;
-import com.google.devtools.build.lib.testutil.TestThread;
-import com.google.devtools.build.lib.testutil.TestUtils;
-import java.lang.Thread.State;
-import java.time.Duration;
-import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.CyclicBarrier;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link CommandManager}. */
-@RunWith(JUnit4.class)
-public class CommandManagerTest {
-
-  @Test
-  public void testBasicOperationsOnSingleThread() {
-    CommandManager underTest =
-        new CommandManager(/*doIdleServerTasks=*/ false, "slow interrupt message suffix");
-    assertThat(underTest.isEmpty()).isTrue();
-    try (RunningCommand firstCommand = underTest.createCommand()) {
-      assertThat(underTest.isEmpty()).isFalse();
-      assertThat(isValidUuid(firstCommand.id)).isTrue();
-      try (RunningCommand secondCommand = underTest.createCommand()) {
-        assertThat(underTest.isEmpty()).isFalse();
-        assertThat(isValidUuid(secondCommand.id)).isTrue();
-        assertThat(firstCommand.id).isNotEqualTo(secondCommand.id);
-      }
-      assertThat(underTest.isEmpty()).isFalse();
+/** Tests for [CommandManager].  */
+@RunWith(JUnit4::class)
+class CommandManagerTest {
+    @Test
+    fun testBasicOperationsOnSingleThread() {
+        val underTest: CommandManager =
+            CommandManager( /*doIdleServerTasks=*/false, "slow interrupt message suffix")
+        assertThat(underTest.isEmpty()).isTrue()
+        underTest.createCommand().use { firstCommand ->
+            assertThat(underTest.isEmpty()).isFalse()
+            Truth.assertThat(isValidUuid(firstCommand.id)).isTrue()
+            underTest.createCommand().use { secondCommand ->
+                assertThat(underTest.isEmpty()).isFalse()
+                Truth.assertThat(isValidUuid(secondCommand.id)).isTrue()
+                assertThat(firstCommand.id).isNotEqualTo(secondCommand.id)
+            }
+            assertThat(underTest.isEmpty()).isFalse()
+        }
+        assertThat(underTest.isEmpty()).isTrue()
     }
-    assertThat(underTest.isEmpty()).isTrue();
-  }
 
-  @Test
-  public void testNotifiesOnBusyAndIdle() throws Exception {
-    AtomicInteger notificationCounter = new AtomicInteger(0);
-    CommandManager underTest =
-        new CommandManager(/*doIdleServerTasks=*/ false, "slow interrupt message suffix");
-    AtomicBoolean waiting = new AtomicBoolean(false);
-    CyclicBarrier cyclicBarrier = new CyclicBarrier(2);
+    @Test
+    @Throws(Exception::class)
+    fun testNotifiesOnBusyAndIdle() {
+        val notificationCounter: AtomicInteger = AtomicInteger(0)
+        val underTest: CommandManager =
+            CommandManager( /*doIdleServerTasks=*/false, "slow interrupt message suffix")
+        val waiting: AtomicBoolean = AtomicBoolean(false)
+        val cyclicBarrier: CyclicBarrier = CyclicBarrier(2)
 
-    TestThread thread =
-        new TestThread(
-            () -> {
-              try {
-                while (true) {
-                  waiting.set(true);
-                  underTest.waitForChange();
-                  waiting.set(false);
-                  notificationCounter.incrementAndGet();
-                  cyclicBarrier.await();
+        val thread: TestThread =
+            TestThread(
+                TestRunnable {
+                    try {
+                        while (true) {
+                            waiting.set(true)
+                            underTest.waitForChange()
+                            waiting.set(false)
+                            notificationCounter.incrementAndGet()
+                            cyclicBarrier.await()
+                        }
+                    } catch (e: InterruptedException) {
+                        // Used to terminate the thread.
+                    }
+                })
+        thread.start()
+
+        // We want to ensure at each step that we are actively awaiting notification.
+        waitForThreadWaiting(waiting, thread)
+        underTest.createCommand().use { firstCommand ->
+            cyclicBarrier.await()
+            Truth.assertThat(notificationCounter.get()).isEqualTo(1)
+            waitForThreadWaiting(waiting, thread)
+            underTest.createCommand().use { secondCommand ->
+                cyclicBarrier.await()
+                Truth.assertThat(notificationCounter.get()).isEqualTo(2)
+                waitForThreadWaiting(waiting, thread)
+            }
+            cyclicBarrier.await()
+            Truth.assertThat(notificationCounter.get()).isEqualTo(3)
+            waitForThreadWaiting(waiting, thread)
+        }
+        cyclicBarrier.await()
+        Truth.assertThat(notificationCounter.get()).isEqualTo(4)
+
+        thread.interrupt()
+        thread.joinAndAssertState(TestUtils.WAIT_TIMEOUT_MILLISECONDS)
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testIdleTasksEnabled() {
+        val underTest: CommandManager =
+            CommandManager( /* doIdleServerTasks= */true, "slow interrupt message suffix")
+
+        val taskRunning: CountDownLatch = CountDownLatch(1)
+
+        val idleTask: IdleTask =
+            object : IdleTask() {
+                override fun displayName(): String {
+                    return "my idle task"
                 }
-              } catch (InterruptedException e) {
-                // Used to terminate the thread.
-              }
-            });
-    thread.start();
 
-    // We want to ensure at each step that we are actively awaiting notification.
-    waitForThreadWaiting(waiting, thread);
-    try (RunningCommand firstCommand = underTest.createCommand()) {
-      cyclicBarrier.await();
-      assertThat(notificationCounter.get()).isEqualTo(1);
-      waitForThreadWaiting(waiting, thread);
-      try (RunningCommand secondCommand = underTest.createCommand()) {
-        cyclicBarrier.await();
-        assertThat(notificationCounter.get()).isEqualTo(2);
-        waitForThreadWaiting(waiting, thread);
-      }
-      cyclicBarrier.await();
-      assertThat(notificationCounter.get()).isEqualTo(3);
-      waitForThreadWaiting(waiting, thread);
-    }
-    cyclicBarrier.await();
-    assertThat(notificationCounter.get()).isEqualTo(4);
+                override fun run() {
+                    taskRunning.countDown()
+                }
+            }
 
-    thread.interrupt();
-    thread.joinAndAssertState(TestUtils.WAIT_TIMEOUT_MILLISECONDS);
-  }
+        underTest.createCommand().use { c1 ->
+            assertThat(underTest.getIdleTaskResults()).isNull()
+            c1.setIdleTasks(ImmutableList.of<E?>(idleTask))
+        }
+        taskRunning.await()
 
-  @Test
-  public void testIdleTasksEnabled() throws Exception {
-    CommandManager underTest =
-        new CommandManager(/* doIdleServerTasks= */ true, "slow interrupt message suffix");
-
-    CountDownLatch taskRunning = new CountDownLatch(1);
-
-    IdleTask idleTask =
-        new IdleTask() {
-          @Override
-          public String displayName() {
-            return "my idle task";
-          }
-
-          @Override
-          public void run() {
-            taskRunning.countDown();
-          }
-        };
-
-    // The 1st command collects no results and registers a task.
-    try (RunningCommand c1 = underTest.createCommand()) {
-      assertThat(underTest.getIdleTaskResults()).isNull();
-      c1.setIdleTasks(ImmutableList.of(idleTask));
+        underTest.createCommand().use { c2 -> }
+        underTest.createCommand().use { c3 ->
+            assertThat(
+                underTest.getIdleTaskResults().stream()
+                    .map({ r -> IdleTask.Result(r.name, r.status, Duration.ZERO) })
+            )
+                .containsExactly(
+                    IdleTask.Result("my idle task", IdleTask.Status.SUCCESS, Duration.ZERO)
+                )
+        }
+        underTest.createCommand().use { c4 ->
+            assertThat(underTest.getIdleTaskResults()).isNull()
+        }
     }
 
-    taskRunning.await();
+    @Test
+    @Throws(Exception::class)
+    fun testIdleTasksDisabled() {
+        val underTest: CommandManager =
+            CommandManager( /* doIdleServerTasks= */false, "slow interrupt message suffix")
 
-    // The 2nd command does not attempt to collect results and registers no tasks.
-    try (RunningCommand c2 = underTest.createCommand()) {}
+        val idleTask: IdleTask =
+            object : IdleTask() {
+                override fun displayName(): String {
+                    return "my idle task"
+                }
 
-    // The 3rd command collects results from the 1st command and registers no tasks.
-    try (RunningCommand c3 = underTest.createCommand()) {
-      assertThat(
-              underTest.getIdleTaskResults().stream()
-                  .map(r -> new IdleTask.Result(r.name, r.status, Duration.ZERO)))
-          .containsExactly(
-              new IdleTask.Result("my idle task", IdleTask.Status.SUCCESS, Duration.ZERO));
+                override fun run() {}
+            }
+
+        underTest.createCommand().use { c1 ->
+            c1.setIdleTasks(ImmutableList.of<E?>(idleTask))
+        }
+        underTest.createCommand().use { c2 ->
+            assertThat(underTest.getIdleTaskResults()).isNull()
+        }
     }
 
-    // The 4th command collects no results.
-    try (RunningCommand c4 = underTest.createCommand()) {
-      assertThat(underTest.getIdleTaskResults()).isNull();
+    companion object {
+        @Throws(InterruptedException::class)
+        private fun waitForThreadWaiting(readyToWaitForChange: AtomicBoolean, thread: Thread) {
+            while (!(readyToWaitForChange.get() && thread.getState() == Thread.State.WAITING)) {
+                Thread.sleep(50)
+            }
+        }
+
+        private fun isValidUuid(uuidString: String): Boolean {
+            try {
+                val unused: UUID = UUID.fromString(uuidString)
+                return true
+            } catch (e: IllegalArgumentException) {
+                return false
+            }
+        }
     }
-  }
-
-  @Test
-  public void testIdleTasksDisabled() throws Exception {
-    CommandManager underTest =
-        new CommandManager(/* doIdleServerTasks= */ false, "slow interrupt message suffix");
-
-    IdleTask idleTask =
-        new IdleTask() {
-          @Override
-          public String displayName() {
-            return "my idle task";
-          }
-
-          @Override
-          public void run() {}
-        };
-
-    try (RunningCommand c1 = underTest.createCommand()) {
-      c1.setIdleTasks(ImmutableList.of(idleTask));
-    }
-
-    try (RunningCommand c2 = underTest.createCommand()) {
-      assertThat(underTest.getIdleTaskResults()).isNull();
-    }
-  }
-
-  private static void waitForThreadWaiting(AtomicBoolean readyToWaitForChange, Thread thread)
-      throws InterruptedException {
-    while (!(readyToWaitForChange.get() && thread.getState() == State.WAITING)) {
-      Thread.sleep(50);
-    }
-  }
-
-  private static boolean isValidUuid(String uuidString) {
-    try {
-      UUID unused = UUID.fromString(uuidString);
-      return true;
-    } catch (IllegalArgumentException e) {
-      return false;
-    }
-  }
 }

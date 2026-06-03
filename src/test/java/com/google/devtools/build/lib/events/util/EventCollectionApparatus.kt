@@ -11,218 +11,220 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.events.util;
+package com.google.devtools.build.lib.events.util
 
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.EventBusEventHandler;
-import com.google.devtools.build.lib.events.EventCollector;
-import com.google.devtools.build.lib.events.EventHandler;
-import com.google.devtools.build.lib.events.EventKind;
-import com.google.devtools.build.lib.events.PrintingEventHandler;
-import com.google.devtools.build.lib.events.Reporter;
-import com.google.devtools.build.lib.testutil.MoreAsserts;
-import com.google.devtools.build.lib.util.io.OutErr;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
-import java.util.regex.Pattern;
+import com.google.devtools.build.lib.events.EventBusEventHandler
 
 /**
  * An apparatus for reporting / collecting events.
  */
-public final class EventCollectionApparatus {
-  private EventCollector eventCollector;
-  private Reporter reporter;
-  private PrintingEventHandler printingEventHandler;
+class EventCollectionApparatus @kotlin.jvm.JvmOverloads constructor(mask: MutableSet<com.google.devtools.build.lib.events.EventKind?>? = com.google.devtools.build.lib.events.EventKind.ERRORS_WARNINGS_AND_INFO) {
+    private val eventCollector: EventCollector
+    private val reporter: com.google.devtools.build.lib.events.Reporter
+    private val printingEventHandler: PrintingEventHandler
 
-  private boolean failFast;
-  private List<EventHandler> handlers = new ArrayList<>();
+    private var failFast = false
+    private val handlers: MutableList<com.google.devtools.build.lib.events.EventHandler?> =
+        java.util.ArrayList<com.google.devtools.build.lib.events.EventHandler?>()
 
-  /**
-   * Determine which events the {@link #collector()} created by this apparatus
-   * will collect. Default: {@link EventKind#ERRORS_AND_WARNINGS}.
-   */
-  public EventCollectionApparatus(Set<EventKind> mask) {
-    eventCollector = new EventCollector(mask);
-    printingEventHandler = new PrintingEventHandler(EventKind.ERRORS_AND_WARNINGS_AND_OUTPUT);
-    reporter =
-        new Reporter(
-            EventBusEventHandler.createWithNewEventBus(), eventCollector, printingEventHandler);
-    this.setFailFast(true);
-  }
-
-  public EventCollectionApparatus() {
-    this(EventKind.ERRORS_WARNINGS_AND_INFO);
-  }
-
-  public void clear() {
-    eventCollector.clear();
-  }
-
-  public void initExternal(Reporter reporter) {
-    // TODO(ulfjack): Changes to the EventCollectionApparatus are not reflected in the external
-    // reporter, i.e., this is a one-shot change. Maybe we should store the external reporter here?
-    reporter.addHandler(eventCollector);
-    reporter.addHandler(printingEventHandler);
-    for (EventHandler handler : handlers) {
-      reporter.addHandler(handler);
+    fun clear() {
+        eventCollector.clear()
     }
-    if (failFast) {
-      reporter.addHandler(FAIL_FAST_HANDLER);
-    }
-  }
 
-  /**
-   * Determine whether the {#link reporter()} created by this apparatus will
-   * fail fast, that is, throw an exception whenever we encounter an event of
-   * matching {@link EventKind#ERRORS_AND_WARNINGS}.
-   * Default: {@code true}.
-   */
-  public void setFailFast(boolean failFast) {
-    this.failFast = failFast;
-    if (failFast) {
-      reporter.addHandler(FAIL_FAST_HANDLER);
-    } else {
-      reporter.removeHandler(FAIL_FAST_HANDLER);
-    }
-  }
-
-  public void addHandler(EventHandler eventHandler) {
-    reporter.addHandler(eventHandler);
-    handlers.add(eventHandler);
-  }
-
-  /** An exception thrown by {@link #FAIL_FAST_HANDLER}. */
-  // TODO(bazel-team): Possibly extend RuntimeException instead of IllegalArgumentException.
-  public static class FailFastException extends IllegalArgumentException {
-    public FailFastException(String s) {
-      super(s);
-    }
-  }
-
-  /**
-   * A handler that immediately throws {@link FailFastException} whenever an error or warning
-   * occurs.
-   *
-   * <p>We do not reuse an existing unchecked exception type, because callers (e.g., test
-   * assertions) need to be able to distinguish between organically occurring exceptions and
-   * exceptions thrown by this handler.
-   */
-  private static final EventHandler FAIL_FAST_HANDLER =
-      new EventHandler() {
-        @Override
-        public void handle(Event event) {
-          if (EventKind.ERRORS_AND_WARNINGS.contains(event.getKind())) {
-            throw new FailFastException(event.toString());
-          }
+    fun initExternal(reporter: com.google.devtools.build.lib.events.Reporter) {
+        // TODO(ulfjack): Changes to the EventCollectionApparatus are not reflected in the external
+        // reporter, i.e., this is a one-shot change. Maybe we should store the external reporter here?
+        reporter.addHandler(eventCollector)
+        reporter.addHandler(printingEventHandler)
+        for (handler in handlers) {
+            reporter.addHandler(handler)
         }
-      };
+        if (failFast) {
+            reporter.addHandler(FAIL_FAST_HANDLER)
+        }
+    }
 
-  /**
-   * @return the event reporter for this apparatus
-   */
-  public Reporter reporter() {
-    return reporter;
-  }
+    /**
+     * Determine whether the {#link reporter()} created by this apparatus will
+     * fail fast, that is, throw an exception whenever we encounter an event of
+     * matching [EventKind.ERRORS_AND_WARNINGS].
+     * Default: `true`.
+     */
+    fun setFailFast(failFast: Boolean) {
+        this.failFast = failFast
+        if (failFast) {
+            reporter.addHandler(FAIL_FAST_HANDLER)
+        } else {
+            reporter.removeHandler(FAIL_FAST_HANDLER)
+        }
+    }
 
-  /**
-   * @return the event collector for this apparatus.
-   */
-  public EventCollector collector() {
-    return eventCollector;
-  }
+    fun addHandler(eventHandler: com.google.devtools.build.lib.events.EventHandler?) {
+        reporter.addHandler(eventHandler)
+        handlers.add(eventHandler)
+    }
 
-  public Iterable<Event> infos() {
-    return eventCollector.filtered(EventKind.INFO);
-  }
+    /** An exception thrown by [.FAIL_FAST_HANDLER].  */ // TODO(bazel-team): Possibly extend RuntimeException instead of IllegalArgumentException.
+    class FailFastException(s: String?) : java.lang.IllegalArgumentException(s)
 
-  public Iterable<Event> errors() {
-    return eventCollector.filtered(EventKind.ERROR);
-  }
+    /**
+     * Determine which events the [.collector] created by this apparatus
+     * will collect. Default: [EventKind.ERRORS_AND_WARNINGS].
+     */
+    init {
+        eventCollector = EventCollector(mask)
+        printingEventHandler =
+            PrintingEventHandler(com.google.devtools.build.lib.events.EventKind.ERRORS_AND_WARNINGS_AND_OUTPUT)
+        reporter =
+            com.google.devtools.build.lib.events.Reporter(
+                EventBusEventHandler.createWithNewEventBus(), eventCollector, printingEventHandler
+            )
+        this.setFailFast(true)
+    }
 
-  public Iterable<Event> warnings() {
-    return eventCollector.filtered(EventKind.WARNING);
-  }
+    /**
+     * @return the event reporter for this apparatus
+     */
+    fun reporter(): com.google.devtools.build.lib.events.Reporter {
+        return reporter
+    }
 
-  /**
-   * Redirects all output to the specified OutErr stream pair.
-   * Returns the previous OutErr.
-   */
-  public OutErr setOutErr(OutErr outErr) {
-    return printingEventHandler.setOutErr(outErr);
-  }
+    /**
+     * @return the event collector for this apparatus.
+     */
+    fun collector(): EventCollector {
+        return eventCollector
+    }
 
-  /**
-   * Utility method: Asserts that the {@link #collector()} has not collected
-   * any warnings or errors.
-   */
-  public void assertNoWarningsOrErrors() {
-    MoreAsserts.assertNoEvents(warnings());
-    MoreAsserts.assertNoEvents(errors());
-  }
+    fun infos(): Iterable<com.google.devtools.build.lib.events.Event?>? {
+        return eventCollector.filtered(com.google.devtools.build.lib.events.EventKind.INFO)
+    }
 
-  public void assertNoWarnings() {
-    MoreAsserts.assertNoEvents(warnings());
-  }
+    fun errors(): Iterable<com.google.devtools.build.lib.events.Event?>? {
+        return eventCollector.filtered(com.google.devtools.build.lib.events.EventKind.ERROR)
+    }
 
-  /**
-   * Utility method: Assert that the {@link #collector()} has received an info message with the
-   * {@code expectedMessage}.
-   */
-  @CanIgnoreReturnValue
-  public Event assertContainsInfo(String expectedMessage) {
-    return MoreAsserts.assertContainsEvent(eventCollector, expectedMessage, EventKind.INFO);
-  }
+    fun warnings(): Iterable<com.google.devtools.build.lib.events.Event?>? {
+        return eventCollector.filtered(com.google.devtools.build.lib.events.EventKind.WARNING)
+    }
 
-  /**
-   * Utility method: Assert that the {@link #collector()} has received an error with the {@code
-   * expectedMessage}.
-   */
-  @CanIgnoreReturnValue
-  public Event assertContainsError(String expectedMessage) {
-    return MoreAsserts.assertContainsEvent(eventCollector, expectedMessage, EventKind.ERROR);
-  }
+    /**
+     * Redirects all output to the specified OutErr stream pair.
+     * Returns the previous OutErr.
+     */
+    fun setOutErr(outErr: OutErr?): OutErr? {
+        return printingEventHandler.setOutErr(outErr)
+    }
 
-  /**
-   * Utility method: Assert that the {@link #collector()} has received an error that matches {@code
-   * expectedPattern}.
-   */
-  @CanIgnoreReturnValue
-  public Event assertContainsError(Pattern expectedPattern) {
-    return MoreAsserts.assertContainsEvent(eventCollector, expectedPattern, EventKind.ERROR);
-  }
+    /**
+     * Utility method: Asserts that the [.collector] has not collected
+     * any warnings or errors.
+     */
+    fun assertNoWarningsOrErrors() {
+        MoreAsserts.assertNoEvents(warnings())
+        MoreAsserts.assertNoEvents(errors())
+    }
 
-  /**
-   * Utility method: Assert that the {@link #collector()} has received a warning with the {@code
-   * expectedMessage}.
-   */
-  @CanIgnoreReturnValue
-  public Event assertContainsWarning(String expectedMessage) {
-    return MoreAsserts.assertContainsEvent(eventCollector, expectedMessage, EventKind.WARNING);
-  }
+    fun assertNoWarnings() {
+        MoreAsserts.assertNoEvents(warnings())
+    }
 
-  /**
-   * Utility method: Assert that the {@link #collector()} has received a warning that matches {@code
-   * expectedPattern}.
-   */
-  @CanIgnoreReturnValue
-  public Event assertContainsWarning(Pattern expectedPattern) {
-    return MoreAsserts.assertContainsEvent(eventCollector, expectedPattern, EventKind.WARNING);
-  }
+    /**
+     * Utility method: Assert that the [.collector] has received an info message with the
+     * `expectedMessage`.
+     */
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun assertContainsInfo(expectedMessage: String?): com.google.devtools.build.lib.events.Event? {
+        return MoreAsserts.assertContainsEvent(
+            eventCollector,
+            expectedMessage,
+            com.google.devtools.build.lib.events.EventKind.INFO
+        )
+    }
 
-  @CanIgnoreReturnValue
-  public List<Event> assertContainsEventWithFrequency(
-      String expectedMessage, int expectedFrequency) {
-    return MoreAsserts.assertContainsEventWithFrequency(eventCollector, expectedMessage,
-        expectedFrequency);
-  }
+    /**
+     * Utility method: Assert that the [.collector] has received an error with the `expectedMessage`.
+     */
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun assertContainsError(expectedMessage: String?): com.google.devtools.build.lib.events.Event? {
+        return MoreAsserts.assertContainsEvent(
+            eventCollector,
+            expectedMessage,
+            com.google.devtools.build.lib.events.EventKind.ERROR
+        )
+    }
 
-  public void assertDoesNotContainEvent(String unexpectedEvent) {
-    MoreAsserts.assertDoesNotContainEvent(eventCollector, unexpectedEvent);
-  }
+    /**
+     * Utility method: Assert that the [.collector] has received an error that matches `expectedPattern`.
+     */
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun assertContainsError(expectedPattern: java.util.regex.Pattern?): com.google.devtools.build.lib.events.Event? {
+        return MoreAsserts.assertContainsEvent(
+            eventCollector,
+            expectedPattern,
+            com.google.devtools.build.lib.events.EventKind.ERROR
+        )
+    }
 
-  public void assertContainsEventsInOrder(String... expectedMessages) {
-    MoreAsserts.assertContainsEventsInOrder(eventCollector, expectedMessages);
-  }
+    /**
+     * Utility method: Assert that the [.collector] has received a warning with the `expectedMessage`.
+     */
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun assertContainsWarning(expectedMessage: String?): com.google.devtools.build.lib.events.Event? {
+        return MoreAsserts.assertContainsEvent(
+            eventCollector,
+            expectedMessage,
+            com.google.devtools.build.lib.events.EventKind.WARNING
+        )
+    }
+
+    /**
+     * Utility method: Assert that the [.collector] has received a warning that matches `expectedPattern`.
+     */
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun assertContainsWarning(expectedPattern: java.util.regex.Pattern?): com.google.devtools.build.lib.events.Event? {
+        return MoreAsserts.assertContainsEvent(
+            eventCollector,
+            expectedPattern,
+            com.google.devtools.build.lib.events.EventKind.WARNING
+        )
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    fun assertContainsEventWithFrequency(
+        expectedMessage: String?, expectedFrequency: Int
+    ): MutableList<com.google.devtools.build.lib.events.Event?> {
+        return MoreAsserts.assertContainsEventWithFrequency(
+            eventCollector, expectedMessage,
+            expectedFrequency
+        )
+    }
+
+    fun assertDoesNotContainEvent(unexpectedEvent: String?) {
+        MoreAsserts.assertDoesNotContainEvent(eventCollector, unexpectedEvent)
+    }
+
+    fun assertContainsEventsInOrder(vararg expectedMessages: String?) {
+        MoreAsserts.assertContainsEventsInOrder(eventCollector, expectedMessages)
+    }
+
+    companion object {
+        /**
+         * A handler that immediately throws [FailFastException] whenever an error or warning
+         * occurs.
+         * 
+         * 
+         * We do not reuse an existing unchecked exception type, because callers (e.g., test
+         * assertions) need to be able to distinguish between organically occurring exceptions and
+         * exceptions thrown by this handler.
+         */
+        private val FAIL_FAST_HANDLER: com.google.devtools.build.lib.events.EventHandler =
+            object : com.google.devtools.build.lib.events.EventHandler {
+                override fun handle(event: com.google.devtools.build.lib.events.Event) {
+                    if (com.google.devtools.build.lib.events.EventKind.ERRORS_AND_WARNINGS.contains(event.getKind())) {
+                        throw FailFastException(event.toString())
+                    }
+                }
+            }
+    }
 }

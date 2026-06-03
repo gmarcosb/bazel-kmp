@@ -11,86 +11,109 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.cmdline.PackageIdentifier
 
-import com.google.common.collect.ImmutableSet;
-import com.google.common.testing.EqualsTester;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.packages.Globber.Operation;
-import com.google.devtools.build.lib.skyframe.GlobsValue.GlobRequest;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.FsUtils;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Root;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+@RunWith(JUnit4::class)
+class GlobsValueTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSerialization() {
+        val packageId: PackageIdentifier? = PackageIdentifier.create("foo", PathFragment.create("//bar"))
+        val packageRoot: Root? = Root.fromPath(FsUtils.TEST_FILESYSTEM.getPath("/packageRoot"))
 
-@RunWith(JUnit4.class)
-public class GlobsValueTest {
+        val globRequest1: GlobRequest = GlobRequest.create("*", Operation.FILES_AND_DIRS)
+        val globRequest2: GlobRequest? = GlobRequest.create("foo/**", Operation.SUBPACKAGES)
+        val globRequest3: GlobRequest? = GlobRequest.create("**/*", Operation.FILES)
 
-  @Test
-  public void testSerialization() throws Exception {
-    PackageIdentifier packageId = PackageIdentifier.create("foo", PathFragment.create("//bar"));
-    Root packageRoot = Root.fromPath(FsUtils.TEST_FILESYSTEM.getPath("/packageRoot"));
+        val serializationTester: SerializationTester =
+            SerializationTester(
+                GlobsValue.key(
+                    packageId,
+                    packageRoot,
+                    com.google.common.collect.ImmutableSet.of<E?>(globRequest1, globRequest2)
+                ),
+                GlobsValue.key(
+                    packageId,
+                    packageRoot,
+                    com.google.common.collect.ImmutableSet.of<E?>(globRequest2, globRequest3)
+                )
+            )
+                .setVerificationFunction({ orig: GlobsValue.Key?, deserialized: GlobsValue.Key? ->
+                    verifyEquivalent(
+                        orig,
+                        deserialized
+                    )
+                })
+        FsUtils.addDependencies(serializationTester)
+        serializationTester.runTests()
+    }
 
-    GlobRequest globRequest1 = GlobRequest.create("*", Operation.FILES_AND_DIRS);
-    GlobRequest globRequest2 = GlobRequest.create("foo/**", Operation.SUBPACKAGES);
-    GlobRequest globRequest3 = GlobRequest.create("**/*", Operation.FILES);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testPrintingDeterministic() {
+        val packageId: PackageIdentifier? = PackageIdentifier.create("foo", PathFragment.create("//bar"))
+        val packageRoot: Root? = Root.fromPath(FsUtils.TEST_FILESYSTEM.getPath("/packageRoot"))
 
-    SerializationTester serializationTester =
-        new SerializationTester(
-                GlobsValue.key(packageId, packageRoot, ImmutableSet.of(globRequest1, globRequest2)),
-                GlobsValue.key(packageId, packageRoot, ImmutableSet.of(globRequest2, globRequest3)))
-            .setVerificationFunction(GlobsValueTest::verifyEquivalent);
-    FsUtils.addDependencies(serializationTester);
-    serializationTester.runTests();
-  }
+        val globRequest1: GlobRequest = GlobRequest.create("*", Operation.FILES_AND_DIRS)
+        val globRequest2: GlobRequest? = GlobRequest.create("foo/**", Operation.SUBPACKAGES)
+        val globRequest3: GlobRequest? = GlobRequest.create("**/*", Operation.FILES)
 
-  private static void verifyEquivalent(GlobsValue.Key orig, GlobsValue.Key deserialized) {
-    assertThat(deserialized).isSameInstanceAs(orig);
-  }
+        val key1: GlobsValue.Key =
+            GlobsValue.key(
+                packageId,
+                packageRoot,
+                com.google.common.collect.ImmutableSet.of<E?>(globRequest1, globRequest2, globRequest3)
+            )
+        val key2: GlobsValue.Key =
+            GlobsValue.key(
+                packageId,
+                packageRoot,
+                com.google.common.collect.ImmutableSet.of<E?>(globRequest1, globRequest3, globRequest2)
+            )
+        val key3: GlobsValue.Key =
+            GlobsValue.key(
+                packageId,
+                packageRoot,
+                com.google.common.collect.ImmutableSet.of<E?>(globRequest2, globRequest1, globRequest3)
+            )
+        val key4: GlobsValue.Key =
+            GlobsValue.key(
+                packageId,
+                packageRoot,
+                com.google.common.collect.ImmutableSet.of<E?>(globRequest2, globRequest3, globRequest1)
+            )
+        val key5: GlobsValue.Key =
+            GlobsValue.key(
+                packageId,
+                packageRoot,
+                com.google.common.collect.ImmutableSet.of<E?>(globRequest3, globRequest1, globRequest2)
+            )
+        val key6: GlobsValue.Key =
+            GlobsValue.key(
+                packageId,
+                packageRoot,
+                com.google.common.collect.ImmutableSet.of<E?>(globRequest3, globRequest2, globRequest1)
+            )
+        EqualsTester()
+            .addEqualityGroup(
+                key1.toString(),
+                key2.toString(),
+                key3.toString(),
+                key4.toString(),
+                key5.toString(),
+                key6.toString(),
+                ("<GlobsKey packageRoot = /packageRoot, packageIdentifier = @@foo///bar,"
+                        + " globRequests = [GlobRequest: * FILES_AND_DIRS,GlobRequest: **/* FILES,"
+                        + "GlobRequest: foo/** SUBPACKAGES]>")
+            )
+            .testEquals()
+    }
 
-  @Test
-  public void testPrintingDeterministic() throws Exception {
-    PackageIdentifier packageId = PackageIdentifier.create("foo", PathFragment.create("//bar"));
-    Root packageRoot = Root.fromPath(FsUtils.TEST_FILESYSTEM.getPath("/packageRoot"));
-
-    GlobRequest globRequest1 = GlobRequest.create("*", Operation.FILES_AND_DIRS);
-    GlobRequest globRequest2 = GlobRequest.create("foo/**", Operation.SUBPACKAGES);
-    GlobRequest globRequest3 = GlobRequest.create("**/*", Operation.FILES);
-
-    GlobsValue.Key key1 =
-        GlobsValue.key(
-            packageId, packageRoot, ImmutableSet.of(globRequest1, globRequest2, globRequest3));
-    GlobsValue.Key key2 =
-        GlobsValue.key(
-            packageId, packageRoot, ImmutableSet.of(globRequest1, globRequest3, globRequest2));
-    GlobsValue.Key key3 =
-        GlobsValue.key(
-            packageId, packageRoot, ImmutableSet.of(globRequest2, globRequest1, globRequest3));
-    GlobsValue.Key key4 =
-        GlobsValue.key(
-            packageId, packageRoot, ImmutableSet.of(globRequest2, globRequest3, globRequest1));
-    GlobsValue.Key key5 =
-        GlobsValue.key(
-            packageId, packageRoot, ImmutableSet.of(globRequest3, globRequest1, globRequest2));
-    GlobsValue.Key key6 =
-        GlobsValue.key(
-            packageId, packageRoot, ImmutableSet.of(globRequest3, globRequest2, globRequest1));
-    new EqualsTester()
-        .addEqualityGroup(
-            key1.toString(),
-            key2.toString(),
-            key3.toString(),
-            key4.toString(),
-            key5.toString(),
-            key6.toString(),
-            "<GlobsKey packageRoot = /packageRoot, packageIdentifier = @@foo///bar,"
-                + " globRequests = [GlobRequest: * FILES_AND_DIRS,GlobRequest: **/* FILES,"
-                + "GlobRequest: foo/** SUBPACKAGES]>")
-        .testEquals();
-  }
+    companion object {
+        private fun verifyEquivalent(orig: GlobsValue.Key?, deserialized: GlobsValue.Key?) {
+            assertThat(deserialized).isSameInstanceAs(orig)
+        }
+    }
 }

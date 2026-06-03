@@ -11,84 +11,79 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.LinkedHashMultimap;
-import com.google.common.collect.Sets;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Map;
-import java.util.Set;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-@RunWith(JUnit4.class)
-public final class ImmutableSetCodecTest {
-
-  @Test
-  @SuppressWarnings("SingletonSet")
-  public void testSingleton() throws Exception {
-    new SerializationTester(Collections.singleton("a"), Collections.singleton(1)).runTests();
-  }
-
-  @Test
-  @SuppressWarnings("EmptySet")
-  public void testEmpty() throws Exception {
-    new SerializationTester(Collections.emptySet(), ImmutableSet.of()).runTests();
-  }
-
-  @Test
-  public void testMultimapValueSet() throws Exception {
-    // Tests the serialization of the hidden type, `LinkedHashMultimap.ValueSet`. There's no way to
-    // construct instances of this type directly, so instead, constructs a `LinkedHashMultimap`,
-    // then extracts and tests its values.
-    LinkedHashMultimap<String, Integer> source = LinkedHashMultimap.create();
-    source.putAll("a", ImmutableList.of(1, 2, 3));
-    source.putAll("b", ImmutableList.of(4, 5, 6));
-    source.putAll("c", ImmutableList.of(7, 8, 9));
-
-    Map<String, Collection<Integer>> map = source.asMap();
-
-    ArrayList<Collection<Integer>> subjects = new ArrayList<>();
-    for (Map.Entry<String, Collection<Integer>> entry : map.entrySet()) {
-      Collection<Integer> valueSet = entry.getValue();
-      // Verifies that `valueSet` is of the special hidden `LinkedHashMultimap.ValueSet` type.
-      assertThat(valueSet).isInstanceOf(ImmutableSetCodec.MULTIMAP_VALUE_SET_CLASS);
-      subjects.add(valueSet);
+@RunWith(JUnit4::class)
+class ImmutableSetCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSingleton() {
+        SerializationTester(Collections.singleton<T?>("a"), Collections.singleton<T?>(1)).runTests()
     }
 
-    new SerializationTester(Iterables.toArray(subjects, Object.class)).runTests();
-  }
-
-  @Test
-  public void testPowerSetSubset() throws Exception {
-    ArrayList<Set<String>> subsets = new ArrayList<>();
-    for (Set<String> subset : Sets.powerSet(ImmutableSet.of("a", "b", "c"))) {
-      if (subset.isEmpty()) {
-        // The empty subset, unfortunately, does not have a stable serialized representation. The
-        // first trip serializes it as a set of size 0, and the second trip serializes it as a
-        // reference constant.
-        continue;
-      }
-      subsets.add(subset);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEmpty() {
+        SerializationTester(Collections.emptySet<T?>(), com.google.common.collect.ImmutableSet.of<E?>()).runTests()
     }
-    new SerializationTester(Iterables.toArray(subsets, Object.class)).runTests();
-  }
 
-  @Test
-  public void testSet() throws Exception {
-    new SerializationTester(
-            ImmutableSet.of(1, 2, 3, 4, 5),
-            ImmutableSet.of("abc", "def", "ced"),
-            ImmutableSet.of(2.5e2, 3.14159))
-        .runTests();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMultimapValueSet() {
+        // Tests the serialization of the hidden type, `LinkedHashMultimap.ValueSet`. There's no way to
+        // construct instances of this type directly, so instead, constructs a `LinkedHashMultimap`,
+        // then extracts and tests its values.
+        val source: com.google.common.collect.LinkedHashMultimap<String?, Int?> =
+            com.google.common.collect.LinkedHashMultimap.create<String?, Int?>()
+        source.putAll("a", com.google.common.collect.ImmutableList.of<Int?>(1, 2, 3))
+        source.putAll("b", com.google.common.collect.ImmutableList.of<Int?>(4, 5, 6))
+        source.putAll("c", com.google.common.collect.ImmutableList.of<Int?>(7, 8, 9))
+
+        val map: MutableMap<String?, MutableCollection<Int?>?> = source.asMap()
+
+        val subjects: java.util.ArrayList<MutableCollection<Int?>?> = java.util.ArrayList<MutableCollection<Int?>?>()
+        for (entry in map.entrySet()) {
+            val valueSet: MutableCollection<Int?>? = entry.getValue()
+            // Verifies that `valueSet` is of the special hidden `LinkedHashMultimap.ValueSet` type.
+            Truth.assertThat(valueSet).isInstanceOf(ImmutableSetCodec.MULTIMAP_VALUE_SET_CLASS)
+            subjects.add(valueSet)
+        }
+
+        SerializationTester(com.google.common.collect.Iterables.toArray<T?>(subjects, Any::class.java)).runTests()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testPowerSetSubset() {
+        val subsets: java.util.ArrayList<MutableSet<String?>?> = java.util.ArrayList<MutableSet<String?>?>()
+        for (subset in com.google.common.collect.Sets.powerSet<String?>(
+            com.google.common.collect.ImmutableSet.of<String?>(
+                "a",
+                "b",
+                "c"
+            )
+        )) {
+            if (subset.isEmpty()) {
+                // The empty subset, unfortunately, does not have a stable serialized representation. The
+                // first trip serializes it as a set of size 0, and the second trip serializes it as a
+                // reference constant.
+                continue
+            }
+            subsets.add(subset)
+        }
+        SerializationTester(com.google.common.collect.Iterables.toArray<T?>(subsets, Any::class.java)).runTests()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSet() {
+        SerializationTester(
+            com.google.common.collect.ImmutableSet.of<E?>(1, 2, 3, 4, 5),
+            com.google.common.collect.ImmutableSet.of<E?>("abc", "def", "ced"),
+            com.google.common.collect.ImmutableSet.of<E?>(2.5e2, 3.14159)
+        )
+            .runTests()
+    }
 }

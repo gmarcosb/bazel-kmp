@@ -11,214 +11,198 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.util;
+package com.google.devtools.build.lib.remote.util
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.remote.util.RxUtils.mergeBulkTransfer;
-import static com.google.devtools.build.lib.remote.util.RxUtils.toTransferResult;
+import com.google.devtools.build.lib.remote.util.RxUtils.mergeBulkTransfer
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.remote.common.BulkTransferException;
-import com.google.devtools.build.lib.remote.util.RxUtils.TransferResult;
-import io.reactivex.rxjava3.annotations.NonNull;
-import io.reactivex.rxjava3.core.Completable;
-import io.reactivex.rxjava3.core.CompletableEmitter;
-import io.reactivex.rxjava3.core.CompletableObserver;
-import io.reactivex.rxjava3.observers.TestObserver;
-import java.io.IOException;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [RxUtils].  */
+@RunWith(JUnit4::class)
+class RxUtilsTest {
+    @org.junit.Rule
+    val rxNoGlobalErrorsRule: RxNoGlobalErrorsRule = RxNoGlobalErrorsRule()
 
-/** Tests for {@link RxUtils}. */
-@RunWith(JUnit4.class)
-public class RxUtilsTest {
-  @Rule public final RxNoGlobalErrorsRule rxNoGlobalErrorsRule = new RxNoGlobalErrorsRule();
+    internal class SettableCompletable : Completable() {
+        private val emitterRef: AtomicReference<CompletableEmitter?> = AtomicReference<CompletableEmitter?>(null)
+        private val cancelled: AtomicBoolean = AtomicBoolean(false)
+        private val completed: AtomicBoolean = AtomicBoolean(false)
+        private val completable: Completable = Completable.create(
+            CompletableOnSubscribe { emitter: CompletableEmitter? ->
+                emitterRef.set(emitter)
+                emitter.setCancellable(
+                    io.reactivex.rxjava3.functions.Cancellable {
+                        if (!completed.get()) {
+                            cancelled.set(true)
+                        }
+                    })
+            })
 
-  static class SettableCompletable extends Completable {
-    private final AtomicReference<CompletableEmitter> emitterRef = new AtomicReference<>(null);
-    private final AtomicBoolean cancelled = new AtomicBoolean(false);
-    private final AtomicBoolean completed = new AtomicBoolean(false);
-    private final Completable completable =
-        Completable.create(
-            emitter -> {
-              emitterRef.set(emitter);
-              emitter.setCancellable(
-                  () -> {
-                    if (!completed.get()) {
-                      cancelled.set(true);
-                    }
-                  });
-            });
+        override fun subscribeActual(observer: CompletableObserver) {
+            completable.subscribe(observer)
+        }
 
-    public static SettableCompletable create() {
-      return new SettableCompletable();
+        fun setComplete() {
+            completed.set(true)
+            emitterRef.get().onComplete()
+        }
+
+        fun setError(error: Throwable?) {
+            completed.set(true)
+            emitterRef.get().onError(error)
+        }
+
+        fun cancelled(): Boolean {
+            return cancelled.get()
+        }
+
+        companion object {
+            fun create(): SettableCompletable {
+                return SettableCompletable()
+            }
+        }
     }
 
-    @Override
-    protected void subscribeActual(@NonNull CompletableObserver observer) {
-      completable.subscribe(observer);
+    @org.junit.Test
+    fun toTransferResult_onComplete_isOk() {
+        val transfer = SettableCompletable.Companion.create()
+        val ob: TestObserver<TransferResult?> = toTransferResult(transfer).test()
+
+        transfer.setComplete()
+
+        ob.assertValue(
+            io.reactivex.rxjava3.functions.Predicate { result: TransferResult? ->
+                assertThat(result.isOk()).isTrue()
+                assertThat(result.isError()).isFalse()
+                true
+            })
     }
 
-    public void setComplete() {
-      completed.set(true);
-      emitterRef.get().onComplete();
+    @org.junit.Test
+    fun toTransferResult_onIOException_isError() {
+        val transfer = SettableCompletable.Companion.create()
+        val ob: TestObserver<TransferResult?> = toTransferResult(transfer).test()
+        val error: IOException = IOException("IO error")
+
+        transfer.setError(error)
+
+        ob.assertValue(
+            io.reactivex.rxjava3.functions.Predicate { result: TransferResult? ->
+                assertThat(result.isOk()).isFalse()
+                assertThat(result.isError()).isTrue()
+                assertThat(result.getError()).isEqualTo(error)
+                true
+            })
     }
 
-    public void setError(Throwable error) {
-      completed.set(true);
-      emitterRef.get().onError(error);
+    @org.junit.Test
+    fun toTransferResult_onOtherError_propagateError() {
+        val transfer = SettableCompletable.Companion.create()
+        val ob: TestObserver<TransferResult?> = toTransferResult(transfer).test()
+        val error: java.lang.Exception = java.lang.Exception("other error")
+
+        transfer.setError(error)
+
+        ob.assertError(error)
     }
 
-    public boolean cancelled() {
-      return cancelled.get();
-    }
-  }
+    @org.junit.Test
+    fun mergeBulkTransfer_allComplete_complete() {
+        val transfer1 = SettableCompletable.Companion.create()
+        val transfer2 = SettableCompletable.Companion.create()
+        val transfer3 = SettableCompletable.Companion.create()
+        val ob: TestObserver<java.lang.Void?> = mergeBulkTransfer(transfer1, transfer2, transfer3).test()
 
-  @Test
-  public void toTransferResult_onComplete_isOk() {
-    SettableCompletable transfer = SettableCompletable.create();
-    TestObserver<TransferResult> ob = toTransferResult(transfer).test();
+        transfer1.setComplete()
+        transfer2.setComplete()
+        transfer3.setComplete()
 
-    transfer.setComplete();
-
-    ob.assertValue(
-        result -> {
-          assertThat(result.isOk()).isTrue();
-          assertThat(result.isError()).isFalse();
-          return true;
-        });
-  }
-
-  @Test
-  public void toTransferResult_onIOException_isError() {
-    SettableCompletable transfer = SettableCompletable.create();
-    TestObserver<TransferResult> ob = toTransferResult(transfer).test();
-    IOException error = new IOException("IO error");
-
-    transfer.setError(error);
-
-    ob.assertValue(
-        result -> {
-          assertThat(result.isOk()).isFalse();
-          assertThat(result.isError()).isTrue();
-          assertThat(result.getError()).isEqualTo(error);
-          return true;
-        });
-  }
-
-  @Test
-  public void toTransferResult_onOtherError_propagateError() {
-    SettableCompletable transfer = SettableCompletable.create();
-    TestObserver<TransferResult> ob = toTransferResult(transfer).test();
-    Exception error = new Exception("other error");
-
-    transfer.setError(error);
-
-    ob.assertError(error);
-  }
-
-  @Test
-  public void mergeBulkTransfer_allComplete_complete() {
-    SettableCompletable transfer1 = SettableCompletable.create();
-    SettableCompletable transfer2 = SettableCompletable.create();
-    SettableCompletable transfer3 = SettableCompletable.create();
-    TestObserver<Void> ob = mergeBulkTransfer(transfer1, transfer2, transfer3).test();
-
-    transfer1.setComplete();
-    transfer2.setComplete();
-    transfer3.setComplete();
-
-    ob.assertComplete();
-  }
-
-  @Test
-  public void mergeBulkTransfer_hasPendingTransfer_pending() {
-    SettableCompletable transfer1 = SettableCompletable.create();
-    SettableCompletable transfer2 = SettableCompletable.create();
-    SettableCompletable transfer3 = SettableCompletable.create();
-    TestObserver<Void> ob = mergeBulkTransfer(transfer1, transfer2, transfer3).test();
-
-    transfer1.setComplete();
-    transfer2.setComplete();
-
-    ob.assertNotComplete();
-    ob.assertNoErrors();
-  }
-
-  @Test
-  public void mergeBulkTransfer_onIOErrors_keepOtherTransfers() {
-    SettableCompletable transfer1 = SettableCompletable.create();
-    SettableCompletable transfer2 = SettableCompletable.create();
-    SettableCompletable transfer3 = SettableCompletable.create();
-    TestObserver<Void> ob = mergeBulkTransfer(transfer1, transfer2, transfer3).test();
-    IOException error = new IOException("IO error");
-
-    transfer1.setError(error);
-    transfer2.setComplete();
-    transfer3.setComplete();
-
-    ob.assertError(BulkTransferException.class);
-    assertThat(transfer2.cancelled()).isFalse();
-    assertThat(transfer3.cancelled()).isFalse();
-  }
-
-  @Test
-  public void mergeBulkTransfer_onIOErrors_wrapsIOErrorsInBulkTransferExceptions() {
-    SettableCompletable transfer1 = SettableCompletable.create();
-    SettableCompletable transfer2 = SettableCompletable.create();
-    SettableCompletable transfer3 = SettableCompletable.create();
-    TestObserver<Void> ob = mergeBulkTransfer(transfer1, transfer2, transfer3).test();
-    IOException error1 = new IOException("IO error 1");
-    IOException error2 = new IOException("IO error 2");
-
-    transfer1.setError(error1);
-    transfer2.setError(error2);
-    transfer3.setComplete();
-
-    ob.assertError(
-        e -> {
-          assertThat(e).isInstanceOf(BulkTransferException.class);
-          assertThat(ImmutableList.copyOf(e.getSuppressed())).containsExactly(error1, error2);
-          return true;
-        });
-  }
-
-  @Test
-  public void mergeBulkTransfer_onOtherError_cancelOtherTransfers() {
-    SettableCompletable transfer1 = SettableCompletable.create();
-    SettableCompletable transfer2 = SettableCompletable.create();
-    SettableCompletable transfer3 = SettableCompletable.create();
-    TestObserver<Void> ob = mergeBulkTransfer(transfer1, transfer2, transfer3).test();
-    Exception error = new Exception("error");
-
-    transfer1.setError(error);
-
-    ob.assertError(error);
-    assertThat(transfer2.cancelled()).isTrue();
-    assertThat(transfer3.cancelled()).isTrue();
-  }
-
-  @Test
-  public void mergeBulkTransfer_onInterruption_cancelOtherTransfers() {
-    SettableCompletable transfer1 = SettableCompletable.create();
-    SettableCompletable transfer2 = SettableCompletable.create();
-    SettableCompletable transfer3 = SettableCompletable.create();
-
-    Thread.currentThread().interrupt();
-    RuntimeException error = null;
-    try {
-      mergeBulkTransfer(transfer1, transfer2, transfer3).blockingAwait();
-    } catch (RuntimeException e) {
-      error = e;
+        ob.assertComplete()
     }
 
-    assertThat(error).hasCauseThat().isInstanceOf(InterruptedException.class);
-    assertThat(transfer1.cancelled()).isTrue();
-    assertThat(transfer2.cancelled()).isTrue();
-    assertThat(transfer3.cancelled()).isTrue();
-  }
+    @org.junit.Test
+    fun mergeBulkTransfer_hasPendingTransfer_pending() {
+        val transfer1 = SettableCompletable.Companion.create()
+        val transfer2 = SettableCompletable.Companion.create()
+        val transfer3 = SettableCompletable.Companion.create()
+        val ob: TestObserver<java.lang.Void?> = mergeBulkTransfer(transfer1, transfer2, transfer3).test()
+
+        transfer1.setComplete()
+        transfer2.setComplete()
+
+        ob.assertNotComplete()
+        ob.assertNoErrors()
+    }
+
+    @org.junit.Test
+    fun mergeBulkTransfer_onIOErrors_keepOtherTransfers() {
+        val transfer1 = SettableCompletable.Companion.create()
+        val transfer2 = SettableCompletable.Companion.create()
+        val transfer3 = SettableCompletable.Companion.create()
+        val ob: TestObserver<java.lang.Void?> = mergeBulkTransfer(transfer1, transfer2, transfer3).test()
+        val error: IOException = IOException("IO error")
+
+        transfer1.setError(error)
+        transfer2.setComplete()
+        transfer3.setComplete()
+
+        ob.assertError(BulkTransferException::class.java)
+        Truth.assertThat(transfer2.cancelled()).isFalse()
+        Truth.assertThat(transfer3.cancelled()).isFalse()
+    }
+
+    @org.junit.Test
+    fun mergeBulkTransfer_onIOErrors_wrapsIOErrorsInBulkTransferExceptions() {
+        val transfer1 = SettableCompletable.Companion.create()
+        val transfer2 = SettableCompletable.Companion.create()
+        val transfer3 = SettableCompletable.Companion.create()
+        val ob: TestObserver<java.lang.Void?> = mergeBulkTransfer(transfer1, transfer2, transfer3).test()
+        val error1: IOException = IOException("IO error 1")
+        val error2: IOException = IOException("IO error 2")
+
+        transfer1.setError(error1)
+        transfer2.setError(error2)
+        transfer3.setComplete()
+
+        ob.assertError(
+            io.reactivex.rxjava3.functions.Predicate { e: Throwable? ->
+                Truth.assertThat(e).isInstanceOf(BulkTransferException::class.java)
+                Truth.assertThat(com.google.common.collect.ImmutableList.copyOf<Throwable?>(e.getSuppressed()))
+                    .containsExactly(error1, error2)
+                true
+            })
+    }
+
+    @org.junit.Test
+    fun mergeBulkTransfer_onOtherError_cancelOtherTransfers() {
+        val transfer1 = SettableCompletable.Companion.create()
+        val transfer2 = SettableCompletable.Companion.create()
+        val transfer3 = SettableCompletable.Companion.create()
+        val ob: TestObserver<java.lang.Void?> = mergeBulkTransfer(transfer1, transfer2, transfer3).test()
+        val error: java.lang.Exception = java.lang.Exception("error")
+
+        transfer1.setError(error)
+
+        ob.assertError(error)
+        Truth.assertThat(transfer2.cancelled()).isTrue()
+        Truth.assertThat(transfer3.cancelled()).isTrue()
+    }
+
+    @org.junit.Test
+    fun mergeBulkTransfer_onInterruption_cancelOtherTransfers() {
+        val transfer1 = SettableCompletable.Companion.create()
+        val transfer2 = SettableCompletable.Companion.create()
+        val transfer3 = SettableCompletable.Companion.create()
+
+        java.lang.Thread.currentThread().interrupt()
+        var error: java.lang.RuntimeException? = null
+        try {
+            mergeBulkTransfer(transfer1, transfer2, transfer3).blockingAwait()
+        } catch (e: java.lang.RuntimeException) {
+            error = e
+        }
+
+        Truth.assertThat(error).hasCauseThat().isInstanceOf(java.lang.InterruptedException::class.java)
+        Truth.assertThat(transfer1.cancelled()).isTrue()
+        Truth.assertThat(transfer2.cancelled()).isTrue()
+        Truth.assertThat(transfer3.cancelled()).isTrue()
+    }
 }

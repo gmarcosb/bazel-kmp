@@ -11,87 +11,65 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License
+package com.google.devtools.build.lib.rules.config
 
-package com.google.devtools.build.lib.rules.config;
+import com.google.common.collect.ImmutableMap
+import com.google.devtools.build.lib.packages.Attribute.attr
 
-import static com.google.devtools.build.lib.packages.Attribute.attr;
-import static com.google.devtools.build.lib.packages.BuildType.LABEL;
-import static com.google.devtools.build.lib.packages.BuildType.LABEL_KEYED_STRING_DICT;
-import static com.google.devtools.build.lib.packages.BuildType.LABEL_LIST;
-
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.actions.ActionConflictException;
-import com.google.devtools.build.lib.analysis.BaseRuleClasses;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.PrerequisiteArtifacts;
-import com.google.devtools.build.lib.analysis.RuleConfiguredTargetBuilder;
-import com.google.devtools.build.lib.analysis.RuleConfiguredTargetFactory;
-import com.google.devtools.build.lib.analysis.RuleContext;
-import com.google.devtools.build.lib.analysis.RuleDefinition;
-import com.google.devtools.build.lib.analysis.RuleDefinitionEnvironment;
-import com.google.devtools.build.lib.analysis.RunfilesProvider;
-import com.google.devtools.build.lib.analysis.TransitiveInfoCollection;
-import com.google.devtools.build.lib.analysis.config.ConfigMatchingProvider;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.RuleClass;
-import javax.annotation.Nullable;
-
-/** Rule introducing a transition to set feature flags for itself and dependencies. */
-public final class FeatureFlagSetterRule implements RuleDefinition, RuleConfiguredTargetFactory {
-
-  @Override
-  public RuleClass build(RuleClass.Builder builder, RuleDefinitionEnvironment env) {
-    return builder
-        .requiresConfigurationFragments(ConfigFeatureFlagConfiguration.class)
-        .cfg(new ConfigFeatureFlagTransitionFactory("flag_values"))
-        .add(attr("deps", LABEL_LIST).allowedFileTypes())
-        .add(attr("exports_setting", LABEL).allowedRuleClasses("config_setting").allowedFileTypes())
-        .add(
-            attr("exports_flag", LABEL)
-                .allowedRuleClasses("config_feature_flag")
-                .allowedFileTypes())
-        .add(
-            attr("flag_values", LABEL_KEYED_STRING_DICT)
-                .allowedRuleClasses("config_feature_flag")
-                .allowedFileTypes()
-                .nonconfigurable("used in RuleTransitionFactory")
-                .value(ImmutableMap.<Label, String>of()))
-        .build();
-  }
-
-  @Override
-  public Metadata getMetadata() {
-    return RuleDefinition.Metadata.builder()
-        .name("feature_flag_setter")
-        .ancestors(BaseRuleClasses.NativeBuildRule.class)
-        .factoryClass(FeatureFlagSetterRule.class)
-        .build();
-  }
-
-  @Override
-  @Nullable
-  public ConfiguredTarget create(RuleContext ruleContext)
-      throws InterruptedException, RuleErrorException, ActionConflictException {
-    TransitiveInfoCollection exportedFlag = ruleContext.getPrerequisite("exports_flag");
-    ConfigFeatureFlagProvider exportedFlagProvider =
-        exportedFlag != null ? ConfigFeatureFlagProvider.fromTarget(exportedFlag) : null;
-
-    TransitiveInfoCollection exportedSetting = ruleContext.getPrerequisite("exports_setting");
-    ConfigMatchingProvider exportedSettingProvider =
-        exportedSetting != null ? exportedSetting.getProvider(ConfigMatchingProvider.class) : null;
-
-    RuleConfiguredTargetBuilder builder =
-        new RuleConfiguredTargetBuilder(ruleContext)
-            .setFilesToBuild(
-                PrerequisiteArtifacts.nestedSet(
-                    ruleContext.getRulePrerequisitesCollection(), "deps"))
-            .addProvider(RunfilesProvider.class, RunfilesProvider.EMPTY);
-    if (exportedFlagProvider != null) {
-      builder.addNativeDeclaredProvider(exportedFlagProvider);
+/** Rule introducing a transition to set feature flags for itself and dependencies.  */
+class FeatureFlagSetterRule : RuleDefinition, RuleConfiguredTargetFactory {
+    public override fun build(builder: RuleClass.Builder, env: RuleDefinitionEnvironment?): RuleClass {
+        return builder
+            .requiresConfigurationFragments(ConfigFeatureFlagConfiguration::class.java)
+            .cfg(ConfigFeatureFlagTransitionFactory("flag_values"))
+            .add(attr("deps", LABEL_LIST).allowedFileTypes())
+            .add(attr("exports_setting", LABEL).allowedRuleClasses("config_setting").allowedFileTypes())
+            .add(
+                attr("exports_flag", LABEL)
+                    .allowedRuleClasses("config_feature_flag")
+                    .allowedFileTypes()
+            )
+            .add(
+                attr("flag_values", LABEL_KEYED_STRING_DICT)
+                    .allowedRuleClasses("config_feature_flag")
+                    .allowedFileTypes()
+                    .nonconfigurable("used in RuleTransitionFactory")
+                    .value(ImmutableMap.of<Label?, String?>())
+            )
+            .build()
     }
-    if (exportedSettingProvider != null) {
-      builder.addProvider(ConfigMatchingProvider.class, exportedSettingProvider);
+
+    val metadata: Metadata
+        get() = RuleDefinition.Metadata.builder()
+            .name("feature_flag_setter")
+            .ancestors(BaseRuleClasses.NativeBuildRule::class.java)
+            .factoryClass(FeatureFlagSetterRule::class.java)
+            .build()
+
+    @Throws(InterruptedException::class, RuleErrorException::class, ActionConflictException::class)
+    public override fun create(ruleContext: RuleContext): ConfiguredTarget? {
+        val exportedFlag: TransitiveInfoCollection? = ruleContext.getPrerequisite("exports_flag")
+        val exportedFlagProvider: ConfigFeatureFlagProvider? =
+            if (exportedFlag != null) ConfigFeatureFlagProvider.fromTarget(exportedFlag) else null
+
+        val exportedSetting: TransitiveInfoCollection? = ruleContext.getPrerequisite("exports_setting")
+        val exportedSettingProvider: ConfigMatchingProvider? =
+            if (exportedSetting != null) exportedSetting.getProvider(ConfigMatchingProvider::class.java) else null
+
+        val builder: RuleConfiguredTargetBuilder =
+            RuleConfiguredTargetBuilder(ruleContext)
+                .setFilesToBuild(
+                    PrerequisiteArtifacts.nestedSet(
+                        ruleContext.getRulePrerequisitesCollection(), "deps"
+                    )
+                )
+                .addProvider(RunfilesProvider::class.java, RunfilesProvider.EMPTY)
+        if (exportedFlagProvider != null) {
+            builder.addNativeDeclaredProvider(exportedFlagProvider)
+        }
+        if (exportedSettingProvider != null) {
+            builder.addProvider(ConfigMatchingProvider::class.java, exportedSettingProvider)
+        }
+        return builder.build()
     }
-    return builder.build();
-  }
 }

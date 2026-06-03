@@ -11,24 +11,23 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util.regex;
+package com.google.devtools.build.lib.util.regex
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.exec.util.SpawnBuilder.build
+import com.google.devtools.build.lib.util.regex.RegexUtil.asOptimizedMatchingPredicate
+import com.google.devtools.common.options.testing.ConverterTesterMap.Builder.build
+import com.google.testing.junit.testparameterinjector.TestParameter
+import com.google.testing.junit.testparameterinjector.TestParameterInjector
+import net.starlark.java.syntax.FileOptions.Builder.build
+import org.junit.runner.RunWith
 
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import java.util.function.Predicate;
-import java.util.regex.Pattern;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-
-/** Tests for {@link RegexUtil}. */
-@RunWith(TestParameterInjector.class)
-public class RegexUtilTest {
-
-  @Test
-  public void optimizedMatchingPredicate(
-      @TestParameter({
+/** Tests for [RegexUtil].  */
+@RunWith(TestParameterInjector::class)
+class RegexUtilTest {
+    @org.junit.Test
+    fun optimizedMatchingPredicate(
+        @TestParameter(
             "",
             ".",
             "a",
@@ -48,10 +47,9 @@ public class RegexUtilTest {
             "]]\n",
             "()",
             "+",
-            "|",
-          })
-          String haystack,
-      @TestParameter({
+            "|"
+        ) haystack: String?,
+        @TestParameter(
             ".*",
             ".*?foo",
             ".*+foo",
@@ -73,12 +71,14 @@ public class RegexUtilTest {
             ".*()",
             ".*|",
             ".*^",
-            ".*+",
-          })
-          String needle) {
-    Pattern originalPattern = Pattern.compile(needle, Pattern.DOTALL);
-    Predicate<String> optimizedMatcher = RegexUtil.asOptimizedMatchingPredicate(originalPattern);
-    assertThat(optimizedMatcher.test(haystack))
-        .isEqualTo(originalPattern.matcher(haystack).matches());
-  }
+            ".*+"
+        ) needle: String?
+    ) {
+        val originalPattern: java.util.regex.Pattern =
+            java.util.regex.Pattern.compile(needle, java.util.regex.Pattern.DOTALL)
+        val optimizedMatcher: java.util.function.Predicate<String?> =
+            com.google.devtools.build.lib.util.regex.RegexUtil.asOptimizedMatchingPredicate(originalPattern)
+        Truth.assertThat(optimizedMatcher.test(haystack))
+            .isEqualTo(originalPattern.matcher(haystack).matches())
+    }
 }

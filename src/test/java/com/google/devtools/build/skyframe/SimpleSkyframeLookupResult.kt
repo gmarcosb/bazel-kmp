@@ -11,60 +11,73 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import static com.google.common.base.Preconditions.checkNotNull;
+import com.google.devtools.build.skyframe.ValueOrUntypedException
 
-import java.util.function.Function;
-import javax.annotation.Nullable;
+/** Simple implementation of [SkyframeLookupResult].  */
+class SimpleSkyframeLookupResult(
+    valuesMissingCallback: java.lang.Runnable?,
+    valuesOrExceptions: java.util.function.Function<SkyKey?, ValueOrUntypedException?>?
+) : SkyframeLookupResult {
+    private val valuesMissingCallback: java.lang.Runnable
+    private val valuesOrExceptions: java.util.function.Function<SkyKey?, ValueOrUntypedException?>? = null
 
-/** Simple implementation of {@link SkyframeLookupResult}. */
-public final class SimpleSkyframeLookupResult implements SkyframeLookupResult {
-  private final Runnable valuesMissingCallback;
-  private final Function<SkyKey, ValueOrUntypedException> valuesOrExceptions;
-
-  public SimpleSkyframeLookupResult(
-      Runnable valuesMissingCallback,
-      Function<SkyKey, ValueOrUntypedException> valuesOrExceptions) {
-    this.valuesMissingCallback = checkNotNull(valuesMissingCallback);
-    this.valuesOrExceptions = checkNotNull(valuesOrExceptions);
-  }
-
-  /** Similar to {@link #getOrThrow(SkyKey, Class)}, but takes three exception class parameters. */
-  @Nullable
-  @Override
-  public <E1 extends Exception, E2 extends Exception, E3 extends Exception> SkyValue getOrThrow(
-      SkyKey skyKey,
-      @Nullable Class<E1> exceptionClass1,
-      @Nullable Class<E2> exceptionClass2,
-      @Nullable Class<E3> exceptionClass3)
-      throws E1, E2, E3 {
-    ValueOrUntypedException voe =
-        checkNotNull(valuesOrExceptions.apply(skyKey), "Missing value for %s", skyKey);
-    SkyValue value = voe.getValue();
-    if (value != null) {
-      return value;
+    init {
+        .also {
+            this.valuesMissingCallback = it
+        }<Runnable> com . google . common . base . Preconditions . checkNotNull < java . lang . Runnable ? > (valuesMissingCallback)
+        TODO(
+            """
+            |Cannot convert element
+            |With text:
+            |this.valuesOrExceptions = <Function<SkyKey, ValueOrUntypedException>>checkNotNull(valuesOrExceptions);
+            """.trimMargin()
+        )
     }
-    SkyFunctionException.throwIfInstanceOf(
-        voe.getException(), exceptionClass1, exceptionClass2, exceptionClass3, null);
-    valuesMissingCallback.run();
-    return null;
-  }
 
-  @Override
-  public boolean queryDep(SkyKey key, QueryDepCallback resultCallback) {
-    ValueOrUntypedException voe =
-        checkNotNull(valuesOrExceptions.apply(key), "Missing value for %s", key);
-    SkyValue value = voe.getValue();
-    if (value != null) {
-      resultCallback.acceptValue(key, value);
-      return true;
+    /** Similar to [.getOrThrow], but takes three exception class parameters.  */
+    @Throws(E1::class, E2::class, E3::class)
+    public override fun <E1 : java.lang.Exception?, E2 : java.lang.Exception?, E3 : java.lang.Exception?> getOrThrow(
+        skyKey: SkyKey?,
+        exceptionClass1: java.lang.Class<E1?>?,
+        exceptionClass2: java.lang.Class<E2?>?,
+        exceptionClass3: java.lang.Class<E3?>?
+    ): SkyValue? {
+        val voe: ValueOrUntypedException =
+            com.google.common.base.Preconditions.checkNotNull<ValueOrUntypedException>(
+                valuesOrExceptions.apply(skyKey),
+                "Missing value for %s",
+                skyKey
+            )
+        val value: SkyValue? = voe.getValue()
+        if (value != null) {
+            return value
+        }
+        SkyFunctionException.throwIfInstanceOf(
+            voe.getException(), exceptionClass1, exceptionClass2, exceptionClass3, null
+        )
+        valuesMissingCallback.run()
+        return null
     }
-    Exception exception = voe.getException();
-    if (exception != null && resultCallback.tryHandleException(key, exception)) {
-      return true;
+
+    public override fun queryDep(key: SkyKey?, resultCallback: QueryDepCallback): Boolean {
+        val voe: ValueOrUntypedException =
+            com.google.common.base.Preconditions.checkNotNull<ValueOrUntypedException>(
+                valuesOrExceptions.apply(key),
+                "Missing value for %s",
+                key
+            )
+        val value: SkyValue? = voe.getValue()
+        if (value != null) {
+            resultCallback.acceptValue(key, value)
+            return true
+        }
+        val exception: java.lang.Exception? = voe.getException()
+        if (exception != null && resultCallback.tryHandleException(key, exception)) {
+            return true
+        }
+        valuesMissingCallback.run()
+        return false
     }
-    valuesMissingCallback.run();
-    return false;
-  }
 }

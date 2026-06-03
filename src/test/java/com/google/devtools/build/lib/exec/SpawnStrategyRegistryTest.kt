@@ -11,766 +11,851 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.exec;
+package com.google.devtools.build.lib.exec
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.actions.ActionContext
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.actions.ActionContext;
-import com.google.devtools.build.lib.actions.ActionExecutionContext;
-import com.google.devtools.build.lib.actions.DynamicStrategyRegistry.DynamicMode;
-import com.google.devtools.build.lib.actions.ResourceSet;
-import com.google.devtools.build.lib.actions.SandboxedSpawnStrategy;
-import com.google.devtools.build.lib.actions.SimpleSpawn;
-import com.google.devtools.build.lib.actions.Spawn;
-import com.google.devtools.build.lib.actions.SpawnResult;
-import com.google.devtools.build.lib.actions.SpawnStrategy;
-import com.google.devtools.build.lib.analysis.platform.PlatformInfo;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.exec.util.FakeOwner;
-import com.google.devtools.build.lib.runtime.proto.MnemonicPolicy;
-import com.google.devtools.build.lib.runtime.proto.StrategyPolicy;
-import com.google.devtools.build.lib.util.AbruptExitException;
-import com.google.devtools.build.lib.util.RegexFilter;
-import java.util.List;
-import javax.annotation.Nullable;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Unit tests for SpawnStrategyRegistry.  */
+@RunWith(JUnit4::class)
+class SpawnStrategyRegistryTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRegistration() {
+        val strategy = NoopStrategy("")
+        val strategyRegistry: SpawnStrategyRegistry =
+            SpawnStrategyRegistry.builder()
+                .registerStrategy(strategy, "foo")
+                .setDefaultStrategies(com.google.common.collect.ImmutableList.of<E?>("foo"))
+                .build()
 
-/** Unit tests for SpawnStrategyRegistry. */
-@RunWith(JUnit4.class)
-public class SpawnStrategyRegistryTest {
-
-  private static final RegexFilter ELLO_MATCHER =
-      new RegexFilter(ImmutableList.of("ello"), ImmutableList.of());
-  private static final RegexFilter LLO_MATCHER =
-      new RegexFilter(ImmutableList.of("llo"), ImmutableList.of());
-
-  private static void noopEventHandler(Event event) {}
-
-  @Test
-  public void testRegistration() throws Exception {
-    NoopStrategy strategy = new NoopStrategy("");
-    SpawnStrategyRegistry strategyRegistry =
-        SpawnStrategyRegistry.builder()
-            .registerStrategy(strategy, "foo")
-            .setDefaultStrategies(ImmutableList.of("foo"))
-            .build();
-
-    assertThat(
+        assertThat(
             strategyRegistry.getStrategies(
                 createSpawnWithMnemonicAndDescription("", ""),
-                SpawnStrategyRegistryTest::noopEventHandler))
-        .containsExactly(strategy);
-  }
+                { event: com.google.devtools.build.lib.events.Event? -> noopEventHandler(event) })
+        )
+            .containsExactly(strategy)
+    }
 
-  @Test
-  public void testMnemonicFilter() throws Exception {
-    NoopStrategy strategy1 = new NoopStrategy("1");
-    NoopStrategy strategy2 = new NoopStrategy("2");
-    SpawnStrategyRegistry strategyRegistry =
-        SpawnStrategyRegistry.builder()
-            .registerStrategy(strategy1, "foo")
-            .registerStrategy(strategy2, "bar")
-            .addMnemonicFilter("mnem", ImmutableList.of("bar", "foo"))
-            .build();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMnemonicFilter() {
+        val strategy1 = NoopStrategy("1")
+        val strategy2 = NoopStrategy("2")
+        val strategyRegistry: SpawnStrategyRegistry =
+            SpawnStrategyRegistry.builder()
+                .registerStrategy(strategy1, "foo")
+                .registerStrategy(strategy2, "bar")
+                .addMnemonicFilter("mnem", com.google.common.collect.ImmutableList.of<E?>("bar", "foo"))
+                .build()
 
-    assertThat(
+        assertThat(
             strategyRegistry.getStrategies(
                 createSpawnWithMnemonicAndDescription("mnem", ""),
-                SpawnStrategyRegistryTest::noopEventHandler))
-        .containsExactly(strategy2, strategy1);
-  }
+                { event: com.google.devtools.build.lib.events.Event? -> noopEventHandler(event) })
+        )
+            .containsExactly(strategy2, strategy1)
+    }
 
-  @Test
-  public void testStrategyPolicyAppliedToPerMnemonicStrategies() throws Exception {
-    NoopStrategy strategy1 = new NoopStrategy("1");
-    NoopStrategy strategy2 = new NoopStrategy("2");
-    StrategyPolicy strategyPolicyProto =
-        StrategyPolicy.newBuilder()
-            .setMnemonicPolicy(MnemonicPolicy.newBuilder().addDefaultAllowlist("foo"))
-            .build();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStrategyPolicyAppliedToPerMnemonicStrategies() {
+        val strategy1 = NoopStrategy("1")
+        val strategy2 = NoopStrategy("2")
+        val strategyPolicyProto: StrategyPolicy? =
+            StrategyPolicy.newBuilder()
+                .setMnemonicPolicy(MnemonicPolicy.newBuilder().addDefaultAllowlist("foo"))
+                .build()
 
-    SpawnStrategyRegistry strategyRegistry =
-        SpawnStrategyRegistry.builder(strategyPolicyProto)
-            .registerStrategy(strategy1, "foo")
-            .registerStrategy(strategy2, "bar")
-            .addMnemonicFilter("some-mnemonic", ImmutableList.of("bar", "foo"))
-            .build();
+        val strategyRegistry: SpawnStrategyRegistry =
+            SpawnStrategyRegistry.builder(strategyPolicyProto)
+                .registerStrategy(strategy1, "foo")
+                .registerStrategy(strategy2, "bar")
+                .addMnemonicFilter("some-mnemonic", com.google.common.collect.ImmutableList.of<E?>("bar", "foo"))
+                .build()
 
-    assertThat(
+        assertThat(
             strategyRegistry.getStrategies(
                 createSpawnWithMnemonicAndDescription("some-mnemonic", ""),
-                SpawnStrategyRegistryTest::noopEventHandler))
-        .containsExactly(strategy1);
-  }
+                { event: com.google.devtools.build.lib.events.Event? -> noopEventHandler(event) })
+        )
+            .containsExactly(strategy1)
+    }
 
-  @Test
-  public void strategyPolicyAppliedToPerDefaulttrategies() throws Exception {
-    NoopStrategy strategy1 = new NoopStrategy("1");
-    NoopStrategy strategy2 = new NoopStrategy("2");
-    StrategyPolicy strategyPolicyProto =
-        StrategyPolicy.newBuilder()
-            .setMnemonicPolicy(MnemonicPolicy.newBuilder().addDefaultAllowlist("foo"))
-            .build();
-    SpawnStrategyRegistry strategyRegistry =
-        SpawnStrategyRegistry.builder(strategyPolicyProto)
-            .registerStrategy(strategy1, "foo")
-            .registerStrategy(strategy2, "bar")
-            .build();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun strategyPolicyAppliedToPerDefaulttrategies() {
+        val strategy1 = NoopStrategy("1")
+        val strategy2 = NoopStrategy("2")
+        val strategyPolicyProto: StrategyPolicy? =
+            StrategyPolicy.newBuilder()
+                .setMnemonicPolicy(MnemonicPolicy.newBuilder().addDefaultAllowlist("foo"))
+                .build()
+        val strategyRegistry: SpawnStrategyRegistry =
+            SpawnStrategyRegistry.builder(strategyPolicyProto)
+                .registerStrategy(strategy1, "foo")
+                .registerStrategy(strategy2, "bar")
+                .build()
 
-    List<? extends SpawnStrategy> strategies =
-        strategyRegistry.getStrategies(
-            createSpawnWithMnemonicAndDescription("some-mnemonic", ""),
-            SpawnStrategyRegistryTest::noopEventHandler);
+        val strategies: MutableList<out SpawnStrategy?>? =
+            strategyRegistry.getStrategies(
+                createSpawnWithMnemonicAndDescription("some-mnemonic", ""),
+                { event: com.google.devtools.build.lib.events.Event? -> noopEventHandler(event) })
 
-    assertThat(strategies).containsExactly(strategy1);
-  }
+        Truth.assertThat(strategies).containsExactly(strategy1)
+    }
 
-  @Test
-  public void strategyPolicyAppliedToRegexpFilter_sanitizeStrategy() throws Exception {
-    NoopStrategy strategy1 = new NoopStrategy("1");
-    NoopStrategy strategy2 = new NoopStrategy("2");
-    StrategyPolicy strategyPolicyProto =
-        StrategyPolicy.newBuilder()
-            .setMnemonicPolicy(MnemonicPolicy.newBuilder().addDefaultAllowlist("foo"))
-            .build();
-    SpawnStrategyRegistry strategyRegistry =
-        SpawnStrategyRegistry.builder(strategyPolicyProto)
-            .registerStrategy(strategy1, "foo")
-            .registerStrategy(strategy2, "bar")
-            .addDescriptionFilter(ELLO_MATCHER, ImmutableList.of("foo", "bar"))
-            .build();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun strategyPolicyAppliedToRegexpFilter_sanitizeStrategy() {
+        val strategy1 = NoopStrategy("1")
+        val strategy2 = NoopStrategy("2")
+        val strategyPolicyProto: StrategyPolicy? =
+            StrategyPolicy.newBuilder()
+                .setMnemonicPolicy(MnemonicPolicy.newBuilder().addDefaultAllowlist("foo"))
+                .build()
+        val strategyRegistry: SpawnStrategyRegistry =
+            SpawnStrategyRegistry.builder(strategyPolicyProto)
+                .registerStrategy(strategy1, "foo")
+                .registerStrategy(strategy2, "bar")
+                .addDescriptionFilter(ELLO_MATCHER, com.google.common.collect.ImmutableList.of<E?>("foo", "bar"))
+                .build()
 
-    List<? extends SpawnStrategy> strategies =
-        strategyRegistry.getStrategies(
-            createSpawnWithMnemonicAndDescription("regex-mnemonic", "hello"),
-            SpawnStrategyRegistryTest::noopEventHandler);
+        val strategies: MutableList<out SpawnStrategy?>? =
+            strategyRegistry.getStrategies(
+                createSpawnWithMnemonicAndDescription("regex-mnemonic", "hello"),
+                { event: com.google.devtools.build.lib.events.Event? -> noopEventHandler(event) })
 
-    assertThat(strategies).containsExactly(strategy1);
-  }
+        Truth.assertThat(strategies).containsExactly(strategy1)
+    }
 
-  @Test
-  public void strategyPolicyAppliedToRegexpFilter_fallbackToDefaultStrategy() throws Exception {
-    NoopStrategy strategy1 = new NoopStrategy("1");
-    NoopStrategy strategy2 = new NoopStrategy("2");
-    NoopStrategy strategy3 = new NoopStrategy("3");
-    StrategyPolicy strategyPolicyProto =
-        StrategyPolicy.newBuilder()
-            .setMnemonicPolicy(
-                MnemonicPolicy.newBuilder().addAllDefaultAllowlist(ImmutableList.of("foo", "baz")))
-            .build();
-    SpawnStrategyRegistry strategyRegistry =
-        SpawnStrategyRegistry.builder(strategyPolicyProto)
-            .registerStrategy(strategy1, "foo")
-            .registerStrategy(strategy2, "bar")
-            .registerStrategy(strategy3, "baz")
-            .addDescriptionFilter(ELLO_MATCHER, ImmutableList.of("foo"))
-            .addDescriptionFilter(LLO_MATCHER, ImmutableList.of("bar"))
-            .addMnemonicFilter("regex-mnemonic", ImmutableList.of("baz"))
-            .build();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun strategyPolicyAppliedToRegexpFilter_fallbackToDefaultStrategy() {
+        val strategy1 = NoopStrategy("1")
+        val strategy2 = NoopStrategy("2")
+        val strategy3 = NoopStrategy("3")
+        val strategyPolicyProto: StrategyPolicy? =
+            StrategyPolicy.newBuilder()
+                .setMnemonicPolicy(
+                    MnemonicPolicy.newBuilder()
+                        .addAllDefaultAllowlist(com.google.common.collect.ImmutableList.of<E?>("foo", "baz"))
+                )
+                .build()
+        val strategyRegistry: SpawnStrategyRegistry =
+            SpawnStrategyRegistry.builder(strategyPolicyProto)
+                .registerStrategy(strategy1, "foo")
+                .registerStrategy(strategy2, "bar")
+                .registerStrategy(strategy3, "baz")
+                .addDescriptionFilter(ELLO_MATCHER, com.google.common.collect.ImmutableList.of<E?>("foo"))
+                .addDescriptionFilter(LLO_MATCHER, com.google.common.collect.ImmutableList.of<E?>("bar"))
+                .addMnemonicFilter("regex-mnemonic", com.google.common.collect.ImmutableList.of<E?>("baz"))
+                .build()
 
-    List<? extends SpawnStrategy> strategies =
-        strategyRegistry.getStrategies(
-            createSpawnWithMnemonicAndDescription("regex-mnemonic", "hello"),
-            SpawnStrategyRegistryTest::noopEventHandler);
+        val strategies: MutableList<out SpawnStrategy?>? =
+            strategyRegistry.getStrategies(
+                createSpawnWithMnemonicAndDescription("regex-mnemonic", "hello"),
+                { event: com.google.devtools.build.lib.events.Event? -> noopEventHandler(event) })
 
-    assertThat(strategies).containsExactly(strategy3);
-  }
+        Truth.assertThat(strategies).containsExactly(strategy3)
+    }
 
-  @Test
-  public void testLaterStrategyOverridesEarlier() throws Exception {
-    NoopStrategy strategy1 = new NoopStrategy("1");
-    NoopStrategy strategy2 = new NoopStrategy("2");
-    SpawnStrategyRegistry strategyRegistry =
-        SpawnStrategyRegistry.builder()
-            .registerStrategy(strategy1, "foo")
-            .registerStrategy(strategy2, "foo")
-            .addMnemonicFilter("mnem", ImmutableList.of("foo"))
-            .build();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLaterStrategyOverridesEarlier() {
+        val strategy1 = NoopStrategy("1")
+        val strategy2 = NoopStrategy("2")
+        val strategyRegistry: SpawnStrategyRegistry =
+            SpawnStrategyRegistry.builder()
+                .registerStrategy(strategy1, "foo")
+                .registerStrategy(strategy2, "foo")
+                .addMnemonicFilter("mnem", com.google.common.collect.ImmutableList.of<E?>("foo"))
+                .build()
 
-    assertThat(
+        assertThat(
             strategyRegistry.getStrategies(
                 createSpawnWithMnemonicAndDescription("mnem", ""),
-                SpawnStrategyRegistryTest::noopEventHandler))
-        .containsExactly(strategy2);
-  }
+                { event: com.google.devtools.build.lib.events.Event? -> noopEventHandler(event) })
+        )
+            .containsExactly(strategy2)
+    }
 
-  @Test
-  public void testDescriptionFilter() throws Exception {
-    NoopStrategy strategy1 = new NoopStrategy("1");
-    NoopStrategy strategy2 = new NoopStrategy("2");
-    SpawnStrategyRegistry strategyRegistry =
-        SpawnStrategyRegistry.builder()
-            .registerStrategy(strategy1, "foo")
-            .registerStrategy(strategy2, "bar")
-            .addDescriptionFilter(ELLO_MATCHER, ImmutableList.of("bar", "foo"))
-            .build();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDescriptionFilter() {
+        val strategy1 = NoopStrategy("1")
+        val strategy2 = NoopStrategy("2")
+        val strategyRegistry: SpawnStrategyRegistry =
+            SpawnStrategyRegistry.builder()
+                .registerStrategy(strategy1, "foo")
+                .registerStrategy(strategy2, "bar")
+                .addDescriptionFilter(ELLO_MATCHER, com.google.common.collect.ImmutableList.of<E?>("bar", "foo"))
+                .build()
 
-    assertThat(
+        assertThat(
             strategyRegistry.getStrategies(
                 createSpawnWithMnemonicAndDescription("", "hello"),
-                SpawnStrategyRegistryTest::noopEventHandler))
-        .containsExactly(strategy2, strategy1);
-  }
+                { event: com.google.devtools.build.lib.events.Event? -> noopEventHandler(event) })
+        )
+            .containsExactly(strategy2, strategy1)
+    }
 
-  @Test
-  public void testDescriptionHasPrecedenceOverMnemonic() throws Exception {
-    NoopStrategy strategy1 = new NoopStrategy("1");
-    NoopStrategy strategy2 = new NoopStrategy("2");
-    SpawnStrategyRegistry strategyRegistry =
-        SpawnStrategyRegistry.builder()
-            .registerStrategy(strategy1, "foo")
-            .registerStrategy(strategy2, "bar")
-            .addMnemonicFilter("mnem", ImmutableList.of("foo"))
-            .addDescriptionFilter(ELLO_MATCHER, ImmutableList.of("bar"))
-            .build();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDescriptionHasPrecedenceOverMnemonic() {
+        val strategy1 = NoopStrategy("1")
+        val strategy2 = NoopStrategy("2")
+        val strategyRegistry: SpawnStrategyRegistry =
+            SpawnStrategyRegistry.builder()
+                .registerStrategy(strategy1, "foo")
+                .registerStrategy(strategy2, "bar")
+                .addMnemonicFilter("mnem", com.google.common.collect.ImmutableList.of<E?>("foo"))
+                .addDescriptionFilter(ELLO_MATCHER, com.google.common.collect.ImmutableList.of<E?>("bar"))
+                .build()
 
-    assertThat(
+        assertThat(
             strategyRegistry.getStrategies(
                 createSpawnWithMnemonicAndDescription("mnem", "hello"),
-                SpawnStrategyRegistryTest::noopEventHandler))
-        .containsExactly(strategy2);
-  }
+                { event: com.google.devtools.build.lib.events.Event? -> noopEventHandler(event) })
+        )
+            .containsExactly(strategy2)
+    }
 
-  @Test
-  public void testMultipleMnemonicFilter() throws Exception {
-    NoopStrategy strategy1 = new NoopStrategy("1");
-    NoopStrategy strategy2 = new NoopStrategy("2");
-    SpawnStrategyRegistry strategyRegistry =
-        SpawnStrategyRegistry.builder()
-            .registerStrategy(strategy1, "foo")
-            .registerStrategy(strategy2, "bar")
-            .addMnemonicFilter("mnem", ImmutableList.of("foo"))
-            .addMnemonicFilter("mnem", ImmutableList.of("bar"))
-            .build();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMultipleMnemonicFilter() {
+        val strategy1 = NoopStrategy("1")
+        val strategy2 = NoopStrategy("2")
+        val strategyRegistry: SpawnStrategyRegistry =
+            SpawnStrategyRegistry.builder()
+                .registerStrategy(strategy1, "foo")
+                .registerStrategy(strategy2, "bar")
+                .addMnemonicFilter("mnem", com.google.common.collect.ImmutableList.of<E?>("foo"))
+                .addMnemonicFilter("mnem", com.google.common.collect.ImmutableList.of<E?>("bar"))
+                .build()
 
-    assertThat(
+        assertThat(
             strategyRegistry.getStrategies(
                 createSpawnWithMnemonicAndDescription("mnem", ""),
-                SpawnStrategyRegistryTest::noopEventHandler))
-        .containsExactly(strategy2);
-  }
+                { event: com.google.devtools.build.lib.events.Event? -> noopEventHandler(event) })
+        )
+            .containsExactly(strategy2)
+    }
 
-  /** If an action matches multiple filters, the latter one gets the priority. */
-  @Test
-  public void testMultipleDescriptionFilter() throws Exception {
-    NoopStrategy strategy1 = new NoopStrategy("1");
-    NoopStrategy strategy2 = new NoopStrategy("2");
-    SpawnStrategyRegistry strategyRegistry =
-        SpawnStrategyRegistry.builder()
-            .registerStrategy(strategy1, "foo")
-            .registerStrategy(strategy2, "bar")
-            .addDescriptionFilter(ELLO_MATCHER, ImmutableList.of("foo"))
-            .addDescriptionFilter(LLO_MATCHER, ImmutableList.of("bar"))
-            .build();
+    /** If an action matches multiple filters, the latter one gets the priority.  */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMultipleDescriptionFilter() {
+        val strategy1 = NoopStrategy("1")
+        val strategy2 = NoopStrategy("2")
+        val strategyRegistry: SpawnStrategyRegistry =
+            SpawnStrategyRegistry.builder()
+                .registerStrategy(strategy1, "foo")
+                .registerStrategy(strategy2, "bar")
+                .addDescriptionFilter(ELLO_MATCHER, com.google.common.collect.ImmutableList.of<E?>("foo"))
+                .addDescriptionFilter(LLO_MATCHER, com.google.common.collect.ImmutableList.of<E?>("bar"))
+                .build()
 
-    assertThat(
+        assertThat(
             strategyRegistry.getStrategies(
                 createSpawnWithMnemonicAndDescription("", "hello"),
-                SpawnStrategyRegistryTest::noopEventHandler))
-        .containsExactly(strategy2);
-  }
+                { event: com.google.devtools.build.lib.events.Event? -> noopEventHandler(event) })
+        )
+            .containsExactly(strategy2)
+    }
 
-  /**
-   * This demonstrate that the latter description filter overrides preceding one of same regexp.
-   * filter=val_1 filter=val_2 is equivalent to filter=val_2
-   */
-  @Test
-  public void testDuplicatedDescriptionFilter() throws Exception {
-    NoopStrategy strategy1 = new NoopStrategy("1");
-    NoopStrategy strategy2 = new NoopStrategy("2");
-    SpawnStrategyRegistry strategyRegistry =
-        SpawnStrategyRegistry.builder()
-            .registerStrategy(strategy1, "foo")
-            .registerStrategy(strategy2, "bar")
-            .addDescriptionFilter(ELLO_MATCHER, ImmutableList.of("foo"))
-            .addDescriptionFilter(ELLO_MATCHER, ImmutableList.of("bar"))
-            .build();
+    /**
+     * This demonstrate that the latter description filter overrides preceding one of same regexp.
+     * filter=val_1 filter=val_2 is equivalent to filter=val_2
+     */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDuplicatedDescriptionFilter() {
+        val strategy1 = NoopStrategy("1")
+        val strategy2 = NoopStrategy("2")
+        val strategyRegistry: SpawnStrategyRegistry =
+            SpawnStrategyRegistry.builder()
+                .registerStrategy(strategy1, "foo")
+                .registerStrategy(strategy2, "bar")
+                .addDescriptionFilter(ELLO_MATCHER, com.google.common.collect.ImmutableList.of<E?>("foo"))
+                .addDescriptionFilter(ELLO_MATCHER, com.google.common.collect.ImmutableList.of<E?>("bar"))
+                .build()
 
-    assertThat(
+        assertThat(
             strategyRegistry.getStrategies(
                 createSpawnWithMnemonicAndDescription("", "hello"),
-                SpawnStrategyRegistryTest::noopEventHandler))
-        .containsExactly(strategy2);
-  }
+                { event: com.google.devtools.build.lib.events.Event? -> noopEventHandler(event) })
+        )
+            .containsExactly(strategy2)
+    }
 
-  @Test
-  public void testPlatformFilter() throws Exception {
-    NoopStrategy strategy1 = new NoopStrategy("1");
-    NoopStrategy strategy2 = new NoopStrategy("2");
-    SpawnStrategyRegistry strategyRegistry =
-        SpawnStrategyRegistry.builder()
-            .registerStrategy(strategy1, "foo")
-            .registerStrategy(strategy2, "bar")
-            .addExecPlatformFilter(
-                PlatformInfo.EMPTY_PLATFORM_INFO.label(), ImmutableList.of("foo"))
-            .build();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testPlatformFilter() {
+        val strategy1 = NoopStrategy("1")
+        val strategy2 = NoopStrategy("2")
+        val strategyRegistry: SpawnStrategyRegistry =
+            SpawnStrategyRegistry.builder()
+                .registerStrategy(strategy1, "foo")
+                .registerStrategy(strategy2, "bar")
+                .addExecPlatformFilter(
+                    PlatformInfo.EMPTY_PLATFORM_INFO.label(), com.google.common.collect.ImmutableList.of<E?>("foo")
+                )
+                .build()
 
-    assertThat(
+        assertThat(
             strategyRegistry.getStrategies(
                 createSpawnWithMnemonicAndDescription("", ""),
-                SpawnStrategyRegistryTest::noopEventHandler))
-        .containsExactly(strategy1);
-  }
+                { event: com.google.devtools.build.lib.events.Event? -> noopEventHandler(event) })
+        )
+            .containsExactly(strategy1)
+    }
 
-  /** Tests that platform filters not affect the strategy ordering. */
-  @Test
-  public void testPlatformFilterOrder() throws Exception {
-    NoopStrategy strategy1 = new NoopStrategy("1");
-    NoopStrategy strategy2 = new NoopStrategy("2");
-    SpawnStrategyRegistry strategyRegistry =
-        SpawnStrategyRegistry.builder()
-            .registerStrategy(strategy1, "foo")
-            .registerStrategy(strategy2, "bar")
-            .addExecPlatformFilter(
-                PlatformInfo.EMPTY_PLATFORM_INFO.label(), ImmutableList.of("bar", "foo"))
-            .build();
+    /** Tests that platform filters not affect the strategy ordering.  */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testPlatformFilterOrder() {
+        val strategy1 = NoopStrategy("1")
+        val strategy2 = NoopStrategy("2")
+        val strategyRegistry: SpawnStrategyRegistry =
+            SpawnStrategyRegistry.builder()
+                .registerStrategy(strategy1, "foo")
+                .registerStrategy(strategy2, "bar")
+                .addExecPlatformFilter(
+                    PlatformInfo.EMPTY_PLATFORM_INFO.label(),
+                    com.google.common.collect.ImmutableList.of<E?>("bar", "foo")
+                )
+                .build()
 
-    assertThat(
+        assertThat(
             strategyRegistry.getStrategies(
                 createSpawnWithMnemonicAndDescription("", ""),
-                SpawnStrategyRegistryTest::noopEventHandler))
-        .containsExactly(strategy1, strategy2);
-  }
+                { event: com.google.devtools.build.lib.events.Event? -> noopEventHandler(event) })
+        )
+            .containsExactly(strategy1, strategy2)
+    }
 
-  @Test
-  public void testMultipleDefaultStrategies() throws Exception {
-    NoopStrategy strategy1 = new NoopStrategy("1");
-    NoopStrategy strategy2 = new NoopStrategy("2");
-    NoopStrategy strategy3 = new NoopStrategy("3");
-    SpawnStrategyRegistry strategyRegistry =
-        SpawnStrategyRegistry.builder()
-            .registerStrategy(strategy1, "foo")
-            .registerStrategy(strategy2, "bar")
-            .registerStrategy(strategy3, "baz")
-            .setDefaultStrategies(ImmutableList.of("foo", "baz"))
-            .build();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMultipleDefaultStrategies() {
+        val strategy1 = NoopStrategy("1")
+        val strategy2 = NoopStrategy("2")
+        val strategy3 = NoopStrategy("3")
+        val strategyRegistry: SpawnStrategyRegistry =
+            SpawnStrategyRegistry.builder()
+                .registerStrategy(strategy1, "foo")
+                .registerStrategy(strategy2, "bar")
+                .registerStrategy(strategy3, "baz")
+                .setDefaultStrategies(com.google.common.collect.ImmutableList.of<E?>("foo", "baz"))
+                .build()
 
-    assertThat(
+        assertThat(
             strategyRegistry.getStrategies(
                 createSpawnWithMnemonicAndDescription("", ""),
-                SpawnStrategyRegistryTest::noopEventHandler))
-        .containsExactly(strategy1, strategy3);
-  }
+                { event: com.google.devtools.build.lib.events.Event? -> noopEventHandler(event) })
+        )
+            .containsExactly(strategy1, strategy3)
+    }
 
-  @Test
-  public void testDefaultStrategiesIndependentOfFilters() throws Exception {
-    NoopStrategy strategy1 = new NoopStrategy("1");
-    NoopStrategy strategy2 = new NoopStrategy("2");
-    NoopStrategy strategy3 = new NoopStrategy("3");
-    SpawnStrategyRegistry strategyRegistry =
-        SpawnStrategyRegistry.builder()
-            .registerStrategy(strategy1, "foo")
-            .registerStrategy(strategy2, "bar")
-            .registerStrategy(strategy3, "baz")
-            .addMnemonicFilter("mnem", ImmutableList.of("bar"))
-            .setDefaultStrategies(ImmutableList.of("foo", "baz"))
-            .build();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDefaultStrategiesIndependentOfFilters() {
+        val strategy1 = NoopStrategy("1")
+        val strategy2 = NoopStrategy("2")
+        val strategy3 = NoopStrategy("3")
+        val strategyRegistry: SpawnStrategyRegistry =
+            SpawnStrategyRegistry.builder()
+                .registerStrategy(strategy1, "foo")
+                .registerStrategy(strategy2, "bar")
+                .registerStrategy(strategy3, "baz")
+                .addMnemonicFilter("mnem", com.google.common.collect.ImmutableList.of<E?>("bar"))
+                .setDefaultStrategies(com.google.common.collect.ImmutableList.of<E?>("foo", "baz"))
+                .build()
 
-    assertThat(
+        assertThat(
             strategyRegistry.getStrategies(
                 createSpawnWithMnemonicAndDescription("", ""),
-                SpawnStrategyRegistryTest::noopEventHandler))
-        .containsExactly(strategy1, strategy3);
+                { event: com.google.devtools.build.lib.events.Event? -> noopEventHandler(event) })
+        )
+            .containsExactly(strategy1, strategy3)
 
-    assertThat(
+        assertThat(
             strategyRegistry.getStrategies(
                 createSpawnWithMnemonicAndDescription("mnem", ""),
-                SpawnStrategyRegistryTest::noopEventHandler))
-        .containsExactly(strategy2);
-  }
+                { event: com.google.devtools.build.lib.events.Event? -> noopEventHandler(event) })
+        )
+            .containsExactly(strategy2)
+    }
 
-  @Test
-  public void testImplicitDefault() throws Exception {
-    NoopStrategy strategy1 = new NoopStrategy("1");
-    NoopStrategy strategy2 = new NoopStrategy("2");
-    SpawnStrategyRegistry strategyRegistry =
-        SpawnStrategyRegistry.builder()
-            .registerStrategy(strategy1, "foo")
-            .registerStrategy(strategy2, "bar")
-            .build();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testImplicitDefault() {
+        val strategy1 = NoopStrategy("1")
+        val strategy2 = NoopStrategy("2")
+        val strategyRegistry: SpawnStrategyRegistry =
+            SpawnStrategyRegistry.builder()
+                .registerStrategy(strategy1, "foo")
+                .registerStrategy(strategy2, "bar")
+                .build()
 
-    assertThat(
+        assertThat(
             strategyRegistry.getStrategies(
                 createSpawnWithMnemonicAndDescription("", ""),
-                SpawnStrategyRegistryTest::noopEventHandler))
-        .containsExactly(strategy1, strategy2);
-  }
+                { event: com.google.devtools.build.lib.events.Event? -> noopEventHandler(event) })
+        )
+            .containsExactly(strategy1, strategy2)
+    }
 
-  @Test
-  public void testMnemonicStrategyNotPresent() {
-    NoopStrategy strategy1 = new NoopStrategy("1");
-    AbruptExitException exception =
-        assertThrows(
-            AbruptExitException.class,
-            () ->
-                SpawnStrategyRegistry.builder()
-                    .registerStrategy(strategy1, "foo")
-                    .addMnemonicFilter("mnem", ImmutableList.of("bar", "foo"))
-                    .build());
+    @org.junit.Test
+    fun testMnemonicStrategyNotPresent() {
+        val strategy1 = NoopStrategy("1")
+        val exception: AbruptExitException? =
+            org.junit.Assert.assertThrows<T?>(
+                AbruptExitException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    SpawnStrategyRegistry.builder()
+                        .registerStrategy(strategy1, "foo")
+                        .addMnemonicFilter("mnem", com.google.common.collect.ImmutableList.of<E?>("bar", "foo"))
+                        .build()
+                })
 
-    assertThat(exception).hasMessageThat().containsMatch("bar.*Valid.*foo");
-  }
+        assertThat(exception).hasMessageThat().containsMatch("bar.*Valid.*foo")
+    }
 
-  /** Don't throw an error if any of the replaced strategies was not registered. */
-  @Test
-  public void testDescriptionStrategyReplacedNotPresent() throws Exception {
-    NoopStrategy strategy1 = new NoopStrategy("1");
-    SpawnStrategyRegistry strategyRegistry =
-        SpawnStrategyRegistry.builder()
-            .registerStrategy(strategy1, "foo")
-            .addDescriptionFilter(ELLO_MATCHER, ImmutableList.of("bar", "foo"))
-            .addDescriptionFilter(ELLO_MATCHER, ImmutableList.of("foo"))
-            .build();
+    /** Don't throw an error if any of the replaced strategies was not registered.  */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDescriptionStrategyReplacedNotPresent() {
+        val strategy1 = NoopStrategy("1")
+        val strategyRegistry: SpawnStrategyRegistry =
+            SpawnStrategyRegistry.builder()
+                .registerStrategy(strategy1, "foo")
+                .addDescriptionFilter(ELLO_MATCHER, com.google.common.collect.ImmutableList.of<E?>("bar", "foo"))
+                .addDescriptionFilter(ELLO_MATCHER, com.google.common.collect.ImmutableList.of<E?>("foo"))
+                .build()
 
-    assertThat(
+        assertThat(
             strategyRegistry.getStrategies(
                 createSpawnWithMnemonicAndDescription("", "hello"),
-                SpawnStrategyRegistryTest::noopEventHandler))
-        .containsExactly(strategy1);
-  }
+                { event: com.google.devtools.build.lib.events.Event? -> noopEventHandler(event) })
+        )
+            .containsExactly(strategy1)
+    }
 
-  /** Throw error when some of strategies were not registered. */
-  @Test
-  public void testDescriptionStrategyNotPresent() {
-    NoopStrategy strategy1 = new NoopStrategy("1");
-    AbruptExitException exception =
-        assertThrows(
-            AbruptExitException.class,
-            () ->
-                SpawnStrategyRegistry.builder()
-                    .registerStrategy(strategy1, "foo")
-                    .addDescriptionFilter(ELLO_MATCHER, ImmutableList.of("bar", "foo"))
-                    .build());
+    /** Throw error when some of strategies were not registered.  */
+    @org.junit.Test
+    fun testDescriptionStrategyNotPresent() {
+        val strategy1 = NoopStrategy("1")
+        val exception: AbruptExitException? =
+            org.junit.Assert.assertThrows<T?>(
+                AbruptExitException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    SpawnStrategyRegistry.builder()
+                        .registerStrategy(strategy1, "foo")
+                        .addDescriptionFilter(
+                            ELLO_MATCHER,
+                            com.google.common.collect.ImmutableList.of<E?>("bar", "foo")
+                        )
+                        .build()
+                })
 
-    assertThat(exception)
-        .hasMessageThat()
-        .containsMatch("'bar' was requested.*Valid values are: \\[foo\\]");
-  }
+        assertThat(exception)
+            .hasMessageThat()
+            .containsMatch("'bar' was requested.*Valid values are: \\[foo\\]")
+    }
 
-  @Test
-  public void testDescriptionStrategyAllNotPresent() {
-    NoopStrategy strategy1 = new NoopStrategy("1");
-    AbruptExitException exception =
-        assertThrows(
-            AbruptExitException.class,
-            () ->
-                SpawnStrategyRegistry.builder()
-                    .registerStrategy(strategy1, "foo")
-                    .addDescriptionFilter(ELLO_MATCHER, ImmutableList.of("bar", "food"))
-                    .build());
+    @org.junit.Test
+    fun testDescriptionStrategyAllNotPresent() {
+        val strategy1 = NoopStrategy("1")
+        val exception: AbruptExitException? =
+            org.junit.Assert.assertThrows<T?>(
+                AbruptExitException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    SpawnStrategyRegistry.builder()
+                        .registerStrategy(strategy1, "foo")
+                        .addDescriptionFilter(
+                            ELLO_MATCHER,
+                            com.google.common.collect.ImmutableList.of<E?>("bar", "food")
+                        )
+                        .build()
+                })
 
-    assertThat(exception).hasMessageThat().containsMatch("bar.*Valid.*foo");
-  }
+        assertThat(exception).hasMessageThat().containsMatch("bar.*Valid.*foo")
+    }
 
-  @Test
-  public void testDefaultStrategyNotPresent() {
-    NoopStrategy strategy1 = new NoopStrategy("1");
-    AbruptExitException exception =
-        assertThrows(
-            AbruptExitException.class,
-            () ->
-                SpawnStrategyRegistry.builder()
-                    .registerStrategy(strategy1, "foo")
-                    .setDefaultStrategies(ImmutableList.of("bar"))
-                    .build());
+    @org.junit.Test
+    fun testDefaultStrategyNotPresent() {
+        val strategy1 = NoopStrategy("1")
+        val exception: AbruptExitException? =
+            org.junit.Assert.assertThrows<T?>(
+                AbruptExitException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    SpawnStrategyRegistry.builder()
+                        .registerStrategy(strategy1, "foo")
+                        .setDefaultStrategies(com.google.common.collect.ImmutableList.of<E?>("bar"))
+                        .build()
+                })
 
-    assertThat(exception).hasMessageThat().containsMatch("bar.*Valid.*foo");
-  }
+        assertThat(exception).hasMessageThat().containsMatch("bar.*Valid.*foo")
+    }
 
-  @Test
-  public void testDynamicStrategies() throws Exception {
-    NoopStrategy strategy1 = new NoopSandboxedStrategy("1");
-    NoopStrategy strategy2 = new NoopSandboxedStrategy("2");
-    SpawnStrategyRegistry strategyRegistry =
-        SpawnStrategyRegistry.builder()
-            .registerStrategy(strategy1, "foo")
-            .registerStrategy(strategy2, "bar")
-            .addDynamicLocalStrategies(ImmutableMap.of("mnem", ImmutableList.of("bar")))
-            .addDynamicRemoteStrategies(ImmutableMap.of("mnem", ImmutableList.of("foo")))
-            .build();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDynamicStrategies() {
+        val strategy1: NoopStrategy = NoopSandboxedStrategy("1")
+        val strategy2: NoopStrategy = NoopSandboxedStrategy("2")
+        val strategyRegistry: SpawnStrategyRegistry =
+            SpawnStrategyRegistry.builder()
+                .registerStrategy(strategy1, "foo")
+                .registerStrategy(strategy2, "bar")
+                .addDynamicLocalStrategies(
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(
+                        "mnem",
+                        com.google.common.collect.ImmutableList.of<E?>("bar")
+                    )
+                )
+                .addDynamicRemoteStrategies(
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(
+                        "mnem",
+                        com.google.common.collect.ImmutableList.of<E?>("foo")
+                    )
+                )
+                .build()
 
-    assertThat(
+        assertThat(
             strategyRegistry.getDynamicSpawnActionContexts(
-                createSpawnWithMnemonicAndDescription("mnem", ""), DynamicMode.REMOTE))
-        .containsExactly(strategy1);
-    assertThat(
+                createSpawnWithMnemonicAndDescription("mnem", ""), DynamicMode.REMOTE
+            )
+        )
+            .containsExactly(strategy1)
+        assertThat(
             strategyRegistry.getDynamicSpawnActionContexts(
-                createSpawnWithMnemonicAndDescription("mnem", ""), DynamicMode.LOCAL))
-        .containsExactly(strategy2);
-  }
+                createSpawnWithMnemonicAndDescription("mnem", ""), DynamicMode.LOCAL
+            )
+        )
+            .containsExactly(strategy2)
+    }
 
-  @Test
-  public void testDynamicStrategyNotPresent() {
-    NoopStrategy strategy1 = new NoopSandboxedStrategy("1");
-    AbruptExitException exception =
-        assertThrows(
-            AbruptExitException.class,
-            () ->
-                SpawnStrategyRegistry.builder()
-                    .registerStrategy(strategy1, "foo")
-                    .addDynamicLocalStrategies(ImmutableMap.of("mnem", ImmutableList.of("bar")))
-                    .build());
+    @org.junit.Test
+    fun testDynamicStrategyNotPresent() {
+        val strategy1: NoopStrategy = NoopSandboxedStrategy("1")
+        val exception: AbruptExitException? =
+            org.junit.Assert.assertThrows<T?>(
+                AbruptExitException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    SpawnStrategyRegistry.builder()
+                        .registerStrategy(strategy1, "foo")
+                        .addDynamicLocalStrategies(
+                            com.google.common.collect.ImmutableMap.of<K?, V?>(
+                                "mnem",
+                                com.google.common.collect.ImmutableList.of<E?>("bar")
+                            )
+                        )
+                        .build()
+                })
 
-    assertThat(exception).hasMessageThat().containsMatch("bar.*Valid.*foo");
-  }
+        assertThat(exception).hasMessageThat().containsMatch("bar.*Valid.*foo")
+    }
 
-  @Test
-  public void testDynamicStrategyNotSandboxed() {
-    NoopStrategy strategy1 = new NoopStrategy("1");
-    AbruptExitException exception =
-        assertThrows(
-            AbruptExitException.class,
-            () ->
-                SpawnStrategyRegistry.builder()
-                    .registerStrategy(strategy1, "foo")
-                    .addDynamicLocalStrategies(ImmutableMap.of("mnem", ImmutableList.of("foo")))
-                    .build());
+    @org.junit.Test
+    fun testDynamicStrategyNotSandboxed() {
+        val strategy1 = NoopStrategy("1")
+        val exception: AbruptExitException? =
+            org.junit.Assert.assertThrows<T?>(
+                AbruptExitException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    SpawnStrategyRegistry.builder()
+                        .registerStrategy(strategy1, "foo")
+                        .addDynamicLocalStrategies(
+                            com.google.common.collect.ImmutableMap.of<K?, V?>(
+                                "mnem",
+                                com.google.common.collect.ImmutableList.of<E?>("foo")
+                            )
+                        )
+                        .build()
+                })
 
-    assertThat(exception).hasMessageThat().containsMatch("sandboxed strategy");
-  }
+        assertThat(exception).hasMessageThat().containsMatch("sandboxed strategy")
+    }
 
-  @Test
-  public void testDynamicStrategiesHonorStrategyPolicy() throws Exception {
-    NoopStrategy remoteStrategy = new NoopSandboxedStrategy("remote");
-    NoopStrategy localStrategy = new NoopSandboxedStrategy("local");
-    SpawnStrategyRegistry strategyRegistry =
-        SpawnStrategyRegistry.builder(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDynamicStrategiesHonorStrategyPolicy() {
+        val remoteStrategy: NoopStrategy = NoopSandboxedStrategy("remote")
+        val localStrategy: NoopStrategy = NoopSandboxedStrategy("local")
+        val strategyRegistry: SpawnStrategyRegistry =
+            SpawnStrategyRegistry.builder(
                 StrategyPolicy.newBuilder()
                     .setDynamicRemotePolicy(
-                        MnemonicPolicy.newBuilder().addDefaultAllowlist("remote"))
+                        MnemonicPolicy.newBuilder().addDefaultAllowlist("remote")
+                    )
                     .setDynamicLocalPolicy(MnemonicPolicy.newBuilder().addDefaultAllowlist("local"))
-                    .build())
-            .registerStrategy(remoteStrategy, "remote")
-            .registerStrategy(localStrategy, "local")
-            // Pointlessly register both strategies in order to test that policy filters them.
-            .addDynamicLocalStrategies(ImmutableMap.of("mnem", ImmutableList.of("remote", "local")))
-            .addDynamicRemoteStrategies(
-                ImmutableMap.of("mnem", ImmutableList.of("remote", "local")))
-            .build();
+                    .build()
+            )
+                .registerStrategy(remoteStrategy, "remote")
+                .registerStrategy(
+                    localStrategy,
+                    "local"
+                ) // Pointlessly register both strategies in order to test that policy filters them.
+                .addDynamicLocalStrategies(
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(
+                        "mnem",
+                        com.google.common.collect.ImmutableList.of<E?>("remote", "local")
+                    )
+                )
+                .addDynamicRemoteStrategies(
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(
+                        "mnem",
+                        com.google.common.collect.ImmutableList.of<E?>("remote", "local")
+                    )
+                )
+                .build()
 
-    assertThat(
+        assertThat(
             strategyRegistry.getDynamicSpawnActionContexts(
-                createSpawnWithMnemonicAndDescription("mnem", ""), DynamicMode.REMOTE))
-        .containsExactly(remoteStrategy);
-    assertThat(
+                createSpawnWithMnemonicAndDescription("mnem", ""), DynamicMode.REMOTE
+            )
+        )
+            .containsExactly(remoteStrategy)
+        assertThat(
             strategyRegistry.getDynamicSpawnActionContexts(
-                createSpawnWithMnemonicAndDescription("mnem", ""), DynamicMode.LOCAL))
-        .containsExactly(localStrategy);
-  }
+                createSpawnWithMnemonicAndDescription("mnem", ""), DynamicMode.LOCAL
+            )
+        )
+            .containsExactly(localStrategy)
+    }
 
-  @Test
-  public void testRemoteLocalFallback() throws Exception {
-    NoopAbstractStrategy strategy1 = new NoopAbstractStrategy("1");
-    NoopAbstractStrategy strategy2 = new NoopAbstractStrategy("2");
-    SpawnStrategyRegistry strategyRegistry =
-        SpawnStrategyRegistry.builder()
-            .registerStrategy(strategy1, "foo")
-            .registerStrategy(strategy2, "bar")
-            .setRemoteLocalFallbackStrategyIdentifier("bar")
-            .build();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRemoteLocalFallback() {
+        val strategy1 = NoopAbstractStrategy("1")
+        val strategy2 = NoopAbstractStrategy("2")
+        val strategyRegistry: SpawnStrategyRegistry =
+            SpawnStrategyRegistry.builder()
+                .registerStrategy(strategy1, "foo")
+                .registerStrategy(strategy2, "bar")
+                .setRemoteLocalFallbackStrategyIdentifier("bar")
+                .build()
 
-    assertThat(
+        assertThat(
             strategyRegistry.getRemoteLocalFallbackStrategy(
-                createSpawnWithMnemonicAndDescription("", "")))
-        .isEqualTo(strategy2);
-  }
+                createSpawnWithMnemonicAndDescription("", "")
+            )
+        )
+            .isEqualTo(strategy2)
+    }
 
-  @Test
-  public void testRemoteLocalFallbackNotPresent() {
-    NoopStrategy strategy1 = new NoopStrategy("1");
-    AbruptExitException exception =
-        assertThrows(
-            AbruptExitException.class,
-            () ->
-                SpawnStrategyRegistry.builder()
-                    .registerStrategy(strategy1, "foo")
-                    .setRemoteLocalFallbackStrategyIdentifier("bar")
-                    .build());
+    @org.junit.Test
+    fun testRemoteLocalFallbackNotPresent() {
+        val strategy1 = NoopStrategy("1")
+        val exception: AbruptExitException? =
+            org.junit.Assert.assertThrows<T?>(
+                AbruptExitException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    SpawnStrategyRegistry.builder()
+                        .registerStrategy(strategy1, "foo")
+                        .setRemoteLocalFallbackStrategyIdentifier("bar")
+                        .build()
+                })
 
-    assertThat(exception).hasMessageThat().containsMatch("bar.*Valid.*foo");
-  }
+        assertThat(exception).hasMessageThat().containsMatch("bar.*Valid.*foo")
+    }
 
-  @Test
-  public void testRemoteLocalFallbackNotRegistered() throws Exception {
-    NoopStrategy strategy1 = new NoopStrategy("1");
-    SpawnStrategyRegistry strategyRegistry =
-        SpawnStrategyRegistry.builder().registerStrategy(strategy1, "foo").build();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRemoteLocalFallbackNotRegistered() {
+        val strategy1 = NoopStrategy("1")
+        val strategyRegistry: SpawnStrategyRegistry =
+            SpawnStrategyRegistry.builder().registerStrategy(strategy1, "foo").build()
 
-    assertThat(
+        assertThat(
             strategyRegistry.getRemoteLocalFallbackStrategy(
-                createSpawnWithMnemonicAndDescription("", "")))
-        .isNull();
-  }
-
-  @Test
-  public void testNotifyUsed() throws Exception {
-    NoopStrategy strategy1 = new NoopStrategy("1");
-    NoopStrategy strategy2 = new NoopStrategy("2");
-    NoopStrategy strategy3 = new NoopStrategy("3");
-    NoopAbstractStrategy strategy4 = new NoopAbstractStrategy("4");
-    NoopStrategy strategy5 = new NoopSandboxedStrategy("5");
-    NoopStrategy strategy6 = new NoopSandboxedStrategy("6");
-    NoopStrategy strategy7 = new NoopStrategy("7");
-    NoopStrategy strategy8 = new NoopStrategy("8");
-    NoopStrategy strategy9 = new NoopStrategy("9");
-    SpawnStrategyRegistry strategyRegistry =
-        SpawnStrategyRegistry.builder()
-            .registerStrategy(strategy1, "1")
-            .registerStrategy(strategy2, "2")
-            .registerStrategy(strategy3, "3")
-            .registerStrategy(strategy7, "4") // no notification: identifier is overridden
-            .registerStrategy(strategy4, "4")
-            .registerStrategy(strategy5, "5") // no notification: dynamic strategies are separate
-            .registerStrategy(strategy6, "6") // no notification: dynamic strategies are separate
-            .registerStrategy(strategy8, "8") // no notification: never referenced
-            .registerStrategy(strategy9, "9") // no notification: reference overridden
-            .addMnemonicFilter("mnem", ImmutableList.of("1"))
-            .addDescriptionFilter(ELLO_MATCHER, ImmutableList.of("2"))
-            .setDefaultStrategies(ImmutableList.of("9"))
-            .setDefaultStrategies(ImmutableList.of("3"))
-            .setRemoteLocalFallbackStrategyIdentifier("4")
-            .addDynamicLocalStrategies(ImmutableMap.of("oy", ImmutableList.of("5")))
-            .addDynamicRemoteStrategies(ImmutableMap.of("oy", ImmutableList.of("6")))
-            .build();
-
-    strategyRegistry.notifyUsed(null);
-
-    assertThat(strategy1.usedCalled).isEqualTo(1);
-    assertThat(strategy2.usedCalled).isEqualTo(1);
-    assertThat(strategy3.usedCalled).isEqualTo(1);
-    assertThat(strategy4.usedCalled).isEqualTo(1);
-
-    assertThat(strategy5.usedCalled).isEqualTo(0);
-    assertThat(strategy6.usedCalled).isEqualTo(0);
-    assertThat(strategy7.usedCalled).isEqualTo(0);
-    assertThat(strategy8.usedCalled).isEqualTo(0);
-    assertThat(strategy9.usedCalled).isEqualTo(0);
-  }
-
-  @Test
-  public void testNotifyUsedDynamic() throws Exception {
-    NoopStrategy strategy1 = new NoopStrategy("1");
-    NoopStrategy strategy2 = new NoopStrategy("2");
-    NoopStrategy strategy3 = new NoopStrategy("3");
-    NoopAbstractStrategy strategy4 = new NoopAbstractStrategy("4");
-    NoopStrategy strategy5 = new NoopSandboxedStrategy("5");
-    NoopStrategy strategy6 = new NoopSandboxedStrategy("6");
-    NoopStrategy strategy7 = new NoopStrategy("7");
-    SpawnStrategyRegistry strategyRegistry =
-        SpawnStrategyRegistry.builder()
-            .registerStrategy(strategy1, "1") // no notification: regular strategies are separate
-            .registerStrategy(strategy2, "2") // no notification: regular strategies are separate
-            .registerStrategy(strategy3, "3") // no notification: regular strategies are separate
-            .registerStrategy(strategy4, "4") // no notification: regular strategies are separate
-            .registerStrategy(strategy5, "5")
-            .registerStrategy(strategy6, "6")
-            .registerStrategy(strategy7, "7") // no notification: reference overridden
-            .addMnemonicFilter("mnem", ImmutableList.of("1"))
-            .addDescriptionFilter(ELLO_MATCHER, ImmutableList.of("2"))
-            .setDefaultStrategies(ImmutableList.of("3"))
-            .setRemoteLocalFallbackStrategyIdentifier("4")
-            .addDynamicLocalStrategies(ImmutableMap.of("oy", ImmutableList.of("7")))
-            .addDynamicLocalStrategies(ImmutableMap.of("oy", ImmutableList.of("5")))
-            .addDynamicRemoteStrategies(ImmutableMap.of("oy", ImmutableList.of("6")))
-            .build();
-
-    strategyRegistry.notifyUsedDynamic(null);
-
-    assertThat(strategy1.usedCalled).isEqualTo(0);
-    assertThat(strategy2.usedCalled).isEqualTo(0);
-    assertThat(strategy3.usedCalled).isEqualTo(0);
-    assertThat(strategy4.usedCalled).isEqualTo(0);
-
-    assertThat(strategy5.usedCalled).isEqualTo(1);
-    assertThat(strategy6.usedCalled).isEqualTo(1);
-
-    assertThat(strategy7.usedCalled).isEqualTo(0);
-  }
-
-  private static Spawn createSpawnWithMnemonicAndDescription(String mnemonic, String description) {
-    return new SimpleSpawn(
-        new FakeOwner(mnemonic, description, "//dummy:label"),
-        ImmutableList.of(),
-        ImmutableMap.of(),
-        ImmutableMap.of(),
-        NestedSetBuilder.emptySet(Order.STABLE_ORDER),
-        ImmutableSet.of(),
-        ResourceSet.ZERO);
-  }
-
-  private static class NoopStrategy implements SpawnStrategy {
-
-    private final String name;
-    private int usedCalled = 0;
-
-    private NoopStrategy(String name) {
-      this.name = name;
+                createSpawnWithMnemonicAndDescription("", "")
+            )
+        )
+            .isNull()
     }
 
-    @Override
-    public ImmutableList<SpawnResult> exec(
-        Spawn spawn, ActionExecutionContext actionExecutionContext) {
-      throw new UnsupportedOperationException();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNotifyUsed() {
+        val strategy1 = NoopStrategy("1")
+        val strategy2 = NoopStrategy("2")
+        val strategy3 = NoopStrategy("3")
+        val strategy4 = NoopAbstractStrategy("4")
+        val strategy5: NoopStrategy = NoopSandboxedStrategy("5")
+        val strategy6: NoopStrategy = NoopSandboxedStrategy("6")
+        val strategy7 = NoopStrategy("7")
+        val strategy8 = NoopStrategy("8")
+        val strategy9 = NoopStrategy("9")
+        val strategyRegistry: SpawnStrategyRegistry =
+            SpawnStrategyRegistry.builder()
+                .registerStrategy(strategy1, "1")
+                .registerStrategy(strategy2, "2")
+                .registerStrategy(strategy3, "3")
+                .registerStrategy(strategy7, "4") // no notification: identifier is overridden
+                .registerStrategy(strategy4, "4")
+                .registerStrategy(strategy5, "5") // no notification: dynamic strategies are separate
+                .registerStrategy(strategy6, "6") // no notification: dynamic strategies are separate
+                .registerStrategy(strategy8, "8") // no notification: never referenced
+                .registerStrategy(strategy9, "9") // no notification: reference overridden
+                .addMnemonicFilter("mnem", com.google.common.collect.ImmutableList.of<E?>("1"))
+                .addDescriptionFilter(ELLO_MATCHER, com.google.common.collect.ImmutableList.of<E?>("2"))
+                .setDefaultStrategies(com.google.common.collect.ImmutableList.of<E?>("9"))
+                .setDefaultStrategies(com.google.common.collect.ImmutableList.of<E?>("3"))
+                .setRemoteLocalFallbackStrategyIdentifier("4")
+                .addDynamicLocalStrategies(
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(
+                        "oy",
+                        com.google.common.collect.ImmutableList.of<E?>("5")
+                    )
+                )
+                .addDynamicRemoteStrategies(
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(
+                        "oy",
+                        com.google.common.collect.ImmutableList.of<E?>("6")
+                    )
+                )
+                .build()
+
+        strategyRegistry.notifyUsed(null)
+
+        Truth.assertThat(strategy1.usedCalled).isEqualTo(1)
+        Truth.assertThat(strategy2.usedCalled).isEqualTo(1)
+        Truth.assertThat(strategy3.usedCalled).isEqualTo(1)
+        Truth.assertThat(strategy4.usedCalled).isEqualTo(1)
+
+        Truth.assertThat(strategy5.usedCalled).isEqualTo(0)
+        Truth.assertThat(strategy6.usedCalled).isEqualTo(0)
+        Truth.assertThat(strategy7.usedCalled).isEqualTo(0)
+        Truth.assertThat(strategy8.usedCalled).isEqualTo(0)
+        Truth.assertThat(strategy9.usedCalled).isEqualTo(0)
     }
 
-    @Override
-    public boolean canExec(Spawn spawn, ActionContext.ActionContextRegistry actionContextRegistry) {
-      return false;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNotifyUsedDynamic() {
+        val strategy1 = NoopStrategy("1")
+        val strategy2 = NoopStrategy("2")
+        val strategy3 = NoopStrategy("3")
+        val strategy4 = NoopAbstractStrategy("4")
+        val strategy5: NoopStrategy = NoopSandboxedStrategy("5")
+        val strategy6: NoopStrategy = NoopSandboxedStrategy("6")
+        val strategy7 = NoopStrategy("7")
+        val strategyRegistry: SpawnStrategyRegistry =
+            SpawnStrategyRegistry.builder()
+                .registerStrategy(strategy1, "1") // no notification: regular strategies are separate
+                .registerStrategy(strategy2, "2") // no notification: regular strategies are separate
+                .registerStrategy(strategy3, "3") // no notification: regular strategies are separate
+                .registerStrategy(strategy4, "4") // no notification: regular strategies are separate
+                .registerStrategy(strategy5, "5")
+                .registerStrategy(strategy6, "6")
+                .registerStrategy(strategy7, "7") // no notification: reference overridden
+                .addMnemonicFilter("mnem", com.google.common.collect.ImmutableList.of<E?>("1"))
+                .addDescriptionFilter(ELLO_MATCHER, com.google.common.collect.ImmutableList.of<E?>("2"))
+                .setDefaultStrategies(com.google.common.collect.ImmutableList.of<E?>("3"))
+                .setRemoteLocalFallbackStrategyIdentifier("4")
+                .addDynamicLocalStrategies(
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(
+                        "oy",
+                        com.google.common.collect.ImmutableList.of<E?>("7")
+                    )
+                )
+                .addDynamicLocalStrategies(
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(
+                        "oy",
+                        com.google.common.collect.ImmutableList.of<E?>("5")
+                    )
+                )
+                .addDynamicRemoteStrategies(
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(
+                        "oy",
+                        com.google.common.collect.ImmutableList.of<E?>("6")
+                    )
+                )
+                .build()
+
+        strategyRegistry.notifyUsedDynamic(null)
+
+        Truth.assertThat(strategy1.usedCalled).isEqualTo(0)
+        Truth.assertThat(strategy2.usedCalled).isEqualTo(0)
+        Truth.assertThat(strategy3.usedCalled).isEqualTo(0)
+        Truth.assertThat(strategy4.usedCalled).isEqualTo(0)
+
+        Truth.assertThat(strategy5.usedCalled).isEqualTo(1)
+        Truth.assertThat(strategy6.usedCalled).isEqualTo(1)
+
+        Truth.assertThat(strategy7.usedCalled).isEqualTo(0)
     }
 
-    @Override
-    public void usedContext(ActionContext.ActionContextRegistry actionContextRegistry) {
-      usedCalled++;
+    private open class NoopStrategy(private val name: String) : SpawnStrategy {
+        private var usedCalled = 0
+
+        public override fun exec(
+            spawn: Spawn?, actionExecutionContext: ActionExecutionContext?
+        ): com.google.common.collect.ImmutableList<SpawnResult?>? {
+            throw java.lang.UnsupportedOperationException()
+        }
+
+        public override fun canExec(
+            spawn: Spawn?,
+            actionContextRegistry: ActionContext.ActionContextRegistry?
+        ): Boolean {
+            return false
+        }
+
+        public override fun usedContext(actionContextRegistry: ActionContext.ActionContextRegistry?) {
+            usedCalled++
+        }
+
+        override fun toString(): String {
+            return "strategy" + name
+        }
     }
 
-    @Override
-    public String toString() {
-      return "strategy" + name;
-    }
-  }
-
-  private static class NoopSandboxedStrategy extends NoopStrategy
-      implements SandboxedSpawnStrategy {
-
-    private NoopSandboxedStrategy(String name) {
-      super(name);
+    private class NoopSandboxedStrategy(name: String) : NoopStrategy(name), SandboxedSpawnStrategy {
+        public override fun exec(
+            spawn: Spawn?,
+            actionExecutionContext: ActionExecutionContext?,
+            stopConcurrentSpawns: SandboxedSpawnStrategy.StopConcurrentSpawns?
+        ): com.google.common.collect.ImmutableList<SpawnResult?>? {
+            throw java.lang.UnsupportedOperationException()
+        }
     }
 
-    @Override
-    public ImmutableList<SpawnResult> exec(
-        Spawn spawn,
-        ActionExecutionContext actionExecutionContext,
-        @Nullable SandboxedSpawnStrategy.StopConcurrentSpawns stopConcurrentSpawns) {
-      throw new UnsupportedOperationException();
-    }
-  }
+    private class NoopAbstractStrategy(private val name: String) : AbstractSpawnStrategy(null, null) {
+        private var usedCalled = 0
 
-  private static class NoopAbstractStrategy extends AbstractSpawnStrategy {
+        public override fun usedContext(actionContextRegistry: ActionContext.ActionContextRegistry?) {
+            usedCalled++
+        }
 
-    private final String name;
-    private int usedCalled = 0;
-
-    NoopAbstractStrategy(String name) {
-      super(null, null);
-      this.name = name;
+        override fun toString(): String {
+            return "strategy" + name
+        }
     }
 
-    @Override
-    public void usedContext(ActionContext.ActionContextRegistry actionContextRegistry) {
-      usedCalled++;
-    }
+    companion object {
+        private val ELLO_MATCHER: RegexFilter = RegexFilter(
+            com.google.common.collect.ImmutableList.of<E?>("ello"),
+            com.google.common.collect.ImmutableList.of<E?>()
+        )
+        private val LLO_MATCHER: RegexFilter = RegexFilter(
+            com.google.common.collect.ImmutableList.of<E?>("llo"),
+            com.google.common.collect.ImmutableList.of<E?>()
+        )
 
-    @Override
-    public String toString() {
-      return "strategy" + name;
+        private fun noopEventHandler(event: com.google.devtools.build.lib.events.Event?) {}
+
+        private fun createSpawnWithMnemonicAndDescription(mnemonic: String?, description: String?): Spawn {
+            return SimpleSpawn(
+                FakeOwner(mnemonic, description, "//dummy:label"),
+                com.google.common.collect.ImmutableList.of<E?>(),
+                com.google.common.collect.ImmutableMap.of<K?, V?>(),
+                com.google.common.collect.ImmutableMap.of<K?, V?>(),
+                NestedSetBuilder.emptySet(Order.STABLE_ORDER),
+                com.google.common.collect.ImmutableSet.of<E?>(),
+                ResourceSet.ZERO
+            )
+        }
     }
-  }
 }

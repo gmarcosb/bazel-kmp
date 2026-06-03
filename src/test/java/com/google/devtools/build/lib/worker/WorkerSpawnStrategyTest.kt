@@ -11,54 +11,43 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.worker;
+package com.google.devtools.build.lib.worker
 
-import static com.google.common.truth.Truth.assertThat;
-import static java.nio.charset.StandardCharsets.UTF_8;
+import com.google.devtools.build.lib.sandbox.SandboxHelpers.SandboxInputs
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.sandbox.SandboxHelpers.SandboxInputs;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.util.FileSystems;
-import com.google.devtools.build.lib.worker.WorkerProtocol.WorkRequest;
-import java.io.File;
-import java.io.PrintWriter;
-import java.nio.file.Files;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Unit tests for the [WorkerSpawnStrategy].  */
+@RunWith(JUnit4::class)
+class WorkerSpawnStrategyTest {
+    @org.junit.Rule
+    var folder: TemporaryFolder = TemporaryFolder()
+    private val fs: FileSystem = com.google.devtools.build.lib.vfs.util.FileSystems.getNativeFileSystem()
 
-/** Unit tests for the {@link WorkerSpawnStrategy}. */
-@RunWith(JUnit4.class)
-public class WorkerSpawnStrategyTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun expandArgumentsPreservesEmptyLines() {
+        val flagfile: java.io.File = folder.newFile("flagfile.txt")
 
-  @Rule public TemporaryFolder folder = new TemporaryFolder();
-  private final FileSystem fs = FileSystems.getNativeFileSystem();
+        val flags: com.google.common.collect.ImmutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>("--hello", "", "--world")
 
-  @Test
-  public void expandArgumentsPreservesEmptyLines() throws Exception {
-    File flagfile = folder.newFile("flagfile.txt");
+        PrintWriter(
+            java.nio.file.Files.newBufferedWriter(
+                flagfile.toPath(),
+                java.nio.charset.StandardCharsets.UTF_8
+            )
+        ).use { pw ->
+            flags.forEach(java.util.function.Consumer { x: String? -> pw.println(x) })
+        }
+        val path: Path = fs.getPath(flagfile.getAbsolutePath())
+        val requestBuilder: WorkRequest.Builder = WorkRequest.newBuilder()
+        val inputs: SandboxInputs =
+            SandboxInputs(
+                com.google.common.collect.ImmutableMap.of<K?, V?>(PathFragment.create("flagfile.txt"), path),
+                com.google.common.collect.ImmutableMap.of<K?, V?>(),
+                com.google.common.collect.ImmutableMap.of<K?, V?>()
+            )
+        WorkerSpawnRunner.expandArgument(inputs, "@flagfile.txt", requestBuilder)
 
-    ImmutableList<String> flags = ImmutableList.of("--hello", "", "--world");
-
-    try (PrintWriter pw = new PrintWriter(Files.newBufferedWriter(flagfile.toPath(), UTF_8))) {
-      flags.forEach(pw::println);
+        assertThat(requestBuilder.getArgumentsList()).containsExactlyElementsIn(flags)
     }
-
-    Path path = fs.getPath(flagfile.getAbsolutePath());
-    WorkRequest.Builder requestBuilder = WorkRequest.newBuilder();
-    SandboxInputs inputs =
-        new SandboxInputs(
-            ImmutableMap.of(PathFragment.create("flagfile.txt"), path),
-            ImmutableMap.of(),
-            ImmutableMap.of());
-    WorkerSpawnRunner.expandArgument(inputs, "@flagfile.txt", requestBuilder);
-
-    assertThat(requestBuilder.getArgumentsList()).containsExactlyElementsIn(flags);
-  }
 }

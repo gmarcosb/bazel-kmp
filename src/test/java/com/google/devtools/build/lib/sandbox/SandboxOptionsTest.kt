@@ -11,93 +11,98 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.sandbox
 
-package com.google.devtools.build.lib.sandbox;
+import com.google.common.truth.Truth
+import com.google.devtools.common.options.OptionsParsingException
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+/** Tests for `SandboxOptions`.  */
+@RunWith(JUnit4::class)
+class SandboxOptionsTest {
+    private var pathPair: MutableMap.MutableEntry<String?, String?>? = null
 
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.common.options.OptionsParsingException;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testParsingAdditionalMounts_singlePathWithoutColonSucess() {
+        val source = "/a/bc/def/gh"
+        val target = source
+        val input = source
+        pathPair = MountPairConverter().convert(input)
+        Companion.assertMountPair(pathPair!!, source, target)
+    }
 
-/** Tests for {@code SandboxOptions}. */
-@RunWith(JUnit4.class)
-public final class SandboxOptionsTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testParsingAdditionalMounts_singlePathWithColonSucess() {
+        val source = "/a/b:c/def/gh"
+        val target = source
+        val input = "/a/b\\:c/def/gh"
+        pathPair = MountPairConverter().convert(input)
+        Companion.assertMountPair(pathPair!!, source, target)
+    }
 
-  private ImmutableMap.Entry<String, String> pathPair;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testParsingAdditionalMounts_pathPairWithoutColonSucess() {
+        val source = "/a/bc/def/gh"
+        val target = "/1/2/3/4/5"
+        val input = source + ":" + target
+        pathPair = MountPairConverter().convert(input)
+        Companion.assertMountPair(pathPair!!, source, target)
+    }
 
-  @Test
-  public void testParsingAdditionalMounts_singlePathWithoutColonSucess() throws Exception {
-    String source = "/a/bc/def/gh";
-    String target = source;
-    String input = source;
-    pathPair = new SandboxOptions.MountPairConverter().convert(input);
-    assertMountPair(pathPair, source, target);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testParsingAdditionalMounts_pathPairWithColonSucess() {
+        val source = "/a:/bc:/d:ef/gh"
+        val target = ":/1/2/3/4/5"
+        val input = "/a\\:/bc\\:/d\\:ef/gh:\\:/1/2/3/4/5"
+        pathPair = MountPairConverter().convert(input)
+        Companion.assertMountPair(pathPair!!, source, target)
+    }
 
-  @Test
-  public void testParsingAdditionalMounts_singlePathWithColonSucess() throws Exception {
-    String source = "/a/b:c/def/gh";
-    String target = source;
-    String input = "/a/b\\:c/def/gh";
-    pathPair = new SandboxOptions.MountPairConverter().convert(input);
-    assertMountPair(pathPair, source, target);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testParsingAdditionalMounts_tooManyPaths() {
+        val input = "a/bc/def/gh:/1/2/3:x/y/z"
+        val e: OptionsParsingException? =
+            org.junit.Assert.assertThrows<OptionsParsingException?>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable { pathPair = MountPairConverter().convert(input) })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .isEqualTo(
+                "Input must be a single path to mount inside the sandbox or "
+                        + "a mounting pair in the form of 'source:target'"
+            )
+    }
 
-  @Test
-  public void testParsingAdditionalMounts_pathPairWithoutColonSucess() throws Exception {
-    String source = "/a/bc/def/gh";
-    String target = "/1/2/3/4/5";
-    String input = source + ":" + target;
-    pathPair = new SandboxOptions.MountPairConverter().convert(input);
-    assertMountPair(pathPair, source, target);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testParsingAdditionalMounts_emptyInput() {
+        val input = ""
+        val e: OptionsParsingException =
+            org.junit.Assert.assertThrows<OptionsParsingException>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable { pathPair = MountPairConverter().convert(input) })
+        Truth.assertThat(
+            ("Input "
+                    + input
+                    + " contains one or more empty paths. "
+                    + "Input must be a single path to mount inside the sandbox or "
+                    + "a mounting pair in the form of 'source:target'")
+        )
+            .isEqualTo(e.message)
+    }
 
-  @Test
-  public void testParsingAdditionalMounts_pathPairWithColonSucess() throws Exception {
-    String source = "/a:/bc:/d:ef/gh";
-    String target = ":/1/2/3/4/5";
-    String input = "/a\\:/bc\\:/d\\:ef/gh:\\:/1/2/3/4/5";
-    pathPair = new SandboxOptions.MountPairConverter().convert(input);
-    assertMountPair(pathPair, source, target);
-  }
-
-  @Test
-  public void testParsingAdditionalMounts_tooManyPaths() throws Exception {
-    String input = "a/bc/def/gh:/1/2/3:x/y/z";
-    OptionsParsingException e =
-        assertThrows(
-            OptionsParsingException.class,
-            () -> pathPair = new SandboxOptions.MountPairConverter().convert(input));
-    assertThat(e)
-        .hasMessageThat()
-        .isEqualTo(
-            "Input must be a single path to mount inside the sandbox or "
-                + "a mounting pair in the form of 'source:target'");
-  }
-
-  @Test
-  public void testParsingAdditionalMounts_emptyInput() throws Exception {
-    String input = "";
-    OptionsParsingException e =
-        assertThrows(
-            OptionsParsingException.class,
-            () -> pathPair = new SandboxOptions.MountPairConverter().convert(input));
-    assertThat(
-            "Input "
-                + input
-                + " contains one or more empty paths. "
-                + "Input must be a single path to mount inside the sandbox or "
-                + "a mounting pair in the form of 'source:target'")
-        .isEqualTo(e.getMessage());
-  }
-
-  private static void assertMountPair(
-      ImmutableMap.Entry<String, String> pathPair, String source, String target) {
-    assertThat(source).isEqualTo(pathPair.getKey());
-    assertThat(target).isEqualTo(pathPair.getValue());
-  }
+    companion object {
+        private fun assertMountPair(
+            pathPair: MutableMap.MutableEntry<String?, String?>, source: String?, target: String?
+        ) {
+            Truth.assertThat(source).isEqualTo(pathPair.key)
+            Truth.assertThat(target).isEqualTo(pathPair.value)
+        }
+    }
 }

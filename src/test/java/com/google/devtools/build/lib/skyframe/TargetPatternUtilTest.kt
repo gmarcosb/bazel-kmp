@@ -11,271 +11,274 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.package com.google.devtools.build.lib.skyframe;
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.skyframe.EvaluationResultSubjectFactory.assertThatEvaluationResult;
-import static java.util.Objects.requireNonNull;
+import com.google.devtools.build.lib.analysis.BlazeDirectories
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.analysis.util.AnalysisMock;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.cmdline.SignedTargetPattern;
-import com.google.devtools.build.lib.cmdline.TargetPattern;
-import com.google.devtools.build.lib.pkgcache.FilteringPolicies;
-import com.google.devtools.build.lib.pkgcache.FilteringPolicy;
-import com.google.devtools.build.lib.skyframe.TargetPatternUtil.InvalidTargetPatternException;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.lib.skyframe.util.SkyframeExecutorTestUtils;
-import com.google.devtools.build.lib.testutil.Scratch;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.skyframe.EvaluationResult;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionException;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import com.google.testing.junit.testparameterinjector.TestParameters;
-import com.google.testing.junit.testparameterinjector.TestParameters.TestParametersValues;
-import com.google.testing.junit.testparameterinjector.TestParametersValuesProvider;
-import java.io.IOException;
-import java.util.Arrays;
-import javax.annotation.Nullable;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+/** Tests for [TargetPatternUtil].  */
+@RunWith(TestParameterInjector::class)
+class TargetPatternUtilTest : BuildViewTestCase() {
+    @org.junit.Test
+    @TestParameters(valuesProvider = ExpansionPatternProvider::class)
+    @Throws(java.lang.Exception::class)
+    fun expansion(
+        rawPatterns: com.google.common.collect.ImmutableList<String?>?,
+        expectedLabels: com.google.common.collect.ImmutableList<Label?>?
+    ) {
+        ExpansionPatternProvider.Companion.createBuildFiles(scratch)
 
-/** Tests for {@link TargetPatternUtil}. */
-@RunWith(TestParameterInjector.class)
-public class TargetPatternUtilTest extends BuildViewTestCase {
-
-  @Test
-  @TestParameters(valuesProvider = ExpansionPatternProvider.class)
-  public void expansion(ImmutableList<String> rawPatterns, ImmutableList<Label> expectedLabels)
-      throws Exception {
-    ExpansionPatternProvider.createBuildFiles(scratch);
-
-    ImmutableSet<Label> result = expandTargetPattern(rawPatterns, FilteringPolicies.NO_FILTER);
-    assertThat(result).containsExactlyElementsIn(expectedLabels);
-  }
-
-  // TODO: blaze-configurability-team - Test errors
-  // TODO: blaze-configurability-team - Test relative labels
-  // TODO: blaze-configurability-team - Test filtering policies
-
-  private static final class ExpansionPatternProvider extends TestParametersValuesProvider {
-    private static TestParametersValues create(String rawPattern, String... rawLabels) {
-      return create(ImmutableList.of(rawPattern), rawLabels);
+        val result: com.google.common.collect.ImmutableSet<Label?> =
+            expandTargetPattern(rawPatterns, FilteringPolicies.NO_FILTER)
+        Truth.assertThat(result).containsExactlyElementsIn(expectedLabels)
     }
 
-    private static TestParametersValues create(
-        ImmutableList<String> rawPatterns, String... rawLabels) {
-      ImmutableList<Label> labels =
-          Arrays.stream(rawLabels).map(Label::parseCanonicalUnchecked).collect(toImmutableList());
+    // TODO: blaze-configurability-team - Test errors
+    // TODO: blaze-configurability-team - Test relative labels
+    // TODO: blaze-configurability-team - Test filtering policies
+    private class ExpansionPatternProvider :
+        com.google.testing.junit.testparameterinjector.TestParametersValuesProvider() {
+        override fun provideValues(context: com.google.testing.junit.testparameterinjector.TestParametersValuesProvider.Context?): com.google.common.collect.ImmutableList<TestParametersValues?> {
+            return com.google.common.collect.ImmutableList.of<TestParametersValues?>( // Single patterns.
+                Companion.create("//foo/bar:baz", "//foo/bar:baz"),
+                Companion.create(
+                    "//wildcard/single/...",
+                    "//wildcard/single:a",
+                    "//wildcard/single:b",
+                    "//wildcard/single:c"
+                ),
+                Companion.create(
+                    "//wildcard/single:all",
+                    "//wildcard/single:a",
+                    "//wildcard/single:b",
+                    "//wildcard/single:c"
+                ),
+                Companion.create(
+                    "//wildcard/single:*",
+                    "//wildcard/single:BUILD",
+                    "//wildcard/single:a",
+                    "//wildcard/single:b",
+                    "//wildcard/single:c"
+                ),
+                Companion.create(
+                    "//wildcard/deep/...",
+                    "//wildcard/deep/a",
+                    "//wildcard/deep/b:b_1",
+                    "//wildcard/deep/b:b_2",
+                    "//wildcard/deep/c"
+                ),  // Combinations of patterns
 
-      String name = String.format("%s-%s", rawPatterns, labels);
-      return TestParametersValues.builder()
-          .name(name)
-          .addParameter("rawPatterns", rawPatterns)
-          .addParameter("expectedLabels", labels)
-          .build();
-    }
+                Companion.create(
+                    com.google.common.collect.ImmutableList.of<String?>("//foo/bar:baz", "//foo/bar:quux"),
+                    "//foo/bar:baz",
+                    "//foo/bar:quux"
+                ),
+                Companion.create(
+                    com.google.common.collect.ImmutableList.of<String?>(
+                        "//wildcard/deep/a/...",
+                        "//wildcard/deep/c/..."
+                    ),
+                    "//wildcard/deep/a",
+                    "//wildcard/deep/c"
+                ),  // Negative patterns.
+                // TODO: blaze-configurability-team - fix handling of negative patterns and re-enable
 
-    @Override
-    protected ImmutableList<TestParametersValues> provideValues(Context context) {
-      return ImmutableList.of(
-          // Single patterns.
-          create("//foo/bar:baz", "//foo/bar:baz"),
-          create(
-              "//wildcard/single/...",
-              "//wildcard/single:a",
-              "//wildcard/single:b",
-              "//wildcard/single:c"),
-          create(
-              "//wildcard/single:all",
-              "//wildcard/single:a",
-              "//wildcard/single:b",
-              "//wildcard/single:c"),
-          create(
-              "//wildcard/single:*",
-              "//wildcard/single:BUILD",
-              "//wildcard/single:a",
-              "//wildcard/single:b",
-              "//wildcard/single:c"),
-          create(
-              "//wildcard/deep/...",
-              "//wildcard/deep/a",
-              "//wildcard/deep/b:b_1",
-              "//wildcard/deep/b:b_2",
-              "//wildcard/deep/c"),
+                Companion.create(
+                    com.google.common.collect.ImmutableList.of<String?>(
+                        "-//foo/bar:baz",
+                        "//foo/bar:quux"
+                    ), "//foo/bar:quux"
+                ),
+                Companion.create(
+                    com.google.common.collect.ImmutableList.of<String?>(
+                        "//wildcard/deep/...",
+                        "-//wildcard/deep/b/..."
+                    ),
+                    "//wildcard/deep/a",
+                    "//wildcard/deep/c"
+                )
+            )
+        }
 
-          // Combinations of patterns
-          create(
-              ImmutableList.of("//foo/bar:baz", "//foo/bar:quux"),
-              "//foo/bar:baz",
-              "//foo/bar:quux"),
-          create(
-              ImmutableList.of("//wildcard/deep/a/...", "//wildcard/deep/c/..."),
-              "//wildcard/deep/a",
-              "//wildcard/deep/c"),
+        companion object {
+            private fun create(rawPattern: String, vararg rawLabels: String?): TestParametersValues {
+                return Companion.create(com.google.common.collect.ImmutableList.of<String?>(rawPattern), *rawLabels)
+            }
 
-          // Negative patterns.
-          // TODO: blaze-configurability-team - fix handling of negative patterns and re-enable
-          create(ImmutableList.of("-//foo/bar:baz", "//foo/bar:quux"), "//foo/bar:quux"),
-          create(
-              ImmutableList.of("//wildcard/deep/...", "-//wildcard/deep/b/..."),
-              "//wildcard/deep/a",
-              "//wildcard/deep/c"));
-    }
+            private fun create(
+                rawPatterns: com.google.common.collect.ImmutableList<String?>?, vararg rawLabels: String?
+            ): TestParametersValues {
+                val labels: com.google.common.collect.ImmutableList<Label?> =
+                    java.util.Arrays.stream<String?>(rawLabels).map<Any?>(Label::parseCanonicalUnchecked)
+                        .collect(com.google.common.collect.ImmutableList.toImmutableList<Any?>())
 
-    private static void createBuildFiles(Scratch scratch) throws IOException {
-      scratch.file(
-          "foo/bar/BUILD",
-          """
+                val name: String = java.lang.String.format("%s-%s", rawPatterns, labels)
+                return TestParametersValues.builder()
+                    .name(name)
+                    .addParameter("rawPatterns", rawPatterns)
+                    .addParameter("expectedLabels", labels)
+                    .build()
+            }
+
+            @Throws(IOException::class)
+            private fun createBuildFiles(scratch: Scratch) {
+                scratch.file(
+                    "foo/bar/BUILD",
+                    """
           filegroup(name = "baz")
           filegroup(name = "quux")
-          """);
-      scratch.file(
-          "wildcard/single/BUILD",
-          """
+          
+          """.trimIndent()
+                )
+                scratch.file(
+                    "wildcard/single/BUILD",
+                    """
           filegroup(name = "a")
           filegroup(name = "b")
           filegroup(name = "c")
-          """);
-      scratch.file(
-          "wildcard/deep/a/BUILD",
-          """
+          
+          """.trimIndent()
+                )
+                scratch.file(
+                    "wildcard/deep/a/BUILD",
+                    """
           filegroup(name = "a")
-          """);
-      scratch.file(
-          "wildcard/deep/b/BUILD",
-          """
+          
+          """.trimIndent()
+                )
+                scratch.file(
+                    "wildcard/deep/b/BUILD",
+                    """
           filegroup(name = "b_1")
           filegroup(name = "b_2")
-          """);
-      scratch.file(
-          "wildcard/deep/c/BUILD",
-          """
+          
+          """.trimIndent()
+                )
+                scratch.file(
+                    "wildcard/deep/c/BUILD",
+                    """
           filegroup(name = "c")
-          """);
-    }
-  }
-
-  // Test setup and methods.
-  private ImmutableSet<Label> expandTargetPattern(
-      ImmutableList<String> rawPatterns, FilteringPolicy filteringPolicy)
-      throws InterruptedException {
-    ExpandTargetPatternKey key = new ExpandTargetPatternKey(rawPatterns, filteringPolicy);
-    EvaluationResult<ExpandTargetPatternValue> result = expandTargetPattern(key);
-    assertThatEvaluationResult(result).hasNoError();
-    assertThatEvaluationResult(result).hasEntryThat(key).isNotNull();
-
-    return result.get(key).result();
-  }
-
-  private EvaluationResult<ExpandTargetPatternValue> expandTargetPattern(ExpandTargetPatternKey key)
-      throws InterruptedException {
-    try {
-      // Must re-enable analysis for Skyframe functions that create configured targets.
-      skyframeExecutor.getSkyframeBuildView().enableAnalysis(true);
-      return SkyframeExecutorTestUtils.evaluate(
-          skyframeExecutor, key, /* keepGoing= */ false, reporter);
-    } finally {
-      skyframeExecutor.getSkyframeBuildView().enableAnalysis(false);
-    }
-  }
-
-  @Override
-  protected AnalysisMock getAnalysisMock() {
-    return new AnalysisMockWithExpandTargetPatternFunction();
-  }
-
-  private static final SkyFunctionName EXPAND_TARGET_PATTERNS_FUNCTION =
-      SkyFunctionName.createHermetic("EXPAND_TARGET_PATTERNS_FUNCTION");
-
-  /**
-   * An {@link AnalysisMock} that injects {@link ExpandTargetPatternFunction} into the Skyframe
-   * executor.
-   */
-  private static final class AnalysisMockWithExpandTargetPatternFunction
-      extends AnalysisMock.Delegate {
-    AnalysisMockWithExpandTargetPatternFunction() {
-      super(AnalysisMock.get());
+          
+          """.trimIndent()
+                )
+            }
+        }
     }
 
-    @Override
-    public ImmutableMap<SkyFunctionName, SkyFunction> getSkyFunctions(
-        BlazeDirectories directories) {
-      return ImmutableMap.<SkyFunctionName, SkyFunction>builder()
-          .putAll(super.getSkyFunctions(directories))
-          .put(EXPAND_TARGET_PATTERNS_FUNCTION, new ExpandTargetPatternFunction())
-          .buildOrThrow();
-    }
-  }
+    // Test setup and methods.
+    @Throws(java.lang.InterruptedException::class)
+    private fun expandTargetPattern(
+        rawPatterns: com.google.common.collect.ImmutableList<String?>?, filteringPolicy: FilteringPolicy?
+    ): com.google.common.collect.ImmutableSet<Label?> {
+        val key = ExpandTargetPatternKey(rawPatterns, filteringPolicy)
+        val result: EvaluationResult<ExpandTargetPatternValue?> = expandTargetPattern(key)
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasNoError()
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasEntryThat(key).isNotNull()
 
-  @AutoCodec
-  record ExpandTargetPatternKey(ImmutableList<String> rawPatterns, FilteringPolicy filteringPolicy)
-      implements SkyKey {
-    ExpandTargetPatternKey {
-      requireNonNull(rawPatterns);
-      requireNonNull(filteringPolicy);
+        return result.get(key).result()
     }
 
-    @Override
-    public SkyFunctionName functionName() {
-      return EXPAND_TARGET_PATTERNS_FUNCTION;
+    @Throws(java.lang.InterruptedException::class)
+    private fun expandTargetPattern(key: ExpandTargetPatternKey?): EvaluationResult<ExpandTargetPatternValue?> {
+        try {
+            // Must re-enable analysis for Skyframe functions that create configured targets.
+            skyframeExecutor.getSkyframeBuildView().enableAnalysis(true)
+            return SkyframeExecutorTestUtils.evaluate<T?>(
+                skyframeExecutor, key,  /* keepGoing= */false, reporter
+            )
+        } finally {
+            skyframeExecutor.getSkyframeBuildView().enableAnalysis(false)
+        }
     }
-  }
 
-  @AutoCodec
-  record ExpandTargetPatternValue(ImmutableSet<Label> result) implements SkyValue {}
+    val analysisMock: AnalysisMock
+        get() = AnalysisMockWithExpandTargetPatternFunction()
 
-  private static final class ExpandTargetPatternFunction implements SkyFunction {
+    /**
+     * An [AnalysisMock] that injects [ExpandTargetPatternFunction] into the Skyframe
+     * executor.
+     */
+    private class AnalysisMockWithExpandTargetPatternFunction
 
-    @Nullable
-    @Override
-    public SkyValue compute(SkyKey skyKey, Environment env)
-        throws InterruptedException, ExpandTargetPatternFunctionException {
-      ExpandTargetPatternKey key = (ExpandTargetPatternKey) skyKey;
+        : com.google.devtools.build.lib.analysis.util.AnalysisMock.Delegate(AnalysisMock.get()) {
+        public override fun getSkyFunctions(
+            directories: BlazeDirectories
+        ): com.google.common.collect.ImmutableMap<SkyFunctionName?, SkyFunction?> {
+            return com.google.common.collect.ImmutableMap.builder<SkyFunctionName?, SkyFunction?>()
+                .putAll(super.getSkyFunctions(directories))
+                .put(EXPAND_TARGET_PATTERNS_FUNCTION, ExpandTargetPatternFunction())
+                .buildOrThrow()
+        }
+    }
 
-      RepositoryMappingValue mainRepoMapping =
-          (RepositoryMappingValue) env.getValue(RepositoryMappingValue.key(RepositoryName.MAIN));
-      if (env.valuesMissing()) {
-        return null;
-      }
-      TargetPattern.Parser targetPatternParser =
-          new TargetPattern.Parser(
-              PathFragment.EMPTY_FRAGMENT,
-              RepositoryName.MAIN,
-              mainRepoMapping.repositoryMapping());
-
-      try {
-        ImmutableList<SignedTargetPattern> signedTargetPatterns =
-            TargetPatternUtil.parseAllSigned(key.rawPatterns(), targetPatternParser);
-        ImmutableSet<Label> labels =
-            TargetPatternUtil.expandTargetPatterns(
-                env, signedTargetPatterns, key.filteringPolicy());
-        if (env.valuesMissing()) {
-          return null;
+    @AutoCodec
+    internal class ExpandTargetPatternKey(
+        rawPatterns: com.google.common.collect.ImmutableList<String?>?,
+        filteringPolicy: FilteringPolicy?
+    ) : SkyKey {
+        public override fun functionName(): SkyFunctionName? {
+            return EXPAND_TARGET_PATTERNS_FUNCTION
         }
 
-        return new ExpandTargetPatternValue(labels);
-      } catch (InvalidTargetPatternException e) {
-        throw new ExpandTargetPatternFunctionException(e);
-      }
-    }
-  }
+        val rawPatterns: com.google.common.collect.ImmutableList<String?>?
+        val filteringPolicy: FilteringPolicy?
 
-  private static final class ExpandTargetPatternFunctionException extends SkyFunctionException {
-
-    private ExpandTargetPatternFunctionException(InvalidTargetPatternException e) {
-      super(e, Transience.PERSISTENT);
+        init {
+            this.filteringPolicy = filteringPolicy
+            this.rawPatterns = rawPatterns
+            java.util.Objects.requireNonNull<com.google.common.collect.ImmutableList<String?>?>(rawPatterns)
+            java.util.Objects.requireNonNull<Any?>(filteringPolicy)
+        }
     }
-  }
+
+    @AutoCodec
+    internal class ExpandTargetPatternValue(result: com.google.common.collect.ImmutableSet<Label?>?) : SkyValue {
+        val result: com.google.common.collect.ImmutableSet<Label?>?
+
+        init {
+            this.result = result
+        }
+    }
+
+    private class ExpandTargetPatternFunction : SkyFunction {
+        @Throws(java.lang.InterruptedException::class, ExpandTargetPatternFunctionException::class)
+        public override fun compute(skyKey: SkyKey?, env: Environment): SkyValue? {
+            val key = skyKey as ExpandTargetPatternKey
+
+            val mainRepoMapping: RepositoryMappingValue =
+                env.getValue(RepositoryMappingValue.key(RepositoryName.MAIN)) as RepositoryMappingValue
+            if (env.valuesMissing()) {
+                return null
+            }
+            val targetPatternParser: TargetPattern.Parser =
+                Parser(
+                    PathFragment.EMPTY_FRAGMENT,
+                    RepositoryName.MAIN,
+                    mainRepoMapping.repositoryMapping()
+                )
+
+            try {
+                val signedTargetPatterns: com.google.common.collect.ImmutableList<SignedTargetPattern?>? =
+                    TargetPatternUtil.parseAllSigned(key.rawPatterns, targetPatternParser)
+                val labels: com.google.common.collect.ImmutableSet<Label?>? =
+                    TargetPatternUtil.expandTargetPatterns(
+                        env, signedTargetPatterns, key.filteringPolicy
+                    )
+                if (env.valuesMissing()) {
+                    return null
+                }
+
+                return ExpandTargetPatternValue(labels)
+            } catch (e: InvalidTargetPatternException) {
+                throw ExpandTargetPatternFunctionException(e)
+            }
+        }
+    }
+
+    private class ExpandTargetPatternFunctionException(e: InvalidTargetPatternException?) :
+        SkyFunctionException(e, Transience.PERSISTENT)
+
+    companion object {
+        private val EXPAND_TARGET_PATTERNS_FUNCTION: SkyFunctionName? =
+            SkyFunctionName.createHermetic("EXPAND_TARGET_PATTERNS_FUNCTION")
+    }
 }

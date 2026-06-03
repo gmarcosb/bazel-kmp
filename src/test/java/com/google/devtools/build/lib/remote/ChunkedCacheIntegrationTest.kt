@@ -11,307 +11,279 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote;
+package com.google.devtools.build.lib.remote
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.vfs.FileSystemUtils.readContent;
-import static java.nio.charset.StandardCharsets.UTF_8;
+import com.google.devtools.build.lib.vfs.FileSystemUtils.readContent
 
-import build.bazel.remote.execution.v2.ContentAddressableStorageGrpc;
-import build.bazel.remote.execution.v2.Digest;
-import build.bazel.remote.execution.v2.RequestMetadata;
-import build.bazel.remote.execution.v2.SplitBlobRequest;
-import build.bazel.remote.execution.v2.SplitBlobResponse;
-import build.bazel.remote.execution.v2.ToolDetails;
-import com.google.bytestream.ByteStreamGrpc;
-import com.google.bytestream.ByteStreamProto.ReadRequest;
-import com.google.bytestream.ByteStreamProto.ReadResponse;
-import com.google.common.collect.ImmutableList;
-import com.google.common.hash.HashCode;
-import com.google.common.hash.Hashing;
-import com.google.common.io.ByteStreams;
-import com.google.devtools.build.lib.authandtls.credentialhelper.CredentialModule;
-import com.google.devtools.build.lib.buildtool.util.BuildIntegrationTestCase;
-import com.google.devtools.build.lib.remote.options.RemoteStartupOptions;
-import com.google.devtools.build.lib.remote.util.IntegrationTestUtils;
-import com.google.devtools.build.lib.remote.util.IntegrationTestUtils.WorkerInstance;
-import com.google.devtools.build.lib.remote.util.TracingMetadataUtils;
-import com.google.devtools.build.lib.runtime.BlazeModule;
-import com.google.devtools.build.lib.runtime.BlazeRuntime;
-import com.google.devtools.build.lib.runtime.BlockWaitingModule;
-import com.google.devtools.build.lib.runtime.BuildSummaryStatsModule;
-import com.google.devtools.build.lib.standalone.StandaloneModule;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.common.options.OptionsBase;
-import io.grpc.ClientInterceptor;
-import io.grpc.ManagedChannel;
-import io.grpc.ManagedChannelBuilder;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.Iterator;
-import java.util.List;
-import org.junit.After;
-import org.junit.ClassRule;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Integration tests for chunked remote cache using SplitBlob/SpliceBlob APIs.  */
+@RunWith(JUnit4::class)
+class ChunkedCacheIntegrationTest : BuildIntegrationTestCase() {
+    val startupOptionClasses: com.google.common.collect.ImmutableList<java.lang.Class<out OptionsBase?>?>?
+        get() = com.google.common.collect.ImmutableList.builder<java.lang.Class<out OptionsBase?>?>()
+            .addAll(super.startupOptionClasses)
+            .add(RemoteStartupOptions::class.java)
+            .build()
 
-/** Integration tests for chunked remote cache using SplitBlob/SpliceBlob APIs. */
-@RunWith(JUnit4.class)
-public class ChunkedCacheIntegrationTest extends BuildIntegrationTestCase {
-  @ClassRule @Rule public static final WorkerInstance worker = IntegrationTestUtils.createWorker();
-
-  @Override
-  protected ImmutableList<Class<? extends OptionsBase>> getStartupOptionClasses() {
-    return ImmutableList.<Class<? extends OptionsBase>>builder()
-        .addAll(super.getStartupOptionClasses())
-        .add(RemoteStartupOptions.class)
-        .build();
-  }
-
-  @Override
-  protected void setupOptions() throws Exception {
-    super.setupOptions();
-    addOptions(
-        "--remote_cache=grpc://localhost:" + worker.getPort(),
-        "--experimental_remote_cache_chunking");
-  }
-
-  @Override
-  protected BlazeRuntime.Builder getRuntimeBuilder() throws Exception {
-    return super.getRuntimeBuilder()
-        .addBlazeModule(new RemoteModule())
-        .addBlazeModule(new BuildSummaryStatsModule())
-        .addBlazeModule(new BlockWaitingModule());
-  }
-
-  @Override
-  protected ImmutableList<BlazeModule> getSpawnModules() {
-    return ImmutableList.<BlazeModule>builder()
-        .addAll(super.getSpawnModules())
-        .add(new StandaloneModule())
-        .add(new CredentialModule())
-        .build();
-  }
-
-  @After
-  public void waitDownloads() throws Exception {
-    runtimeWrapper.newCommand();
-  }
-
-  private Path getOutputPath(String binRelativePath) {
-    return getTargetConfiguration().getBinDir().getRoot().getRelative(binRelativePath);
-  }
-
-  private void cleanAndRestartServer() throws Exception {
-    getOutputBase().getRelative("action_cache").deleteTreesBelow();
-    createRuntimeWrapper();
-  }
-
-  private byte[] readFileBytes(Path path) throws IOException {
-    try (InputStream in = path.getInputStream()) {
-      return ByteStreams.toByteArray(in);
+    @Throws(java.lang.Exception::class)
+    override fun setupOptions() {
+        super.setupOptions()
+        addOptions(
+            "--remote_cache=grpc://localhost:" + worker.getPort(),
+            "--experimental_remote_cache_chunking"
+        )
     }
-  }
 
-  private Digest computeDigest(byte[] data) {
-    HashCode hash = Hashing.sha256().hashBytes(data);
-    return Digest.newBuilder().setHash(hash.toString()).setSizeBytes(data.length).build();
-  }
+    @get:Throws(java.lang.Exception::class)
+    val runtimeBuilder: BlazeRuntime.Builder
+        get() = super.runtimeBuilder
+            .addBlazeModule(RemoteModule())
+            .addBlazeModule(BuildSummaryStatsModule())
+            .addBlazeModule(BlockWaitingModule())
 
-  @Test
-  public void uploadAndDownloadLargeBlob_withChunking_succeeds() throws Exception {
-    write(
-        "BUILD",
-        """
+    val spawnModules: com.google.common.collect.ImmutableList<BlazeModule?>?
+        get() = com.google.common.collect.ImmutableList.builder<BlazeModule?>()
+            .addAll(super.spawnModules)
+            .add(StandaloneModule())
+            .add(CredentialModule())
+            .build()
+
+    @org.junit.After
+    @Throws(java.lang.Exception::class)
+    fun waitDownloads() {
+        runtimeWrapper.newCommand()
+    }
+
+    private fun getOutputPath(binRelativePath: String?): Path {
+        return targetConfiguration.getBinDir().getRoot().getRelative(binRelativePath)
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun cleanAndRestartServer() {
+        getOutputBase().getRelative("action_cache").deleteTreesBelow()
+        createRuntimeWrapper()
+    }
+
+    @Throws(IOException::class)
+    private fun readFileBytes(path: Path): ByteArray {
+        path.getInputStream().use { `in` ->
+            return com.google.common.io.ByteStreams.toByteArray(`in`)
+        }
+    }
+
+    private fun computeDigest(data: ByteArray): Digest {
+        val hash: com.google.common.hash.HashCode = com.google.common.hash.Hashing.sha256().hashBytes(data)
+        return Digest.newBuilder().setHash(hash.toString()).setSizeBytes(data.size).build()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun uploadAndDownloadLargeBlob_withChunking_succeeds() {
+        write(
+            "BUILD",
+            """
         genrule(
             name = "large_file",
             srcs = [],
             outs = ["large.txt"],
-            cmd = "dd if=/dev/zero bs=1M count=3 2>/dev/null | tr '\\\\0' 'a' > $@",
+            cmd = "dd if=/dev/zero bs=1M count=3 2>/dev/null | tr '\\0' 'a' > ${'$'}@",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    buildTarget("//:large_file");
+        buildTarget("//:large_file")
 
-    Path output = getOutputPath("large.txt");
-    assertThat(output.exists()).isTrue();
-    byte[] originalContent = readFileBytes(output);
-    assertThat(originalContent.length).isAtLeast(2 * 1024 * 1024);
+        val output: Path = getOutputPath("large.txt")
+        assertThat(output.exists()).isTrue()
+        val originalContent = readFileBytes(output)
+        Truth.assertThat(originalContent.size).isAtLeast(2 * 1024 * 1024)
 
-    Digest blobDigest = computeDigest(originalContent);
+        val blobDigest: Digest = computeDigest(originalContent)
 
-    // Verify SplitBlob returns multiple chunks and each chunk is individually downloadable.
-    RequestMetadata metadata =
-        RequestMetadata.newBuilder()
-            .setCorrelatedInvocationsId("test-build-id")
-            .setToolInvocationId("test-command-id")
-            .setActionId("test-action-id")
-            .setToolDetails(ToolDetails.newBuilder().setToolName("bazel").setToolVersion("test"))
-            .build();
-    ClientInterceptor interceptor = TracingMetadataUtils.attachMetadataInterceptor(metadata);
+        // Verify SplitBlob returns multiple chunks and each chunk is individually downloadable.
+        val metadata: RequestMetadata? =
+            RequestMetadata.newBuilder()
+                .setCorrelatedInvocationsId("test-build-id")
+                .setToolInvocationId("test-command-id")
+                .setActionId("test-action-id")
+                .setToolDetails(ToolDetails.newBuilder().setToolName("bazel").setToolVersion("test"))
+                .build()
+        val interceptor: ClientInterceptor? = TracingMetadataUtils.attachMetadataInterceptor(metadata)
 
-    ManagedChannel channel =
-        ManagedChannelBuilder.forAddress("localhost", worker.getPort())
-            .usePlaintext()
-            .intercept(interceptor)
-            .build();
-    try {
-      ContentAddressableStorageGrpc.ContentAddressableStorageBlockingStub casStub =
-          ContentAddressableStorageGrpc.newBlockingStub(channel);
+        val channel: ManagedChannel =
+            ManagedChannelBuilder.forAddress("localhost", worker.getPort())
+                .usePlaintext()
+                .intercept(interceptor)
+                .build()
+        try {
+            val casStub: ContentAddressableStorageGrpc.ContentAddressableStorageBlockingStub =
+                ContentAddressableStorageGrpc.newBlockingStub(channel)
 
-      SplitBlobResponse splitResponse =
-          casStub.splitBlob(SplitBlobRequest.newBuilder().setBlobDigest(blobDigest).build());
-      List<Digest> chunkDigests = splitResponse.getChunkDigestsList();
+            val splitResponse: SplitBlobResponse =
+                casStub.splitBlob(SplitBlobRequest.newBuilder().setBlobDigest(blobDigest).build())
+            val chunkDigests: MutableList<Digest> = splitResponse.getChunkDigestsList()
 
-      assertThat(chunkDigests.size()).isGreaterThan(1);
-      long totalChunkSize = chunkDigests.stream().mapToLong(Digest::getSizeBytes).sum();
-      assertThat(totalChunkSize).isEqualTo(originalContent.length);
+            Truth.assertThat(chunkDigests.size).isGreaterThan(1)
+            val totalChunkSize: Long = chunkDigests.stream().mapToLong(Digest::getSizeBytes).sum()
+            Truth.assertThat(totalChunkSize).isEqualTo(originalContent.size)
 
-      // Download each chunk individually and reassemble to verify integrity.
-      ByteStreamGrpc.ByteStreamBlockingStub bsStub = ByteStreamGrpc.newBlockingStub(channel);
-      ByteArrayOutputStream reassembled = new ByteArrayOutputStream();
-      for (Digest chunkDigest : chunkDigests) {
-        String resourceName = "blobs/" + chunkDigest.getHash() + "/" + chunkDigest.getSizeBytes();
-        Iterator<ReadResponse> readIter =
-            bsStub.read(ReadRequest.newBuilder().setResourceName(resourceName).build());
-        int chunkBytesRead = 0;
-        while (readIter.hasNext()) {
-          byte[] data = readIter.next().getData().toByteArray();
-          reassembled.write(data);
-          chunkBytesRead += data.length;
+            // Download each chunk individually and reassemble to verify integrity.
+            val bsStub: ByteStreamGrpc.ByteStreamBlockingStub = ByteStreamGrpc.newBlockingStub(channel)
+            val reassembled: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+            for (chunkDigest in chunkDigests) {
+                val resourceName = "blobs/" + chunkDigest.getHash() + "/" + chunkDigest.getSizeBytes()
+                val readIter: MutableIterator<ReadResponse?> =
+                    bsStub.read(ReadRequest.newBuilder().setResourceName(resourceName).build())
+                var chunkBytesRead = 0
+                while (readIter.hasNext()) {
+                    val data: ByteArray = readIter.next().getData().toByteArray()
+                    reassembled.write(data)
+                    chunkBytesRead += data.size
+                }
+                Truth.assertThat(chunkBytesRead).isEqualTo(chunkDigest.getSizeBytes() as Int)
+            }
+            Truth.assertThat(reassembled.toByteArray()).isEqualTo(originalContent)
+        } finally {
+            channel.shutdownNow()
         }
-        assertThat(chunkBytesRead).isEqualTo((int) chunkDigest.getSizeBytes());
-      }
-      assertThat(reassembled.toByteArray()).isEqualTo(originalContent);
-    } finally {
-      channel.shutdownNow();
+
+        // Delete output and action cache, then rebuild to exercise chunked download.
+        output.delete()
+        assertThat(output.exists()).isFalse()
+        cleanAndRestartServer()
+
+        buildTarget("//:large_file")
+
+        assertThat(output.exists()).isTrue()
+        Truth.assertThat(readFileBytes(output)).isEqualTo(originalContent)
     }
 
-    // Delete output and action cache, then rebuild to exercise chunked download.
-    output.delete();
-    assertThat(output.exists()).isFalse();
-    cleanAndRestartServer();
-
-    buildTarget("//:large_file");
-
-    assertThat(output.exists()).isTrue();
-    assertThat(readFileBytes(output)).isEqualTo(originalContent);
-  }
-
-  @Test
-  public void multipleTargets_withChunking_allSucceed() throws Exception {
-    // Multiple large files built in parallel, with a downstream target that depends on them.
-    // Use deterministic content (filled with distinct byte patterns) so we can verify integrity.
-    write(
-        "BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun multipleTargets_withChunking_allSucceed() {
+        // Multiple large files built in parallel, with a downstream target that depends on them.
+        // Use deterministic content (filled with distinct byte patterns) so we can verify integrity.
+        write(
+            "BUILD",
+            """
         genrule(
             name = "data_a",
             srcs = [],
             outs = ["a.bin"],
-            cmd = "dd if=/dev/zero bs=1M count=3 2>/dev/null | tr '\\\\0' 'A' > $@",
+            cmd = "dd if=/dev/zero bs=1M count=3 2>/dev/null | tr '\\0' 'A' > ${'$'}@",
         )
         genrule(
             name = "data_b",
             srcs = [],
             outs = ["b.bin"],
-            cmd = "dd if=/dev/zero bs=1M count=4 2>/dev/null | tr '\\\\0' 'B' > $@",
+            cmd = "dd if=/dev/zero bs=1M count=4 2>/dev/null | tr '\\0' 'B' > ${'$'}@",
         )
         genrule(
             name = "combined",
             srcs = [":a.bin", ":b.bin"],
             outs = ["combined.bin"],
-            cmd = "cat $(SRCS) > $@",
+            cmd = "cat ${'$'}(SRCS) > ${'$'}@",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    buildTarget("//:combined");
+        buildTarget("//:combined")
 
-    Path outputA = getOutputPath("a.bin");
-    Path outputB = getOutputPath("b.bin");
-    Path outputCombined = getOutputPath("combined.bin");
-    assertThat(outputA.exists()).isTrue();
-    assertThat(outputB.exists()).isTrue();
-    assertThat(outputCombined.exists()).isTrue();
+        val outputA: Path = getOutputPath("a.bin")
+        val outputB: Path = getOutputPath("b.bin")
+        val outputCombined: Path = getOutputPath("combined.bin")
+        assertThat(outputA.exists()).isTrue()
+        assertThat(outputB.exists()).isTrue()
+        assertThat(outputCombined.exists()).isTrue()
 
-    byte[] contentA = readFileBytes(outputA);
-    byte[] contentB = readFileBytes(outputB);
-    byte[] contentCombined = readFileBytes(outputCombined);
-    assertThat(contentA.length).isEqualTo(3 * 1024 * 1024);
-    assertThat(contentB.length).isEqualTo(4 * 1024 * 1024);
-    assertThat(contentCombined.length).isEqualTo(7 * 1024 * 1024);
+        val contentA = readFileBytes(outputA)
+        val contentB = readFileBytes(outputB)
+        val contentCombined = readFileBytes(outputCombined)
+        Truth.assertThat(contentA.size).isEqualTo(3 * 1024 * 1024)
+        Truth.assertThat(contentB.size).isEqualTo(4 * 1024 * 1024)
+        Truth.assertThat(contentCombined.size).isEqualTo(7 * 1024 * 1024)
 
-    // Clean and rebuild from cache.
-    outputA.delete();
-    outputB.delete();
-    outputCombined.delete();
-    cleanAndRestartServer();
+        // Clean and rebuild from cache.
+        outputA.delete()
+        outputB.delete()
+        outputCombined.delete()
+        cleanAndRestartServer()
 
-    buildTarget("//:combined");
+        buildTarget("//:combined")
 
-    assertThat(readFileBytes(outputA)).isEqualTo(contentA);
-    assertThat(readFileBytes(outputB)).isEqualTo(contentB);
-    assertThat(readFileBytes(outputCombined)).isEqualTo(contentCombined);
-  }
+        Truth.assertThat(readFileBytes(outputA)).isEqualTo(contentA)
+        Truth.assertThat(readFileBytes(outputB)).isEqualTo(contentB)
+        Truth.assertThat(readFileBytes(outputCombined)).isEqualTo(contentCombined)
+    }
 
-  @Test
-  public void buildWithChunking_smallFile_succeeds() throws Exception {
-    write(
-        "BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun buildWithChunking_smallFile_succeeds() {
+        write(
+            "BUILD",
+            """
         genrule(
             name = "small_file",
             srcs = [],
             outs = ["small.txt"],
-            cmd = "echo 'hello world' > $@",
+            cmd = "echo 'hello world' > ${'$'}@",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    buildTarget("//:small_file");
+        buildTarget("//:small_file")
 
-    Path output = getOutputPath("small.txt");
-    assertThat(output.exists()).isTrue();
-    assertThat(readContent(output, UTF_8)).isEqualTo("hello world\n");
-  }
+        val output: Path = getOutputPath("small.txt")
+        assertThat(output.exists()).isTrue()
+        assertThat(readContent(output, java.nio.charset.StandardCharsets.UTF_8)).isEqualTo("hello world\n")
+    }
 
-  @Test
-  public void mixedSizes_largeAndSmallOutputs_allSucceed() throws Exception {
-    write(
-        "BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun mixedSizes_largeAndSmallOutputs_allSucceed() {
+        write(
+            "BUILD",
+            """
         genrule(
             name = "large",
             srcs = [],
             outs = ["large.bin"],
-            cmd = "dd if=/dev/zero bs=1M count=3 2>/dev/null | tr '\\\\0' 'X' > $@",
+            cmd = "dd if=/dev/zero bs=1M count=3 2>/dev/null | tr '\\0' 'X' > ${'$'}@",
         )
         genrule(
             name = "small",
             srcs = [],
             outs = ["small.txt"],
-            cmd = "echo 'small output' > $@",
+            cmd = "echo 'small output' > ${'$'}@",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    buildTarget("//:large", "//:small");
+        buildTarget("//:large", "//:small")
 
-    Path largePath = getOutputPath("large.bin");
-    Path smallPath = getOutputPath("small.txt");
-    byte[] largeContent = readFileBytes(largePath);
-    assertThat(largeContent.length).isEqualTo(3 * 1024 * 1024);
-    assertThat(readContent(smallPath, UTF_8)).isEqualTo("small output\n");
+        val largePath: Path = getOutputPath("large.bin")
+        val smallPath: Path = getOutputPath("small.txt")
+        val largeContent = readFileBytes(largePath)
+        Truth.assertThat(largeContent.size).isEqualTo(3 * 1024 * 1024)
+        assertThat(readContent(smallPath, java.nio.charset.StandardCharsets.UTF_8)).isEqualTo("small output\n")
 
-    // Clean and rebuild.
-    largePath.delete();
-    smallPath.delete();
-    cleanAndRestartServer();
+        // Clean and rebuild.
+        largePath.delete()
+        smallPath.delete()
+        cleanAndRestartServer()
 
-    buildTarget("//:large", "//:small");
+        buildTarget("//:large", "//:small")
 
-    assertThat(readFileBytes(largePath)).isEqualTo(largeContent);
-    assertThat(readContent(smallPath, UTF_8)).isEqualTo("small output\n");
-  }
+        Truth.assertThat(readFileBytes(largePath)).isEqualTo(largeContent)
+        assertThat(readContent(smallPath, java.nio.charset.StandardCharsets.UTF_8)).isEqualTo("small output\n")
+    }
+
+    companion object {
+        @ClassRule
+        @org.junit.Rule
+        val worker: WorkerInstance = createWorker()
+    }
 }

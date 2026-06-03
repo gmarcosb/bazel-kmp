@@ -11,92 +11,90 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.util
 
-package com.google.devtools.build.lib.util;
+import com.google.devtools.common.options.testing.ConverterTesterMap.Builder.add
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+@RunWith(JUnit4::class)
+class DecimalBucketerTest {
+    @org.junit.Test
+    fun testEmpty() {
+        val bucketer: DecimalBucketer = DecimalBucketer()
+        assertThat(bucketer.getBuckets()).isEmpty()
+    }
 
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @org.junit.Test
+    fun testSingleValue() {
+        val bucketer: DecimalBucketer = DecimalBucketer()
+        bucketer.add(5)
+        assertThat(bucketer.getBuckets()).containsExactly(Bucket(5, 6, 1))
+    }
 
-@RunWith(JUnit4.class)
-public final class DecimalBucketerTest {
+    @org.junit.Test
+    fun testZero() {
+        val bucketer: DecimalBucketer = DecimalBucketer()
+        bucketer.add(0)
+        assertThat(bucketer.getBuckets()).containsExactly(Bucket(0, 1, 1))
+    }
 
-  @Test
-  public void testEmpty() {
-    DecimalBucketer bucketer = new DecimalBucketer();
-    assertThat(bucketer.getBuckets()).isEmpty();
-  }
+    @org.junit.Test
+    fun testMultipleValuesSameBucket() {
+        val bucketer: DecimalBucketer = DecimalBucketer()
+        bucketer.add(10)
+        bucketer.add(15)
+        bucketer.add(19)
+        assertThat(bucketer.getBuckets()).containsExactly(Bucket(10, 20, 3))
+    }
 
-  @Test
-  public void testSingleValue() {
-    DecimalBucketer bucketer = new DecimalBucketer();
-    bucketer.add(5);
-    assertThat(bucketer.getBuckets()).containsExactly(new Bucket(5, 6, 1));
-  }
+    @org.junit.Test
+    fun testMultipleBuckets() {
+        val bucketer: DecimalBucketer = DecimalBucketer()
+        bucketer.add(5)
+        bucketer.add(12)
+        bucketer.add(15)
+        bucketer.add(25)
+        bucketer.add(99)
+        bucketer.add(100)
 
-  @Test
-  public void testZero() {
-    DecimalBucketer bucketer = new DecimalBucketer();
-    bucketer.add(0);
-    assertThat(bucketer.getBuckets()).containsExactly(new Bucket(0, 1, 1));
-  }
+        assertThat(bucketer.getBuckets())
+            .containsExactly(
+                Bucket(5, 6, 1),
+                Bucket(10, 20, 2),
+                Bucket(20, 30, 1),
+                Bucket(90, 100, 1),
+                Bucket(100, 200, 1)
+            )
+            .inOrder()
+    }
 
-  @Test
-  public void testMultipleValuesSameBucket() {
-    DecimalBucketer bucketer = new DecimalBucketer();
-    bucketer.add(10);
-    bucketer.add(15);
-    bucketer.add(19);
-    assertThat(bucketer.getBuckets()).containsExactly(new Bucket(10, 20, 3));
-  }
+    @org.junit.Test
+    fun bucketsWithGap() {
+        val bucketer: DecimalBucketer = DecimalBucketer()
+        bucketer.add(5)
+        bucketer.add(61234)
+        bucketer.add(69999)
 
-  @Test
-  public void testMultipleBuckets() {
-    DecimalBucketer bucketer = new DecimalBucketer();
-    bucketer.add(5);
-    bucketer.add(12);
-    bucketer.add(15);
-    bucketer.add(25);
-    bucketer.add(99);
-    bucketer.add(100);
+        assertThat(bucketer.getBuckets())
+            .containsExactly(Bucket(5, 6, 1), Bucket(60000, 70000, 2))
+            .inOrder()
+    }
 
-    assertThat(bucketer.getBuckets())
-        .containsExactly(
-            new Bucket(5, 6, 1),
-            new Bucket(10, 20, 2),
-            new Bucket(20, 30, 1),
-            new Bucket(90, 100, 1),
-            new Bucket(100, 200, 1))
-        .inOrder();
-  }
+    @org.junit.Test
+    fun testNegativeValue() {
+        val bucketer: DecimalBucketer = DecimalBucketer()
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable { bucketer.add(-1) })
+    }
 
-  @Test
-  public void bucketsWithGap() {
-    DecimalBucketer bucketer = new DecimalBucketer();
-    bucketer.add(5);
-    bucketer.add(61234);
-    bucketer.add(69999);
+    @org.junit.Test
+    fun testLargeValues() {
+        val bucketer: DecimalBucketer = DecimalBucketer()
+        val `val` = 9000000000000000000L // 9 * 10^18
+        bucketer.add(`val`)
 
-    assertThat(bucketer.getBuckets())
-        .containsExactly(new Bucket(5, 6, 1), new Bucket(60000, 70000, 2))
-        .inOrder();
-  }
-
-  @Test
-  public void testNegativeValue() {
-    DecimalBucketer bucketer = new DecimalBucketer();
-    assertThrows(IllegalArgumentException.class, () -> bucketer.add(-1));
-  }
-
-  @Test
-  public void testLargeValues() {
-    DecimalBucketer bucketer = new DecimalBucketer();
-    long val = 9000000000000000000L; // 9 * 10^18
-    bucketer.add(val);
-
-    assertThat(bucketer.getBuckets()).containsExactly(new Bucket(val, Long.MAX_VALUE, 1));
-  }
+        assertThat(bucketer.getBuckets()).containsExactly(Bucket(`val`, Long.Companion.MAX_VALUE, 1))
+    }
 }

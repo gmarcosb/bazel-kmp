@@ -11,23 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import com.google.devtools.build.skyframe.Version.ConstantVersion;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import org.junit.runner.RunWith;
+import com.google.devtools.build.skyframe.Version.ConstantVersion
 
-/** Tests for {@link NonIncrementalInMemoryNodeEntry}. */
-@RunWith(TestParameterInjector.class)
-public class NonIncrementalInMemoryNodeEntryTest extends InMemoryNodeEntryTest<ConstantVersion> {
+/** Tests for [NonIncrementalInMemoryNodeEntry].  */
+@RunWith(TestParameterInjector::class)
+class NonIncrementalInMemoryNodeEntryTest : InMemoryNodeEntryTest<ConstantVersion?>() {
+    override fun createEntry(key: SkyKey?): NonIncrementalInMemoryNodeEntry? {
+        return NonIncrementalInMemoryNodeEntry(key)
+    }
 
-  @Override
-  protected NonIncrementalInMemoryNodeEntry createEntry(SkyKey key) {
-    return new NonIncrementalInMemoryNodeEntry(key);
-  }
-
-  @Override
-  final ConstantVersion getInitialVersion() {
-    return Version.constant();
-  }
+    val initialVersion: ConstantVersion
+        get() = Version.constant()
 }

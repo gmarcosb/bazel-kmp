@@ -11,118 +11,131 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.common.options;
+package com.google.devtools.common.options
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
-import com.google.common.jimfs.Jimfs;
-import com.google.devtools.common.options.OptionsParser.ArgAndFallbackData;
-import java.io.IOException;
-import java.nio.file.FileSystem;
-import java.nio.file.Path;
-import java.util.List;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.common.jimfs.Jimfs
+import com.google.common.truth.Truth
+import com.google.devtools.common.options.OptionsParser.ArgAndFallbackData
+import com.google.devtools.common.options.OptionsParsingException
+import com.google.devtools.common.options.ParamsFilePreProcessor
+import org.junit.Before
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.io.IOException
+import java.nio.file.Path
 
 /**
- * Tests {@link ParamsFilePreProcessor}.
+ * Tests [ParamsFilePreProcessor].
  */
-@RunWith(JUnit4.class)
-public class ParamsFilePreProcessorTest {
-  private static final ImmutableList<String> PARAM_FILE_ARGS =
-      ImmutableList.of("params", "file", "args");
-
-  private static class MockParamsFilePreProcessor extends ParamsFilePreProcessor {
-
-    MockParamsFilePreProcessor(FileSystem fs) {
-      super(fs);
+@RunWith(JUnit4::class)
+class ParamsFilePreProcessorTest {
+    private class MockParamsFilePreProcessor(fs: java.nio.file.FileSystem?) : ParamsFilePreProcessor(fs) {
+        @Throws(IOException::class, OptionsParsingException::class)
+        override fun parse(paramsFile: Path?): MutableList<String?> {
+            return PARAM_FILE_ARGS
+        }
     }
 
-    @Override
-    protected List<String> parse(Path paramsFile) throws IOException, OptionsParsingException {
-      return PARAM_FILE_ARGS;
+    private var fileSystem: java.nio.file.FileSystem? = null
+    private var paramsFilePreProcessor: ParamsFilePreProcessor? = null
+
+    @Before
+    fun setup() {
+        fileSystem = Jimfs.newFileSystem()
+        paramsFilePreProcessor = MockParamsFilePreProcessor(fileSystem)
     }
-  }
 
-  private FileSystem fileSystem;
-  private ParamsFilePreProcessor paramsFilePreProcessor;
+    @org.junit.Test
+    @Throws(OptionsParsingException::class)
+    fun testNoArgs() {
+        val args = preProcess(paramsFilePreProcessor, com.google.common.collect.ImmutableList.of<String?>())
+        Truth.assertThat(args).isEmpty()
+    }
 
-  @Before
-  public void setup() {
-    fileSystem = Jimfs.newFileSystem();
-    paramsFilePreProcessor = new MockParamsFilePreProcessor(fileSystem);
-  }
+    @org.junit.Test
+    @Throws(OptionsParsingException::class)
+    fun testNoParamsFile() {
+        val rawArgs: MutableList<String?> = com.google.common.collect.ImmutableList.of<String?>("--foo", "foo val")
+        val args = preProcess(paramsFilePreProcessor, rawArgs)
+        Truth.assertThat(args).containsExactlyElementsIn(rawArgs).inOrder()
+    }
 
-  @Test
-  public void testNoArgs() throws OptionsParsingException {
-    List<String> args = preProcess(paramsFilePreProcessor, ImmutableList.of());
-    assertThat(args).isEmpty();
-  }
+    @org.junit.Test
+    @Throws(OptionsParsingException::class)
+    fun testParamsFileNotFirst() {
+        val rawArgs: MutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>("--foo", "foo val", "@paramsFile")
+        val args = preProcess(paramsFilePreProcessor, rawArgs)
+        Truth.assertThat(args).containsExactlyElementsIn(rawArgs).inOrder()
+    }
 
-  @Test
-  public void testNoParamsFile() throws OptionsParsingException {
-    List<String> rawArgs = ImmutableList.of("--foo", "foo val");
-    List<String> args = preProcess(paramsFilePreProcessor, rawArgs);
-    assertThat(args).containsExactlyElementsIn(rawArgs).inOrder();
-  }
+    @org.junit.Test
+    @Throws(OptionsParsingException::class)
+    fun testTooManyArgs() {
+        val rawArgs: MutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>("@paramsFile", "--foo", "foo val")
+        val expected: OptionsParsingException? =
+            org.junit.Assert.assertThrows<OptionsParsingException?>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable { preProcess(paramsFilePreProcessor, rawArgs) })
+        Truth.assertThat(expected)
+            .hasMessageThat()
+            .isEqualTo(
+                String.format(ParamsFilePreProcessor.TOO_MANY_ARGS_ERROR_MESSAGE_FORMAT, rawArgs)
+            )
+    }
 
-  @Test
-  public void testParamsFileNotFirst() throws OptionsParsingException {
-    List<String> rawArgs = ImmutableList.of("--foo", "foo val", "@paramsFile");
-    List<String> args = preProcess(paramsFilePreProcessor, rawArgs);
-    assertThat(args).containsExactlyElementsIn(rawArgs).inOrder();
-  }
+    @org.junit.Test
+    @Throws(OptionsParsingException::class)
+    fun testExceptionDuringParsing() {
+        val exceptionParser: ParamsFilePreProcessor = object : ParamsFilePreProcessor(fileSystem) {
+            @Throws(IOException::class, OptionsParsingException::class)
+            override fun parse(paramsFile: Path?): MutableList<String?>? {
+                throw IOException("Error parsing " + paramsFile)
+            }
+        }
+        val paramsFileName = "paramsFile"
+        val paramsFile: Path? = fileSystem.getPath(paramsFileName)
+        val expected: OptionsParsingException? =
+            org.junit.Assert.assertThrows<OptionsParsingException?>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    preProcess(
+                        exceptionParser,
+                        com.google.common.collect.ImmutableList.of<String?>("@" + paramsFileName)
+                    )
+                })
+        Truth.assertThat(expected)
+            .hasMessageThat()
+            .isEqualTo(
+                String.format(
+                    ParamsFilePreProcessor.ERROR_MESSAGE_FORMAT,
+                    paramsFile,
+                    "Error parsing " + paramsFileName
+                )
+            )
+    }
 
-  @Test
-  public void testTooManyArgs() throws OptionsParsingException {
-    List<String> rawArgs = ImmutableList.of("@paramsFile", "--foo", "foo val");
-    OptionsParsingException expected =
-        assertThrows(
-            OptionsParsingException.class, () -> preProcess(paramsFilePreProcessor, rawArgs));
-    assertThat(expected)
-        .hasMessageThat()
-        .isEqualTo(
-            String.format(ParamsFilePreProcessor.TOO_MANY_ARGS_ERROR_MESSAGE_FORMAT, rawArgs));
-  }
+    @org.junit.Test
+    @Throws(OptionsParsingException::class)
+    fun testParamsFile() {
+        val args =
+            preProcess(paramsFilePreProcessor, com.google.common.collect.ImmutableList.of<String?>("@paramsFile"))
+        Truth.assertThat(args).containsExactlyElementsIn(PARAM_FILE_ARGS).inOrder()
+    }
 
-  @Test
-  public void testExceptionDuringParsing() throws OptionsParsingException {
-    ParamsFilePreProcessor exceptionParser = new ParamsFilePreProcessor(fileSystem) {
-      @Override
-      protected List<String> parse(Path paramsFile) throws IOException, OptionsParsingException {
-        throw new IOException("Error parsing " + paramsFile);
-      }
-    };
-    String paramsFileName = "paramsFile";
-    Path paramsFile = fileSystem.getPath(paramsFileName);
-    OptionsParsingException expected =
-        assertThrows(
-            OptionsParsingException.class,
-            () -> preProcess(exceptionParser, ImmutableList.of("@" + paramsFileName)));
-    assertThat(expected)
-        .hasMessageThat()
-        .isEqualTo(
-            String.format(
-                ParamsFilePreProcessor.ERROR_MESSAGE_FORMAT,
-                paramsFile,
-                "Error parsing " + paramsFileName));
-  }
+    companion object {
+        private val PARAM_FILE_ARGS: com.google.common.collect.ImmutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>("params", "file", "args")
 
-  @Test
-  public void testParamsFile() throws OptionsParsingException {
-    List<String> args = preProcess(paramsFilePreProcessor, ImmutableList.of("@paramsFile"));
-    assertThat(args).containsExactlyElementsIn(PARAM_FILE_ARGS).inOrder();
-  }
-
-  private static List<String> preProcess(ParamsFilePreProcessor preProcessor, List<String> args)
-      throws OptionsParsingException {
-    return Lists.transform(
-        preProcessor.preProcess(ArgAndFallbackData.wrapWithFallbackData(args, null)),
-        argAndFallbackData -> argAndFallbackData.arg);
-  }
+        @Throws(OptionsParsingException::class)
+        private fun preProcess(
+            preProcessor: ParamsFilePreProcessor,
+            args: MutableList<String?>?
+        ): MutableList<String?> {
+            return com.google.common.collect.Lists.transform<ArgAndFallbackData?, String?>(
+                preProcessor.preProcess(ArgAndFallbackData.wrapWithFallbackData(args, null)),
+                com.google.common.base.Function { argAndFallbackData: ArgAndFallbackData? -> argAndFallbackData.arg })
+        }
+    }
 }

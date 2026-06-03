@@ -11,281 +11,328 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import com.google.devtools.build.lib.actions.Artifact.DerivedArtifact
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMultimap;
-import com.google.common.eventbus.EventBus;
-import com.google.devtools.build.lib.actions.Artifact.DerivedArtifact;
-import com.google.devtools.build.lib.actions.ArtifactRoot;
-import com.google.devtools.build.lib.actions.ArtifactRoot.RootType;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.analysis.test.TestProvider;
-import com.google.devtools.build.lib.analysis.test.TestProvider.TestParams;
-import com.google.devtools.build.lib.analysis.test.TestResult;
-import com.google.devtools.build.lib.analysis.test.TestRunnerAction;
-import com.google.devtools.build.lib.packages.TestTimeout;
-import com.google.devtools.build.lib.runtime.TestResultAggregator.AggregationPolicy;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import com.google.devtools.build.lib.view.test.TestStatus.BlazeTestStatus;
-import com.google.devtools.build.lib.view.test.TestStatus.TestResultData;
-import java.io.IOException;
-import java.util.stream.IntStream;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [TestResultAggregator].  */
+@RunWith(JUnit4::class)
+class TestResultAggregatorTest {
+    private val mockParams: TestParams = Mockito.mock<TestParams>(TestParams::class.java)
 
-/** Tests for {@link TestResultAggregator}. */
-@RunWith(JUnit4.class)
-public final class TestResultAggregatorTest {
+    @Before
+    fun configureMockParams() {
+        Mockito.`when`<T?>(mockParams.runsDetectsFlakes()).thenReturn(false)
+        Mockito.`when`<T?>(mockParams.getTimeout()).thenReturn(TestTimeout.LONG)
+        Mockito.`when`<T?>(mockParams.getShards()).thenReturn(1)
+    }
 
-  private final TestParams mockParams = mock(TestParams.class);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun nonCachedResult_setsActionRanTrue() {
+        val underTest: TestResultAggregator = createAggregatorWithTestRuns(1)
 
-  @Before
-  public void configureMockParams() {
-    when(mockParams.runsDetectsFlakes()).thenReturn(false);
-    when(mockParams.getTimeout()).thenReturn(TestTimeout.LONG);
-    when(mockParams.getShards()).thenReturn(1);
-  }
+        underTest.testEvent(
+            testResult(TestResultData.newBuilder().setRemotelyCached(false),  /*locallyCached=*/false)
+        )
 
-  @Test
-  public void nonCachedResult_setsActionRanTrue() throws Exception {
-    TestResultAggregator underTest = createAggregatorWithTestRuns(1);
+        assertThat(underTest.aggregateAndReportSummary(false).actionRan()).isTrue()
+    }
 
-    underTest.testEvent(
-        testResult(TestResultData.newBuilder().setRemotelyCached(false), /*locallyCached=*/ false));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun locallyCachedTest_setsActionRanFalse() {
+        val underTest: TestResultAggregator = createAggregatorWithTestRuns(1)
 
-    assertThat(underTest.aggregateAndReportSummary(false).actionRan()).isTrue();
-  }
+        underTest.testEvent(
+            testResult(TestResultData.newBuilder().setRemotelyCached(false),  /*locallyCached=*/true)
+        )
 
-  @Test
-  public void locallyCachedTest_setsActionRanFalse() throws Exception {
-    TestResultAggregator underTest = createAggregatorWithTestRuns(1);
+        assertThat(underTest.aggregateAndReportSummary(false).actionRan()).isFalse()
+    }
 
-    underTest.testEvent(
-        testResult(TestResultData.newBuilder().setRemotelyCached(false), /*locallyCached=*/ true));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun remotelyCachedTest_setsActionRanFalse() {
+        val underTest: TestResultAggregator = createAggregatorWithTestRuns(1)
 
-    assertThat(underTest.aggregateAndReportSummary(false).actionRan()).isFalse();
-  }
+        underTest.testEvent(
+            testResult(TestResultData.newBuilder().setRemotelyCached(true),  /*locallyCached=*/false)
+        )
 
-  @Test
-  public void remotelyCachedTest_setsActionRanFalse() throws Exception {
-    TestResultAggregator underTest = createAggregatorWithTestRuns(1);
+        assertThat(underTest.aggregateAndReportSummary(false).actionRan()).isFalse()
+    }
 
-    underTest.testEvent(
-        testResult(TestResultData.newBuilder().setRemotelyCached(true), /*locallyCached=*/ false));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun newCachedResult_keepsActionRanTrueWhenAlreadyTrue() {
+        val underTest: TestResultAggregator = createAggregatorWithTestRuns(2)
 
-    assertThat(underTest.aggregateAndReportSummary(false).actionRan()).isFalse();
-  }
+        underTest.testEvent(
+            testResult(TestResultData.newBuilder().setRemotelyCached(false),  /*locallyCached=*/false)
+        )
+        underTest.testEvent(
+            testResult(TestResultData.newBuilder().setRemotelyCached(true),  /*locallyCached=*/true)
+        )
 
-  @Test
-  public void newCachedResult_keepsActionRanTrueWhenAlreadyTrue() throws Exception {
-    TestResultAggregator underTest = createAggregatorWithTestRuns(2);
+        assertThat(underTest.aggregateAndReportSummary(false).actionRan()).isTrue()
+    }
 
-    underTest.testEvent(
-        testResult(TestResultData.newBuilder().setRemotelyCached(false), /*locallyCached=*/ false));
-    underTest.testEvent(
-        testResult(TestResultData.newBuilder().setRemotelyCached(true), /*locallyCached=*/ true));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun timingAggregation() {
+        val underTest: TestResultAggregator = createAggregatorWithTestRuns(2)
 
-    assertThat(underTest.aggregateAndReportSummary(false).actionRan()).isTrue();
-  }
+        underTest.testEvent(
+            testResult(
+                TestResultData.newBuilder().setStartTimeMillisEpoch(7).setRunDurationMillis(10),  /*locallyCached=*/
+                true
+            )
+        )
+        underTest.testEvent(
+            testResult(
+                TestResultData.newBuilder().setStartTimeMillisEpoch(12).setRunDurationMillis(1),  /*locallyCached=*/
+                true
+            )
+        )
 
-  @Test
-  public void timingAggregation() throws Exception {
-    TestResultAggregator underTest = createAggregatorWithTestRuns(2);
+        val summary: TestSummary = underTest.aggregateAndReportSummary(false)
+        assertThat(summary.getFirstStartTimeMillis()).isEqualTo(7)
+        assertThat(summary.getLastStopTimeMillis()).isEqualTo(17)
+        assertThat(summary.getTotalRunDurationMillis()).isEqualTo(11)
+    }
 
-    underTest.testEvent(
-        testResult(
-            TestResultData.newBuilder().setStartTimeMillisEpoch(7).setRunDurationMillis(10),
-            /*locallyCached=*/ true));
-    underTest.testEvent(
-        testResult(
-            TestResultData.newBuilder().setStartTimeMillisEpoch(12).setRunDurationMillis(1),
-            /*locallyCached=*/ true));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun attemptCount_aggregatesSingleShardSingleAttempt() {
+        Mockito.`when`<T?>(mockParams.runsDetectsFlakes()).thenReturn(true)
+        val underTest: TestResultAggregator = createAggregatorWithTestRuns(1)
 
-    TestSummary summary = underTest.aggregateAndReportSummary(false);
-    assertThat(summary.getFirstStartTimeMillis()).isEqualTo(7);
-    assertThat(summary.getLastStopTimeMillis()).isEqualTo(17);
-    assertThat(summary.getTotalRunDurationMillis()).isEqualTo(11);
-  }
+        underTest.testEvent(
+            shardedTestResult(
+                TestResultData.newBuilder()
+                    .addAllTestTimes(com.google.common.collect.ImmutableList.of<E?>(1L, 2L)),  /*shardNum=*/
+                0
+            )
+        )
 
-  @Test
-  public void attemptCount_aggregatesSingleShardSingleAttempt() throws Exception {
-    when(mockParams.runsDetectsFlakes()).thenReturn(true);
-    TestResultAggregator underTest = createAggregatorWithTestRuns(1);
+        assertThat(underTest.aggregateAndReportSummary(false).getNumAttempts()).isEqualTo(2)
+    }
 
-    underTest.testEvent(
-        shardedTestResult(
-            TestResultData.newBuilder().addAllTestTimes(ImmutableList.of(1L, 2L)),
-            /*shardNum=*/ 0));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun attemptCount_aggregatesSingleShardMultipleAttempts() {
+        Mockito.`when`<T?>(mockParams.runsDetectsFlakes()).thenReturn(true)
+        val underTest: TestResultAggregator = createAggregatorWithTestRuns(2)
 
-    assertThat(underTest.aggregateAndReportSummary(false).getNumAttempts()).isEqualTo(2);
-  }
+        underTest.testEvent(
+            shardedTestResult(
+                TestResultData.newBuilder()
+                    .addAllTestTimes(com.google.common.collect.ImmutableList.of<E?>(1L, 2L)),  /*shardNum=*/
+                0
+            )
+        )
+        underTest.testEvent(
+            shardedTestResult(
+                TestResultData.newBuilder()
+                    .addAllTestTimes(com.google.common.collect.ImmutableList.of<E?>(3L, 4L)),  /*shardNum=*/
+                0
+            )
+        )
 
-  @Test
-  public void attemptCount_aggregatesSingleShardMultipleAttempts() throws Exception {
-    when(mockParams.runsDetectsFlakes()).thenReturn(true);
-    TestResultAggregator underTest = createAggregatorWithTestRuns(2);
+        assertThat(underTest.aggregateAndReportSummary(false).getNumAttempts()).isEqualTo(4)
+    }
 
-    underTest.testEvent(
-        shardedTestResult(
-            TestResultData.newBuilder().addAllTestTimes(ImmutableList.of(1L, 2L)),
-            /*shardNum=*/ 0));
-    underTest.testEvent(
-        shardedTestResult(
-            TestResultData.newBuilder().addAllTestTimes(ImmutableList.of(3L, 4L)),
-            /*shardNum=*/ 0));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun attemptCount_aggregatesMultipleShardsMultipleAttempts() {
+        Mockito.`when`<T?>(mockParams.runsDetectsFlakes()).thenReturn(true)
+        Mockito.`when`<T?>(mockParams.getShards()).thenReturn(2)
+        val underTest: TestResultAggregator = createAggregatorWithTestRuns(3)
 
-    assertThat(underTest.aggregateAndReportSummary(false).getNumAttempts()).isEqualTo(4);
-  }
+        underTest.testEvent(
+            shardedTestResult(
+                TestResultData.newBuilder()
+                    .addAllTestTimes(com.google.common.collect.ImmutableList.of<E?>(1L, 2L, 3L)),  /*shardNum=*/
+                0
+            )
+        )
+        underTest.testEvent(
+            shardedTestResult(
+                TestResultData.newBuilder()
+                    .addAllTestTimes(com.google.common.collect.ImmutableList.of<E?>(3L, 4L)),  /*shardNum=*/
+                1
+            )
+        )
+        underTest.testEvent(
+            shardedTestResult(
+                TestResultData.newBuilder()
+                    .addAllTestTimes(com.google.common.collect.ImmutableList.of<E?>(3L, 4L)),  /*shardNum=*/
+                1
+            )
+        )
 
-  @Test
-  public void attemptCount_aggregatesMultipleShardsMultipleAttempts() throws Exception {
-    when(mockParams.runsDetectsFlakes()).thenReturn(true);
-    when(mockParams.getShards()).thenReturn(2);
-    TestResultAggregator underTest = createAggregatorWithTestRuns(3);
+        assertThat(underTest.aggregateAndReportSummary(false).getNumAttempts()).isEqualTo(4)
+    }
 
-    underTest.testEvent(
-        shardedTestResult(
-            TestResultData.newBuilder().addAllTestTimes(ImmutableList.of(1L, 2L, 3L)),
-            /*shardNum=*/ 0));
-    underTest.testEvent(
-        shardedTestResult(
-            TestResultData.newBuilder().addAllTestTimes(ImmutableList.of(3L, 4L)),
-            /*shardNum=*/ 1));
-    underTest.testEvent(
-        shardedTestResult(
-            TestResultData.newBuilder().addAllTestTimes(ImmutableList.of(3L, 4L)),
-            /*shardNum=*/ 1));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun attemptCount_aggregatesMultipleShardsSingleShardHasMostAttempts() {
+        Mockito.`when`<T?>(mockParams.runsDetectsFlakes()).thenReturn(true)
+        Mockito.`when`<T?>(mockParams.getShards()).thenReturn(2)
+        val underTest: TestResultAggregator = createAggregatorWithTestRuns(3)
 
-    assertThat(underTest.aggregateAndReportSummary(false).getNumAttempts()).isEqualTo(4);
-  }
+        underTest.testEvent(
+            shardedTestResult(
+                TestResultData.newBuilder()
+                    .addAllTestTimes(com.google.common.collect.ImmutableList.of<E?>(1L, 2L, 3L, 4L, 5L)),  /*shardNum=*/
+                0
+            )
+        )
+        underTest.testEvent(
+            shardedTestResult(
+                TestResultData.newBuilder()
+                    .addAllTestTimes(com.google.common.collect.ImmutableList.of<E?>(3L, 4L)),  /*shardNum=*/
+                1
+            )
+        )
+        underTest.testEvent(
+            shardedTestResult(
+                TestResultData.newBuilder()
+                    .addAllTestTimes(com.google.common.collect.ImmutableList.of<E?>(3L, 4L)),  /*shardNum=*/
+                1
+            )
+        )
 
-  @Test
-  public void attemptCount_aggregatesMultipleShardsSingleShardHasMostAttempts() throws Exception {
-    when(mockParams.runsDetectsFlakes()).thenReturn(true);
-    when(mockParams.getShards()).thenReturn(2);
-    TestResultAggregator underTest = createAggregatorWithTestRuns(3);
+        assertThat(underTest.aggregateAndReportSummary(false).getNumAttempts()).isEqualTo(5)
+    }
 
-    underTest.testEvent(
-        shardedTestResult(
-            TestResultData.newBuilder().addAllTestTimes(ImmutableList.of(1L, 2L, 3L, 4L, 5L)),
-            /*shardNum=*/ 0));
-    underTest.testEvent(
-        shardedTestResult(
-            TestResultData.newBuilder().addAllTestTimes(ImmutableList.of(3L, 4L)),
-            /*shardNum=*/ 1));
-    underTest.testEvent(
-        shardedTestResult(
-            TestResultData.newBuilder().addAllTestTimes(ImmutableList.of(3L, 4L)),
-            /*shardNum=*/ 1));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun cancelConcurrentTests_cancellationAfterPassIgnored() {
+        Mockito.`when`<T?>(mockParams.runsDetectsFlakes()).thenReturn(true)
+        val underTest: TestResultAggregator = createAggregatorWithTestRuns(2)
 
-    assertThat(underTest.aggregateAndReportSummary(false).getNumAttempts()).isEqualTo(5);
-  }
+        underTest.testEvent(
+            testResult(
+                TestResultData.newBuilder().setStatus(BlazeTestStatus.PASSED),  /* locallyCached= */
+                true
+            )
+        )
+        underTest.testEvent(
+            testResult(
+                TestResultData.newBuilder().setStatus(BlazeTestStatus.INCOMPLETE),  /*locallyCached=*/
+                true
+            )
+        )
 
-  @Test
-  public void cancelConcurrentTests_cancellationAfterPassIgnored() throws Exception {
-    when(mockParams.runsDetectsFlakes()).thenReturn(true);
-    TestResultAggregator underTest = createAggregatorWithTestRuns(2);
+        assertThat(underTest.aggregateAndReportSummary(false).getStatus())
+            .isEqualTo(BlazeTestStatus.PASSED)
+    }
 
-    underTest.testEvent(
-        testResult(
-            TestResultData.newBuilder().setStatus(BlazeTestStatus.PASSED),
-            /* locallyCached= */ true));
-    underTest.testEvent(
-        testResult(
-            TestResultData.newBuilder().setStatus(BlazeTestStatus.INCOMPLETE),
-            /*locallyCached=*/ true));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun notAllTestRunsReported_skipTargetsOnFailure_noStatus() {
+        val underTest: TestResultAggregator = createAggregatorWithTestRuns(2)
 
-    assertThat(underTest.aggregateAndReportSummary(false).getStatus())
-        .isEqualTo(BlazeTestStatus.PASSED);
-  }
+        underTest.testEvent(
+            testResult(
+                TestResultData.newBuilder().setStatus(BlazeTestStatus.PASSED),  /*locallyCached=*/
+                false
+            )
+        )
 
-  @Test
-  public void notAllTestRunsReported_skipTargetsOnFailure_noStatus() throws Exception {
-    TestResultAggregator underTest = createAggregatorWithTestRuns(2);
+        assertThat(underTest.aggregateAndReportSummary( /*skipTargetsOnFailure=*/true).getStatus())
+            .isEqualTo(BlazeTestStatus.NO_STATUS)
+    }
 
-    underTest.testEvent(
-        testResult(
-            TestResultData.newBuilder().setStatus(BlazeTestStatus.PASSED),
-            /*locallyCached=*/ false));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun notAllTestRunsReported_noSkipTargetsOnFailure_incomplete() {
+        val underTest: TestResultAggregator = createAggregatorWithTestRuns(2)
 
-    assertThat(underTest.aggregateAndReportSummary(/*skipTargetsOnFailure=*/ true).getStatus())
-        .isEqualTo(BlazeTestStatus.NO_STATUS);
-  }
+        underTest.testEvent(
+            testResult(
+                TestResultData.newBuilder().setStatus(BlazeTestStatus.PASSED),  /*locallyCached=*/
+                false
+            )
+        )
 
-  @Test
-  public void notAllTestRunsReported_noSkipTargetsOnFailure_incomplete() throws Exception {
-    TestResultAggregator underTest = createAggregatorWithTestRuns(2);
+        assertThat(underTest.aggregateAndReportSummary( /*skipTargetsOnFailure=*/false).getStatus())
+            .isEqualTo(BlazeTestStatus.INCOMPLETE)
+    }
 
-    underTest.testEvent(
-        testResult(
-            TestResultData.newBuilder().setStatus(BlazeTestStatus.PASSED),
-            /*locallyCached=*/ false));
+    private fun createAggregatorWithTestRuns(testRuns: Int): TestResultAggregator {
+        val root: ArtifactRoot? =
+            ArtifactRoot.asDerivedRoot(
+                InMemoryFileSystem(DigestHashFunction.SHA256).getPath("/output_base"),
+                RootType.OUTPUT,
+                "execroot"
+            )
+        Mockito.`when`<T?>(mockParams.getTestStatusArtifacts())
+            .thenReturn(
+                IntStream.range(0, testRuns)
+                    .mapToObj<Any?>(
+                        java.util.function.IntFunction { i: Int ->
+                            ActionsTestUtil.createArtifact(
+                                root,
+                                "status." + i
+                            ) as DerivedArtifact?
+                        })
+                    .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
+            )
+        Mockito.`when`<T?>(mockParams.getRuns()).thenReturn(testRuns)
 
-    assertThat(underTest.aggregateAndReportSummary(/*skipTargetsOnFailure=*/ false).getStatus())
-        .isEqualTo(BlazeTestStatus.INCOMPLETE);
-  }
+        val mockTarget: ConfiguredTarget = Mockito.mock<ConfiguredTarget>(ConfiguredTarget::class.java)
+        Mockito.`when`<T?>(mockTarget.getProvider(TestProvider::class.java)).thenReturn(TestProvider(mockParams))
 
-  private TestResultAggregator createAggregatorWithTestRuns(int testRuns) {
-    ArtifactRoot root =
-        ArtifactRoot.asDerivedRoot(
-            new InMemoryFileSystem(DigestHashFunction.SHA256).getPath("/output_base"),
-            RootType.OUTPUT,
-            "execroot");
-    when(mockParams.getTestStatusArtifacts())
-        .thenReturn(
-            IntStream.range(0, testRuns)
-                .mapToObj(
-                    i -> (DerivedArtifact) ActionsTestUtil.createArtifact(root, "status." + i))
-                .collect(toImmutableList()));
-    when(mockParams.getRuns()).thenReturn(testRuns);
+        return TestResultAggregator(
+            mockTarget,
+            < T > mock < T ? > (BuildConfigurationValue::class.java),
+        AggregationPolicy(
+            com.google.common.eventbus.EventBus(),  /* testCheckUpToDate= */
+            false,  /* testVerboseTimeoutWarnings= */
+            false
+        ),  /* skippedThisTest= */
+        false)
+    }
 
-    ConfiguredTarget mockTarget = mock(ConfiguredTarget.class);
-    when(mockTarget.getProvider(TestProvider.class)).thenReturn(new TestProvider(mockParams));
+    companion object {
+        @Throws(IOException::class)
+        private fun testResult(data: TestResultData.Builder, locallyCached: Boolean): TestResult {
+            val mockTestAction: TestRunnerAction = Mockito.mock<TestRunnerAction>(TestRunnerAction::class.java)
+            Mockito.`when`<T?>(
+                mockTestAction.getTestOutputsMapping(
+                    ArgumentMatchers.any<T?>(),
+                    ArgumentMatchers.any<T?>()
+                )
+            ).thenReturn(com.google.common.collect.ImmutableMultimap.of<K?, V?>())
+            return TestResult(
+                mockTestAction,
+                data.build(),
+                com.google.common.collect.ImmutableMultimap.of<K?, V?>(),
+                locallyCached,  /* systemFailure= */
+                null
+            )
+        }
 
-    return new TestResultAggregator(
-        mockTarget,
-        mock(BuildConfigurationValue.class),
-        new AggregationPolicy(
-            new EventBus(),
-            /* testCheckUpToDate= */ false,
-            /* testVerboseTimeoutWarnings= */ false),
-        /* skippedThisTest= */ false);
-  }
-
-  private static TestResult testResult(TestResultData.Builder data, boolean locallyCached)
-      throws IOException {
-    TestRunnerAction mockTestAction = mock(TestRunnerAction.class);
-    when(mockTestAction.getTestOutputsMapping(any(), any())).thenReturn(ImmutableMultimap.of());
-    return new TestResult(
-        mockTestAction,
-        data.build(),
-        ImmutableMultimap.of(),
-        locallyCached,
-        /* systemFailure= */ null);
-  }
-
-  private static TestResult shardedTestResult(TestResultData.Builder data, int shardNum)
-      throws IOException {
-    TestRunnerAction mockTestAction = mock(TestRunnerAction.class);
-    when(mockTestAction.getTestOutputsMapping(any(), any())).thenReturn(ImmutableMultimap.of());
-    when(mockTestAction.getShardNum()).thenReturn(shardNum);
-    return new TestResult(
-        mockTestAction,
-        data.build(),
-        ImmutableMultimap.of(),
-        /* cached= */ false,
-        /* systemFailure= */ null);
-  }
+        @Throws(IOException::class)
+        private fun shardedTestResult(data: TestResultData.Builder, shardNum: Int): TestResult {
+            val mockTestAction: TestRunnerAction = Mockito.mock<TestRunnerAction>(TestRunnerAction::class.java)
+            Mockito.`when`<T?>(
+                mockTestAction.getTestOutputsMapping(
+                    ArgumentMatchers.any<T?>(),
+                    ArgumentMatchers.any<T?>()
+                )
+            ).thenReturn(com.google.common.collect.ImmutableMultimap.of<K?, V?>())
+            Mockito.`when`<T?>(mockTestAction.getShardNum()).thenReturn(shardNum)
+            return TestResult(
+                mockTestAction,
+                data.build(),
+                com.google.common.collect.ImmutableMultimap.of<K?, V?>(),  /* cached= */
+                false,  /* systemFailure= */
+                null
+            )
+        }
+    }
 }

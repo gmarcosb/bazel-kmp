@@ -11,27 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.common.options.processor.optiontestsources;
+package com.google.devtools.common.options.processor.optiontestsources
 
-import com.google.devtools.common.options.Converters.IntegerConverter;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
-import java.util.List;
+import OptionFilters.OptionEffectTag
+import com.google.devtools.common.options.OptionDocumentationCategory
+import com.google.devtools.common.options.OptionEffectTag
+import com.google.devtools.common.options.OptionsBase
+import com.google.devtools.common.options.OptionsClass
 
-/** This example options class should fail to compile. */
+/** This example options class should fail to compile.  */
 @OptionsClass
-public abstract class IncorrectConverterTypeForAllowMultipleOption extends OptionsBase {
-  @Option(
-      name = "bad_option",
-      defaultValue = "true",
-      converter = IntegerConverter.class,
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
-      allowMultiple = true)
-  public abstract List<String> getBadOption();
-
-  public abstract void setBadOption(List<String> value);
+abstract class IncorrectConverterTypeForAllowMultipleOption : OptionsBase() {
+    @get:com.google.devtools.common.options.Option(
+        name = "bad_option",
+        defaultValue = "true",
+        converter = com.google.devtools.common.options.Converters.IntegerConverter::class,
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = [OptionEffectTag.AFFECTS_OUTPUTS],
+        allowMultiple = true
+    )
+    abstract var badOption: MutableList<String?>?
 }

@@ -11,39 +11,30 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.vfs.bazel
 
-package com.google.devtools.build.lib.vfs.bazel;
+import com.google.devtools.build.lib.vfs.GitSha1HashFunction
 
-import static com.google.common.truth.Truth.assertThat;
+/** Tests for [GitSha1MessageDigest].  */
+@RunWith(JUnit4::class)
+class GitSha1HasherTest {
+    @org.junit.Test
+    fun emptyHash() {
+        val h: com.google.common.hash.Hasher = GitSha1HashFunction.INSTANCE.newHasher()
 
-import com.google.common.hash.Hasher;
-import com.google.devtools.build.lib.vfs.GitSha1HashFunction;
-import com.google.devtools.build.lib.vfs.GitSha1MessageDigest;
-import java.nio.charset.StandardCharsets;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+        val data = ByteArray(0)
+        h.putBytes(data)
 
-/** Tests for {@link GitSha1MessageDigest}. */
-@RunWith(JUnit4.class)
-public class GitSha1HasherTest {
-  @Test
-  public void emptyHash() {
-    Hasher h = GitSha1HashFunction.INSTANCE.newHasher();
+        Truth.assertThat(h.hash().toString()).isEqualTo("e69de29bb2d1d6434b8b29ae775ad8c2e48c5391")
+    }
 
-    byte[] data = new byte[0];
-    h.putBytes(data);
+    @org.junit.Test
+    fun helloWorld() {
+        val h: com.google.common.hash.Hasher = GitSha1HashFunction.INSTANCE.newHasher()
 
-    assertThat(h.hash().toString()).isEqualTo("e69de29bb2d1d6434b8b29ae775ad8c2e48c5391");
-  }
+        val data: ByteArray = "hello world".toByteArray(java.nio.charset.StandardCharsets.US_ASCII)
+        h.putBytes(data)
 
-  @Test
-  public void helloWorld() {
-    Hasher h = GitSha1HashFunction.INSTANCE.newHasher();
-
-    byte[] data = "hello world".getBytes(StandardCharsets.US_ASCII);
-    h.putBytes(data);
-
-    assertThat(h.hash().toString()).isEqualTo("95d09f2b10159347eece71399a7e2e907ea3df4f");
-  }
+        Truth.assertThat(h.hash().toString()).isEqualTo("95d09f2b10159347eece71399a7e2e907ea3df4f")
+    }
 }

@@ -11,339 +11,333 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.query2.common
 
-package com.google.devtools.build.lib.query2.common;
+import com.google.devtools.build.lib.cmdline.Label
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.truth.extensions.proto.ProtoTruth.assertThat;
-import static org.junit.Assert.assertThrows;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoMoreInteractions;
-import static org.mockito.Mockito.when;
+/** Tests for [QueryTransitivePackagePreloader].  */
+@RunWith(TestParameterInjector::class)
+class QueryTransitivePackagePreloaderTest {
+    @org.mockito.Mock
+    var memoizingEvaluator: MemoizingEvaluator? = null
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
-import com.google.devtools.build.lib.bugreport.BugReporter;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.query2.engine.QueryException;
-import com.google.devtools.build.lib.query2.engine.QueryExpression;
-import com.google.devtools.build.lib.server.FailureDetails;
-import com.google.devtools.build.lib.skyframe.DetailedException;
-import com.google.devtools.build.lib.skyframe.TransitiveTargetKey;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.skyframe.CycleInfo;
-import com.google.devtools.build.skyframe.ErrorInfo;
-import com.google.devtools.build.skyframe.EvaluationContext;
-import com.google.devtools.build.skyframe.EvaluationResult;
-import com.google.devtools.build.skyframe.MemoizingEvaluator;
-import com.google.devtools.build.skyframe.SkyFunctionException;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import java.util.List;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.mockito.ArgumentMatchers;
-import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
+    @org.mockito.Mock
+    var contextBuilder: EvaluationContext.Builder? = null
 
-/** Tests for {@link QueryTransitivePackagePreloader}. */
-@RunWith(TestParameterInjector.class)
-public class QueryTransitivePackagePreloaderTest {
-  private static final Label LABEL = Label.parseCanonicalUnchecked("//my:label");
-  private static final Label LABEL2 = Label.parseCanonicalUnchecked("//my:label2");
-  private static final Label LABEL3 = Label.parseCanonicalUnchecked("//my:label3");
-  private static final TransitiveTargetKey KEY = TransitiveTargetKey.of(LABEL);
-  private static final TransitiveTargetKey KEY2 = TransitiveTargetKey.of(LABEL2);
-  private static final TransitiveTargetKey KEY3 = TransitiveTargetKey.of(LABEL3);
+    @org.mockito.Mock
+    var context: EvaluationContext? = null
+    private val bugReporter: BugReporter? = Mockito.mock<BugReporter?>(BugReporter::class.java)
 
-  private static final ErrorInfo DETAILED_ERROR =
-      ErrorInfo.fromException(
-          new SkyFunctionException.ReifiedSkyFunctionException(
-              new SkyFunctionException(
-                  new MyDetailedException("bork"), SkyFunctionException.Transience.PERSISTENT) {}),
-          /*isTransitivelyTransient=*/ false);
-  private static final ErrorInfo UNDETAILED_ERROR =
-      ErrorInfo.fromException(
-          new SkyFunctionException.ReifiedSkyFunctionException(
-              new SkyFunctionException(
-                  new UndetailedException("bork"), SkyFunctionException.Transience.PERSISTENT) {}),
-          /*isTransitivelyTransient=*/ false);
-  private static final ErrorInfo CYCLE_ERROR =
-      ErrorInfo.fromCycle(CycleInfo.createCycleInfo(ImmutableList.of(KEY)));
+    private val underTest: QueryTransitivePackagePreloader = QueryTransitivePackagePreloader(
+        { memoizingEvaluator }, { contextBuilder }, bugReporter
+    )
+    private var closeable: java.lang.AutoCloseable? = null
 
-  @Mock MemoizingEvaluator memoizingEvaluator;
-  @Mock EvaluationContext.Builder contextBuilder;
-  @Mock EvaluationContext context;
-  private final BugReporter bugReporter = mock(BugReporter.class);
-
-  private final QueryTransitivePackagePreloader underTest =
-      new QueryTransitivePackagePreloader(
-          () -> memoizingEvaluator, () -> contextBuilder, bugReporter);
-  private AutoCloseable closeable;
-
-  @Before
-  public void setUpMocks() {
-    closeable = MockitoAnnotations.openMocks(this);
-    when(contextBuilder.setKeepGoing(ArgumentMatchers.anyBoolean())).thenReturn(contextBuilder);
-    when(contextBuilder.setParallelism(ArgumentMatchers.anyInt())).thenReturn(contextBuilder);
-    when(contextBuilder.setEventHandler(ArgumentMatchers.any())).thenReturn(contextBuilder);
-    when(contextBuilder.setDetectCycles(ArgumentMatchers.anyBoolean())).thenReturn(contextBuilder);
-    when(contextBuilder.build()).thenReturn(context);
-  }
-
-  @After
-  public void releaseMocks() throws Exception {
-    verifyNoMoreInteractions(memoizingEvaluator);
-    verifyNoMoreInteractions(bugReporter);
-    closeable.close();
-  }
-
-  @Test
-  public void preloadTransitiveTargets_noError() throws Exception {
-    List<TransitiveTargetKey> roots = Lists.newArrayList(KEY);
-
-    when(memoizingEvaluator.evaluate(roots, context))
-        .thenReturn(EvaluationResult.builder().build());
-
-    underTest.preloadTransitiveTargets(
-        mock(ExtendedEventHandler.class),
-        ImmutableList.of(LABEL),
-        /*keepGoing=*/ true,
-        1,
-        /*callerForError=*/ null);
-
-    verify(memoizingEvaluator).evaluate(roots, context);
-  }
-
-  @Test
-  public void preloadTransitiveTargets_errorWithNullCallerKeepGoing_doesntCleanGraph()
-      throws Exception {
-    List<TransitiveTargetKey> roots = Lists.newArrayList(KEY);
-
-    when(memoizingEvaluator.evaluate(roots, context))
-        .thenReturn(EvaluationResult.builder().addError(KEY, UNDETAILED_ERROR).build());
-
-    underTest.preloadTransitiveTargets(
-        mock(ExtendedEventHandler.class),
-        ImmutableList.of(LABEL),
-        /*keepGoing=*/ true,
-        1,
-        /*callerForError=*/ null);
-
-    verify(memoizingEvaluator).evaluate(roots, context);
-  }
-
-  @Test
-  public void preloadTransitiveTargets_errorWithNullCallerKeepGoingCatastrophe_cleansGraph()
-      throws Exception {
-    List<TransitiveTargetKey> roots = Lists.newArrayList(KEY);
-
-    when(memoizingEvaluator.evaluate(roots, context))
-        .thenReturn(
-            EvaluationResult.builder()
-                .setCatastrophe(new UndetailedException("catas"))
-                .addError(KEY, UNDETAILED_ERROR)
-                .build());
-
-    underTest.preloadTransitiveTargets(
-        mock(ExtendedEventHandler.class),
-        ImmutableList.of(LABEL),
-        /*keepGoing=*/ true,
-        1,
-        /*callerForError=*/ null);
-
-    verify(memoizingEvaluator).evaluate(roots, context);
-    verify(memoizingEvaluator).evaluate(ImmutableList.of(), context);
-  }
-
-  @Test
-  public void preloadTransitiveTargets_errorWithNullCallerNoKeepGoing_cleansGraph()
-      throws Exception {
-    List<TransitiveTargetKey> roots = Lists.newArrayList(KEY);
-
-    when(memoizingEvaluator.evaluate(roots, context))
-        .thenReturn(EvaluationResult.builder().addError(KEY, UNDETAILED_ERROR).build());
-
-    underTest.preloadTransitiveTargets(
-        mock(ExtendedEventHandler.class),
-        ImmutableList.of(LABEL),
-        /*keepGoing=*/ false,
-        1,
-        /*callerForError=*/ null);
-
-    verify(memoizingEvaluator).evaluate(roots, context);
-    verify(memoizingEvaluator).evaluate(ImmutableList.of(), context);
-  }
-
-  @Test
-  public void preloadTransitiveTargets_detailedErrorWithCaller_throwsError(
-      @TestParameter boolean keepGoing) throws Exception {
-    List<TransitiveTargetKey> roots = Lists.newArrayList(KEY);
-
-    when(memoizingEvaluator.evaluate(roots, context))
-        .thenReturn(EvaluationResult.builder().addError(KEY, DETAILED_ERROR).build());
-
-    var e =
-        assertThrows(
-            QueryException.class,
-            () ->
-                underTest.preloadTransitiveTargets(
-                    mock(ExtendedEventHandler.class),
-                    ImmutableList.of(LABEL),
-                    keepGoing,
-                    1,
-                    /*callerForError=*/ mock(QueryExpression.class)));
-    assertThat(e).hasMessageThat().contains("failed: bork");
-    assertThat(e.getFailureDetail())
-        .isSameInstanceAs(MyDetailedException.DETAILED_EXIT_CODE.getFailureDetail());
-
-    verify(memoizingEvaluator).evaluate(roots, context);
-  }
-
-  @Test
-  public void preloadTransitiveTargets_undetailedErrorWithCaller_throwsErrorAndFilesBugReport(
-      @TestParameter boolean keepGoing) throws Exception {
-    List<TransitiveTargetKey> roots = Lists.newArrayList(KEY);
-
-    when(memoizingEvaluator.evaluate(roots, context))
-        .thenReturn(EvaluationResult.builder().addError(KEY, UNDETAILED_ERROR).build());
-
-    var e =
-        assertThrows(
-            QueryException.class,
-            () ->
-                underTest.preloadTransitiveTargets(
-                    mock(ExtendedEventHandler.class),
-                    ImmutableList.of(LABEL),
-                    keepGoing,
-                    1,
-                    /*callerForError=*/ mock(QueryExpression.class)));
-    assertThat(e).hasMessageThat().contains("failed: bork");
-    assertThat(e.getFailureDetail())
-        .comparingExpectedFieldsOnly()
-        .isEqualTo(
-            FailureDetails.FailureDetail.newBuilder()
-                .setQuery(
-                    FailureDetails.Query.newBuilder()
-                        .setCode(FailureDetails.Query.Code.NON_DETAILED_ERROR)
-                        .build())
-                .build());
-
-    verify(memoizingEvaluator).evaluate(roots, context);
-    verify(bugReporter).sendNonFatalBugReport(ArgumentMatchers.any());
-  }
-
-  @Test
-  public void
-      preloadTransitiveTargets_undetailedCatastropheAndDetailedExceptionWithCaller_throwsErrorAndFilesBugReport(
-          @TestParameter boolean keepGoing) throws Exception {
-    List<TransitiveTargetKey> roots = Lists.newArrayList(KEY);
-
-    when(memoizingEvaluator.evaluate(roots, context))
-        .thenReturn(
-            EvaluationResult.builder()
-                .addError(KEY, DETAILED_ERROR)
-                .setCatastrophe(new UndetailedException("undetailed bok"))
-                .build());
-
-    var e =
-        assertThrows(
-            QueryException.class,
-            () ->
-                underTest.preloadTransitiveTargets(
-                    mock(ExtendedEventHandler.class),
-                    ImmutableList.of(LABEL),
-                    keepGoing,
-                    1,
-                    /*callerForError=*/ mock(QueryExpression.class)));
-    assertThat(e).hasMessageThat().contains("failed: undetailed bok");
-    assertThat(e.getFailureDetail())
-        .comparingExpectedFieldsOnly()
-        .isEqualTo(
-            FailureDetails.FailureDetail.newBuilder()
-                .setQuery(
-                    FailureDetails.Query.newBuilder()
-                        .setCode(FailureDetails.Query.Code.NON_DETAILED_ERROR)
-                        .build())
-                .build());
-
-    verify(memoizingEvaluator).evaluate(roots, context);
-    verify(bugReporter).sendNonFatalBugReport(ArgumentMatchers.any());
-  }
-
-  @Test
-  public void preloadTransitiveTargets_undetailedAndDetailedExceptionsWithCaller_throwsError(
-      @TestParameter boolean keepGoing, @TestParameter boolean includeCycle) throws Exception {
-    List<TransitiveTargetKey> roots = Lists.newArrayList(KEY, KEY2, KEY3);
-
-    EvaluationResult.Builder<SkyValue> resultBuilder =
-        EvaluationResult.builder().addError(KEY, UNDETAILED_ERROR).addError(KEY2, DETAILED_ERROR);
-    if (includeCycle) {
-      resultBuilder.addError(KEY3, CYCLE_ERROR);
-    }
-    when(memoizingEvaluator.evaluate(roots, context)).thenReturn(resultBuilder.build());
-
-    var e =
-        assertThrows(
-            QueryException.class,
-            () ->
-                underTest.preloadTransitiveTargets(
-                    mock(ExtendedEventHandler.class),
-                    ImmutableList.of(LABEL, LABEL2, LABEL3),
-                    keepGoing,
-                    1,
-                    /*callerForError=*/ mock(QueryExpression.class)));
-    assertThat(e).hasMessageThat().contains("failed: bork");
-    assertThat(e.getFailureDetail())
-        .isSameInstanceAs(MyDetailedException.DETAILED_EXIT_CODE.getFailureDetail());
-
-    verify(memoizingEvaluator).evaluate(roots, context);
-  }
-
-  @Test
-  public void preloadTransitiveTargets_cycleOnly_returns() throws Exception {
-    List<TransitiveTargetKey> roots = Lists.newArrayList(KEY);
-
-    when(memoizingEvaluator.evaluate(roots, context))
-        .thenReturn(EvaluationResult.builder().addError(KEY, CYCLE_ERROR).build());
-
-    underTest.preloadTransitiveTargets(
-        mock(ExtendedEventHandler.class),
-        ImmutableList.of(LABEL),
-        /*keepGoing=*/ true,
-        1,
-        /*callerForError=*/ null);
-
-    verify(memoizingEvaluator).evaluate(roots, context);
-  }
-
-  private static final class UndetailedException extends Exception {
-    UndetailedException(String message) {
-      super(message);
-    }
-  }
-
-  private static final class MyDetailedException extends Exception implements DetailedException {
-    private static final DetailedExitCode DETAILED_EXIT_CODE =
-        DetailedExitCode.of(
-            FailureDetails.FailureDetail.newBuilder()
-                .setQuery(
-                    FailureDetails.Query.newBuilder()
-                        .setCode(FailureDetails.Query.Code.BUILD_FILE_ERROR))
-                .build());
-
-    MyDetailedException(String message) {
-      super(message);
+    @Before
+    fun setUpMocks() {
+        closeable = MockitoAnnotations.openMocks(this)
+        Mockito.`when`<T?>(contextBuilder.setKeepGoing(ArgumentMatchers.anyBoolean())).thenReturn(contextBuilder)
+        Mockito.`when`<T?>(contextBuilder.setParallelism(ArgumentMatchers.anyInt())).thenReturn(contextBuilder)
+        Mockito.`when`<T?>(contextBuilder.setEventHandler(ArgumentMatchers.any<T?>())).thenReturn(contextBuilder)
+        Mockito.`when`<T?>(contextBuilder.setDetectCycles(ArgumentMatchers.anyBoolean())).thenReturn(contextBuilder)
+        Mockito.`when`<T?>(contextBuilder.build()).thenReturn(context)
     }
 
-    @Override
-    public DetailedExitCode getDetailedExitCode() {
-      return DETAILED_EXIT_CODE;
+    @org.junit.After
+    @Throws(java.lang.Exception::class)
+    fun releaseMocks() {
+        Mockito.verifyNoMoreInteractions(memoizingEvaluator)
+        Mockito.verifyNoMoreInteractions(bugReporter)
+        closeable.close()
     }
-  }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun preloadTransitiveTargets_noError() {
+        val roots: MutableList<TransitiveTargetKey?> = com.google.common.collect.Lists.newArrayList(KEY)
+
+        Mockito.`when`<T?>(memoizingEvaluator.evaluate(roots, context))
+            .thenReturn(EvaluationResult.builder().build())
+
+        underTest.preloadTransitiveTargets(
+            < T > mock < T ? > (ExtendedEventHandler::class.java),
+        com.google.common.collect.ImmutableList.of<E?>(LABEL),  /*keepGoing=*/
+        true,
+        1,  /*callerForError=*/
+        null)
+
+        Mockito.verify<Any?>(memoizingEvaluator).evaluate(roots, context)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun preloadTransitiveTargets_errorWithNullCallerKeepGoing_doesntCleanGraph() {
+        val roots: MutableList<TransitiveTargetKey?> = com.google.common.collect.Lists.newArrayList(KEY)
+
+        Mockito.`when`<T?>(memoizingEvaluator.evaluate(roots, context))
+            .thenReturn(EvaluationResult.builder().addError(KEY, UNDETAILED_ERROR).build())
+
+        underTest.preloadTransitiveTargets(
+            < T > mock < T ? > (ExtendedEventHandler::class.java),
+        com.google.common.collect.ImmutableList.of<E?>(LABEL),  /*keepGoing=*/
+        true,
+        1,  /*callerForError=*/
+        null)
+
+        Mockito.verify<Any?>(memoizingEvaluator).evaluate(roots, context)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun preloadTransitiveTargets_errorWithNullCallerKeepGoingCatastrophe_cleansGraph() {
+        val roots: MutableList<TransitiveTargetKey?> = com.google.common.collect.Lists.newArrayList(KEY)
+
+        Mockito.`when`<T?>(memoizingEvaluator.evaluate(roots, context))
+            .thenReturn(
+                EvaluationResult.builder()
+                    .setCatastrophe(UndetailedException("catas"))
+                    .addError(KEY, UNDETAILED_ERROR)
+                    .build()
+            )
+
+        underTest.preloadTransitiveTargets(
+            < T > mock < T ? > (ExtendedEventHandler::class.java),
+        com.google.common.collect.ImmutableList.of<E?>(LABEL),  /*keepGoing=*/
+        true,
+        1,  /*callerForError=*/
+        null)
+
+        Mockito.verify<Any?>(memoizingEvaluator).evaluate(roots, context)
+        Mockito.verify<Any?>(memoizingEvaluator).evaluate(com.google.common.collect.ImmutableList.of<E?>(), context)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun preloadTransitiveTargets_errorWithNullCallerNoKeepGoing_cleansGraph() {
+        val roots: MutableList<TransitiveTargetKey?> = com.google.common.collect.Lists.newArrayList(KEY)
+
+        Mockito.`when`<T?>(memoizingEvaluator.evaluate(roots, context))
+            .thenReturn(EvaluationResult.builder().addError(KEY, UNDETAILED_ERROR).build())
+
+        underTest.preloadTransitiveTargets(
+            < T > mock < T ? > (ExtendedEventHandler::class.java),
+        com.google.common.collect.ImmutableList.of<E?>(LABEL),  /*keepGoing=*/
+        false,
+        1,  /*callerForError=*/
+        null)
+
+        Mockito.verify<Any?>(memoizingEvaluator).evaluate(roots, context)
+        Mockito.verify<Any?>(memoizingEvaluator).evaluate(com.google.common.collect.ImmutableList.of<E?>(), context)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun preloadTransitiveTargets_detailedErrorWithCaller_throwsError(
+        @TestParameter keepGoing: Boolean
+    ) {
+        val roots: MutableList<TransitiveTargetKey?> = com.google.common.collect.Lists.newArrayList(KEY)
+
+        Mockito.`when`<T?>(memoizingEvaluator.evaluate(roots, context))
+            .thenReturn(EvaluationResult.builder().addError(KEY, DETAILED_ERROR).build())
+
+        val e: com.google.devtools.build.lib.query2.engine.QueryException =
+            org.junit.Assert.assertThrows<com.google.devtools.build.lib.query2.engine.QueryException>(
+                com.google.devtools.build.lib.query2.engine.QueryException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    underTest.preloadTransitiveTargets(
+                        < T > mock < T ? > (ExtendedEventHandler::class.java),
+                    com.google.common.collect.ImmutableList.of<E?>(LABEL),
+                    keepGoing,
+                    1,  /*callerForError=*/
+                    <T > mock<T?>(QueryExpression::class.java))
+                })
+        Truth.assertThat(e).hasMessageThat().contains("failed: bork")
+        assertThat(e.getFailureDetail())
+            .isSameInstanceAs(MyDetailedException.Companion.DETAILED_EXIT_CODE.getFailureDetail())
+
+        Mockito.verify<Any?>(memoizingEvaluator).evaluate(roots, context)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun preloadTransitiveTargets_undetailedErrorWithCaller_throwsErrorAndFilesBugReport(
+        @TestParameter keepGoing: Boolean
+    ) {
+        val roots: MutableList<TransitiveTargetKey?> = com.google.common.collect.Lists.newArrayList(KEY)
+
+        Mockito.`when`<T?>(memoizingEvaluator.evaluate(roots, context))
+            .thenReturn(EvaluationResult.builder().addError(KEY, UNDETAILED_ERROR).build())
+
+        val e: com.google.devtools.build.lib.query2.engine.QueryException =
+            org.junit.Assert.assertThrows<com.google.devtools.build.lib.query2.engine.QueryException>(
+                com.google.devtools.build.lib.query2.engine.QueryException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    underTest.preloadTransitiveTargets(
+                        < T > mock < T ? > (ExtendedEventHandler::class.java),
+                    com.google.common.collect.ImmutableList.of<E?>(LABEL),
+                    keepGoing,
+                    1,  /*callerForError=*/
+                    <T > mock<T?>(QueryExpression::class.java))
+                })
+        Truth.assertThat(e).hasMessageThat().contains("failed: bork")
+        assertThat(e.getFailureDetail())
+            .comparingExpectedFieldsOnly()
+            .isEqualTo(
+                FailureDetails.FailureDetail.newBuilder()
+                    .setQuery(
+                        FailureDetails.Query.newBuilder()
+                            .setCode(FailureDetails.Query.Code.NON_DETAILED_ERROR)
+                            .build()
+                    )
+                    .build()
+            )
+
+        Mockito.verify<Any?>(memoizingEvaluator).evaluate(roots, context)
+        Mockito.verify<BugReporter?>(bugReporter).sendNonFatalBugReport(ArgumentMatchers.any<Throwable?>())
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun preloadTransitiveTargets_undetailedCatastropheAndDetailedExceptionWithCaller_throwsErrorAndFilesBugReport(
+        @TestParameter keepGoing: Boolean
+    ) {
+        val roots: MutableList<TransitiveTargetKey?> = com.google.common.collect.Lists.newArrayList(KEY)
+
+        Mockito.`when`<T?>(memoizingEvaluator.evaluate(roots, context))
+            .thenReturn(
+                EvaluationResult.builder()
+                    .addError(KEY, DETAILED_ERROR)
+                    .setCatastrophe(UndetailedException("undetailed bok"))
+                    .build()
+            )
+
+        val e: com.google.devtools.build.lib.query2.engine.QueryException =
+            org.junit.Assert.assertThrows<com.google.devtools.build.lib.query2.engine.QueryException>(
+                com.google.devtools.build.lib.query2.engine.QueryException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    underTest.preloadTransitiveTargets(
+                        < T > mock < T ? > (ExtendedEventHandler::class.java),
+                    com.google.common.collect.ImmutableList.of<E?>(LABEL),
+                    keepGoing,
+                    1,  /*callerForError=*/
+                    <T > mock<T?>(QueryExpression::class.java))
+                })
+        Truth.assertThat(e).hasMessageThat().contains("failed: undetailed bok")
+        assertThat(e.getFailureDetail())
+            .comparingExpectedFieldsOnly()
+            .isEqualTo(
+                FailureDetails.FailureDetail.newBuilder()
+                    .setQuery(
+                        FailureDetails.Query.newBuilder()
+                            .setCode(FailureDetails.Query.Code.NON_DETAILED_ERROR)
+                            .build()
+                    )
+                    .build()
+            )
+
+        Mockito.verify<Any?>(memoizingEvaluator).evaluate(roots, context)
+        Mockito.verify<BugReporter?>(bugReporter).sendNonFatalBugReport(ArgumentMatchers.any<Throwable?>())
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun preloadTransitiveTargets_undetailedAndDetailedExceptionsWithCaller_throwsError(
+        @TestParameter keepGoing: Boolean, @TestParameter includeCycle: Boolean
+    ) {
+        val roots: MutableList<TransitiveTargetKey?> =
+            com.google.common.collect.Lists.newArrayList<TransitiveTargetKey?>(
+                KEY, KEY2, KEY3
+            )
+
+        val resultBuilder: EvaluationResult.Builder<SkyValue?> =
+            EvaluationResult.builder().addError(KEY, UNDETAILED_ERROR).addError(KEY2, DETAILED_ERROR)
+        if (includeCycle) {
+            resultBuilder.addError(KEY3, CYCLE_ERROR)
+        }
+        Mockito.`when`<T?>(memoizingEvaluator.evaluate(roots, context)).thenReturn(resultBuilder.build())
+
+        val e: com.google.devtools.build.lib.query2.engine.QueryException =
+            org.junit.Assert.assertThrows<com.google.devtools.build.lib.query2.engine.QueryException>(
+                com.google.devtools.build.lib.query2.engine.QueryException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    underTest.preloadTransitiveTargets(
+                        < T > mock < T ? > (ExtendedEventHandler::class.java),
+                    com.google.common.collect.ImmutableList.of<E?>(LABEL, LABEL2, LABEL3),
+                    keepGoing,
+                    1,  /*callerForError=*/
+                    <T > mock<T?>(QueryExpression::class.java))
+                })
+        Truth.assertThat(e).hasMessageThat().contains("failed: bork")
+        assertThat(e.getFailureDetail())
+            .isSameInstanceAs(MyDetailedException.Companion.DETAILED_EXIT_CODE.getFailureDetail())
+
+        Mockito.verify<Any?>(memoizingEvaluator).evaluate(roots, context)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun preloadTransitiveTargets_cycleOnly_returns() {
+        val roots: MutableList<TransitiveTargetKey?> = com.google.common.collect.Lists.newArrayList(KEY)
+
+        Mockito.`when`<T?>(memoizingEvaluator.evaluate(roots, context))
+            .thenReturn(EvaluationResult.builder().addError(KEY, CYCLE_ERROR).build())
+
+        underTest.preloadTransitiveTargets(
+            < T > mock < T ? > (ExtendedEventHandler::class.java),
+        com.google.common.collect.ImmutableList.of<E?>(LABEL),  /*keepGoing=*/
+        true,
+        1,  /*callerForError=*/
+        null)
+
+        Mockito.verify<Any?>(memoizingEvaluator).evaluate(roots, context)
+    }
+
+    private class UndetailedException(message: String?) : java.lang.Exception(message)
+
+    private class MyDetailedException(message: String?) : java.lang.Exception(message), DetailedException {
+        val detailedExitCode: DetailedExitCode
+            get() = DETAILED_EXIT_CODE
+
+        companion object {
+            private val DETAILED_EXIT_CODE: DetailedExitCode = DetailedExitCode.of(
+                FailureDetails.FailureDetail.newBuilder()
+                    .setQuery(
+                        FailureDetails.Query.newBuilder()
+                            .setCode(FailureDetails.Query.Code.BUILD_FILE_ERROR)
+                    )
+                    .build()
+            )
+        }
+    }
+
+    companion object {
+        private val LABEL: Label = Label.parseCanonicalUnchecked("//my:label")
+        private val LABEL2: Label? = Label.parseCanonicalUnchecked("//my:label2")
+        private val LABEL3: Label? = Label.parseCanonicalUnchecked("//my:label3")
+        private val KEY: TransitiveTargetKey = TransitiveTargetKey.of(LABEL)
+        private val KEY2: TransitiveTargetKey? = TransitiveTargetKey.of(LABEL2)
+        private val KEY3: TransitiveTargetKey? = TransitiveTargetKey.of(LABEL3)
+
+        private val DETAILED_ERROR: ErrorInfo? = ErrorInfo.fromException(
+            ReifiedSkyFunctionException(
+                object : SkyFunctionException(
+                    MyDetailedException("bork"), SkyFunctionException.Transience.PERSISTENT
+                ) {}),  /*isTransitivelyTransient=*/
+            false
+        )
+        private val UNDETAILED_ERROR: ErrorInfo? = ErrorInfo.fromException(
+            ReifiedSkyFunctionException(
+                object : SkyFunctionException(
+                    UndetailedException("bork"), SkyFunctionException.Transience.PERSISTENT
+                ) {}),  /*isTransitivelyTransient=*/
+            false
+        )
+        private val CYCLE_ERROR: ErrorInfo? = ErrorInfo.fromCycle(
+            CycleInfo.createCycleInfo(
+                com.google.common.collect.ImmutableList.of<E?>(
+                    KEY
+                )
+            )
+        )
+    }
 }

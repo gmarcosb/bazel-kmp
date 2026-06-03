@@ -11,56 +11,60 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package net.starlark.java.syntax;
+package net.starlark.java.syntax
 
-import com.google.common.truth.Truth;
-import java.util.Arrays;
-import java.util.Set;
-import java.util.stream.Collectors;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.common.truth.Truth
+import net.starlark.java.syntax.SyntaxError.Exception.errors
+import net.starlark.java.syntax.TypeTable.errors
+import net.starlark.java.syntax.TypeTable.ok
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.util.stream.Collectors
 
-/** A test for {@link LValue#boundIdentifiers}()}. */
-@RunWith(JUnit4.class)
-public class LValueBoundNamesTest {
-
-  @Test
-  public void simpleAssignment() {
-    assertBoundNames("x = 1", "x");
-  }
-
-  @Test
-  public void listAssignment() {
-    assertBoundNames("x, y = 1", "x", "y");
-  }
-
-  @Test
-  public void complexListAssignment() {
-    assertBoundNames("x, [y] = 1", "x", "y");
-  }
-
-  @Test
-  public void arrayElementAssignment() {
-    assertBoundNames("x[1] = 1");
-  }
-
-  @Test
-  public void complexListAssignment2() {
-    assertBoundNames("[[x], y], [z, w[1]] = 1", "x", "y", "z");
-  }
-
-  private static void assertBoundNames(String assignment, String... expectedBoundNames) {
-    ParserInput input = ParserInput.fromLines(assignment);
-    StarlarkFile file = StarlarkFile.parse(input);
-    if (!file.ok()) {
-      throw new AssertionError(new SyntaxError.Exception(file.errors()));
+/** A test for [LValue.boundIdentifiers]()}.  */
+@RunWith(JUnit4::class)
+class LValueBoundNamesTest {
+    @org.junit.Test
+    fun simpleAssignment() {
+        assertBoundNames("x = 1", "x")
     }
-    Expression lhs = ((AssignmentStatement) file.statements.get(0)).getLHS();
-    Set<String> boundNames =
-        Identifier.boundIdentifiers(lhs).stream()
-            .map(Identifier::getName)
-            .collect(Collectors.toSet());
-    Truth.assertThat(boundNames).containsExactlyElementsIn(Arrays.asList(expectedBoundNames));
-  }
+
+    @org.junit.Test
+    fun listAssignment() {
+        assertBoundNames("x, y = 1", "x", "y")
+    }
+
+    @org.junit.Test
+    fun complexListAssignment() {
+        assertBoundNames("x, [y] = 1", "x", "y")
+    }
+
+    @org.junit.Test
+    fun arrayElementAssignment() {
+        assertBoundNames("x[1] = 1")
+    }
+
+    @org.junit.Test
+    fun complexListAssignment2() {
+        assertBoundNames("[[x], y], [z, w[1]] = 1", "x", "y", "z")
+    }
+
+    companion object {
+        private fun assertBoundNames(assignment: String?, vararg expectedBoundNames: String?) {
+            val input: net.starlark.java.syntax.ParserInput? =
+                net.starlark.java.syntax.ParserInput.fromLines(assignment)
+            val file: net.starlark.java.syntax.StarlarkFile = net.starlark.java.syntax.StarlarkFile.parse(input)
+            if (!file.ok()) {
+                throw java.lang.AssertionError(net.starlark.java.syntax.SyntaxError.Exception(file.errors()))
+            }
+            val lhs: net.starlark.java.syntax.Expression? =
+                (file.statements.get(0) as net.starlark.java.syntax.AssignmentStatement).getLHS()
+            val boundNames: MutableSet<String?> =
+                net.starlark.java.syntax.Identifier.boundIdentifiers(lhs).stream()
+                    .map<String?> { obj: net.starlark.java.syntax.Identifier? -> obj.getName() }
+                    .collect(Collectors.toSet())
+            Truth.assertThat(boundNames)
+                .containsExactlyElementsIn(java.util.Arrays.asList<String?>(*expectedBoundNames))
+        }
+    }
 }

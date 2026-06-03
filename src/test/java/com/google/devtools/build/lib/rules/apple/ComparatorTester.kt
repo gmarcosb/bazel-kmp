@@ -11,119 +11,108 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.rules.apple;
+package com.google.devtools.build.lib.rules.apple
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import javax.annotation.Nullable;
+import com.google.common.base.Preconditions
+import com.google.common.collect.ImmutableList
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.rules.apple.ComparatorTester.ICanNotBeCompared
+import com.google.errorprone.annotations.CanIgnoreReturnValue
+import org.junit.Assert
+import org.junit.function.ThrowingRunnable
+import kotlin.Any
+import kotlin.Array
+import kotlin.ClassCastException
+import kotlin.Comparable
+import kotlin.Comparator
+import kotlin.Int
+import kotlin.NullPointerException
+import kotlin.collections.ArrayList
+import kotlin.collections.MutableList
 
 /**
- * Tests that a given comparator (or the implementation of {@link Comparable}) is correct. To use,
- * repeatedly call {@link #addEqualityGroup(Object...)} with sets of objects that should be equal.
- * The calls to {@link #addEqualityGroup(Object...)} must be made in sorted order. Then call {@link
- * #testCompare()} to test the comparison. For example:
- *
- * <pre>{@code
- * new ComparatorTester()
- *     .addEqualityGroup(1)
- *     .addEqualityGroup(2)
- *     .addEqualityGroup(3)
- *     .testCompare();
- * }</pre>
+ * Tests that a given comparator (or the implementation of [Comparable]) is correct. To use,
+ * repeatedly call [.addEqualityGroup] with sets of objects that should be equal.
+ * The calls to [.addEqualityGroup] must be made in sorted order. Then call [ ][.testCompare] to test the comparison. For example:
+ * 
+ * <pre>`new ComparatorTester()     .addEqualityGroup(1)     .addEqualityGroup(2)     .addEqualityGroup(3)     .testCompare(); `</pre>
  */
-public class ComparatorTester {
-  @SuppressWarnings({"unchecked", "rawtypes"})
-  private final @Nullable Comparator comparator;
+class ComparatorTester @kotlin.jvm.JvmOverloads constructor(private val comparator: Comparator<*>? = null) {
+    /** The items that we are checking, stored as a sorted set of equivalence classes.  */
+    private val equalityGroups: MutableList<MutableList<Any>?>
 
-  /** The items that we are checking, stored as a sorted set of equivalence classes. */
-  private final List<List<Object>> equalityGroups;
-
-  /**
-   * Creates a new instance that tests the order of objects using the natural order (as defined by
-   * {@link Comparable}).
-   */
-  public ComparatorTester() {
-    this(null);
-  }
-
-  /**
-   * Creates a new instance that tests the order of objects using the given comparator. Or, if the
-   * comparator is {@code null}, the natural ordering (as defined by {@link Comparable})
-   */
-  public ComparatorTester(@Nullable Comparator<?> comparator) {
-    this.equalityGroups = new ArrayList<>();
-    this.comparator = comparator;
-  }
-
-  /**
-   * Adds a set of objects to the test which should all compare as equal. All of the elements in
-   * {@code objects} must be greater than any element of {@code objects} in a previous call to
-   * {@link #addEqualityGroup(Object...)}.
-   *
-   * @return {@code this} (to allow chaining of calls)
-   */
-  @CanIgnoreReturnValue
-  public ComparatorTester addEqualityGroup(Object... objects) {
-    Preconditions.checkNotNull(objects);
-    Preconditions.checkArgument(objects.length > 0, "Array must not be empty");
-    equalityGroups.add(ImmutableList.copyOf(objects));
-    return this;
-  }
-
-  @SuppressWarnings({"unchecked", "rawtypes"})
-  private int compare(Object a, Object b) {
-    int compareValue;
-    if (comparator == null) {
-      compareValue = ((Comparable) a).compareTo(b);
-    } else {
-      compareValue = comparator.compare(a, b);
+    /**
+     * Creates a new instance that tests the order of objects using the given comparator. Or, if the
+     * comparator is `null`, the natural ordering (as defined by [Comparable])
+     */
+    /**
+     * Creates a new instance that tests the order of objects using the natural order (as defined by
+     * [Comparable]).
+     */
+    init {
+        this.equalityGroups = ArrayList<MutableList<Any>?>()
     }
-    return compareValue;
-  }
 
-  public final void testCompare() {
-    for (int referenceIndex = 0; referenceIndex < equalityGroups.size(); referenceIndex++) {
-      for (Object reference : equalityGroups.get(referenceIndex)) {
-        testNullCompare(reference);
-        testClassCast(reference);
-        for (int otherIndex = 0; otherIndex < equalityGroups.size(); otherIndex++) {
-          for (Object other : equalityGroups.get(otherIndex)) {
-            assertThat(compare(reference, other))
-                .isEqualTo(Integer.compare(referenceIndex, otherIndex));
-          }
+    /**
+     * Adds a set of objects to the test which should all compare as equal. All of the elements in
+     * `objects` must be greater than any element of `objects` in a previous call to
+     * [.addEqualityGroup].
+     * 
+     * @return `this` (to allow chaining of calls)
+     */
+    @CanIgnoreReturnValue
+    fun addEqualityGroup(vararg objects: Any?): ComparatorTester {
+        Preconditions.checkNotNull<Array<Any?>?>(objects)
+        Preconditions.checkArgument(objects.size > 0, "Array must not be empty")
+        equalityGroups.add(ImmutableList.copyOf<Any?>(objects))
+        return this
+    }
+
+    private fun compare(a: Any, b: Any?): Int {
+        val compareValue: Int
+        if (comparator == null) {
+            compareValue = (a as Comparable<*>).compareTo(b)
+        } else {
+            compareValue = comparator.compare(a, b)
         }
-      }
+        return compareValue
     }
-  }
 
-  private void testNullCompare(Object obj) {
-    // Comparator does not require any specific behavior for null.
-    if (comparator == null) {
-      assertThrows(
-          "Expected NullPointerException in " + obj + ".compare(null)",
-          NullPointerException.class,
-          () -> compare(obj, null));
+    fun testCompare() {
+        for (referenceIndex in equalityGroups.indices) {
+            for (reference in equalityGroups.get(referenceIndex)!!) {
+                testNullCompare(reference)
+                testClassCast(reference)
+                for (otherIndex in equalityGroups.indices) {
+                    for (other in equalityGroups.get(otherIndex)!!) {
+                        Truth.assertThat(compare(reference, other))
+                            .isEqualTo(Integer.compare(referenceIndex, otherIndex))
+                    }
+                }
+            }
+        }
     }
-  }
 
-  @SuppressWarnings("unchecked")
-  private void testClassCast(Object obj) {
-    if (comparator == null) {
-      assertThrows(
-          "Expected ClassCastException in " + obj + ".compareTo(otherObject)",
-          ClassCastException.class,
-          () -> compare(obj, ICanNotBeCompared.INSTANCE));
+    private fun testNullCompare(obj: Any) {
+        // Comparator does not require any specific behavior for null.
+        if (comparator == null) {
+            Assert.assertThrows<NullPointerException?>(
+                "Expected NullPointerException in " + obj + ".compare(null)",
+                NullPointerException::class.java,
+                ThrowingRunnable { compare(obj, null) })
+        }
     }
-  }
 
-  private static final class ICanNotBeCompared {
-    static final ComparatorTester.ICanNotBeCompared INSTANCE = new ICanNotBeCompared();
-  }
+    private fun testClassCast(obj: Any) {
+        if (comparator == null) {
+            Assert.assertThrows<ClassCastException?>(
+                "Expected ClassCastException in " + obj + ".compareTo(otherObject)",
+                ClassCastException::class.java,
+                ThrowingRunnable { compare(obj, ICanNotBeCompared.INSTANCE) })
+        }
+    }
+
+    private object ICanNotBeCompared {
+        val INSTANCE: ICanNotBeCompared = ICanNotBeCompared()
+    }
 }

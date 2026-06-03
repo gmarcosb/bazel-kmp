@@ -11,23 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages.util;
+package com.google.devtools.build.lib.packages.util
 
-import static java.nio.charset.StandardCharsets.UTF_8;
-
-import com.google.common.io.ByteStreams;
-import java.io.IOException;
-import java.io.InputStream;
+import com.google.common.io.ByteStreams
+import java.io.IOException
+import java.io.InputStream
+import java.nio.charset.StandardCharsets
 
 /**
  * Reads a file from the resources and returns its contents as a string.
  */
-public final class ResourceLoader {
-  /**
-   * Reads a file from the resources and returns its contents as a string.
-   */
-  public static String readFromResources(String filename) throws IOException {
-    InputStream in = ResourceLoader.class.getClassLoader().getResourceAsStream(filename);
-    return new String(ByteStreams.toByteArray(in), UTF_8);
-  }
+object ResourceLoader {
+    /**
+     * Reads a file from the resources and returns its contents as a string.
+     */
+    @kotlin.jvm.JvmStatic
+    @Throws(IOException::class)
+    fun readFromResources(filename: String?): String {
+        val `in`: InputStream = ResourceLoader::class.java.getClassLoader().getResourceAsStream(filename)
+        return String(ByteStreams.toByteArray(`in`), StandardCharsets.UTF_8)
+    }
 }

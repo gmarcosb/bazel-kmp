@@ -11,261 +11,268 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime
 
-package com.google.devtools.build.lib.runtime;
+import com.google.devtools.build.lib.buildtool.BuildResult
 
-import static com.google.common.truth.Truth.assertThat;
-import static java.util.concurrent.TimeUnit.SECONDS;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+/** Tests [SkymeldUiStateTracker].  */
+@RunWith(JUnit4::class)
+class SkymeldUiStateTrackerTest : FoundationTestCase() {
+    @org.junit.Test
+    fun buildStarted_stateChanges() {
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        val uiStateTracker: SkymeldUiStateTracker = SkymeldUiStateTracker(clock)
 
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.buildtool.BuildResult;
-import com.google.devtools.build.lib.buildtool.ExecutionProgressReceiver;
-import com.google.devtools.build.lib.buildtool.buildevent.BuildCompleteEvent;
-import com.google.devtools.build.lib.buildtool.buildevent.ExecutionProgressReceiverAvailableEvent;
-import com.google.devtools.build.lib.cmdline.RepositoryMapping;
-import com.google.devtools.build.lib.pkgcache.LoadingPhaseCompleteEvent;
-import com.google.devtools.build.lib.runtime.SkymeldUiStateTracker.BuildStatus;
-import com.google.devtools.build.lib.skyframe.AnalysisProgressReceiver;
-import com.google.devtools.build.lib.skyframe.ConfigurationPhaseStartedEvent;
-import com.google.devtools.build.lib.skyframe.LoadingPhaseStartedEvent;
-import com.google.devtools.build.lib.skyframe.PackageProgressReceiver;
-import com.google.devtools.build.lib.testutil.FoundationTestCase;
-import com.google.devtools.build.lib.testutil.ManualClock;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.lib.util.Pair;
-import com.google.devtools.build.lib.util.io.LoggingTerminalWriter;
-import com.google.devtools.build.lib.util.io.PositionAwareAnsiTerminalWriter;
-import java.io.IOException;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+        assertThat(uiStateTracker.getBuildStatus()).isEqualTo(BuildStatus.BUILD_NOT_STARTED)
+        uiStateTracker.buildStarted()
+        assertThat(uiStateTracker.getBuildStatus()).isEqualTo(BuildStatus.BUILD_STARTED)
+    }
 
-/** Tests {@link SkymeldUiStateTracker}. */
-@RunWith(JUnit4.class)
-public class SkymeldUiStateTrackerTest extends FoundationTestCase {
+    @org.junit.Test
+    fun loadingStarted_stateChanges() {
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        val uiStateTracker: SkymeldUiStateTracker = SkymeldUiStateTracker(clock)
 
-  @Test
-  public void buildStarted_stateChanges() {
-    ManualClock clock = new ManualClock();
-    SkymeldUiStateTracker uiStateTracker = new SkymeldUiStateTracker(clock);
+        uiStateTracker.loadingStarted(
+            LoadingPhaseStartedEvent(< T > mock < T ? > (PackageProgressReceiver::class.java)
+        ))
 
-    assertThat(uiStateTracker.getBuildStatus()).isEqualTo(BuildStatus.BUILD_NOT_STARTED);
-    uiStateTracker.buildStarted();
-    assertThat(uiStateTracker.getBuildStatus()).isEqualTo(BuildStatus.BUILD_STARTED);
-  }
+        assertThat(uiStateTracker.getBuildStatus()).isEqualTo(BuildStatus.TARGET_PATTERN_PARSING)
+    }
 
-  @Test
-  public void loadingStarted_stateChanges() {
-    ManualClock clock = new ManualClock();
-    SkymeldUiStateTracker uiStateTracker = new SkymeldUiStateTracker(clock);
+    @org.junit.Test
+    fun loadingComplete_stateChanges() {
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        val uiStateTracker: SkymeldUiStateTracker = SkymeldUiStateTracker(clock)
 
-    uiStateTracker.loadingStarted(
-        new LoadingPhaseStartedEvent(mock(PackageProgressReceiver.class)));
+        uiStateTracker.loadingComplete(
+            LoadingPhaseCompleteEvent(
+                com.google.common.collect.ImmutableSet.of<E?>(),
+                com.google.common.collect.ImmutableSet.of<E?>(),
+                RepositoryMapping.EMPTY
+            )
+        )
 
-    assertThat(uiStateTracker.getBuildStatus()).isEqualTo(BuildStatus.TARGET_PATTERN_PARSING);
-  }
+        assertThat(uiStateTracker.getBuildStatus()).isEqualTo(BuildStatus.LOADING_COMPLETE)
+    }
 
-  @Test
-  public void loadingComplete_stateChanges() {
-    ManualClock clock = new ManualClock();
-    SkymeldUiStateTracker uiStateTracker = new SkymeldUiStateTracker(clock);
+    @org.junit.Test
+    fun configurationStarted_stateChanges() {
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        val uiStateTracker: SkymeldUiStateTracker = SkymeldUiStateTracker(clock)
 
-    uiStateTracker.loadingComplete(
-        new LoadingPhaseCompleteEvent(
-            ImmutableSet.of(), ImmutableSet.of(), RepositoryMapping.EMPTY));
+        uiStateTracker.configurationStarted(
+            ConfigurationPhaseStartedEvent(< T > mock < T ? > (AnalysisProgressReceiver::class.java)
+        ))
 
-    assertThat(uiStateTracker.getBuildStatus()).isEqualTo(BuildStatus.LOADING_COMPLETE);
-  }
+        assertThat(uiStateTracker.getBuildStatus()).isEqualTo(BuildStatus.CONFIGURATION)
+    }
 
-  @Test
-  public void configurationStarted_stateChanges() {
-    ManualClock clock = new ManualClock();
-    SkymeldUiStateTracker uiStateTracker = new SkymeldUiStateTracker(clock);
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun analysisAndExecution_stateChangesAndWriteProgressBar() {
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        val uiStateTracker: SkymeldUiStateTracker = SkymeldUiStateTracker(clock)
+        val additionalMessage = "5 targets"
+        uiStateTracker.setBuildStatusForTestingOnly(BuildStatus.CONFIGURATION)
+        uiStateTracker.additionalMessage = additionalMessage
 
-    uiStateTracker.configurationStarted(
-        new ConfigurationPhaseStartedEvent(mock(AnalysisProgressReceiver.class)));
+        // First we need to set up the state tracker to already be analysing.
+        val loadingState = "42 packages loaded"
+        val loadingActivity = "currently loading //src/foo/bar and 17 more"
+        uiStateTracker.packageProgressReceiver =
+            mockPackageProgressReceiver(loadingState, loadingActivity)
 
-    assertThat(uiStateTracker.getBuildStatus()).isEqualTo(BuildStatus.CONFIGURATION);
-  }
+        val analysisProgressString = "5 targets and 0 aspects configured"
+        uiStateTracker.analysisProgressReceiver = mockAnalysisProgressReceiver(analysisProgressString)
 
-  @Test
-  public void analysisAndExecution_stateChangesAndWriteProgressBar() throws IOException {
-    ManualClock clock = new ManualClock();
-    SkymeldUiStateTracker uiStateTracker = new SkymeldUiStateTracker(clock);
-    String additionalMessage = "5 targets";
-    uiStateTracker.setBuildStatusForTestingOnly(BuildStatus.CONFIGURATION);
-    uiStateTracker.additionalMessage = additionalMessage;
+        // Mock starting execution while configuring (before analysis complete).
+        val executionProgressReceiver: ExecutionProgressReceiver = ExecutionProgressReceiver(0, null)
+        uiStateTracker.progressReceiverAvailable(
+            ExecutionProgressReceiverAvailableEvent(executionProgressReceiver)
+        )
 
-    // First we need to set up the state tracker to already be analysing.
-    String loadingState = "42 packages loaded";
-    String loadingActivity = "currently loading //src/foo/bar and 17 more";
-    uiStateTracker.packageProgressReceiver =
-        mockPackageProgressReceiver(loadingState, loadingActivity);
+        assertThat(uiStateTracker.getBuildStatus()).isEqualTo(BuildStatus.ANALYSIS_AND_EXECUTION)
 
-    String analysisProgressString = "5 targets and 0 aspects configured";
-    uiStateTracker.analysisProgressReceiver = mockAnalysisProgressReceiver(analysisProgressString);
+        val terminalWriter: LoggingTerminalWriter = LoggingTerminalWriter( /*discardHighlight=*/true)
+        uiStateTracker.writeProgressBar(terminalWriter)
+        val output: String? = terminalWriter.getTranscript()
+        // Should write analysis and execution information.
+        Truth.assertThat(output).contains("Analyzing")
+        Truth.assertThat(output).contains(additionalMessage)
+        Truth.assertThat(output).contains(loadingState)
+        Truth.assertThat(output).contains(loadingActivity)
+        Truth.assertThat(output).contains(analysisProgressString)
+        Truth.assertThat(output).doesNotContain("[0 / 0]")
+    }
 
-    // Mock starting execution while configuring (before analysis complete).
-    ExecutionProgressReceiver executionProgressReceiver = new ExecutionProgressReceiver(0, null);
-    uiStateTracker.progressReceiverAvailable(
-        new ExecutionProgressReceiverAvailableEvent(executionProgressReceiver));
+    @org.junit.Test
+    fun executionFromAnalysisAndExecution_stateChanges() {
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        val uiStateTracker: SkymeldUiStateTracker = SkymeldUiStateTracker(clock)
 
-    assertThat(uiStateTracker.getBuildStatus()).isEqualTo(BuildStatus.ANALYSIS_AND_EXECUTION);
+        uiStateTracker.analysisComplete()
 
-    LoggingTerminalWriter terminalWriter = new LoggingTerminalWriter(/*discardHighlight=*/ true);
-    uiStateTracker.writeProgressBar(terminalWriter);
-    String output = terminalWriter.getTranscript();
-    // Should write analysis and execution information.
-    assertThat(output).contains("Analyzing");
-    assertThat(output).contains(additionalMessage);
-    assertThat(output).contains(loadingState);
-    assertThat(output).contains(loadingActivity);
-    assertThat(output).contains(analysisProgressString);
-    assertThat(output).doesNotContain("[0 / 0]");
-  }
+        assertThat(uiStateTracker.getBuildStatus()).isEqualTo(BuildStatus.EXECUTION)
+    }
 
-  @Test
-  public void executionFromAnalysisAndExecution_stateChanges() {
-    ManualClock clock = new ManualClock();
-    SkymeldUiStateTracker uiStateTracker = new SkymeldUiStateTracker(clock);
+    @org.junit.Test
+    fun buildCompleted_stateChanges() {
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        val uiStateTracker: SkymeldUiStateTracker = SkymeldUiStateTracker(clock)
 
-    uiStateTracker.analysisComplete();
+        val buildResult: BuildResult = BuildResult(clock.currentTimeMillis())
+        buildResult.setDetailedExitCode(DetailedExitCode.success())
+        clock.advanceMillis(TimeUnit.SECONDS.toMillis(1))
+        buildResult.setStopTime(clock.currentTimeMillis())
+        val unused: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            uiStateTracker.buildComplete(BuildCompleteEvent(buildResult))
 
-    assertThat(uiStateTracker.getBuildStatus()).isEqualTo(BuildStatus.EXECUTION);
-  }
+        assertThat(uiStateTracker.getBuildStatus()).isEqualTo(BuildStatus.BUILD_COMPLETED)
+    }
 
-  @Test
-  public void buildCompleted_stateChanges() {
-    ManualClock clock = new ManualClock();
-    SkymeldUiStateTracker uiStateTracker = new SkymeldUiStateTracker(clock);
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun testWriteBaseProgress() {
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        val uiStateTracker: SkymeldUiStateTracker = SkymeldUiStateTracker(clock)
+        val status = "status"
+        val message = "hello"
 
-    BuildResult buildResult = new BuildResult(clock.currentTimeMillis());
-    buildResult.setDetailedExitCode(DetailedExitCode.success());
-    clock.advanceMillis(SECONDS.toMillis(1));
-    buildResult.setStopTime(clock.currentTimeMillis());
-    var unused = uiStateTracker.buildComplete(new BuildCompleteEvent(buildResult));
+        uiStateTracker.buildStarted()
+        uiStateTracker.ok = true
+        val okTerminalWriter: LoggingTerminalWriter = LoggingTerminalWriter( /*discardHighlight=*/false)
+        uiStateTracker.writeBaseProgress(
+            status, message, PositionAwareAnsiTerminalWriter(okTerminalWriter)
+        )
+        assertOutputContainsBaseProgress(
+            okTerminalWriter.getTranscript(), status, message,  /*ok=*/true
+        )
 
-    assertThat(uiStateTracker.getBuildStatus()).isEqualTo(BuildStatus.BUILD_COMPLETED);
-  }
+        uiStateTracker.ok = false
+        val notOkTerminalWriter: LoggingTerminalWriter =
+            LoggingTerminalWriter( /*discardHighlight=*/false)
+        uiStateTracker.writeBaseProgress(
+            status, message, PositionAwareAnsiTerminalWriter(notOkTerminalWriter)
+        )
+        assertOutputContainsBaseProgress(
+            notOkTerminalWriter.getTranscript(), status, message,  /*ok=*/false
+        )
+    }
 
-  @Test
-  public void testWriteBaseProgress() throws IOException {
-    ManualClock clock = new ManualClock();
-    SkymeldUiStateTracker uiStateTracker = new SkymeldUiStateTracker(clock);
-    String status = "status";
-    String message = "hello";
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun testWriteLoadingAnalysisPhaseProgress() {
+        val clock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
+        val uiStateTracker: SkymeldUiStateTracker = SkymeldUiStateTracker(clock)
+        uiStateTracker.ok = true
+        val status = "status"
+        val message = "message"
+        val loadingState = "42 packages loaded"
+        val loadingActivity = "currently loading //src/foo/bar and 17 more"
+        val analysisProgressString = "5 targets and 0 aspects configured"
 
-    uiStateTracker.buildStarted();
-    uiStateTracker.ok = true;
-    LoggingTerminalWriter okTerminalWriter = new LoggingTerminalWriter(/*discardHighlight=*/ false);
-    uiStateTracker.writeBaseProgress(
-        status, message, new PositionAwareAnsiTerminalWriter(okTerminalWriter));
-    assertOutputContainsBaseProgress(
-        okTerminalWriter.getTranscript(), status, message, /*ok=*/ true);
+        // Mock starting loading.
+        val terminalWriter: LoggingTerminalWriter = LoggingTerminalWriter( /*discardHighlight=*/false)
+        uiStateTracker.packageProgressReceiver =
+            mockPackageProgressReceiver(loadingState, loadingActivity)
 
-    uiStateTracker.ok = false;
-    LoggingTerminalWriter notOkTerminalWriter =
-        new LoggingTerminalWriter(/*discardHighlight=*/ false);
-    uiStateTracker.writeBaseProgress(
-        status, message, new PositionAwareAnsiTerminalWriter(notOkTerminalWriter));
-    assertOutputContainsBaseProgress(
-        notOkTerminalWriter.getTranscript(), status, message, /*ok=*/ false);
-  }
+        // Output should only contain loading-related output.
+        uiStateTracker.writeLoadingAnalysisPhaseProgress(
+            status,
+            message,
+            PositionAwareAnsiTerminalWriter(terminalWriter),  /*shortVersion=*/
+            false
+        )
+        val loadingOutput: String? = terminalWriter.getTranscript()
+        assertOutputContainsBaseProgress(loadingOutput, status, message,  /*ok=*/true)
+        Truth.assertThat(loadingOutput).contains("(" + loadingState + ")")
+        Truth.assertThat(loadingOutput).contains(loadingActivity)
+        Truth.assertThat(loadingOutput).doesNotContain(analysisProgressString)
 
-  @Test
-  public void testWriteLoadingAnalysisPhaseProgress() throws IOException {
-    ManualClock clock = new ManualClock();
-    SkymeldUiStateTracker uiStateTracker = new SkymeldUiStateTracker(clock);
-    uiStateTracker.ok = true;
-    String status = "status";
-    String message = "message";
-    String loadingState = "42 packages loaded";
-    String loadingActivity = "currently loading //src/foo/bar and 17 more";
-    String analysisProgressString = "5 targets and 0 aspects configured";
+        terminalWriter.reset()
+        // When there is an empty message (only happens during target pattern parsing).
+        uiStateTracker.writeLoadingAnalysisPhaseProgress(
+            status,  /*message=*/
+            "",
+            PositionAwareAnsiTerminalWriter(terminalWriter),  /*shortVersion=*/
+            false
+        )
+        val emptyMessageLoadingOutput: String? = terminalWriter.getTranscript()
+        assertOutputContainsBaseProgress(
+            emptyMessageLoadingOutput, status,  /*message=*/"",  /*ok=*/true
+        )
+        // The loading state should not be parenthesized.
+        Truth.assertThat(emptyMessageLoadingOutput).doesNotContain("(" + loadingState + ")")
+        Truth.assertThat(emptyMessageLoadingOutput).contains(loadingState)
+        Truth.assertThat(emptyMessageLoadingOutput).contains(loadingActivity)
+        Truth.assertThat(emptyMessageLoadingOutput).doesNotContain(analysisProgressString)
 
-    // Mock starting loading.
-    LoggingTerminalWriter terminalWriter = new LoggingTerminalWriter(/*discardHighlight=*/ false);
-    uiStateTracker.packageProgressReceiver =
-        mockPackageProgressReceiver(loadingState, loadingActivity);
+        terminalWriter.reset()
+        // When writing as a short version.
+        uiStateTracker.writeLoadingAnalysisPhaseProgress(
+            status,
+            message,
+            PositionAwareAnsiTerminalWriter(terminalWriter),  /*shortVersion=*/
+            true
+        )
+        val shortVersionLoadingOutput: String? = terminalWriter.getTranscript()
+        assertOutputContainsBaseProgress(shortVersionLoadingOutput, status, message,  /*ok=*/true)
+        // Output should only contain the loading state but not the activity.
+        Truth.assertThat(shortVersionLoadingOutput).contains(loadingState)
+        Truth.assertThat(shortVersionLoadingOutput).doesNotContain(loadingActivity)
+        Truth.assertThat(emptyMessageLoadingOutput).doesNotContain(analysisProgressString)
 
-    // Output should only contain loading-related output.
-    uiStateTracker.writeLoadingAnalysisPhaseProgress(
-        status,
-        message,
-        new PositionAwareAnsiTerminalWriter(terminalWriter),
-        /*shortVersion=*/ false);
-    String loadingOutput = terminalWriter.getTranscript();
-    assertOutputContainsBaseProgress(loadingOutput, status, message, /*ok=*/ true);
-    assertThat(loadingOutput).contains("(" + loadingState + ")");
-    assertThat(loadingOutput).contains(loadingActivity);
-    assertThat(loadingOutput).doesNotContain(analysisProgressString);
+        terminalWriter.reset()
+        // Mock starting configuration.
+        uiStateTracker.analysisProgressReceiver = mockAnalysisProgressReceiver(analysisProgressString)
 
-    terminalWriter.reset();
-    // When there is an empty message (only happens during target pattern parsing).
-    uiStateTracker.writeLoadingAnalysisPhaseProgress(
-        status,
-        /*message=*/ "",
-        new PositionAwareAnsiTerminalWriter(terminalWriter),
-        /*shortVersion=*/ false);
-    String emptyMessageLoadingOutput = terminalWriter.getTranscript();
-    assertOutputContainsBaseProgress(
-        emptyMessageLoadingOutput, status, /*message=*/ "", /*ok=*/ true);
-    // The loading state should not be parenthesized.
-    assertThat(emptyMessageLoadingOutput).doesNotContain("(" + loadingState + ")");
-    assertThat(emptyMessageLoadingOutput).contains(loadingState);
-    assertThat(emptyMessageLoadingOutput).contains(loadingActivity);
-    assertThat(emptyMessageLoadingOutput).doesNotContain(analysisProgressString);
+        // Output should contain both loading and analysis related output.
+        uiStateTracker.writeLoadingAnalysisPhaseProgress(
+            status,
+            message,
+            PositionAwareAnsiTerminalWriter(terminalWriter),  /*shortVersion=*/
+            false
+        )
+        val loadingAnalysisOutput: String? = terminalWriter.getTranscript()
+        assertOutputContainsBaseProgress(loadingAnalysisOutput, status, message,  /*ok=*/true)
+        Truth.assertThat(loadingAnalysisOutput).contains(loadingState)
+        Truth.assertThat(loadingAnalysisOutput).contains(loadingActivity)
+        Truth.assertThat(loadingAnalysisOutput).contains(analysisProgressString)
+    }
 
-    terminalWriter.reset();
-    // When writing as a short version.
-    uiStateTracker.writeLoadingAnalysisPhaseProgress(
-        status,
-        message,
-        new PositionAwareAnsiTerminalWriter(terminalWriter),
-        /*shortVersion=*/ true);
-    String shortVersionLoadingOutput = terminalWriter.getTranscript();
-    assertOutputContainsBaseProgress(shortVersionLoadingOutput, status, message, /*ok=*/ true);
-    // Output should only contain the loading state but not the activity.
-    assertThat(shortVersionLoadingOutput).contains(loadingState);
-    assertThat(shortVersionLoadingOutput).doesNotContain(loadingActivity);
-    assertThat(emptyMessageLoadingOutput).doesNotContain(analysisProgressString);
+    companion object {
+        private fun assertOutputContainsBaseProgress(
+            output: String?, status: String?, message: String?, ok: Boolean
+        ) {
+            val okIndicator: String? = if (ok) LoggingTerminalWriter.OK else LoggingTerminalWriter.FAIL
+            Truth.assertThat(output)
+                .contains(okIndicator + status + ":" + LoggingTerminalWriter.NORMAL + " " + message)
+        }
 
-    terminalWriter.reset();
-    // Mock starting configuration.
-    uiStateTracker.analysisProgressReceiver = mockAnalysisProgressReceiver(analysisProgressString);
+        private fun mockPackageProgressReceiver(
+            state: String?, activity: String?
+        ): PackageProgressReceiver {
+            val packageProgressReceiver: PackageProgressReceiver =
+                Mockito.mock<PackageProgressReceiver>(PackageProgressReceiver::class.java)
+            Mockito.`when`<T?>(packageProgressReceiver.progressState()).thenReturn(Pair(state, activity))
+            return packageProgressReceiver
+        }
 
-    // Output should contain both loading and analysis related output.
-    uiStateTracker.writeLoadingAnalysisPhaseProgress(
-        status,
-        message,
-        new PositionAwareAnsiTerminalWriter(terminalWriter),
-        /*shortVersion=*/ false);
-    String loadingAnalysisOutput = terminalWriter.getTranscript();
-    assertOutputContainsBaseProgress(loadingAnalysisOutput, status, message, /*ok=*/ true);
-    assertThat(loadingAnalysisOutput).contains(loadingState);
-    assertThat(loadingAnalysisOutput).contains(loadingActivity);
-    assertThat(loadingAnalysisOutput).contains(analysisProgressString);
-  }
-
-  private static void assertOutputContainsBaseProgress(
-      String output, String status, String message, boolean ok) {
-    String okIndicator = ok ? LoggingTerminalWriter.OK : LoggingTerminalWriter.FAIL;
-    assertThat(output)
-        .contains(okIndicator + status + ":" + LoggingTerminalWriter.NORMAL + " " + message);
-  }
-
-  private static PackageProgressReceiver mockPackageProgressReceiver(
-      String state, String activity) {
-    PackageProgressReceiver packageProgressReceiver = mock(PackageProgressReceiver.class);
-    when(packageProgressReceiver.progressState()).thenReturn(new Pair<>(state, activity));
-    return packageProgressReceiver;
-  }
-
-  private static AnalysisProgressReceiver mockAnalysisProgressReceiver(String progress) {
-    AnalysisProgressReceiver analysisProgressReceiver = mock(AnalysisProgressReceiver.class);
-    when(analysisProgressReceiver.getProgressString()).thenReturn(progress);
-    return analysisProgressReceiver;
-  }
+        private fun mockAnalysisProgressReceiver(progress: String?): AnalysisProgressReceiver {
+            val analysisProgressReceiver: AnalysisProgressReceiver =
+                Mockito.mock<AnalysisProgressReceiver>(AnalysisProgressReceiver::class.java)
+            Mockito.`when`<T?>(analysisProgressReceiver.getProgressString()).thenReturn(progress)
+            return analysisProgressReceiver
+        }
+    }
 }

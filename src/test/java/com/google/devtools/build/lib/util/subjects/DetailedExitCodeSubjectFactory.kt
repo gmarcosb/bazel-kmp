@@ -11,26 +11,25 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util.subjects;
+package com.google.devtools.build.lib.util.subjects
 
-import com.google.common.truth.FailureMetadata;
-import com.google.common.truth.Subject;
-import com.google.common.truth.Truth;
-import com.google.devtools.build.lib.util.DetailedExitCode;
+import com.google.common.truth.Subject
+import com.google.devtools.build.lib.util.DetailedExitCode
 
 /**
- * {@link Subject.Factory} for {@link DetailedExitCode} objects, providing {@link
- * DetailedExitCodeSubject}s.
+ * [Subject.Factory] for [DetailedExitCode] objects, providing [ ]s.
  */
-public class DetailedExitCodeSubjectFactory
-    implements Subject.Factory<DetailedExitCodeSubject, DetailedExitCode> {
+class DetailedExitCodeSubjectFactory
 
-  public static DetailedExitCodeSubject assertThatDetailedExitCode(DetailedExitCode code) {
-    return Truth.assertAbout(new DetailedExitCodeSubjectFactory()).that(code);
-  }
+    : Subject.Factory<DetailedExitCodeSubject?, DetailedExitCode?> {
+    override fun createSubject(metadata: FailureMetadata?, actual: DetailedExitCode?): DetailedExitCodeSubject {
+        return DetailedExitCodeSubject(metadata, actual)
+    }
 
-  @Override
-  public DetailedExitCodeSubject createSubject(FailureMetadata metadata, DetailedExitCode actual) {
-    return new DetailedExitCodeSubject(metadata, actual);
-  }
+    companion object {
+        fun assertThatDetailedExitCode(code: DetailedExitCode?): DetailedExitCodeSubject? {
+            return Truth.assertAbout<DetailedExitCodeSubject?, DetailedExitCode?>(DetailedExitCodeSubjectFactory())
+                .that(code)
+        }
+    }
 }

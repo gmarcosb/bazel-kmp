@@ -11,31 +11,23 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.buildtool;
+package com.google.devtools.build.lib.buildtool
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.runtime.BlazeCommandResult
 
-import com.google.devtools.build.lib.runtime.BlazeCommandResult;
-import com.google.devtools.build.lib.runtime.commands.ShutdownCommand;
-import com.google.devtools.build.lib.util.ExitCode;
-import com.google.devtools.common.options.OptionsParser;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests [ShutdownCommand].  */
+@RunWith(JUnit4::class)
+class ShutdownCommandTest {
+    private val shutdown: ShutdownCommand = ShutdownCommand()
+    private val optionsParser: OptionsParser =
+        OptionsParser.builder().optionsClasses(ShutdownCommand.Options::class.java).build()
 
-/** Tests {@link ShutdownCommand}. */
-@RunWith(JUnit4.class)
-public class ShutdownCommandTest {
-
-  private ShutdownCommand shutdown = new ShutdownCommand();
-  private final OptionsParser optionsParser =
-      OptionsParser.builder().optionsClasses(ShutdownCommand.Options.class).build();
-
-  @Test
-  public void testShutdownShutsDownWithStatusZero() throws Exception {
-    optionsParser.parse();
-    BlazeCommandResult result = shutdown.exec(null, optionsParser);
-    assertThat(result.getExitCode()).isEqualTo(ExitCode.SUCCESS);
-    assertThat(result.shutdown()).isTrue();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testShutdownShutsDownWithStatusZero() {
+        optionsParser.parse()
+        val result: BlazeCommandResult = shutdown.exec(null, optionsParser)
+        assertThat(result.getExitCode()).isEqualTo(ExitCode.SUCCESS)
+        assertThat(result.shutdown()).isTrue()
+    }
 }

@@ -11,232 +11,244 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.eval
 
-package net.starlark.java.eval;
-
-import static com.google.common.truth.Truth.assertThat;
-import static net.starlark.java.eval.StarlarkSemantics.DEFAULT;
-import static org.junit.Assert.assertThrows;
-
-import com.google.common.collect.ImmutableMap;
-import java.util.IllegalFormatException;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import net.starlark.java.eval.StarlarkSemantics.DEFAULT
 
 /**
  * Test properties of the evaluator's datatypes and utility functions without actually creating any
  * parse trees.
  */
-@RunWith(JUnit4.class)
-public class PrinterTest {
+@RunWith(JUnit4::class)
+class PrinterTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testPrinter() {
+        // Note that str and repr only differ on behaviour of strings at toplevel.
+        Truth.assertThat(str(createObjWithStr())).isEqualTo("<str marker>")
+        assertThat(Starlark.repr(createObjWithStr(), DEFAULT)).isEqualTo("<repr marker>")
 
-  private static String str(Object o) {
-    return Starlark.str(o, DEFAULT);
-  }
+        Truth.assertThat(str("foo\nbar")).isEqualTo("foo\nbar")
+        assertThat(Starlark.repr("foo\nbar", DEFAULT)).isEqualTo("\"foo\\nbar\"")
+        Truth.assertThat(str("'")).isEqualTo("'")
+        assertThat(Starlark.repr("'", DEFAULT)).isEqualTo("\"'\"")
+        Truth.assertThat(str("\"")).isEqualTo("\"")
+        assertThat(Starlark.repr("\"", DEFAULT)).isEqualTo("\"\\\"\"")
+        Truth.assertThat(str(StarlarkInt.of(3))).isEqualTo("3")
+        assertThat(Starlark.repr(StarlarkInt.of(3), DEFAULT)).isEqualTo("3")
+        assertThat(Starlark.repr(Starlark.NONE, DEFAULT)).isEqualTo("None")
 
-  @Test
-  public void testPrinter() throws Exception {
-    // Note that str and repr only differ on behaviour of strings at toplevel.
-    assertThat(str(createObjWithStr())).isEqualTo("<str marker>");
-    assertThat(Starlark.repr(createObjWithStr(), DEFAULT)).isEqualTo("<repr marker>");
+        val list: MutableList<*> = StarlarkList.of(null, "foo", "bar")
+        val tuple: MutableList<*> = Tuple.of("foo", "bar")
 
-    assertThat(str("foo\nbar")).isEqualTo("foo\nbar");
-    assertThat(Starlark.repr("foo\nbar", DEFAULT)).isEqualTo("\"foo\\nbar\"");
-    assertThat(str("'")).isEqualTo("'");
-    assertThat(Starlark.repr("'", DEFAULT)).isEqualTo("\"'\"");
-    assertThat(str("\"")).isEqualTo("\"");
-    assertThat(Starlark.repr("\"", DEFAULT)).isEqualTo("\"\\\"\"");
-    assertThat(str(StarlarkInt.of(3))).isEqualTo("3");
-    assertThat(Starlark.repr(StarlarkInt.of(3), DEFAULT)).isEqualTo("3");
-    assertThat(Starlark.repr(Starlark.NONE, DEFAULT)).isEqualTo("None");
-
-    List<?> list = StarlarkList.of(null, "foo", "bar");
-    List<?> tuple = Tuple.of("foo", "bar");
-
-    assertThat(str(Tuple.of(StarlarkInt.of(1), list, StarlarkInt.of(3))))
-        .isEqualTo("(1, [\"foo\", \"bar\"], 3)");
-    assertThat(Starlark.repr(Tuple.of(StarlarkInt.of(1), list, StarlarkInt.of(3)), DEFAULT))
-        .isEqualTo("(1, [\"foo\", \"bar\"], 3)");
-    assertThat(str(StarlarkList.of(null, StarlarkInt.of(1), tuple, StarlarkInt.of(3))))
-        .isEqualTo("[1, (\"foo\", \"bar\"), 3]");
-    assertThat(
+        Truth.assertThat(str(Tuple.of(StarlarkInt.of(1), list, StarlarkInt.of(3))))
+            .isEqualTo("(1, [\"foo\", \"bar\"], 3)")
+        assertThat(Starlark.repr(Tuple.of(StarlarkInt.of(1), list, StarlarkInt.of(3)), DEFAULT))
+            .isEqualTo("(1, [\"foo\", \"bar\"], 3)")
+        Truth.assertThat(str(StarlarkList.of(null, StarlarkInt.of(1), tuple, StarlarkInt.of(3))))
+            .isEqualTo("[1, (\"foo\", \"bar\"), 3]")
+        assertThat(
             Starlark.repr(
-                StarlarkList.of(null, StarlarkInt.of(1), tuple, StarlarkInt.of(3)), DEFAULT))
-        .isEqualTo("[1, (\"foo\", \"bar\"), 3]");
+                StarlarkList.of(null, StarlarkInt.of(1), tuple, StarlarkInt.of(3)), DEFAULT
+            )
+        )
+            .isEqualTo("[1, (\"foo\", \"bar\"), 3]")
 
-    Map<Object, Object> dict =
-        ImmutableMap.<Object, Object>of(
-            StarlarkInt.of(1), tuple, StarlarkInt.of(2), list, "foo", StarlarkList.of(null));
-    assertThat(str(dict)).isEqualTo("{1: (\"foo\", \"bar\"), 2: [\"foo\", \"bar\"], \"foo\": []}");
-    assertThat(Starlark.repr(dict, DEFAULT))
-        .isEqualTo("{1: (\"foo\", \"bar\"), 2: [\"foo\", \"bar\"], \"foo\": []}");
-  }
+        val dict: MutableMap<Any?, Any?> =
+            com.google.common.collect.ImmutableMap.of<Any?, Any?>(
+                StarlarkInt.of(1), tuple, StarlarkInt.of(2), list, "foo", StarlarkList.of(null)
+            )
+        Truth.assertThat(str(dict)).isEqualTo("{1: (\"foo\", \"bar\"), 2: [\"foo\", \"bar\"], \"foo\": []}")
+        assertThat(Starlark.repr(dict, DEFAULT))
+            .isEqualTo("{1: (\"foo\", \"bar\"), 2: [\"foo\", \"bar\"], \"foo\": []}")
+    }
 
-  private static String format(String fmt, Object... args) {
-    return Starlark.format(DEFAULT, fmt, args);
-  }
+    private fun checkFormatPositionalFails(errorMessage: String?, format: String?, vararg arguments: Any?) {
+        val e: IllegalFormatException? =
+            org.junit.Assert.assertThrows<IllegalFormatException?>(
+                IllegalFormatException::class.java,
+                org.junit.function.ThrowingRunnable { format(format, *arguments) })
+        Truth.assertThat(e).hasMessageThat().isEqualTo(errorMessage)
+    }
 
-  private static String formatWithList(String fmt, List<?> args) {
-    return Starlark.formatWithList(DEFAULT, fmt, args);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testOutputOrderOfMap() {
+        val map: MutableMap<Any?, Any?> = LinkedHashMap<Any?, Any?>()
+        map.put(StarlarkInt.of(5), StarlarkInt.of(5))
+        map.put(StarlarkInt.of(3), StarlarkInt.of(3))
+        map.put("foo", StarlarkInt.of(42))
+        map.put(StarlarkInt.of(7), "bar")
+        Truth.assertThat(str(Starlark.fromJava(map, null)))
+            .isEqualTo("{5: 5, 3: 3, \"foo\": 42, 7: \"bar\"}")
+    }
 
-  private void checkFormatPositionalFails(String errorMessage, String format, Object... arguments) {
-    IllegalFormatException e =
-        assertThrows(IllegalFormatException.class, () -> format(format, arguments));
-    assertThat(e).hasMessageThat().isEqualTo(errorMessage);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFormatPositional() {
+        Truth.assertThat(formatWithList("%s %d", Tuple.of("foo", StarlarkInt.of(3)))).isEqualTo("foo 3")
+        Truth.assertThat(format("%s %d", "foo", StarlarkInt.of(3))).isEqualTo("foo 3")
 
-  @Test
-  public void testOutputOrderOfMap() throws Exception {
-    Map<Object, Object> map = new LinkedHashMap<>();
-    map.put(StarlarkInt.of(5), StarlarkInt.of(5));
-    map.put(StarlarkInt.of(3), StarlarkInt.of(3));
-    map.put("foo", StarlarkInt.of(42));
-    map.put(StarlarkInt.of(7), "bar");
-    assertThat(str(Starlark.fromJava(map, null)))
-        .isEqualTo("{5: 5, 3: 3, \"foo\": 42, 7: \"bar\"}");
-  }
+        // %d allows Integer or StarlarkInt
+        Truth.assertThat(format("%d %d", StarlarkInt.of(123), 456)).isEqualTo("123 456")
 
-  @Test
-  public void testFormatPositional() throws Exception {
-    assertThat(formatWithList("%s %d", Tuple.of("foo", StarlarkInt.of(3)))).isEqualTo("foo 3");
-    assertThat(format("%s %d", "foo", StarlarkInt.of(3))).isEqualTo("foo 3");
+        Truth.assertThat(format("%s %s %s", StarlarkInt.of(1), null, StarlarkInt.of(3)))
+            .isEqualTo("1 null 3")
 
-    // %d allows Integer or StarlarkInt
-    assertThat(format("%d %d", StarlarkInt.of(123), 456)).isEqualTo("123 456");
-
-    assertThat(format("%s %s %s", StarlarkInt.of(1), null, StarlarkInt.of(3)))
-        .isEqualTo("1 null 3");
-
-    // Note: formatToString doesn't perform scalar x -> (x) conversion;
-    // The %-operator is responsible for that.
-    assertThat(formatWithList("", Tuple.of())).isEmpty();
-    assertThat(format("%s", "foo")).isEqualTo("foo");
-    assertThat(format("%s", 3.14159)).isEqualTo("3.14159");
-    checkFormatPositionalFails(
-        "not all arguments converted during string formatting", "%s", 1, 2, 3);
-    assertThat(format("%%%s", "foo")).isEqualTo("%foo");
-    checkFormatPositionalFails(
-        "not all arguments converted during string formatting", "%%s", "foo");
-    checkFormatPositionalFails(
-        "unsupported format character \" \" at index 1 in \"% %s\"", "% %s", "foo");
-    assertThat(
+        // Note: formatToString doesn't perform scalar x -> (x) conversion;
+        // The %-operator is responsible for that.
+        Truth.assertThat(formatWithList("", Tuple.of())).isEmpty()
+        Truth.assertThat(format("%s", "foo")).isEqualTo("foo")
+        Truth.assertThat(format("%s", 3.14159)).isEqualTo("3.14159")
+        checkFormatPositionalFails(
+            "not all arguments converted during string formatting", "%s", 1, 2, 3
+        )
+        Truth.assertThat(format("%%%s", "foo")).isEqualTo("%foo")
+        checkFormatPositionalFails(
+            "not all arguments converted during string formatting", "%%s", "foo"
+        )
+        checkFormatPositionalFails(
+            "unsupported format character \" \" at index 1 in \"% %s\"", "% %s", "foo"
+        )
+        Truth.assertThat(
             format(
                 "%s",
-                StarlarkList.of(null, StarlarkInt.of(1), StarlarkInt.of(2), StarlarkInt.of(3))))
-        .isEqualTo("[1, 2, 3]");
-    assertThat(format("%s", Tuple.of(StarlarkInt.of(1), StarlarkInt.of(2), StarlarkInt.of(3))))
-        .isEqualTo("(1, 2, 3)");
-    assertThat(format("%s", StarlarkList.of(null))).isEqualTo("[]");
-    assertThat(format("%s", Tuple.of())).isEqualTo("()");
-    assertThat(format("%% %d %r %s", StarlarkInt.of(1), "2", "3")).isEqualTo("% 1 \"2\" 3");
+                StarlarkList.of(null, StarlarkInt.of(1), StarlarkInt.of(2), StarlarkInt.of(3))
+            )
+        )
+            .isEqualTo("[1, 2, 3]")
+        Truth.assertThat(format("%s", Tuple.of(StarlarkInt.of(1), StarlarkInt.of(2), StarlarkInt.of(3))))
+            .isEqualTo("(1, 2, 3)")
+        Truth.assertThat(format("%s", StarlarkList.of(null))).isEqualTo("[]")
+        Truth.assertThat(format("%s", Tuple.of())).isEqualTo("()")
+        Truth.assertThat(format("%% %d %r %s", StarlarkInt.of(1), "2", "3")).isEqualTo("% 1 \"2\" 3")
 
-    checkFormatPositionalFails("got string for '%d' format, want int or float", "%d", "1");
-    checkFormatPositionalFails(
-        "unsupported format character \".\" at index 1 in \"%.3g\"", "%.3g", 1);
-    checkFormatPositionalFails(
-        "unsupported format character \".\" at index 1 in \"%.3g\"", "%.3g", 1, 2);
-    checkFormatPositionalFails(
-        "unsupported format character \".\" at index 1 in \"%.s\"", "%.s", 1);
-    checkFormatPositionalFails("not enough arguments for format pattern \"%.s\": ()", "%.s");
-  }
+        checkFormatPositionalFails("got string for '%d' format, want int or float", "%d", "1")
+        checkFormatPositionalFails(
+            "unsupported format character \".\" at index 1 in \"%.3g\"", "%.3g", 1
+        )
+        checkFormatPositionalFails(
+            "unsupported format character \".\" at index 1 in \"%.3g\"", "%.3g", 1, 2
+        )
+        checkFormatPositionalFails(
+            "unsupported format character \".\" at index 1 in \"%.s\"", "%.s", 1
+        )
+        checkFormatPositionalFails("not enough arguments for format pattern \"%.s\": ()", "%.s")
+    }
 
-  private static String prettyQuoted(String s) {
-    StringBuilder sb = new StringBuilder();
-    new Printer(sb).appendPrettyQuoted(s);
-    return sb.toString();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testPrettyQuoted() {
+        // Single-line strings should use ordinary double quotes.
+        Truth.assertThat(prettyQuoted("foo")).isEqualTo("\"foo\"")
+        Truth.assertThat(prettyQuoted("foo\"bar")).isEqualTo("\"foo\\\"bar\"")
+        Truth.assertThat(prettyQuoted("foo\\bar")).isEqualTo("\"foo\\\\bar\"")
 
-  @Test
-  public void testPrettyQuoted() throws Exception {
-    // Single-line strings should use ordinary double quotes.
-    assertThat(prettyQuoted("foo")).isEqualTo("\"foo\"");
-    assertThat(prettyQuoted("foo\"bar")).isEqualTo("\"foo\\\"bar\"");
-    assertThat(prettyQuoted("foo\\bar")).isEqualTo("\"foo\\\\bar\"");
+        // Multiline default is triple double quotes
+        Truth.assertThat(prettyQuoted("one\ntwo"))
+            .isEqualTo(
+                """
+            ${'"'}${'"'}${'"'}one
+            two${'"'}${'"'}${'"'}
+            """.trimIndent()
+            )
 
-    // Multiline default is triple double quotes
-    assertThat(prettyQuoted("one\ntwo"))
-        .isEqualTo(
-            """
-            \"\"\"one
-            two\"\"\"\
-            """);
+        // Escaping inside triple double quotes
+        // Double quotes should be escaped (force """ by having more single quotes)
+        Truth.assertThat(prettyQuoted("one\"two 'three' 'four'\nfive"))
+            .isEqualTo(
+                """
+            ${'"'}${'"'}${'"'}one"two 'three' 'four'
+            five${'"'}${'"'}${'"'}
+            """.trimIndent()
+            )
+        // Backslashes should be escaped
+        // Escaping inside triple double quotes (backslashes, control characters, hex escapes)
+        Truth.assertThat(prettyQuoted("one\\two\none\rtwo\ntabs\tthree\none\u0001two\nthree"))
+            .isEqualTo(
+                """
+            ${'"'}${'"'}${'"'}one\\two
+            one\rtwo
+            tabs\tthree
+            one\x01two
+            three${'"'}${'"'}${'"'}
+            """.trimIndent()
+            )
 
-    // Escaping inside triple double quotes
-    // Double quotes should be escaped (force """ by having more single quotes)
-    assertThat(prettyQuoted("one\"two 'three' 'four'\nfive"))
-        .isEqualTo(
-            """
-            \"\"\"one"two 'three' 'four'
-            five\"\"\"\
-            """);
-    // Backslashes should be escaped
-    // Escaping inside triple double quotes (backslashes, control characters, hex escapes)
-    assertThat(prettyQuoted("one\\two\none\rtwo\ntabs\tthree\none\u0001two\nthree"))
-        .isEqualTo(
-            """
-            \"\"\"one\\\\two
-            one\\rtwo
-            tabs\\tthree
-            one\\x01two
-            three\"\"\"\
-            """);
-
-    // Heuristic: switch to triple single quotes (''') if double quotes are dominant
-    assertThat(prettyQuoted("one\"two\"three\nfour"))
-        .isEqualTo(
-            """
+        // Heuristic: switch to triple single quotes (''') if double quotes are dominant
+        Truth.assertThat(prettyQuoted("one\"two\"three\nfour"))
+            .isEqualTo(
+                """
             '''one"two"three
-            four'''\
-            """);
+            four'''
+            """.trimIndent()
+            )
 
-    // Escaping inside triple single quotes (''')
-    // Single quotes should be escaped
-    assertThat(prettyQuoted("one\"two\" 'three\nfour"))
-        .isEqualTo(
-            """
+        // Escaping inside triple single quotes (''')
+        // Single quotes should be escaped
+        Truth.assertThat(prettyQuoted("one\"two\" 'three\nfour"))
+            .isEqualTo(
+                """
             '''one"two" 'three
-            four'''\
-            """);
+            four'''
+            """.trimIndent()
+            )
 
-    // Heuristic: switch to ''' if starting/ending with double quote (boundary issue)
-    assertThat(prettyQuoted("\"one\ntwo"))
-        .isEqualTo(
-            """
+        // Heuristic: switch to ''' if starting/ending with double quote (boundary issue)
+        Truth.assertThat(prettyQuoted("\"one\ntwo"))
+            .isEqualTo(
+                """
             '''"one
-            two'''\
-            """);
-    assertThat(prettyQuoted("one\ntwo\""))
-        .isEqualTo(
-            """
+            two'''
+            """.trimIndent()
+            )
+        Truth.assertThat(prettyQuoted("one\ntwo\""))
+            .isEqualTo(
+                """
             '''one
-            two"'''\
-            """);
+            two"'''
+            """.trimIndent()
+            )
 
-    // Boundary with single quote: keep triple double quotes
-    assertThat(prettyQuoted("'one\ntwo"))
-        .isEqualTo(
-            """
-            \"\"\"'one
-            two\"\"\"\
-            """);
-  }
+        // Boundary with single quote: keep triple double quotes
+        Truth.assertThat(prettyQuoted("'one\ntwo"))
+            .isEqualTo(
+                """
+            ${'"'}${'"'}${'"'}'one
+            two${'"'}${'"'}${'"'}
+            """.trimIndent()
+            )
+    }
 
-  private StarlarkValue createObjWithStr() {
-    return new StarlarkValue() {
-      @Override
-      public void repr(Printer printer, StarlarkSemantics semantics) {
-        printer.append("<repr marker>");
-      }
+    private fun createObjWithStr(): StarlarkValue {
+        return object : StarlarkValue() {
+            public override fun repr(printer: Printer, semantics: StarlarkSemantics?) {
+                printer.append("<repr marker>")
+            }
 
-      @Override
-      public void str(Printer printer, StarlarkSemantics semantics) {
-        printer.append("<str marker>");
-      }
-    };
-  }
+            public override fun str(printer: Printer, semantics: StarlarkSemantics?) {
+                printer.append("<str marker>")
+            }
+        }
+    }
+
+    companion object {
+        private fun str(o: Any?): String {
+            return Starlark.str(o, DEFAULT)
+        }
+
+        private fun format(fmt: String?, vararg args: Any?): String {
+            return Starlark.format(DEFAULT, fmt, args)
+        }
+
+        private fun formatWithList(fmt: String?, args: MutableList<*>?): String {
+            return Starlark.formatWithList(DEFAULT, fmt, args)
+        }
+
+        private fun prettyQuoted(s: String?): String {
+            val sb: java.lang.StringBuilder = java.lang.StringBuilder()
+            Printer(sb).appendPrettyQuoted(s)
+            return sb.toString()
+        }
+    }
 }

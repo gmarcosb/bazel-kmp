@@ -11,710 +11,723 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime
 
-package com.google.devtools.build.lib.runtime;
+import com.google.devtools.build.lib.analysis.ConfiguredTarget
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.AdditionalMatchers.find;
-import static org.mockito.AdditionalMatchers.not;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.contains;
-import static org.mockito.Mockito.any;
-import static org.mockito.Mockito.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+@RunWith(JUnit4::class)
+class TestSummaryTest {
+    private var stubTarget: ConfiguredTarget? = null
+    private var fs: FileSystem? = null
+    private var basicBuilder: TestSummary.Builder? = null
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.analysis.test.TestProvider;
-import com.google.devtools.build.lib.analysis.test.TestProvider.TestParams;
-import com.google.devtools.build.lib.buildeventstream.BuildEventContext;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.TestStatus;
-import com.google.devtools.build.lib.buildeventstream.PathConverter;
-import com.google.devtools.build.lib.clock.BlazeClock;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.util.io.AnsiTerminalPrinter;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import com.google.devtools.build.lib.view.test.TestStatus.BlazeTestStatus;
-import com.google.devtools.build.lib.view.test.TestStatus.FailedTestCasesStatus;
-import com.google.devtools.build.lib.view.test.TestStatus.TestCase;
-import com.google.devtools.build.lib.view.test.TestStatus.TestCase.Status;
-import com.google.protobuf.util.Durations;
-import com.google.protobuf.util.Timestamps;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-import org.mockito.InOrder;
-import org.mockito.Mockito;
-
-@RunWith(JUnit4.class)
-public class TestSummaryTest {
-
-  private static final String ANY_STRING = ".*?";
-  private static final String PATH = "package";
-  private static final String TARGET_NAME = "name";
-  private ConfiguredTarget stubTarget;
-  private static final ImmutableList<Long> SMALL_TIMING = ImmutableList.of(1L, 2L, 3L, 4L);
-
-  private static final int CACHED = SMALL_TIMING.size();
-  private static final int NOT_CACHED = 0;
-
-  private FileSystem fs;
-  private TestSummary.Builder basicBuilder;
-
-  @Before
-  public final void createFileSystem() throws Exception  {
-    fs = new InMemoryFileSystem(BlazeClock.instance(), DigestHashFunction.SHA256);
-    stubTarget = stubTarget();
-    basicBuilder = getTemplateBuilder();
-  }
-
-  private TestSummary.Builder getTemplateBuilder() {
-    BuildConfigurationValue configuration = Mockito.mock(BuildConfigurationValue.class);
-    when(configuration.checksum()).thenReturn("abcdef");
-    return TestSummary.newBuilder(stubTarget)
-        .setConfiguration(configuration)
-        .setStatus(BlazeTestStatus.PASSED)
-        .setNumCached(NOT_CACHED)
-        .setActionRan(true)
-        .setRanRemotely(false);
-  }
-
-  private List<Path> getPathList(String... names) {
-    List<Path> list = new ArrayList<>();
-    for (String name : names) {
-      list.add(fs.getPath(name));
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun createFileSystem() {
+        fs = InMemoryFileSystem(com.google.devtools.build.lib.clock.BlazeClock.instance(), DigestHashFunction.SHA256)
+        stubTarget = stubTarget()
+        basicBuilder = this.templateBuilder
     }
-    return list;
-  }
 
-  @Test
-  public void testShouldProperlyTestLabels() throws Exception {
-    ConfiguredTarget target = target("somepath", "MyTarget");
-    String expectedString = ANY_STRING + "//somepath:MyTarget" + ANY_STRING;
-    AnsiTerminalPrinter terminalPrinter = Mockito.mock(AnsiTerminalPrinter.class);
+    private val templateBuilder: TestSummary.Builder
+        get() {
+            val configuration: BuildConfigurationValue =
+                Mockito.mock<BuildConfigurationValue>(BuildConfigurationValue::class.java)
+            Mockito.`when`<T?>(configuration.checksum()).thenReturn("abcdef")
+            return TestSummary.newBuilder(stubTarget)
+                .setConfiguration(configuration)
+                .setStatus(BlazeTestStatus.PASSED)
+                .setNumCached(NOT_CACHED)
+                .setActionRan(true)
+                .setRanRemotely(false)
+        }
 
-    TestSummary summaryStatus = createTestSummary(target, BlazeTestStatus.PASSED, CACHED);
-    TestSummaryPrinter.print(summaryStatus, terminalPrinter, Path::getPathString, true, false);
-    terminalPrinter.print(find(expectedString));
-  }
+    private fun getPathList(vararg names: String?): MutableList<Path?> {
+        val list: MutableList<Path?> = java.util.ArrayList<Path?>()
+        for (name in names) {
+            list.add(fs.getPath(name))
+        }
+        return list
+    }
 
-  @Test
-  public void testShouldPrintPassedStatus() throws Exception {
-    String expectedString = ANY_STRING + "INFO" + ANY_STRING + BlazeTestStatus.PASSED + ANY_STRING;
-    AnsiTerminalPrinter terminalPrinter = Mockito.mock(AnsiTerminalPrinter.class);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testShouldProperlyTestLabels() {
+        val target: ConfiguredTarget = target("somepath", "MyTarget")
+        val expectedString = ANY_STRING + "//somepath:MyTarget" + ANY_STRING
+        val terminalPrinter: AnsiTerminalPrinter = Mockito.mock<AnsiTerminalPrinter>(AnsiTerminalPrinter::class.java)
 
-    TestSummary summary = createTestSummary(stubTarget, BlazeTestStatus.PASSED, NOT_CACHED);
-    TestSummaryPrinter.print(summary, terminalPrinter, Path::getPathString, true, false);
+        val summaryStatus: TestSummary = createTestSummary(target, BlazeTestStatus.PASSED, CACHED)
+        TestSummaryPrinter.print(summaryStatus, terminalPrinter, Path::getPathString, true, false)
+        terminalPrinter.print(AdditionalMatchers.find(expectedString))
+    }
 
-    verify(terminalPrinter).print(find(expectedString));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testShouldPrintPassedStatus() {
+        val expectedString = ANY_STRING + "INFO" + ANY_STRING + BlazeTestStatus.PASSED + ANY_STRING
+        val terminalPrinter: AnsiTerminalPrinter? = Mockito.mock<AnsiTerminalPrinter?>(AnsiTerminalPrinter::class.java)
 
-  @Test
-  public void testShouldPrintFailedStatus() throws Exception {
-    String expectedString = ANY_STRING + "ERROR" + ANY_STRING + BlazeTestStatus.FAILED + ANY_STRING;
-    AnsiTerminalPrinter terminalPrinter = Mockito.mock(AnsiTerminalPrinter.class);
+        val summary: TestSummary = createTestSummary(stubTarget, BlazeTestStatus.PASSED, NOT_CACHED)
+        TestSummaryPrinter.print(summary, terminalPrinter, Path::getPathString, true, false)
 
-    TestSummary summary = createTestSummary(stubTarget, BlazeTestStatus.FAILED, NOT_CACHED);
+        Mockito.verify<Any?>(terminalPrinter).print(AdditionalMatchers.find(expectedString))
+    }
 
-    TestSummaryPrinter.print(summary, terminalPrinter, Path::getPathString, true, false);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testShouldPrintFailedStatus() {
+        val expectedString = ANY_STRING + "ERROR" + ANY_STRING + BlazeTestStatus.FAILED + ANY_STRING
+        val terminalPrinter: AnsiTerminalPrinter = Mockito.mock<AnsiTerminalPrinter>(AnsiTerminalPrinter::class.java)
 
-    terminalPrinter.print(find(expectedString));
-  }
+        val summary: TestSummary = createTestSummary(stubTarget, BlazeTestStatus.FAILED, NOT_CACHED)
 
-  private void assertShouldNotPrint(BlazeTestStatus status, boolean verboseSummary) {
-    AnsiTerminalPrinter terminalPrinter = Mockito.mock(AnsiTerminalPrinter.class);
-    TestSummaryPrinter.print(
-        createTestSummary(stubTarget, status, NOT_CACHED),
-        terminalPrinter,
-        Path::getPathString,
-        verboseSummary,
-        false);
-    verify(terminalPrinter, never()).print(anyString());
-  }
+        TestSummaryPrinter.print(summary, terminalPrinter, Path::getPathString, true, false)
 
-  @Test
-  public void testShouldPrintFailedToBuildStatus() {
-    String expectedString = ANY_STRING + "INFO" + ANY_STRING + BlazeTestStatus.FAILED_TO_BUILD;
-    AnsiTerminalPrinter terminalPrinter = Mockito.mock(AnsiTerminalPrinter.class);
+        terminalPrinter.print(AdditionalMatchers.find(expectedString))
+    }
 
-    TestSummary summary = createTestSummary(BlazeTestStatus.FAILED_TO_BUILD, NOT_CACHED);
+    private fun assertShouldNotPrint(status: BlazeTestStatus?, verboseSummary: Boolean) {
+        val terminalPrinter: AnsiTerminalPrinter? = Mockito.mock<AnsiTerminalPrinter?>(AnsiTerminalPrinter::class.java)
+        TestSummaryPrinter.print(
+            createTestSummary(stubTarget, status, NOT_CACHED),
+            terminalPrinter,
+            Path::getPathString,
+            verboseSummary,
+            false
+        )
+        Mockito.verify<Any?>(terminalPrinter, Mockito.never()).print(ArgumentMatchers.anyString())
+    }
 
-    TestSummaryPrinter.print(summary, terminalPrinter, Path::getPathString, true, false);
+    @org.junit.Test
+    fun testShouldPrintFailedToBuildStatus() {
+        val expectedString = ANY_STRING + "INFO" + ANY_STRING + BlazeTestStatus.FAILED_TO_BUILD
+        val terminalPrinter: AnsiTerminalPrinter = Mockito.mock<AnsiTerminalPrinter>(AnsiTerminalPrinter::class.java)
 
-    terminalPrinter.print(find(expectedString));
-  }
+        val summary: TestSummary = createTestSummary(BlazeTestStatus.FAILED_TO_BUILD, NOT_CACHED)
 
-  @Test
-  public void testShouldNotPrintFailedToBuildStatus() {
-    assertShouldNotPrint(BlazeTestStatus.FAILED_TO_BUILD, false);
-  }
+        TestSummaryPrinter.print(summary, terminalPrinter, Path::getPathString, true, false)
 
-  @Test
-  public void testShouldNotPrintHaltedStatus() {
-    assertShouldNotPrint(BlazeTestStatus.BLAZE_HALTED_BEFORE_TESTING, true);
-  }
+        terminalPrinter.print(AdditionalMatchers.find(expectedString))
+    }
 
-  @Test
-  public void testShouldPrintCachedStatus() throws Exception {
-    String expectedString = ANY_STRING + "\\(cached" + ANY_STRING;
-    AnsiTerminalPrinter terminalPrinter = Mockito.mock(AnsiTerminalPrinter.class);
+    @org.junit.Test
+    fun testShouldNotPrintFailedToBuildStatus() {
+        assertShouldNotPrint(BlazeTestStatus.FAILED_TO_BUILD, false)
+    }
 
-    TestSummary summary = createTestSummary(stubTarget, BlazeTestStatus.PASSED, CACHED);
+    @org.junit.Test
+    fun testShouldNotPrintHaltedStatus() {
+        assertShouldNotPrint(BlazeTestStatus.BLAZE_HALTED_BEFORE_TESTING, true)
+    }
 
-    TestSummaryPrinter.print(summary, terminalPrinter, Path::getPathString, true, false);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testShouldPrintCachedStatus() {
+        val expectedString = ANY_STRING + "\\(cached" + ANY_STRING
+        val terminalPrinter: AnsiTerminalPrinter = Mockito.mock<AnsiTerminalPrinter>(AnsiTerminalPrinter::class.java)
 
-    terminalPrinter.print(find(expectedString));
-  }
+        val summary: TestSummary = createTestSummary(stubTarget, BlazeTestStatus.PASSED, CACHED)
 
-  @Test
-  public void testPartialCachedStatus() throws Exception {
-    String expectedString = ANY_STRING + "\\(3/4 cached" + ANY_STRING;
-    AnsiTerminalPrinter terminalPrinter = Mockito.mock(AnsiTerminalPrinter.class);
+        TestSummaryPrinter.print(summary, terminalPrinter, Path::getPathString, true, false)
 
-    TestSummary summary = createTestSummary(stubTarget, BlazeTestStatus.PASSED, CACHED - 1);
-    TestSummaryPrinter.print(summary, terminalPrinter, Path::getPathString, true, false);
-    terminalPrinter.print(find(expectedString));
-  }
+        terminalPrinter.print(AdditionalMatchers.find(expectedString))
+    }
 
-  @Test
-  public void testIncompleteCached() throws Exception {
-    AnsiTerminalPrinter terminalPrinter = Mockito.mock(AnsiTerminalPrinter.class);
-    TestSummary summary = createTestSummary(stubTarget, BlazeTestStatus.INCOMPLETE, CACHED - 1);
-    TestSummaryPrinter.print(summary, terminalPrinter, Path::getPathString, true, false);
-    verify(terminalPrinter).print(not(contains("cached")));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testPartialCachedStatus() {
+        val expectedString = ANY_STRING + "\\(3/4 cached" + ANY_STRING
+        val terminalPrinter: AnsiTerminalPrinter = Mockito.mock<AnsiTerminalPrinter>(AnsiTerminalPrinter::class.java)
 
-  @Test
-  public void testShouldPrintUncachedStatus() throws Exception {
-    AnsiTerminalPrinter terminalPrinter = Mockito.mock(AnsiTerminalPrinter.class);
-    TestSummary summary = createTestSummary(stubTarget, BlazeTestStatus.PASSED, NOT_CACHED);
-    TestSummaryPrinter.print(summary, terminalPrinter, Path::getPathString, true, false);
-    verify(terminalPrinter).print(not(contains("cached")));
-  }
+        val summary: TestSummary = createTestSummary(stubTarget, BlazeTestStatus.PASSED, CACHED - 1)
+        TestSummaryPrinter.print(summary, terminalPrinter, Path::getPathString, true, false)
+        terminalPrinter.print(AdditionalMatchers.find(expectedString))
+    }
 
-  @Test
-  public void testNoTiming() throws Exception {
-    String expectedString = ANY_STRING + "INFO" + ANY_STRING + BlazeTestStatus.PASSED;
-    AnsiTerminalPrinter terminalPrinter = Mockito.mock(AnsiTerminalPrinter.class);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testIncompleteCached() {
+        val terminalPrinter: AnsiTerminalPrinter? = Mockito.mock<AnsiTerminalPrinter?>(AnsiTerminalPrinter::class.java)
+        val summary: TestSummary = createTestSummary(stubTarget, BlazeTestStatus.INCOMPLETE, CACHED - 1)
+        TestSummaryPrinter.print(summary, terminalPrinter, Path::getPathString, true, false)
+        Mockito.verify<Any?>(terminalPrinter).print(< T > not < T ? > (ArgumentMatchers.contains("cached")))
+    }
 
-    TestSummary summary = createTestSummary(stubTarget, BlazeTestStatus.PASSED, NOT_CACHED);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testShouldPrintUncachedStatus() {
+        val terminalPrinter: AnsiTerminalPrinter? = Mockito.mock<AnsiTerminalPrinter?>(AnsiTerminalPrinter::class.java)
+        val summary: TestSummary = createTestSummary(stubTarget, BlazeTestStatus.PASSED, NOT_CACHED)
+        TestSummaryPrinter.print(summary, terminalPrinter, Path::getPathString, true, false)
+        Mockito.verify<Any?>(terminalPrinter).print(< T > not < T ? > (ArgumentMatchers.contains("cached")))
+    }
 
-    TestSummaryPrinter.print(summary, terminalPrinter, Path::getPathString, true, false);
-    terminalPrinter.print(find(expectedString));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNoTiming() {
+        val expectedString = ANY_STRING + "INFO" + ANY_STRING + BlazeTestStatus.PASSED
+        val terminalPrinter: AnsiTerminalPrinter = Mockito.mock<AnsiTerminalPrinter>(AnsiTerminalPrinter::class.java)
 
-  @Test
-  public void testBuilder() throws Exception {
-    // No need to copy if built twice in a row; no direct setters on the object.
-    TestSummary summary = basicBuilder.build();
-    TestSummary sameSummary = basicBuilder.build();
-    assertThat(sameSummary).isSameInstanceAs(summary);
+        val summary: TestSummary = createTestSummary(stubTarget, BlazeTestStatus.PASSED, NOT_CACHED)
 
-    basicBuilder.addTestTimes(ImmutableList.of(40L));
+        TestSummaryPrinter.print(summary, terminalPrinter, Path::getPathString, true, false)
+        terminalPrinter.print(AdditionalMatchers.find(expectedString))
+    }
 
-    TestSummary summaryCopy = basicBuilder.build();
-    assertThat(summaryCopy.getTarget()).isEqualTo(summary.getTarget());
-    assertThat(summaryCopy.getStatus()).isEqualTo(summary.getStatus());
-    assertThat(summaryCopy.numCached()).isEqualTo(summary.numCached());
-    assertThat(summaryCopy).isNotSameInstanceAs(summary);
-    assertThat(summary.totalRuns()).isEqualTo(0);
-    assertThat(summaryCopy.totalRuns()).isEqualTo(1);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBuilder() {
+        // No need to copy if built twice in a row; no direct setters on the object.
+        val summary: TestSummary = basicBuilder.build()
+        val sameSummary: TestSummary? = basicBuilder.build()
+        assertThat(sameSummary).isSameInstanceAs(summary)
 
-    // Check that the builder can add a new warning to the copy,
-    // despite the immutability of the original.
-    basicBuilder.addTestTimes(ImmutableList.of(60L));
+        basicBuilder.addTestTimes(com.google.common.collect.ImmutableList.of<E?>(40L))
 
-    TestSummary fiftyCached = basicBuilder.setNumCached(50).build();
-    assertThat(fiftyCached.getStatus()).isEqualTo(summary.getStatus());
-    assertThat(fiftyCached.numCached()).isEqualTo(50);
-    assertThat(fiftyCached.totalRuns()).isEqualTo(2);
+        val summaryCopy: TestSummary = basicBuilder.build()
+        assertThat(summaryCopy.getTarget()).isEqualTo(summary.getTarget())
+        assertThat(summaryCopy.getStatus()).isEqualTo(summary.getStatus())
+        assertThat(summaryCopy.numCached()).isEqualTo(summary.numCached())
+        assertThat(summaryCopy).isNotSameInstanceAs(summary)
+        assertThat(summary.totalRuns()).isEqualTo(0)
+        assertThat(summaryCopy.totalRuns()).isEqualTo(1)
 
-    TestSummary sixtyCached = basicBuilder.setNumCached(60).build();
-    assertThat(sixtyCached.numCached()).isEqualTo(60);
-    assertThat(fiftyCached.numCached()).isEqualTo(50);
-  }
+        // Check that the builder can add a new warning to the copy,
+        // despite the immutability of the original.
+        basicBuilder.addTestTimes(com.google.common.collect.ImmutableList.of<E?>(60L))
 
-  @Test
-  public void testAsStreamProto() throws Exception {
-    TestParams testParams = mock(TestParams.class);
-    when(testParams.getRuns()).thenReturn(2);
-    when(testParams.getShards()).thenReturn(3);
+        val fiftyCached: TestSummary = basicBuilder.setNumCached(50).build()
+        assertThat(fiftyCached.getStatus()).isEqualTo(summary.getStatus())
+        assertThat(fiftyCached.numCached()).isEqualTo(50)
+        assertThat(fiftyCached.totalRuns()).isEqualTo(2)
 
-    TestProvider testProvider = new TestProvider(testParams);
-    when(stubTarget.getProvider(eq(TestProvider.class))).thenReturn(testProvider);
+        val sixtyCached: TestSummary = basicBuilder.setNumCached(60).build()
+        assertThat(sixtyCached.numCached()).isEqualTo(60)
+        assertThat(fiftyCached.numCached()).isEqualTo(50)
+    }
 
-    PathConverter pathConverter = mock(PathConverter.class);
-    when(pathConverter.apply(any(Path.class)))
-        .thenAnswer(
-            invocation -> "/path/to" + ((Path) invocation.getArguments()[0]).getPathString());
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAsStreamProto() {
+        val testParams: TestParams = Mockito.mock<TestParams>(TestParams::class.java)
+        Mockito.`when`<T?>(testParams.getRuns()).thenReturn(2)
+        Mockito.`when`<T?>(testParams.getShards()).thenReturn(3)
 
-    BuildEventContext converters = mock(BuildEventContext.class);
-    when(converters.pathConverter()).thenReturn(pathConverter);
+        val testProvider: TestProvider = TestProvider(testParams)
+        Mockito.`when`<T?>(stubTarget.getProvider(< T > eq < T ? > (TestProvider::class.java))).thenReturn(testProvider)
 
-    TestSummary summary =
-        basicBuilder
+        val pathConverter: PathConverter = Mockito.mock<PathConverter>(PathConverter::class.java)
+        Mockito.`when`<T?>(pathConverter.apply(ArgumentMatchers.any<T?>(Path::class.java)))
+            .thenAnswer(
+                Answer { invocation: InvocationOnMock? -> "/path/to" + (invocation.getArguments()[0] as Path).getPathString() })
+
+        val converters: BuildEventContext = Mockito.mock<BuildEventContext>(BuildEventContext::class.java)
+        Mockito.`when`<T?>(converters.pathConverter()).thenReturn(pathConverter)
+
+        val summary: TestSummary =
+            basicBuilder
+                .setStatus(BlazeTestStatus.FAILED)
+                .addPassedLogs(getPathList("/apple"))
+                .addFailedLogs(getPathList("/pear"))
+                .mergeTiming(1000, 300)
+                .build()
+
+        assertThat(summary.asStreamProto(converters).getTestSummary())
+            .isEqualTo(
+                BuildEventStreamProtos.TestSummary.newBuilder()
+                    .setOverallStatus(TestStatus.FAILED)
+                    .setFirstStartTimeMillis(1000)
+                    .setFirstStartTime(Timestamps.fromMillis(1000))
+                    .setLastStopTimeMillis(1300)
+                    .setLastStopTime(Timestamps.fromMillis(1300))
+                    .setTotalRunDurationMillis(300)
+                    .setTotalRunDuration(Durations.fromMillis(300))
+                    .setRunCount(2)
+                    .setShardCount(3)
+                    .addPassed(BuildEventStreamProtos.File.newBuilder().setUri("/path/to/apple"))
+                    .addFailed(BuildEventStreamProtos.File.newBuilder().setUri("/path/to/pear"))
+                    .build()
+            )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSingleTime() {
+        val expectedString = ANY_STRING + "INFO" + ANY_STRING + BlazeTestStatus.PASSED + ANY_STRING +
+                "in 3.4s"
+        val terminalPrinter: AnsiTerminalPrinter = Mockito.mock<AnsiTerminalPrinter>(AnsiTerminalPrinter::class.java)
+
+        val summary: TestSummary? =
+            basicBuilder.addTestTimes(com.google.common.collect.ImmutableList.of<E?>(3412L)).build()
+        TestSummaryPrinter.print(summary, terminalPrinter, Path::getPathString, true, false)
+        terminalPrinter.print(AdditionalMatchers.find(expectedString))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNoTime() {
+        // The last part matches anything not containing "in".
+        val expectedString = ANY_STRING + "INFO" + ANY_STRING + BlazeTestStatus.PASSED + "(?!in)*"
+        val terminalPrinter: AnsiTerminalPrinter = Mockito.mock<AnsiTerminalPrinter>(AnsiTerminalPrinter::class.java)
+
+        val summary: TestSummary? =
+            basicBuilder.addTestTimes(com.google.common.collect.ImmutableList.of<E?>(3412L)).build()
+        TestSummaryPrinter.print(summary, terminalPrinter, Path::getPathString, false, false)
+        terminalPrinter.print(AdditionalMatchers.find(expectedString))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMultipleTimes() {
+        val expectedString = ANY_STRING + "INFO" + ANY_STRING + BlazeTestStatus.PASSED + ANY_STRING +
+                "\n  Stats over 3 runs: max = 3.0s, min = 1.0s, " +
+                "avg = 2.0s, dev = 0.8s"
+        val terminalPrinter: AnsiTerminalPrinter = Mockito.mock<AnsiTerminalPrinter>(AnsiTerminalPrinter::class.java)
+        val summary: TestSummary? = basicBuilder
+            .addTestTimes(com.google.common.collect.ImmutableList.of<E?>(1000L, 2000L, 3000L))
+            .build()
+        TestSummaryPrinter.print(summary, terminalPrinter, Path::getPathString, true, false)
+        terminalPrinter.print(AdditionalMatchers.find(expectedString))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCoverageDataReferences() {
+        val paths: MutableList<Path?> = getPathList("/cov1.dat", "/cov2.dat", "/cov3.dat", "/cov4.dat")
+        FileSystemUtils.writeContentAsLatin1(paths.get(1), "something")
+        FileSystemUtils.writeContentAsLatin1(paths.get(3), "")
+        FileSystemUtils.writeContentAsLatin1(paths.get(3), "something else")
+        val summary: TestSummary? = basicBuilder.addCoverageFiles(paths).build()
+
+        val terminalPrinter: AnsiTerminalPrinter? = Mockito.mock<AnsiTerminalPrinter?>(AnsiTerminalPrinter::class.java)
+        TestSummaryPrinter.print(summary, terminalPrinter, Path::getPathString, true, false)
+        Mockito.verify<Any?>(terminalPrinter)
+            .print(AdditionalMatchers.find(ANY_STRING + "INFO" + ANY_STRING + BlazeTestStatus.PASSED))
+        Mockito.verify<Any?>(terminalPrinter).print(AdditionalMatchers.find("  /cov2.dat"))
+        Mockito.verify<Any?>(terminalPrinter).print(AdditionalMatchers.find("  /cov4.dat"))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFlakyAttempts() {
+        val expectedString = ANY_STRING + "WARNING" + ANY_STRING + BlazeTestStatus.FLAKY +
+                ANY_STRING + ", failed in 2 out of 3"
+        val terminalPrinter: AnsiTerminalPrinter = Mockito.mock<AnsiTerminalPrinter>(AnsiTerminalPrinter::class.java)
+
+        val summary: TestSummary? = basicBuilder
+            .setStatus(BlazeTestStatus.FLAKY)
+            .addPassedLogs(getPathList("/a"))
+            .addFailedLogs(getPathList("/b", "/c"))
+            .build()
+        TestSummaryPrinter.print(summary, terminalPrinter, Path::getPathString, true, false)
+        terminalPrinter.print(AdditionalMatchers.find(expectedString))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNumberOfFailedRuns() {
+        val expectedString = ANY_STRING + "ERROR" + ANY_STRING + BlazeTestStatus.FAILED +
+                ANY_STRING + "in 2 out of 3"
+        val terminalPrinter: AnsiTerminalPrinter = Mockito.mock<AnsiTerminalPrinter>(AnsiTerminalPrinter::class.java)
+
+        val summary: TestSummary? = basicBuilder
+            .setStatus(BlazeTestStatus.FAILED)
+            .addPassedLogs(getPathList("/a"))
+            .addFailedLogs(getPathList("/b", "/c"))
+            .build()
+        TestSummaryPrinter.print(summary, terminalPrinter, Path::getPathString, true, false)
+        terminalPrinter.print(AdditionalMatchers.find(expectedString))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFileNamesNotShown() {
+        val emptyDetails: MutableList<TestCase?> = com.google.common.collect.ImmutableList.of<TestCase?>()
+        val summary: TestSummary? = basicBuilder
             .setStatus(BlazeTestStatus.FAILED)
             .addPassedLogs(getPathList("/apple"))
             .addFailedLogs(getPathList("/pear"))
-            .mergeTiming(1000, 300)
-            .build();
+            .addCoverageFiles(getPathList("/maracuja"))
+            .addFailedTestCases(emptyDetails, FailedTestCasesStatus.FULL)
+            .build()
 
-    assertThat(summary.asStreamProto(converters).getTestSummary())
-        .isEqualTo(
-            BuildEventStreamProtos.TestSummary.newBuilder()
-                .setOverallStatus(TestStatus.FAILED)
-                .setFirstStartTimeMillis(1000)
-                .setFirstStartTime(Timestamps.fromMillis(1000))
-                .setLastStopTimeMillis(1300)
-                .setLastStopTime(Timestamps.fromMillis(1300))
-                .setTotalRunDurationMillis(300)
-                .setTotalRunDuration(Durations.fromMillis(300))
-                .setRunCount(2)
-                .setShardCount(3)
-                .addPassed(BuildEventStreamProtos.File.newBuilder().setUri("/path/to/apple"))
-                .addFailed(BuildEventStreamProtos.File.newBuilder().setUri("/path/to/pear"))
-                .build());
-  }
-
-  @Test
-  public void testSingleTime() throws Exception {
-    String expectedString = ANY_STRING + "INFO" + ANY_STRING + BlazeTestStatus.PASSED + ANY_STRING +
-                            "in 3.4s";
-    AnsiTerminalPrinter terminalPrinter = Mockito.mock(AnsiTerminalPrinter.class);
-
-    TestSummary summary = basicBuilder.addTestTimes(ImmutableList.of(3412L)).build();
-    TestSummaryPrinter.print(summary, terminalPrinter, Path::getPathString, true, false);
-    terminalPrinter.print(find(expectedString));
-  }
-
-  @Test
-  public void testNoTime() throws Exception {
-    // The last part matches anything not containing "in".
-    String expectedString = ANY_STRING + "INFO" + ANY_STRING + BlazeTestStatus.PASSED + "(?!in)*";
-    AnsiTerminalPrinter terminalPrinter = Mockito.mock(AnsiTerminalPrinter.class);
-
-    TestSummary summary = basicBuilder.addTestTimes(ImmutableList.of(3412L)).build();
-    TestSummaryPrinter.print(summary, terminalPrinter, Path::getPathString, false, false);
-    terminalPrinter.print(find(expectedString));
-  }
-
-  @Test
-  public void testMultipleTimes() throws Exception {
-    String expectedString = ANY_STRING + "INFO" + ANY_STRING + BlazeTestStatus.PASSED + ANY_STRING +
-                            "\n  Stats over 3 runs: max = 3.0s, min = 1.0s, " +
-                            "avg = 2.0s, dev = 0.8s";
-    AnsiTerminalPrinter terminalPrinter = Mockito.mock(AnsiTerminalPrinter.class);
-    TestSummary summary = basicBuilder
-        .addTestTimes(ImmutableList.of(1000L, 2000L, 3000L))
-        .build();
-    TestSummaryPrinter.print(summary, terminalPrinter, Path::getPathString, true, false);
-    terminalPrinter.print(find(expectedString));
-  }
-
-  @Test
-  public void testCoverageDataReferences() throws Exception {
-    List<Path> paths = getPathList("/cov1.dat", "/cov2.dat", "/cov3.dat", "/cov4.dat");
-    FileSystemUtils.writeContentAsLatin1(paths.get(1), "something");
-    FileSystemUtils.writeContentAsLatin1(paths.get(3), "");
-    FileSystemUtils.writeContentAsLatin1(paths.get(3), "something else");
-    TestSummary summary = basicBuilder.addCoverageFiles(paths).build();
-
-    AnsiTerminalPrinter terminalPrinter = Mockito.mock(AnsiTerminalPrinter.class);
-    TestSummaryPrinter.print(summary, terminalPrinter, Path::getPathString, true, false);
-    verify(terminalPrinter).print(find(ANY_STRING + "INFO" + ANY_STRING + BlazeTestStatus.PASSED));
-    verify(terminalPrinter).print(find("  /cov2.dat"));
-    verify(terminalPrinter).print(find("  /cov4.dat"));
-  }
-
-  @Test
-  public void testFlakyAttempts() throws Exception {
-    String expectedString = ANY_STRING + "WARNING" + ANY_STRING + BlazeTestStatus.FLAKY +
-        ANY_STRING + ", failed in 2 out of 3";
-    AnsiTerminalPrinter terminalPrinter = Mockito.mock(AnsiTerminalPrinter.class);
-
-    TestSummary summary = basicBuilder
-        .setStatus(BlazeTestStatus.FLAKY)
-        .addPassedLogs(getPathList("/a"))
-        .addFailedLogs(getPathList("/b", "/c"))
-        .build();
-    TestSummaryPrinter.print(summary, terminalPrinter, Path::getPathString, true, false);
-    terminalPrinter.print(find(expectedString));
-  }
-
-  @Test
-  public void testNumberOfFailedRuns() throws Exception {
-    String expectedString = ANY_STRING + "ERROR" + ANY_STRING + BlazeTestStatus.FAILED +
-    ANY_STRING + "in 2 out of 3";
-    AnsiTerminalPrinter terminalPrinter = Mockito.mock(AnsiTerminalPrinter.class);
-
-    TestSummary summary = basicBuilder
-        .setStatus(BlazeTestStatus.FAILED)
-        .addPassedLogs(getPathList("/a"))
-        .addFailedLogs(getPathList("/b", "/c"))
-        .build();
-    TestSummaryPrinter.print(summary, terminalPrinter, Path::getPathString, true, false);
-    terminalPrinter.print(find(expectedString));
-  }
-
-  @Test
-  public void testFileNamesNotShown() throws Exception {
-    List<TestCase> emptyDetails = ImmutableList.of();
-    TestSummary summary = basicBuilder
-        .setStatus(BlazeTestStatus.FAILED)
-        .addPassedLogs(getPathList("/apple"))
-        .addFailedLogs(getPathList("/pear"))
-        .addCoverageFiles(getPathList("/maracuja"))
-        .addFailedTestCases(emptyDetails, FailedTestCasesStatus.FULL)
-        .build();
-
-    // Check that only //package:name is printed.
-    AnsiTerminalPrinter printer = Mockito.mock(AnsiTerminalPrinter.class);
-    TestSummaryPrinter.print(summary, printer, Path::getPathString, true, true);
-    verify(printer).print(contains("//package:name"));
-  }
-
-  @Test
-  public void testMessageShownWhenTestCasesMissing() throws Exception {
-    ImmutableList<TestCase> emptyList = ImmutableList.of();
-    TestSummary summary = createTestSummaryWithDetails(
-        BlazeTestStatus.FAILED, emptyList, FailedTestCasesStatus.NOT_AVAILABLE);
-
-    AnsiTerminalPrinter printer = Mockito.mock(AnsiTerminalPrinter.class);
-    TestSummaryPrinter.print(summary, printer, Path::getPathString, true, true);
-    verify(printer).print(contains("//package:name"));
-    verify(printer).print(contains("not available"));
-  }
-
-  @Test
-  public void testMessageShownForPartialResults() throws Exception {
-    ImmutableList<TestCase> testCases =
-        ImmutableList.of(newDetail("orange", TestCase.Status.FAILED, 1500L));
-    TestSummary summary = createTestSummaryWithDetails(BlazeTestStatus.FAILED, testCases,
-        FailedTestCasesStatus.PARTIAL);
-
-    AnsiTerminalPrinter printer = Mockito.mock(AnsiTerminalPrinter.class);
-    TestSummaryPrinter.print(summary, printer, Path::getPathString, true, true);
-    verify(printer).print(contains("//package:name"));
-    verify(printer).print(find("FAILED.*orange"));
-    verify(printer).print(contains("incomplete"));
-  }
-
-  private TestCase newDetail(String name,  TestCase.Status status, long duration) {
-    return TestCase.newBuilder()
-        .setName(name)
-        .setStatus(status)
-        .setRunDurationMillis(duration)
-        .build();
-  }
-
-  @Test
-  public void testTestCaseNamesShownWhenNeeded() throws Exception {
-    TestCase detailPassed =
-        newDetail("strawberry", TestCase.Status.PASSED, 1000L);
-    TestCase detailFailed =
-        newDetail("orange", TestCase.Status.FAILED, 1500L);
-
-    TestSummary summaryPassed = createTestSummaryWithDetails(
-        BlazeTestStatus.PASSED, Arrays.asList(detailPassed));
-
-    TestSummary summaryFailed = createTestSummaryWithDetails(
-        BlazeTestStatus.FAILED, Arrays.asList(detailPassed, detailFailed));
-    assertThat(summaryFailed.getStatus()).isEqualTo(BlazeTestStatus.FAILED);
-
-    AnsiTerminalPrinter printerPassed = Mockito.mock(AnsiTerminalPrinter.class);
-    TestSummaryPrinter.print(summaryPassed, printerPassed, Path::getPathString, true, true);
-    verify(printerPassed).print(contains("//package:name"));
-
-    AnsiTerminalPrinter printerFailed = Mockito.mock(AnsiTerminalPrinter.class);
-    TestSummaryPrinter.print(summaryFailed, printerFailed, Path::getPathString, true, true);
-    verify(printerFailed).print(contains("//package:name"));
-    verify(printerFailed).print(find("FAILED.*orange *\\(1\\.5"));
-  }
-
-  @Test
-  public void testShowTestCaseNames() throws Exception {
-    TestCase detailPassed = newDetail("strawberry", TestCase.Status.PASSED, 1000L);
-    TestCase detailFailed = newDetail("orange", TestCase.Status.FAILED, 1500L);
-
-    TestSummary summaryPassed =
-        createPassedTestSummary(BlazeTestStatus.PASSED, Arrays.asList(detailPassed));
-
-    TestSummary summaryFailed =
-        createTestSummaryWithDetails(
-            BlazeTestStatus.FAILED, Arrays.asList(detailPassed, detailFailed));
-    assertThat(summaryFailed.getStatus()).isEqualTo(BlazeTestStatus.FAILED);
-
-    AnsiTerminalPrinter printerPassed = Mockito.mock(AnsiTerminalPrinter.class);
-    TestSummaryPrinter.print(summaryPassed, printerPassed, Path::getPathString, true, true);
-    verify(printerPassed).print(contains("//package:name"));
-    verify(printerPassed).print(find("PASSED.*strawberry *\\(1\\.0"));
-
-    AnsiTerminalPrinter printerFailed = Mockito.mock(AnsiTerminalPrinter.class);
-    TestSummaryPrinter.print(summaryFailed, printerFailed, Path::getPathString, true, true);
-    verify(printerFailed).print(contains("//package:name"));
-    verify(printerFailed).print(find("FAILED.*orange *\\(1\\.5"));
-  }
-
-  @Test
-  public void testTestCaseNamesOrdered() throws Exception {
-    TestCase[] details = {
-      newDetail("apple", TestCase.Status.FAILED, 1000L),
-      newDetail("banana", TestCase.Status.FAILED, 1000L),
-      newDetail("cranberry", TestCase.Status.FAILED, 1000L)
-    };
-
-    // The exceedingly dumb approach: writing all the permutations down manually
-    // is simply easier than any way of generating them.
-    int[][] permutations = {
-        { 0, 1, 2 },
-        { 0, 2, 1 },
-        { 1, 0, 2 },
-        { 1, 2, 0 },
-        { 2, 0, 1 },
-        { 2, 1, 0 }
-    };
-
-    for (int[] permutation : permutations) {
-      List<TestCase> permutatedDetails = new ArrayList<>();
-
-      for (int element : permutation) {
-        permutatedDetails.add(details[element]);
-      }
-
-      TestSummary summary = createTestSummaryWithDetails(BlazeTestStatus.FAILED, permutatedDetails);
-
-      // A mock that checks the ordering of method calls
-      AnsiTerminalPrinter printer = Mockito.mock(AnsiTerminalPrinter.class);
-      TestSummaryPrinter.print(summary, printer, Path::getPathString, true, true);
-      InOrder order = Mockito.inOrder(printer);
-      order.verify(printer).print(contains("//package:name"));
-      order.verify(printer).print(find("FAILED.*apple"));
-      order.verify(printer).print(find("FAILED.*banana"));
-      order.verify(printer).print(find("FAILED.*cranberry"));
+        // Check that only //package:name is printed.
+        val printer: AnsiTerminalPrinter? = Mockito.mock<AnsiTerminalPrinter?>(AnsiTerminalPrinter::class.java)
+        TestSummaryPrinter.print(summary, printer, Path::getPathString, true, true)
+        Mockito.verify<Any?>(printer).print(ArgumentMatchers.contains("//package:name"))
     }
-  }
 
-  @Test
-  public void testCachedResultsFirstInSort() throws Exception {
-    TestSummary summaryFailedCached = createTestSummary(BlazeTestStatus.FAILED, CACHED);
-    TestSummary summaryFailedNotCached = createTestSummary(BlazeTestStatus.FAILED, NOT_CACHED);
-    TestSummary summaryPassedCached = createTestSummary(BlazeTestStatus.PASSED, CACHED);
-    TestSummary summaryPassedNotCached = createTestSummary(BlazeTestStatus.PASSED, NOT_CACHED);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMessageShownWhenTestCasesMissing() {
+        val emptyList: com.google.common.collect.ImmutableList<TestCase?> =
+            com.google.common.collect.ImmutableList.of<TestCase?>()
+        val summary: TestSummary? = createTestSummaryWithDetails(
+            BlazeTestStatus.FAILED, emptyList, FailedTestCasesStatus.NOT_AVAILABLE
+        )
 
-    // This way we can make the test independent from the sort order of FAILEd
-    // and PASSED.
+        val printer: AnsiTerminalPrinter? = Mockito.mock<AnsiTerminalPrinter?>(AnsiTerminalPrinter::class.java)
+        TestSummaryPrinter.print(summary, printer, Path::getPathString, true, true)
+        Mockito.verify<Any?>(printer).print(ArgumentMatchers.contains("//package:name"))
+        Mockito.verify<Any?>(printer).print(ArgumentMatchers.contains("not available"))
+    }
 
-    assertThat(summaryFailedCached.compareTo(summaryPassedNotCached)).isLessThan(0);
-    assertThat(summaryPassedCached.compareTo(summaryFailedNotCached)).isLessThan(0);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMessageShownForPartialResults() {
+        val testCases: com.google.common.collect.ImmutableList<TestCase?> =
+            com.google.common.collect.ImmutableList.of<TestCase?>(newDetail("orange", TestCase.Status.FAILED, 1500L))
+        val summary: TestSummary? = createTestSummaryWithDetails(
+            BlazeTestStatus.FAILED, testCases,
+            FailedTestCasesStatus.PARTIAL
+        )
 
-  @Test
-  public void testCollectingFailedDetails() throws Exception {
-    TestCase rootCase =
-        TestCase.newBuilder()
-            .setName("tests")
-            .setRunDurationMillis(5000L)
-            .addChild(newDetail("apple", TestCase.Status.FAILED, 1000L))
-            .addChild(newDetail("cherry", TestCase.Status.ERROR, 1000L))
-            .build();
+        val printer: AnsiTerminalPrinter? = Mockito.mock<AnsiTerminalPrinter?>(AnsiTerminalPrinter::class.java)
+        TestSummaryPrinter.print(summary, printer, Path::getPathString, true, true)
+        Mockito.verify<Any?>(printer).print(ArgumentMatchers.contains("//package:name"))
+        Mockito.verify<Any?>(printer).print(AdditionalMatchers.find("FAILED.*orange"))
+        Mockito.verify<Any?>(printer).print(ArgumentMatchers.contains("incomplete"))
+    }
 
-    TestSummary summary =
-        getTemplateBuilder().collectTestCases(rootCase).setStatus(BlazeTestStatus.FAILED).build();
+    private fun newDetail(name: String?, status: TestCase.Status?, duration: Long): TestCase {
+        return TestCase.newBuilder()
+            .setName(name)
+            .setStatus(status)
+            .setRunDurationMillis(duration)
+            .build()
+    }
 
-    AnsiTerminalPrinter printer = Mockito.mock(AnsiTerminalPrinter.class);
-    TestSummaryPrinter.print(summary, printer, Path::getPathString, true, true);
-    verify(printer).print(contains("//package:name"));
-    verify(printer).print(find("FAILED.*apple"));
-    verify(printer).print(find("ERROR.*cherry"));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTestCaseNamesShownWhenNeeded() {
+        val detailPassed: TestCase =
+            newDetail("strawberry", TestCase.Status.PASSED, 1000L)
+        val detailFailed: TestCase =
+            newDetail("orange", TestCase.Status.FAILED, 1500L)
 
-  @Test
-  public void testCollectingAllDetails() throws Exception {
-    TestCase rootCase =
-        TestCase.newBuilder()
-            .setName("tests")
-            .setRunDurationMillis(5000L)
-            .addChild(newDetail("apple", TestCase.Status.FAILED, 1000L))
-            .addChild(newDetail("banana", TestCase.Status.PASSED, 1000L))
-            .addChild(newDetail("cherry", TestCase.Status.ERROR, 1000L))
-            .addChild(newDetail("sugarcane", Status.SKIPPED, 0))
-            .build();
+        val summaryPassed: TestSummary = createTestSummaryWithDetails(
+            BlazeTestStatus.PASSED, java.util.Arrays.asList<TestCase?>(detailPassed)
+        )
 
-    TestSummary summary =
-        getTemplateBuilder().collectTestCases(rootCase).setStatus(BlazeTestStatus.FAILED).build();
+        val summaryFailed: TestSummary = createTestSummaryWithDetails(
+            BlazeTestStatus.FAILED, java.util.Arrays.asList<TestCase?>(detailPassed, detailFailed)
+        )
+        assertThat(summaryFailed.getStatus()).isEqualTo(BlazeTestStatus.FAILED)
 
-    AnsiTerminalPrinter printer = Mockito.mock(AnsiTerminalPrinter.class);
-    TestSummaryPrinter.print(summary, printer, Path::getPathString, true, true);
-    verify(printer).print(contains("//package:name"));
-    verify(printer).print(find("FAILED.*apple"));
-    verify(printer).print(find("PASSED.*banana"));
-    verify(printer).print(find("ERROR.*cherry"));
-    verify(printer).print(find("SKIPPED.*sugarcane"));
-  }
+        val printerPassed: AnsiTerminalPrinter? = Mockito.mock<AnsiTerminalPrinter?>(AnsiTerminalPrinter::class.java)
+        TestSummaryPrinter.print(summaryPassed, printerPassed, Path::getPathString, true, true)
+        Mockito.verify<Any?>(printerPassed).print(ArgumentMatchers.contains("//package:name"))
 
-  @Test
-  public void testCollectingPassedDetails() throws Exception {
-    TestCase rootCase =
-        TestCase.newBuilder()
-            .setName("tests")
-            .setRunDurationMillis(5000L)
-            .addChild(newDetail("apple", TestCase.Status.PASSED, 1000L))
-            .addChild(newDetail("banana", Status.SKIPPED, 0))
-            .build();
+        val printerFailed: AnsiTerminalPrinter? = Mockito.mock<AnsiTerminalPrinter?>(AnsiTerminalPrinter::class.java)
+        TestSummaryPrinter.print(summaryFailed, printerFailed, Path::getPathString, true, true)
+        Mockito.verify<Any?>(printerFailed).print(ArgumentMatchers.contains("//package:name"))
+        Mockito.verify<Any?>(printerFailed).print(AdditionalMatchers.find("FAILED.*orange *\\(1\\.5"))
+    }
 
-    TestSummary summary =
-        getTemplateBuilder().collectTestCases(rootCase).setStatus(BlazeTestStatus.PASSED).build();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testShowTestCaseNames() {
+        val detailPassed: TestCase = newDetail("strawberry", TestCase.Status.PASSED, 1000L)
+        val detailFailed: TestCase = newDetail("orange", TestCase.Status.FAILED, 1500L)
 
-    AnsiTerminalPrinter printer = Mockito.mock(AnsiTerminalPrinter.class);
-    TestSummaryPrinter.print(summary, printer, Path::getPathString, true, true);
-    verify(printer).print(contains("//package:name"));
-    verify(printer).print(find("PASSED.*apple"));
-    verify(printer).print(find("SKIPPED.*banana"));
-  }
+        val summaryPassed: TestSummary =
+            createPassedTestSummary(BlazeTestStatus.PASSED, java.util.Arrays.asList<TestCase?>(detailPassed))
 
-  @Test
-  public void countTotalTestCases() throws Exception {
-    TestCase rootCase =
-        TestCase.newBuilder()
-            .setName("tests")
-            .setRunDurationMillis(5000L)
-            .addChild(newDetail("apple", TestCase.Status.FAILED, 1000L))
-            .addChild(newDetail("banana", TestCase.Status.PASSED, 1000L))
-            .addChild(newDetail("cherry", TestCase.Status.ERROR, 1000L))
-            .addChild(newDetail("sugarcane", Status.SKIPPED, 0))
-            .build();
+        val summaryFailed: TestSummary =
+            createTestSummaryWithDetails(
+                BlazeTestStatus.FAILED, java.util.Arrays.asList<TestCase?>(detailPassed, detailFailed)
+            )
+        assertThat(summaryFailed.getStatus()).isEqualTo(BlazeTestStatus.FAILED)
 
-    TestSummary summary =
-        getTemplateBuilder().collectTestCases(rootCase).setStatus(BlazeTestStatus.FAILED).build();
+        val printerPassed: AnsiTerminalPrinter? = Mockito.mock<AnsiTerminalPrinter?>(AnsiTerminalPrinter::class.java)
+        TestSummaryPrinter.print(summaryPassed, printerPassed, Path::getPathString, true, true)
+        Mockito.verify<Any?>(printerPassed).print(ArgumentMatchers.contains("//package:name"))
+        Mockito.verify<Any?>(printerPassed).print(AdditionalMatchers.find("PASSED.*strawberry *\\(1\\.0"))
 
-    assertThat(summary.getTotalTestCases()).isEqualTo(4);
-  }
+        val printerFailed: AnsiTerminalPrinter? = Mockito.mock<AnsiTerminalPrinter?>(AnsiTerminalPrinter::class.java)
+        TestSummaryPrinter.print(summaryFailed, printerFailed, Path::getPathString, true, true)
+        Mockito.verify<Any?>(printerFailed).print(ArgumentMatchers.contains("//package:name"))
+        Mockito.verify<Any?>(printerFailed).print(AdditionalMatchers.find("FAILED.*orange *\\(1\\.5"))
+    }
 
-  @Test
-  public void countUnknownTestCases() throws Exception {
-    TestSummary summary =
-        getTemplateBuilder().collectTestCases(null).setStatus(BlazeTestStatus.FAILED).build();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTestCaseNamesOrdered() {
+        val details: Array<TestCase?> = arrayOf<TestCase?>(
+            newDetail("apple", TestCase.Status.FAILED, 1000L),
+            newDetail("banana", TestCase.Status.FAILED, 1000L),
+            newDetail("cranberry", TestCase.Status.FAILED, 1000L)
+        )
 
-    assertThat(summary.getTotalTestCases()).isEqualTo(1);
-    assertThat(summary.getUnknownTestCases()).isEqualTo(1);
-  }
+        // The exceedingly dumb approach: writing all the permutations down manually
+        // is simply easier than any way of generating them.
+        val permutations = arrayOf<IntArray>(
+            intArrayOf(0, 1, 2),
+            intArrayOf(0, 2, 1),
+            intArrayOf(1, 0, 2),
+            intArrayOf(1, 2, 0),
+            intArrayOf(2, 0, 1),
+            intArrayOf(2, 1, 0)
+        )
 
-  @Test
-  public void countNotRunTestCases() throws Exception {
-    TestCase a =
-        TestCase.newBuilder()
-            .addChild(
-                TestCase.newBuilder().setName("A").setStatus(Status.PASSED).setRun(true).build())
-            .addChild(
-                TestCase.newBuilder().setName("B").setStatus(Status.PASSED).setRun(true).build())
-            .addChild(
-                TestCase.newBuilder().setName("C").setStatus(Status.PASSED).setRun(false).build())
-            .build();
-    TestSummary summary =
-        getTemplateBuilder().collectTestCases(a).setStatus(BlazeTestStatus.FAILED).build();
+        for (permutation in permutations) {
+            val permutatedDetails: MutableList<TestCase?> = java.util.ArrayList<TestCase?>()
 
-    assertThat(summary.getTotalTestCases()).isEqualTo(2);
-    assertThat(summary.getUnknownTestCases()).isEqualTo(0);
-    assertThat(summary.getFailedTestCases()).isEmpty();
-  }
+            for (element in permutation) {
+                permutatedDetails.add(details[element])
+            }
 
-  @Test
-  public void countTotalTestCasesInNestedTree() throws Exception {
-    TestCase aCase =
-        TestCase.newBuilder()
-            .setName("tests-1")
-            .setRunDurationMillis(5000L)
-            .addChild(newDetail("apple", TestCase.Status.FAILED, 1000L))
-            .addChild(newDetail("banana", TestCase.Status.PASSED, 1000L))
-            .addChild(newDetail("cherry", TestCase.Status.ERROR, 1000L))
-            .build();
-    TestCase anotherCase =
-        TestCase.newBuilder()
-            .setName("tests-2")
-            .setRunDurationMillis(5000L)
-            .addChild(newDetail("apple", TestCase.Status.FAILED, 1000L))
-            .addChild(newDetail("banana", TestCase.Status.PASSED, 1000L))
-            .addChild(newDetail("cherry", TestCase.Status.ERROR, 1000L))
-            .build();
+            val summary: TestSummary = createTestSummaryWithDetails(BlazeTestStatus.FAILED, permutatedDetails)
 
-    TestCase rootCase =
-        TestCase.newBuilder().setName("tests").addChild(aCase).addChild(anotherCase).build();
+            // A mock that checks the ordering of method calls
+            val printer: AnsiTerminalPrinter? = Mockito.mock<AnsiTerminalPrinter?>(AnsiTerminalPrinter::class.java)
+            TestSummaryPrinter.print(summary, printer, Path::getPathString, true, true)
+            val order: InOrder = Mockito.inOrder(printer)
+            order.verify<Any?>(printer).print(ArgumentMatchers.contains("//package:name"))
+            order.verify<Any?>(printer).print(AdditionalMatchers.find("FAILED.*apple"))
+            order.verify<Any?>(printer).print(AdditionalMatchers.find("FAILED.*banana"))
+            order.verify<Any?>(printer).print(AdditionalMatchers.find("FAILED.*cranberry"))
+        }
+    }
 
-    TestSummary summary =
-        getTemplateBuilder().collectTestCases(rootCase).setStatus(BlazeTestStatus.FAILED).build();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCachedResultsFirstInSort() {
+        val summaryFailedCached: TestSummary = createTestSummary(BlazeTestStatus.FAILED, CACHED)
+        val summaryFailedNotCached: TestSummary = createTestSummary(BlazeTestStatus.FAILED, NOT_CACHED)
+        val summaryPassedCached: TestSummary = createTestSummary(BlazeTestStatus.PASSED, CACHED)
+        val summaryPassedNotCached: TestSummary = createTestSummary(BlazeTestStatus.PASSED, NOT_CACHED)
 
-    assertThat(summary.getTotalTestCases()).isEqualTo(6);
-  }
+        // This way we can make the test independent from the sort order of FAILEd
+        // and PASSED.
+        assertThat(summaryFailedCached.compareTo(summaryPassedNotCached)).isLessThan(0)
+        assertThat(summaryPassedCached.compareTo(summaryFailedNotCached)).isLessThan(0)
+    }
 
-  private ConfiguredTarget target(String path, String targetName) throws Exception {
-    ConfiguredTarget target = Mockito.mock(ConfiguredTarget.class);
-    when(target.getLabel()).thenReturn(Label.create(path, targetName));
-    when(target.getConfigurationChecksum()).thenReturn("abcdef");
-    TestParams mockParams = Mockito.mock(TestParams.class);
-    when(mockParams.getShards()).thenReturn(1);
-    when(target.getProvider(TestProvider.class)).thenReturn(new TestProvider(mockParams));
-    return target;
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCollectingFailedDetails() {
+        val rootCase: TestCase? =
+            TestCase.newBuilder()
+                .setName("tests")
+                .setRunDurationMillis(5000L)
+                .addChild(newDetail("apple", TestCase.Status.FAILED, 1000L))
+                .addChild(newDetail("cherry", TestCase.Status.ERROR, 1000L))
+                .build()
 
-  private ConfiguredTarget stubTarget() throws Exception {
-    return target(PATH, TARGET_NAME);
-  }
+        val summary: TestSummary? =
+            this.templateBuilder.collectTestCases(rootCase).setStatus(BlazeTestStatus.FAILED).build()
 
-  private TestSummary createPassedTestSummary(BlazeTestStatus status, List<TestCase> details) {
-    return getTemplateBuilder().setStatus(status).addPassedTestCases(details).build();
-  }
+        val printer: AnsiTerminalPrinter? = Mockito.mock<AnsiTerminalPrinter?>(AnsiTerminalPrinter::class.java)
+        TestSummaryPrinter.print(summary, printer, Path::getPathString, true, true)
+        Mockito.verify<Any?>(printer).print(ArgumentMatchers.contains("//package:name"))
+        Mockito.verify<Any?>(printer).print(AdditionalMatchers.find("FAILED.*apple"))
+        Mockito.verify<Any?>(printer).print(AdditionalMatchers.find("ERROR.*cherry"))
+    }
 
-  private TestSummary createTestSummaryWithDetails(BlazeTestStatus status,
-      List<TestCase> details) {
-    TestSummary summary = getTemplateBuilder()
-        .setStatus(status)
-        .addFailedTestCases(details, FailedTestCasesStatus.FULL)
-        .build();
-    return summary;
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCollectingAllDetails() {
+        val rootCase: TestCase? =
+            TestCase.newBuilder()
+                .setName("tests")
+                .setRunDurationMillis(5000L)
+                .addChild(newDetail("apple", TestCase.Status.FAILED, 1000L))
+                .addChild(newDetail("banana", TestCase.Status.PASSED, 1000L))
+                .addChild(newDetail("cherry", TestCase.Status.ERROR, 1000L))
+                .addChild(newDetail("sugarcane", Status.SKIPPED, 0))
+                .build()
 
-  private TestSummary createTestSummaryWithDetails(
-      BlazeTestStatus status, List<TestCase> testCaseList,
-      FailedTestCasesStatus detailsStatus) {
-    TestSummary summary = getTemplateBuilder()
-        .setStatus(status)
-        .addFailedTestCases(testCaseList, detailsStatus)
-        .build();
-    return summary;
-  }
+        val summary: TestSummary? =
+            this.templateBuilder.collectTestCases(rootCase).setStatus(BlazeTestStatus.FAILED).build()
 
-  private static TestSummary createTestSummary(ConfiguredTarget target, BlazeTestStatus status,
-                                               int numCached) {
-    ImmutableList<TestCase> emptyList = ImmutableList.of();
-    return TestSummary.newBuilder(target)
-        .setStatus(status)
-        .setNumCached(numCached)
-        .setActionRan(true)
-        .setRanRemotely(false)
-        .addFailedTestCases(emptyList, FailedTestCasesStatus.FULL)
-        .addTestTimes(SMALL_TIMING)
-        .build();
-  }
+        val printer: AnsiTerminalPrinter? = Mockito.mock<AnsiTerminalPrinter?>(AnsiTerminalPrinter::class.java)
+        TestSummaryPrinter.print(summary, printer, Path::getPathString, true, true)
+        Mockito.verify<Any?>(printer).print(ArgumentMatchers.contains("//package:name"))
+        Mockito.verify<Any?>(printer).print(AdditionalMatchers.find("FAILED.*apple"))
+        Mockito.verify<Any?>(printer).print(AdditionalMatchers.find("PASSED.*banana"))
+        Mockito.verify<Any?>(printer).print(AdditionalMatchers.find("ERROR.*cherry"))
+        Mockito.verify<Any?>(printer).print(AdditionalMatchers.find("SKIPPED.*sugarcane"))
+    }
 
-  private TestSummary createTestSummary(BlazeTestStatus status, int numCached) {
-    TestSummary summary = getTemplateBuilder()
-        .setStatus(status)
-        .setNumCached(numCached)
-        .addTestTimes(SMALL_TIMING)
-        .build();
-    return summary;
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCollectingPassedDetails() {
+        val rootCase: TestCase? =
+            TestCase.newBuilder()
+                .setName("tests")
+                .setRunDurationMillis(5000L)
+                .addChild(newDetail("apple", TestCase.Status.PASSED, 1000L))
+                .addChild(newDetail("banana", Status.SKIPPED, 0))
+                .build()
+
+        val summary: TestSummary? =
+            this.templateBuilder.collectTestCases(rootCase).setStatus(BlazeTestStatus.PASSED).build()
+
+        val printer: AnsiTerminalPrinter? = Mockito.mock<AnsiTerminalPrinter?>(AnsiTerminalPrinter::class.java)
+        TestSummaryPrinter.print(summary, printer, Path::getPathString, true, true)
+        Mockito.verify<Any?>(printer).print(ArgumentMatchers.contains("//package:name"))
+        Mockito.verify<Any?>(printer).print(AdditionalMatchers.find("PASSED.*apple"))
+        Mockito.verify<Any?>(printer).print(AdditionalMatchers.find("SKIPPED.*banana"))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun countTotalTestCases() {
+        val rootCase: TestCase? =
+            TestCase.newBuilder()
+                .setName("tests")
+                .setRunDurationMillis(5000L)
+                .addChild(newDetail("apple", TestCase.Status.FAILED, 1000L))
+                .addChild(newDetail("banana", TestCase.Status.PASSED, 1000L))
+                .addChild(newDetail("cherry", TestCase.Status.ERROR, 1000L))
+                .addChild(newDetail("sugarcane", Status.SKIPPED, 0))
+                .build()
+
+        val summary: TestSummary =
+            this.templateBuilder.collectTestCases(rootCase).setStatus(BlazeTestStatus.FAILED).build()
+
+        assertThat(summary.getTotalTestCases()).isEqualTo(4)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun countUnknownTestCases() {
+        val summary: TestSummary =
+            this.templateBuilder.collectTestCases(null).setStatus(BlazeTestStatus.FAILED).build()
+
+        assertThat(summary.getTotalTestCases()).isEqualTo(1)
+        assertThat(summary.getUnknownTestCases()).isEqualTo(1)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun countNotRunTestCases() {
+        val a: TestCase? =
+            TestCase.newBuilder()
+                .addChild(
+                    TestCase.newBuilder().setName("A").setStatus(Status.PASSED).setRun(true).build()
+                )
+                .addChild(
+                    TestCase.newBuilder().setName("B").setStatus(Status.PASSED).setRun(true).build()
+                )
+                .addChild(
+                    TestCase.newBuilder().setName("C").setStatus(Status.PASSED).setRun(false).build()
+                )
+                .build()
+        val summary: TestSummary =
+            this.templateBuilder.collectTestCases(a).setStatus(BlazeTestStatus.FAILED).build()
+
+        assertThat(summary.getTotalTestCases()).isEqualTo(2)
+        assertThat(summary.getUnknownTestCases()).isEqualTo(0)
+        assertThat(summary.getFailedTestCases()).isEmpty()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun countTotalTestCasesInNestedTree() {
+        val aCase: TestCase? =
+            TestCase.newBuilder()
+                .setName("tests-1")
+                .setRunDurationMillis(5000L)
+                .addChild(newDetail("apple", TestCase.Status.FAILED, 1000L))
+                .addChild(newDetail("banana", TestCase.Status.PASSED, 1000L))
+                .addChild(newDetail("cherry", TestCase.Status.ERROR, 1000L))
+                .build()
+        val anotherCase: TestCase? =
+            TestCase.newBuilder()
+                .setName("tests-2")
+                .setRunDurationMillis(5000L)
+                .addChild(newDetail("apple", TestCase.Status.FAILED, 1000L))
+                .addChild(newDetail("banana", TestCase.Status.PASSED, 1000L))
+                .addChild(newDetail("cherry", TestCase.Status.ERROR, 1000L))
+                .build()
+
+        val rootCase: TestCase? =
+            TestCase.newBuilder().setName("tests").addChild(aCase).addChild(anotherCase).build()
+
+        val summary: TestSummary =
+            this.templateBuilder.collectTestCases(rootCase).setStatus(BlazeTestStatus.FAILED).build()
+
+        assertThat(summary.getTotalTestCases()).isEqualTo(6)
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun target(path: String?, targetName: String?): ConfiguredTarget {
+        val target: ConfiguredTarget = Mockito.mock<ConfiguredTarget>(ConfiguredTarget::class.java)
+        Mockito.`when`<T?>(target.getLabel()).thenReturn(Label.create(path, targetName))
+        Mockito.`when`<T?>(target.getConfigurationChecksum()).thenReturn("abcdef")
+        val mockParams: TestParams = Mockito.mock<TestParams>(TestParams::class.java)
+        Mockito.`when`<T?>(mockParams.getShards()).thenReturn(1)
+        Mockito.`when`<T?>(target.getProvider(TestProvider::class.java)).thenReturn(TestProvider(mockParams))
+        return target
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun stubTarget(): ConfiguredTarget {
+        return target(PATH, TARGET_NAME)
+    }
+
+    private fun createPassedTestSummary(status: BlazeTestStatus?, details: MutableList<TestCase?>?): TestSummary {
+        return this.templateBuilder.setStatus(status).addPassedTestCases(details).build()
+    }
+
+    private fun createTestSummaryWithDetails(
+        status: BlazeTestStatus?,
+        details: MutableList<TestCase?>?
+    ): TestSummary {
+        val summary: TestSummary = this.templateBuilder
+            .setStatus(status)
+            .addFailedTestCases(details, FailedTestCasesStatus.FULL)
+            .build()
+        return summary
+    }
+
+    private fun createTestSummaryWithDetails(
+        status: BlazeTestStatus?, testCaseList: MutableList<TestCase?>?,
+        detailsStatus: FailedTestCasesStatus?
+    ): TestSummary? {
+        val summary: TestSummary? = this.templateBuilder
+            .setStatus(status)
+            .addFailedTestCases(testCaseList, detailsStatus)
+            .build()
+        return summary
+    }
+
+    private fun createTestSummary(status: BlazeTestStatus?, numCached: Int): TestSummary {
+        val summary: TestSummary = this.templateBuilder
+            .setStatus(status)
+            .setNumCached(numCached)
+            .addTestTimes(SMALL_TIMING)
+            .build()
+        return summary
+    }
+
+    companion object {
+        private const val ANY_STRING = ".*?"
+        private const val PATH = "package"
+        private const val TARGET_NAME = "name"
+        private val SMALL_TIMING: com.google.common.collect.ImmutableList<Long?> =
+            com.google.common.collect.ImmutableList.of<Long?>(1L, 2L, 3L, 4L)
+
+        private val CACHED: Int = SMALL_TIMING.size
+        private const val NOT_CACHED = 0
+
+        private fun createTestSummary(
+            target: ConfiguredTarget?, status: BlazeTestStatus?,
+            numCached: Int
+        ): TestSummary {
+            val emptyList: com.google.common.collect.ImmutableList<TestCase?> =
+                com.google.common.collect.ImmutableList.of<TestCase?>()
+            return TestSummary.newBuilder(target)
+                .setStatus(status)
+                .setNumCached(numCached)
+                .setActionRan(true)
+                .setRanRemotely(false)
+                .addFailedTestCases(emptyList, FailedTestCasesStatus.FULL)
+                .addTestTimes(SMALL_TIMING)
+                .build()
+        }
+    }
 }

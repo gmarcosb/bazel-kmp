@@ -11,110 +11,93 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.windows
 
-package com.google.devtools.build.lib.windows;
-
-import com.google.common.base.Strings;
-import java.io.PrintStream;
-import java.nio.charset.Charset;
-import java.nio.file.Paths;
-import java.util.HashMap;
-import java.util.Map;
+import com.google.devtools.build.lib.buildtool.util.BuildIntegrationTestCase.write
+import java.io.PrintStream
+import java.nio.file.Paths
+import java.util.HashMap
 
 /**
  * Mock subprocess to be used for testing Windows process management. Command line usage:
- *
- * <ul>
- *   <li><code>I&lt;register&gt;&lt;count&gt;</code>: Read count bytes to the specified register
- *   <li><code>O-&lt;string&gt;</code>: Write a string to stdout</li>
- *   <li><code>E-&lt;string&gt;</code>: Write a string to stderr</li>
- *   <li><code>O$&lt;variable&gt;</code>: Write an environment variable to stdout</li>
- *   <li><code>E$&lt;variable&gt;</code>: Write an environment variable to stderr</li>
- *   <li><code>O.</code>: Write the cwd stdout</li>
- *   <li><code>E.</code>: Write the cwd stderr</li>
- *   <li><code>O&lt;register&gt;</code>: Write the contents of a register to stdout</li>
- *   <li><code>E&lt;register&gt;</code>: Write the contents of a register to stderr</li>
- *   <li><code>X&lt;exit code%gt;</code>: Exit with the specified exit code</li>
- *   <li><code>S&lt;seconds&gt;</code>: Wait the specified number of seconds</li>
- * </ul>
- *
- * <p>Registers are single characters. Each command line argument is interpreted as a single
+ * 
+ * 
+ *  * `I<register><count>`: Read count bytes to the specified register
+ *  * `O-<string>`: Write a string to stdout
+ *  * `E-<string>`: Write a string to stderr
+ *  * `O$<variable>`: Write an environment variable to stdout
+ *  * `E$<variable>`: Write an environment variable to stderr
+ *  * `O.`: Write the cwd stdout
+ *  * `E.`: Write the cwd stderr
+ *  * `O<register>`: Write the contents of a register to stdout
+ *  * `E<register>`: Write the contents of a register to stderr
+ *  * `X<exit code%gt;`: Exit with the specified exit code
+ *  * `S<seconds>`: Wait the specified number of seconds
+ * 
+ * 
+ * 
+ * Registers are single characters. Each command line argument is interpreted as a single
  * operation. Example:
- *
- * <code>
- *   Ia10 Oa Oa Ea E-OVER X42
- * </code>
- *
+ * 
+ * `
+ * Ia10 Oa Oa Ea E-OVER X42
+` * 
+ * 
  * Means: read 10 bytes from stdin, write them back twice to stdout and once to stderr, write
  * the string "OVER" to stderr then exit with exit code 42.
  */
-public class MockSubprocess {
-  private static Map<Character, byte[]> registers = new HashMap<>();
-  private static final Charset UTF8 = Charset.forName("UTF-8");
+object MockSubprocess {
+    private val registers: MutableMap<Char?, ByteArray> = HashMap<Char?, ByteArray>()
+    private val UTF8: java.nio.charset.Charset = java.nio.charset.Charset.forName("UTF-8")
 
-  private static void writeBytes(PrintStream stream, String arg) throws Exception {
+    @Throws(java.lang.Exception::class)
+    private fun writeBytes(stream: PrintStream, arg: String) {
+        val buf: ByteArray
+        when (arg.get(1)) {
+            '-' ->         // Immediate string
+                buf = arg.substring(2).toByteArray(UTF8)
 
-    byte[] buf;
-    switch (arg.charAt(1)) {
-      case '-':
-        // Immediate string
-        buf = arg.substring(2).getBytes(UTF8);
-        break;
+            '$' ->         // Environment variable
+                buf = com.google.common.base.Strings.nullToEmpty(java.lang.System.getenv(arg.substring(2)))
+                    .toByteArray(UTF8)
 
-      case '$':
-        // Environment variable
-        buf = Strings.nullToEmpty(System.getenv(arg.substring(2))).getBytes(UTF8);
-        break;
+            '.' -> buf = Paths.get(".").toAbsolutePath().normalize().toString().toByteArray(UTF8)
+            else -> buf = registers.get(arg.get(1))!!
+        }
 
-      case '.':
-        buf = Paths.get(".").toAbsolutePath().normalize().toString().getBytes(UTF8);
-        break;
-
-      default:
-        buf = registers.get(arg.charAt(1));
-        break;
+        stream.write(buf, 0, buf.size)
     }
 
-    stream.write(buf, 0, buf.length);
-}
+    @Throws(java.lang.Exception::class)
+    @kotlin.jvm.JvmStatic
+    fun main(args: Array<String>) {
+        for (arg in args) {
+            when (arg.get(0)) {
+                'I' -> {
+                    val register = arg.get(1)
+                    val length: Int = arg.substring(2).toInt()
+                    val buf: ByteArray?
+                    if (length > 0) {
+                        buf = ByteArray(length)
+                        java.lang.System.`in`.read(buf, 0, length)
+                    } else {
+                        buf = java.lang.System.`in`.readAllBytes()
+                    }
+                    registers.put(register, buf!!)
+                }
 
-  public static void main(String[] args) throws Exception {
-    for (String arg : args) {
-      switch (arg.charAt(0)) {
-        case 'I':
-          char register = arg.charAt(1);
-          int length = Integer.parseInt(arg.substring(2));
-          byte[] buf;
-          if (length > 0) {
-            buf = new byte[length];
-            System.in.read(buf, 0, length);
-          } else {
-            buf = System.in.readAllBytes();
-          }
-          registers.put(register, buf);
-          break;
+                'E' -> writeBytes(java.lang.System.err, arg)
+                'O' -> writeBytes(java.lang.System.out, arg)
+                'W' -> try {
+                    java.lang.Thread.sleep((arg.substring(1).toInt() * 1000).toLong())
+                } catch (e: java.lang.InterruptedException) {
+                    // This is good enough for a mock process
+                    throw java.lang.IllegalStateException(e)
+                }
 
-        case 'E':
-          writeBytes(System.err, arg);
-          break;
-
-        case 'O':
-          writeBytes(System.out, arg);
-          break;
-
-        case 'W':
-          try {
-            Thread.sleep(Integer.parseInt(arg.substring(1)) * 1000);
-          } catch (InterruptedException e) {
-            // This is good enough for a mock process
-            throw new IllegalStateException(e);
-          }
-          break;
-
-        case 'X':
-          System.exit(Integer.parseInt(arg.substring(1)));
-        default: // fall out
-      }
+                'X' -> java.lang.System.exit(arg.substring(1).toInt())
+                else -> {}
+            }
+        }
     }
-  }
 }

@@ -11,71 +11,76 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util;
+package com.google.devtools.build.lib.util
 
-import static com.google.common.truth.Truth.assertThat;
-
-import java.io.ByteArrayOutputStream;
-import java.io.OutputStream;
-import java.io.PrintStream;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.common.truth.Truth
+import org.junit.Before
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.io.PrintStream
 
 /**
- * Tests for {@link AnsiStrippingOutputStream}.
+ * Tests for [AnsiStrippingOutputStream].
  */
-@RunWith(JUnit4.class)
-public class AnsiStrippingOutputStreamTest {
-  ByteArrayOutputStream output;
-  PrintStream input;
+@RunWith(JUnit4::class)
+class AnsiStrippingOutputStreamTest {
+    var output: java.io.ByteArrayOutputStream? = null
+    var input: PrintStream? = null
 
-  private static final String ESCAPE = "\u001b[";
-
-  @Before
-  public final void createStreams() throws Exception  {
-    output = new ByteArrayOutputStream();
-    OutputStream inputStream = new AnsiStrippingOutputStream(output);
-    input = new PrintStream(inputStream);
-  }
-
-  private String getOutput(String... fragments) throws Exception {
-    for (String fragment: fragments) {
-      input.print(fragment);
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun createStreams() {
+        output = java.io.ByteArrayOutputStream()
+        val inputStream: java.io.OutputStream = AnsiStrippingOutputStream(output)
+        input = PrintStream(inputStream)
     }
 
-    return new String(output.toByteArray(), "ISO8859-1");
-  }
+    @Throws(java.lang.Exception::class)
+    private fun getOutput(vararg fragments: String?): String {
+        for (fragment in fragments) {
+            input.print(fragment)
+        }
 
-  @Test
-  public void doesNotFailHorribly() throws Exception {
-    assertThat(getOutput("Love")).isEqualTo("Love");
-  }
+        return String(output.toByteArray(), charset("ISO8859-1"))
+    }
 
-  @Test
-  public void canStripAnsiCode() throws Exception {
-    assertThat(getOutput(ESCAPE + "32mLove" + ESCAPE + "m")).isEqualTo("Love");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun doesNotFailHorribly() {
+        Truth.assertThat(getOutput("Love")).isEqualTo("Love")
+    }
 
-  @Test
-  public void recognizesAnsiCodeWhenBrokenUp() throws Exception {
-    assertThat(getOutput("\u001b", "[", "mLove")).isEqualTo("Love");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun canStripAnsiCode() {
+        Truth.assertThat(getOutput(ESCAPE + "32mLove" + ESCAPE + "m")).isEqualTo("Love")
+    }
 
-  @Test
-  public void handlesOnlyEscCorrectly() throws Exception {
-    assertThat(getOutput("\u001bLove")).isEqualTo("\u001bLove");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun recognizesAnsiCodeWhenBrokenUp() {
+        Truth.assertThat(getOutput("\u001b", "[", "mLove")).isEqualTo("Love")
+    }
 
-  @Test
-  public void handlesEscInPlaceOfControlCharCorrectly() throws Exception {
-    assertThat(getOutput(ESCAPE + "31;42" + ESCAPE + "1mLove")).isEqualTo(ESCAPE + "31;42Love");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun handlesOnlyEscCorrectly() {
+        Truth.assertThat(getOutput("\u001bLove")).isEqualTo("\u001bLove")
+    }
 
-  @Test
-  public void handlesTwoEscapeSequencesCorrectly() throws Exception {
-    assertThat(getOutput(ESCAPE + "32m" + ESCAPE + "1m" + "Love")).isEqualTo("Love");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun handlesEscInPlaceOfControlCharCorrectly() {
+        Truth.assertThat(getOutput(ESCAPE + "31;42" + ESCAPE + "1mLove")).isEqualTo(ESCAPE + "31;42Love")
+    }
 
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun handlesTwoEscapeSequencesCorrectly() {
+        Truth.assertThat(getOutput(ESCAPE + "32m" + ESCAPE + "1m" + "Love")).isEqualTo("Love")
+    }
+
+    companion object {
+        private const val ESCAPE = "\u001b["
+    }
 }

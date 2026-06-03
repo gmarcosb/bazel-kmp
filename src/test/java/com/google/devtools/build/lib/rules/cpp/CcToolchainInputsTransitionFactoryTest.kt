@@ -11,26 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.rules.cpp;
+package com.google.devtools.build.lib.rules.cpp
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.analysis.ConfiguredTarget
 
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.config.CoreOptions;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.packages.util.MockCcSupport;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Unit tests for {@code CcToolchainInputsTransitionFactory}. */
-@RunWith(JUnit4.class)
-public class CcToolchainInputsTransitionFactoryTest extends BuildViewTestCase {
-  @Test
-  public void testToolchain_usesTargetPlatform() throws Exception {
-    scratch.file(
-        "a/BUILD",
-        """
+/** Unit tests for `CcToolchainInputsTransitionFactory`.  */
+@RunWith(JUnit4::class)
+class CcToolchainInputsTransitionFactoryTest : BuildViewTestCase() {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testToolchain_usesTargetPlatform() {
+        scratch.file(
+            "a/BUILD",
+            """
         load("@rules_cc//cc/toolchains:cc_toolchain.bzl", "cc_toolchain")
         load(":cc_toolchain_config.bzl", "cc_toolchain_config")
 
@@ -55,19 +48,21 @@ public class CcToolchainInputsTransitionFactoryTest extends BuildViewTestCase {
         )
 
         cc_toolchain_config(name = "does-not-matter-config")
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file("a/cc_toolchain_config.bzl", MockCcSupport.EMPTY_CC_TOOLCHAIN);
+        scratch.file("a/cc_toolchain_config.bzl", MockCcSupport.EMPTY_CC_TOOLCHAIN)
 
-    ConfiguredTarget toolchainTarget = getConfiguredTarget("//a:toolchain");
-    assertThat(toolchainTarget).isNotNull();
+        val toolchainTarget: ConfiguredTarget = getConfiguredTarget("//a:toolchain")
+        assertThat(toolchainTarget).isNotNull()
 
-    ConfiguredTarget allFiles = getDirectPrerequisite(toolchainTarget, "//a:all_files");
-    assertThat(allFiles).isNotNull();
+        val allFiles: ConfiguredTarget = getDirectPrerequisite(toolchainTarget, "//a:all_files")
+        assertThat(allFiles).isNotNull()
 
-    CoreOptions coreOptions = getConfiguration(allFiles).getOptions().get(CoreOptions.class);
-    assertThat(coreOptions).isNotNull();
-    assertThat(coreOptions.getIsExec()).isFalse();
-    // if isExec is false, then allFiles is building for the target platform
-  }
+        val coreOptions: CoreOptions = getConfiguration(allFiles).getOptions().get(CoreOptions::class.java)
+        assertThat(coreOptions).isNotNull()
+        assertThat(coreOptions.getIsExec()).isFalse()
+        // if isExec is false, then allFiles is building for the target platform
+    }
 }

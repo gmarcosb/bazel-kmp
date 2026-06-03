@@ -11,20 +11,21 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import com.google.common.truth.FailureMetadata;
-import com.google.common.truth.Subject;
-import com.google.common.truth.Truth;
+import com.google.common.truth.FailureMetadata
+import com.google.common.truth.Truth
+import com.google.devtools.build.skyframe.NodeEntrySubject
 
-/** {@link Subject.Factory} for {@link NodeEntry} objects, providing {@link NodeEntrySubject}s. */
-public class NodeEntrySubjectFactory implements Subject.Factory<NodeEntrySubject, NodeEntry> {
-  public static NodeEntrySubject assertThatNodeEntry(NodeEntry nodeEntry) {
-    return Truth.assertAbout(new NodeEntrySubjectFactory()).that(nodeEntry);
-  }
+/** [Subject.Factory] for [NodeEntry] objects, providing [NodeEntrySubject]s.  */
+class NodeEntrySubjectFactory : com.google.common.truth.Subject.Factory<NodeEntrySubject?, NodeEntry?> {
+    override fun createSubject(failureMetadata: FailureMetadata?, nodeEntry: NodeEntry?): NodeEntrySubject {
+        return NodeEntrySubject(failureMetadata, nodeEntry)
+    }
 
-  @Override
-  public NodeEntrySubject createSubject(FailureMetadata failureMetadata, NodeEntry nodeEntry) {
-    return new NodeEntrySubject(failureMetadata, nodeEntry);
-  }
+    companion object {
+        fun assertThatNodeEntry(nodeEntry: NodeEntry?): NodeEntrySubject? {
+            return Truth.assertAbout<NodeEntrySubject?, NodeEntry?>(NodeEntrySubjectFactory()).that(nodeEntry)
+        }
+    }
 }

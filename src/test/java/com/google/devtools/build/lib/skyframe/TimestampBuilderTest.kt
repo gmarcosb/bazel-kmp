@@ -11,322 +11,354 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe
 
-package com.google.devtools.build.lib.skyframe;
-
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.ArtifactRoot;
-import com.google.devtools.build.lib.actions.BuildFailedException;
-import com.google.devtools.build.lib.actions.util.TestAction;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.testutil.BlazeTestUtils;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Root;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.actions.Artifact
 
 /**
  * Test suite for TimestampBuilder.
- *
+ * 
  */
-@RunWith(JUnit4.class)
-public class TimestampBuilderTest extends TimestampBuilderTestCase {
-  private static NestedSet<Artifact> asNestedSet(Artifact... artifacts) {
-    return NestedSetBuilder.create(Order.STABLE_ORDER, artifacts);
-  }
+@RunWith(JUnit4::class)
+class TimestampBuilderTest : TimestampBuilderTestCase() {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAmnesiacBuilderAlwaysRebuilds() {
+        // [action] -> hello
+        val hello: Artifact = createDerivedArtifact("hello")
+        val button: com.google.devtools.build.lib.skyframe.TimestampBuilderTestCase.Button = createActionButton(
+            TimestampBuilderTestCase.Companion.emptyNestedSet,
+            com.google.common.collect.ImmutableSet.of<Artifact?>(hello)
+        )
 
-  @Test
-  public void testAmnesiacBuilderAlwaysRebuilds() throws Exception {
-    // [action] -> hello
-    Artifact hello = createDerivedArtifact("hello");
-    Button button = createActionButton(emptyNestedSet, ImmutableSet.of(hello));
+        button.pressed = false
+        buildArtifacts(amnesiacBuilder(), hello)
+        Truth.assertThat(button.pressed).isTrue() // built
 
-    button.pressed = false;
-    buildArtifacts(amnesiacBuilder(), hello);
-    assertThat(button.pressed).isTrue(); // built
+        button.pressed = false
+        buildArtifacts(amnesiacBuilder(), hello)
+        Truth.assertThat(button.pressed).isTrue() // rebuilt
+    }
 
-    button.pressed = false;
-    buildArtifacts(amnesiacBuilder(), hello);
-    assertThat(button.pressed).isTrue(); // rebuilt
-  }
-
-  // If we re-use the same builder (even an "amnesiac" builder), it remembers
-  // which Actions it has already visited, and doesn't revisit them, even if
-  // they would otherwise be rebuilt.
-  //
-  // That is, Builders conflate traversal and dependency analysis, and don't
-  // revisit a node (traversal) even if it needs to be rebuilt (dependency
-  // analysis).  We might want to separate these aspects.
-  @Test
-  public void testBuilderDoesntRevisitActions() throws Exception {
-    // [action] -> hello
-    Artifact hello = createDerivedArtifact("hello");
-    Counter counter = createActionCounter(emptyNestedSet, ImmutableSet.of(hello));
-
-    Builder amnesiacBuilder = amnesiacBuilder();
-
-    counter.count = 0;
-    buildArtifacts(amnesiacBuilder, hello, hello);
-    assertThat(counter.count).isEqualTo(1); // built only once
-  }
-
-  @Test
-  public void testBuildingExistingSourcefileSuceeds() throws Exception {
-    Artifact hello = createSourceArtifact("hello");
-    BlazeTestUtils.makeEmptyFile(hello.getPath());
-    buildArtifacts(cachingBuilder(), hello);
-  }
-
-  @Test
-  public void testCachingBuilderCachesUntilReset() throws Exception {
-    // [action] -> hello
-    Artifact hello = createDerivedArtifact("hello");
-    Button button = createActionButton(emptyNestedSet, ImmutableSet.of(hello));
-
-    button.pressed = false;
-    buildArtifacts(cachingBuilder(), hello);
-    assertThat(button.pressed).isTrue(); // built
-
-    button.pressed = false;
-    buildArtifacts(cachingBuilder(), hello);
-    assertThat(button.pressed).isFalse(); // not rebuilt
-
-    inMemoryCache.reset();
-
-    button.pressed = false;
-    buildArtifacts(cachingBuilder(), hello);
-    assertThat(button.pressed).isTrue(); // rebuilt
-  }
-
-  @Test
-  public void testUnneededInputs() throws Exception {
-    Artifact hello = createSourceArtifact("hello");
-    hello.getPath().getParentDirectory().createDirectoryAndParents();
-    FileSystemUtils.writeContentAsLatin1(hello.getPath(), "content1");
-    Artifact optional = createSourceArtifact("hello.optional");
-    Artifact goodbye = createDerivedArtifact("goodbye");
-    Button button = createActionButton(asNestedSet(hello, optional), ImmutableSet.of(goodbye));
-
-    button.pressed = false;
-    buildArtifacts(cachingBuilder(), goodbye);
-    assertThat(button.pressed).isTrue(); // built
-
-    button.pressed = false;
-    buildArtifacts(cachingBuilder(), goodbye);
-    assertThat(button.pressed).isFalse(); // not rebuilt
-
-    BlazeTestUtils.makeEmptyFile(optional.getPath());
-    FileSystemUtils.writeContentAsLatin1(hello.getPath(), "content2");
-
-    button.pressed = false;
-    buildArtifacts(cachingBuilder(), goodbye);
-    assertThat(button.pressed).isTrue(); // built
-
-    button.pressed = false;
-    buildArtifacts(cachingBuilder(), goodbye);
-    assertThat(button.pressed).isFalse(); // not rebuilt
-
-    optional.getPath().delete();
-    FileSystemUtils.writeContentAsLatin1(hello.getPath(), "content3");
-
-    button.pressed = false;
-    buildArtifacts(cachingBuilder(), goodbye);
-    assertThat(button.pressed).isTrue(); // built
-
-    button.pressed = false;
-    buildArtifacts(cachingBuilder(), goodbye);
-    assertThat(button.pressed).isFalse(); // not rebuilt
-  }
-
-  @Test
-  public void testModifyingInputCausesActionReexecution() throws Exception {
-    // hello -> [action] -> goodbye
-    Artifact hello = createSourceArtifact("hello");
-    BlazeTestUtils.makeEmptyFile(hello.getPath());
-    Artifact goodbye = createDerivedArtifact("goodbye");
-    Button button = createActionButton(asNestedSet(hello), ImmutableSet.of(goodbye));
-
-    button.pressed = false;
-    buildArtifacts(cachingBuilder(), goodbye);
-    assertThat(button.pressed).isTrue(); // built
-
-    button.pressed = false;
-    buildArtifacts(cachingBuilder(), goodbye);
-    assertThat(button.pressed).isFalse(); // not rebuilt
-
-    hello.getPath().setWritable(true);
-    FileSystemUtils.writeContentAsLatin1(hello.getPath(), "new content");
-
-    button.pressed = false;
-    buildArtifacts(cachingBuilder(), goodbye);
-    assertThat(button.pressed).isTrue(); // rebuilt
-
-    button.pressed = false;
-    buildArtifacts(cachingBuilder(), goodbye);
-    assertThat(button.pressed).isFalse(); // not rebuilt
-  }
-
-  @Test
-  public void testOnlyModifyingInputContentCausesReexecution() throws Exception {
-    // hello -> [action] -> goodbye
-    Artifact hello = createSourceArtifact("hello");
-    // touch file to create the directory structure
-    BlazeTestUtils.makeEmptyFile(hello.getPath());
-    FileSystemUtils.writeContentAsLatin1(hello.getPath(), "content1");
-
-    Artifact goodbye = createDerivedArtifact("goodbye");
-    Button button = createActionButton(asNestedSet(hello), ImmutableSet.of(goodbye));
-
-    button.pressed = false;
-    buildArtifacts(cachingBuilder(), goodbye);
-    assertThat(button.pressed).isTrue(); // built
-
-    button.pressed = false;
-    buildArtifacts(cachingBuilder(), goodbye);
-    assertThat(button.pressed).isFalse(); // not rebuilt
-
-    FileSystemUtils.touchFile(hello.getPath());
-
-    button.pressed = false;
-    buildArtifacts(cachingBuilder(), goodbye);
-    assertThat(button.pressed).isFalse(); // still not rebuilt
-
-    FileSystemUtils.writeContentAsLatin1(hello.getPath(), "content2");
-
-    button.pressed = false;
-    buildArtifacts(cachingBuilder(), goodbye);
-    assertThat(button.pressed).isTrue(); // rebuilt
-
-    button.pressed = false;
-    buildArtifacts(cachingBuilder(), goodbye);
-    assertThat(button.pressed).isFalse(); // not rebuilt
-  }
-
-  @Test
-  public void testModifyingOutputCausesActionReexecution() throws Exception {
-    // [action] -> hello
-    Artifact hello = createDerivedArtifact("hello");
-    Button button = createActionButton(emptyNestedSet, ImmutableSet.of(hello));
-
-    button.pressed = false;
-    buildArtifacts(cachingBuilder(), hello);
-    assertThat(button.pressed).isTrue(); // built
-
-    button.pressed = false;
-    buildArtifacts(cachingBuilder(), hello);
-    assertThat(button.pressed).isFalse(); // not rebuilt
-
-    // Changing the *output* file 'hello' causes 'action' to re-execute, to make things consistent
-    // again.
-    hello.getPath().setWritable(true);
-    FileSystemUtils.writeContentAsLatin1(hello.getPath(), "new content");
-
-    button.pressed = false;
-    buildArtifacts(cachingBuilder(), hello);
-    assertThat(button.pressed).isTrue(); // rebuilt
-
-    button.pressed = false;
-    buildArtifacts(cachingBuilder(), hello);
-    assertThat(button.pressed).isFalse(); // not rebuilt
-  }
-
-  @Test
-  public void testBuildingTransitivePrerequisites() throws Exception {
-    // hello -> [action1] -> wazuup -> [action2] -> goodbye
-    Artifact hello = createSourceArtifact("hello");
-    BlazeTestUtils.makeEmptyFile(hello.getPath());
-    Artifact wazuup = createDerivedArtifact("wazuup");
-    Button button1 = new Button();
-    registerAction(new CopyingAction(button1, hello, wazuup));
-    Artifact goodbye = createDerivedArtifact("goodbye");
-    Button button2 = createActionButton(asNestedSet(wazuup), ImmutableSet.of(goodbye));
-
-    button1.pressed = button2.pressed = false;
-    buildArtifacts(cachingBuilder(), wazuup);
-    assertThat(button1.pressed).isTrue(); // built wazuup
-    assertThat(button2.pressed).isFalse(); // goodbye not built
-
-    button1.pressed = button2.pressed = false;
-    buildArtifacts(cachingBuilder(), wazuup);
-    assertThat(button1.pressed).isFalse(); // wazuup not rebuilt
-    assertThat(button2.pressed).isFalse(); // goodbye not built
-
-    button1.pressed = button2.pressed = false;
-    buildArtifacts(cachingBuilder(), goodbye);
-    assertThat(button1.pressed).isFalse(); // wazuup not rebuilt
-    assertThat(button2.pressed).isTrue(); // built goodbye
-
-    button1.pressed = button2.pressed = false;
-    buildArtifacts(cachingBuilder(), goodbye);
-    assertThat(button1.pressed).isFalse(); // wazuup not rebuilt
-    assertThat(button2.pressed).isFalse(); // goodbye not rebuilt
-
-    hello.getPath().setWritable(true);
-    FileSystemUtils.writeContentAsLatin1(hello.getPath(), "new content");
-
-    button1.pressed = button2.pressed = false;
-    buildArtifacts(cachingBuilder(), goodbye);
-    assertThat(button1.pressed).isTrue(); // hello rebuilt
-    assertThat(button2.pressed).isTrue(); // goodbye rebuilt
-  }
-
-  @Test
-  public void testWillNotRebuildActionsWithEmptyListOfInputsSpuriously()
-      throws Exception {
-
-    Artifact anOutputFile = createDerivedArtifact("anOutputFile");
-    Artifact anotherOutputFile = createDerivedArtifact("anotherOutputFile");
-
-    Button aButton = createActionButton(emptyNestedSet, ImmutableSet.of(anOutputFile));
-    Button anotherButton = createActionButton(emptyNestedSet, ImmutableSet.of(anotherOutputFile));
-
-    buildArtifacts(cachingBuilder(), anOutputFile, anotherOutputFile);
-
-    assertThat(aButton.pressed).isTrue();
-    assertThat(anotherButton.pressed).isTrue();
-
-    aButton.pressed = anotherButton.pressed = false;
-
-    buildArtifacts(cachingBuilder(), anOutputFile, anotherOutputFile);
-
-    assertThat(aButton.pressed).isFalse();
-    assertThat(anotherButton.pressed).isFalse();
-  }
-
-  @Test
-  public void testMissingSourceFileIsAnError() {
-    // A missing input to an action must be treated as an error because there's
-    // a risk that the action that consumes it will succeed, but with a
-    // different behavior (imagine that it globs over the directory, for
-    // example).  It's not ok to simply try the action and let the action
-    // report "input file not found".
+    // If we re-use the same builder (even an "amnesiac" builder), it remembers
+    // which Actions it has already visited, and doesn't revisit them, even if
+    // they would otherwise be rebuilt.
     //
-    // (However, there are exceptions to this principle: C++ compilation
-    // actions may depend on non-existent headers from stale .d files.  We need
-    // to allow the action to proceed to execution in this case.)
+    // That is, Builders conflate traversal and dependency analysis, and don't
+    // revisit a node (traversal) even if it needs to be rebuilt (dependency
+    // analysis).  We might want to separate these aspects.
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBuilderDoesntRevisitActions() {
+        // [action] -> hello
+        val hello: Artifact = createDerivedArtifact("hello")
+        val counter: com.google.devtools.build.lib.skyframe.TimestampBuilderTestCase.Counter = createActionCounter(
+            TimestampBuilderTestCase.Companion.emptyNestedSet,
+            com.google.common.collect.ImmutableSet.of<Artifact?>(hello)
+        )
 
-    reporter.removeHandler(failFastHandler);
-    // doesn't exist
-    Artifact in =
-        new Artifact.SourceArtifact(
-            ArtifactRoot.asSourceRoot(Root.fromPath(fileSystem.getPath("/src"))),
-            PathFragment.create("in/in"),
-            () -> Label.parseCanonicalUnchecked("//in:in"));
-    Artifact out = createDerivedArtifact("out");
+        val amnesiacBuilder: Builder? = amnesiacBuilder()
 
-    registerAction(new TestAction(TestAction.NO_EFFECT, asNestedSet(in), ImmutableSet.of(out)));
+        counter.count = 0
+        buildArtifacts(amnesiacBuilder, hello, hello)
+        Truth.assertThat(counter.count).isEqualTo(1) // built only once
+    }
 
-    BuildFailedException e =
-        assertThrows(BuildFailedException.class, () -> buildArtifacts(amnesiacBuilder(), out));
-    assertThat(e).hasMessageThat().contains("1 input file(s) do not exist");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBuildingExistingSourcefileSuceeds() {
+        val hello: Artifact = createSourceArtifact("hello")
+        BlazeTestUtils.makeEmptyFile(hello.getPath())
+        buildArtifacts(cachingBuilder(), hello)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCachingBuilderCachesUntilReset() {
+        // [action] -> hello
+        val hello: Artifact = createDerivedArtifact("hello")
+        val button: com.google.devtools.build.lib.skyframe.TimestampBuilderTestCase.Button = createActionButton(
+            TimestampBuilderTestCase.Companion.emptyNestedSet,
+            com.google.common.collect.ImmutableSet.of<Artifact?>(hello)
+        )
+
+        button.pressed = false
+        buildArtifacts(cachingBuilder(), hello)
+        Truth.assertThat(button.pressed).isTrue() // built
+
+        button.pressed = false
+        buildArtifacts(cachingBuilder(), hello)
+        Truth.assertThat(button.pressed).isFalse() // not rebuilt
+
+        inMemoryCache.reset()
+
+        button.pressed = false
+        buildArtifacts(cachingBuilder(), hello)
+        Truth.assertThat(button.pressed).isTrue() // rebuilt
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testUnneededInputs() {
+        val hello: Artifact = createSourceArtifact("hello")
+        hello.getPath().getParentDirectory().createDirectoryAndParents()
+        FileSystemUtils.writeContentAsLatin1(hello.getPath(), "content1")
+        val optional: Artifact = createSourceArtifact("hello.optional")
+        val goodbye: Artifact = createDerivedArtifact("goodbye")
+        val button: com.google.devtools.build.lib.skyframe.TimestampBuilderTestCase.Button = createActionButton(
+            asNestedSet(hello, optional), com.google.common.collect.ImmutableSet.of<Artifact?>(goodbye)
+        )
+
+        button.pressed = false
+        buildArtifacts(cachingBuilder(), goodbye)
+        Truth.assertThat(button.pressed).isTrue() // built
+
+        button.pressed = false
+        buildArtifacts(cachingBuilder(), goodbye)
+        Truth.assertThat(button.pressed).isFalse() // not rebuilt
+
+        BlazeTestUtils.makeEmptyFile(optional.getPath())
+        FileSystemUtils.writeContentAsLatin1(hello.getPath(), "content2")
+
+        button.pressed = false
+        buildArtifacts(cachingBuilder(), goodbye)
+        Truth.assertThat(button.pressed).isTrue() // built
+
+        button.pressed = false
+        buildArtifacts(cachingBuilder(), goodbye)
+        Truth.assertThat(button.pressed).isFalse() // not rebuilt
+
+        optional.getPath().delete()
+        FileSystemUtils.writeContentAsLatin1(hello.getPath(), "content3")
+
+        button.pressed = false
+        buildArtifacts(cachingBuilder(), goodbye)
+        Truth.assertThat(button.pressed).isTrue() // built
+
+        button.pressed = false
+        buildArtifacts(cachingBuilder(), goodbye)
+        Truth.assertThat(button.pressed).isFalse() // not rebuilt
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testModifyingInputCausesActionReexecution() {
+        // hello -> [action] -> goodbye
+        val hello: Artifact = createSourceArtifact("hello")
+        BlazeTestUtils.makeEmptyFile(hello.getPath())
+        val goodbye: Artifact = createDerivedArtifact("goodbye")
+        val button: com.google.devtools.build.lib.skyframe.TimestampBuilderTestCase.Button = createActionButton(
+            asNestedSet(hello), com.google.common.collect.ImmutableSet.of<Artifact?>(goodbye)
+        )
+
+        button.pressed = false
+        buildArtifacts(cachingBuilder(), goodbye)
+        Truth.assertThat(button.pressed).isTrue() // built
+
+        button.pressed = false
+        buildArtifacts(cachingBuilder(), goodbye)
+        Truth.assertThat(button.pressed).isFalse() // not rebuilt
+
+        hello.getPath().setWritable(true)
+        FileSystemUtils.writeContentAsLatin1(hello.getPath(), "new content")
+
+        button.pressed = false
+        buildArtifacts(cachingBuilder(), goodbye)
+        Truth.assertThat(button.pressed).isTrue() // rebuilt
+
+        button.pressed = false
+        buildArtifacts(cachingBuilder(), goodbye)
+        Truth.assertThat(button.pressed).isFalse() // not rebuilt
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testOnlyModifyingInputContentCausesReexecution() {
+        // hello -> [action] -> goodbye
+        val hello: Artifact = createSourceArtifact("hello")
+        // touch file to create the directory structure
+        BlazeTestUtils.makeEmptyFile(hello.getPath())
+        FileSystemUtils.writeContentAsLatin1(hello.getPath(), "content1")
+
+        val goodbye: Artifact = createDerivedArtifact("goodbye")
+        val button: com.google.devtools.build.lib.skyframe.TimestampBuilderTestCase.Button = createActionButton(
+            asNestedSet(hello), com.google.common.collect.ImmutableSet.of<Artifact?>(goodbye)
+        )
+
+        button.pressed = false
+        buildArtifacts(cachingBuilder(), goodbye)
+        Truth.assertThat(button.pressed).isTrue() // built
+
+        button.pressed = false
+        buildArtifacts(cachingBuilder(), goodbye)
+        Truth.assertThat(button.pressed).isFalse() // not rebuilt
+
+        FileSystemUtils.touchFile(hello.getPath())
+
+        button.pressed = false
+        buildArtifacts(cachingBuilder(), goodbye)
+        Truth.assertThat(button.pressed).isFalse() // still not rebuilt
+
+        FileSystemUtils.writeContentAsLatin1(hello.getPath(), "content2")
+
+        button.pressed = false
+        buildArtifacts(cachingBuilder(), goodbye)
+        Truth.assertThat(button.pressed).isTrue() // rebuilt
+
+        button.pressed = false
+        buildArtifacts(cachingBuilder(), goodbye)
+        Truth.assertThat(button.pressed).isFalse() // not rebuilt
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testModifyingOutputCausesActionReexecution() {
+        // [action] -> hello
+        val hello: Artifact = createDerivedArtifact("hello")
+        val button: com.google.devtools.build.lib.skyframe.TimestampBuilderTestCase.Button = createActionButton(
+            TimestampBuilderTestCase.Companion.emptyNestedSet,
+            com.google.common.collect.ImmutableSet.of<Artifact?>(hello)
+        )
+
+        button.pressed = false
+        buildArtifacts(cachingBuilder(), hello)
+        Truth.assertThat(button.pressed).isTrue() // built
+
+        button.pressed = false
+        buildArtifacts(cachingBuilder(), hello)
+        Truth.assertThat(button.pressed).isFalse() // not rebuilt
+
+        // Changing the *output* file 'hello' causes 'action' to re-execute, to make things consistent
+        // again.
+        hello.getPath().setWritable(true)
+        FileSystemUtils.writeContentAsLatin1(hello.getPath(), "new content")
+
+        button.pressed = false
+        buildArtifacts(cachingBuilder(), hello)
+        Truth.assertThat(button.pressed).isTrue() // rebuilt
+
+        button.pressed = false
+        buildArtifacts(cachingBuilder(), hello)
+        Truth.assertThat(button.pressed).isFalse() // not rebuilt
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBuildingTransitivePrerequisites() {
+        // hello -> [action1] -> wazuup -> [action2] -> goodbye
+        val hello: Artifact = createSourceArtifact("hello")
+        BlazeTestUtils.makeEmptyFile(hello.getPath())
+        val wazuup: Artifact = createDerivedArtifact("wazuup")
+        val button1: com.google.devtools.build.lib.skyframe.TimestampBuilderTestCase.Button =
+            com.google.devtools.build.lib.skyframe.TimestampBuilderTestCase.Button()
+        registerAction<T?>(CopyingAction(button1, hello, wazuup))
+        val goodbye: Artifact = createDerivedArtifact("goodbye")
+        val button2: com.google.devtools.build.lib.skyframe.TimestampBuilderTestCase.Button = createActionButton(
+            asNestedSet(wazuup), com.google.common.collect.ImmutableSet.of<Artifact?>(goodbye)
+        )
+
+        button2.pressed = false
+        button1.pressed = button2.pressed
+        buildArtifacts(cachingBuilder(), wazuup)
+        Truth.assertThat(button1.pressed).isTrue() // built wazuup
+        Truth.assertThat(button2.pressed).isFalse() // goodbye not built
+
+        button2.pressed = false
+        button1.pressed = button2.pressed
+        buildArtifacts(cachingBuilder(), wazuup)
+        Truth.assertThat(button1.pressed).isFalse() // wazuup not rebuilt
+        Truth.assertThat(button2.pressed).isFalse() // goodbye not built
+
+        button2.pressed = false
+        button1.pressed = button2.pressed
+        buildArtifacts(cachingBuilder(), goodbye)
+        Truth.assertThat(button1.pressed).isFalse() // wazuup not rebuilt
+        Truth.assertThat(button2.pressed).isTrue() // built goodbye
+
+        button2.pressed = false
+        button1.pressed = button2.pressed
+        buildArtifacts(cachingBuilder(), goodbye)
+        Truth.assertThat(button1.pressed).isFalse() // wazuup not rebuilt
+        Truth.assertThat(button2.pressed).isFalse() // goodbye not rebuilt
+
+        hello.getPath().setWritable(true)
+        FileSystemUtils.writeContentAsLatin1(hello.getPath(), "new content")
+
+        button2.pressed = false
+        button1.pressed = button2.pressed
+        buildArtifacts(cachingBuilder(), goodbye)
+        Truth.assertThat(button1.pressed).isTrue() // hello rebuilt
+        Truth.assertThat(button2.pressed).isTrue() // goodbye rebuilt
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testWillNotRebuildActionsWithEmptyListOfInputsSpuriously() {
+        val anOutputFile: Artifact = createDerivedArtifact("anOutputFile")
+        val anotherOutputFile: Artifact = createDerivedArtifact("anotherOutputFile")
+
+        val aButton: com.google.devtools.build.lib.skyframe.TimestampBuilderTestCase.Button = createActionButton(
+            TimestampBuilderTestCase.Companion.emptyNestedSet,
+            com.google.common.collect.ImmutableSet.of<Artifact?>(anOutputFile)
+        )
+        val anotherButton: com.google.devtools.build.lib.skyframe.TimestampBuilderTestCase.Button = createActionButton(
+            TimestampBuilderTestCase.Companion.emptyNestedSet,
+            com.google.common.collect.ImmutableSet.of<Artifact?>(anotherOutputFile)
+        )
+
+        buildArtifacts(cachingBuilder(), anOutputFile, anotherOutputFile)
+
+        Truth.assertThat(aButton.pressed).isTrue()
+        Truth.assertThat(anotherButton.pressed).isTrue()
+
+        anotherButton.pressed = false
+        aButton.pressed = anotherButton.pressed
+
+        buildArtifacts(cachingBuilder(), anOutputFile, anotherOutputFile)
+
+        Truth.assertThat(aButton.pressed).isFalse()
+        Truth.assertThat(anotherButton.pressed).isFalse()
+    }
+
+    @org.junit.Test
+    fun testMissingSourceFileIsAnError() {
+        // A missing input to an action must be treated as an error because there's
+        // a risk that the action that consumes it will succeed, but with a
+        // different behavior (imagine that it globs over the directory, for
+        // example).  It's not ok to simply try the action and let the action
+        // report "input file not found".
+        //
+        // (However, there are exceptions to this principle: C++ compilation
+        // actions may depend on non-existent headers from stale .d files.  We need
+        // to allow the action to proceed to execution in this case.)
+
+        reporter.removeHandler(FoundationTestCase.failFastHandler)
+        // doesn't exist
+        val `in`: Artifact =
+            SourceArtifact(
+                ArtifactRoot.asSourceRoot(Root.fromPath(fileSystem.getPath("/src"))),
+                PathFragment.create("in/in"),
+                { Label.parseCanonicalUnchecked("//in:in") })
+        val out: Artifact = createDerivedArtifact("out")
+
+        registerAction<T?>(
+            TestAction(
+                TestAction.NO_EFFECT,
+                asNestedSet(`in`),
+                com.google.common.collect.ImmutableSet.of<Artifact>(out)
+            )
+        )
+
+        val e: BuildFailedException? =
+            org.junit.Assert.assertThrows<T?>(
+                BuildFailedException::class.java,
+                org.junit.function.ThrowingRunnable { buildArtifacts(amnesiacBuilder(), out) })
+        assertThat(e).hasMessageThat().contains("1 input file(s) do not exist")
+    }
+
+    companion object {
+        private fun asNestedSet(vararg artifacts: Artifact?): NestedSet<Artifact?> {
+            return NestedSetBuilder.create(Order.STABLE_ORDER, artifacts)
+        }
+    }
 }

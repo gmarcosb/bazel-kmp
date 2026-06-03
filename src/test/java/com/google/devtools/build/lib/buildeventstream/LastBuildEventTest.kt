@@ -11,56 +11,39 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.buildeventstream;
+package com.google.devtools.build.lib.buildeventstream
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.buildeventstream.BuildEvent.LocalFile
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.buildeventstream.BuildEvent.LocalFile;
-import com.google.devtools.build.lib.buildeventstream.BuildEvent.LocalFile.LocalFileType;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [LastBuildEvent].  */
+@RunWith(JUnit4::class)
+class LastBuildEventTest {
+    @org.junit.Test
+    fun testForwardsReferencedLocalFilesCall() {
+        val fs: FileSystem = InMemoryFileSystem(DigestHashFunction.SHA256)
+        val localFile: LocalFile =
+            LocalFile(
+                fs.getPath("/some/file"),
+                LocalFileType.FAILED_TEST_OUTPUT,  /* artifactMetadata= */
+                null
+            )
+        val event: LastBuildEvent =
+            LastBuildEvent(
+                object : BuildEvent() {
+                    val eventId: BuildEventId?
+                        get() = null
 
-/** Tests for {@link LastBuildEvent}. */
-@RunWith(JUnit4.class)
-public class LastBuildEventTest {
+                    val childrenEvents: com.google.common.collect.ImmutableList<BuildEventId?>
+                        get() = com.google.common.collect.ImmutableList.of<BuildEventId?>()
 
-  @Test
-  public void testForwardsReferencedLocalFilesCall() {
-    FileSystem fs = new InMemoryFileSystem(DigestHashFunction.SHA256);
-    LocalFile localFile =
-        new LocalFile(
-            fs.getPath("/some/file"),
-            LocalFileType.FAILED_TEST_OUTPUT,
-            /* artifactMetadata= */ null);
-    LastBuildEvent event =
-        new LastBuildEvent(
-            new BuildEvent() {
-              @Override
-              public BuildEventId getEventId() {
-                return null;
-              }
+                    public override fun referencedLocalFiles(): com.google.common.collect.ImmutableList<LocalFile?> {
+                        return com.google.common.collect.ImmutableList.of<LocalFile?>(localFile)
+                    }
 
-              @Override
-              public ImmutableList<BuildEventId> getChildrenEvents() {
-                return ImmutableList.of();
-              }
-
-              @Override
-              public ImmutableList<LocalFile> referencedLocalFiles() {
-                return ImmutableList.of(localFile);
-              }
-
-              @Override
-              public BuildEventStreamProtos.BuildEvent asStreamProto(BuildEventContext context) {
-                return null;
-              }
-            });
-    assertThat(event.referencedLocalFiles()).containsExactly(localFile);
-  }
+                    public override fun asStreamProto(context: BuildEventContext?): BuildEventStreamProtos.BuildEvent? {
+                        return null
+                    }
+                })
+        assertThat(event.referencedLocalFiles()).containsExactly(localFile)
+    }
 }

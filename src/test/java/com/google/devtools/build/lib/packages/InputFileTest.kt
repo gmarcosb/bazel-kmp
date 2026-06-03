@@ -11,89 +11,88 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages;
+package com.google.devtools.build.lib.packages
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.truth.Truth.assertWithMessage;
-import static com.google.devtools.build.lib.packages.util.TargetDataSubject.assertThat;
+import com.google.devtools.build.lib.vfs.Path
 
-import com.google.common.testing.EqualsTester;
-import com.google.devtools.build.lib.packages.util.PackageLoadingTestCase;
-import com.google.devtools.build.lib.vfs.Path;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** A test for [InputFile].  */
+@RunWith(JUnit4::class)
+class InputFileTest : PackageLoadingTestCase() {
+    private var pathX: Path? = null
+    private var pathY: Path? = null
+    private var pkg: java.lang.Package? = null
 
-/** A test for {@link InputFile}. */
-@RunWith(JUnit4.class)
-public class InputFileTest extends PackageLoadingTestCase {
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun writeFiles() {
+        scratch.file("pkg/BUILD", "genrule(name='dummy', cmd='', outs=[], srcs=['x', 'subdir/y'])")
+        pkg = getPackage("pkg")
+        assertNoEvents()
 
-  private Path pathX;
-  private Path pathY;
-  private Package pkg;
+        this.pathX = scratch.file("pkg/x", "blah")
+        this.pathY = scratch.file("pkg/subdir/y", "blah blah")
+    }
 
-  @Before
-  public final void writeFiles() throws Exception  {
-    scratch.file("pkg/BUILD", "genrule(name='dummy', cmd='', outs=[], srcs=['x', 'subdir/y'])");
-    pkg = getPackage("pkg");
-    assertNoEvents();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGetAssociatedRule() {
+        Truth.assertWithMessage(null).that(pkg.getTarget("x").getAssociatedRule()).isNull()
+    }
 
-    this.pathX = scratch.file("pkg/x", "blah");
-    this.pathY = scratch.file("pkg/subdir/y", "blah blah");
-  }
+    @org.junit.Test
+    @Throws(NoSuchTargetException::class)
+    fun testInputFileInPackageDirectory() {
+        val inputFileX: InputFile = pkg.getTarget("x") as InputFile
+        checkPathMatches(inputFileX, pathX)
+        checkName(inputFileX, "x")
+        checkLabel(inputFileX, "//pkg:x")
+        assertThat(inputFileX.getTargetKind()).isEqualTo("source file")
+    }
 
-  private static void checkPathMatches(InputFile input, Path expectedPath) {
-    assertThat(input.getPath()).isEqualTo(expectedPath);
-  }
+    @org.junit.Test
+    @Throws(NoSuchTargetException::class)
+    fun testInputFileInSubdirectory() {
+        val inputFileY: InputFile = pkg.getTarget("subdir/y") as InputFile
+        checkPathMatches(inputFileY, pathY)
+        checkName(inputFileY, "subdir/y")
+        checkLabel(inputFileY, "//pkg:subdir/y")
+    }
 
-  private static void checkName(InputFile input, String expectedName) {
-    assertThat(input.getName()).isEqualTo(expectedName);
-  }
+    @org.junit.Test
+    @Throws(NoSuchTargetException::class)
+    fun testEquivalenceRelation() {
+        val inputFileX: InputFile? = pkg.getTarget("x") as InputFile?
+        assertThat(inputFileX).isSameInstanceAs(pkg.getTarget("x"))
+        val inputFileY: InputFile? = pkg.getTarget("subdir/y") as InputFile?
+        assertThat(inputFileY).isSameInstanceAs(pkg.getTarget("subdir/y"))
+        EqualsTester()
+            .addEqualityGroup(inputFileX)
+            .addEqualityGroup(inputFileY)
+            .testEquals()
+    }
 
-  private static void checkLabel(InputFile input, String expectedLabelString) {
-    assertThat(input.getLabel().toString()).isEqualTo(expectedLabelString);
-  }
+    @org.junit.Test
+    @Throws(NoSuchTargetException::class)
+    fun testReduceForSerialization() {
+        val inputFileX: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            pkg.getTarget("x")
+        assertThat(inputFileX).hasSamePropertiesAs(inputFileX.reduceForSerialization())
+        val inputFileY: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            pkg.getTarget("subdir/y")
+        assertThat(inputFileY).hasSamePropertiesAs(inputFileY.reduceForSerialization())
+    }
 
-  @Test
-  public void testGetAssociatedRule() throws Exception {
-    assertWithMessage(null).that(pkg.getTarget("x").getAssociatedRule()).isNull();
-  }
+    companion object {
+        private fun checkPathMatches(input: InputFile, expectedPath: Path?) {
+            assertThat(input.getPath()).isEqualTo(expectedPath)
+        }
 
-  @Test
-  public void testInputFileInPackageDirectory() throws NoSuchTargetException {
-    InputFile inputFileX = (InputFile) pkg.getTarget("x");
-    checkPathMatches(inputFileX, pathX);
-    checkName(inputFileX, "x");
-    checkLabel(inputFileX, "//pkg:x");
-    assertThat(inputFileX.getTargetKind()).isEqualTo("source file");
-  }
+        private fun checkName(input: InputFile, expectedName: String?) {
+            assertThat(input.getName()).isEqualTo(expectedName)
+        }
 
-  @Test
-  public void testInputFileInSubdirectory() throws NoSuchTargetException {
-    InputFile inputFileY = (InputFile) pkg.getTarget("subdir/y");
-    checkPathMatches(inputFileY, pathY);
-    checkName(inputFileY, "subdir/y");
-    checkLabel(inputFileY, "//pkg:subdir/y");
-  }
-
-  @Test
-  public void testEquivalenceRelation() throws NoSuchTargetException {
-    InputFile inputFileX = (InputFile) pkg.getTarget("x");
-    assertThat(inputFileX).isSameInstanceAs(pkg.getTarget("x"));
-    InputFile inputFileY = (InputFile) pkg.getTarget("subdir/y");
-    assertThat(inputFileY).isSameInstanceAs(pkg.getTarget("subdir/y"));
-    new EqualsTester()
-        .addEqualityGroup(inputFileX)
-        .addEqualityGroup(inputFileY)
-        .testEquals();
-  }
-
-  @Test
-  public void testReduceForSerialization() throws NoSuchTargetException {
-    var inputFileX = pkg.getTarget("x");
-    assertThat(inputFileX).hasSamePropertiesAs(inputFileX.reduceForSerialization());
-    var inputFileY = pkg.getTarget("subdir/y");
-    assertThat(inputFileY).hasSamePropertiesAs(inputFileY.reduceForSerialization());
-  }
+        private fun checkLabel(input: InputFile, expectedLabelString: String?) {
+            assertThat(input.getLabel().toString()).isEqualTo(expectedLabelString)
+        }
+    }
 }

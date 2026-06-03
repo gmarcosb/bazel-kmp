@@ -11,178 +11,164 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.sandbox
 
-package com.google.devtools.build.lib.sandbox;
+import com.google.devtools.build.lib.sandbox.LinuxSandboxCommandLineBuilder.NetworkNamespace.NETNS_WITH_LOOPBACK
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.sandbox.LinuxSandboxCommandLineBuilder.NetworkNamespace.NETNS_WITH_LOOPBACK;
-import static com.google.devtools.build.lib.sandbox.LinuxSandboxCommandLineBuilder.NetworkNamespace.NO_NETNS;
-import static org.junit.Assert.assertThrows;
+/** Unit tests for [LinuxSandboxCommandLineBuilderTest].  */
+@RunWith(JUnit4::class)
+class LinuxSandboxCommandLineBuilderTest {
+    private var testFS: FileSystem? = null
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.ImmutableSortedMap;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import java.time.Duration;
-import java.util.List;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @Before
+    fun createFileSystem() {
+        testFS = InMemoryFileSystem(DigestHashFunction.SHA256)
+    }
 
-/** Unit tests for {@link LinuxSandboxCommandLineBuilderTest}. */
-@RunWith(JUnit4.class)
-public final class LinuxSandboxCommandLineBuilderTest {
-  private FileSystem testFS;
+    @org.junit.Test
+    fun testLinuxSandboxCommandLineBuilder_fakeRootAndFakeUsernameAreExclusive() {
+        val linuxSandboxPath: Path? = testFS.getPath("/linux-sandbox")
+        val commandArguments: com.google.common.collect.ImmutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>("echo", "hello, flo")
 
-  @Before
-  public final void createFileSystem() {
-    testFS = new InMemoryFileSystem(DigestHashFunction.SHA256);
-  }
+        val e: java.lang.Exception? =
+            org.junit.Assert.assertThrows<java.lang.IllegalStateException?>(
+                java.lang.IllegalStateException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    LinuxSandboxCommandLineBuilder.commandLineBuilder(linuxSandboxPath)
+                        .setUseFakeRoot(true)
+                        .setUseFakeUsername(true)
+                        .buildForCommand(commandArguments)
+                })
+        Truth.assertThat(e).hasMessageThat().contains("exclusive")
+    }
 
-  @Test
-  public void testLinuxSandboxCommandLineBuilder_fakeRootAndFakeUsernameAreExclusive() {
-    Path linuxSandboxPath = testFS.getPath("/linux-sandbox");
-    ImmutableList<String> commandArguments = ImmutableList.of("echo", "hello, flo");
+    @org.junit.Test
+    fun testLinuxSandboxCommandLineBuilder_buildsWithoutOptionalArguments() {
+        val linuxSandboxPath: Path = testFS.getPath("/linux-sandbox")
 
-    Exception e =
-        assertThrows(
-            IllegalStateException.class,
-            () ->
-                LinuxSandboxCommandLineBuilder.commandLineBuilder(linuxSandboxPath)
-                    .setUseFakeRoot(true)
-                    .setUseFakeUsername(true)
-                    .buildForCommand(commandArguments));
-    assertThat(e).hasMessageThat().contains("exclusive");
-  }
+        val commandArguments: com.google.common.collect.ImmutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>("echo", "hello, max")
 
-  @Test
-  public void testLinuxSandboxCommandLineBuilder_buildsWithoutOptionalArguments() {
-    Path linuxSandboxPath = testFS.getPath("/linux-sandbox");
+        val expectedCommandLine: com.google.common.collect.ImmutableList<String?> =
+            com.google.common.collect.ImmutableList.builder<String?>()
+                .add(linuxSandboxPath.getPathString())
+                .add("--")
+                .addAll(commandArguments)
+                .build()
 
-    ImmutableList<String> commandArguments = ImmutableList.of("echo", "hello, max");
+        val commandLine: MutableList<String?>? =
+            LinuxSandboxCommandLineBuilder.commandLineBuilder(linuxSandboxPath)
+                .buildForCommand(commandArguments)
 
-    ImmutableList<String> expectedCommandLine =
-        ImmutableList.<String>builder()
-            .add(linuxSandboxPath.getPathString())
-            .add("--")
-            .addAll(commandArguments)
-            .build();
+        Truth.assertThat(commandLine).containsExactlyElementsIn(expectedCommandLine).inOrder()
+    }
 
-    List<String> commandLine =
-        LinuxSandboxCommandLineBuilder.commandLineBuilder(linuxSandboxPath)
-            .buildForCommand(commandArguments);
+    @org.junit.Test
+    fun testLinuxSandboxCommandLineBuilder_buildsWithOptionalArguments() {
+        val linuxSandboxPath: Path = testFS.getPath("/linux-sandbox")
 
-    assertThat(commandLine).containsExactlyElementsIn(expectedCommandLine).inOrder();
-  }
+        val commandArguments: com.google.common.collect.ImmutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>("echo", "hello, tom")
 
-  @Test
-  public void testLinuxSandboxCommandLineBuilder_buildsWithOptionalArguments() {
-    Path linuxSandboxPath = testFS.getPath("/linux-sandbox");
+        val timeout: java.time.Duration = java.time.Duration.ofSeconds(10)
+        val killDelay: java.time.Duration = java.time.Duration.ofSeconds(2)
 
-    ImmutableList<String> commandArguments = ImmutableList.of("echo", "hello, tom");
+        val sandboxDebugPath: Path = testFS.getPath("/debug.out")
+        val statisticsPath: Path = testFS.getPath("/stats.out")
 
-    Duration timeout = Duration.ofSeconds(10);
-    Duration killDelay = Duration.ofSeconds(2);
+        val workingDirectory: Path = testFS.getPath("/all-work-and-no-play")
+        val stdoutPath: Path = testFS.getPath("/stdout.txt")
+        val stderrPath: Path = testFS.getPath("/stderr.txt")
 
-    Path sandboxDebugPath = testFS.getPath("/debug.out");
-    Path statisticsPath = testFS.getPath("/stats.out");
+        // These two flags are exclusive.
+        val useFakeUsername = true
+        val useFakeRoot = false
 
-    Path workingDirectory = testFS.getPath("/all-work-and-no-play");
-    Path stdoutPath = testFS.getPath("/stdout.txt");
-    Path stderrPath = testFS.getPath("/stderr.txt");
+        val createNetworkNamespace = true
+        val useFakeHostname = true
 
-    // These two flags are exclusive.
-    boolean useFakeUsername = true;
-    boolean useFakeRoot = false;
+        val fileSystem: FileSystem = InMemoryFileSystem(DigestHashFunction.SHA256)
+        val workDir: Path = fileSystem.getPath("/work")
+        val concreteDir: Path = workDir.getRelative("concrete")
+        val sandboxDir: Path = workDir.getRelative("sandbox")
 
-    boolean createNetworkNamespace = true;
-    boolean useFakeHostname = true;
+        val bindMountSource1: Path? = concreteDir.getRelative("bindMountSource1")
+        val bindMountSource2: Path? = concreteDir.getRelative("bindMountSource2")
+        val mountDir: Path = sandboxDir.getRelative("mount")
+        val bindMountTarget1: Path? = mountDir.getRelative("bindMountTarget1")
+        val bindMountTarget2: Path? = mountDir.getRelative("bindMountTarget2")
+        val bindMountSameSourceAndTarget: Path? = mountDir.getRelative("bindMountSourceAndTarget")
 
-    FileSystem fileSystem = new InMemoryFileSystem(DigestHashFunction.SHA256);
-    Path workDir = fileSystem.getPath("/work");
-    Path concreteDir = workDir.getRelative("concrete");
-    Path sandboxDir = workDir.getRelative("sandbox");
+        val writableDir1: Path = sandboxDir.getRelative("writable1")
+        val writableDir2: Path? = sandboxDir.getRelative("writable2")
 
-    Path bindMountSource1 = concreteDir.getRelative("bindMountSource1");
-    Path bindMountSource2 = concreteDir.getRelative("bindMountSource2");
-    Path mountDir = sandboxDir.getRelative("mount");
-    Path bindMountTarget1 = mountDir.getRelative("bindMountTarget1");
-    Path bindMountTarget2 = mountDir.getRelative("bindMountTarget2");
-    Path bindMountSameSourceAndTarget = mountDir.getRelative("bindMountSourceAndTarget");
+        val tmpfsDir1: PathFragment = sandboxDir.asFragment().getRelative("tmpfs1")
+        val tmpfsDir2: PathFragment? = sandboxDir.asFragment().getRelative("tmpfs2")
 
-    Path writableDir1 = sandboxDir.getRelative("writable1");
-    Path writableDir2 = sandboxDir.getRelative("writable2");
+        val writableFilesAndDirectories: com.google.common.collect.ImmutableSet<Path?> =
+            com.google.common.collect.ImmutableSet.of<Path?>(writableDir1, writableDir2)
 
-    PathFragment tmpfsDir1 = sandboxDir.asFragment().getRelative("tmpfs1");
-    PathFragment tmpfsDir2 = sandboxDir.asFragment().getRelative("tmpfs2");
+        val tmpfsDirectories: com.google.common.collect.ImmutableSet<PathFragment?> =
+            com.google.common.collect.ImmutableSet.of<PathFragment?>(tmpfsDir1, tmpfsDir2)
 
-    ImmutableSet<Path> writableFilesAndDirectories = ImmutableSet.of(writableDir1, writableDir2);
+        val bindMounts: com.google.common.collect.ImmutableMap<Path?, Path?> =
+            com.google.common.collect.ImmutableSortedMap.naturalOrder<Path?, Path?>()
+                .put(bindMountSameSourceAndTarget, bindMountSameSourceAndTarget)
+                .put(bindMountTarget1, bindMountSource1)
+                .put(bindMountTarget2, bindMountSource2)
+                .buildOrThrow()
 
-    ImmutableSet<PathFragment> tmpfsDirectories = ImmutableSet.of(tmpfsDir1, tmpfsDir2);
+        val cgroupsDir: Path = fileSystem.getPath("/sys/fs/cgroups/something")
 
-    ImmutableMap<Path, Path> bindMounts =
-        ImmutableSortedMap.<Path, Path>naturalOrder()
-            .put(bindMountSameSourceAndTarget, bindMountSameSourceAndTarget)
-            .put(bindMountTarget1, bindMountSource1)
-            .put(bindMountTarget2, bindMountSource2)
-            .buildOrThrow();
+        val expectedCommandLine: com.google.common.collect.ImmutableList<String?> =
+            com.google.common.collect.ImmutableList.builder<String?>()
+                .add(linuxSandboxPath.getPathString())
+                .add("-W", workingDirectory.getPathString())
+                .add("-T", timeout.toSeconds().toString())
+                .add("-t", killDelay.toSeconds().toString())
+                .add("-l", stdoutPath.getPathString())
+                .add("-L", stderrPath.getPathString())
+                .add("-w", writableDir1.getPathString())
+                .add("-w", writableDir2.getPathString())
+                .add("-e", tmpfsDir1.getPathString())
+                .add("-e", tmpfsDir2.getPathString())
+                .add("-M", bindMountSameSourceAndTarget.getPathString())
+                .add("-M", bindMountSource1.getPathString())
+                .add("-m", bindMountTarget1.getPathString())
+                .add("-M", bindMountSource2.getPathString())
+                .add("-m", bindMountTarget2.getPathString())
+                .add("-S", statisticsPath.getPathString())
+                .add("-H")
+                .add("-N")
+                .add("-U")
+                .add("-D", sandboxDebugPath.getPathString())
+                .add("-p")
+                .add("-C", cgroupsDir.toString())
+                .add("--")
+                .addAll(commandArguments)
+                .build()
 
-    Path cgroupsDir = fileSystem.getPath("/sys/fs/cgroups/something");
+        val commandLine: MutableList<String?>? =
+            LinuxSandboxCommandLineBuilder.commandLineBuilder(linuxSandboxPath)
+                .setWorkingDirectory(workingDirectory)
+                .setStdoutPath(stdoutPath)
+                .setStderrPath(stderrPath)
+                .setTimeout(timeout)
+                .setKillDelay(killDelay)
+                .setWritableFilesAndDirectories(writableFilesAndDirectories)
+                .setTmpfsDirectories(tmpfsDirectories)
+                .setBindMounts(bindMounts)
+                .setUseFakeHostname(useFakeHostname)
+                .setCreateNetworkNamespace(if (createNetworkNamespace) NETNS_WITH_LOOPBACK else NO_NETNS)
+                .setUseFakeRoot(useFakeRoot)
+                .setStatisticsPath(statisticsPath)
+                .setUseFakeUsername(useFakeUsername)
+                .setSandboxDebugPath(sandboxDebugPath.getPathString())
+                .setPersistentProcess(true)
+                .setCgroupsDirs(com.google.common.collect.ImmutableSet.of<E?>(cgroupsDir.getPathFile().toPath()))
+                .buildForCommand(commandArguments)
 
-    ImmutableList<String> expectedCommandLine =
-        ImmutableList.<String>builder()
-            .add(linuxSandboxPath.getPathString())
-            .add("-W", workingDirectory.getPathString())
-            .add("-T", Long.toString(timeout.toSeconds()))
-            .add("-t", Long.toString(killDelay.toSeconds()))
-            .add("-l", stdoutPath.getPathString())
-            .add("-L", stderrPath.getPathString())
-            .add("-w", writableDir1.getPathString())
-            .add("-w", writableDir2.getPathString())
-            .add("-e", tmpfsDir1.getPathString())
-            .add("-e", tmpfsDir2.getPathString())
-            .add("-M", bindMountSameSourceAndTarget.getPathString())
-            .add("-M", bindMountSource1.getPathString())
-            .add("-m", bindMountTarget1.getPathString())
-            .add("-M", bindMountSource2.getPathString())
-            .add("-m", bindMountTarget2.getPathString())
-            .add("-S", statisticsPath.getPathString())
-            .add("-H")
-            .add("-N")
-            .add("-U")
-            .add("-D", sandboxDebugPath.getPathString())
-            .add("-p")
-            .add("-C", cgroupsDir.toString())
-            .add("--")
-            .addAll(commandArguments)
-            .build();
-
-    List<String> commandLine =
-        LinuxSandboxCommandLineBuilder.commandLineBuilder(linuxSandboxPath)
-            .setWorkingDirectory(workingDirectory)
-            .setStdoutPath(stdoutPath)
-            .setStderrPath(stderrPath)
-            .setTimeout(timeout)
-            .setKillDelay(killDelay)
-            .setWritableFilesAndDirectories(writableFilesAndDirectories)
-            .setTmpfsDirectories(tmpfsDirectories)
-            .setBindMounts(bindMounts)
-            .setUseFakeHostname(useFakeHostname)
-            .setCreateNetworkNamespace(createNetworkNamespace ? NETNS_WITH_LOOPBACK : NO_NETNS)
-            .setUseFakeRoot(useFakeRoot)
-            .setStatisticsPath(statisticsPath)
-            .setUseFakeUsername(useFakeUsername)
-            .setSandboxDebugPath(sandboxDebugPath.getPathString())
-            .setPersistentProcess(true)
-            .setCgroupsDirs(ImmutableSet.of(cgroupsDir.getPathFile().toPath()))
-            .buildForCommand(commandArguments);
-
-    assertThat(commandLine).containsExactlyElementsIn(expectedCommandLine).inOrder();
-  }
+        Truth.assertThat(commandLine).containsExactlyElementsIn(expectedCommandLine).inOrder()
+    }
 }

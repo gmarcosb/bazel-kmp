@@ -11,90 +11,69 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime.commands
 
-package com.google.devtools.build.lib.runtime.commands;
+import com.google.devtools.build.lib.events.EventBusEventHandler
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.truth.Truth.assertWithMessage;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+/** Test for [QueryCommand].  */
+@RunWith(JUnit4::class)
+class QueryCommandTest {
+    @org.junit.Rule
+    val mockito: MockitoRule = MockitoJUnit.rule()
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.events.EventBusEventHandler;
-import com.google.devtools.build.lib.events.Reporter;
-import com.google.devtools.build.lib.events.StoredEventHandler;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.query2.common.AbstractBlazeQueryEnvironment;
-import com.google.devtools.build.lib.query2.engine.QueryEvalResult;
-import com.google.devtools.build.lib.query2.query.output.OutputFormatter;
-import com.google.devtools.build.lib.query2.query.output.QueryOptions;
-import com.google.devtools.build.lib.runtime.BlazeCommandResult;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.runtime.QueryRuntimeHelper;
-import com.google.devtools.build.lib.server.FailureDetails.Query.Code;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.lib.util.Either;
-import com.google.devtools.build.lib.util.ExitCode;
-import com.google.devtools.common.options.Options;
-import java.util.Optional;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnit;
-import org.mockito.junit.MockitoRule;
+    @org.mockito.Mock
+    private val mockQueryEnvironment: AbstractBlazeQueryEnvironment<Target?>? = null
 
-/** Test for {@link QueryCommand}. */
-@RunWith(JUnit4.class)
-public class QueryCommandTest {
+    private var underTest: QueryCommand? = null
 
-  @Rule public final MockitoRule mockito = MockitoJUnit.rule();
+    @Before
+    fun setUp() {
+        this.underTest = QueryCommand()
+        Mockito.`when`<T?>(mockQueryEnvironment.getFunctions())
+            .thenReturn(com.google.common.collect.ImmutableList.of<E?>())
+    }
 
-  @Mock private AbstractBlazeQueryEnvironment<Target> mockQueryEnvironment;
+    @org.junit.Test
+    fun testQuerySyntaxErrorResultsInCommandLineExitStatusWithDetails() {
+        val storedEventHandler: StoredEventHandler = StoredEventHandler()
 
-  private QueryCommand underTest;
+        val result: Either<BlazeCommandResult?, QueryEvalResult?> =
+            underTest.doQuery(
+                "terrible syntax",
+                mockCommandEnvironment(
+                    com.google.devtools.build.lib.events.Reporter(
+                        EventBusEventHandler.createWithNewEventBus(),
+                        storedEventHandler
+                    )
+                ),
+                com.google.devtools.common.options.Options.getDefaults<O?>(QueryOptions::class.java),  /* streamResults= */
+                false,
+                < T > mock < T ? > (com.google.devtools.build.lib.query2.query.output.OutputFormatter::class.java),
+        mockQueryEnvironment,
+        <T > mock<T?>(QueryRuntimeHelper::class.java))
 
-  @Before
-  public void setUp() {
-    this.underTest = new QueryCommand();
-    when(mockQueryEnvironment.getFunctions()).thenReturn(ImmutableList.of());
-  }
+        val detailedExitCode: java.util.Optional<DetailedExitCode?> =
+            result.map(
+                { r -> java.util.Optional.of<T?>(r.getDetailedExitCode()) },
+                { r -> java.util.Optional.empty<T?>() })
+        Truth.assertWithMessage("Expected to contain BlazeCommandResult, got: %s", result)
+            .that(detailedExitCode.isPresent())
+            .isTrue()
 
-  @Test
-  public void testQuerySyntaxErrorResultsInCommandLineExitStatusWithDetails() {
-    StoredEventHandler storedEventHandler = new StoredEventHandler();
+        assertThat(detailedExitCode.get().getExitCode()).isEqualTo(ExitCode.COMMAND_LINE_ERROR)
+        assertThat(detailedExitCode.get().getFailureDetail().getQuery().getCode())
+            .isEqualTo(Code.SYNTAX_ERROR)
 
-    Either<BlazeCommandResult, QueryEvalResult> result =
-        underTest.doQuery(
-            "terrible syntax",
-            mockCommandEnvironment(
-                new Reporter(EventBusEventHandler.createWithNewEventBus(), storedEventHandler)),
-            Options.getDefaults(QueryOptions.class),
-            /* streamResults= */ false,
-            mock(OutputFormatter.class),
-            mockQueryEnvironment,
-            mock(QueryRuntimeHelper.class));
+        Truth.assertThat(storedEventHandler.getEvents()).hasSize(1)
+        Truth.assertThat(storedEventHandler.getEvents().get(0).getMessage())
+            .startsWith("Error while parsing 'terrible syntax'")
+    }
 
-    Optional<DetailedExitCode> detailedExitCode =
-        result.map(r -> Optional.of(r.getDetailedExitCode()), r -> Optional.empty());
-    assertWithMessage("Expected to contain BlazeCommandResult, got: %s", result)
-        .that(detailedExitCode.isPresent())
-        .isTrue();
-
-    assertThat(detailedExitCode.get().getExitCode()).isEqualTo(ExitCode.COMMAND_LINE_ERROR);
-    assertThat(detailedExitCode.get().getFailureDetail().getQuery().getCode())
-        .isEqualTo(Code.SYNTAX_ERROR);
-
-    assertThat(storedEventHandler.getEvents()).hasSize(1);
-    assertThat(storedEventHandler.getEvents().get(0).getMessage())
-        .startsWith("Error while parsing 'terrible syntax'");
-  }
-
-  private static CommandEnvironment mockCommandEnvironment(Reporter reporter) {
-    CommandEnvironment result = mock(CommandEnvironment.class);
-    when(result.getReporter()).thenReturn(reporter);
-    return result;
-  }
+    companion object {
+        private fun mockCommandEnvironment(reporter: com.google.devtools.build.lib.events.Reporter?): CommandEnvironment {
+            val result: CommandEnvironment = Mockito.mock<CommandEnvironment>(CommandEnvironment::class.java)
+            Mockito.`when`<T?>(result.getReporter()).thenReturn(reporter)
+            return result
+        }
+    }
 }

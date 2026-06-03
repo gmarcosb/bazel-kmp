@@ -11,25 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester
 
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import net.starlark.java.syntax.Expression;
-import net.starlark.java.syntax.ParserInput;
-import net.starlark.java.syntax.SyntaxError;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link Expression_AutoCodec}. */
-@RunWith(JUnit4.class)
-public class ExpressionCodecTest {
-
-  @Test
-  public void testCodec() throws Exception {
-    new SerializationTester(
+/** Tests for [Expression_AutoCodec].  */
+@RunWith(JUnit4::class)
+class ExpressionCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCodec() {
+        SerializationTester(
             parseExpression("1 + 1"),
             parseExpression("1 if True else 2"),
             parseExpression("{x: 2*x for x in [1, 2, 3] if x > 0}"),
@@ -46,22 +38,32 @@ public class ExpressionCodecTest {
             parseExpression("[1, 2, 3]"),
             parseExpression("not True"),
             parseExpression("a[x:y:z]"),
-            parseExpression("'foo'"),
-            // This is optimized by the parser, so it's pretty much equivalent to the string literal
+            parseExpression("'foo'"),  // This is optimized by the parser, so it's pretty much equivalent to the string literal
             // case above.
-            parseExpression("'cat' + 'dog'"))
-        .setVerificationFunction(
-            (original, deserialized) -> {
-              Expression x = (Expression) original;
-              Expression y = (Expression) deserialized;
-              assertThat(x.prettyPrint()).isEqualTo(y.prettyPrint());
-              assertThat(x.getStartLocation()).isEqualTo(y.getStartLocation());
-              assertThat(x.getEndLocation()).isEqualTo(y.getEndLocation());
-            })
-        .runTests();
-  }
+            parseExpression("'cat' + 'dog'")
+        )
+            .setVerificationFunction(
+                { original, deserialized ->
+                    val x: net.starlark.java.syntax.Expression = original as net.starlark.java.syntax.Expression
+                    val y: net.starlark.java.syntax.Expression = deserialized as net.starlark.java.syntax.Expression
+                    Truth.assertThat(x.prettyPrint()).isEqualTo(y.prettyPrint())
+                    Truth.assertThat<net.starlark.java.syntax.Location>(x.getStartLocation())
+                        .isEqualTo(y.getStartLocation())
+                    Truth.assertThat<net.starlark.java.syntax.Location>(x.getEndLocation())
+                        .isEqualTo(y.getEndLocation())
+                })
+            .runTests()
+    }
 
-  private static Expression parseExpression(String input) throws SyntaxError.Exception {
-    return Expression.parse(ParserInput.fromString(input, "<file>"));
-  }
+    companion object {
+        @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+        private fun parseExpression(input: String?): net.starlark.java.syntax.Expression {
+            return net.starlark.java.syntax.Expression.parse(
+                net.starlark.java.syntax.ParserInput.fromString(
+                    input,
+                    "<file>"
+                )
+            )
+        }
+    }
 }

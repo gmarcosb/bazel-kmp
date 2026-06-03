@@ -11,121 +11,115 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.shell
 
-package com.google.devtools.build.lib.shell;
+import com.google.devtools.build.lib.actions.ActionInputHelper
 
-import static com.google.common.truth.Truth.assertThat;
+/** Unit tests for [Command]s that are wrapped using the `process-wrapper`.  */
+@RunWith(JUnit4::class)
+class CommandUsingProcessWrapperTest {
+    private val fs: FileSystem = UnixFileSystem(
+        DigestHashFunction.SHA256,  /* hashAttributeName= */
+        "",
+        NativePosixFilesServiceImpl()
+    )
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.actions.ActionInputHelper;
-import com.google.devtools.build.lib.runtime.ProcessWrapper;
-import com.google.devtools.build.lib.testutil.BlazeTestUtils;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import com.google.devtools.build.lib.testutil.TestUtils;
-import com.google.devtools.build.lib.unix.NativePosixFilesServiceImpl;
-import com.google.devtools.build.lib.unix.UnixFileSystem;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.io.IOException;
-import java.time.Duration;
-import java.util.List;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCommand_echo() {
+        val commandArguments: com.google.common.collect.ImmutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>("echo", "worker bees can leave")
 
-/** Unit tests for {@link Command}s that are wrapped using the {@code process-wrapper}. */
-@RunWith(JUnit4.class)
-public final class CommandUsingProcessWrapperTest {
+        val command: Command = Command(commandArguments, java.lang.System.getenv())
+        val commandResult: CommandResult = command.execute()
 
-  private final FileSystem fs =
-      new UnixFileSystem(
-          DigestHashFunction.SHA256,
-          /* hashAttributeName= */ "",
-          new NativePosixFilesServiceImpl());
+        assertThat(commandResult.terminationStatus().success()).isTrue()
+        com.google.common.truth.Subject.contains("worker bees can leave")
+    }
 
-  private static ProcessWrapper getProcessWrapper() {
-    PathFragment path =
-        PathFragment.create(BlazeTestUtils.runfilesDir())
-            .getRelative(TestConstants.PROCESS_WRAPPER_PATH);
-    return new ProcessWrapper(
-        path,
-        ActionInputHelper.fromPath(path),
-        /* killDelay= */ null,
-        /* gracefulSigterm= */ false);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testProcessWrappedCommand_echo() {
+        val commandArguments: com.google.common.collect.ImmutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>("echo", "even drones can fly away")
 
-  private static String getCpuTimeSpenderPath() {
-    return BlazeTestUtils.runfilesDir() + "/" + TestConstants.CPU_TIME_SPENDER_PATH;
-  }
+        val fullCommandLine: MutableList<String?>? = processWrapper.commandLineBuilder(commandArguments).build()
 
-  @Test
-  public void testCommand_echo() throws Exception {
-    ImmutableList<String> commandArguments = ImmutableList.of("echo", "worker bees can leave");
+        val command: Command = Command(fullCommandLine, java.lang.System.getenv())
+        val commandResult: CommandResult = command.execute()
 
-    Command command = new Command(commandArguments, System.getenv());
-    CommandResult commandResult = command.execute();
+        assertThat(commandResult.terminationStatus().success()).isTrue()
+        com.google.common.truth.Subject.contains("even drones can fly away")
+    }
 
-    assertThat(commandResult.terminationStatus().success()).isTrue();
-    assertThat(commandResult.stdoutStream().toString()).contains("worker bees can leave");
-  }
+    @Throws(IOException::class, CommandException::class, java.lang.InterruptedException::class)
+    private fun checkProcessWrapperStatistics(
+        userTimeToSpend: java.time.Duration,
+        systemTimeToSpend: java.time.Duration
+    ) {
+        val commandArguments: com.google.common.collect.ImmutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>(
+                cpuTimeSpenderPath,
+                userTimeToSpend.toSeconds().toString(),
+                systemTimeToSpend.toSeconds().toString()
+            )
 
-  @Test
-  public void testProcessWrappedCommand_echo() throws Exception {
-    ImmutableList<String> commandArguments = ImmutableList.of("echo", "even drones can fly away");
+        val outputDir: Path = com.google.devtools.build.lib.testutil.TestUtils.createUniqueTmpDir(fs)
+        val statisticsFilePath: Path = outputDir.getRelative("stats.out")
 
-    List<String> fullCommandLine = getProcessWrapper().commandLineBuilder(commandArguments).build();
+        val fullCommandLine: MutableList<String?>? =
+            processWrapper
+                .commandLineBuilder(commandArguments)
+                .setStatisticsPath(statisticsFilePath.asFragment())
+                .build()
 
-    Command command = new Command(fullCommandLine, System.getenv());
-    CommandResult commandResult = command.execute();
+        ExecutionStatisticsTestUtil.executeCommandAndCheckStatisticsAboutCpuTimeSpent(
+            userTimeToSpend, systemTimeToSpend, fullCommandLine, statisticsFilePath
+        )
+    }
 
-    assertThat(commandResult.terminationStatus().success()).isTrue();
-    assertThat(commandResult.stdoutStream().toString()).contains("even drones can fly away");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testProcessWrappedCommand_withStatistics_spendUserTime() {
+        val userTimeToSpend: java.time.Duration = java.time.Duration.ofSeconds(10)
+        val systemTimeToSpend: java.time.Duration = java.time.Duration.ZERO
 
-  private void checkProcessWrapperStatistics(Duration userTimeToSpend, Duration systemTimeToSpend)
-      throws IOException, CommandException, InterruptedException {
-    ImmutableList<String> commandArguments =
-        ImmutableList.of(
-            getCpuTimeSpenderPath(),
-            Long.toString(userTimeToSpend.toSeconds()),
-            Long.toString(systemTimeToSpend.toSeconds()));
+        checkProcessWrapperStatistics(userTimeToSpend, systemTimeToSpend)
+    }
 
-    Path outputDir = TestUtils.createUniqueTmpDir(fs);
-    Path statisticsFilePath = outputDir.getRelative("stats.out");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testProcessWrappedCommand_withStatistics_spendSystemTime() {
+        val userTimeToSpend: java.time.Duration = java.time.Duration.ZERO
+        val systemTimeToSpend: java.time.Duration = java.time.Duration.ofSeconds(10)
 
-    List<String> fullCommandLine =
-        getProcessWrapper()
-            .commandLineBuilder(commandArguments)
-            .setStatisticsPath(statisticsFilePath.asFragment())
-            .build();
+        checkProcessWrapperStatistics(userTimeToSpend, systemTimeToSpend)
+    }
 
-    ExecutionStatisticsTestUtil.executeCommandAndCheckStatisticsAboutCpuTimeSpent(
-        userTimeToSpend, systemTimeToSpend, fullCommandLine, statisticsFilePath);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testProcessWrappedCommand_withStatistics_spendUserAndSystemTime() {
+        val userTimeToSpend: java.time.Duration = java.time.Duration.ofSeconds(10)
+        val systemTimeToSpend: java.time.Duration = java.time.Duration.ofSeconds(10)
 
-  @Test
-  public void testProcessWrappedCommand_withStatistics_spendUserTime() throws Exception {
-    Duration userTimeToSpend = Duration.ofSeconds(10);
-    Duration systemTimeToSpend = Duration.ZERO;
+        checkProcessWrapperStatistics(userTimeToSpend, systemTimeToSpend)
+    }
 
-    checkProcessWrapperStatistics(userTimeToSpend, systemTimeToSpend);
-  }
+    companion object {
+        private val processWrapper: ProcessWrapper
+            get() {
+                val path: PathFragment? =
+                    PathFragment.create(BlazeTestUtils.runfilesDir())
+                        .getRelative(TestConstants.PROCESS_WRAPPER_PATH)
+                return ProcessWrapper(
+                    path,
+                    ActionInputHelper.fromPath(path),  /* killDelay= */
+                    null,  /* gracefulSigterm= */
+                    false
+                )
+            }
 
-  @Test
-  public void testProcessWrappedCommand_withStatistics_spendSystemTime() throws Exception {
-    Duration userTimeToSpend = Duration.ZERO;
-    Duration systemTimeToSpend = Duration.ofSeconds(10);
-
-    checkProcessWrapperStatistics(userTimeToSpend, systemTimeToSpend);
-  }
-
-  @Test
-  public void testProcessWrappedCommand_withStatistics_spendUserAndSystemTime() throws Exception {
-    Duration userTimeToSpend = Duration.ofSeconds(10);
-    Duration systemTimeToSpend = Duration.ofSeconds(10);
-
-    checkProcessWrapperStatistics(userTimeToSpend, systemTimeToSpend);
-  }
+        private val cpuTimeSpenderPath: String
+            get() = BlazeTestUtils.runfilesDir() + "/" + TestConstants.CPU_TIME_SPENDER_PATH
+    }
 }

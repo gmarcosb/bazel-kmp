@@ -11,29 +11,25 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.annot.processor.testsources
 
-package net.starlark.java.annot.processor.testsources;
-
-import net.starlark.java.annot.Param;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.StarlarkInt;
-import net.starlark.java.eval.StarlarkValue;
+import net.starlark.java.eval.StarlarkInt
 
 /**
  * Test case for a StarlarkMethod which does not have an appropriate StarlarkThread parameter
  * despite having useStarlarkThread set.
  */
-public class StarlarkThreadMissing implements StarlarkValue {
-
-  @StarlarkMethod(
-      name = "three_arg_method_missing_env",
-      documented = false,
-      parameters = {
-        @Param(name = "one", named = true),
-        @Param(name = "two", named = true),
-      },
-      useStarlarkThread = true)
-  public String threeArgMethod(String one, StarlarkInt two, String shouldBeThread) {
-    return "bar";
-  }
+class StarlarkThreadMissing : StarlarkValue {
+    @StarlarkMethod(
+        name = "three_arg_method_missing_env",
+        documented = false,
+        parameters = [net.starlark.java.annot.Param(
+            name = "one",
+            named = true
+        ), net.starlark.java.annot.Param(name = "two", named = true)],
+        useStarlarkThread = true
+    )
+    fun threeArgMethod(one: String?, two: StarlarkInt?, shouldBeThread: String?): String {
+        return "bar"
+    }
 }

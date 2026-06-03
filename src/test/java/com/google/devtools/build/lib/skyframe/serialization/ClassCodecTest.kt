@@ -11,20 +11,23 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester
 
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link ClassCodec}. */
-@RunWith(JUnit4.class)
-public class ClassCodecTest {
-  @Test
-  public void smoke() throws Exception {
-    new SerializationTester(String.class, Object.class, Class.class, int.class, boolean.class)
-        .runTests();
-  }
+/** Tests for [ClassCodec].  */
+@RunWith(JUnit4::class)
+class ClassCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun smoke() {
+        SerializationTester(
+            String::class.java,
+            Any::class.java,
+            java.lang.Class::class.java,
+            Int::class.javaPrimitiveType,
+            Boolean::class.javaPrimitiveType
+        )
+            .runTests()
+    }
 }

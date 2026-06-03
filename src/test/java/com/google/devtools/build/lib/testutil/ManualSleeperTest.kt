@@ -11,129 +11,138 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.testutil;
+package com.google.devtools.build.lib.testutil
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.fail;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.clock.Clock.currentTimeMillis
+import com.google.devtools.build.lib.exec.util.SpawnBuilder.build
+import com.google.devtools.build.lib.testutil.ManualSleeper
+import com.google.devtools.common.options.testing.ConverterTesterMap.Builder.build
+import net.starlark.java.syntax.FileOptions.Builder.build
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.util.concurrent.atomic.AtomicInteger
 
-import java.util.concurrent.atomic.AtomicInteger;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for `ManualSleeper`.  */
+@RunWith(JUnit4::class)
+class ManualSleeperTest {
+    private val clock: com.google.devtools.build.lib.testutil.ManualClock =
+        com.google.devtools.build.lib.testutil.ManualClock()
+    private val sleeper: ManualSleeper = ManualSleeper(clock)
 
-/** Tests for {@code ManualSleeper}. */
-@RunWith(JUnit4.class)
-public class ManualSleeperTest {
-
-  private final ManualClock clock = new ManualClock();
-  private final ManualSleeper sleeper = new ManualSleeper(clock);
-
-  @Test
-  public void sleepMillis_0_ok() throws InterruptedException {
-    sleeper.sleepMillis(0);
-    assertThat(clock.currentTimeMillis()).isEqualTo(0);
-  }
-
-  @Test
-  public void sleepMillis_100_ok() throws InterruptedException {
-    sleeper.sleepMillis(100);
-    assertThat(clock.currentTimeMillis()).isEqualTo(100);
-  }
-
-  @Test
-  public void sleepMillis_minus1_throws() throws InterruptedException {
-    try {
-      sleeper.sleepMillis(-1);
-      fail("Should have thrown");
-    } catch (IllegalArgumentException expected) {
-      assertThat(expected).hasMessageThat().isEqualTo("sleeper can't time travel");
+    @org.junit.Test
+    @Throws(java.lang.InterruptedException::class)
+    fun sleepMillis_0_ok() {
+        sleeper.sleepMillis(0)
+        Truth.assertThat(clock.currentTimeMillis()).isEqualTo(0)
     }
-  }
 
-  @Test
-  public void scheduleRunnable_0_doesNotRunItImmediately() {
-    AtomicInteger counter = new AtomicInteger();
-    sleeper.scheduleRunnable(counter::incrementAndGet, 0);
-
-    assertThat(counter.get()).isEqualTo(0);
-  }
-
-  @Test
-  public void scheduleRunnable_100_doesNotRunItImmediately() {
-    AtomicInteger counter = new AtomicInteger();
-    sleeper.scheduleRunnable(counter::incrementAndGet, 100);
-
-    assertThat(counter.get()).isEqualTo(0);
-  }
-
-  @Test
-  public void scheduleRunnable_minus1_throws() {
-    AtomicInteger counter = new AtomicInteger();
-
-    try {
-      sleeper.scheduleRunnable(counter::incrementAndGet, -1);
-      fail("Should have thrown");
-    } catch (IllegalArgumentException expected) {
-      assertThat(expected).hasMessageThat().isEqualTo("sleeper can't time travel");
-      assertThat(counter.get()).isEqualTo(0);
+    @org.junit.Test
+    @Throws(java.lang.InterruptedException::class)
+    fun sleepMillis_100_ok() {
+        sleeper.sleepMillis(100)
+        Truth.assertThat(clock.currentTimeMillis()).isEqualTo(100)
     }
-  }
 
-  @Test
-  public void scheduleRunnable_0_runsAfterSleep0() throws InterruptedException {
-    AtomicInteger counter = new AtomicInteger();
-    sleeper.scheduleRunnable(counter::incrementAndGet, 0);
+    @org.junit.Test
+    @Throws(java.lang.InterruptedException::class)
+    fun sleepMillis_minus1_throws() {
+        try {
+            sleeper.sleepMillis(-1)
+            org.junit.Assert.fail("Should have thrown")
+        } catch (expected: java.lang.IllegalArgumentException) {
+            Truth.assertThat(expected).hasMessageThat().isEqualTo("sleeper can't time travel")
+        }
+    }
 
-    sleeper.sleepMillis(0);
+    @org.junit.Test
+    fun scheduleRunnable_0_doesNotRunItImmediately() {
+        val counter: AtomicInteger = AtomicInteger()
+        sleeper.scheduleRunnable(java.lang.Runnable { counter.incrementAndGet() }, 0)
 
-    assertThat(counter.get()).isEqualTo(1);
-  }
+        Truth.assertThat(counter.get()).isEqualTo(0)
+    }
 
-  @Test
-  public void scheduleRunnable_0_runsAfterSleep0_doesNotRunSecondTime()
-      throws InterruptedException {
-    AtomicInteger counter = new AtomicInteger();
-    sleeper.scheduleRunnable(counter::incrementAndGet, 0);
+    @org.junit.Test
+    fun scheduleRunnable_100_doesNotRunItImmediately() {
+        val counter: AtomicInteger = AtomicInteger()
+        sleeper.scheduleRunnable(java.lang.Runnable { counter.incrementAndGet() }, 100)
 
-    sleeper.sleepMillis(0);
-    sleeper.sleepMillis(0);
+        Truth.assertThat(counter.get()).isEqualTo(0)
+    }
 
-    assertThat(counter.get()).isEqualTo(1);
-  }
+    @org.junit.Test
+    fun scheduleRunnable_minus1_throws() {
+        val counter: AtomicInteger = AtomicInteger()
 
-  @Test
-  public void scheduleRunnable_100_runsAfterSleepExactly100() throws InterruptedException {
-    AtomicInteger counter = new AtomicInteger();
-    sleeper.scheduleRunnable(counter::incrementAndGet, 100);
+        try {
+            sleeper.scheduleRunnable(java.lang.Runnable { counter.incrementAndGet() }, -1)
+            org.junit.Assert.fail("Should have thrown")
+        } catch (expected: java.lang.IllegalArgumentException) {
+            Truth.assertThat(expected).hasMessageThat().isEqualTo("sleeper can't time travel")
+            Truth.assertThat(counter.get()).isEqualTo(0)
+        }
+    }
 
-    sleeper.sleepMillis(50);
-    assertThat(counter.get()).isEqualTo(0);
+    @org.junit.Test
+    @Throws(java.lang.InterruptedException::class)
+    fun scheduleRunnable_0_runsAfterSleep0() {
+        val counter: AtomicInteger = AtomicInteger()
+        sleeper.scheduleRunnable(java.lang.Runnable { counter.incrementAndGet() }, 0)
 
-    sleeper.sleepMillis(50);
-    assertThat(counter.get()).isEqualTo(1);
-  }
+        sleeper.sleepMillis(0)
 
-  @Test
-  public void scheduleRunnable_100_runsAfterSleepOver100() throws InterruptedException {
-    AtomicInteger counter = new AtomicInteger();
-    sleeper.scheduleRunnable(counter::incrementAndGet, 100);
+        Truth.assertThat(counter.get()).isEqualTo(1)
+    }
 
-    sleeper.sleepMillis(50);
-    assertThat(counter.get()).isEqualTo(0);
+    @org.junit.Test
+    @Throws(java.lang.InterruptedException::class)
+    fun scheduleRunnable_0_runsAfterSleep0_doesNotRunSecondTime() {
+        val counter: AtomicInteger = AtomicInteger()
+        sleeper.scheduleRunnable(java.lang.Runnable { counter.incrementAndGet() }, 0)
 
-    sleeper.sleepMillis(150);
-    assertThat(counter.get()).isEqualTo(1);
-  }
+        sleeper.sleepMillis(0)
+        sleeper.sleepMillis(0)
 
-  @Test
-  public void scheduleRunnable_100_doesNotRunAgain() throws InterruptedException {
-    AtomicInteger counter = new AtomicInteger();
-    sleeper.scheduleRunnable(counter::incrementAndGet, 100);
+        Truth.assertThat(counter.get()).isEqualTo(1)
+    }
 
-    sleeper.sleepMillis(150);
-    assertThat(counter.get()).isEqualTo(1);
+    @org.junit.Test
+    @Throws(java.lang.InterruptedException::class)
+    fun scheduleRunnable_100_runsAfterSleepExactly100() {
+        val counter: AtomicInteger = AtomicInteger()
+        sleeper.scheduleRunnable(java.lang.Runnable { counter.incrementAndGet() }, 100)
 
-    sleeper.sleepMillis(100);
-    assertThat(counter.get()).isEqualTo(1);
-  }
+        sleeper.sleepMillis(50)
+        Truth.assertThat(counter.get()).isEqualTo(0)
+
+        sleeper.sleepMillis(50)
+        Truth.assertThat(counter.get()).isEqualTo(1)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.InterruptedException::class)
+    fun scheduleRunnable_100_runsAfterSleepOver100() {
+        val counter: AtomicInteger = AtomicInteger()
+        sleeper.scheduleRunnable(java.lang.Runnable { counter.incrementAndGet() }, 100)
+
+        sleeper.sleepMillis(50)
+        Truth.assertThat(counter.get()).isEqualTo(0)
+
+        sleeper.sleepMillis(150)
+        Truth.assertThat(counter.get()).isEqualTo(1)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.InterruptedException::class)
+    fun scheduleRunnable_100_doesNotRunAgain() {
+        val counter: AtomicInteger = AtomicInteger()
+        sleeper.scheduleRunnable(java.lang.Runnable { counter.incrementAndGet() }, 100)
+
+        sleeper.sleepMillis(150)
+        Truth.assertThat(counter.get()).isEqualTo(1)
+
+        sleeper.sleepMillis(100)
+        Truth.assertThat(counter.get()).isEqualTo(1)
+    }
 }

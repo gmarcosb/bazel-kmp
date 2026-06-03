@@ -11,25 +11,34 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
+/** Utility methods for querying [WalkableGraph]s more concisely.  */
+object WalkableGraphUtils {
+    @Throws(java.lang.InterruptedException::class)
+    fun getDirectDeps(graph: WalkableGraph, key: SkyKey): Iterable<SkyKey?>? {
+        return com.google.common.collect.Iterables.getOnlyElement<T?>(
+            graph.getDirectDeps(
+                com.google.common.collect.ImmutableList.of<E?>(
+                    key
+                )
+            ).values()
+        )
+    }
 
-/** Utility methods for querying {@link WalkableGraph}s more concisely. */
-public class WalkableGraphUtils {
+    @Throws(java.lang.InterruptedException::class)
+    fun getReverseDeps(graph: WalkableGraph, key: SkyKey): Iterable<SkyKey?>? {
+        return com.google.common.collect.Iterables.getOnlyElement<T?>(
+            graph.getReverseDeps(
+                com.google.common.collect.ImmutableList.of<E?>(
+                    key
+                )
+            ).values()
+        )
+    }
 
-  public static Iterable<SkyKey> getDirectDeps(WalkableGraph graph, SkyKey key)
-      throws InterruptedException {
-    return Iterables.getOnlyElement(graph.getDirectDeps(ImmutableList.of(key)).values());
-  }
-
-  public static Iterable<SkyKey> getReverseDeps(WalkableGraph graph, SkyKey key)
-      throws InterruptedException {
-    return Iterables.getOnlyElement(graph.getReverseDeps(ImmutableList.of(key)).values());
-  }
-
-  public static boolean exists(SkyKey key, WalkableGraph graph) throws InterruptedException {
-    return graph.getValue(key) != null || graph.getException(key) != null || graph.isCycle(key);
-  }
+    @Throws(java.lang.InterruptedException::class)
+    fun exists(key: SkyKey?, graph: WalkableGraph): Boolean {
+        return graph.getValue(key) != null || graph.getException(key) != null || graph.isCycle(key)
+    }
 }

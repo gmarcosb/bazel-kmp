@@ -11,150 +11,193 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoMoreInteractions;
-import static org.mockito.Mockito.when;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.bugreport.BugReporter
+import com.google.devtools.build.lib.bugreport.BugReporter.logUnexpected
+import com.google.devtools.build.lib.exec.util.SpawnBuilder.build
+import com.google.devtools.build.skyframe.SimpleSkyframeLookupResult
+import com.google.devtools.build.skyframe.SomeErrorException
+import com.google.devtools.build.skyframe.ValueOrUntypedException
+import com.google.devtools.common.options.testing.ConverterTesterMap.Builder.build
+import net.starlark.java.syntax.FileOptions.Builder.build
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import org.mockito.Mockito
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.bugreport.BugReporter;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [GraphTraversingHelper].  */
+@RunWith(JUnit4::class)
+class GraphTraversingHelperTest {
+    private val mockEnv: SkyFunction.Environment =
+        Mockito.mock<SkyFunction.Environment>(SkyFunction.Environment::class.java)
+    private val keyA: SkyKey = Mockito.mock<SkyKey>(SkyKey::class.java, "keyA")
+    private val keyB: SkyKey = Mockito.mock<SkyKey>(SkyKey::class.java, "keyB")
+    private val exn: SomeErrorException = SomeErrorException("")
+    private val value: SkyValue? = Mockito.mock<SkyValue?>(SkyValue::class.java)
 
-/** Tests for {@link GraphTraversingHelper}. */
-@RunWith(JUnit4.class)
-public final class GraphTraversingHelperTest {
+    private class SomeOtherErrorException : java.lang.Exception()
 
-  private final SkyFunction.Environment mockEnv = mock(SkyFunction.Environment.class);
-  private final SkyKey keyA = mock(SkyKey.class, "keyA");
-  private final SkyKey keyB = mock(SkyKey.class, "keyB");
-  private final SomeErrorException exn = new SomeErrorException("");
-  private final SkyValue value = mock(SkyValue.class);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun declareDependenciesAndCheckIfValuesMissing_valuesMissingBeforeCompute() {
+        Mockito.`when`<T?>(mockEnv.valuesMissing()).thenReturn(true)
+        Mockito.`when`<T?>(mockEnv.getValuesAndExceptions(com.google.common.collect.ImmutableSet.of<E?>(keyA)))
+            .thenReturn(null)
+        val valuesMissing: Boolean =
+            GraphTraversingHelper.declareDependenciesAndCheckIfValuesMissing(
+                mockEnv,
+                com.google.common.collect.ImmutableSet.of<E?>(keyA),
+                com.google.devtools.build.skyframe.GraphTraversingHelperTest.SomeOtherErrorException::class.java
+            )
+        Truth.assertThat(valuesMissing).isTrue()
+    }
 
-  private static final class SomeOtherErrorException extends Exception {
-    private SomeOtherErrorException() {}
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun declareDependenciesAndCheckIfValuesMissing_valuesMissingAfterCompute() {
+        val mockReporter: BugReporter? = Mockito.mock<BugReporter?>(BugReporter::class.java)
+        val result: SkyframeLookupResult =
+            SimpleSkyframeLookupResult(
+                java.lang.Runnable {},
+                java.util.function.Function { key: SkyKey? ->
+                    com.google.common.collect.ImmutableMap.of<Any?, ValueOrUntypedException?>(
+                        keyA,
+                        ValueOrUntypedException.Companion.ofExn(exn)
+                    ).get(key)
+                })
+        Mockito.`when`<T?>(mockEnv.getValuesAndExceptions(com.google.common.collect.ImmutableSet.of<E?>(keyA)))
+            .thenReturn(result)
+        val valuesMissing: Boolean =
+            GraphTraversingHelper.declareDependenciesAndCheckIfValuesMissing(
+                mockEnv,
+                com.google.common.collect.ImmutableSet.of<E?>(keyA),
+                com.google.devtools.build.skyframe.GraphTraversingHelperTest.SomeOtherErrorException::class.java,  /*exceptionClass2=*/
+                null,
+                mockReporter
+            )
+        Mockito.verify<BugReporter?>(mockReporter)
+            .logUnexpected("Value for: '%s' was missing, this should never happen", keyA)
+        Mockito.verifyNoMoreInteractions(mockReporter)
+        Truth.assertThat(valuesMissing).isTrue()
+    }
 
-  @Test
-  public void declareDependenciesAndCheckIfValuesMissing_valuesMissingBeforeCompute()
-      throws Exception {
-    when(mockEnv.valuesMissing()).thenReturn(true);
-    when(mockEnv.getValuesAndExceptions(ImmutableSet.of(keyA))).thenReturn(null);
-    boolean valuesMissing =
-        GraphTraversingHelper.declareDependenciesAndCheckIfValuesMissing(
-            mockEnv, ImmutableSet.of(keyA), SomeOtherErrorException.class);
-    assertThat(valuesMissing).isTrue();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun declareDependenciesAndCheckIfValuesMissing_notValuesMissingAfterCompute() {
+        val result: SkyframeLookupResult =
+            SimpleSkyframeLookupResult(
+                java.lang.Runnable {},
+                java.util.function.Function { key: SkyKey? ->
+                    com.google.common.collect.ImmutableMap.of<Any?, ValueOrUntypedException?>(
+                        keyA,
+                        ValueOrUntypedException.Companion.ofExn(exn),
+                        keyB,
+                        ValueOrUntypedException.Companion.ofValueUntyped(value)
+                    )
+                        .get(key)
+                })
+        Mockito.`when`<T?>(mockEnv.getValuesAndExceptions(com.google.common.collect.ImmutableList.of<E?>(keyA, keyB)))
+            .thenReturn(result)
+        val valuesMissing: Boolean =
+            GraphTraversingHelper.declareDependenciesAndCheckIfValuesMissing(
+                mockEnv, com.google.common.collect.ImmutableList.of<E?>(keyA, keyB), SomeErrorException::class.java
+            )
+        Truth.assertThat(valuesMissing).isFalse()
+    }
 
-  @Test
-  public void declareDependenciesAndCheckIfValuesMissing_valuesMissingAfterCompute()
-      throws Exception {
-    BugReporter mockReporter = mock(BugReporter.class);
-    SkyframeLookupResult result =
-        new SimpleSkyframeLookupResult(
-            () -> {}, ImmutableMap.of(keyA, ValueOrUntypedException.ofExn(exn))::get);
-    when(mockEnv.getValuesAndExceptions(ImmutableSet.of(keyA))).thenReturn(result);
-    boolean valuesMissing =
-        GraphTraversingHelper.declareDependenciesAndCheckIfValuesMissing(
-            mockEnv,
-            ImmutableSet.of(keyA),
-            SomeOtherErrorException.class,
-            /*exceptionClass2=*/ null,
-            mockReporter);
-    verify(mockReporter)
-        .logUnexpected("Value for: '%s' was missing, this should never happen", keyA);
-    verifyNoMoreInteractions(mockReporter);
-    assertThat(valuesMissing).isTrue();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun declareDependenciesAndCheckIfValuesMissing_nullAfterError_hasCorrectKeyInBugReport() {
+        val result: SkyframeLookupResult =
+            SimpleSkyframeLookupResult(
+                java.lang.Runnable {},
+                java.util.function.Function { key: SkyKey? ->
+                    com.google.common.collect.ImmutableMap.of<Any?, ValueOrUntypedException?>(
+                        keyA,
+                        ValueOrUntypedException.Companion.ofExn(exn),
+                        keyB,
+                        ValueOrUntypedException.Companion.ofNull()
+                    )
+                        .get(key)
+                })
+        Mockito.`when`<T?>(mockEnv.getValuesAndExceptions(com.google.common.collect.ImmutableList.of<E?>(keyA, keyB)))
+            .thenReturn(result)
+        val mockReporter: BugReporter? = Mockito.mock<BugReporter?>(BugReporter::class.java)
 
-  @Test
-  public void declareDependenciesAndCheckIfValuesMissing_notValuesMissingAfterCompute()
-      throws Exception {
-    SkyframeLookupResult result =
-        new SimpleSkyframeLookupResult(
-            () -> {},
-            ImmutableMap.of(
-                    keyA,
-                    ValueOrUntypedException.ofExn(exn),
-                    keyB,
-                    ValueOrUntypedException.ofValueUntyped(value))
-                ::get);
-    when(mockEnv.getValuesAndExceptions(ImmutableList.of(keyA, keyB))).thenReturn(result);
-    boolean valuesMissing =
-        GraphTraversingHelper.declareDependenciesAndCheckIfValuesMissing(
-            mockEnv, ImmutableList.of(keyA, keyB), SomeErrorException.class);
-    assertThat(valuesMissing).isFalse();
-  }
+        val valuesMissing: Boolean =
+            GraphTraversingHelper.declareDependenciesAndCheckIfValuesMissing(
+                mockEnv,
+                com.google.common.collect.ImmutableList.of<E?>(keyA, keyB),
+                SomeErrorException::class.java,
+                null,
+                mockReporter
+            )
 
-  @Test
-  public void declareDependenciesAndCheckIfValuesMissing_nullAfterError_hasCorrectKeyInBugReport()
-      throws Exception {
-    SkyframeLookupResult result =
-        new SimpleSkyframeLookupResult(
-            () -> {},
-            ImmutableMap.of(
-                    keyA,
-                    ValueOrUntypedException.ofExn(exn),
-                    keyB,
-                    ValueOrUntypedException.ofNull())
-                ::get);
-    when(mockEnv.getValuesAndExceptions(ImmutableList.of(keyA, keyB))).thenReturn(result);
-    BugReporter mockReporter = mock(BugReporter.class);
+        Truth.assertThat(valuesMissing).isTrue()
+        Mockito.verify<BugReporter?>(mockReporter)
+            .logUnexpected("Value for: '%s' was missing, this should never happen", keyB)
+        Mockito.verifyNoMoreInteractions(mockReporter)
+    }
 
-    boolean valuesMissing =
-        GraphTraversingHelper.declareDependenciesAndCheckIfValuesMissing(
-            mockEnv, ImmutableList.of(keyA, keyB), SomeErrorException.class, null, mockReporter);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun declareDependenciesAndCheckIfValuesMissingMaybeWithExceptions_beforeCompute() {
+        Mockito.`when`<T?>(mockEnv.valuesMissing()).thenReturn(true)
+        Mockito.`when`<T?>(mockEnv.getValuesAndExceptions(com.google.common.collect.ImmutableSet.of<E?>(keyB)))
+            .thenReturn(null)
 
-    assertThat(valuesMissing).isTrue();
-    verify(mockReporter)
-        .logUnexpected("Value for: '%s' was missing, this should never happen", keyB);
-    verifyNoMoreInteractions(mockReporter);
-  }
-
-  @Test
-  public void declareDependenciesAndCheckIfValuesMissingMaybeWithExceptions_beforeCompute()
-      throws Exception {
-    when(mockEnv.valuesMissing()).thenReturn(true);
-    when(mockEnv.getValuesAndExceptions(ImmutableSet.of(keyB))).thenReturn(null);
-
-    assertThat(
+        assertThat(
             GraphTraversingHelper.declareDependenciesAndCheckIfValuesMissingMaybeWithExceptions(
-                mockEnv, ImmutableSet.of(keyB)))
-        .isTrue();
-  }
+                mockEnv, com.google.common.collect.ImmutableSet.of<E?>(keyB)
+            )
+        )
+            .isTrue()
+    }
 
-  @Test
-  public void declareDependenciesAndCheckIfValuesMissingMaybeWithExceptions_valuesMissing()
-      throws Exception {
-    when(mockEnv.getValuesAndExceptions(ImmutableSet.of(keyA)))
-        .thenReturn(
-            new SimpleSkyframeLookupResult(
-                () -> {}, ImmutableMap.of(keyA, ValueOrUntypedException.ofExn(exn))::get));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun declareDependenciesAndCheckIfValuesMissingMaybeWithExceptions_valuesMissing() {
+        Mockito.`when`<T?>(mockEnv.getValuesAndExceptions(com.google.common.collect.ImmutableSet.of<E?>(keyA)))
+            .thenReturn(
+                SimpleSkyframeLookupResult(
+                    java.lang.Runnable {},
+                    java.util.function.Function { key: SkyKey? ->
+                        com.google.common.collect.ImmutableMap.of<Any?, ValueOrUntypedException?>(
+                            keyA,
+                            ValueOrUntypedException.Companion.ofExn(exn)
+                        ).get(key)
+                    })
+            )
 
-    assertThat(
+        assertThat(
             GraphTraversingHelper.declareDependenciesAndCheckIfValuesMissingMaybeWithExceptions(
-                mockEnv, ImmutableSet.of(keyA)))
-        .isTrue();
-  }
+                mockEnv, com.google.common.collect.ImmutableSet.of<E?>(keyA)
+            )
+        )
+            .isTrue()
+    }
 
-  @Test
-  public void declareDependenciesAndCheckIfValuesMissingMaybeWithExceptions_notValuesMissing()
-      throws Exception {
-    when(mockEnv.getValuesAndExceptions(ImmutableSet.of(keyB)))
-        .thenReturn(
-            new SimpleSkyframeLookupResult(
-                () -> {},
-                ImmutableMap.of(keyB, ValueOrUntypedException.ofValueUntyped(value))::get));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun declareDependenciesAndCheckIfValuesMissingMaybeWithExceptions_notValuesMissing() {
+        Mockito.`when`<T?>(mockEnv.getValuesAndExceptions(com.google.common.collect.ImmutableSet.of<E?>(keyB)))
+            .thenReturn(
+                SimpleSkyframeLookupResult(
+                    java.lang.Runnable {},
+                    java.util.function.Function { key: SkyKey? ->
+                        com.google.common.collect.ImmutableMap.of<Any?, ValueOrUntypedException?>(
+                            keyB,
+                            ValueOrUntypedException.Companion.ofValueUntyped(value)
+                        ).get(key)
+                    })
+            )
 
-    assertThat(
+        assertThat(
             GraphTraversingHelper.declareDependenciesAndCheckIfValuesMissingMaybeWithExceptions(
-                mockEnv, ImmutableSet.of(keyB)))
-        .isFalse();
-  }
+                mockEnv, com.google.common.collect.ImmutableSet.of<E?>(keyB)
+            )
+        )
+            .isFalse()
+    }
 }

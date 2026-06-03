@@ -11,140 +11,129 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.cpp
 
-package com.google.devtools.build.lib.rules.cpp;
-
-import static com.google.common.collect.ImmutableList.toImmutableList;
-
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import com.google.devtools.build.lib.packages.StarlarkInfo;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.Dict;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.Sequence;
+import com.google.devtools.build.lib.actions.Artifact
 
 /**
  * Unwraps information for linking a library from a Starlark struct.
  */
-public final class LibraryToLink {
-  public static ImmutableList<Artifact> getDynamicLibrariesForRuntime(
-      boolean linkingStatically, Iterable<LibraryToLink> libraries) {
-    ImmutableList.Builder<Artifact> dynamicLibrariesForRuntimeBuilder = ImmutableList.builder();
-    for (LibraryToLink libraryToLink : libraries) {
-      Artifact artifact = libraryToLink.getDynamicLibraryForRuntimeOrNull(linkingStatically);
-      if (artifact != null) {
-        dynamicLibrariesForRuntimeBuilder.add(artifact);
-      }
+class LibraryToLink private constructor(value: StarlarkInfo) {
+    private val value: StarlarkInfo
+
+    init {
+        this.value = value
     }
-    return dynamicLibrariesForRuntimeBuilder.build();
-  }
 
-  public static ImmutableList<Artifact> getDynamicLibrariesForLinking(
-      NestedSet<LibraryToLink> libraries) {
-    ImmutableList.Builder<Artifact> dynamicLibrariesForLinkingBuilder = ImmutableList.builder();
-    for (LibraryToLink libraryToLink : libraries.toList()) {
-      if (libraryToLink.getInterfaceLibrary() != null) {
-        dynamicLibrariesForLinkingBuilder.add(libraryToLink.getInterfaceLibrary());
-      } else if (libraryToLink.getDynamicLibrary() != null) {
-        dynamicLibrariesForLinkingBuilder.add(libraryToLink.getDynamicLibrary());
-      }
+    val staticLibrary: Artifact?
+        get() = if (value.getValue("static_library") is Artifact) artifact else null
+
+    val picStaticLibrary: Artifact?
+        get() = if (value.getValue("pic_static_library") is Artifact) artifact else null
+
+    val dynamicLibrary: Artifact?
+        get() = if (value.getValue("dynamic_library") is Artifact) artifact else null
+
+    val resolvedSymlinkDynamicLibrary: Artifact?
+        get() = if (value.getValue("resolved_symlink_dynamic_library") is Artifact)
+            artifact
+        else
+            null
+
+    val interfaceLibrary: Artifact?
+        get() = if (value.getValue("interface_library") is Artifact) artifact else null
+
+    val resolvedSymlinkInterfaceLibrary: Artifact?
+        get() = if (value.getValue("resolved_symlink_interface_library") is Artifact)
+            artifact
+        else
+            null
+
+    @get:Throws(net.starlark.java.eval.EvalException::class)
+    val objectFiles: com.google.common.collect.ImmutableList<Artifact?>?
+        get() = net.starlark.java.eval.Sequence.cast<T?>(value.getValue("objects"), Artifact::class.java, "objects")
+            .getImmutableList()
+
+    @get:Throws(net.starlark.java.eval.EvalException::class)
+    val picObjectFiles: com.google.common.collect.ImmutableList<Artifact?>?
+        get() = net.starlark.java.eval.Sequence.cast<T?>(
+            value.getValue("pic_objects"),
+            Artifact::class.java,
+            "pic_objects"
+        )
+            .getImmutableList()
+
+    @get:Throws(net.starlark.java.eval.EvalException::class)
+    val ltoCompilationContextBitcodeFiles: Dict<*, *>?
+        get() {
+            if (value.getValue("_lto_compilation_context") is StarlarkInfo) {
+                return ctx.getValue("lto_bitcode_inputs", Dict::class.java)
+            }
+            return null
+        }
+
+    @get:Throws(net.starlark.java.eval.EvalException::class)
+    val picLtoCompilationContextBitcodeFiles: Dict<*, *>?
+        get() {
+            if (value.getValue("_pic_lto_compilation_context") is StarlarkInfo) {
+                return ctx.getValue("lto_bitcode_inputs", Dict::class.java)
+            }
+            return null
+        }
+
+    val alwayslink: Boolean
+        get() = value.getValue("alwayslink") is Boolean && bool
+
+    fun getDynamicLibraryForRuntimeOrNull(linkingStatically: Boolean): Artifact? {
+        if (this.dynamicLibrary == null) {
+            return null
+        }
+        if (linkingStatically && (this.staticLibrary != null || this.picStaticLibrary != null)) {
+            return null
+        }
+        return this.dynamicLibrary
     }
-    return dynamicLibrariesForLinkingBuilder.build();
-  }
 
-  private final StarlarkInfo value;
+    companion object {
+        fun getDynamicLibrariesForRuntime(
+            linkingStatically: Boolean, libraries: Iterable<LibraryToLink>
+        ): com.google.common.collect.ImmutableList<Artifact?> {
+            val dynamicLibrariesForRuntimeBuilder: com.google.common.collect.ImmutableList.Builder<Artifact?> =
+                com.google.common.collect.ImmutableList.builder<Artifact?>()
+            for (libraryToLink in libraries) {
+                val artifact: Artifact? = libraryToLink.getDynamicLibraryForRuntimeOrNull(linkingStatically)
+                if (artifact != null) {
+                    dynamicLibrariesForRuntimeBuilder.add(artifact)
+                }
+            }
+            return dynamicLibrariesForRuntimeBuilder.build()
+        }
 
-  private LibraryToLink(StarlarkInfo value) {
-    this.value = value;
-  }
+        fun getDynamicLibrariesForLinking(
+            libraries: NestedSet<LibraryToLink?>
+        ): com.google.common.collect.ImmutableList<Artifact?> {
+            val dynamicLibrariesForLinkingBuilder: com.google.common.collect.ImmutableList.Builder<Artifact?> =
+                com.google.common.collect.ImmutableList.builder<Artifact?>()
+            for (libraryToLink in libraries.toList()) {
+                if (libraryToLink.getInterfaceLibrary() != null) {
+                    dynamicLibrariesForLinkingBuilder.add(libraryToLink.getInterfaceLibrary())
+                } else if (libraryToLink.getDynamicLibrary() != null) {
+                    dynamicLibrariesForLinkingBuilder.add(libraryToLink.getDynamicLibrary())
+                }
+            }
+            return dynamicLibrariesForLinkingBuilder.build()
+        }
 
-  public static LibraryToLink wrap(StarlarkInfo value) {
-    return new LibraryToLink(value);
-  }
+        fun wrap(value: StarlarkInfo): LibraryToLink {
+            return LibraryToLink(value)
+        }
 
-  public static NestedSet<LibraryToLink> wrap(NestedSet<StarlarkInfo> libraries) {
-    return NestedSetBuilder.wrap(
-        Order.STABLE_ORDER,
-        libraries.toList().stream().map(LibraryToLink::wrap).collect(toImmutableList()));
-  }
-
-  @Nullable
-  public Artifact getStaticLibrary() {
-    return value.getValue("static_library") instanceof Artifact artifact ? artifact : null;
-  }
-
-  @Nullable
-  public Artifact getPicStaticLibrary() {
-    return value.getValue("pic_static_library") instanceof Artifact artifact ? artifact : null;
-  }
-
-  @Nullable
-  public Artifact getDynamicLibrary() {
-    return value.getValue("dynamic_library") instanceof Artifact artifact ? artifact : null;
-  }
-
-  @Nullable
-  public Artifact getResolvedSymlinkDynamicLibrary() {
-    return value.getValue("resolved_symlink_dynamic_library") instanceof Artifact artifact
-        ? artifact
-        : null;
-  }
-
-  @Nullable
-  public Artifact getInterfaceLibrary() {
-    return value.getValue("interface_library") instanceof Artifact artifact ? artifact : null;
-  }
-
-  @Nullable
-  public Artifact getResolvedSymlinkInterfaceLibrary() {
-    return value.getValue("resolved_symlink_interface_library") instanceof Artifact artifact
-        ? artifact
-        : null;
-  }
-
-  @Nullable
-  public ImmutableList<Artifact> getObjectFiles() throws EvalException {
-    return Sequence.cast(value.getValue("objects"), Artifact.class, "objects").getImmutableList();
-  }
-
-  @Nullable
-  public ImmutableList<Artifact> getPicObjectFiles() throws EvalException {
-    return Sequence.cast(value.getValue("pic_objects"), Artifact.class, "pic_objects")
-        .getImmutableList();
-  }
-
-  @Nullable
-  public Dict<?, ?> getLtoCompilationContextBitcodeFiles() throws EvalException {
-    if (value.getValue("_lto_compilation_context") instanceof StarlarkInfo ctx) {
-      return ctx.getValue("lto_bitcode_inputs", Dict.class);
+        fun wrap(libraries: NestedSet<StarlarkInfo?>): NestedSet<LibraryToLink?> {
+            return NestedSetBuilder.wrap(
+                Order.STABLE_ORDER,
+                libraries.toList().stream().map(LibraryToLink::wrap)
+                    .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
+            )
+        }
     }
-    return null;
-  }
-
-  @Nullable
-  public Dict<?, ?> getPicLtoCompilationContextBitcodeFiles() throws EvalException {
-    if (value.getValue("_pic_lto_compilation_context") instanceof StarlarkInfo ctx) {
-      return ctx.getValue("lto_bitcode_inputs", Dict.class);
-    }
-    return null;
-  }
-
-  public boolean getAlwayslink() {
-    return value.getValue("alwayslink") instanceof Boolean bool && bool;
-  }
-
-  @Nullable
-  public Artifact getDynamicLibraryForRuntimeOrNull(boolean linkingStatically) {
-    if (getDynamicLibrary() == null) {
-      return null;
-    }
-    if (linkingStatically && (getStaticLibrary() != null || getPicStaticLibrary() != null)) {
-      return null;
-    }
-    return getDynamicLibrary();
-  }
 }

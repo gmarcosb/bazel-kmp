@@ -11,48 +11,43 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.testutil;
+package com.google.devtools.build.lib.testutil
 
-import com.google.common.base.Throwables;
-import java.util.concurrent.atomic.AtomicInteger;
+import com.google.devtools.build.lib.testutil.ThrowableRecordingRunnableWrapper
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * {@link ThrowableRecordingRunnableWrapper} that can throw if one task has thrown an exception but
+ * [ThrowableRecordingRunnableWrapper] that can throw if one task has thrown an exception but
  * others are still processing.
  */
-public class TestRunnableWrapper extends ThrowableRecordingRunnableWrapper {
-  // Because IncrementableCountDownLatch isn't public, we have to use a hacky AtomicInteger.
-  private final AtomicInteger runningTasks = new AtomicInteger(0);
+class TestRunnableWrapper(name: String?) : ThrowableRecordingRunnableWrapper(name) {
+    // Because IncrementableCountDownLatch isn't public, we have to use a hacky AtomicInteger.
+    private val runningTasks: AtomicInteger = AtomicInteger(0)
 
-  public TestRunnableWrapper(String name) {
-    super(name);
-  }
+    @Throws(java.lang.Exception::class)
+    fun waitForTasksAndMaybeThrow() {
+        var firstThrownError: Throwable?
+        do {
+            firstThrownError = getFirstThrownError()
+            if (firstThrownError != null) {
+                com.google.common.base.Throwables.propagateIfPossible(firstThrownError)
+                throw java.lang.RuntimeException(firstThrownError)
+            }
+            java.lang.Thread.sleep(100)
+        } while (runningTasks.get() > 0)
+    }
 
-  public void waitForTasksAndMaybeThrow() throws Exception {
-    Throwable firstThrownError;
-    do {
-      firstThrownError = getFirstThrownError();
-      if (firstThrownError != null) {
-        Throwables.propagateIfPossible(firstThrownError);
-        throw new RuntimeException(firstThrownError);
-      }
-      Thread.sleep(100);
-    } while (runningTasks.get() > 0);
-  }
-
-  @Override
-  public Runnable wrap(final Runnable runnable) {
-    final Runnable wrapped = super.wrap(runnable);
-    return new Runnable() {
-      @Override
-      public void run() {
-        runningTasks.incrementAndGet();
-        try {
-          wrapped.run();
-        } finally {
-          runningTasks.decrementAndGet();
+    override fun wrap(runnable: java.lang.Runnable?): java.lang.Runnable {
+        val wrapped: java.lang.Runnable = super.wrap(runnable)
+        return object : java.lang.Runnable {
+            override fun run() {
+                runningTasks.incrementAndGet()
+                try {
+                    wrapped.run()
+                } finally {
+                    runningTasks.decrementAndGet()
+                }
+            }
         }
-      }
-    };
-  }
+    }
 }

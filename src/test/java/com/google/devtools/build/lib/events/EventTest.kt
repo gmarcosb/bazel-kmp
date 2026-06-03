@@ -11,274 +11,384 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.events;
+package com.google.devtools.build.lib.events
 
-import static com.google.common.truth.Truth.assertThat;
-import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.mockito.Mockito.inOrder;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
+import net.starlark.java.eval.Mutability
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.testing.EqualsTester;
-import com.google.devtools.build.lib.events.Event.ProcessOutput;
-import net.starlark.java.eval.Mutability;
-import net.starlark.java.eval.StarlarkSemantics;
-import net.starlark.java.eval.StarlarkThread;
-import net.starlark.java.eval.StarlarkThread.PrintHandler;
-import net.starlark.java.syntax.Location;
-import net.starlark.java.syntax.SyntaxError;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-import org.mockito.InOrder;
+/** Tests for [Event].  */
+@RunWith(JUnit4::class)
+class EventTest {
+    @org.junit.Test
+    fun eventKindMessage() {
+        val event: com.google.devtools.build.lib.events.Event = com.google.devtools.build.lib.events.Event.of(
+            com.google.devtools.build.lib.events.EventKind.WARNING,
+            "myMessage"
+        )
 
-/** Tests for {@link Event}. */
-@RunWith(JUnit4.class)
-public class EventTest {
+        Truth.assertThat(event.getMessage()).isEqualTo("myMessage")
+        Truth.assertThat<com.google.devtools.build.lib.events.EventKind?>(event.getKind())
+            .isEqualTo(com.google.devtools.build.lib.events.EventKind.WARNING)
+    }
 
-  @Test
-  public void eventKindMessage() {
-    Event event = Event.of(EventKind.WARNING, "myMessage");
+    @org.junit.Test
+    fun eventMessageEncoding() {
+        val message = "Bazel \u1f33f"
 
-    assertThat(event.getMessage()).isEqualTo("myMessage");
-    assertThat(event.getKind()).isEqualTo(EventKind.WARNING);
-  }
+        val stringEvent: com.google.devtools.build.lib.events.Event = com.google.devtools.build.lib.events.Event.of(
+            com.google.devtools.build.lib.events.EventKind.WARNING,
+            message
+        )
+        val stringEvent2: com.google.devtools.build.lib.events.Event = com.google.devtools.build.lib.events.Event.of(
+            com.google.devtools.build.lib.events.EventKind.WARNING,
+            "Bazel \u1f33f"
+        )
+        Truth.assertThat(stringEvent.getMessage()).isEqualTo(message)
+        Truth.assertThat(stringEvent.getMessageBytes())
+            .isEqualTo(message.toByteArray(java.nio.charset.StandardCharsets.UTF_8))
 
-  @Test
-  public void eventMessageEncoding() {
-    String message = "Bazel \u1f33f";
+        val byteArrayEvent: com.google.devtools.build.lib.events.Event = com.google.devtools.build.lib.events.Event.of(
+            com.google.devtools.build.lib.events.EventKind.WARNING,
+            message.toByteArray(java.nio.charset.StandardCharsets.UTF_8)
+        )
+        val byteArrayEvent2: com.google.devtools.build.lib.events.Event = com.google.devtools.build.lib.events.Event.of(
+            com.google.devtools.build.lib.events.EventKind.WARNING,
+            "Bazel \u1f33f".toByteArray(java.nio.charset.StandardCharsets.UTF_8)
+        )
+        Truth.assertThat(byteArrayEvent.getMessage()).isEqualTo(message)
+        Truth.assertThat(byteArrayEvent.getMessageBytes())
+            .isEqualTo(message.toByteArray(java.nio.charset.StandardCharsets.UTF_8))
 
-    Event stringEvent = Event.of(EventKind.WARNING, message);
-    Event stringEvent2 = Event.of(EventKind.WARNING, "Bazel \u1f33f");
-    assertThat(stringEvent.getMessage()).isEqualTo(message);
-    assertThat(stringEvent.getMessageBytes()).isEqualTo(message.getBytes(UTF_8));
+        EqualsTester()
+            .addEqualityGroup(stringEvent, stringEvent2)
+            .addEqualityGroup(byteArrayEvent, byteArrayEvent2)
+            .testEquals()
+    }
 
-    Event byteArrayEvent = Event.of(EventKind.WARNING, message.getBytes(UTF_8));
-    Event byteArrayEvent2 = Event.of(EventKind.WARNING, "Bazel \u1f33f".getBytes(UTF_8));
-    assertThat(byteArrayEvent.getMessage()).isEqualTo(message);
-    assertThat(byteArrayEvent.getMessageBytes()).isEqualTo(message.getBytes(UTF_8));
+    @org.junit.Test
+    fun eventLocationSensitiveToString() {
+        val file = "/path/to/workspace/my/sample/path.txt"
+        val location: net.starlark.java.syntax.Location? =
+            net.starlark.java.syntax.Location.fromFileLineColumn(file, 3, 4)
+        val event: com.google.devtools.build.lib.events.Event =
+            com.google.devtools.build.lib.events.Event.of<net.starlark.java.syntax.Location?>(
+                com.google.devtools.build.lib.events.EventKind.WARNING,
+                "myMessage",
+                net.starlark.java.syntax.Location::class.java,
+                location
+            )
 
-    new EqualsTester()
-        .addEqualityGroup(stringEvent, stringEvent2)
-        .addEqualityGroup(byteArrayEvent, byteArrayEvent2)
-        .testEquals();
-  }
+        Truth.assertThat<net.starlark.java.syntax.Location?>(event.getLocation()).isEqualTo(location)
+        Truth.assertThat(event.toString()).isEqualTo("WARNING " + file + ":3:4: myMessage")
+    }
 
-  @Test
-  public void eventLocationSensitiveToString() {
-    String file = "/path/to/workspace/my/sample/path.txt";
-    Location location = Location.fromFileLineColumn(file, 3, 4);
-    Event event = Event.of(EventKind.WARNING, "myMessage", Location.class, location);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun messageReference() {
+        val messageBytes: ByteArray = "message".toByteArray(java.nio.charset.StandardCharsets.UTF_8)
+        val event: com.google.devtools.build.lib.events.Event = com.google.devtools.build.lib.events.Event.of(
+            com.google.devtools.build.lib.events.EventKind.WARNING,
+            messageBytes
+        )
+        Truth.assertThat(event.getMessageBytes()).isEqualTo(messageBytes)
+    }
 
-    assertThat(event.getLocation()).isEqualTo(location);
-    assertThat(event.toString()).isEqualTo("WARNING " + file + ":3:4: myMessage");
-  }
+    @org.junit.Test
+    fun noProperties() {
+        val event: com.google.devtools.build.lib.events.Event = com.google.devtools.build.lib.events.Event.of(
+            com.google.devtools.build.lib.events.EventKind.WARNING,
+            "myMessage"
+        )
+        Truth.assertThat(event.getProperty<Any?>(Any::class.java)).isNull()
+        Truth.assertThat(event).isEqualTo(
+            com.google.devtools.build.lib.events.Event.of(
+                com.google.devtools.build.lib.events.EventKind.WARNING,
+                "myMessage"
+            )
+        )
+    }
 
-  @Test
-  public void messageReference() throws Exception {
-    byte[] messageBytes = "message".getBytes(UTF_8);
-    Event event = Event.of(EventKind.WARNING, messageBytes);
-    assertThat(event.getMessageBytes()).isEqualTo(messageBytes);
-  }
+    @org.junit.Test
+    fun oneProperty() {
+        val event: com.google.devtools.build.lib.events.Event = com.google.devtools.build.lib.events.Event.of<String?>(
+            com.google.devtools.build.lib.events.EventKind.WARNING,
+            "myMessage",
+            String::class.java,
+            "myProperty"
+        )
+        Truth.assertThat(event.getProperty<Any?>(Any::class.java)).isNull()
+        Truth.assertThat(event.getProperty<String?>(String::class.java)).isEqualTo("myProperty")
+        Truth.assertThat(event)
+            .isEqualTo(
+                com.google.devtools.build.lib.events.Event.of<String?>(
+                    com.google.devtools.build.lib.events.EventKind.WARNING,
+                    "myMessage",
+                    String::class.java,
+                    "myProperty"
+                )
+            )
+    }
 
-  @Test
-  public void noProperties() {
-    Event event = Event.of(EventKind.WARNING, "myMessage");
-    assertThat(event.getProperty(Object.class)).isNull();
-    assertThat(event).isEqualTo(Event.of(EventKind.WARNING, "myMessage"));
-  }
+    @org.junit.Test
+    fun withAddedProperty() {
+        val event: com.google.devtools.build.lib.events.Event = com.google.devtools.build.lib.events.Event.of<String?>(
+            com.google.devtools.build.lib.events.EventKind.WARNING,
+            "myMessage",
+            String::class.java,
+            "myProperty"
+        )
+        val location: net.starlark.java.syntax.Location? =
+            net.starlark.java.syntax.Location.fromFileLineColumn("file", 1, 2)
+        val twoPropertyEvent: com.google.devtools.build.lib.events.Event =
+            event.withProperty<net.starlark.java.syntax.Location?>(
+                net.starlark.java.syntax.Location::class.java,
+                location
+            )
 
-  @Test
-  public void oneProperty() {
-    Event event = Event.of(EventKind.WARNING, "myMessage", String.class, "myProperty");
-    assertThat(event.getProperty(Object.class)).isNull();
-    assertThat(event.getProperty(String.class)).isEqualTo("myProperty");
-    assertThat(event)
-        .isEqualTo(Event.of(EventKind.WARNING, "myMessage", String.class, "myProperty"));
-  }
+        Truth.assertThat(event).isNotSameInstanceAs(twoPropertyEvent)
+        Truth.assertThat(event).isNotEqualTo(twoPropertyEvent)
+        Truth.assertThat(event.getProperty<String?>(String::class.java)).isEqualTo("myProperty")
+        Truth.assertThat<net.starlark.java.syntax.Location?>(event.getProperty<net.starlark.java.syntax.Location?>(net.starlark.java.syntax.Location::class.java))
+            .isNull()
+        Truth.assertThat(twoPropertyEvent.getProperty<String?>(String::class.java)).isEqualTo("myProperty")
+        Truth.assertThat<net.starlark.java.syntax.Location?>(
+            twoPropertyEvent.getProperty<net.starlark.java.syntax.Location?>(
+                net.starlark.java.syntax.Location::class.java
+            )
+        ).isSameInstanceAs(location)
+    }
 
-  @Test
-  public void withAddedProperty() {
-    Event event = Event.of(EventKind.WARNING, "myMessage", String.class, "myProperty");
-    Location location = Location.fromFileLineColumn("file", 1, 2);
-    Event twoPropertyEvent = event.withProperty(Location.class, location);
+    @org.junit.Test
+    fun withReplacedProperty() {
+        val location: net.starlark.java.syntax.Location? =
+            net.starlark.java.syntax.Location.fromFileLineColumn("file", 1, 2)
+        val event: com.google.devtools.build.lib.events.Event =
+            com.google.devtools.build.lib.events.Event.of(
+                com.google.devtools.build.lib.events.EventKind.WARNING,
+                "myMessage"
+            )
+                .withProperty<String?>(String::class.java, "myProperty")
+                .withProperty<net.starlark.java.syntax.Location?>(
+                    net.starlark.java.syntax.Location::class.java,
+                    location
+                )
+        val replacedPropertyEvent: com.google.devtools.build.lib.events.Event =
+            event.withProperty<String?>(String::class.java, "yourProperty")
 
-    assertThat(event).isNotSameInstanceAs(twoPropertyEvent);
-    assertThat(event).isNotEqualTo(twoPropertyEvent);
-    assertThat(event.getProperty(String.class)).isEqualTo("myProperty");
-    assertThat(event.getProperty(Location.class)).isNull();
-    assertThat(twoPropertyEvent.getProperty(String.class)).isEqualTo("myProperty");
-    assertThat(twoPropertyEvent.getProperty(Location.class)).isSameInstanceAs(location);
-  }
+        Truth.assertThat(event).isNotSameInstanceAs(replacedPropertyEvent)
+        Truth.assertThat(event).isNotEqualTo(replacedPropertyEvent)
+        Truth.assertThat(event.getProperty<String?>(String::class.java)).isEqualTo("myProperty")
+        Truth.assertThat<net.starlark.java.syntax.Location?>(event.getProperty<net.starlark.java.syntax.Location?>(net.starlark.java.syntax.Location::class.java))
+            .isSameInstanceAs(location)
+        Truth.assertThat(replacedPropertyEvent.getProperty<String?>(String::class.java)).isEqualTo("yourProperty")
+        Truth.assertThat<net.starlark.java.syntax.Location?>(
+            replacedPropertyEvent.getProperty<net.starlark.java.syntax.Location?>(
+                net.starlark.java.syntax.Location::class.java
+            )
+        ).isSameInstanceAs(location)
+    }
 
-  @Test
-  public void withReplacedProperty() {
-    Location location = Location.fromFileLineColumn("file", 1, 2);
-    Event event =
-        Event.of(EventKind.WARNING, "myMessage")
-            .withProperty(String.class, "myProperty")
-            .withProperty(Location.class, location);
-    Event replacedPropertyEvent = event.withProperty(String.class, "yourProperty");
+    @org.junit.Test
+    fun withRemovedProperty() {
+        val location: net.starlark.java.syntax.Location? =
+            net.starlark.java.syntax.Location.fromFileLineColumn("file", 1, 2)
+        val event: com.google.devtools.build.lib.events.Event =
+            com.google.devtools.build.lib.events.Event.of(
+                com.google.devtools.build.lib.events.EventKind.WARNING,
+                "myMessage"
+            )
+                .withProperty<String?>(String::class.java, "myProperty")
+                .withProperty<net.starlark.java.syntax.Location?>(
+                    net.starlark.java.syntax.Location::class.java,
+                    location
+                )
+        val removedPropertyEvent: com.google.devtools.build.lib.events.Event =
+            event.withProperty<net.starlark.java.syntax.Location?>(net.starlark.java.syntax.Location::class.java, null)
 
-    assertThat(event).isNotSameInstanceAs(replacedPropertyEvent);
-    assertThat(event).isNotEqualTo(replacedPropertyEvent);
-    assertThat(event.getProperty(String.class)).isEqualTo("myProperty");
-    assertThat(event.getProperty(Location.class)).isSameInstanceAs(location);
-    assertThat(replacedPropertyEvent.getProperty(String.class)).isEqualTo("yourProperty");
-    assertThat(replacedPropertyEvent.getProperty(Location.class)).isSameInstanceAs(location);
-  }
+        Truth.assertThat(event).isNotSameInstanceAs(removedPropertyEvent)
+        Truth.assertThat(event).isNotEqualTo(removedPropertyEvent)
+        Truth.assertThat(event.getProperty<String?>(String::class.java)).isEqualTo("myProperty")
+        Truth.assertThat<net.starlark.java.syntax.Location?>(event.getProperty<net.starlark.java.syntax.Location?>(net.starlark.java.syntax.Location::class.java))
+            .isSameInstanceAs(location)
+        Truth.assertThat(removedPropertyEvent.getProperty<String?>(String::class.java)).isEqualTo("myProperty")
+        Truth.assertThat<net.starlark.java.syntax.Location?>(
+            removedPropertyEvent.getProperty<net.starlark.java.syntax.Location?>(
+                net.starlark.java.syntax.Location::class.java
+            )
+        ).isNull()
+        Truth.assertThat(
+            removedPropertyEvent.withProperty<net.starlark.java.syntax.Location?>(
+                net.starlark.java.syntax.Location::class.java,
+                null
+            )
+        )
+            .isSameInstanceAs(removedPropertyEvent)
+    }
 
-  @Test
-  public void withRemovedProperty() {
-    Location location = Location.fromFileLineColumn("file", 1, 2);
-    Event event =
-        Event.of(EventKind.WARNING, "myMessage")
-            .withProperty(String.class, "myProperty")
-            .withProperty(Location.class, location);
-    Event removedPropertyEvent = event.withProperty(Location.class, null);
+    @org.junit.Test
+    fun propertyOrderAgnostic() {
+        val location: net.starlark.java.syntax.Location? =
+            net.starlark.java.syntax.Location.fromFileLineColumn("file", 1, 2)
+        val stringFirstEvent: com.google.devtools.build.lib.events.Event =
+            com.google.devtools.build.lib.events.Event.of(
+                com.google.devtools.build.lib.events.EventKind.WARNING,
+                "myMessage"
+            )
+                .withProperty<String?>(String::class.java, "myProperty")
+                .withProperty<net.starlark.java.syntax.Location?>(
+                    net.starlark.java.syntax.Location::class.java,
+                    location
+                )
+        val locationFirstEvent: com.google.devtools.build.lib.events.Event =
+            com.google.devtools.build.lib.events.Event.of(
+                com.google.devtools.build.lib.events.EventKind.WARNING,
+                "myMessage"
+            )
+                .withProperty<net.starlark.java.syntax.Location?>(
+                    net.starlark.java.syntax.Location::class.java,
+                    location
+                )
+                .withProperty<String?>(String::class.java, "myProperty")
+        EqualsTester().addEqualityGroup(stringFirstEvent, locationFirstEvent).testEquals()
+    }
 
-    assertThat(event).isNotSameInstanceAs(removedPropertyEvent);
-    assertThat(event).isNotEqualTo(removedPropertyEvent);
-    assertThat(event.getProperty(String.class)).isEqualTo("myProperty");
-    assertThat(event.getProperty(Location.class)).isSameInstanceAs(location);
-    assertThat(removedPropertyEvent.getProperty(String.class)).isEqualTo("myProperty");
-    assertThat(removedPropertyEvent.getProperty(Location.class)).isNull();
-    assertThat(removedPropertyEvent.withProperty(Location.class, null))
-        .isSameInstanceAs(removedPropertyEvent);
-  }
+    @org.junit.Test
+    fun withTag() {
+        val event: com.google.devtools.build.lib.events.Event = com.google.devtools.build.lib.events.Event.of(
+            com.google.devtools.build.lib.events.EventKind.WARNING,
+            "myMessage"
+        ).withTag("myTag")
+        Truth.assertThat(event.getTag()).isEqualTo("myTag")
+        Truth.assertThat(event.withTag("myTag")).isSameInstanceAs(event)
 
-  @Test
-  public void propertyOrderAgnostic() {
-    Location location = Location.fromFileLineColumn("file", 1, 2);
-    Event stringFirstEvent =
-        Event.of(EventKind.WARNING, "myMessage")
-            .withProperty(String.class, "myProperty")
-            .withProperty(Location.class, location);
-    Event locationFirstEvent =
-        Event.of(EventKind.WARNING, "myMessage")
-            .withProperty(Location.class, location)
-            .withProperty(String.class, "myProperty");
-    new EqualsTester().addEqualityGroup(stringFirstEvent, locationFirstEvent).testEquals();
-  }
+        val withoutTag: com.google.devtools.build.lib.events.Event = event.withTag(null)
+        Truth.assertThat(withoutTag.getTag()).isNull()
+        Truth.assertThat(withoutTag.withTag(null)).isSameInstanceAs(withoutTag)
+    }
 
-  @Test
-  public void withTag() {
-    Event event = Event.of(EventKind.WARNING, "myMessage").withTag("myTag");
-    assertThat(event.getTag()).isEqualTo("myTag");
-    assertThat(event.withTag("myTag")).isSameInstanceAs(event);
+    @org.junit.Test
+    fun tagIsSameAsStringProperty() {
+        Truth.assertThat(
+            com.google.devtools.build.lib.events.Event.of<String?>(
+                com.google.devtools.build.lib.events.EventKind.WARNING,
+                "myMessage",
+                String::class.java,
+                "myProperty"
+            ).getTag()
+        )
+            .isEqualTo("myProperty")
+    }
 
-    Event withoutTag = event.withTag(null);
-    assertThat(withoutTag.getTag()).isNull();
-    assertThat(withoutTag.withTag(null)).isSameInstanceAs(withoutTag);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testWithProcessOutput() {
+        val stdOutPath = "/stdout"
+        val stdOut: ByteArray = "some stdout output".toByteArray(java.nio.charset.StandardCharsets.UTF_8)
+        val stdErrPath = "/stderr"
+        val stdErr: ByteArray = "some stderr error".toByteArray(java.nio.charset.StandardCharsets.UTF_8)
 
-  @Test
-  public void tagIsSameAsStringProperty() {
-    assertThat(Event.of(EventKind.WARNING, "myMessage", String.class, "myProperty").getTag())
-        .isEqualTo("myProperty");
-  }
+        val testProcessOutput: ProcessOutput =
+            object : ProcessOutput {
+                val stdOutSize: Long
+                    get() = stdOut.size.toLong()
 
-  @Test
-  public void testWithProcessOutput() throws Exception {
-    String stdoutPath = "/stdout";
-    byte[] stdout = "some stdout output".getBytes(UTF_8);
-    String stderrPath = "/stderr";
-    byte[] stderr = "some stderr error".getBytes(UTF_8);
+                val stdErrSize: Long
+                    get() = stdErr.size.toLong()
+            }
 
-    ProcessOutput testProcessOutput =
-        new ProcessOutput() {
-          @Override
-          public String getStdOutPath() {
-            return stdoutPath;
-          }
+        val event: com.google.devtools.build.lib.events.Event = com.google.devtools.build.lib.events.Event.of(
+            com.google.devtools.build.lib.events.EventKind.WARNING,
+            "myMessage"
+        )
+        val eventWithProcessOutput: com.google.devtools.build.lib.events.Event =
+            event.withProcessOutput(testProcessOutput)
 
-          @Override
-          public long getStdOutSize() {
-            return stdout.length;
-          }
+        Truth.assertThat(eventWithProcessOutput).isNotEqualTo(event)
+        Truth.assertThat(event.getProcessOutput()).isNull()
+        Truth.assertThat(eventWithProcessOutput.getProcessOutput()).isNotNull()
 
-          @Override
-          public byte[] getStdOut() {
-            return stdout;
-          }
+        Truth.assertThat(eventWithProcessOutput.getStdOut()).isEqualTo(this.stdOut)
+        assertThat(eventWithProcessOutput.getProcessOutput().stdOut).isEqualTo(this.stdOut)
+        assertThat(eventWithProcessOutput.getProcessOutput().stdOutSize).isEqualTo(stdOut.size)
 
-          @Override
-          public String getStdErrPath() {
-            return stderrPath;
-          }
+        Truth.assertThat(eventWithProcessOutput.getStdErr()).isEqualTo(this.stdErr)
+        assertThat(eventWithProcessOutput.getProcessOutput().stdErr).isEqualTo(this.stdErr)
+        assertThat(eventWithProcessOutput.getProcessOutput().stdErrSize).isEqualTo(stdErr.size)
+    }
 
-          @Override
-          public long getStdErrSize() {
-            return stderr.length;
-          }
+    @org.junit.Test
+    fun replayEventsOn() {
+        val events: com.google.common.collect.ImmutableList<com.google.devtools.build.lib.events.Event?> =
+            com.google.common.collect.ImmutableList.of<com.google.devtools.build.lib.events.Event?>(
+                com.google.devtools.build.lib.events.Event.of(
+                    com.google.devtools.build.lib.events.EventKind.INFO,
+                    "someInfo"
+                ),
+                com.google.devtools.build.lib.events.Event.of(
+                    com.google.devtools.build.lib.events.EventKind.WARNING,
+                    "someWarning"
+                )
+            )
 
-          @Override
-          public byte[] getStdErr() {
-            return stderr;
-          }
-        };
+        val mock: com.google.devtools.build.lib.events.EventHandler? =
+            Mockito.mock<com.google.devtools.build.lib.events.EventHandler?>(com.google.devtools.build.lib.events.EventHandler::class.java)
 
-    Event event = Event.of(EventKind.WARNING, "myMessage");
-    Event eventWithProcessOutput = event.withProcessOutput(testProcessOutput);
+        com.google.devtools.build.lib.events.Event.replayEventsOn(mock, events)
 
-    assertThat(eventWithProcessOutput).isNotEqualTo(event);
-    assertThat(event.getProcessOutput()).isNull();
-    assertThat(eventWithProcessOutput.getProcessOutput()).isNotNull();
+        val inOrder: InOrder = Mockito.inOrder(mock)
+        inOrder.verify<com.google.devtools.build.lib.events.EventHandler?>(mock).handle(events.get(0))
+        inOrder.verify<com.google.devtools.build.lib.events.EventHandler?>(mock).handle(events.get(1))
+    }
 
-    assertThat(eventWithProcessOutput.getStdOut()).isEqualTo(stdout);
-    assertThat(eventWithProcessOutput.getProcessOutput().stdOut).isEqualTo(stdout);
-    assertThat(eventWithProcessOutput.getProcessOutput().stdOutSize).isEqualTo(stdout.length);
+    @org.junit.Test
+    fun replaySyntaxErrorsOn() {
+        val location1: net.starlark.java.syntax.Location? =
+            net.starlark.java.syntax.Location.fromFileLineColumn("someFile", 3, 4)
+        val location2: net.starlark.java.syntax.Location? =
+            net.starlark.java.syntax.Location.fromFileLineColumn("someOtherFile", 5, 6)
+        val syntaxErrors: com.google.common.collect.ImmutableList<net.starlark.java.syntax.SyntaxError?> =
+            com.google.common.collect.ImmutableList.of<net.starlark.java.syntax.SyntaxError?>(
+                net.starlark.java.syntax.SyntaxError(location1, "message1"),
+                net.starlark.java.syntax.SyntaxError(location2, "message2")
+            )
 
-    assertThat(eventWithProcessOutput.getStdErr()).isEqualTo(stderr);
-    assertThat(eventWithProcessOutput.getProcessOutput().stdErr).isEqualTo(stderr);
-    assertThat(eventWithProcessOutput.getProcessOutput().stdErrSize).isEqualTo(stderr.length);
-  }
+        val mock: com.google.devtools.build.lib.events.EventHandler? =
+            Mockito.mock<com.google.devtools.build.lib.events.EventHandler?>(com.google.devtools.build.lib.events.EventHandler::class.java)
+        com.google.devtools.build.lib.events.Event.replayEventsOn(mock, syntaxErrors)
 
-  @Test
-  public void replayEventsOn() {
-    ImmutableList<Event> events =
-        ImmutableList.of(
-            Event.of(EventKind.INFO, "someInfo"), Event.of(EventKind.WARNING, "someWarning"));
+        val inOrder: InOrder = Mockito.inOrder(mock)
+        inOrder
+            .verify<com.google.devtools.build.lib.events.EventHandler?>(mock)
+            .handle(
+                com.google.devtools.build.lib.events.Event.error(
+                    syntaxErrors.get(0).location(),
+                    syntaxErrors.get(0).message()
+                )
+            )
+        inOrder
+            .verify<com.google.devtools.build.lib.events.EventHandler?>(mock)
+            .handle(
+                com.google.devtools.build.lib.events.Event.error(
+                    syntaxErrors.get(1).location(),
+                    syntaxErrors.get(1).message()
+                )
+            )
+    }
 
-    EventHandler mock = mock(EventHandler.class);
+    @org.junit.Test
+    fun debugPrintHandler() {
+        val mockHandler: com.google.devtools.build.lib.events.EventHandler? =
+            Mockito.mock<com.google.devtools.build.lib.events.EventHandler?>(com.google.devtools.build.lib.events.EventHandler::class.java)
+        val printHandler: PrintHandler = com.google.devtools.build.lib.events.Event.makeDebugPrintHandler(mockHandler)
+        val starlarkThread: StarlarkThread? =
+            StarlarkThread.createTransient(Mutability.create(), StarlarkSemantics.DEFAULT)
 
-    Event.replayEventsOn(mock, events);
+        printHandler.print(starlarkThread, "someMessage")
 
-    InOrder inOrder = inOrder(mock);
-    inOrder.verify(mock).handle(events.get(0));
-    inOrder.verify(mock).handle(events.get(1));
-  }
-
-  @Test
-  public void replaySyntaxErrorsOn() {
-    Location location1 = Location.fromFileLineColumn("someFile", 3, 4);
-    Location location2 = Location.fromFileLineColumn("someOtherFile", 5, 6);
-    ImmutableList<SyntaxError> syntaxErrors =
-        ImmutableList.of(
-            new SyntaxError(location1, "message1"), new SyntaxError(location2, "message2"));
-
-    EventHandler mock = mock(EventHandler.class);
-    Event.replayEventsOn(mock, syntaxErrors);
-
-    InOrder inOrder = inOrder(mock);
-    inOrder
-        .verify(mock)
-        .handle(Event.error(syntaxErrors.get(0).location(), syntaxErrors.get(0).message()));
-    inOrder
-        .verify(mock)
-        .handle(Event.error(syntaxErrors.get(1).location(), syntaxErrors.get(1).message()));
-  }
-
-  @Test
-  public void debugPrintHandler() {
-    EventHandler mockHandler = mock(EventHandler.class);
-    PrintHandler printHandler = Event.makeDebugPrintHandler(mockHandler);
-    StarlarkThread starlarkThread =
-        StarlarkThread.createTransient(Mutability.create(), StarlarkSemantics.DEFAULT);
-
-    printHandler.print(starlarkThread, "someMessage");
-
-    verify(mockHandler).handle(Event.debug(Location.BUILTIN, "someMessage"));
-  }
+        Mockito.verify<com.google.devtools.build.lib.events.EventHandler?>(mockHandler).handle(
+            com.google.devtools.build.lib.events.Event.debug(
+                net.starlark.java.syntax.Location.BUILTIN,
+                "someMessage"
+            )
+        )
+    }
 }

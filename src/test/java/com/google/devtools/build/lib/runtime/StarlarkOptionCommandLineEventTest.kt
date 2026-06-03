@@ -11,80 +11,68 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.bazel.BazelStartupOptionsModule.Options;
-import com.google.devtools.build.lib.runtime.CommandLineEvent.CanonicalCommandLineEvent;
-import com.google.devtools.build.lib.runtime.CommandLineEvent.OriginalCommandLineEvent;
-import com.google.devtools.build.lib.runtime.proto.CommandLineOuterClass.CommandLine;
-import com.google.devtools.build.lib.runtime.proto.CommandLineOuterClass.Option;
-import com.google.devtools.build.lib.starlark.util.StarlarkOptionsTestCase;
-import com.google.devtools.common.options.OptionsParser;
-import java.util.Optional;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.bazel.BazelStartupOptionsModule.Options
 
 /**
- * Tests for {@link CommandLineEvent}'s construction of the command lines which contain
+ * Tests for [CommandLineEvent]'s construction of the command lines which contain
  * Starlark-style flags.
  */
-@RunWith(JUnit4.class)
-public class StarlarkOptionCommandLineEventTest extends StarlarkOptionsTestCase {
+@RunWith(JUnit4::class)
+class StarlarkOptionCommandLineEventTest : StarlarkOptionsTestCase() {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStarlarkOptions_original() {
+        val fakeStartupOptions: OptionsParser? =
+            OptionsParser.builder()
+                .optionsClasses(BlazeServerStartupOptions::class.java, Options::class.java)
+                .build()
 
-  @Test
-  public void testStarlarkOptions_original() throws Exception {
-    OptionsParser fakeStartupOptions =
-        OptionsParser.builder()
-            .optionsClasses(BlazeServerStartupOptions.class, Options.class)
-            .build();
+        writeBasicIntFlag()
 
-    writeBasicIntFlag();
+        parseStarlarkOptions("--//test:my_int_setting=666")
 
-    parseStarlarkOptions("--//test:my_int_setting=666");
-
-    CommandLine line =
-        new OriginalCommandLineEvent(
+        val line: CommandLine =
+            OriginalCommandLineEvent(
                 "testblaze",
                 fakeStartupOptions,
                 "someCommandName",
-                ImmutableList.of(),
+                com.google.common.collect.ImmutableList.of<E?>(),
                 false,
                 optionsParser.asListOfExplicitOptions(),
                 optionsParser.getExplicitCommandLineStarlarkOptions(),
                 optionsParser.getStarlarkOptionsAllowingMultiple(),
-                Optional.empty())
-            .asStreamProto(null)
-            .getStructuredCommandLine();
+                java.util.Optional.empty<T?>()
+            )
+                .asStreamProto(null)
+                .getStructuredCommandLine()
 
-    // Command options should appear in section 3. See
-    // CommandLineEventTest#testOptionsAtVariousPriorities_OriginalCommandLine.
-    // Verify that the starlark flag was processed as expected.
-    assertThat(line.getSections(3).getOptionList().getOptionCount()).isEqualTo(1);
-    assertThat(line.getSections(3).getOptionList().getOption(0).getCombinedForm())
-        .isEqualTo("--//test:my_int_setting=666");
-    assertThat(line.getSections(3).getOptionList().getOption(0).getOptionName())
-        .isEqualTo("//test:my_int_setting");
-    assertThat(line.getSections(3).getOptionList().getOption(0).getOptionValue()).isEqualTo("666");
-  }
+        // Command options should appear in section 3. See
+        // CommandLineEventTest#testOptionsAtVariousPriorities_OriginalCommandLine.
+        // Verify that the starlark flag was processed as expected.
+        assertThat(line.getSections(3).getOptionList().getOptionCount()).isEqualTo(1)
+        assertThat(line.getSections(3).getOptionList().getOption(0).getCombinedForm())
+            .isEqualTo("--//test:my_int_setting=666")
+        assertThat(line.getSections(3).getOptionList().getOption(0).getOptionName())
+            .isEqualTo("//test:my_int_setting")
+        assertThat(line.getSections(3).getOptionList().getOption(0).getOptionValue()).isEqualTo("666")
+    }
 
-  /**
-   * {@link OriginalCommandLineEvent} contains options explicitly set on the command line but not
-   * options inherited through bazelrcs.
-   */
-  @Test
-  public void testStarlarkOptionsFromCommandLineAndBazelRc_original() throws Exception {
-    OptionsParser fakeStartupOptions =
-        OptionsParser.builder()
-            .optionsClasses(BlazeServerStartupOptions.class, Options.class)
-            .build();
-    scratch.file(
-        "test/build_setting.bzl",
-        """
+    /**
+     * [OriginalCommandLineEvent] contains options explicitly set on the command line but not
+     * options inherited through bazelrcs.
+     */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStarlarkOptionsFromCommandLineAndBazelRc_original() {
+        val fakeStartupOptions: OptionsParser? =
+            OptionsParser.builder()
+                .optionsClasses(BlazeServerStartupOptions::class.java, Options::class.java)
+                .build()
+        scratch.file(
+            "test/build_setting.bzl",
+            """
         def _build_setting_impl(ctx):
             return []
 
@@ -92,10 +80,12 @@ public class StarlarkOptionCommandLineEventTest extends StarlarkOptionsTestCase 
             implementation = _build_setting_impl,
             build_setting = config.int(flag = True),
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load("//test:build_setting.bzl", "int_flag")
 
         int_flag(
@@ -107,115 +97,124 @@ public class StarlarkOptionCommandLineEventTest extends StarlarkOptionsTestCase 
             name = "bazelrcflag",
             build_setting_default = 20,
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    var unused =
-        parseStarlarkOptions(
-            /* commandLineOptions= */ "--//test:cmdflag=666",
-            /* bazelrcOptions= */ "--//test:bazelrcflag=777");
-    CommandLine line =
-        new OriginalCommandLineEvent(
+        val unused: OptionsParsingResult? =
+            parseStarlarkOptions( /* commandLineOptions= */
+                "--//test:cmdflag=666",  /* bazelrcOptions= */
+                "--//test:bazelrcflag=777"
+            )
+        val line: CommandLine =
+            OriginalCommandLineEvent(
                 "testblaze",
                 fakeStartupOptions,
                 "someCommandName",
-                ImmutableList.of(),
+                com.google.common.collect.ImmutableList.of<E?>(),
                 false,
                 optionsParser.asListOfExplicitOptions(),
                 optionsParser.getExplicitCommandLineStarlarkOptions(),
                 optionsParser.getStarlarkOptionsAllowingMultiple(),
-                Optional.empty())
-            .asStreamProto(null)
-            .getStructuredCommandLine();
+                java.util.Optional.empty<T?>()
+            )
+                .asStreamProto(null)
+                .getStructuredCommandLine()
 
-    assertThat(line.getSections(3).getOptionList().getOptionCount()).isEqualTo(1);
-    assertThat(line.getSections(3).getOptionList().getOption(0).getCombinedForm())
-        .isEqualTo("--//test:cmdflag=666");
-  }
+        assertThat(line.getSections(3).getOptionList().getOptionCount()).isEqualTo(1)
+        assertThat(line.getSections(3).getOptionList().getOption(0).getCombinedForm())
+            .isEqualTo("--//test:cmdflag=666")
+    }
 
-  @Test
-  public void testStarlarkOptions_canonical() throws Exception {
-    OptionsParser fakeStartupOptions =
-        OptionsParser.builder()
-            .optionsClasses(BlazeServerStartupOptions.class, Options.class)
-            .build();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStarlarkOptions_canonical() {
+        val fakeStartupOptions: OptionsParser? =
+            OptionsParser.builder()
+                .optionsClasses(BlazeServerStartupOptions::class.java, Options::class.java)
+                .build()
 
-    writeBasicIntFlag();
+        writeBasicIntFlag()
 
-    parseStarlarkOptions("--//test:my_int_setting=666");
+        parseStarlarkOptions("--//test:my_int_setting=666")
 
-    CommandLine line =
-        new CanonicalCommandLineEvent(
+        val line: CommandLine =
+            CanonicalCommandLineEvent(
                 "testblaze",
                 fakeStartupOptions,
                 "someCommandName",
-                ImmutableList.of(),
+                com.google.common.collect.ImmutableList.of<E?>(),
                 false,
                 optionsParser.getExplicitCommandLineStarlarkOptions(),
                 optionsParser.getStarlarkOptions(),
                 optionsParser.getStarlarkOptionsAllowingMultiple(),
-                optionsParser.asListOfCanonicalOptions(),
-                /* replaceable= */ false)
-            .asStreamProto(null)
-            .getStructuredCommandLine();
-    assertThat(line.getCommandLineLabel()).isEqualTo("canonical");
+                optionsParser.asListOfCanonicalOptions(),  /* replaceable= */
+                false
+            )
+                .asStreamProto(null)
+                .getStructuredCommandLine()
+        assertThat(line.getCommandLineLabel()).isEqualTo("canonical")
 
-    // Command options should appear in section 3. See
-    // CommandLineEventTest#testOptionsAtVariousPriorities_OriginalCommandLine.
-    // Verify that the starlark flag was processed as expected.
-    assertThat(line.getSections(3).getOptionList().getOptionCount()).isEqualTo(1);
-    assertThat(line.getSections(3).getOptionList().getOption(0).getCombinedForm())
-        .isEqualTo("--//test:my_int_setting=666");
-    assertThat(line.getSections(3).getOptionList().getOption(0).getOptionName())
-        .isEqualTo("//test:my_int_setting");
-    assertThat(line.getSections(3).getOptionList().getOption(0).getOptionValue()).isEqualTo("666");
-  }
+        // Command options should appear in section 3. See
+        // CommandLineEventTest#testOptionsAtVariousPriorities_OriginalCommandLine.
+        // Verify that the starlark flag was processed as expected.
+        assertThat(line.getSections(3).getOptionList().getOptionCount()).isEqualTo(1)
+        assertThat(line.getSections(3).getOptionList().getOption(0).getCombinedForm())
+            .isEqualTo("--//test:my_int_setting=666")
+        assertThat(line.getSections(3).getOptionList().getOption(0).getOptionName())
+            .isEqualTo("//test:my_int_setting")
+        assertThat(line.getSections(3).getOptionList().getOption(0).getOptionValue()).isEqualTo("666")
+    }
 
-  @Test
-  public void testStarlarkOptions_canonical_defaultValue() throws Exception {
-    OptionsParser fakeStartupOptions =
-        OptionsParser.builder()
-            .optionsClasses(BlazeServerStartupOptions.class, Options.class)
-            .build();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStarlarkOptions_canonical_defaultValue() {
+        val fakeStartupOptions: OptionsParser? =
+            OptionsParser.builder()
+                .optionsClasses(BlazeServerStartupOptions::class.java, Options::class.java)
+                .build()
 
-    writeBasicIntFlag();
+        writeBasicIntFlag()
 
-    parseStarlarkOptions("--//test:my_int_setting=42");
+        parseStarlarkOptions("--//test:my_int_setting=42")
 
-    CommandLine line =
-        new CanonicalCommandLineEvent(
+        val line: CommandLine =
+            CanonicalCommandLineEvent(
                 "testblaze",
                 fakeStartupOptions,
                 "someCommandName",
-                ImmutableList.of(),
+                com.google.common.collect.ImmutableList.of<E?>(),
                 false,
                 optionsParser.getExplicitCommandLineStarlarkOptions(),
                 optionsParser.getStarlarkOptions(),
                 optionsParser.getStarlarkOptionsAllowingMultiple(),
-                optionsParser.asListOfCanonicalOptions(),
-                /* replaceable= */ false)
-            .asStreamProto(null)
-            .getStructuredCommandLine();
-    assertThat(line.getCommandLineLabel()).isEqualTo("canonical");
+                optionsParser.asListOfCanonicalOptions(),  /* replaceable= */
+                false
+            )
+                .asStreamProto(null)
+                .getStructuredCommandLine()
+        assertThat(line.getCommandLineLabel()).isEqualTo("canonical")
 
-    // Command options should appear in section 3. See
-    // CommandLineEventTest#testOptionsAtVariousPriorities_OriginalCommandLine.
-    // Verify that the starlark flag was processed as expected.
-    assertThat(line.getSections(3).getOptionList().getOptionCount()).isEqualTo(0);
-  }
+        // Command options should appear in section 3. See
+        // CommandLineEventTest#testOptionsAtVariousPriorities_OriginalCommandLine.
+        // Verify that the starlark flag was processed as expected.
+        assertThat(line.getSections(3).getOptionList().getOptionCount()).isEqualTo(0)
+    }
 
-  /**
-   * {@link CanonicalCommandLineEvent} includes both options set explicitly on the command line and
-   * options inherited through bazelrcs.
-   */
-  @Test
-  public void testStarlarkOptionsFromCommandLineAndBazelRc_canonical() throws Exception {
-    OptionsParser fakeStartupOptions =
-        OptionsParser.builder()
-            .optionsClasses(BlazeServerStartupOptions.class, Options.class)
-            .build();
-    scratch.file(
-        "test/build_setting.bzl",
-        """
+    /**
+     * [CanonicalCommandLineEvent] includes both options set explicitly on the command line and
+     * options inherited through bazelrcs.
+     */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStarlarkOptionsFromCommandLineAndBazelRc_canonical() {
+        val fakeStartupOptions: OptionsParser? =
+            OptionsParser.builder()
+                .optionsClasses(BlazeServerStartupOptions::class.java, Options::class.java)
+                .build()
+        scratch.file(
+            "test/build_setting.bzl",
+            """
         def _build_setting_impl(ctx):
             return []
 
@@ -223,10 +222,12 @@ public class StarlarkOptionCommandLineEventTest extends StarlarkOptionsTestCase 
             implementation = _build_setting_impl,
             build_setting = config.int(flag = True),
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load("//test:build_setting.bzl", "int_flag")
 
         int_flag(
@@ -238,40 +239,46 @@ public class StarlarkOptionCommandLineEventTest extends StarlarkOptionsTestCase 
             name = "bazelrcflag",
             build_setting_default = 20,
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    var unused =
-        parseStarlarkOptions(
-            /* commandLineOptions= */ "--//test:cmdflag=666",
-            /* bazelrcOptions= */ "--//test:bazelrcflag=777");
-    CommandLine line =
-        new CanonicalCommandLineEvent(
+        val unused: OptionsParsingResult? =
+            parseStarlarkOptions( /* commandLineOptions= */
+                "--//test:cmdflag=666",  /* bazelrcOptions= */
+                "--//test:bazelrcflag=777"
+            )
+        val line: CommandLine =
+            CanonicalCommandLineEvent(
                 "testblaze",
                 fakeStartupOptions,
                 "someCommandName",
-                ImmutableList.of(),
+                com.google.common.collect.ImmutableList.of<E?>(),
                 false,
                 optionsParser.getExplicitCommandLineStarlarkOptions(),
                 optionsParser.getStarlarkOptions(),
                 optionsParser.getStarlarkOptionsAllowingMultiple(),
-                optionsParser.asListOfCanonicalOptions(),
-                /* replaceable= */ false)
-            .asStreamProto(null)
-            .getStructuredCommandLine();
+                optionsParser.asListOfCanonicalOptions(),  /* replaceable= */
+                false
+            )
+                .asStreamProto(null)
+                .getStructuredCommandLine()
 
-    assertThat(
+        assertThat(
             line.getSections(3).getOptionList().getOptionList().stream()
-                .map(o -> o.getCombinedForm()))
-        .containsExactly("--//test:cmdflag=666", "--//test:bazelrcflag=777");
-  }
+                .map({ o -> o.getCombinedForm() })
+        )
+            .containsExactly("--//test:cmdflag=666", "--//test:bazelrcflag=777")
+    }
 
-  @Test
-  public void testStarlarkOptions_multipleAndRepeatable() throws Exception {
-    OptionsParser fakeStartupOptions =
-        OptionsParser.builder().optionsClasses(BlazeServerStartupOptions.class).build();
-    scratch.file(
-        "flags/build_settings.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStarlarkOptions_multipleAndRepeatable() {
+        val fakeStartupOptions: OptionsParser? =
+            OptionsParser.builder().optionsClasses(BlazeServerStartupOptions::class.java).build()
+        scratch.file(
+            "flags/build_settings.bzl",
+            """
         def _impl(ctx):
             return []
 
@@ -289,56 +296,64 @@ public class StarlarkOptionCommandLineEventTest extends StarlarkOptionsTestCase 
             implementation = _impl,
             build_setting = config.string(flag = True),
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "flags/BUILD",
-        """
+        scratch.file(
+            "flags/BUILD",
+            """
         load(":build_settings.bzl", "allow_multiple_flag", "repeatable_flag", "singular_flag")
         allow_multiple_flag(name = "allow_multiple", build_setting_default = "")
         repeatable_flag(name = "repeatable", build_setting_default = [])
         singular_flag(name = "singular", build_setting_default = "")
-        """);
+        
+        """.trimIndent()
+        )
 
-    var unused =
-        parseStarlarkOptions(
-            "--//flags:singular=abc --//flags:allow_multiple=foo --//flags:allow_multiple=bar"
-                + " --//flags:repeatable=good --//flags:repeatable=bye");
+        val unused: OptionsParsingResult? =
+            parseStarlarkOptions(
+                "--//flags:singular=abc --//flags:allow_multiple=foo --//flags:allow_multiple=bar"
+                        + " --//flags:repeatable=good --//flags:repeatable=bye"
+            )
 
-    CommandLine line =
-        new OriginalCommandLineEvent(
+        val line: CommandLine =
+            OriginalCommandLineEvent(
                 "testblaze",
                 fakeStartupOptions,
                 "someCommandName",
-                ImmutableList.of(),
+                com.google.common.collect.ImmutableList.of<E?>(),
                 false,
                 optionsParser.asListOfExplicitOptions(),
                 optionsParser.getStarlarkOptions(),
                 optionsParser.getStarlarkOptionsAllowingMultiple(),
-                Optional.empty())
-            .asStreamProto(null)
-            .getStructuredCommandLine();
-    assertThat(
+                java.util.Optional.empty<T?>()
+            )
+                .asStreamProto(null)
+                .getStructuredCommandLine()
+        assertThat(
             line.getSections(3).getOptionList().getOptionList().stream()
                 .map(Option::getCombinedForm)
-                .collect(toImmutableList()))
-        .containsExactly(
-            // Flags names are sorted; order of multiple values is preserved.
-            "--//flags:allow_multiple=foo",
-            "--//flags:allow_multiple=bar",
-            "--//flags:repeatable=good",
-            "--//flags:repeatable=bye",
-            "--//flags:singular=abc")
-        .inOrder();
-  }
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
+        )
+            .containsExactly( // Flags names are sorted; order of multiple values is preserved.
+                "--//flags:allow_multiple=foo",
+                "--//flags:allow_multiple=bar",
+                "--//flags:repeatable=good",
+                "--//flags:repeatable=bye",
+                "--//flags:singular=abc"
+            )
+            .inOrder()
+    }
 
-  @Test
-  public void testStarlarkOptions_nonRepeatableListsAndSets() throws Exception {
-    OptionsParser fakeStartupOptions =
-        OptionsParser.builder().optionsClasses(BlazeServerStartupOptions.class).build();
-    scratch.file(
-        "flags/build_settings.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStarlarkOptions_nonRepeatableListsAndSets() {
+        val fakeStartupOptions: OptionsParser? =
+            OptionsParser.builder().optionsClasses(BlazeServerStartupOptions::class.java).build()
+        scratch.file(
+            "flags/build_settings.bzl",
+            """
         def _impl(ctx):
             return []
 
@@ -351,40 +366,47 @@ public class StarlarkOptionCommandLineEventTest extends StarlarkOptionsTestCase 
             implementation = _impl,
             build_setting = config.string_set(flag = True, repeatable = False),
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "flags/BUILD",
-        """
+        scratch.file(
+            "flags/BUILD",
+            """
         load(":build_settings.bzl", "non_repeatable_list_flag", "non_repeatable_set_flag")
         non_repeatable_list_flag(name = "non_repeatable_list", build_setting_default = [])
         non_repeatable_set_flag(name = "non_repeatable_set", build_setting_default = set([]))
-        """);
+        
+        """.trimIndent()
+        )
 
-    var unused =
-        parseStarlarkOptions(
-            "--//flags:non_repeatable_list=h,e,l,l,o --//flags:non_repeatable_set=h,e,l,l,o");
+        val unused: OptionsParsingResult? =
+            parseStarlarkOptions(
+                "--//flags:non_repeatable_list=h,e,l,l,o --//flags:non_repeatable_set=h,e,l,l,o"
+            )
 
-    CommandLine line =
-        new OriginalCommandLineEvent(
+        val line: CommandLine =
+            OriginalCommandLineEvent(
                 "testblaze",
                 fakeStartupOptions,
                 "someCommandName",
-                ImmutableList.of(),
+                com.google.common.collect.ImmutableList.of<E?>(),
                 false,
                 optionsParser.asListOfExplicitOptions(),
                 optionsParser.getStarlarkOptions(),
                 optionsParser.getStarlarkOptionsAllowingMultiple(),
-                Optional.empty())
-            .asStreamProto(null)
-            .getStructuredCommandLine();
-    assertThat(
+                java.util.Optional.empty<T?>()
+            )
+                .asStreamProto(null)
+                .getStructuredCommandLine()
+        assertThat(
             line.getSections(3).getOptionList().getOptionList().stream()
                 .map(Option::getCombinedForm)
-                .collect(toImmutableList()))
-        .containsExactly(
-            // Lists are preserved; sets are deduped and sorted; both rendered as comma-separated.
-            "--//flags:non_repeatable_list=h,e,l,l,o", "--//flags:non_repeatable_set=e,h,l,o")
-        .inOrder();
-  }
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
+        )
+            .containsExactly( // Lists are preserved; sets are deduped and sorted; both rendered as comma-separated.
+                "--//flags:non_repeatable_list=h,e,l,l,o", "--//flags:non_repeatable_set=e,h,l,o"
+            )
+            .inOrder()
+    }
 }

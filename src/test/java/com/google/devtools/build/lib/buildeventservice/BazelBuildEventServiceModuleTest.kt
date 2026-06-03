@@ -11,942 +11,941 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.buildeventservice
 
-package com.google.devtools.build.lib.buildeventservice;
+import com.google.devtools.build.lib.buildeventservice.BuildEventServiceModule.RUNS_PER_TEST_LIMIT
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.truth.TruthJUnit.assume;
-import static com.google.common.truth.extensions.proto.ProtoTruth.assertThat;
-import static com.google.devtools.build.lib.buildeventservice.BuildEventServiceModule.RUNS_PER_TEST_LIMIT;
-import static org.junit.Assert.assertThrows;
+/** Tests for [BazelBuildEventServiceModule].  */
+@RunWith(TestParameterInjector::class)
+class BazelBuildEventServiceModuleTest : BuildIntegrationTestCase() {
+    private val fakeServerName = "fake server for " + javaClass
+    private val buildEventService: DelayingPublishBuildEventService = DelayingPublishBuildEventService()
+    private val serviceRegistry: MutableHandlerRegistry = MutableHandlerRegistry()
+    private var fakeServer: io.grpc.Server? = null
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Maps;
-import com.google.common.eventbus.Subscribe;
-import com.google.common.util.concurrent.Uninterruptibles;
-import com.google.devtools.build.lib.actions.ActionLookupData;
-import com.google.devtools.build.lib.actions.BuildFailedException;
-import com.google.devtools.build.lib.actions.SpawnResult;
-import com.google.devtools.build.lib.analysis.util.AnalysisMock;
-import com.google.devtools.build.lib.authandtls.AuthAndTLSOptions;
-import com.google.devtools.build.lib.authandtls.credentialhelper.CredentialModule;
-import com.google.devtools.build.lib.bugreport.BugReport;
-import com.google.devtools.build.lib.bugreport.Crash;
-import com.google.devtools.build.lib.bugreport.CrashContext;
-import com.google.devtools.build.lib.buildeventservice.BazelBuildEventServiceModule.BackendConfig;
-import com.google.devtools.build.lib.buildeventservice.BuildEventServiceModule.BuildEventFileType;
-import com.google.devtools.build.lib.buildeventservice.BuildEventServiceModule.BuildEventOutputStreamFactory;
-import com.google.devtools.build.lib.buildeventstream.AnnounceBuildEventTransportsEvent;
-import com.google.devtools.build.lib.buildeventstream.BuildEventArtifactUploader;
-import com.google.devtools.build.lib.buildeventstream.BuildEventServiceUploadCompleteEvent;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.Aborted;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.Aborted.AbortReason;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEvent;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId.BuildFinishedId;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId.ConfigurationId;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildEventId.TargetCompletedId;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildFinished;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.BuildGraphMetrics.StarlarkProviderStats.StalarkProvider;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.BzlMetrics;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos.BuildMetrics.BzlMetrics.BzlFileMetrics;
-import com.google.devtools.build.lib.buildeventstream.BuildEventTransport;
-import com.google.devtools.build.lib.buildeventstream.transports.BinaryFormatFileTransport;
-import com.google.devtools.build.lib.buildeventstream.transports.JsonFormatFileTransport;
-import com.google.devtools.build.lib.buildeventstream.transports.TextFormatFileTransport;
-import com.google.devtools.build.lib.buildtool.util.BuildIntegrationTestCase;
-import com.google.devtools.build.lib.exec.SpawnExecException;
-import com.google.devtools.build.lib.network.ConnectivityStatus;
-import com.google.devtools.build.lib.network.ConnectivityStatusProvider;
-import com.google.devtools.build.lib.network.NoOpConnectivityModule;
-import com.google.devtools.build.lib.packages.metrics.PackageMetricsModule;
-import com.google.devtools.build.lib.remote.util.TracingMetadataUtils;
-import com.google.devtools.build.lib.runtime.BlazeModule;
-import com.google.devtools.build.lib.runtime.BlazeRuntime;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.runtime.NoSpawnCacheModule;
-import com.google.devtools.build.lib.runtime.proto.CommandLineOuterClass.CommandLineSection;
-import com.google.devtools.build.lib.runtime.proto.CommandLineOuterClass.Option;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.server.FailureDetails.Spawn;
-import com.google.devtools.build.lib.server.FailureDetails.Spawn.Code;
-import com.google.devtools.build.lib.testutil.ControllableActionStrategyModule;
-import com.google.devtools.build.lib.testutil.SpawnController;
-import com.google.devtools.build.lib.testutil.SpawnController.ExecResult;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import com.google.devtools.build.lib.util.AbruptExitException;
-import com.google.devtools.build.lib.util.ExitCode;
-import com.google.devtools.build.skyframe.NotifyingHelper;
-import com.google.devtools.common.options.Options;
-import com.google.protobuf.MessageLite;
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import io.grpc.ManagedChannel;
-import io.grpc.Metadata;
-import io.grpc.Server;
-import io.grpc.ServerInterceptors;
-import io.grpc.Status;
-import io.grpc.inprocess.InProcessChannelBuilder;
-import io.grpc.inprocess.InProcessServerBuilder;
-import io.grpc.util.MutableHandlerRegistry;
-import java.io.BufferedOutputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.lang.Thread.UncaughtExceptionHandler;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.NoSuchElementException;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Function;
-import java.util.regex.Pattern;
-import javax.annotation.Nullable;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Ignore;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.TemporaryFolder;
-import org.junit.runner.RunWith;
+    private var besModule: BazelBuildEventServiceModule? = null
+    private var connectivityModule: BlazeModule = NoOpConnectivityModule()
+    private val spawnController: SpawnController = SpawnController()
 
-/** Tests for {@link BazelBuildEventServiceModule}. */
-@RunWith(TestParameterInjector.class)
-public final class BazelBuildEventServiceModuleTest extends BuildIntegrationTestCase {
+    @org.junit.Rule
+    var tmpFolder: TemporaryFolder = TemporaryFolder()
 
-  private static final Duration WAIT_FOR_LAST_INVOCATION_TIMEOUT = Duration.ofSeconds(2);
+    private var buildEventOutputStreamFactory: BuildEventOutputStreamFactory? = null
 
-  private final String fakeServerName = "fake server for " + getClass();
-  private final DelayingPublishBuildEventService buildEventService =
-      new DelayingPublishBuildEventService();
-  private final MutableHandlerRegistry serviceRegistry = new MutableHandlerRegistry();
-  private Server fakeServer;
+    override fun getConnectivityModule(): BlazeModule {
+        return connectivityModule
+    }
 
-  private BazelBuildEventServiceModule besModule;
-  private BlazeModule connectivityModule = new NoOpConnectivityModule();
-  private final SpawnController spawnController = new SpawnController();
+    @get:Throws(java.lang.Exception::class)
+    val runtimeBuilder: BlazeRuntime.Builder
+        get() = super.getRuntimeBuilder()
+            .addBlazeModule(
+                object : BlazeModule() {
+                    public override fun beforeCommand(env: CommandEnvironment) {
+                        this@BazelBuildEventServiceModuleTest.events.initExternal(env.getReporter())
+                    }
+                })
+            .addBlazeModule(NoSpawnCacheModule())
+            .addBlazeModule(CredentialModule())
+            .addBlazeModule(PackageMetricsModule())
+            .addBlazeModule(ControllableActionStrategyModule(spawnController, "standalone"))
+            .addBlazeModule(
+                object : BazelBuildEventServiceModule() {
+                    @Throws(IOException::class)
+                    protected override fun newGrpcChannel(config: BackendConfig): ManagedChannel? {
+                        if (config.besBackend().equals("inprocess")) {
+                            return InProcessChannelBuilder.forName(fakeServerName).build()
+                        }
+                        return super.newGrpcChannel(config)
+                    }
 
-  @Rule public TemporaryFolder tmpFolder = new TemporaryFolder();
+                    protected val maxWaitForPreviousInvocation: java.time.Duration?
+                        get() = WAIT_FOR_LAST_INVOCATION_TIMEOUT
 
-  @Nullable private BuildEventOutputStreamFactory buildEventOutputStreamFactory;
+                    public override fun createBuildEventOutputStreamFactory(
+                        env: CommandEnvironment?
+                    ): BuildEventOutputStreamFactory? {
+                        return if (buildEventOutputStreamFactory == null)
+                            super.createBuildEventOutputStreamFactory(env)
+                        else
+                            buildEventOutputStreamFactory
+                    }
+                })
 
-  @Override
-  protected BlazeModule getConnectivityModule() {
-    return connectivityModule;
-  }
+    private var bepTransports: com.google.common.collect.ImmutableSet<BuildEventTransport>? = null
+    private val besUploadCompleteEvents: MutableList<BuildEventServiceUploadCompleteEvent> =
+        java.util.ArrayList<BuildEventServiceUploadCompleteEvent>()
 
-  @Override
-  protected BlazeRuntime.Builder getRuntimeBuilder() throws Exception {
-    return super.getRuntimeBuilder()
-        .addBlazeModule(
-            new BlazeModule() {
-              @Override
-              public void beforeCommand(CommandEnvironment env) {
-                BazelBuildEventServiceModuleTest.this.events.initExternal(env.getReporter());
-              }
+    private inner class BepTransportLogger {
+        @com.google.common.eventbus.Subscribe
+        @Suppress("unused")
+        fun transportsKnown(event: AnnounceBuildEventTransportsEvent?) {
+            bepTransports = besModule.getBepTransports()
+        }
+    }
+
+    private inner class BuildEventServiceUploadCompleteEventListener {
+        @com.google.common.eventbus.Subscribe
+        @Suppress("unused")
+        fun onBuildEventServiceUploadComplete(event: BuildEventServiceUploadCompleteEvent?) {
+            besUploadCompleteEvents.add(event)
+        }
+    }
+
+    private fun getBepTransports(): com.google.common.collect.ImmutableSet<BuildEventTransport>? {
+        return bepTransports
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun runBuildWithOptions(vararg options: String?) {
+        addOptions(*options)
+        besModule = runtimeWrapper.getRuntime().getBlazeModule(BazelBuildEventServiceModule::class.java)
+        if (buildEventOutputStreamFactory != null) {
+            besModule.setBuildEventOutputStreamFactory(buildEventOutputStreamFactory)
+        }
+        runtimeWrapper.newCommand()
+        runtimeWrapper.getSkyframeExecutor().getEventBus().register(BepTransportLogger())
+        runtimeWrapper
+            .getSkyframeExecutor()
+            .getEventBus()
+            .register(BuildEventServiceUploadCompleteEventListener())
+        buildTarget()
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun afterBuildCommand() {
+        runtimeWrapper.newCommand()
+    }
+
+    override fun createUncaughtExceptionHandler(): java.lang.Thread.UncaughtExceptionHandler? {
+        // Disable the crash handler since this test leaves runaway threads e.g. accessing shut down
+        // fakeServer.
+        return null
+    }
+
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun setUp() {
+        serviceRegistry.addService(
+            ServerInterceptors.intercept(
+                buildEventService, ServerHeadersInterceptor()
+            )
+        )
+        fakeServer =
+            InProcessServerBuilder.forName(fakeServerName)
+                .fallbackHandlerRegistry(serviceRegistry)
+                .directExecutor()
+                .build()
+                .start()
+    }
+
+    @org.junit.After
+    @Throws(java.lang.Exception::class)
+    fun tearDown() {
+        fakeServer.shutdownNow()
+        fakeServer.awaitTermination()
+        spawnController.verifyAllShimsConsumed()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCreatesStreamerForTextFormatFileTransport() {
+        runBuildWithOptions("--build_event_text_file=" + tmpFolder.newFile().getAbsolutePath())
+        Truth.assertThat(getBepTransports()).hasSize(1)
+        assertThat(getBepTransports().asList().get(0)).isInstanceOf(TextFormatFileTransport::class.java)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCreatesStreamerForBinaryFormatFileTransport() {
+        runBuildWithOptions("--build_event_binary_file=" + tmpFolder.newFile().getAbsolutePath())
+        Truth.assertThat(getBepTransports()).hasSize(1)
+        assertThat(getBepTransports().asList().get(0)).isInstanceOf(BinaryFormatFileTransport::class.java)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCreatesStreamerForJsonFormatFileTransport() {
+        runBuildWithOptions("--build_event_json_file=" + tmpFolder.newFile().getAbsolutePath())
+        Truth.assertThat(getBepTransports()).hasSize(1)
+        assertThat(getBepTransports().asList().get(0)).isInstanceOf(JsonFormatFileTransport::class.java)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCreatesStreamerForBesTransport() {
+        runBuildWithOptions("--bes_backend=does.not.exist:1234")
+        Truth.assertThat(getBepTransports()).hasSize(1)
+        assertThat(getBepTransports().asList().get(0)).isInstanceOf(BuildEventServiceTransport::class.java)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRetryCount() {
+        runBuildWithOptions(
+            "--bes_backend=does.not.exist:1234", "--experimental_build_event_upload_max_retries=3"
+        )
+        afterBuildCommand()
+
+        events.assertContainsError(
+            "The Build Event Protocol upload failed: all 3 publishLifecycleEvent retry attempts"
+                    + " failed"
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testConnectivityFailureDisablesBesStreaming() {
+        class FailingConnectivityStatusProvider : BlazeModule(), ConnectivityStatusProvider {
+            public override fun getStatus(service: String?): ConnectivityStatus {
+                return ConnectivityStatus(
+                    ConnectivityStatus.Status.NO_CREDENTIALS, "forced connectivity failure"
+                )
+            }
+        }
+
+        connectivityModule = FailingConnectivityStatusProvider()
+        reinitializeAndPreserveOptions()
+        addOptions("--bes_backend=does.not.exist:1234")
+        addOptions("--spawn_strategy=standalone")
+        runBuildWithOptions()
+        Truth.assertThat(getBepTransports()).isEmpty()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCreatesStreamerForGrpcBesResultsUrl() {
+        runBuildWithOptions(
+            "--bes_backend=inprocess",
+            "--bes_upload_mode=FULLY_ASYNC",
+            "--bes_results_url=http://results-ui/"
+        )
+
+        Truth.assertThat(getBepTransports()).hasSize(1)
+        assertThat(getBepTransports().asList().get(0)).isInstanceOf(BuildEventServiceTransport::class.java)
+    }
+
+    @org.junit.Test
+    fun testCreatesStreamerForGrpcRunsPerTestTooHighDisablesStreaming() {
+        val expected: AbruptExitException =
+            org.junit.Assert.assertThrows<T>(
+                AbruptExitException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    runBuildWithOptions(
+                        "--bes_backend=inprocess", "--runs_per_test=" + (RUNS_PER_TEST_LIMIT + 1)
+                    )
+                })
+        assertThat(expected.getExitCode()).isEqualTo(ExitCode.COMMAND_LINE_ERROR)
+        Truth.assertThat(getBepTransports()).isEmpty()
+        assertContainsError("The value of --runs_per_test")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBeforeCommandGrpcReportsBesResultsUrl() {
+        runBuildWithOptions(
+            "--color=no",  // disable ANSI color sequences
+            "--bes_backend=inprocess",
+            "--bes_upload_mode=FULLY_ASYNC",
+            "--bes_results_url=http://results-ui/"
+        )
+        events.assertContainsEventsInOrder(
+            "Streaming build results to: http://results-ui/", "Found 0 targets", "Found 0 targets"
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAfterCommandGrpcReportsBesResultsUrl() {
+        runBuildWithOptions(
+            "--color=no",  // disable ANSI color sequences
+            "--bes_backend=inprocess",
+            "--bes_upload_mode=FULLY_ASYNC",
+            "--bes_results_url=http://results-ui/"
+        )
+        afterBuildCommand()
+
+        events.assertContainsEventsInOrder(
+            "Streaming build results to: http://results-ui/",
+            "Found 0 targets",
+            "Found 0 targets",
+            "Streaming build results to: http://results-ui/",
+            "Streaming build results to: http://results-ui/"
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAfterCommand_waitForUploadComplete() {
+        buildEventService.setDelayBeforeClosingStream(java.time.Duration.ZERO)
+        runBuildWithOptions(
+            "--bes_backend=inprocess",
+            "--bes_upload_mode=WAIT_FOR_UPLOAD_COMPLETE",
+            "--bes_timeout=5s"
+        )
+        afterBuildCommand()
+        events.assertNoWarningsOrErrors()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAfterCommand_waitForUploadComplete_postsEvent() {
+        buildEventService.setDelayBeforeClosingStream(java.time.Duration.ofMillis(100))
+        runBuildWithOptions(
+            "--bes_backend=inprocess",
+            "--bes_upload_mode=WAIT_FOR_UPLOAD_COMPLETE",
+            "--bes_timeout=5s"
+        )
+        afterBuildCommand()
+        events.assertNoWarningsOrErrors()
+        Truth.assertThat(besUploadCompleteEvents).hasSize(1)
+        assertThat(besUploadCompleteEvents.get(0).duration()).isGreaterThan(java.time.Duration.ZERO)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAfterCommand_waitForUploadComplete_slowFullCloseError() {
+        buildEventService.setDelayBeforeClosingStream(java.time.Duration.ofSeconds(10))
+        runBuildWithOptions(
+            "--bes_backend=inprocess",
+            "--bes_upload_mode=WAIT_FOR_UPLOAD_COMPLETE",
+            "--bes_timeout=5s"
+        )
+        val bepTransports: com.google.common.collect.ImmutableSet<BuildEventTransport>? = getBepTransports()
+        Truth.assertThat(bepTransports).hasSize(1)
+        afterBuildCommand()
+        assertContainsError("The Build Event Protocol upload timed out")
+        for (bepTransport in bepTransports) {
+            assertThat(bepTransport.close().isDone()).isTrue()
+        }
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAfterCommand_waitForUploadComplete_slowHalfCloseError() {
+        buildEventService.setDelayBeforeHalfClosingStream(java.time.Duration.ofSeconds(10))
+        runBuildWithOptions(
+            "--bes_backend=inprocess",
+            "--bes_upload_mode=WAIT_FOR_UPLOAD_COMPLETE",
+            "--bes_timeout=5s"
+        )
+        afterBuildCommand()
+        assertContainsError("The Build Event Protocol upload timed out")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAfterCommand_noWaitForUploadComplete() {
+        buildEventService.setDelayBeforeClosingStream(java.time.Duration.ZERO)
+        runBuildWithOptions("--bes_backend=inprocess", "--bes_upload_mode=NOWAIT_FOR_UPLOAD_COMPLETE")
+        afterBuildCommand()
+        events.assertNoWarningsOrErrors()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAfterCommand_noWaitForUploadComplete_slowFullCloseIgnored() {
+        buildEventService.setDelayBeforeClosingStream(java.time.Duration.ofSeconds(10))
+        runBuildWithOptions("--bes_backend=inprocess", "--bes_upload_mode=NOWAIT_FOR_UPLOAD_COMPLETE")
+        afterBuildCommand()
+        events.assertNoWarningsOrErrors()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAfterCommand_noWaitForUploadComplete_slowHalfCloseIgnored() {
+        buildEventService.setDelayBeforeHalfClosingStream(java.time.Duration.ofSeconds(10))
+        runBuildWithOptions("--bes_backend=inprocess", "--bes_upload_mode=NOWAIT_FOR_UPLOAD_COMPLETE")
+        afterBuildCommand()
+        events.assertNoWarningsOrErrors()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBeforeSecondCommand_noWaitForUploadComplete_slowFullCloseWarning() {
+        buildEventService.setDelayBeforeClosingStream(java.time.Duration.ofSeconds(10))
+        runBuildWithOptions("--bes_backend=inprocess", "--bes_upload_mode=NOWAIT_FOR_UPLOAD_COMPLETE")
+        afterBuildCommand()
+        buildTarget()
+        events.assertContainsWarning(
+            "The background upload of the Build Event Protocol for the previous "
+                    + "invocation failed to complete in"
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBeforeSecondCommand_noWaitForUploadComplete_slowHalfCloseWarning() {
+        buildEventService.setDelayBeforeHalfClosingStream(java.time.Duration.ofSeconds(10))
+        runBuildWithOptions("--bes_backend=inprocess", "--bes_upload_mode=NOWAIT_FOR_UPLOAD_COMPLETE")
+        afterBuildCommand()
+        buildTarget()
+        events.assertContainsWarning(
+            "The background upload of the Build Event Protocol for the previous "
+                    + "invocation failed to complete in"
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBeforeSecondCommand_noWaitForUploadComplete_besTimeout_slowFullCloseWarning() {
+        buildEventService.setDelayBeforeClosingStream(java.time.Duration.ofSeconds(10))
+        runBuildWithOptions(
+            "--bes_backend=inprocess",
+            "--bes_upload_mode=NOWAIT_FOR_UPLOAD_COMPLETE",
+            "--bes_timeout=1s"
+        )
+        afterBuildCommand()
+        buildTarget()
+        events.assertContainsWarning(
+            "The background upload of the Build Event Protocol for the previous "
+                    + "invocation failed due to a network timeout"
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBeforeSecondCommand_noWaitForUpload_besTimeout_slowHalfCloseWarning() {
+        buildEventService.setDelayBeforeHalfClosingStream(java.time.Duration.ofSeconds(10))
+        runBuildWithOptions(
+            "--bes_backend=inprocess",
+            "--bes_upload_mode=NOWAIT_FOR_UPLOAD_COMPLETE",
+            "--bes_timeout=1s"
+        )
+        afterBuildCommand()
+        buildTarget()
+        events.assertContainsWarning(
+            "The background upload of the Build Event Protocol for the previous "
+                    + "invocation failed due to a network timeout"
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAfterCommand_fullyAsync() {
+        runBuildWithOptions("--bes_backend=inprocess", "--bes_upload_mode=FULLY_ASYNC")
+        afterBuildCommand()
+        events.assertNoWarningsOrErrors()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAfterCommand_buildEventFile_waitForUploadComplete(
+        @TestParameter buildEventFileType: BuildEventFileType
+    ) {
+        val outRef: AtomicReference<DelayingCloseBufferedOutputStream?> =
+            AtomicReference<DelayingCloseBufferedOutputStream?>(null)
+        buildEventOutputStreamFactory =
+            BuildEventOutputStreamFactory? { type, filePath ->
+            val out =
+                DelayingCloseBufferedOutputStream(
+                    java.nio.file.Files.newOutputStream(Path.of(filePath)), java.time.Duration.ofSeconds(1)
+                )
+            outRef.set(out)
+            out
+        }
+        buildEventService.setDelayBeforeClosingStream(java.time.Duration.ofSeconds(10))
+        val file: java.io.File = tmpFolder.newFile()
+
+        runBuildWithOptions(
+            "--bes_backend=inprocess",
+            "--bes_upload_mode=FULLY_ASYNC",
+            "--bes_timeout=1s",
+            getBuildEventFileFlag(buildEventFileType, file.getAbsolutePath()),
+            getBuildEventFileUploadModeFlag(buildEventFileType, "wait_for_upload_complete")
+        )
+        afterBuildCommand()
+
+        Truth.assertThat(outRef.get().isClosed()).isTrue()
+        // Expect Bazel doesn't wait for uploading to bes_backend, otherwise there will be a timeout
+        // error.
+        events.assertNoWarningsOrErrors()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAfterCommand_fullyAsync_slowHalfCloseIgnored() {
+        buildEventService.setDelayBeforeHalfClosingStream(java.time.Duration.ofSeconds(10))
+        runBuildWithOptions("--bes_backend=inprocess", "--bes_upload_mode=FULLY_ASYNC")
+        afterBuildCommand()
+        events.assertNoWarningsOrErrors()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBeforeSecondCommand_fullyAsync_slowFullCloseIgnored() {
+        buildEventService.setDelayBeforeClosingStream(java.time.Duration.ofSeconds(10))
+        runBuildWithOptions("--bes_backend=inprocess", "--bes_upload_mode=FULLY_ASYNC")
+        afterBuildCommand()
+        buildTarget()
+        events.assertNoWarningsOrErrors()
+    }
+
+    // TODO(b/246912214): Deflake this by fixing the threading model to match the upstream gRPC
+    // changes in https://github.com/grpc/grpc-java/pull/9319 that affect InProcessTransport.
+    @Ignore("b/246912214")
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBeforeSecondCommand_fullyAsync_slowHalfCloseWarning() {
+        buildEventService.setDelayBeforeHalfClosingStream(java.time.Duration.ofSeconds(10))
+        runBuildWithOptions("--bes_backend=inprocess", "--bes_upload_mode=FULLY_ASYNC")
+        afterBuildCommand()
+        buildTarget()
+        events.assertContainsWarning(
+            "The background upload of the Build Event Protocol for the previous "
+                    + "invocation failed to complete in"
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBeforeSecondCommand_fullyAsync_besTimeout_slowFullCloseIgnored() {
+        buildEventService.setDelayBeforeClosingStream(java.time.Duration.ofSeconds(10))
+        runBuildWithOptions(
+            "--bes_backend=inprocess", "--bes_upload_mode=FULLY_ASYNC", "--bes_timeout=1s"
+        )
+        afterBuildCommand()
+        buildTarget()
+        events.assertNoWarningsOrErrors()
+    }
+
+    // TODO(b/246912214): Deflake this by fixing the threading model to match the upstream gRPC
+    // changes in https://github.com/grpc/grpc-java/pull/9319 that affect InProcessTransport.
+    @Ignore("b/246912214")
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBeforeSecondCommand_fullyAsync_besTimeout_slowHalfCloseWarning() {
+        buildEventService.setDelayBeforeHalfClosingStream(java.time.Duration.ofSeconds(10))
+        runBuildWithOptions(
+            "--bes_backend=inprocess", "--bes_upload_mode=FULLY_ASYNC", "--bes_timeout=1s"
+        )
+        afterBuildCommand()
+        buildTarget()
+        events.assertContainsWarning(
+            "The background upload of the Build Event Protocol for the previous "
+                    + "invocation failed due to a network timeout."
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAfterCommandStreamerIsClosedNoWarning() {
+        runBuildWithOptions("--build_event_text_file=" + tmpFolder.newFile().getAbsolutePath())
+        Truth.assertThat(getBepTransports()).hasSize(1)
+        afterBuildCommand()
+        events.assertNoWarningsOrErrors()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAfterCommand_waitForUploadComplete_retryableErrorEarlyInStream() {
+        val numRetries = 3
+        buildEventService.setErrorMessageAndCode("Boom8", io.grpc.Status.UNAVAILABLE)
+        buildEventService.setErrorEarlyInStream(true)
+        runBuildWithOptions(
+            "--bes_backend=inprocess",
+            "--bes_upload_mode=WAIT_FOR_UPLOAD_COMPLETE",
+            "--build_event_upload_max_retries=" + numRetries
+        )
+        afterBuildCommand()
+        events.assertContainsError(
+            java.util.regex.Pattern.compile(
+                "The Build Event Protocol upload failed: no publishBuildEvents retry attempts left:"
+                        + " UNAVAILABLE: Boom8"
+            )
+        )
+        Truth.assertThat(buildEventService.getRequestsReceivedCount()).isEqualTo(numRetries + 1)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAfterCommand_waitForUploadComplete_permissionDeniedErrorEarlyInStream() {
+        val numRetries = 3
+        buildEventService.setErrorMessageAndCode("Boom15", io.grpc.Status.PERMISSION_DENIED)
+        buildEventService.setErrorEarlyInStream(true)
+        runBuildWithOptions(
+            "--bes_backend=inprocess",
+            "--bes_upload_mode=WAIT_FOR_UPLOAD_COMPLETE",
+            "--build_event_upload_max_retries=" + numRetries
+        )
+        afterBuildCommand()
+        events.assertContainsError(
+            java.util.regex.Pattern.compile(
+                "The Build Event Protocol upload failed: not retrying publishBuildEvents:"
+                        + " PERMISSION_DENIED: Boom15"
+            )
+        )
+        Truth.assertThat(buildEventService.getRequestsReceivedCount()).isEqualTo(1)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAfterCommand_waitForUploadComplete_invalidArgumentErrorEarlyInStream() {
+        val numRetries = 3
+        buildEventService.setErrorMessageAndCode("Boom15", io.grpc.Status.INVALID_ARGUMENT)
+        buildEventService.setErrorEarlyInStream(true)
+        runBuildWithOptions(
+            "--bes_backend=inprocess",
+            "--bes_upload_mode=WAIT_FOR_UPLOAD_COMPLETE",
+            "--build_event_upload_max_retries=" + numRetries
+        )
+        afterBuildCommand()
+        events.assertContainsError(
+            java.util.regex.Pattern.compile(
+                "The Build Event Protocol upload failed: not retrying publishBuildEvents:"
+                        + " INVALID_ARGUMENT: Boom15"
+            )
+        )
+        Truth.assertThat(buildEventService.getRequestsReceivedCount()).isEqualTo(1)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAfterCommand_waitForUploadComplete_errorOnComplete() {
+        buildEventService.setErrorMessage("Boom1")
+        runBuildWithOptions("--bes_backend=inprocess", "--bes_upload_mode=WAIT_FOR_UPLOAD_COMPLETE")
+        afterBuildCommand()
+        events.assertContainsError("The Build Event Protocol upload failed: DATA_LOSS: Boom1")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAfterCommand_waitForUploadComplete_besTimeout_errorOnComplete() {
+        buildEventService.setErrorMessage("Boom2")
+        runBuildWithOptions(
+            "--bes_backend=inprocess",
+            "--bes_upload_mode=WAIT_FOR_UPLOAD_COMPLETE",
+            "--bes_timeout=5s"
+        )
+        afterBuildCommand()
+        events.assertContainsError("The Build Event Protocol upload failed: DATA_LOSS: Boom2")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAfterCommand_noWaitForUploadComplete_errorOnComplete() {
+        buildEventService.setErrorMessage("Boom3")
+        runBuildWithOptions("--bes_backend=inprocess", "--bes_upload_mode=NOWAIT_FOR_UPLOAD_COMPLETE")
+        afterBuildCommand()
+        events.assertNoWarningsOrErrors()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBeforeSecondCommand_noWaitForUploadComplete_errorOnComplete() {
+        buildEventService.setErrorMessage("Boom4")
+        runBuildWithOptions("--bes_backend=inprocess", "--bes_upload_mode=NOWAIT_FOR_UPLOAD_COMPLETE")
+        afterBuildCommand()
+        buildTarget()
+        events.assertContainsWarning("The Build Event Protocol upload failed: DATA_LOSS: Boom4")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAfterCommand_fullyAsync_errorOnComplete() {
+        buildEventService.setErrorMessage("Boom5")
+        runBuildWithOptions("--bes_backend=inprocess", "--bes_upload_mode=FULLY_ASYNC")
+        afterBuildCommand()
+        events.assertNoWarningsOrErrors()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBeforeSecondCommand_fullyAsync_errorOnComplete() {
+        buildEventService.setErrorMessage("Boom6")
+        runBuildWithOptions("--bes_backend=inprocess", "--bes_upload_mode=FULLY_ASYNC")
+        afterBuildCommand()
+        buildTarget()
+        events.assertNoWarningsOrErrors()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCreatesStreamerForAllTransports() {
+        runBuildWithOptions(
+            "--build_event_text_file=" + tmpFolder.newFile().getAbsolutePath(),
+            "--build_event_binary_file=" + tmpFolder.newFile().getAbsolutePath(),
+            "--build_event_json_file=" + tmpFolder.newFile().getAbsolutePath(),
+            "--bes_backend=does.not.exist:1234"
+        )
+
+        Truth.assertThat(getBepTransports()).hasSize(4)
+        assertThat(getBepTransports().asList().get(0)).isInstanceOf(TextFormatFileTransport::class.java)
+        assertThat(getBepTransports().asList().get(1)).isInstanceOf(BinaryFormatFileTransport::class.java)
+        assertThat(getBepTransports().asList().get(2)).isInstanceOf(JsonFormatFileTransport::class.java)
+        assertThat(getBepTransports().asList().get(3)).isInstanceOf(BuildEventServiceTransport::class.java)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testUploaderSharing() {
+        runBuildWithOptions(
+            "--build_event_text_file=" + tmpFolder.newFile().getAbsolutePath(),
+            "--build_event_binary_file=" + tmpFolder.newFile().getAbsolutePath(),
+            "--build_event_json_file=" + tmpFolder.newFile().getAbsolutePath(),
+            "--bes_backend=does.not.exist:1234"
+        )
+
+        Truth.assertThat(getBepTransports()).hasSize(4)
+
+        val uploader: BuildEventArtifactUploader? =
+            com.google.common.collect.Iterables.getFirst<BuildEventTransport?>(getBepTransports(), null).uploader
+        assertThat(uploader).isNotNull()
+        for (transport in getBepTransports()) {
+            assertThat(uploader).isSameInstanceAs(transport.uploader)
+        }
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDoesNotCreatesStreamerWithoutTransports() {
+        runBuildWithOptions()
+        Truth.assertThat(getBepTransports()).isEmpty()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testKeywords() {
+        runBuildWithOptions()
+        val besOptions: BuildEventServiceOptions =
+            com.google.devtools.common.options.Options.getDefaults<O>(BuildEventServiceOptions::class.java)
+        besOptions.setBesKeywords(com.google.common.collect.ImmutableList.of<E?>("keyword0", "keyword1", "keyword0"))
+        besOptions.setBesSystemKeywords(
+            com.google.common.collect.ImmutableList.of<E?>("sys_keyword0", "sys_keyword1", "sys_keyword0")
+        )
+
+        assertThat(besModule.getBesKeywords("build", besOptions, null))
+            .containsExactly(
+                "protocol_name=BEP",
+                "command_name=build",
+                "user_keyword=keyword0",
+                "user_keyword=keyword1",
+                "sys_keyword0",
+                "sys_keyword1"
+            )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMakeGrpcMetadata() {
+        runBuildWithOptions()
+        val besOptions: BuildEventServiceOptions =
+            com.google.devtools.common.options.Options.getDefaults<O>(BuildEventServiceOptions::class.java)
+        val authAndTLSOptions: AuthAndTLSOptions? =
+            com.google.devtools.common.options.Options.getDefaults<O?>(AuthAndTLSOptions::class.java)
+        besOptions.besBackend = "bes-backend"
+        besOptions.besProxy = "bes-proxy"
+        besOptions.setBesHeaders(
+            com.google.common.collect.ImmutableList.of<E?>(
+                java.util.Map.entry<K?, V?>("key1", "val1"),
+                java.util.Map.entry<K?, V?>("key2", "val2"),
+                java.util.Map.entry<K?, V?>("key3", "val3"),
+                java.util.Map.entry<K?, V?>("key1", "val4")
+            )
+        )
+        val newConfig: BackendConfig? = BackendConfig.create(besOptions, authAndTLSOptions)
+
+        val metadata: io.grpc.Metadata = BazelBuildEventServiceModule.makeGrpcMetadata(newConfig)
+        Truth.assertThat(
+            metadata.get<String?>(
+                io.grpc.Metadata.Key.of<String?>(
+                    "key1",
+                    io.grpc.Metadata.ASCII_STRING_MARSHALLER
+                )
+            )
+        )
+            .isEqualTo("val4")
+        Truth.assertThat(
+            metadata.get<String?>(
+                io.grpc.Metadata.Key.of<String?>(
+                    "key2",
+                    io.grpc.Metadata.ASCII_STRING_MARSHALLER
+                )
+            )
+        )
+            .isEqualTo("val2")
+        Truth.assertThat(
+            metadata.get<String?>(
+                io.grpc.Metadata.Key.of<String?>(
+                    "key3",
+                    io.grpc.Metadata.ASCII_STRING_MARSHALLER
+                )
+            )
+        )
+            .isEqualTo("val3")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun oom_firstReportedViaHandleCrash() {
+        testOom(
+            java.lang.Runnable {
+                val oom: java.lang.OutOfMemoryError = java.lang.OutOfMemoryError()
+                // Simulates an OOM coming from GcThrashingDetector, which reports the error by calling
+                // handleCrash. Uses keepAlive() to avoid exiting the JVM and aborting the test, then
+                // throw the original oom to ensure control flow terminates.
+                BugReport.handleCrash(Crash.from(oom), CrashContext.keepAlive())
+                throw oom
             })
-        .addBlazeModule(new NoSpawnCacheModule())
-        .addBlazeModule(new CredentialModule())
-        .addBlazeModule(new PackageMetricsModule())
-        .addBlazeModule(new ControllableActionStrategyModule(spawnController, "standalone"))
-        .addBlazeModule(
-            new BazelBuildEventServiceModule() {
-              @Override
-              protected ManagedChannel newGrpcChannel(BackendConfig config) throws IOException {
-                if (config.besBackend().equals("inprocess")) {
-                  return InProcessChannelBuilder.forName(fakeServerName).build();
-                }
-                return super.newGrpcChannel(config);
-              }
-
-              @Override
-              protected Duration getMaxWaitForPreviousInvocation() {
-                return WAIT_FOR_LAST_INVOCATION_TIMEOUT;
-              }
-
-              @Override
-              BuildEventOutputStreamFactory createBuildEventOutputStreamFactory(
-                  CommandEnvironment env) {
-                return buildEventOutputStreamFactory == null
-                    ? super.createBuildEventOutputStreamFactory(env)
-                    : buildEventOutputStreamFactory;
-              }
-            });
-  }
-
-  private ImmutableSet<BuildEventTransport> bepTransports;
-  private final List<BuildEventServiceUploadCompleteEvent> besUploadCompleteEvents =
-      new ArrayList<>();
-
-  private class BepTransportLogger {
-    @Subscribe
-    @SuppressWarnings("unused")
-    public void transportsKnown(AnnounceBuildEventTransportsEvent event) {
-      bepTransports = besModule.getBepTransports();
-    }
-  }
-
-  private class BuildEventServiceUploadCompleteEventListener {
-    @Subscribe
-    @SuppressWarnings("unused")
-    public void onBuildEventServiceUploadComplete(BuildEventServiceUploadCompleteEvent event) {
-      besUploadCompleteEvents.add(event);
-    }
-  }
-
-  private ImmutableSet<BuildEventTransport> getBepTransports() {
-    return bepTransports;
-  }
-
-  private void runBuildWithOptions(String... options) throws Exception {
-    addOptions(options);
-    besModule = runtimeWrapper.getRuntime().getBlazeModule(BazelBuildEventServiceModule.class);
-    if (buildEventOutputStreamFactory != null) {
-      besModule.setBuildEventOutputStreamFactory(buildEventOutputStreamFactory);
-    }
-    runtimeWrapper.newCommand();
-    runtimeWrapper.getSkyframeExecutor().getEventBus().register(new BepTransportLogger());
-    runtimeWrapper
-        .getSkyframeExecutor()
-        .getEventBus()
-        .register(new BuildEventServiceUploadCompleteEventListener());
-    buildTarget();
-  }
-
-  private void afterBuildCommand() throws Exception {
-    runtimeWrapper.newCommand();
-  }
-
-  @Override
-  @Nullable
-  protected UncaughtExceptionHandler createUncaughtExceptionHandler() {
-    // Disable the crash handler since this test leaves runaway threads e.g. accessing shut down
-    // fakeServer.
-    return null;
-  }
-
-  @Before
-  public void setUp() throws Exception {
-    serviceRegistry.addService(
-        ServerInterceptors.intercept(
-            buildEventService, new TracingMetadataUtils.ServerHeadersInterceptor()));
-    fakeServer =
-        InProcessServerBuilder.forName(fakeServerName)
-            .fallbackHandlerRegistry(serviceRegistry)
-            .directExecutor()
-            .build()
-            .start();
-  }
-
-  @After
-  public void tearDown() throws Exception {
-    fakeServer.shutdownNow();
-    fakeServer.awaitTermination();
-    spawnController.verifyAllShimsConsumed();
-  }
-
-  @Test
-  public void testCreatesStreamerForTextFormatFileTransport() throws Exception {
-    runBuildWithOptions("--build_event_text_file=" + tmpFolder.newFile().getAbsolutePath());
-    assertThat(getBepTransports()).hasSize(1);
-    assertThat(getBepTransports().asList().get(0)).isInstanceOf(TextFormatFileTransport.class);
-  }
-
-  @Test
-  public void testCreatesStreamerForBinaryFormatFileTransport() throws Exception {
-    runBuildWithOptions("--build_event_binary_file=" + tmpFolder.newFile().getAbsolutePath());
-    assertThat(getBepTransports()).hasSize(1);
-    assertThat(getBepTransports().asList().get(0)).isInstanceOf(BinaryFormatFileTransport.class);
-  }
-
-  @Test
-  public void testCreatesStreamerForJsonFormatFileTransport() throws Exception {
-    runBuildWithOptions("--build_event_json_file=" + tmpFolder.newFile().getAbsolutePath());
-    assertThat(getBepTransports()).hasSize(1);
-    assertThat(getBepTransports().asList().get(0)).isInstanceOf(JsonFormatFileTransport.class);
-  }
-
-  @Test
-  public void testCreatesStreamerForBesTransport() throws Exception {
-    runBuildWithOptions("--bes_backend=does.not.exist:1234");
-    assertThat(getBepTransports()).hasSize(1);
-    assertThat(getBepTransports().asList().get(0)).isInstanceOf(BuildEventServiceTransport.class);
-  }
-
-  @Test
-  public void testRetryCount() throws Exception {
-    runBuildWithOptions(
-        "--bes_backend=does.not.exist:1234", "--experimental_build_event_upload_max_retries=3");
-    afterBuildCommand();
-
-    events.assertContainsError(
-        "The Build Event Protocol upload failed: all 3 publishLifecycleEvent retry attempts"
-            + " failed");
-  }
-
-  @Test
-  public void testConnectivityFailureDisablesBesStreaming() throws Exception {
-    class FailingConnectivityStatusProvider extends BlazeModule
-        implements ConnectivityStatusProvider {
-      @Override
-      public ConnectivityStatus getStatus(String service) {
-        return new ConnectivityStatus(
-            ConnectivityStatus.Status.NO_CREDENTIALS, "forced connectivity failure");
-      }
     }
 
-    connectivityModule = new FailingConnectivityStatusProvider();
-    reinitializeAndPreserveOptions();
-    addOptions("--bes_backend=does.not.exist:1234");
-    addOptions("--spawn_strategy=standalone");
-    runBuildWithOptions();
-    assertThat(getBepTransports()).isEmpty();
-  }
-
-  @Test
-  public void testCreatesStreamerForGrpcBesResultsUrl() throws Exception {
-    runBuildWithOptions(
-        "--bes_backend=inprocess",
-        "--bes_upload_mode=FULLY_ASYNC",
-        "--bes_results_url=http://results-ui/");
-
-    assertThat(getBepTransports()).hasSize(1);
-    assertThat(getBepTransports().asList().get(0)).isInstanceOf(BuildEventServiceTransport.class);
-  }
-
-  @Test
-  public void testCreatesStreamerForGrpcRunsPerTestTooHighDisablesStreaming() {
-    AbruptExitException expected =
-        assertThrows(
-            AbruptExitException.class,
-            () ->
-                runBuildWithOptions(
-                    "--bes_backend=inprocess", "--runs_per_test=" + (RUNS_PER_TEST_LIMIT + 1)));
-    assertThat(expected.getExitCode()).isEqualTo(ExitCode.COMMAND_LINE_ERROR);
-    assertThat(getBepTransports()).isEmpty();
-    assertContainsError("The value of --runs_per_test");
-  }
-
-  @Test
-  public void testBeforeCommandGrpcReportsBesResultsUrl() throws Exception {
-    runBuildWithOptions(
-        "--color=no", // disable ANSI color sequences
-        "--bes_backend=inprocess",
-        "--bes_upload_mode=FULLY_ASYNC",
-        "--bes_results_url=http://results-ui/");
-    events.assertContainsEventsInOrder(
-        "Streaming build results to: http://results-ui/", "Found 0 targets", "Found 0 targets");
-  }
-
-  @Test
-  public void testAfterCommandGrpcReportsBesResultsUrl() throws Exception {
-    runBuildWithOptions(
-        "--color=no", // disable ANSI color sequences
-        "--bes_backend=inprocess",
-        "--bes_upload_mode=FULLY_ASYNC",
-        "--bes_results_url=http://results-ui/");
-    afterBuildCommand();
-
-    events.assertContainsEventsInOrder(
-        "Streaming build results to: http://results-ui/",
-        "Found 0 targets",
-        "Found 0 targets",
-        "Streaming build results to: http://results-ui/",
-        "Streaming build results to: http://results-ui/");
-  }
-
-  @Test
-  public void testAfterCommand_waitForUploadComplete() throws Exception {
-    buildEventService.setDelayBeforeClosingStream(Duration.ZERO);
-    runBuildWithOptions(
-        "--bes_backend=inprocess",
-        "--bes_upload_mode=WAIT_FOR_UPLOAD_COMPLETE",
-        "--bes_timeout=5s");
-    afterBuildCommand();
-    events.assertNoWarningsOrErrors();
-  }
-
-  @Test
-  public void testAfterCommand_waitForUploadComplete_postsEvent() throws Exception {
-    buildEventService.setDelayBeforeClosingStream(Duration.ofMillis(100));
-    runBuildWithOptions(
-        "--bes_backend=inprocess",
-        "--bes_upload_mode=WAIT_FOR_UPLOAD_COMPLETE",
-        "--bes_timeout=5s");
-    afterBuildCommand();
-    events.assertNoWarningsOrErrors();
-    assertThat(besUploadCompleteEvents).hasSize(1);
-    assertThat(besUploadCompleteEvents.get(0).duration()).isGreaterThan(Duration.ZERO);
-  }
-
-  @Test
-  public void testAfterCommand_waitForUploadComplete_slowFullCloseError() throws Exception {
-    buildEventService.setDelayBeforeClosingStream(Duration.ofSeconds(10));
-    runBuildWithOptions(
-        "--bes_backend=inprocess",
-        "--bes_upload_mode=WAIT_FOR_UPLOAD_COMPLETE",
-        "--bes_timeout=5s");
-    ImmutableSet<BuildEventTransport> bepTransports = getBepTransports();
-    assertThat(bepTransports).hasSize(1);
-    afterBuildCommand();
-    assertContainsError("The Build Event Protocol upload timed out");
-    for (BuildEventTransport bepTransport : bepTransports) {
-      assertThat(bepTransport.close().isDone()).isTrue();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun oom_firstThrownFromSkyframe() {
+        testOom(
+            java.lang.Runnable {
+                throw java.lang.OutOfMemoryError()
+            })
     }
-  }
 
-  @Test
-  public void testAfterCommand_waitForUploadComplete_slowHalfCloseError() throws Exception {
-    buildEventService.setDelayBeforeHalfClosingStream(Duration.ofSeconds(10));
-    runBuildWithOptions(
-        "--bes_backend=inprocess",
-        "--bes_upload_mode=WAIT_FOR_UPLOAD_COMPLETE",
-        "--bes_timeout=5s");
-    afterBuildCommand();
-    assertContainsError("The Build Event Protocol upload timed out");
-  }
+    @Throws(java.lang.Exception::class)
+    private fun testOom(throwOom: java.lang.Runnable) {
+        write("foo/BUILD", "genrule(name = 'gen', outs = ['gen.out'], cmd = 'touch $@')")
+        val threwOom: AtomicBoolean = AtomicBoolean(false)
+        getSkyframeExecutor()
+            .getEvaluator()
+            .injectGraphTransformerForTesting(
+                NotifyingHelper.makeNotifyingTransformer( // To get the right configuration, some analysis has to already been done.
+                    // We're only throwing OOM here for non shareable ActionLookupData to exclude
+                    // workspace status actions, which in Skymeld mode can run without any analysis.
+                    NotifyingHelper.Listener { key: SkyKey?, type: NotifyingHelper.EventType?, order: NotifyingHelper.Order?, context: Any? ->
+                        if (key is ActionLookupData
+                            && key.valueIsShareable()
+                            && !threwOom.getAndSet(true)
+                        ) {
+                            throwOom.run()
+                        }
+                    })
+            )
+        val buildEventBinaryFile: java.io.File = tmpFolder.newFile()
+        addOptions(
+            "--build_event_binary_file=" + buildEventBinaryFile.getAbsolutePath(),
+            "--oom_message=Please build fewer targets."
+        )
 
-  @Test
-  public void testAfterCommand_noWaitForUploadComplete() throws Exception {
-    buildEventService.setDelayBeforeClosingStream(Duration.ZERO);
-    runBuildWithOptions("--bes_backend=inprocess", "--bes_upload_mode=NOWAIT_FOR_UPLOAD_COMPLETE");
-    afterBuildCommand();
-    events.assertNoWarningsOrErrors();
-  }
+        org.junit.Assert.assertThrows<java.lang.OutOfMemoryError?>(
+            java.lang.OutOfMemoryError::class.java,
+            org.junit.function.ThrowingRunnable { buildTarget("//foo:gen") })
 
-  @Test
-  public void testAfterCommand_noWaitForUploadComplete_slowFullCloseIgnored() throws Exception {
-    buildEventService.setDelayBeforeClosingStream(Duration.ofSeconds(10));
-    runBuildWithOptions("--bes_backend=inprocess", "--bes_upload_mode=NOWAIT_FOR_UPLOAD_COMPLETE");
-    afterBuildCommand();
-    events.assertNoWarningsOrErrors();
-  }
-
-  @Test
-  public void testAfterCommand_noWaitForUploadComplete_slowHalfCloseIgnored() throws Exception {
-    buildEventService.setDelayBeforeHalfClosingStream(Duration.ofSeconds(10));
-    runBuildWithOptions("--bes_backend=inprocess", "--bes_upload_mode=NOWAIT_FOR_UPLOAD_COMPLETE");
-    afterBuildCommand();
-    events.assertNoWarningsOrErrors();
-  }
-
-  @Test
-  public void testBeforeSecondCommand_noWaitForUploadComplete_slowFullCloseWarning()
-      throws Exception {
-    buildEventService.setDelayBeforeClosingStream(Duration.ofSeconds(10));
-    runBuildWithOptions("--bes_backend=inprocess", "--bes_upload_mode=NOWAIT_FOR_UPLOAD_COMPLETE");
-    afterBuildCommand();
-    buildTarget();
-    events.assertContainsWarning(
-        "The background upload of the Build Event Protocol for the previous "
-            + "invocation failed to complete in");
-  }
-
-  @Test
-  public void testBeforeSecondCommand_noWaitForUploadComplete_slowHalfCloseWarning()
-      throws Exception {
-    buildEventService.setDelayBeforeHalfClosingStream(Duration.ofSeconds(10));
-    runBuildWithOptions("--bes_backend=inprocess", "--bes_upload_mode=NOWAIT_FOR_UPLOAD_COMPLETE");
-    afterBuildCommand();
-    buildTarget();
-    events.assertContainsWarning(
-        "The background upload of the Build Event Protocol for the previous "
-            + "invocation failed to complete in");
-  }
-
-  @Test
-  public void testBeforeSecondCommand_noWaitForUploadComplete_besTimeout_slowFullCloseWarning()
-      throws Exception {
-    buildEventService.setDelayBeforeClosingStream(Duration.ofSeconds(10));
-    runBuildWithOptions(
-        "--bes_backend=inprocess",
-        "--bes_upload_mode=NOWAIT_FOR_UPLOAD_COMPLETE",
-        "--bes_timeout=1s");
-    afterBuildCommand();
-    buildTarget();
-    events.assertContainsWarning(
-        "The background upload of the Build Event Protocol for the previous "
-            + "invocation failed due to a network timeout");
-  }
-
-  @Test
-  public void testBeforeSecondCommand_noWaitForUpload_besTimeout_slowHalfCloseWarning()
-      throws Exception {
-    buildEventService.setDelayBeforeHalfClosingStream(Duration.ofSeconds(10));
-    runBuildWithOptions(
-        "--bes_backend=inprocess",
-        "--bes_upload_mode=NOWAIT_FOR_UPLOAD_COMPLETE",
-        "--bes_timeout=1s");
-    afterBuildCommand();
-    buildTarget();
-    events.assertContainsWarning(
-        "The background upload of the Build Event Protocol for the previous "
-            + "invocation failed due to a network timeout");
-  }
-
-  @Test
-  public void testAfterCommand_fullyAsync() throws Exception {
-    runBuildWithOptions("--bes_backend=inprocess", "--bes_upload_mode=FULLY_ASYNC");
-    afterBuildCommand();
-    events.assertNoWarningsOrErrors();
-  }
-
-  private static String getBuildEventFileFlag(
-      BuildEventFileType buildEventFileType, String filePath) {
-    return switch (buildEventFileType) {
-      case TEXT -> "--build_event_text_file=" + filePath;
-      case JSON -> "--build_event_json_file=" + filePath;
-      case BINARY -> "--build_event_binary_file=" + filePath;
-    };
-  }
-
-  private static String getBuildEventFileUploadModeFlag(
-      BuildEventFileType buildEventFileType, String mode) {
-    return switch (buildEventFileType) {
-      case TEXT -> "--build_event_text_file_upload_mode=" + mode;
-      case JSON -> "--build_event_json_file_upload_mode=" + mode;
-      case BINARY -> "--build_event_binary_file_upload_mode=" + mode;
-    };
-  }
-
-  @Test
-  public void testAfterCommand_buildEventFile_waitForUploadComplete(
-      @TestParameter BuildEventFileType buildEventFileType) throws Exception {
-    AtomicReference<DelayingCloseBufferedOutputStream> outRef = new AtomicReference<>(null);
-    buildEventOutputStreamFactory =
-        (type, filePath) -> {
-          var out =
-              new DelayingCloseBufferedOutputStream(
-                  Files.newOutputStream(Path.of(filePath)), Duration.ofSeconds(1));
-          outRef.set(out);
-          return out;
-        };
-    buildEventService.setDelayBeforeClosingStream(Duration.ofSeconds(10));
-    var file = tmpFolder.newFile();
-
-    runBuildWithOptions(
-        "--bes_backend=inprocess",
-        "--bes_upload_mode=FULLY_ASYNC",
-        "--bes_timeout=1s",
-        getBuildEventFileFlag(buildEventFileType, file.getAbsolutePath()),
-        getBuildEventFileUploadModeFlag(buildEventFileType, "wait_for_upload_complete"));
-    afterBuildCommand();
-
-    assertThat(outRef.get().isClosed()).isTrue();
-    // Expect Bazel doesn't wait for uploading to bes_backend, otherwise there will be a timeout
-    // error.
-    events.assertNoWarningsOrErrors();
-  }
-
-  @Test
-  public void testAfterCommand_fullyAsync_slowHalfCloseIgnored() throws Exception {
-    buildEventService.setDelayBeforeHalfClosingStream(Duration.ofSeconds(10));
-    runBuildWithOptions("--bes_backend=inprocess", "--bes_upload_mode=FULLY_ASYNC");
-    afterBuildCommand();
-    events.assertNoWarningsOrErrors();
-  }
-
-  @Test
-  public void testBeforeSecondCommand_fullyAsync_slowFullCloseIgnored() throws Exception {
-    buildEventService.setDelayBeforeClosingStream(Duration.ofSeconds(10));
-    runBuildWithOptions("--bes_backend=inprocess", "--bes_upload_mode=FULLY_ASYNC");
-    afterBuildCommand();
-    buildTarget();
-    events.assertNoWarningsOrErrors();
-  }
-
-  // TODO(b/246912214): Deflake this by fixing the threading model to match the upstream gRPC
-  // changes in https://github.com/grpc/grpc-java/pull/9319 that affect InProcessTransport.
-  @Ignore("b/246912214")
-  @Test
-  public void testBeforeSecondCommand_fullyAsync_slowHalfCloseWarning() throws Exception {
-    buildEventService.setDelayBeforeHalfClosingStream(Duration.ofSeconds(10));
-    runBuildWithOptions("--bes_backend=inprocess", "--bes_upload_mode=FULLY_ASYNC");
-    afterBuildCommand();
-    buildTarget();
-    events.assertContainsWarning(
-        "The background upload of the Build Event Protocol for the previous "
-            + "invocation failed to complete in");
-  }
-
-  @Test
-  public void testBeforeSecondCommand_fullyAsync_besTimeout_slowFullCloseIgnored()
-      throws Exception {
-    buildEventService.setDelayBeforeClosingStream(Duration.ofSeconds(10));
-    runBuildWithOptions(
-        "--bes_backend=inprocess", "--bes_upload_mode=FULLY_ASYNC", "--bes_timeout=1s");
-    afterBuildCommand();
-    buildTarget();
-    events.assertNoWarningsOrErrors();
-  }
-
-  // TODO(b/246912214): Deflake this by fixing the threading model to match the upstream gRPC
-  // changes in https://github.com/grpc/grpc-java/pull/9319 that affect InProcessTransport.
-  @Ignore("b/246912214")
-  @Test
-  public void testBeforeSecondCommand_fullyAsync_besTimeout_slowHalfCloseWarning()
-      throws Exception {
-    buildEventService.setDelayBeforeHalfClosingStream(Duration.ofSeconds(10));
-    runBuildWithOptions(
-        "--bes_backend=inprocess", "--bes_upload_mode=FULLY_ASYNC", "--bes_timeout=1s");
-    afterBuildCommand();
-    buildTarget();
-    events.assertContainsWarning(
-        "The background upload of the Build Event Protocol for the previous "
-            + "invocation failed due to a network timeout.");
-  }
-
-  @Test
-  public void testAfterCommandStreamerIsClosedNoWarning() throws Exception {
-    runBuildWithOptions("--build_event_text_file=" + tmpFolder.newFile().getAbsolutePath());
-    assertThat(getBepTransports()).hasSize(1);
-    afterBuildCommand();
-    events.assertNoWarningsOrErrors();
-  }
-
-  @Test
-  public void testAfterCommand_waitForUploadComplete_retryableErrorEarlyInStream()
-      throws Exception {
-    int numRetries = 3;
-    buildEventService.setErrorMessageAndCode("Boom8", Status.UNAVAILABLE);
-    buildEventService.setErrorEarlyInStream(true);
-    runBuildWithOptions(
-        "--bes_backend=inprocess",
-        "--bes_upload_mode=WAIT_FOR_UPLOAD_COMPLETE",
-        "--build_event_upload_max_retries=" + numRetries);
-    afterBuildCommand();
-    events.assertContainsError(
-        Pattern.compile(
-            "The Build Event Protocol upload failed: no publishBuildEvents retry attempts left:"
-                + " UNAVAILABLE: Boom8"));
-    assertThat(buildEventService.getRequestsReceivedCount()).isEqualTo(numRetries + 1);
-  }
-
-  @Test
-  public void testAfterCommand_waitForUploadComplete_permissionDeniedErrorEarlyInStream()
-      throws Exception {
-    int numRetries = 3;
-    buildEventService.setErrorMessageAndCode("Boom15", Status.PERMISSION_DENIED);
-    buildEventService.setErrorEarlyInStream(true);
-    runBuildWithOptions(
-        "--bes_backend=inprocess",
-        "--bes_upload_mode=WAIT_FOR_UPLOAD_COMPLETE",
-        "--build_event_upload_max_retries=" + numRetries);
-    afterBuildCommand();
-    events.assertContainsError(
-        Pattern.compile(
-            "The Build Event Protocol upload failed: not retrying publishBuildEvents:"
-                + " PERMISSION_DENIED: Boom15"));
-    assertThat(buildEventService.getRequestsReceivedCount()).isEqualTo(1);
-  }
-
-  @Test
-  public void testAfterCommand_waitForUploadComplete_invalidArgumentErrorEarlyInStream()
-      throws Exception {
-    int numRetries = 3;
-    buildEventService.setErrorMessageAndCode("Boom15", Status.INVALID_ARGUMENT);
-    buildEventService.setErrorEarlyInStream(true);
-    runBuildWithOptions(
-        "--bes_backend=inprocess",
-        "--bes_upload_mode=WAIT_FOR_UPLOAD_COMPLETE",
-        "--build_event_upload_max_retries=" + numRetries);
-    afterBuildCommand();
-    events.assertContainsError(
-        Pattern.compile(
-            "The Build Event Protocol upload failed: not retrying publishBuildEvents:"
-                + " INVALID_ARGUMENT: Boom15"));
-    assertThat(buildEventService.getRequestsReceivedCount()).isEqualTo(1);
-  }
-
-  @Test
-  public void testAfterCommand_waitForUploadComplete_errorOnComplete() throws Exception {
-    buildEventService.setErrorMessage("Boom1");
-    runBuildWithOptions("--bes_backend=inprocess", "--bes_upload_mode=WAIT_FOR_UPLOAD_COMPLETE");
-    afterBuildCommand();
-    events.assertContainsError("The Build Event Protocol upload failed: DATA_LOSS: Boom1");
-  }
-
-  @Test
-  public void testAfterCommand_waitForUploadComplete_besTimeout_errorOnComplete() throws Exception {
-    buildEventService.setErrorMessage("Boom2");
-    runBuildWithOptions(
-        "--bes_backend=inprocess",
-        "--bes_upload_mode=WAIT_FOR_UPLOAD_COMPLETE",
-        "--bes_timeout=5s");
-    afterBuildCommand();
-    events.assertContainsError("The Build Event Protocol upload failed: DATA_LOSS: Boom2");
-  }
-
-  @Test
-  public void testAfterCommand_noWaitForUploadComplete_errorOnComplete() throws Exception {
-    buildEventService.setErrorMessage("Boom3");
-    runBuildWithOptions("--bes_backend=inprocess", "--bes_upload_mode=NOWAIT_FOR_UPLOAD_COMPLETE");
-    afterBuildCommand();
-    events.assertNoWarningsOrErrors();
-  }
-
-  @Test
-  public void testBeforeSecondCommand_noWaitForUploadComplete_errorOnComplete() throws Exception {
-    buildEventService.setErrorMessage("Boom4");
-    runBuildWithOptions("--bes_backend=inprocess", "--bes_upload_mode=NOWAIT_FOR_UPLOAD_COMPLETE");
-    afterBuildCommand();
-    buildTarget();
-    events.assertContainsWarning("The Build Event Protocol upload failed: DATA_LOSS: Boom4");
-  }
-
-  @Test
-  public void testAfterCommand_fullyAsync_errorOnComplete() throws Exception {
-    buildEventService.setErrorMessage("Boom5");
-    runBuildWithOptions("--bes_backend=inprocess", "--bes_upload_mode=FULLY_ASYNC");
-    afterBuildCommand();
-    events.assertNoWarningsOrErrors();
-  }
-
-  @Test
-  public void testBeforeSecondCommand_fullyAsync_errorOnComplete() throws Exception {
-    buildEventService.setErrorMessage("Boom6");
-    runBuildWithOptions("--bes_backend=inprocess", "--bes_upload_mode=FULLY_ASYNC");
-    afterBuildCommand();
-    buildTarget();
-    events.assertNoWarningsOrErrors();
-  }
-
-  @Test
-  public void testCreatesStreamerForAllTransports() throws Exception {
-    runBuildWithOptions(
-        "--build_event_text_file=" + tmpFolder.newFile().getAbsolutePath(),
-        "--build_event_binary_file=" + tmpFolder.newFile().getAbsolutePath(),
-        "--build_event_json_file=" + tmpFolder.newFile().getAbsolutePath(),
-        "--bes_backend=does.not.exist:1234");
-
-    assertThat(getBepTransports()).hasSize(4);
-    assertThat(getBepTransports().asList().get(0)).isInstanceOf(TextFormatFileTransport.class);
-    assertThat(getBepTransports().asList().get(1)).isInstanceOf(BinaryFormatFileTransport.class);
-    assertThat(getBepTransports().asList().get(2)).isInstanceOf(JsonFormatFileTransport.class);
-    assertThat(getBepTransports().asList().get(3)).isInstanceOf(BuildEventServiceTransport.class);
-  }
-
-  @Test
-  public void testUploaderSharing() throws Exception {
-    runBuildWithOptions(
-        "--build_event_text_file=" + tmpFolder.newFile().getAbsolutePath(),
-        "--build_event_binary_file=" + tmpFolder.newFile().getAbsolutePath(),
-        "--build_event_json_file=" + tmpFolder.newFile().getAbsolutePath(),
-        "--bes_backend=does.not.exist:1234");
-
-    assertThat(getBepTransports()).hasSize(4);
-
-    BuildEventArtifactUploader uploader =
-            Iterables.getFirst(getBepTransports(), null).uploader;
-    assertThat(uploader).isNotNull();
-    for (BuildEventTransport transport : getBepTransports()) {
-      assertThat(uploader).isSameInstanceAs(transport.uploader);
+        val buildEvents: MutableList<BuildEvent> = java.util.ArrayList<BuildEvent>()
+        FileInputStream(buildEventBinaryFile).use { `in` ->
+            var ev: BuildEvent?
+            while ((BuildEvent.parseDelimitedFrom(`in`).also { ev = it }) != null) {
+                buildEvents.add(ev)
+            }
+        }
+        val expectedAbort: Aborted? =
+            Aborted.newBuilder()
+                .setReason(AbortReason.OUT_OF_MEMORY)
+                .setDescription(BugReport.constructOomExitMessage("Please build fewer targets."))
+                .build()
+        Truth.assertThat(buildEvents)
+            .ignoringFields(BuildEvent.LAST_MESSAGE_FIELD_NUMBER, BuildEvent.CHILDREN_FIELD_NUMBER)
+            .containsAtLeast(
+                BuildEvent.newBuilder()
+                    .setId(
+                        BuildEventId.newBuilder()
+                            .setBuildFinished(BuildFinishedId.getDefaultInstance())
+                    )
+                    .setAborted(expectedAbort)
+                    .build(),
+                BuildEvent.newBuilder()
+                    .setId(
+                        BuildEventId.newBuilder()
+                            .setTargetCompleted(
+                                TargetCompletedId.newBuilder()
+                                    .setLabel("//foo:gen")
+                                    .setConfiguration(
+                                        ConfigurationId.newBuilder()
+                                            .setId(
+                                                getConfiguredTarget("//foo:gen")
+                                                    .getConfigurationChecksum()
+                                            )
+                                    )
+                            )
+                    )
+                    .setAborted(expectedAbort)
+                    .build()
+            )
+        Truth.assertThat(runtimeWrapper.getCrashMessages())
+            .containsExactly(
+                TestConstants.PRODUCT_NAME + " is crashing: Crashed: (java.lang.OutOfMemoryError) "
+            )
+        BuildIntegrationTestCase.Companion.assertAndClearBugReporterStoredCrash(java.lang.OutOfMemoryError::class.java)
     }
-  }
 
-  @Test
-  public void testDoesNotCreatesStreamerWithoutTransports() throws Exception {
-    runBuildWithOptions();
-    assertThat(getBepTransports()).isEmpty();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun oom_besClosesAfterSpecialCaseTimeoutThrownFromSkyframe() {
+        // BES server-side will never finish. The test will pass simply by completing and not waiting
+        // until the test timeout.
+        buildEventService.setDelayBeforeClosingStream(java.time.Duration.ofHours(10))
+        write("foo/BUILD", "genrule(name = 'gen', outs = ['gen.out'], cmd = 'touch $@')")
+        val threwOom: AtomicBoolean = AtomicBoolean(false)
+        getSkyframeExecutor()
+            .getEvaluator()
+            .injectGraphTransformerForTesting(
+                NotifyingHelper.makeNotifyingTransformer(
+                    NotifyingHelper.Listener { key: SkyKey?, type: NotifyingHelper.EventType?, order: NotifyingHelper.Order?, context: Any? ->
+                        if (key is ActionLookupData && !threwOom.getAndSet(true)) {
+                            throw java.lang.OutOfMemoryError()
+                        }
+                    })
+            )
+        addOptions(
+            "--bes_backend=inprocess",
+            "--bes_upload_mode=WAIT_FOR_UPLOAD_COMPLETE",
+            "--bes_oom_finish_upload_timeout=2s",
+            "--oom_message=Please build fewer targets."
+        )
 
-  @Test
-  public void testKeywords() throws Exception {
-    runBuildWithOptions();
-    BuildEventServiceOptions besOptions = Options.getDefaults(BuildEventServiceOptions.class);
-    besOptions.setBesKeywords(ImmutableList.of("keyword0", "keyword1", "keyword0"));
-    besOptions.setBesSystemKeywords(
-        ImmutableList.of("sys_keyword0", "sys_keyword1", "sys_keyword0"));
+        org.junit.Assert.assertThrows<java.lang.OutOfMemoryError?>(
+            java.lang.OutOfMemoryError::class.java,
+            org.junit.function.ThrowingRunnable { buildTarget("//foo:gen") })
 
-    assertThat(besModule.getBesKeywords("build", besOptions, null))
-        .containsExactly(
-            "protocol_name=BEP",
-            "command_name=build",
-            "user_keyword=keyword0",
-            "user_keyword=keyword1",
-            "sys_keyword0",
-            "sys_keyword1");
-  }
-
-  @Test
-  public void testMakeGrpcMetadata() throws Exception {
-    runBuildWithOptions();
-    BuildEventServiceOptions besOptions = Options.getDefaults(BuildEventServiceOptions.class);
-    AuthAndTLSOptions authAndTLSOptions = Options.getDefaults(AuthAndTLSOptions.class);
-    besOptions.besBackend = "bes-backend";
-    besOptions.besProxy = "bes-proxy";
-    besOptions.setBesHeaders(
-        ImmutableList.of(
-            Map.entry("key1", "val1"),
-            Map.entry("key2", "val2"),
-            Map.entry("key3", "val3"),
-            Map.entry("key1", "val4")));
-    BackendConfig newConfig = BackendConfig.create(besOptions, authAndTLSOptions);
-
-    Metadata metadata = BazelBuildEventServiceModule.makeGrpcMetadata(newConfig);
-    assertThat(metadata.get(Metadata.Key.of("key1", Metadata.ASCII_STRING_MARSHALLER)))
-        .isEqualTo("val4");
-    assertThat(metadata.get(Metadata.Key.of("key2", Metadata.ASCII_STRING_MARSHALLER)))
-        .isEqualTo("val2");
-    assertThat(metadata.get(Metadata.Key.of("key3", Metadata.ASCII_STRING_MARSHALLER)))
-        .isEqualTo("val3");
-  }
-
-  @Test
-  public void oom_firstReportedViaHandleCrash() throws Exception {
-    testOom(
-        () -> {
-          OutOfMemoryError oom = new OutOfMemoryError();
-          // Simulates an OOM coming from GcThrashingDetector, which reports the error by calling
-          // handleCrash. Uses keepAlive() to avoid exiting the JVM and aborting the test, then
-          // throw the original oom to ensure control flow terminates.
-          BugReport.handleCrash(Crash.from(oom), CrashContext.keepAlive());
-          throw oom;
-        });
-  }
-
-  @Test
-  public void oom_firstThrownFromSkyframe() throws Exception {
-    testOom(
-        () -> {
-          throw new OutOfMemoryError();
-        });
-  }
-
-  private void testOom(Runnable throwOom) throws Exception {
-    write("foo/BUILD", "genrule(name = 'gen', outs = ['gen.out'], cmd = 'touch $@')");
-    AtomicBoolean threwOom = new AtomicBoolean(false);
-    getSkyframeExecutor()
-        .getEvaluator()
-        .injectGraphTransformerForTesting(
-            NotifyingHelper.makeNotifyingTransformer(
-                // To get the right configuration, some analysis has to already been done.
-                // We're only throwing OOM here for non shareable ActionLookupData to exclude
-                // workspace status actions, which in Skymeld mode can run without any analysis.
-                (key, type, order, context) -> {
-                  if (key instanceof ActionLookupData
-                      && key.valueIsShareable()
-                      && !threwOom.getAndSet(true)) {
-                    throwOom.run();
-                  }
-                }));
-    File buildEventBinaryFile = tmpFolder.newFile();
-    addOptions(
-        "--build_event_binary_file=" + buildEventBinaryFile.getAbsolutePath(),
-        "--oom_message=Please build fewer targets.");
-
-    assertThrows(OutOfMemoryError.class, () -> buildTarget("//foo:gen"));
-
-    List<BuildEvent> buildEvents = new ArrayList<>();
-    try (InputStream in = new FileInputStream(buildEventBinaryFile)) {
-      BuildEvent ev;
-      while ((ev = BuildEvent.parseDelimitedFrom(in)) != null) {
-        buildEvents.add(ev);
-      }
+        Truth.assertThat(runtimeWrapper.getCrashMessages())
+            .containsExactly(
+                TestConstants.PRODUCT_NAME + " is crashing: Crashed: (java.lang.OutOfMemoryError) "
+            )
+        BuildIntegrationTestCase.Companion.assertAndClearBugReporterStoredCrash(java.lang.OutOfMemoryError::class.java)
     }
-    Aborted expectedAbort =
-        Aborted.newBuilder()
-            .setReason(AbortReason.OUT_OF_MEMORY)
-            .setDescription(BugReport.constructOomExitMessage("Please build fewer targets."))
-            .build();
-    assertThat(buildEvents)
-        .ignoringFields(BuildEvent.LAST_MESSAGE_FIELD_NUMBER, BuildEvent.CHILDREN_FIELD_NUMBER)
-        .containsAtLeast(
-            BuildEvent.newBuilder()
-                .setId(
-                    BuildEventId.newBuilder()
-                        .setBuildFinished(BuildFinishedId.getDefaultInstance()))
-                .setAborted(expectedAbort)
-                .build(),
-            BuildEvent.newBuilder()
-                .setId(
-                    BuildEventId.newBuilder()
-                        .setTargetCompleted(
-                            TargetCompletedId.newBuilder()
-                                .setLabel("//foo:gen")
-                                .setConfiguration(
-                                    ConfigurationId.newBuilder()
-                                        .setId(
-                                            getConfiguredTarget("//foo:gen")
-                                                .getConfigurationChecksum()))))
-                .setAborted(expectedAbort)
-                .build());
-    assertThat(runtimeWrapper.getCrashMessages())
-        .containsExactly(
-            TestConstants.PRODUCT_NAME + " is crashing: Crashed: (java.lang.OutOfMemoryError) ");
-    assertAndClearBugReporterStoredCrash(OutOfMemoryError.class);
-  }
 
-  @Test
-  public void oom_besClosesAfterSpecialCaseTimeoutThrownFromSkyframe() throws Exception {
-    // BES server-side will never finish. The test will pass simply by completing and not waiting
-    // until the test timeout.
-    buildEventService.setDelayBeforeClosingStream(Duration.ofHours(10));
-    write("foo/BUILD", "genrule(name = 'gen', outs = ['gen.out'], cmd = 'touch $@')");
-    AtomicBoolean threwOom = new AtomicBoolean(false);
-    getSkyframeExecutor()
-        .getEvaluator()
-        .injectGraphTransformerForTesting(
-            NotifyingHelper.makeNotifyingTransformer(
-                (key, type, order, context) -> {
-                  if (key instanceof ActionLookupData && !threwOom.getAndSet(true)) {
-                    throw new OutOfMemoryError();
-                  }
-                }));
-    addOptions(
-        "--bes_backend=inprocess",
-        "--bes_upload_mode=WAIT_FOR_UPLOAD_COMPLETE",
-        "--bes_oom_finish_upload_timeout=2s",
-        "--oom_message=Please build fewer targets.");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun commandLineEvents_includesFlagsFromFlagsets() {
+        write(
+            "hello/BUILD",
+            """
+        genrule(name = "hello", outs = ["hello.out"], cmd = "touch ${'$'}@")
+        
+        """.trimIndent()
+        )
 
-    assertThrows(OutOfMemoryError.class, () -> buildTarget("//foo:gen"));
-
-    assertThat(runtimeWrapper.getCrashMessages())
-        .containsExactly(
-            TestConstants.PRODUCT_NAME + " is crashing: Crashed: (java.lang.OutOfMemoryError) ");
-    assertAndClearBugReporterStoredCrash(OutOfMemoryError.class);
-  }
-
-  @Test
-  public void commandLineEvents_includesFlagsFromFlagsets() throws Exception {
-    write(
-        "hello/BUILD",
-        """
-        genrule(name = "hello", outs = ["hello.out"], cmd = "touch $@")
-        """);
-
-    write(
-        "flag/flag_def.bzl",
-"""
+        write(
+            "flag/flag_def.bzl",
+            """
 string_flag = rule(
   implementation = lambda ctx: [],
   build_setting = config.string(flag = True),
 )
-""");
-    write(
-        "flag/BUILD",
-"""
+
+""".trimIndent()
+        )
+        write(
+            "flag/BUILD",
+            """
 load(":flag_def.bzl", "string_flag")
 string_flag(
   name = "my_flag",
   build_setting_default = "default_value",
 )
-""");
-    writeProjectSclDefinition("test/project_proto.scl", /* alsoWriteBuildFile= */ true);
-    write(
-        "hello/PROJECT.scl",
-"""
+
+""".trimIndent()
+        )
+        writeProjectSclDefinition("test/project_proto.scl",  /* alsoWriteBuildFile= */true)
+        write(
+            "hello/PROJECT.scl",
+            """
 load(
   "//test:project_proto.scl",
   "buildable_unit_pb2",
@@ -962,82 +961,91 @@ project = project_pb2.Project.create(
       )
   ],
 )
-""");
-    File buildEventBinaryFile = tmpFolder.newFile();
-    addOptions(
-        "--enforce_project_configs",
-        "--build_event_binary_file=" + buildEventBinaryFile.getAbsolutePath());
-    buildTarget("//hello:hello");
 
-    BuildEvent canonicalCommandLineEvent =
-        findEventInBep(
-            buildEventBinaryFile,
-            (e) ->
-                e.getStructuredCommandLine().getCommandLineLabel().equals("canonical") ? e : null);
-    ImmutableList<CommandLineSection> sections =
-        canonicalCommandLineEvent.getStructuredCommandLine().getSectionsList().stream()
-            .filter(s -> s.getSectionLabel().equals("command options"))
-            .collect(toImmutableList());
+""".trimIndent()
+        )
+        val buildEventBinaryFile: java.io.File = tmpFolder.newFile()
+        addOptions(
+            "--enforce_project_configs",
+            "--build_event_binary_file=" + buildEventBinaryFile.getAbsolutePath()
+        )
+        buildTarget("//hello:hello")
 
-    ImmutableList<String> options =
-        sections.getFirst().getOptionList().getOptionList().stream()
-            .map(Option::getCombinedForm)
-            .collect(toImmutableList());
-    assertThat(options).contains("--define=foo=bar");
-    assertThat(options).contains("--//flag:my_flag=my_value");
-  }
+        val canonicalCommandLineEvent: BuildEvent =
+            Companion.findEventInBep(
+                buildEventBinaryFile,
+                java.util.function.Function { e: BuildEvent? ->
+                    if (e.getStructuredCommandLine().getCommandLineLabel().equals("canonical")) e else null
+                })
+        val sections: com.google.common.collect.ImmutableList<CommandLineSection?> =
+            canonicalCommandLineEvent.getStructuredCommandLine().getSectionsList().stream()
+                .filter({ s -> s.getSectionLabel().equals("command options") })
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
 
-  @Test
-  public void bzlMetrics(
-      @TestParameter boolean publishPackageMetrics, @TestParameter boolean recordAllPackageMetrics)
-      throws Exception {
-    // In bazel there are other bzl files loaded for repo rules, so just skip.
-    assume().that(AnalysisMock.get().isThisBazel()).isFalse();
+        val options: com.google.common.collect.ImmutableList<String>? =
+            sections.getFirst().getOptionList().getOptionList().stream()
+                .map(Option::getCombinedForm)
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<E?>())
+        Truth.assertThat(options).contains("--define=foo=bar")
+        Truth.assertThat(options).contains("--//flag:my_flag=my_value")
+    }
 
-    long smallBzlSize = write("foo/small.bzl", "A = 1").getFileSize();
-    long bigBzlSize = write("foo/big.bzl", "B = 123456789").getFileSize();
-    write(
-        "foo/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun bzlMetrics(
+        @TestParameter publishPackageMetrics: Boolean, @TestParameter recordAllPackageMetrics: Boolean
+    ) {
+        // In bazel there are other bzl files loaded for repo rules, so just skip.
+        TruthJUnit.assume().that(AnalysisMock.get().isThisBazel()).isFalse()
+
+        val smallBzlSize: Long = write("foo/small.bzl", "A = 1").getFileSize()
+        val bigBzlSize: Long = write("foo/big.bzl", "B = 123456789").getFileSize()
+        write(
+            "foo/BUILD",
+            """
         load(":small.bzl", "A")
         load(":big.bzl", "B")
         filegroup(name = "empty")
-        """);
-    File buildEventBinaryFile = tmpFolder.newFile();
-    addOptions(
-        "--build_event_binary_file=" + buildEventBinaryFile.getAbsolutePath(),
-        "--experimental_publish_package_metrics_in_bep=" + publishPackageMetrics,
-        "--record_metrics_for_all_packages=" + recordAllPackageMetrics,
-        "--log_top_n_packages=1");
+        
+        """.trimIndent()
+        )
+        val buildEventBinaryFile: java.io.File = tmpFolder.newFile()
+        addOptions(
+            "--build_event_binary_file=" + buildEventBinaryFile.getAbsolutePath(),
+            "--experimental_publish_package_metrics_in_bep=" + publishPackageMetrics,
+            "--record_metrics_for_all_packages=" + recordAllPackageMetrics,
+            "--log_top_n_packages=1"
+        )
 
-    buildTarget("//foo:empty");
+        buildTarget("//foo:empty")
 
-    BzlMetrics bzlMetrics = getBuildMetrics(buildEventBinaryFile).getBzlMetrics();
+        val bzlMetrics: BzlMetrics = getBuildMetrics(buildEventBinaryFile).getBzlMetrics()
 
-    if (!publishPackageMetrics) {
-      assertThat(bzlMetrics).isEqualToDefaultInstance();
-      return;
+        if (!publishPackageMetrics) {
+            assertThat(bzlMetrics).isEqualToDefaultInstance()
+            return
+        }
+
+        val bigBzlMetrics: BzlFileMetrics? =
+            BzlFileMetrics.newBuilder().setPath("foo/big.bzl").setSize(bigBzlSize).build()
+        val smallBzlMetrics: BzlFileMetrics? =
+            BzlFileMetrics.newBuilder().setPath("foo/small.bzl").setSize(smallBzlSize).build()
+
+        if (recordAllPackageMetrics) {
+            assertThat(bzlMetrics.getBzlFileMetricsList())
+                .containsExactly(bigBzlMetrics, smallBzlMetrics)
+        } else {
+            assertThat(bzlMetrics.getBzlFileMetricsList()).containsExactly(bigBzlMetrics)
+        }
+        assertThat(bzlMetrics.getBzlFileCount()).isEqualTo(2)
     }
 
-    BzlFileMetrics bigBzlMetrics =
-        BzlFileMetrics.newBuilder().setPath("foo/big.bzl").setSize(bigBzlSize).build();
-    BzlFileMetrics smallBzlMetrics =
-        BzlFileMetrics.newBuilder().setPath("foo/small.bzl").setSize(smallBzlSize).build();
-
-    if (recordAllPackageMetrics) {
-      assertThat(bzlMetrics.getBzlFileMetricsList())
-          .containsExactly(bigBzlMetrics, smallBzlMetrics);
-    } else {
-      assertThat(bzlMetrics.getBzlFileMetricsList()).containsExactly(bigBzlMetrics);
-    }
-    assertThat(bzlMetrics.getBzlFileCount()).isEqualTo(2);
-  }
-
-  @Test
-  public void starlarkProviderMetrics() throws Exception {
-    write(
-        "foo/defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkProviderMetrics() {
+        write(
+            "foo/defs.bzl",
+            """
         A = provider()
         B = provider(fields = ["x", "y"])
 
@@ -1049,203 +1057,261 @@ project = project_pb2.Project.create(
           ]
 
         my_rule = rule(implementation = _impl)
-        """);
-    write(
-        "foo/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        write(
+            "foo/BUILD",
+            """
         load(":defs.bzl", "my_rule")
         my_rule(name = "example")
-        """);
-    File buildEventBinaryFile = tmpFolder.newFile();
-    addOptions(
-        "--build_event_binary_file=" + buildEventBinaryFile.getAbsolutePath(),
-        "--experimental_record_skyframe_metrics");
+        
+        """.trimIndent()
+        )
+        val buildEventBinaryFile: java.io.File = tmpFolder.newFile()
+        addOptions(
+            "--build_event_binary_file=" + buildEventBinaryFile.getAbsolutePath(),
+            "--experimental_record_skyframe_metrics"
+        )
 
-    buildTarget("//foo:example");
+        buildTarget("//foo:example")
 
-    ImmutableMap<String, StalarkProvider> starlarkProviderStats =
-        Maps.uniqueIndex(
-            getBuildMetrics(buildEventBinaryFile)
-                .getBuildGraphMetrics()
-                .getStarlarkProviderStats()
-                .getProvidersList(),
-            StalarkProvider::getName);
-    assertThat(starlarkProviderStats.keySet()).containsExactly("A", "B");
-    assertThat(starlarkProviderStats.get("A").getLocation()).startsWith("foo/defs.bzl:1");
-    assertThat(starlarkProviderStats.get("A").hasSchema()).isFalse();
-    assertThat(starlarkProviderStats.get("B").getLocation()).startsWith("foo/defs.bzl:2");
-    assertThat(starlarkProviderStats.get("B").getSchema().getFieldCount()).isEqualTo(2);
-  }
-
-  private static final class DelayingCloseBufferedOutputStream extends BufferedOutputStream {
-    private final Duration delay;
-    private final AtomicBoolean closed = new AtomicBoolean(false);
-
-    DelayingCloseBufferedOutputStream(OutputStream out, Duration delay) {
-      super(out);
-      this.delay = delay;
-      this.out = out;
+        val starlarkProviderStats: com.google.common.collect.ImmutableMap<String?, StalarkProvider?> =
+            com.google.common.collect.Maps.uniqueIndex(
+                getBuildMetrics(buildEventBinaryFile)
+                    .getBuildGraphMetrics()
+                    .getStarlarkProviderStats()
+                    .getProvidersList(),
+                StalarkProvider::getName
+            )
+        Truth.assertThat(starlarkProviderStats.keys).containsExactly("A", "B")
+        assertThat(starlarkProviderStats.get("A").getLocation()).startsWith("foo/defs.bzl:1")
+        assertThat(starlarkProviderStats.get("A").hasSchema()).isFalse()
+        assertThat(starlarkProviderStats.get("B").getLocation()).startsWith("foo/defs.bzl:2")
+        assertThat(starlarkProviderStats.get("B").getSchema().getFieldCount()).isEqualTo(2)
     }
 
-    @Override
-    public void close() throws IOException {
-      Uninterruptibles.sleepUninterruptibly(delay);
-      super.close();
-      closed.set(true);
-    }
+    private class DelayingCloseBufferedOutputStream(out: java.io.OutputStream?, delay: java.time.Duration) :
+        BufferedOutputStream(out) {
+        private val delay: java.time.Duration
+        private val closed: AtomicBoolean = AtomicBoolean(false)
 
-    public boolean isClosed() {
-      return closed.get();
-    }
-  }
-
-  @Test
-  public void testMultipleActionsSingleTarget() throws Exception {
-    write(
-        "foo/defs.bzl",
-        """
-        def _multi_action_rule_impl(ctx):
-            outputs = []
-            for i, out_name in enumerate(ctx.attr.out_names):
-                out_file = ctx.actions.declare_file(out_name)
-                outputs.append(out_file)
-                ctx.actions.run_shell(
-                    outputs = [out_file],
-                    command = "echo action %d > %s" % (i, out_file.path),
-                    mnemonic = "MyAction%d" % i,
-                )
-            return [DefaultInfo(files = depset(outputs))]
-
-        multi_action_rule = rule(
-            implementation = _multi_action_rule_impl,
-            attrs = {
-                "out_names": attr.string_list(),
-            },
-        )
-        """);
-    write(
-        "foo/BUILD",
-        """
-        load(":defs.bzl", "multi_action_rule")
-        multi_action_rule(
-            name = "my_target",
-            out_names = ["out1.txt", "out2.txt"],
-        )
-        """);
-
-    buildTarget("//foo:my_target");
-    events.assertNoWarningsOrErrors();
-  }
-
-  @Test
-  public void testSeverityErrorSelection() throws Exception {
-    write(
-        "foo/defs.bzl",
-        """
-        def _multi_action_rule_impl(ctx):
-            outputs = []
-            for i, out_name in enumerate(ctx.attr.out_names):
-                out_file = ctx.actions.declare_file(out_name)
-                outputs.append(out_file)
-                ctx.actions.run_shell(
-                    outputs = [out_file],
-                    command = "echo action %d > %s" % (i, out_file.path),
-                    mnemonic = "MyAction%d" % i,
-                )
-            return [DefaultInfo(files = depset(outputs))]
-
-        multi_action_rule = rule(
-            implementation = _multi_action_rule_impl,
-            attrs = {
-                "out_names": attr.string_list(),
-            },
-        )
-        """);
-    write(
-        "foo/BUILD",
-        """
-        load(":defs.bzl", "multi_action_rule")
-        multi_action_rule(
-            name = "my_target",
-            out_names = ["out1.txt", "out2.txt"],
-        )
-        """);
-
-    spawnController.addSpawnShim(
-        "MyAction0 foo/out1.txt",
-        (spawn, context) ->
-            ExecResult.ofException(
-                new SpawnExecException(
-                    "Action 0 failed",
-                    new SpawnResult.Builder()
-                        .setRunnerName("local")
-                        .setStatus(SpawnResult.Status.NON_ZERO_EXIT)
-                        .setExitCode(1)
-                        .setFailureDetail(
-                            FailureDetail.newBuilder()
-                                .setMessage("Action 0 failed")
-                                .setSpawn(Spawn.newBuilder().setCode(Code.NON_ZERO_EXIT))
-                                .build())
-                        .build(),
-                    /* forciblyRunRemotely= */ false,
-                    /* catastrophe= */ false)));
-
-    // EXECUTION_FAILED is an infrastructure error and should be prioritized over NON_ZERO_EXIT.
-    spawnController.addSpawnShim(
-        "MyAction1 foo/out2.txt",
-        (spawn, context) ->
-            ExecResult.ofException(
-                new SpawnExecException(
-                    "Action 1 failed",
-                    new SpawnResult.Builder()
-                        .setRunnerName("local")
-                        .setStatus(SpawnResult.Status.EXECUTION_FAILED)
-                        .setExitCode(34)
-                        .setFailureDetail(
-                            FailureDetail.newBuilder()
-                                .setMessage("Action 1 failed")
-                                .setSpawn(Spawn.newBuilder().setCode(Code.EXECUTION_FAILED))
-                                .build())
-                        .build(),
-                    /* forciblyRunRemotely= */ false,
-                    /* catastrophe= */ false)));
-
-    File bep = tmpFolder.newFile();
-    addOptions(
-        "--keep_going",
-        "--spawn_strategy=standalone",
-        "--build_event_binary_file=" + bep.getAbsolutePath(),
-        "--bes_upload_mode=WAIT_FOR_UPLOAD_COMPLETE");
-
-    assertThrows(BuildFailedException.class, () -> buildTarget("//foo:my_target"));
-    afterBuildCommand();
-
-    BuildFinished buildFinished = findBuildFinishedEvent(bep);
-    assertThat(buildFinished).isNotNull();
-    assertThat(buildFinished.getFailureDetail().getSpawn().getCode())
-        .isEqualTo(Code.EXECUTION_FAILED);
-  }
-
-  private static BuildFinished findBuildFinishedEvent(File bep) throws IOException {
-    return findEventInBep(bep, ev -> ev.hasFinished() ? ev.getFinished() : null);
-  }
-
-  private static BuildMetrics getBuildMetrics(File buildEventBinaryFile) throws IOException {
-    return findEventInBep(
-        buildEventBinaryFile, ev -> ev.hasBuildMetrics() ? ev.getBuildMetrics() : null);
-  }
-
-  private static <T extends MessageLite> T findEventInBep(
-      File bep, Function<BuildEvent, T> extractor) throws IOException {
-    try (InputStream in = new FileInputStream(bep)) {
-      BuildEvent ev;
-      while ((ev = BuildEvent.parseDelimitedFrom(in)) != null) {
-        @Nullable T extracted = extractor.apply(ev);
-        if (extracted != null) {
-          return extracted;
+        init {
+            this.delay = delay
+            this.out = out
         }
-      }
+
+        @Throws(IOException::class)
+        override fun close() {
+            com.google.common.util.concurrent.Uninterruptibles.sleepUninterruptibly(delay)
+            super.close()
+            closed.set(true)
+        }
+
+        fun isClosed(): Boolean {
+            return closed.get()
+        }
     }
-    throw new NoSuchElementException();
-  }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMultipleActionsSingleTarget() {
+        write(
+            "foo/defs.bzl",
+            """
+        def _multi_action_rule_impl(ctx):
+            outputs = []
+            for i, out_name in enumerate(ctx.attr.out_names):
+                out_file = ctx.actions.declare_file(out_name)
+                outputs.append(out_file)
+                ctx.actions.run_shell(
+                    outputs = [out_file],
+                    command = "echo action %d > %s" % (i, out_file.path),
+                    mnemonic = "MyAction%d" % i,
+                )
+            return [DefaultInfo(files = depset(outputs))]
+
+        multi_action_rule = rule(
+            implementation = _multi_action_rule_impl,
+            attrs = {
+                "out_names": attr.string_list(),
+            },
+        )
+        
+        """.trimIndent()
+        )
+        write(
+            "foo/BUILD",
+            """
+        load(":defs.bzl", "multi_action_rule")
+        multi_action_rule(
+            name = "my_target",
+            out_names = ["out1.txt", "out2.txt"],
+        )
+        
+        """.trimIndent()
+        )
+
+        buildTarget("//foo:my_target")
+        events.assertNoWarningsOrErrors()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSeverityErrorSelection() {
+        write(
+            "foo/defs.bzl",
+            """
+        def _multi_action_rule_impl(ctx):
+            outputs = []
+            for i, out_name in enumerate(ctx.attr.out_names):
+                out_file = ctx.actions.declare_file(out_name)
+                outputs.append(out_file)
+                ctx.actions.run_shell(
+                    outputs = [out_file],
+                    command = "echo action %d > %s" % (i, out_file.path),
+                    mnemonic = "MyAction%d" % i,
+                )
+            return [DefaultInfo(files = depset(outputs))]
+
+        multi_action_rule = rule(
+            implementation = _multi_action_rule_impl,
+            attrs = {
+                "out_names": attr.string_list(),
+            },
+        )
+        
+        """.trimIndent()
+        )
+        write(
+            "foo/BUILD",
+            """
+        load(":defs.bzl", "multi_action_rule")
+        multi_action_rule(
+            name = "my_target",
+            out_names = ["out1.txt", "out2.txt"],
+        )
+        
+        """.trimIndent()
+        )
+
+        spawnController.addSpawnShim(
+            "MyAction0 foo/out1.txt",
+            SpawnShim { spawn: Spawn?, context: ActionExecutionContext? ->
+                ExecResult.ofException(
+                    SpawnExecException(
+                        "Action 0 failed",
+                        Builder()
+                            .setRunnerName("local")
+                            .setStatus(SpawnResult.Status.NON_ZERO_EXIT)
+                            .setExitCode(1)
+                            .setFailureDetail(
+                                FailureDetail.newBuilder()
+                                    .setMessage("Action 0 failed")
+                                    .setSpawn(Spawn.newBuilder().setCode(Code.NON_ZERO_EXIT))
+                                    .build()
+                            )
+                            .build(),  /* forciblyRunRemotely= */
+                        false,  /* catastrophe= */
+                        false
+                    )
+                )
+            })
+
+        // EXECUTION_FAILED is an infrastructure error and should be prioritized over NON_ZERO_EXIT.
+        spawnController.addSpawnShim(
+            "MyAction1 foo/out2.txt",
+            SpawnShim { spawn: Spawn?, context: ActionExecutionContext? ->
+                ExecResult.ofException(
+                    SpawnExecException(
+                        "Action 1 failed",
+                        Builder()
+                            .setRunnerName("local")
+                            .setStatus(SpawnResult.Status.EXECUTION_FAILED)
+                            .setExitCode(34)
+                            .setFailureDetail(
+                                FailureDetail.newBuilder()
+                                    .setMessage("Action 1 failed")
+                                    .setSpawn(Spawn.newBuilder().setCode(Code.EXECUTION_FAILED))
+                                    .build()
+                            )
+                            .build(),  /* forciblyRunRemotely= */
+                        false,  /* catastrophe= */
+                        false
+                    )
+                )
+            })
+
+        val bep: java.io.File = tmpFolder.newFile()
+        addOptions(
+            "--keep_going",
+            "--spawn_strategy=standalone",
+            "--build_event_binary_file=" + bep.getAbsolutePath(),
+            "--bes_upload_mode=WAIT_FOR_UPLOAD_COMPLETE"
+        )
+
+        org.junit.Assert.assertThrows<T?>(
+            BuildFailedException::class.java,
+            org.junit.function.ThrowingRunnable { buildTarget("//foo:my_target") })
+        afterBuildCommand()
+
+        val buildFinished: BuildFinished = findBuildFinishedEvent(bep)
+        assertThat(buildFinished).isNotNull()
+        assertThat(buildFinished.getFailureDetail().getSpawn().getCode())
+            .isEqualTo(Code.EXECUTION_FAILED)
+    }
+
+    companion object {
+        private val WAIT_FOR_LAST_INVOCATION_TIMEOUT: java.time.Duration? = java.time.Duration.ofSeconds(2)
+
+        private fun getBuildEventFileFlag(
+            buildEventFileType: BuildEventFileType, filePath: String?
+        ): String {
+            return when (buildEventFileType) {
+                TEXT -> "--build_event_text_file=" + filePath
+                JSON -> "--build_event_json_file=" + filePath
+                BINARY -> "--build_event_binary_file=" + filePath
+            }
+        }
+
+        private fun getBuildEventFileUploadModeFlag(
+            buildEventFileType: BuildEventFileType, mode: String?
+        ): String {
+            return when (buildEventFileType) {
+                TEXT -> "--build_event_text_file_upload_mode=" + mode
+                JSON -> "--build_event_json_file_upload_mode=" + mode
+                BINARY -> "--build_event_binary_file_upload_mode=" + mode
+            }
+        }
+
+        @Throws(IOException::class)
+        private fun findBuildFinishedEvent(bep: java.io.File): BuildFinished {
+            return Companion.findEventInBep(
+                bep,
+                java.util.function.Function { ev: BuildEvent? -> if (ev.hasFinished()) ev.getFinished() else null })
+        }
+
+        @Throws(IOException::class)
+        private fun getBuildMetrics(buildEventBinaryFile: java.io.File): BuildMetrics {
+            return Companion.findEventInBep(
+                buildEventBinaryFile,
+                java.util.function.Function { ev: BuildEvent? -> if (ev.hasBuildMetrics()) ev.getBuildMetrics() else null })
+        }
+
+        @Throws(IOException::class)
+        private fun <T : MessageLite?> findEventInBep(
+            bep: java.io.File, extractor: java.util.function.Function<BuildEvent?, T?>
+        ): T? {
+            FileInputStream(bep).use { `in` ->
+                var ev: BuildEvent?
+                while ((BuildEvent.parseDelimitedFrom(`in`).also { ev = it }) != null) {
+                    val extracted: T? = extractor.apply(ev)
+                    if (extracted != null) {
+                        return extracted
+                    }
+                }
+            }
+            throw java.util.NoSuchElementException()
+        }
+    }
 }

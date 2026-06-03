@@ -11,38 +11,34 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.exec;
+package com.google.devtools.build.lib.exec
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.exec.ExecutionOptions.LocalTestJobsConverter
 
-import com.google.devtools.build.lib.exec.ExecutionOptions.LocalTestJobsConverter;
-import com.google.devtools.common.options.OptionsParsingException;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests [com.google.devtools.build.lib.exec.ExecutionOptions.LocalTestJobsConverter].  */
+@RunWith(JUnit4::class)
+class LocalTestJobsTest {
+    private var localTestJobsConverter: LocalTestJobsConverter? = null
 
-/** Tests {@link com.google.devtools.build.lib.exec.ExecutionOptions.LocalTestJobsConverter}. */
-@RunWith(JUnit4.class)
-public class LocalTestJobsTest {
+    @Before
+    @Throws(OptionsParsingException::class)
+    fun setUp() {
+        localTestJobsConverter = LocalTestJobsConverter()
+    }
 
-  private LocalTestJobsConverter localTestJobsConverter;
+    @org.junit.Test
+    @Throws(OptionsParsingException::class)
+    fun testLocalTestJobsMustBePositive() {
+        val thrown: OptionsParsingException? =
+            org.junit.Assert.assertThrows<OptionsParsingException?>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable { localTestJobsConverter.convert("-1") })
+        Truth.assertThat(thrown).hasMessageThat().contains("must be at least 0")
+    }
 
-  @Before
-  public void setUp() throws OptionsParsingException {
-    localTestJobsConverter = new LocalTestJobsConverter();
-  }
-
-  @Test
-  public void testLocalTestJobsMustBePositive() throws OptionsParsingException {
-    OptionsParsingException thrown =
-        assertThrows(OptionsParsingException.class, () -> localTestJobsConverter.convert("-1"));
-    assertThat(thrown).hasMessageThat().contains("must be at least 0");
-  }
-
-  @Test
-  public void testLocalTestJobsAutoIsZero() throws OptionsParsingException {
-    assertThat(localTestJobsConverter.convert("auto")).isEqualTo(0);
-  }
+    @org.junit.Test
+    @Throws(OptionsParsingException::class)
+    fun testLocalTestJobsAutoIsZero() {
+        assertThat(localTestJobsConverter.convert("auto")).isEqualTo(0)
+    }
 }

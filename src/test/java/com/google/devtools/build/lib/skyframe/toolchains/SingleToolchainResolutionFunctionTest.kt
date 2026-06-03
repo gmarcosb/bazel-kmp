@@ -11,139 +11,135 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.toolchains
 
-package com.google.devtools.build.lib.skyframe.toolchains;
-
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.skyframe.EvaluationResultSubjectFactory.assertThatEvaluationResult;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.testing.EqualsTester;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.rules.platform.ToolchainTestCase;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetKey;
-import com.google.devtools.build.lib.skyframe.util.SkyframeExecutorTestUtils;
-import com.google.devtools.build.skyframe.EvaluationResult;
-import com.google.devtools.build.skyframe.SkyKey;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
- * Tests for {@link SingleToolchainResolutionValue} and {@link SingleToolchainResolutionFunction}.
+ * Tests for [SingleToolchainResolutionValue] and [SingleToolchainResolutionFunction].
  */
-@RunWith(JUnit4.class)
-public class SingleToolchainResolutionFunctionTest extends ToolchainTestCase {
-  ConfiguredTargetKey linuxCtkey;
-  ConfiguredTargetKey macCtkey;
+@RunWith(JUnit4::class)
+class SingleToolchainResolutionFunctionTest : ToolchainTestCase() {
+    var linuxCtkey: ConfiguredTargetKey? = null
+    var macCtkey: ConfiguredTargetKey? = null
 
-  @Before
-  public void setUpKeys() {
-    // This has to happen here so that targetConfiguration is populated.
-    linuxCtkey =
-        ConfiguredTargetKey.builder()
-            .setLabel(Label.parseCanonicalUnchecked("//platforms:linux"))
-            .setConfiguration(getTargetConfiguration())
-            .build();
-    macCtkey =
-        ConfiguredTargetKey.builder()
-            .setLabel(Label.parseCanonicalUnchecked("//platforms:mac"))
-            .setConfiguration(getTargetConfiguration())
-            .build();
-  }
-
-  private EvaluationResult<SingleToolchainResolutionValue> invokeToolchainResolution(SkyKey key)
-      throws InterruptedException {
-    try {
-      getSkyframeExecutor().getSkyframeBuildView().enableAnalysis(true);
-      return SkyframeExecutorTestUtils.evaluate(
-          getSkyframeExecutor(), key, /*keepGoing=*/ false, reporter);
-    } finally {
-      getSkyframeExecutor().getSkyframeBuildView().enableAnalysis(false);
+    @Before
+    fun setUpKeys() {
+        // This has to happen here so that targetConfiguration is populated.
+        linuxCtkey =
+            ConfiguredTargetKey.builder()
+                .setLabel(Label.parseCanonicalUnchecked("//platforms:linux"))
+                .setConfiguration(getTargetConfiguration())
+                .build()
+        macCtkey =
+            ConfiguredTargetKey.builder()
+                .setLabel(Label.parseCanonicalUnchecked("//platforms:mac"))
+                .setConfiguration(getTargetConfiguration())
+                .build()
     }
-  }
 
-  @Test
-  public void testResolution_singleExecutionPlatform() throws Exception {
-    SkyKey key =
-        SingleToolchainResolutionValue.key(
-            targetConfigKey,
-            testToolchainType,
-            testToolchainTypeInfo,
-            linuxCtkey,
-            ImmutableList.of(macCtkey));
-    EvaluationResult<SingleToolchainResolutionValue> result = invokeToolchainResolution(key);
+    @Throws(java.lang.InterruptedException::class)
+    private fun invokeToolchainResolution(key: SkyKey?): EvaluationResult<SingleToolchainResolutionValue?> {
+        try {
+            getSkyframeExecutor().getSkyframeBuildView().enableAnalysis(true)
+            return SkyframeExecutorTestUtils.evaluate<T?>(
+                getSkyframeExecutor(), key,  /*keepGoing=*/false, reporter
+            )
+        } finally {
+            getSkyframeExecutor().getSkyframeBuildView().enableAnalysis(false)
+        }
+    }
 
-    assertThatEvaluationResult(result).hasNoError();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testResolution_singleExecutionPlatform() {
+        val key: SkyKey? =
+            SingleToolchainResolutionValue.key(
+                targetConfigKey,
+                testToolchainType,
+                testToolchainTypeInfo,
+                linuxCtkey,
+                com.google.common.collect.ImmutableList.of<E?>(macCtkey)
+            )
+        val result: EvaluationResult<SingleToolchainResolutionValue?> = invokeToolchainResolution(key)
 
-    SingleToolchainResolutionValue singleToolchainResolutionValue = result.get(key);
-    assertThat(singleToolchainResolutionValue.availableToolchainLabels())
-        .containsExactly(macCtkey, Label.parseCanonicalUnchecked("//toolchain:toolchain_2_impl"));
-  }
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasNoError()
 
-  @Test
-  public void testResolution_multipleExecutionPlatforms() throws Exception {
-    addToolchain(
-        "extra",
-        "extra_toolchain",
-        ImmutableList.of("//constraints:linux"),
-        ImmutableList.of("//constraints:linux"),
-        "baz");
-    rewriteModuleDotBazel(
-        """
+        val singleToolchainResolutionValue: SingleToolchainResolutionValue = result.get(key)
+        assertThat(singleToolchainResolutionValue.availableToolchainLabels())
+            .containsExactly(macCtkey, Label.parseCanonicalUnchecked("//toolchain:toolchain_2_impl"))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testResolution_multipleExecutionPlatforms() {
+        addToolchain(
+            "extra",
+            "extra_toolchain",
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),
+            "baz"
+        )
+        rewriteModuleDotBazel(
+            """
         register_toolchains(
             "//toolchain:toolchain_1",
             "//toolchain:toolchain_2",
             "//extra:extra_toolchain",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    SkyKey key =
-        SingleToolchainResolutionValue.key(
-            targetConfigKey,
-            testToolchainType,
-            testToolchainTypeInfo,
-            linuxCtkey,
-            ImmutableList.of(linuxCtkey, macCtkey));
-    EvaluationResult<SingleToolchainResolutionValue> result = invokeToolchainResolution(key);
+        val key: SkyKey? =
+            SingleToolchainResolutionValue.key(
+                targetConfigKey,
+                testToolchainType,
+                testToolchainTypeInfo,
+                linuxCtkey,
+                com.google.common.collect.ImmutableList.of<E?>(linuxCtkey, macCtkey)
+            )
+        val result: EvaluationResult<SingleToolchainResolutionValue?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result).hasNoError();
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasNoError()
 
-    SingleToolchainResolutionValue singleToolchainResolutionValue = result.get(key);
-    assertThat(singleToolchainResolutionValue.availableToolchainLabels())
-        .containsExactly(
-            linuxCtkey,
-            Label.parseCanonicalUnchecked("//extra:extra_toolchain_impl"),
-            macCtkey,
-            Label.parseCanonicalUnchecked("//toolchain:toolchain_2_impl"));
-  }
+        val singleToolchainResolutionValue: SingleToolchainResolutionValue = result.get(key)
+        assertThat(singleToolchainResolutionValue.availableToolchainLabels())
+            .containsExactly(
+                linuxCtkey,
+                Label.parseCanonicalUnchecked("//extra:extra_toolchain_impl"),
+                macCtkey,
+                Label.parseCanonicalUnchecked("//toolchain:toolchain_2_impl")
+            )
+    }
 
-  @Test
-  public void testResolution_noneFound() throws Exception {
-    // Clear the toolchains.
-    rewriteModuleDotBazel();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testResolution_noneFound() {
+        // Clear the toolchains.
+        rewriteModuleDotBazel()
 
-    SkyKey key =
-        SingleToolchainResolutionValue.key(
-            targetConfigKey,
-            testToolchainType,
-            testToolchainTypeInfo,
-            linuxCtkey,
-            ImmutableList.of(macCtkey));
-    EvaluationResult<SingleToolchainResolutionValue> result = invokeToolchainResolution(key);
+        val key: SkyKey? =
+            SingleToolchainResolutionValue.key(
+                targetConfigKey,
+                testToolchainType,
+                testToolchainTypeInfo,
+                linuxCtkey,
+                com.google.common.collect.ImmutableList.of<E?>(macCtkey)
+            )
+        val result: EvaluationResult<SingleToolchainResolutionValue?> = invokeToolchainResolution(key)
 
-    SingleToolchainResolutionValue singleToolchainResolutionValue = result.get(key);
-    assertThat(singleToolchainResolutionValue.availableToolchainLabels()).isEmpty();
-  }
+        val singleToolchainResolutionValue: SingleToolchainResolutionValue = result.get(key)
+        assertThat(singleToolchainResolutionValue.availableToolchainLabels()).isEmpty()
+    }
 
-  @Test
-  public void testResolution_checkPlatformAllowedToolchains() throws Exception {
-    // Define two new execution platforms, only one of which is compatible with the test toolchain.
-    scratch.file(
-        "allowed/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testResolution_checkPlatformAllowedToolchains() {
+        // Define two new execution platforms, only one of which is compatible with the test toolchain.
+        scratch.file(
+            "allowed/BUILD",
+            """
         platform(
             name = "fails_match",
             check_toolchain_types = True,
@@ -159,81 +155,105 @@ public class SingleToolchainResolutionFunctionTest extends ToolchainTestCase {
                 "//toolchain:test_toolchain",
             ],
         )
-        """);
-    ConfiguredTargetKey failsMatchPlatformCtKey =
-        ConfiguredTargetKey.builder()
-            .setLabel(Label.parseCanonicalUnchecked("//allowed:fails_match"))
-            .setConfiguration(getTargetConfiguration())
-            .build();
-    ConfiguredTargetKey allowedPlatformCtKey =
-        ConfiguredTargetKey.builder()
-            .setLabel(Label.parseCanonicalUnchecked("//allowed:matches"))
-            .setConfiguration(getTargetConfiguration())
-            .build();
+        
+        """.trimIndent()
+        )
+        val failsMatchPlatformCtKey: ConfiguredTargetKey? =
+            ConfiguredTargetKey.builder()
+                .setLabel(Label.parseCanonicalUnchecked("//allowed:fails_match"))
+                .setConfiguration(getTargetConfiguration())
+                .build()
+        val allowedPlatformCtKey: ConfiguredTargetKey? =
+            ConfiguredTargetKey.builder()
+                .setLabel(Label.parseCanonicalUnchecked("//allowed:matches"))
+                .setConfiguration(getTargetConfiguration())
+                .build()
 
-    // Define the toolchains themselves.
-    addToolchain("extra", "extra_toolchain", ImmutableList.of(), ImmutableList.of(), "baz");
-    rewriteModuleDotBazel(
-        """
+        // Define the toolchains themselves.
+        addToolchain(
+            "extra",
+            "extra_toolchain",
+            com.google.common.collect.ImmutableList.of<E?>(),
+            com.google.common.collect.ImmutableList.of<E?>(),
+            "baz"
+        )
+        rewriteModuleDotBazel(
+            """
         register_toolchains("//extra:extra_toolchain")
-        """);
+        
+        """.trimIndent()
+        )
 
-    // Resolve toolchains.
-    SkyKey key =
-        SingleToolchainResolutionValue.key(
-            targetConfigKey,
-            testToolchainType,
-            testToolchainTypeInfo,
-            linuxCtkey,
-            ImmutableList.of(failsMatchPlatformCtKey, allowedPlatformCtKey));
-    EvaluationResult<SingleToolchainResolutionValue> result = invokeToolchainResolution(key);
+        // Resolve toolchains.
+        val key: SkyKey? =
+            SingleToolchainResolutionValue.key(
+                targetConfigKey,
+                testToolchainType,
+                testToolchainTypeInfo,
+                linuxCtkey,
+                com.google.common.collect.ImmutableList.of<E?>(failsMatchPlatformCtKey, allowedPlatformCtKey)
+            )
+        val result: EvaluationResult<SingleToolchainResolutionValue?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result).hasNoError();
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasNoError()
 
-    SingleToolchainResolutionValue singleToolchainResolutionValue = result.get(key);
-    assertThat(singleToolchainResolutionValue.availableToolchainLabels())
-        .containsExactly(
-            allowedPlatformCtKey, Label.parseCanonicalUnchecked("//extra:extra_toolchain_impl"));
-  }
+        val singleToolchainResolutionValue: SingleToolchainResolutionValue = result.get(key)
+        assertThat(singleToolchainResolutionValue.availableToolchainLabels())
+            .containsExactly(
+                allowedPlatformCtKey, Label.parseCanonicalUnchecked("//extra:extra_toolchain_impl")
+            )
+    }
 
-  @Test
-  public void testToolchainResolutionValue_equalsAndHashCode() {
-    new EqualsTester()
-        .addEqualityGroup(
-            SingleToolchainResolutionValue.create(
-                testToolchainTypeInfo,
-                ImmutableMap.of(
-                    linuxCtkey, Label.parseCanonicalUnchecked("//test:toolchain_impl_1"))),
-            SingleToolchainResolutionValue.create(
-                testToolchainTypeInfo,
-                ImmutableMap.of(
-                    linuxCtkey, Label.parseCanonicalUnchecked("//test:toolchain_impl_1"))))
-        // Different execution platform, same label.
-        .addEqualityGroup(
-            SingleToolchainResolutionValue.create(
-                testToolchainTypeInfo,
-                ImmutableMap.of(
-                    macCtkey, Label.parseCanonicalUnchecked("//test:toolchain_impl_1"))))
-        // Same execution platform, different label.
-        .addEqualityGroup(
-            SingleToolchainResolutionValue.create(
-                testToolchainTypeInfo,
-                ImmutableMap.of(
-                    linuxCtkey, Label.parseCanonicalUnchecked("//test:toolchain_impl_2"))))
-        // Different execution platform, different label.
-        .addEqualityGroup(
-            SingleToolchainResolutionValue.create(
-                testToolchainTypeInfo,
-                ImmutableMap.of(
-                    macCtkey, Label.parseCanonicalUnchecked("//test:toolchain_impl_2"))))
-        // Multiple execution platforms.
-        .addEqualityGroup(
-            SingleToolchainResolutionValue.create(
-                testToolchainTypeInfo,
-                ImmutableMap.<ConfiguredTargetKey, Label>builder()
-                    .put(linuxCtkey, Label.parseCanonicalUnchecked("//test:toolchain_impl_1"))
-                    .put(macCtkey, Label.parseCanonicalUnchecked("//test:toolchain_impl_1"))
-                    .buildOrThrow()))
-        .testEquals();
-  }
+    @org.junit.Test
+    fun testToolchainResolutionValue_equalsAndHashCode() {
+        EqualsTester()
+            .addEqualityGroup(
+                SingleToolchainResolutionValue.create(
+                    testToolchainTypeInfo,
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(
+                        linuxCtkey, Label.parseCanonicalUnchecked("//test:toolchain_impl_1")
+                    )
+                ),
+                SingleToolchainResolutionValue.create(
+                    testToolchainTypeInfo,
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(
+                        linuxCtkey, Label.parseCanonicalUnchecked("//test:toolchain_impl_1")
+                    )
+                )
+            ) // Different execution platform, same label.
+            .addEqualityGroup(
+                SingleToolchainResolutionValue.create(
+                    testToolchainTypeInfo,
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(
+                        macCtkey, Label.parseCanonicalUnchecked("//test:toolchain_impl_1")
+                    )
+                )
+            ) // Same execution platform, different label.
+            .addEqualityGroup(
+                SingleToolchainResolutionValue.create(
+                    testToolchainTypeInfo,
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(
+                        linuxCtkey, Label.parseCanonicalUnchecked("//test:toolchain_impl_2")
+                    )
+                )
+            ) // Different execution platform, different label.
+            .addEqualityGroup(
+                SingleToolchainResolutionValue.create(
+                    testToolchainTypeInfo,
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(
+                        macCtkey, Label.parseCanonicalUnchecked("//test:toolchain_impl_2")
+                    )
+                )
+            ) // Multiple execution platforms.
+            .addEqualityGroup(
+                SingleToolchainResolutionValue.create(
+                    testToolchainTypeInfo,
+                    com.google.common.collect.ImmutableMap.builder<ConfiguredTargetKey?, Label?>()
+                        .put(linuxCtkey, Label.parseCanonicalUnchecked("//test:toolchain_impl_1"))
+                        .put(macCtkey, Label.parseCanonicalUnchecked("//test:toolchain_impl_1"))
+                        .buildOrThrow()
+                )
+            )
+            .testEquals()
+    }
 }

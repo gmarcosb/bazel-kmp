@@ -11,25 +11,26 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester
 
-@RunWith(JUnit4.class)
-public final class TransformingRandomAccessListCodecTest {
-
-  @Test
-  public void codec_roundtrips() throws Exception {
-    new SerializationTester(
-            Lists.transform(ImmutableList.of(), input -> input),
-            Lists.transform(ImmutableList.of("abc", "def"), input -> input + "_suffix"))
-        // Serialization transforms the TransformingRandomAccessList into an equivalent
-        // ImmutableList. So serializing it again results in a different tag value.
-        .runTestsWithoutStableSerializationCheck();
-  }
+@RunWith(JUnit4::class)
+class TransformingRandomAccessListCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun codec_roundtrips() {
+        SerializationTester(
+            com.google.common.collect.Lists.transform<F?, T?>(
+                com.google.common.collect.ImmutableList.of<Any?>(),
+                com.google.common.base.Function { input: F? -> input }),
+            com.google.common.collect.Lists.transform<F?, T?>(
+                com.google.common.collect.ImmutableList.of<String?>(
+                    "abc",
+                    "def"
+                ), com.google.common.base.Function { input: F? -> input.toString() + "_suffix" })
+        ) // Serialization transforms the TransformingRandomAccessList into an equivalent
+            // ImmutableList. So serializing it again results in a different tag value.
+            .runTestsWithoutStableSerializationCheck()
+    }
 }

@@ -11,282 +11,289 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.eval
 
-package net.starlark.java.eval;
-
-import static com.google.common.truth.Truth.assertThat;
-import static net.starlark.java.syntax.TestUtils.assertContainsError;
-import static org.junit.Assert.assertThrows;
-
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import javax.annotation.Nullable;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.syntax.Expression;
-import net.starlark.java.syntax.FileOptions;
-import net.starlark.java.syntax.ParserInput;
-import net.starlark.java.syntax.Program;
-import net.starlark.java.syntax.StarlarkFile;
-import net.starlark.java.syntax.StarlarkType;
-import net.starlark.java.syntax.SyntaxError;
-import net.starlark.java.syntax.TypeChecker;
-import net.starlark.java.syntax.TypeConstructor;
-import net.starlark.java.syntax.TypeTable;
-import net.starlark.java.syntax.TypeTagger;
-import net.starlark.java.syntax.Types;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import net.starlark.java.annot.StarlarkBuiltin
 
 /**
  * Integrated tests for static type checking of Starlark code.
- *
- * <p>The test suite {@code syntax/TypeCheckerTest.java} checks the behavior of the static type
+ * 
+ * 
+ * The test suite `syntax/TypeCheckerTest.java` checks the behavior of the static type
  * checker and the base type definitions in the syntax package. In contrast, this suite checks the
  * overall process of static type checking on a Starlark program, using the production universal
  * types defined in the eval/ package. This includes for instance the machinery to generate type
- * information for {@link StarlarkBuiltin}s.
+ * information for [StarlarkBuiltin]s.
  */
-@RunWith(JUnit4.class)
-public final class StaticTypeCheckTest {
+@RunWith(JUnit4::class)
+class StaticTypeCheckTest {
+    private val options: net.starlark.java.syntax.FileOptions.Builder = net.starlark.java.syntax.FileOptions.builder()
+        .allowTypeSyntax(true)
+        .resolveTypeSyntax(true) // This lets us construct simpler test cases without wrapper `def` statements.
+        .allowToplevelRebinding(true)
 
-  @SuppressWarnings("FieldCanBeFinal")
-  private FileOptions.Builder options =
-      FileOptions.builder()
-          .allowTypeSyntax(true)
-          .resolveTypeSyntax(true)
-          // This lets us construct simpler test cases without wrapper `def` statements.
-          .allowToplevelRebinding(true);
+    private var module: java.lang.Module? = java.lang.Module.create()
 
-  @SuppressWarnings("FieldCanBeFinal")
-  private Module module = Module.create();
+    private val loader: net.starlark.java.syntax.TypeTagger.Loader? = null
 
-  @SuppressWarnings("FieldCanBeFinal")
-  @Nullable
-  private TypeTagger.Loader loader = null;
-
-  private Program compile(String... lines) throws SyntaxError.Exception {
-    Preconditions.checkArgument(lines.length > 0);
-    ParserInput input = ParserInput.fromLines(lines);
-    StarlarkFile file = StarlarkFile.parse(input, options.build());
-    Program prog = Program.compileFile(file, module);
-    TypeTable typeTable = TypeTagger.tagProgram(prog, module, loader);
-    if (typeTable.ok()) {
-      TypeChecker.checkProgram(prog, typeTable, module);
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    private fun compile(vararg lines: String?): net.starlark.java.syntax.Program {
+        com.google.common.base.Preconditions.checkArgument(lines.size > 0)
+        val input: net.starlark.java.syntax.ParserInput? = net.starlark.java.syntax.ParserInput.fromLines(lines)
+        val file: net.starlark.java.syntax.StarlarkFile? =
+            net.starlark.java.syntax.StarlarkFile.parse(input, options.build())
+        val prog: net.starlark.java.syntax.Program = net.starlark.java.syntax.Program.compileFile(file, module)
+        val typeTable: net.starlark.java.syntax.TypeTable =
+            net.starlark.java.syntax.TypeTagger.tagProgram(prog, module, loader)
+        if (typeTable.ok()) {
+            net.starlark.java.syntax.TypeChecker.checkProgram(prog, typeTable, module)
+        }
+        if (!typeTable.ok()) {
+            throw net.starlark.java.syntax.SyntaxError.Exception(typeTable.errors())
+        }
+        return prog.withTypeTable(typeTable)
     }
-    if (!typeTable.ok()) {
-      throw new SyntaxError.Exception(typeTable.errors());
+
+    private fun assertValid(vararg lines: String?) {
+        try {
+            compile(*lines)
+        } catch (ex: net.starlark.java.syntax.SyntaxError.Exception) {
+            throw java.lang.AssertionError("Expected success, but got: " + ex.getMessage(), ex)
+        }
     }
-    return prog.withTypeTable(typeTable);
-  }
 
-  private void assertValid(String... lines) {
-    try {
-      compile(lines);
-    } catch (SyntaxError.Exception ex) {
-      throw new AssertionError("Expected success, but got: " + ex.getMessage(), ex);
+    private fun assertInvalid(message: String?, vararg lines: String?) {
+        val ex: net.starlark.java.syntax.SyntaxError.Exception =
+            org.junit.Assert.assertThrows<net.starlark.java.syntax.SyntaxError.Exception>(
+                net.starlark.java.syntax.SyntaxError.Exception::class.java,
+                org.junit.function.ThrowingRunnable { compile(*lines) })
+        net.starlark.java.syntax.TestUtils.assertContainsError(ex.errors(), message)
     }
-  }
 
-  private void assertInvalid(String message, String... lines) {
-    SyntaxError.Exception ex = assertThrows(SyntaxError.Exception.class, () -> compile(lines));
-    assertContainsError(ex.errors(), message);
-  }
+    @Throws(net.starlark.java.syntax.SyntaxError.Exception::class)
+    private fun inferType(expr: String?): net.starlark.java.syntax.StarlarkType? {
+        val input: net.starlark.java.syntax.ParserInput? = net.starlark.java.syntax.ParserInput.fromLines(expr)
+        val expression: net.starlark.java.syntax.Expression? =
+            net.starlark.java.syntax.Expression.parse(input, options.build())
+        val program: net.starlark.java.syntax.Program =
+            net.starlark.java.syntax.Program.compileExpr(expression, module, options.build())
+        return program.getTypeTable().getType(program.getResolvedFunction())
+    }
 
-  @SuppressWarnings("UnusedMethod")
-  private StarlarkType inferType(String expr) throws SyntaxError.Exception {
-    ParserInput input = ParserInput.fromLines(expr);
-    Expression expression = Expression.parse(input, options.build());
-    Program program = Program.compileExpr(expression, module, options.build());
-    return program.getTypeTable().getType(program.getResolvedFunction());
-  }
+    @org.junit.Test
+    fun typecheckSuccess() {
+        assertValid("n = 123 + 123")
+    }
 
-  @Test
-  public void typecheckSuccess() {
-    assertValid("n = 123 + 123");
-  }
-
-  @Test
-  public void typecheckFailure() {
-    assertInvalid(
-        "operator '+' cannot be applied to types 'int' and 'str'",
-        """
+    @org.junit.Test
+    fun typecheckFailure() {
+        assertInvalid(
+            "operator '+' cannot be applied to types 'int' and 'str'",
+            """
         n = 123 + 'abc'
         _unused: bool  # ensure file uses type syntax
-        """);
-  }
+        
+        """.trimIndent()
+        )
+    }
 
-  @Test
-  public void unknownSymbolAsType() {
-    assertInvalid(
-        "name 'unknown' is not defined",
-        """
+    @org.junit.Test
+    fun unknownSymbolAsType() {
+        assertInvalid(
+            "name 'unknown' is not defined",
+            """
         x: unknown
-        """);
-  }
+        
+        """.trimIndent()
+        )
+    }
 
-  @Test
-  public void nonTypeSymbolAsType() {
-    assertInvalid(
-        "universal symbol 'len' cannot be used as a type",
-        """
+    @org.junit.Test
+    fun nonTypeSymbolAsType() {
+        assertInvalid(
+            "universal symbol 'len' cannot be used as a type",
+            """
         x: len
-        """);
-  }
+        
+        """.trimIndent()
+        )
+    }
 
-  @Test
-  public void noneAsType() {
-    assertValid("x: None = None");
+    @org.junit.Test
+    fun noneAsType() {
+        assertValid("x: None = None")
 
-    assertInvalid(
-        "cannot assign type 'int' to 'x' of type 'None'",
-        """
+        assertInvalid(
+            "cannot assign type 'int' to 'x' of type 'None'",
+            """
         x: None = 123
-        """);
-  }
+        
+        """.trimIndent()
+        )
+    }
 
-  @Test
-  public void starlarkBuiltinAsType() {
-    assertValid("x: list[int] = [123]");
+    @org.junit.Test
+    fun starlarkBuiltinAsType() {
+        assertValid("x: list[int] = [123]")
 
-    assertInvalid(
-        "cannot assign type 'list[str]' to 'x' of type 'list[int]'",
-        """
+        assertInvalid(
+            "cannot assign type 'list[str]' to 'x' of type 'list[int]'",
+            """
         x: list[int] = ["abc"]
-        """);
-  }
-
-  @StarlarkBuiltin(name = "BadBodyTypeBuiltin")
-  public static final class BadBodyTypeBuiltin implements StarlarkValue {
-    @SuppressWarnings("DoNotCallSuggester")
-    public static TypeConstructor getAssociatedTypeConstructor() {
-      throw new RuntimeException("fail");
-    }
-  }
-
-  @StarlarkBuiltin(name = "BadSignatureTypeBuiltin")
-  public static final class BadSignatureTypeBuiltin implements StarlarkValue {
-    @SuppressWarnings("DoNotCallSuggester")
-    public TypeConstructor getAssociatedTypeConstructor() { // missing `static`
-      throw new RuntimeException("fail");
-    }
-  }
-
-  @StarlarkBuiltin(name = "MissingStaticMethodTypeBuiltin")
-  public static final class MissingStaticMethodTypeBuiltin implements StarlarkValue {
-    // no getAssociatedTypeConstructor()
-  }
-
-  public static final class DummyLibrary {
-    @StarlarkMethod(name = "BadSignature", documented = false, isTypeConstructor = true)
-    public BadSignatureTypeBuiltin badSignature() {
-      return new BadSignatureTypeBuiltin();
+        
+        """.trimIndent()
+        )
     }
 
-    @StarlarkMethod(name = "BadBody", documented = false, isTypeConstructor = true)
-    public BadBodyTypeBuiltin badBody() {
-      return new BadBodyTypeBuiltin();
+    @StarlarkBuiltin(name = "BadBodyTypeBuiltin")
+    object BadBodyTypeBuiltin : StarlarkValue {
+        val associatedTypeConstructor: net.starlark.java.syntax.TypeConstructor?
+            get() {
+                throw java.lang.RuntimeException("fail")
+            }
     }
 
-    @StarlarkMethod(name = "MissingStaticMethod", documented = false, isTypeConstructor = true)
-    public MissingStaticMethodTypeBuiltin missingStaticMethod() {
-      return new MissingStaticMethodTypeBuiltin();
+    @StarlarkBuiltin(name = "BadSignatureTypeBuiltin")
+    class BadSignatureTypeBuiltin : StarlarkValue {
+        val associatedTypeConstructor: net.starlark.java.syntax.TypeConstructor?
+            get() { // missing `static`
+                throw java.lang.RuntimeException("fail")
+            }
     }
-  }
 
-  @Test
-  public void starlarkBuiltinWithBadAssociatedTypeConstructor() {
-    ImmutableMap.Builder<String, Object> env = ImmutableMap.builder();
-    Starlark.addMethods(env, new DummyLibrary());
-    module = Module.withPredeclared(StarlarkSemantics.DEFAULT, env.buildOrThrow());
+    @StarlarkBuiltin(name = "MissingStaticMethodTypeBuiltin")
+    class MissingStaticMethodTypeBuiltin : StarlarkValue
 
-    var ex = assertThrows(IllegalArgumentException.class, () -> compile("x: BadSignature = None"));
-    assertThat(ex)
-        .hasMessageThat()
-        .containsMatch(
-            ".*BadSignatureTypeBuiltin#getAssociatedTypeConstructor has an invalid signature");
+    class DummyLibrary {
+        @StarlarkMethod(name = "BadSignature", documented = false, isTypeConstructor = true)
+        fun badSignature(): BadSignatureTypeBuiltin {
+            return BadSignatureTypeBuiltin()
+        }
 
-    ex = assertThrows(IllegalArgumentException.class, () -> compile("x: BadBody = None"));
-    assertThat(ex)
-        .hasMessageThat()
-        .containsMatch("Error invoking .*BadBodyTypeBuiltin#getAssociatedTypeConstructor");
+        @StarlarkMethod(name = "BadBody", documented = false, isTypeConstructor = true)
+        fun badBody(): BadBodyTypeBuiltin {
+            return BadBodyTypeBuiltin()
+        }
 
-    ex =
-        assertThrows(
-            IllegalArgumentException.class, () -> compile("x: MissingStaticMethod = None"));
-    assertThat(ex)
-        .hasMessageThat()
-        .containsMatch("invalid type constructor proxy: .*MissingStaticMethodTypeBuiltin");
-  }
+        @StarlarkMethod(name = "MissingStaticMethod", documented = false, isTypeConstructor = true)
+        fun missingStaticMethod(): MissingStaticMethodTypeBuiltin {
+            return MissingStaticMethodTypeBuiltin()
+        }
+    }
 
-  @Test
-  public void listMethods() {
-    assertValid(
-        """
+    @org.junit.Test
+    fun starlarkBuiltinWithBadAssociatedTypeConstructor() {
+        val env: com.google.common.collect.ImmutableMap.Builder<String?, Any?> =
+            com.google.common.collect.ImmutableMap.builder<String?, Any?>()
+        Starlark.addMethods(env, DummyLibrary())
+        module = java.lang.Module.withPredeclared(StarlarkSemantics.DEFAULT, env.buildOrThrow())
+
+        var ex: java.lang.IllegalArgumentException? =
+            org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+                java.lang.IllegalArgumentException::class.java,
+                org.junit.function.ThrowingRunnable { compile("x: BadSignature = None") })
+        Truth.assertThat(ex)
+            .hasMessageThat()
+            .containsMatch(
+                ".*BadSignatureTypeBuiltin#getAssociatedTypeConstructor has an invalid signature"
+            )
+
+        ex = org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable { compile("x: BadBody = None") })
+        Truth.assertThat(ex)
+            .hasMessageThat()
+            .containsMatch("Error invoking .*BadBodyTypeBuiltin#getAssociatedTypeConstructor")
+
+        ex =
+            org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+                java.lang.IllegalArgumentException::class.java,
+                org.junit.function.ThrowingRunnable { compile("x: MissingStaticMethod = None") })
+        Truth.assertThat(ex)
+            .hasMessageThat()
+            .containsMatch("invalid type constructor proxy: .*MissingStaticMethodTypeBuiltin")
+    }
+
+    @org.junit.Test
+    fun listMethods() {
+        assertValid(
+            """
         x: list[int]
         x.pop(0)
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertInvalid(
-        "in call to 'x.pop()', parameter 'i' got value of type 'str', want 'int'",
-        """
+        assertInvalid(
+            "in call to 'x.pop()', parameter 'i' got value of type 'str', want 'int'",
+            """
         x: list[int]
         x.pop("abc")
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertInvalid(
-        "'x' of type 'list[int]' does not have field 'does_not_exist'",
-        """
+        assertInvalid(
+            "'x' of type 'list[int]' does not have field 'does_not_exist'",
+            """
         x: list[int]
         x.does_not_exist
-        """);
-  }
+        
+        """.trimIndent()
+        )
+    }
 
-  @Test
-  public void dictMethods() {
-    assertValid(
-        """
+    @org.junit.Test
+    fun dictMethods() {
+        assertValid(
+            """
         d: dict[str, int]
         v = d.get("a", 0)
         d.setdefault("b", 2)
-        """);
-  }
+        
+        """.trimIndent()
+        )
+    }
 
-  @Test
-  public void setMethods() {
-    assertValid(
-        """
+    @org.junit.Test
+    fun setMethods() {
+        assertValid(
+            """
         s: set[int]
         s.add(3)
-        """);
-  }
+        
+        """.trimIndent()
+        )
+    }
 
-  @Test
-  public void strMethods() {
-    // Note that StringModule is special-cased to take the receiver string object as a separate
-    // parameter to the Java method, yet it doesn't appear in the signature for type-checking
-    // purposes.
-    assertValid(
-        """
+    @org.junit.Test
+    fun strMethods() {
+        // Note that StringModule is special-cased to take the receiver string object as a separate
+        // parameter to the Java method, yet it doesn't appear in the signature for type-checking
+        // purposes.
+        assertValid(
+            """
         s: str
         s.startswith("abc")
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertInvalid(
-        "'s.startswith()' missing 1 required argument: sub",
-        """
+        assertInvalid(
+            "'s.startswith()' missing 1 required argument: sub",
+            """
         s: str
         s.startswith()
-        """);
-  }
+        
+        """.trimIndent()
+        )
+    }
 
-  @Test
-  public void universalSymbolTypes() throws Exception {
-    assertValid(
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun universalSymbolTypes() {
+        assertValid(
+            """
         b: bool = True
         b = False
         n: None = None
@@ -296,150 +303,168 @@ public final class StaticTypeCheckTest {
         l: list = list()
         d: dict = dict()
         se: set = set()
-        """);
-    assertInvalid("cannot assign type 'bool' to 'x' of type 'str'", "x: str = True");
-    assertInvalid("cannot assign type 'bool' to 'x' of type 'str'", "x: str = False");
-    assertInvalid("cannot assign type 'None' to 'x' of type 'str'", "x: str = None");
-    assertInvalid("cannot assign type 'str' to 'x' of type 'int'", "x: int = str(123)");
-    assertInvalid("cannot assign type 'int' to 'x' of type 'str'", "x: str = int(123)");
-    assertInvalid("cannot assign type 'float' to 'x' of type 'str'", "x: str = float(123)");
-    assertInvalid("cannot assign type 'list[Any]' to 'x' of type 'str'", "x: str = list()");
-    assertInvalid("cannot assign type 'dict[Any, Any]' to 'x' of type 'str'", "x: str = dict()");
-    assertInvalid("cannot assign type 'set[Any]' to 'x' of type 'str'", "x: str = set()");
-  }
+        
+        """.trimIndent()
+        )
+        assertInvalid("cannot assign type 'bool' to 'x' of type 'str'", "x: str = True")
+        assertInvalid("cannot assign type 'bool' to 'x' of type 'str'", "x: str = False")
+        assertInvalid("cannot assign type 'None' to 'x' of type 'str'", "x: str = None")
+        assertInvalid("cannot assign type 'str' to 'x' of type 'int'", "x: int = str(123)")
+        assertInvalid("cannot assign type 'int' to 'x' of type 'str'", "x: str = int(123)")
+        assertInvalid("cannot assign type 'float' to 'x' of type 'str'", "x: str = float(123)")
+        assertInvalid("cannot assign type 'list[Any]' to 'x' of type 'str'", "x: str = list()")
+        assertInvalid("cannot assign type 'dict[Any, Any]' to 'x' of type 'str'", "x: str = dict()")
+        assertInvalid("cannot assign type 'set[Any]' to 'x' of type 'str'", "x: str = set()")
+    }
 
-  @Test
-  public void predeclaredSymbolTypes() throws Exception {
-    module =
-        Module.withPredeclared(
-            StarlarkSemantics.DEFAULT,
-            ImmutableMap.of("PREDECLARED_INT", StarlarkInt.of(123), "PREDECLARED_STR", "abc"));
-    assertValid(
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun predeclaredSymbolTypes() {
+        module =
+            java.lang.Module.withPredeclared(
+                StarlarkSemantics.DEFAULT,
+                com.google.common.collect.ImmutableMap.of<K?, V?>(
+                    "PREDECLARED_INT",
+                    StarlarkInt.of(123),
+                    "PREDECLARED_STR",
+                    "abc"
+                )
+            )
+        assertValid(
+            """
         x: int = PREDECLARED_INT
         y: str = PREDECLARED_STR
-        """);
-    assertInvalid("cannot assign type 'int' to 'x' of type 'str'", "x: str = PREDECLARED_INT");
-    assertInvalid("cannot assign type 'str' to 'x' of type 'int'", "x: int = PREDECLARED_STR");
-  }
-
-  // No StarlarkBuiltin annotation.
-  public static final class MyUnannotatedType implements StarlarkValue {
-    @StarlarkMethod(name = "foo", doc = "...")
-    public int foo() {
-      return 123;
-    }
-  }
-
-  @StarlarkBuiltin(name = "MyType")
-  public static final class MyType implements StarlarkValue {
-    @StarlarkMethod(name = "foo", doc = "...")
-    public int foo() {
-      return 123;
-    }
-  }
-
-  @StarlarkBuiltin(name = "MySelfCallType")
-  public static final class MySelfCallType implements StarlarkValue {
-    @StarlarkMethod(name = "MySelfCallType", doc = "...", selfCall = true)
-    public int selfCall() {
-      return 123;
+        
+        """.trimIndent()
+        )
+        assertInvalid("cannot assign type 'int' to 'x' of type 'str'", "x: str = PREDECLARED_INT")
+        assertInvalid("cannot assign type 'str' to 'x' of type 'int'", "x: int = PREDECLARED_STR")
     }
 
-    @StarlarkMethod(name = "bar", doc = "...")
-    public int bar() {
-      return 123;
-    }
-  }
-
-  @StarlarkBuiltin(name = "MyExplicitlyTypedType")
-  public static final class MyExplicitlyTypedType implements StarlarkValue {
-    @Override
-    // Override causes no 'MyExplicitlyTypedType' type to be auto-generated.
-    public StarlarkType getStarlarkType(StarlarkSemantics semantics) {
-      return Types.STRUCT_OF_ANY;
-    }
-  }
-
-  @StarlarkBuiltin(name = "MyExplicitlyTypedSelfCallType")
-  public static final class MyExplicitlyTypedSelfCallType implements StarlarkValue {
-    @StarlarkMethod(name = "MyExplicitlyTypedSelfCallType", doc = "...", selfCall = true)
-    public int selfCall() {
-      return 123;
+    // No StarlarkBuiltin annotation.
+    class MyUnannotatedType : StarlarkValue {
+        @StarlarkMethod(name = "foo", doc = "...")
+        fun foo(): Int {
+            return 123
+        }
     }
 
-    @Override
-    // Override causes no 'MyExplicitlyTypedSelfCallType' type to be auto-generated.
-    public StarlarkType getStarlarkType(StarlarkSemantics semantics) {
-      return new StarlarkType() {
-        @Override
-        public String toString() {
-          return "ExplicitlyTypedSelfCall";
+    @StarlarkBuiltin(name = "MyType")
+    class MyType : StarlarkValue {
+        @StarlarkMethod(name = "foo", doc = "...")
+        fun foo(): Int {
+            return 123
+        }
+    }
+
+    @StarlarkBuiltin(name = "MySelfCallType")
+    class MySelfCallType : StarlarkValue {
+        @StarlarkMethod(name = "MySelfCallType", doc = "...", selfCall = true)
+        fun selfCall(): Int {
+            return 123
         }
 
-        @Override
-        public ImmutableList<StarlarkType> getSupertypes() {
-          return ImmutableList.of(
-              // Nullary callable returning int.
-              Types.callable(
-                  ImmutableList.of(),
-                  ImmutableList.of(),
-                  0,
-                  0,
-                  ImmutableSet.of(),
-                  null,
-                  null,
-                  Types.INT));
+        @StarlarkMethod(name = "bar", doc = "...")
+        fun bar(): Int {
+            return 123
         }
-      };
     }
-  }
 
-  @Test
-  public void predeclaredBuiltinTypes() throws Exception {
-    module =
-        Module.withPredeclared(
-            StarlarkSemantics.DEFAULT,
-            ImmutableMap.of(
-                "my_unannotated_type_value",
-                new MyUnannotatedType(),
-                "my_type_value",
-                new MyType(),
-                "my_self_call_value",
-                new MySelfCallType(),
-                "my_explicitly_typed_value",
-                new MyExplicitlyTypedType(),
-                "my_explicitly_typed_self_call_value",
-                new MyExplicitlyTypedSelfCallType()));
-    assertValid(
-        """
+    @StarlarkBuiltin(name = "MyExplicitlyTypedType")
+    class MyExplicitlyTypedType : StarlarkValue {
+        // Override causes no 'MyExplicitlyTypedType' type to be auto-generated.
+        public override fun getStarlarkType(semantics: StarlarkSemantics?): net.starlark.java.syntax.StarlarkType {
+            return net.starlark.java.syntax.Types.STRUCT_OF_ANY
+        }
+    }
+
+    @StarlarkBuiltin(name = "MyExplicitlyTypedSelfCallType")
+    class MyExplicitlyTypedSelfCallType : StarlarkValue {
+        @StarlarkMethod(name = "MyExplicitlyTypedSelfCallType", doc = "...", selfCall = true)
+        fun selfCall(): Int {
+            return 123
+        }
+
+        // Override causes no 'MyExplicitlyTypedSelfCallType' type to be auto-generated.
+        public override fun getStarlarkType(semantics: StarlarkSemantics?): net.starlark.java.syntax.StarlarkType {
+            return object : net.starlark.java.syntax.StarlarkType() {
+                override fun toString(): String {
+                    return "ExplicitlyTypedSelfCall"
+                }
+
+                val supertypes: com.google.common.collect.ImmutableList<net.starlark.java.syntax.StarlarkType?>?
+                    get() = com.google.common.collect.ImmutableList.of<net.starlark.java.syntax.StarlarkType?>( // Nullary callable returning int.
+                        net.starlark.java.syntax.Types.callable(
+                            com.google.common.collect.ImmutableList.of<String?>(),
+                            com.google.common.collect.ImmutableList.of<net.starlark.java.syntax.StarlarkType?>(),
+                            0,
+                            0,
+                            com.google.common.collect.ImmutableSet.of<String?>(),
+                            null,
+                            null,
+                            net.starlark.java.syntax.Types.INT
+                        )
+                    )
+            }
+        }
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun predeclaredBuiltinTypes() {
+        module =
+            java.lang.Module.withPredeclared(
+                StarlarkSemantics.DEFAULT,
+                com.google.common.collect.ImmutableMap.of<K?, V?>(
+                    "my_unannotated_type_value",
+                    MyUnannotatedType(),
+                    "my_type_value",
+                    MyType(),
+                    "my_self_call_value",
+                    MySelfCallType(),
+                    "my_explicitly_typed_value",
+                    MyExplicitlyTypedType(),
+                    "my_explicitly_typed_self_call_value",
+                    MyExplicitlyTypedSelfCallType()
+                )
+            )
+        assertValid(
+            """
         a: int = my_unannotated_type_value.foo()
         b: int = my_type_value.foo()
         c: int = my_self_call_value()
         d: int = my_self_call_value.bar()
         e: int = my_explicitly_typed_value.some_field  # typed as struct-of-Any
         f: int = my_explicitly_typed_self_call_value()
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertInvalid(
-        "cannot assign type 'MyUnannotatedType' to 'x' of type 'str'",
-        "x: str = my_unannotated_type_value");
-    assertInvalid("cannot assign type 'MyType' to 'x' of type 'str'", "x: str = my_type_value");
-    assertInvalid(
-        "cannot assign type 'MySelfCallType' to 'x' of type 'str'", "x: str = my_self_call_value");
-    assertInvalid("cannot assign type 'int' to 'x' of type 'str'", "x: str = my_self_call_value()");
-    assertInvalid(
-        "cannot assign type 'ExplicitlyTypedSelfCall' to 'x' of type 'str'",
-        "x: str = my_explicitly_typed_self_call_value");
-    assertInvalid(
-        "cannot assign type 'int' to 'x' of type 'float'",
-        "x: float = my_explicitly_typed_self_call_value()");
-    assertInvalid(
-        "cannot assign type 'struct' to 'x' of type 'str'", "x: str = my_explicitly_typed_value");
+        assertInvalid(
+            "cannot assign type 'MyUnannotatedType' to 'x' of type 'str'",
+            "x: str = my_unannotated_type_value"
+        )
+        assertInvalid("cannot assign type 'MyType' to 'x' of type 'str'", "x: str = my_type_value")
+        assertInvalid(
+            "cannot assign type 'MySelfCallType' to 'x' of type 'str'", "x: str = my_self_call_value"
+        )
+        assertInvalid("cannot assign type 'int' to 'x' of type 'str'", "x: str = my_self_call_value()")
+        assertInvalid(
+            "cannot assign type 'ExplicitlyTypedSelfCall' to 'x' of type 'str'",
+            "x: str = my_explicitly_typed_self_call_value"
+        )
+        assertInvalid(
+            "cannot assign type 'int' to 'x' of type 'float'",
+            "x: float = my_explicitly_typed_self_call_value()"
+        )
+        assertInvalid(
+            "cannot assign type 'struct' to 'x' of type 'str'", "x: str = my_explicitly_typed_value"
+        )
 
-    assertInvalid(
-        "'my_type_value' of type 'MyType' does not have field 'bar'",
-        "_: str = my_type_value.bar()");
-    assertInvalid("'my_type_value' is not callable; got type 'MyType'", "_: str = my_type_value()");
-  }
+        assertInvalid(
+            "'my_type_value' of type 'MyType' does not have field 'bar'",
+            "_: str = my_type_value.bar()"
+        )
+        assertInvalid("'my_type_value' is not callable; got type 'MyType'", "_: str = my_type_value()")
+    }
 }

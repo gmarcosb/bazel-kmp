@@ -11,147 +11,133 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.exec;
+package com.google.devtools.build.lib.exec
 
-import static com.google.common.truth.Truth.assertThat;
-import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.junit.Assert.assertThrows;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import com.google.devtools.build.lib.actions.AbstractAction
 
-import com.google.devtools.build.lib.actions.AbstractAction;
-import com.google.devtools.build.lib.actions.ActionExecutionContext;
-import com.google.devtools.build.lib.actions.ActionExecutionException;
-import com.google.devtools.build.lib.actions.ArtifactRoot;
-import com.google.devtools.build.lib.actions.ArtifactRoot.RootType;
-import com.google.devtools.build.lib.actions.EnvironmentalExecException;
-import com.google.devtools.build.lib.actions.ExecException;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil.NullAction;
-import com.google.devtools.build.lib.actions.util.DummyExecutor;
-import com.google.devtools.build.lib.events.NullEventHandler;
-import com.google.devtools.build.lib.server.FailureDetails.Execution.Code;
-import com.google.devtools.build.lib.testing.vfs.SpiedFileSystem;
-import com.google.devtools.build.lib.testutil.Scratch;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.lib.util.DeterministicWriter;
-import com.google.devtools.build.lib.util.ExitCode;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import java.io.IOException;
-import java.io.OutputStream;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+/** Tests for [FileWriteStrategy].  */
+@RunWith(TestParameterInjector::class)
+class FileWriteStrategyTest {
+    private val fileWriteStrategy: FileWriteStrategy = FileWriteStrategy()
 
-/** Tests for {@link FileWriteStrategy}. */
-@RunWith(TestParameterInjector.class)
-public final class FileWriteStrategyTest {
-  private static final IOException INJECTED_EXCEPTION = new IOException("oh no!");
+    private val fileSystem: SpiedFileSystem = SpiedFileSystem.createInMemorySpy()
+    private val scratch: Scratch = Scratch(fileSystem)
+    private var execRoot: Path? = null
+    private var outputRoot: ArtifactRoot? = null
 
-  private final FileWriteStrategy fileWriteStrategy = new FileWriteStrategy();
+    @Before
+    @Throws(IOException::class)
+    fun createOutputRoot() {
+        execRoot = scratch.dir("/execroot")
+        outputRoot = ArtifactRoot.asDerivedRoot(execRoot, RootType.OUTPUT, "bazel-out")
+        outputRoot.getRoot().asPath().createDirectory()
+    }
 
-  private final SpiedFileSystem fileSystem = SpiedFileSystem.createInMemorySpy();
-  private final Scratch scratch = new Scratch(fileSystem);
-  private Path execRoot;
-  private ArtifactRoot outputRoot;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun writeOutputToFile_writesCorrectOutput(
+        @TestParameter("", "hello", "hello there") content: String
+    ) {
+        val action: AbstractAction = createAction("file")
 
-  @Before
-  public void createOutputRoot() throws IOException {
-    execRoot = scratch.dir("/execroot");
-    outputRoot = ArtifactRoot.asDerivedRoot(execRoot, RootType.OUTPUT, "bazel-out");
-    outputRoot.getRoot().asPath().createDirectory();
-  }
+        val unused: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            fileWriteStrategy.writeOutputToFile(
+                action,
+                createActionExecutionContext(),
+                { out -> out.write(content.toByteArray(java.nio.charset.StandardCharsets.UTF_8)) },  /* makeExecutable= */
+                false,  /* isRemotable= */
+                false
+            )
 
-  @Test
-  public void writeOutputToFile_writesCorrectOutput(
-      @TestParameter({"", "hello", "hello there"}) String content) throws Exception {
-    AbstractAction action = createAction("file");
+        assertThat(
+            FileSystemUtils.readContent(
+                action.getPrimaryOutput().getPath(),
+                java.nio.charset.StandardCharsets.UTF_8
+            )
+        )
+            .isEqualTo(content)
+    }
 
-    var unused =
-        fileWriteStrategy.writeOutputToFile(
-            action,
-            createActionExecutionContext(),
-            out -> out.write(content.getBytes(UTF_8)),
-            /* makeExecutable= */ false,
-            /* isRemotable= */ false);
+    private enum class FailureMode : DeterministicWriter {
+        OPEN_FAILURE {
+            @Throws(IOException::class)
+            override fun setupFileSystem(fileSystem: SpiedFileSystem, outputPath: PathFragment?) {
+                Mockito.`when`<T?>(fileSystem.getOutputStream(outputPath,  /* append= */false,  /* internal= */false))
+                    .thenThrow(INJECTED_EXCEPTION)
+            }
+        },
+        WRITE_FAILURE {
+            @Throws(IOException::class)
+            override fun writeTo(out: java.io.OutputStream?) {
+                throw INJECTED_EXCEPTION
+            }
+        },
+        CLOSE_FAILURE {
+            @Throws(IOException::class)
+            override fun setupFileSystem(fileSystem: SpiedFileSystem, outputPath: PathFragment?) {
+                val outputStream: java.io.OutputStream? =
+                    Mockito.mock<java.io.OutputStream?>(java.io.OutputStream::class.java)
+                Mockito.doThrow(INJECTED_EXCEPTION).`when`<java.io.OutputStream?>(outputStream).close()
+                Mockito.`when`<T?>(fileSystem.getOutputStream(outputPath,  /* append= */false,  /* internal= */false))
+                    .thenReturn(outputStream)
+            }
+        };
 
-    assertThat(FileSystemUtils.readContent(action.getPrimaryOutput().getPath(), UTF_8))
-        .isEqualTo(content);
-  }
+        @Throws(IOException::class)
+        open fun setupFileSystem(fileSystem: SpiedFileSystem?, outputPath: PathFragment?) {
+        }
 
-  private enum FailureMode implements DeterministicWriter {
-    OPEN_FAILURE {
-      @Override
-      void setupFileSystem(SpiedFileSystem fileSystem, PathFragment outputPath) throws IOException {
-        when(fileSystem.getOutputStream(outputPath, /* append= */ false, /* internal= */ false))
-            .thenThrow(INJECTED_EXCEPTION);
-      }
-    },
-    WRITE_FAILURE {
-      @Override
-      public void writeTo(OutputStream out) throws IOException {
-        throw INJECTED_EXCEPTION;
-      }
-    },
-    CLOSE_FAILURE {
-      @Override
-      void setupFileSystem(SpiedFileSystem fileSystem, PathFragment outputPath) throws IOException {
-        OutputStream outputStream = mock(OutputStream.class);
-        doThrow(INJECTED_EXCEPTION).when(outputStream).close();
-        when(fileSystem.getOutputStream(outputPath, /* append= */ false, /* internal= */ false))
-            .thenReturn(outputStream);
-      }
-    };
+        @Throws(IOException::class)
+        public override fun writeTo(out: java.io.OutputStream?) {
+        }
+    }
 
-    void setupFileSystem(SpiedFileSystem fileSystem, PathFragment outputPath) throws IOException {}
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun writeOutputToFile_errorInWriter_returnsFailure(@TestParameter failureMode: FailureMode) {
+        val action: AbstractAction = createAction("file")
+        failureMode.setupFileSystem(fileSystem, action.getPrimaryOutput().getPath().asFragment())
 
-    @Override
-    public void writeTo(OutputStream out) throws IOException {}
-  }
+        val e: ExecException? =
+            org.junit.Assert.assertThrows<T?>(
+                EnvironmentalExecException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    fileWriteStrategy.writeOutputToFile(
+                        action,
+                        createActionExecutionContext(),
+                        failureMode,  /* makeExecutable= */
+                        false,  /* isRemotable= */
+                        false
+                    )
+                })
 
-  @Test
-  public void writeOutputToFile_errorInWriter_returnsFailure(@TestParameter FailureMode failureMode)
-      throws Exception {
-    AbstractAction action = createAction("file");
-    failureMode.setupFileSystem(fileSystem, action.getPrimaryOutput().getPath().asFragment());
+        assertThat(e).hasCauseThat().isSameInstanceAs(INJECTED_EXCEPTION)
+        val detailExitCode: DetailedExitCode = getDetailExitCode(e)
+        assertThat(detailExitCode.getExitCode()).isEqualTo(ExitCode.LOCAL_ENVIRONMENTAL_ERROR)
+        assertThat(detailExitCode.getFailureDetail().getExecution().getCode())
+            .isEqualTo(Code.FILE_WRITE_IO_EXCEPTION)
+    }
 
-    ExecException e =
-        assertThrows(
-            EnvironmentalExecException.class,
-            () -> {
-              fileWriteStrategy.writeOutputToFile(
-                  action,
-                  createActionExecutionContext(),
-                  failureMode,
-                  /* makeExecutable= */ false,
-                  /* isRemotable= */ false);
-            });
+    private fun getDetailExitCode(e: ExecException?): DetailedExitCode {
+        return ActionExecutionException.fromExecException(e, NullAction())
+            .getDetailedExitCode()
+    }
 
-    assertThat(e).hasCauseThat().isSameInstanceAs(INJECTED_EXCEPTION);
-    var detailExitCode = getDetailExitCode(e);
-    assertThat(detailExitCode.getExitCode()).isEqualTo(ExitCode.LOCAL_ENVIRONMENTAL_ERROR);
-    assertThat(detailExitCode.getFailureDetail().getExecution().getCode())
-        .isEqualTo(Code.FILE_WRITE_IO_EXCEPTION);
-  }
+    private fun createActionExecutionContext(): ActionExecutionContext {
+        return ActionsTestUtil.createContext(
+            com.google.devtools.build.lib.actions.util.DummyExecutor(fileSystem, execRoot), NullEventHandler.INSTANCE
+        )
+    }
 
-  private DetailedExitCode getDetailExitCode(ExecException e) {
-    return ActionExecutionException.fromExecException(e, new ActionsTestUtil.NullAction())
-        .getDetailedExitCode();
-  }
+    private fun createAction(outputRelativePath: String?): AbstractAction {
+        return NullAction(
+            ActionsTestUtil.createArtifactWithRootRelativePath(
+                outputRoot, PathFragment.create(outputRelativePath)
+            )
+        )
+    }
 
-  private ActionExecutionContext createActionExecutionContext() {
-    return ActionsTestUtil.createContext(
-        new DummyExecutor(fileSystem, execRoot), NullEventHandler.INSTANCE);
-  }
-
-  private AbstractAction createAction(String outputRelativePath) {
-    return new NullAction(
-        ActionsTestUtil.createArtifactWithRootRelativePath(
-            outputRoot, PathFragment.create(outputRelativePath)));
-  }
+    companion object {
+        private val INJECTED_EXCEPTION: IOException = IOException("oh no!")
+    }
 }

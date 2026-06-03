@@ -11,194 +11,192 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
+import com.google.devtools.build.lib.cmdline.Label
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.Mockito.mock;
+/** Tests for [Package].  */
+@RunWith(JUnit4::class)
+class PackageTest {
+    private var fileSystem: FileSystem? = null
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.cmdline.RepositoryMapping;
-import com.google.devtools.build.lib.events.StoredEventHandler;
-import com.google.devtools.build.lib.packages.Package.Builder.PackageSettings;
-import com.google.devtools.build.lib.packages.RuleClass.Builder.RuleClassType;
-import com.google.devtools.build.lib.packages.semantics.BuildLanguageOptions;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.lib.vfs.RootedPath;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import java.util.List;
-import java.util.Optional;
-import net.starlark.java.eval.StarlarkCallable;
-import net.starlark.java.eval.StarlarkSemantics;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @Before
+    fun setUp() {
+        this.fileSystem = InMemoryFileSystem(DigestHashFunction.SHA256)
+    }
 
-/** Tests for {@link Package}. */
-@RunWith(JUnit4.class)
-public class PackageTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBuildPartialPopulatesImplicitTestSuiteIgnoresManualTests() {
+        val pkgBuilder: Package.Builder = pkgBuilder("test_pkg")
+        val testLabel: Label? = Label.parseCanonicalUnchecked("//test_pkg:my_test")
+        addRule(pkgBuilder, testLabel, FAUX_TEST_CLASS)
 
-  private static final RuleClass FAUX_TEST_CLASS =
-      new RuleClass.Builder("faux_test", RuleClassType.TEST, /* starlark= */ false)
-          .addAttribute(
-              Attribute.attr("tags", Types.STRING_LIST).nonconfigurable("tags aren't").build())
-          .addAttribute(Attribute.attr("size", Type.STRING).nonconfigurable("size isn't").build())
-          .addAttribute(Attribute.attr("timeout", Type.STRING).build())
-          .addAttribute(Attribute.attr("flaky", Type.BOOLEAN).build())
-          .addAttribute(Attribute.attr("shard_count", Type.INTEGER).build())
-          .addAttribute(Attribute.attr("local", Type.BOOLEAN).build())
-          .setConfiguredTargetFunction(mock(StarlarkCallable.class))
-          .build();
+        val manualTestLabel: Label? = Label.parseCanonicalUnchecked("//test_pkg:my_manual_test")
+        val tag2Rule: Rule = addRule(pkgBuilder, manualTestLabel, FAUX_TEST_CLASS)
+        tag2Rule.setAttributeValue(
+            FAUX_TEST_CLASS.getAttributeProvider().getAttributeByName("tags"),
+            com.google.common.collect.ImmutableList.of<E?>("manual"),  /* explicit= */
+            true
+        )
 
-  private FileSystem fileSystem;
+        val taggedTestLabel: Label? = Label.parseCanonicalUnchecked("//test_pkg:my_tagged_test")
+        val taggedTestRule: Rule = addRule(pkgBuilder, taggedTestLabel, FAUX_TEST_CLASS)
+        taggedTestRule.setAttributeValue(
+            FAUX_TEST_CLASS.getAttributeProvider().getAttributeByName("tags"),
+            com.google.common.collect.ImmutableList.of<E?>("tag1"),  /* explicit= */
+            true
+        )
 
-  @Before
-  public void setUp() {
-    this.fileSystem = new InMemoryFileSystem(DigestHashFunction.SHA256);
-  }
+        val taggedManualTestLabel: Label? = Label.parseCanonicalUnchecked("//test_pkg:my_tagged_manual_test")
+        val taggedManualTestRule: Rule = addRule(pkgBuilder, taggedManualTestLabel, FAUX_TEST_CLASS)
+        taggedManualTestRule.setAttributeValue(
+            FAUX_TEST_CLASS.getAttributeProvider().getAttributeByName("tags"),
+            com.google.common.collect.ImmutableList.of<E?>("manual", "tag1"),  /* explicit= */
+            true
+        )
 
-  @Test
-  public void testBuildPartialPopulatesImplicitTestSuiteIgnoresManualTests() throws Exception {
-    Package.Builder pkgBuilder = pkgBuilder("test_pkg");
-    Label testLabel = Label.parseCanonicalUnchecked("//test_pkg:my_test");
-    addRule(pkgBuilder, testLabel, FAUX_TEST_CLASS);
+        val allTests: MutableList<Label?>? =
+            pkgBuilder.getTestSuiteImplicitTestsRef( /*tags=*/com.google.common.collect.ImmutableList.of<E?>())
+        val tag1Tests: MutableList<Label?>? =
+            pkgBuilder.getTestSuiteImplicitTestsRef(com.google.common.collect.ImmutableList.of<E?>("tag1"))
 
-    Label manualTestLabel = Label.parseCanonicalUnchecked("//test_pkg:my_manual_test");
-    Rule tag2Rule = addRule(pkgBuilder, manualTestLabel, FAUX_TEST_CLASS);
-    tag2Rule.setAttributeValue(
-        FAUX_TEST_CLASS.getAttributeProvider().getAttributeByName("tags"),
-        ImmutableList.of("manual"),
-        /* explicit= */ true);
+        pkgBuilder.buildPartial()
 
-    Label taggedTestLabel = Label.parseCanonicalUnchecked("//test_pkg:my_tagged_test");
-    Rule taggedTestRule = addRule(pkgBuilder, taggedTestLabel, FAUX_TEST_CLASS);
-    taggedTestRule.setAttributeValue(
-        FAUX_TEST_CLASS.getAttributeProvider().getAttributeByName("tags"),
-        ImmutableList.of("tag1"),
-        /* explicit= */ true);
+        Truth.assertThat(allTests).containsExactly(testLabel, taggedTestLabel)
+        Truth.assertThat(tag1Tests).containsExactly(taggedTestLabel)
+    }
 
-    Label taggedManualTestLabel = Label.parseCanonicalUnchecked("//test_pkg:my_tagged_manual_test");
-    Rule taggedManualTestRule = addRule(pkgBuilder, taggedManualTestLabel, FAUX_TEST_CLASS);
-    taggedManualTestRule.setAttributeValue(
-        FAUX_TEST_CLASS.getAttributeProvider().getAttributeByName("tags"),
-        ImmutableList.of("manual", "tag1"),
-        /* explicit= */ true);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBuildPartialPopulatesImplicitTestSuiteValueOnlyForRequestedTags() {
+        val pkgBuilder: Package.Builder = pkgBuilder("test_pkg")
+        val tag1Label: Label? = Label.parseCanonicalUnchecked("//test_pkg:my_test_tag_1")
+        val tag1Rule: Rule = addRule(pkgBuilder, tag1Label, FAUX_TEST_CLASS)
+        tag1Rule.setAttributeValue(
+            FAUX_TEST_CLASS.getAttributeProvider().getAttributeByName("tags"),
+            com.google.common.collect.ImmutableList.of<E?>("tag1"),  /* explicit= */
+            true
+        )
 
-    List<Label> allTests = pkgBuilder.getTestSuiteImplicitTestsRef(/*tags=*/ ImmutableList.of());
-    List<Label> tag1Tests = pkgBuilder.getTestSuiteImplicitTestsRef(ImmutableList.of("tag1"));
+        val tag2Label: Label? = Label.parseCanonicalUnchecked("//test_pkg:my_test_tag_2")
+        val tag2Rule: Rule = addRule(pkgBuilder, tag2Label, FAUX_TEST_CLASS)
+        tag2Rule.setAttributeValue(
+            FAUX_TEST_CLASS.getAttributeProvider().getAttributeByName("tags"),
+            com.google.common.collect.ImmutableList.of<E?>("tag2"),  /* explicit= */
+            true
+        )
 
-    pkgBuilder.buildPartial();
+        val result: MutableList<Label?>? =
+            pkgBuilder.getTestSuiteImplicitTestsRef(com.google.common.collect.ImmutableList.of<E?>("tag1"))
 
-    assertThat(allTests).containsExactly(testLabel, taggedTestLabel);
-    assertThat(tag1Tests).containsExactly(taggedTestLabel);
-  }
+        pkgBuilder.buildPartial()
 
-  @Test
-  public void testBuildPartialPopulatesImplicitTestSuiteValueOnlyForRequestedTags()
-      throws Exception {
-    Package.Builder pkgBuilder = pkgBuilder("test_pkg");
-    Label tag1Label = Label.parseCanonicalUnchecked("//test_pkg:my_test_tag_1");
-    Rule tag1Rule = addRule(pkgBuilder, tag1Label, FAUX_TEST_CLASS);
-    tag1Rule.setAttributeValue(
-        FAUX_TEST_CLASS.getAttributeProvider().getAttributeByName("tags"),
-        ImmutableList.of("tag1"),
-        /* explicit= */ true);
+        Truth.assertThat(result).containsExactly(tag1Label)
 
-    Label tag2Label = Label.parseCanonicalUnchecked("//test_pkg:my_test_tag_2");
-    Rule tag2Rule = addRule(pkgBuilder, tag2Label, FAUX_TEST_CLASS);
-    tag2Rule.setAttributeValue(
-        FAUX_TEST_CLASS.getAttributeProvider().getAttributeByName("tags"),
-        ImmutableList.of("tag2"),
-        /* explicit= */ true);
+        // Neither "tag2" nor empty (all tags) were requested before buildPartial, so they weren't
+        // accumulated.
+        assertThat(pkgBuilder.getTestSuiteImplicitTestsRef(com.google.common.collect.ImmutableList.of<E?>("tag2"))).isEmpty()
+        assertThat(pkgBuilder.getTestSuiteImplicitTestsRef( /*tags=*/com.google.common.collect.ImmutableList.of<E?>())).isEmpty()
+    }
 
-    List<Label> result = pkgBuilder.getTestSuiteImplicitTestsRef(ImmutableList.of("tag1"));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBuildPartialPopulatesImplicitTestSuitesMatchingTags() {
+        val pkgBuilder: Package.Builder = pkgBuilder("test_pkg")
+        val matchingLabel: Label? = Label.parseCanonicalUnchecked("//test_pkg:matching")
+        val matchingRule: Rule = addRule(pkgBuilder, matchingLabel, FAUX_TEST_CLASS)
+        matchingRule.setAttributeValue(
+            FAUX_TEST_CLASS.getAttributeProvider().getAttributeByName("tags"),
+            com.google.common.collect.ImmutableList.of<E?>("tag1"),  /* explicit= */
+            true
+        )
 
-    pkgBuilder.buildPartial();
+        val excludedLabel: Label? = Label.parseCanonicalUnchecked("//test_pkg:excluded")
+        val excludedRule: Rule = addRule(pkgBuilder, excludedLabel, FAUX_TEST_CLASS)
+        excludedRule.setAttributeValue(
+            FAUX_TEST_CLASS.getAttributeProvider().getAttributeByName("tags"),
+            com.google.common.collect.ImmutableList.of<E?>("tag1", "tag2"),  /* explicit= */
+            true
+        )
 
-    assertThat(result).containsExactly(tag1Label);
+        val result: MutableList<Label?>? =
+            pkgBuilder.getTestSuiteImplicitTestsRef(com.google.common.collect.ImmutableList.of<E?>("tag1", "-tag2"))
 
-    // Neither "tag2" nor empty (all tags) were requested before buildPartial, so they weren't
-    // accumulated.
-    assertThat(pkgBuilder.getTestSuiteImplicitTestsRef(ImmutableList.of("tag2"))).isEmpty();
-    assertThat(pkgBuilder.getTestSuiteImplicitTestsRef(/*tags=*/ ImmutableList.of())).isEmpty();
-  }
+        pkgBuilder.buildPartial()
+        Truth.assertThat(result).containsExactly(matchingLabel)
+    }
 
-  @Test
-  public void testBuildPartialPopulatesImplicitTestSuitesMatchingTags() throws Exception {
-    Package.Builder pkgBuilder = pkgBuilder("test_pkg");
-    Label matchingLabel = Label.parseCanonicalUnchecked("//test_pkg:matching");
-    Rule matchingRule = addRule(pkgBuilder, matchingLabel, FAUX_TEST_CLASS);
-    matchingRule.setAttributeValue(
-        FAUX_TEST_CLASS.getAttributeProvider().getAttributeByName("tags"),
-        ImmutableList.of("tag1"),
-        /* explicit= */ true);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBuildPartialPopulatesImplicitTestSuiteValueIdempotently() {
+        val pkgBuilder: Package.Builder = pkgBuilder("test_pkg")
+        val testLabel: Label? = Label.parseCanonicalUnchecked("//test_pkg:my_test")
+        addRule(pkgBuilder, testLabel, FAUX_TEST_CLASS)
 
-    Label excludedLabel = Label.parseCanonicalUnchecked("//test_pkg:excluded");
-    Rule excludedRule = addRule(pkgBuilder, excludedLabel, FAUX_TEST_CLASS);
-    excludedRule.setAttributeValue(
-        FAUX_TEST_CLASS.getAttributeProvider().getAttributeByName("tags"),
-        ImmutableList.of("tag1", "tag2"),
-        /* explicit= */ true);
+        // Ensure targets are accumulated.
+        val result: MutableList<Label?>? =
+            pkgBuilder.getTestSuiteImplicitTestsRef( /*tags=*/com.google.common.collect.ImmutableList.of<E?>())
 
-    List<Label> result = pkgBuilder.getTestSuiteImplicitTestsRef(ImmutableList.of("tag1", "-tag2"));
+        pkgBuilder.buildPartial()
+        Truth.assertThat(result).containsExactly(testLabel)
 
-    pkgBuilder.buildPartial();
-    assertThat(result).containsExactly(matchingLabel);
-  }
+        // Multiple calls are valid - make sure they're safe.
+        pkgBuilder.buildPartial()
+        Truth.assertThat(result).containsExactly(testLabel)
+    }
 
-  @Test
-  public void testBuildPartialPopulatesImplicitTestSuiteValueIdempotently() throws Exception {
-    Package.Builder pkgBuilder = pkgBuilder("test_pkg");
-    Label testLabel = Label.parseCanonicalUnchecked("//test_pkg:my_test");
-    addRule(pkgBuilder, testLabel, FAUX_TEST_CLASS);
+    private fun pkgBuilder(name: String?): Package.Builder {
+        return java.lang.Package.newPackageBuilder(
+            PackageSettings.DEFAULTS,
+            PackageIdentifier.createInMainRepo(name),  /* filename= */
+            RootedPath.toRootedPath(
+                Root.fromPath(fileSystem.getPath("/irrelevantRoot")),
+                PathFragment.create(name + "/BUILD")
+            ),
+            "workspace",
+            java.util.Optional.empty<T?>(),
+            java.util.Optional.empty<T?>(),  /* noImplicitFileExport= */
+            true,  /* simplifyUnconditionalSelectsInRuleAttrs= */
+            StarlarkSemantics.DEFAULT.getBool(
+                BuildLanguageOptions.INCOMPATIBLE_SIMPLIFY_UNCONDITIONAL_SELECTS_IN_RULE_ATTRS
+            ),  /* repositoryMapping= */
+            RepositoryMapping.EMPTY,  /* mainRepositoryMapping= */
+            null,  /* cpuBoundSemaphore= */
+            null,
+            PackageOverheadEstimator.NOOP_ESTIMATOR,  /* generatorMap= */
+            null,  /* configSettingVisibilityPolicy= */
+            null,  /* globber= */
+            null,  /* enableNameConflictChecking= */
+            true,  /* trackFullMacroInformation= */
+            false,
+            java.lang.Package.Builder.PackageLimits.DEFAULTS
+        )
+    }
 
-    // Ensure targets are accumulated.
-    List<Label> result = pkgBuilder.getTestSuiteImplicitTestsRef(/*tags=*/ ImmutableList.of());
+    companion object {
+        private val FAUX_TEST_CLASS: RuleClass = Builder("faux_test", RuleClassType.TEST,  /* starlark= */false)
+            .addAttribute(
+                Attribute.attr("tags", Types.STRING_LIST).nonconfigurable("tags aren't").build()
+            )
+            .addAttribute(Attribute.attr("size", Type.STRING).nonconfigurable("size isn't").build())
+            .addAttribute(Attribute.attr("timeout", Type.STRING).build())
+            .addAttribute(Attribute.attr("flaky", Type.BOOLEAN).build())
+            .addAttribute(Attribute.attr("shard_count", Type.INTEGER).build())
+            .addAttribute(Attribute.attr("local", Type.BOOLEAN).build())
+            .setConfiguredTargetFunction(< T > mock < T ? > (StarlarkCallable::class.java))
+        .build()
 
-    pkgBuilder.buildPartial();
-    assertThat(result).containsExactly(testLabel);
-
-    // Multiple calls are valid - make sure they're safe.
-    pkgBuilder.buildPartial();
-    assertThat(result).containsExactly(testLabel);
-  }
-
-  private Package.Builder pkgBuilder(String name) {
-    return Package.newPackageBuilder(
-        PackageSettings.DEFAULTS,
-        PackageIdentifier.createInMainRepo(name),
-        /* filename= */ RootedPath.toRootedPath(
-            Root.fromPath(fileSystem.getPath("/irrelevantRoot")),
-            PathFragment.create(name + "/BUILD")),
-        "workspace",
-        Optional.empty(),
-        Optional.empty(),
-        /* noImplicitFileExport= */ true,
-        /* simplifyUnconditionalSelectsInRuleAttrs= */ StarlarkSemantics.DEFAULT.getBool(
-            BuildLanguageOptions.INCOMPATIBLE_SIMPLIFY_UNCONDITIONAL_SELECTS_IN_RULE_ATTRS),
-        /* repositoryMapping= */ RepositoryMapping.EMPTY,
-        /* mainRepositoryMapping= */ null,
-        /* cpuBoundSemaphore= */ null,
-        PackageOverheadEstimator.NOOP_ESTIMATOR,
-        /* generatorMap= */ null,
-        /* configSettingVisibilityPolicy= */ null,
-        /* globber= */ null,
-        /* enableNameConflictChecking= */ true,
-        /* trackFullMacroInformation= */ false,
-        Package.Builder.PackageLimits.DEFAULTS);
-  }
-
-  private static Rule addRule(Package.Builder pkgBuilder, Label label, RuleClass ruleClass)
-      throws Exception {
-    Rule rule = pkgBuilder.createRule(label, ruleClass, /* threadCallStack= */ ImmutableList.of());
-    rule.populateOutputFiles(new StoredEventHandler(), pkgBuilder.getPackageIdentifier());
-    pkgBuilder.addRule(rule);
-    return rule;
-  }
+        @Throws(java.lang.Exception::class)
+        private fun addRule(pkgBuilder: Package.Builder, label: Label?, ruleClass: RuleClass?): Rule {
+            val rule: Rule = pkgBuilder.createRule(
+                label,
+                ruleClass,  /* threadCallStack= */
+                com.google.common.collect.ImmutableList.of<E?>()
+            )
+            rule.populateOutputFiles(StoredEventHandler(), pkgBuilder.getPackageIdentifier())
+            pkgBuilder.addRule(rule)
+            return rule
+        }
+    }
 }

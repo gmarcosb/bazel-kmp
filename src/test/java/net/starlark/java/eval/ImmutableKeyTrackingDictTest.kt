@@ -11,98 +11,93 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.eval
 
-package net.starlark.java.eval;
+import net.starlark.java.eval.Dict.ImmutableKeyTrackingDict
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+/** Tests for [ImmutableKeyTrackingDict].  */
+@RunWith(JUnit4::class)
+class ImmutableKeyTrackingDictTest {
+    private val dict: ImmutableKeyTrackingDict<String?, StarlarkInt?> =
+        Dict.< String, StarlarkInt>builder<kotlin.String?, StarlarkInt?>()
+    .put("a", StarlarkInt.of(1))
+    .put("b", StarlarkInt.of(2))
+    .put("c", StarlarkInt.of(3))
+    .put("d", StarlarkInt.of(4))
+    .buildImmutableWithKeyTracking()
 
-import java.util.Map;
-import net.starlark.java.eval.Dict.ImmutableKeyTrackingDict;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @get:Throws(java.lang.Exception::class)
+    @get:org.junit.Test
+    val isImmutable: Unit
+        get() {
+            assertThat(dict.mutability()).isEqualTo(Mutability.IMMUTABLE)
+            org.junit.Assert.assertThrows<T?>(
+                EvalException::class.java,
+                org.junit.function.ThrowingRunnable { dict.putEntry("e", StarlarkInt.of(5)) })
+            assertThat(dict.containsKey("e")).isFalse()
+            assertThat(dict.getAccessedKeys()).isEmpty()
+        }
 
-/** Tests for {@link ImmutableKeyTrackingDict}. */
-@RunWith(JUnit4.class)
-public final class ImmutableKeyTrackingDictTest {
-
-  private final ImmutableKeyTrackingDict<String, StarlarkInt> dict =
-      Dict.<String, StarlarkInt>builder()
-          .put("a", StarlarkInt.of(1))
-          .put("b", StarlarkInt.of(2))
-          .put("c", StarlarkInt.of(3))
-          .put("d", StarlarkInt.of(4))
-          .buildImmutableWithKeyTracking();
-
-  @Test
-  public void isImmutable() throws Exception {
-    assertThat(dict.mutability()).isEqualTo(Mutability.IMMUTABLE);
-    assertThrows(EvalException.class, () -> dict.putEntry("e", StarlarkInt.of(5)));
-    assertThat(dict.containsKey("e")).isFalse();
-    assertThat(dict.getAccessedKeys()).isEmpty();
-  }
-
-  @Test
-  public void containsKey_tracksPresentKeys() {
-    assertThat(dict.containsKey("a")).isTrue();
-    assertThat(dict.containsKey("b")).isTrue();
-    assertThat(dict.getAccessedKeys()).containsExactly("a", "b");
-  }
-
-  @Test
-  public void containsKey_ignoresAbsentKeys() {
-    assertThat(dict.containsKey("absent")).isFalse();
-    assertThat(dict.containsKey(new Object())).isFalse();
-    assertThat(dict.getAccessedKeys()).isEmpty();
-  }
-
-  @Test
-  public void get_tracksPresentKeys() {
-    assertThat(dict.get("a")).isEqualTo(StarlarkInt.of(1));
-    assertThat(dict.get("b")).isEqualTo(StarlarkInt.of(2));
-    assertThat(dict.getAccessedKeys()).containsExactly("a", "b");
-  }
-
-  @Test
-  public void get_ignoresAbsentKeys() {
-    assertThat(dict.get("absent")).isNull();
-    assertThat(dict.get(new Object())).isNull();
-    assertThat(dict.getAccessedKeys()).isEmpty();
-  }
-
-  @Test
-  public void keySet_reportsAllKeys() {
-    assertThat(dict.keySet()).containsExactly("a", "b", "c", "d").inOrder();
-    assertThat(dict.getAccessedKeys()).isEqualTo(dict.keySet());
-  }
-
-  @Test
-  public void entrySet_reportsAllKeys() {
-    assertThat(dict.entrySet()).hasSize(4);
-    assertThat(dict.getAccessedKeys()).isEqualTo(dict.keySet());
-  }
-
-  @Test
-  public void iteration_reportsAllKeys() {
-    for (String key : dict) {
-      assertThat(key).isAnyOf("a", "b", "c", "d");
+    @org.junit.Test
+    fun containsKey_tracksPresentKeys() {
+        assertThat(dict.containsKey("a")).isTrue()
+        assertThat(dict.containsKey("b")).isTrue()
+        assertThat(dict.getAccessedKeys()).containsExactly("a", "b")
     }
-    assertThat(dict.getAccessedKeys()).isEqualTo(dict.keySet());
-  }
 
-  @Test
-  public void repr_reportsAllKeys() {
-    StringBuilder sb = new StringBuilder();
-    dict.repr(new Printer(sb), StarlarkSemantics.DEFAULT);
-    assertThat(sb.toString()).isEqualTo("{\"a\": 1, \"b\": 2, \"c\": 3, \"d\": 4}");
-    assertThat(dict.getAccessedKeys()).isEqualTo(dict.keySet());
-  }
+    @org.junit.Test
+    fun containsKey_ignoresAbsentKeys() {
+        assertThat(dict.containsKey("absent")).isFalse()
+        assertThat(dict.containsKey(Any())).isFalse()
+        assertThat(dict.getAccessedKeys()).isEmpty()
+    }
 
-  @Test
-  public void mutableCopy_reportsAllKeys() {
-    Map<String, StarlarkInt> copy = Dict.copyOf(Mutability.create("mutable"), dict);
-    assertThat(copy).isNotSameInstanceAs(dict);
-    assertThat(dict.getAccessedKeys()).isEqualTo(dict.keySet());
-  }
+    @org.junit.Test
+    fun get_tracksPresentKeys() {
+        assertThat(dict.get("a")).isEqualTo(StarlarkInt.of(1))
+        assertThat(dict.get("b")).isEqualTo(StarlarkInt.of(2))
+        assertThat(dict.getAccessedKeys()).containsExactly("a", "b")
+    }
+
+    @org.junit.Test
+    fun get_ignoresAbsentKeys() {
+        assertThat(dict.get("absent")).isNull()
+        assertThat(dict.get(Any())).isNull()
+        assertThat(dict.getAccessedKeys()).isEmpty()
+    }
+
+    @org.junit.Test
+    fun keySet_reportsAllKeys() {
+        assertThat(dict.keySet()).containsExactly("a", "b", "c", "d").inOrder()
+        assertThat(dict.getAccessedKeys()).isEqualTo(dict.keySet())
+    }
+
+    @org.junit.Test
+    fun entrySet_reportsAllKeys() {
+        assertThat(dict.entrySet()).hasSize(4)
+        assertThat(dict.getAccessedKeys()).isEqualTo(dict.keySet())
+    }
+
+    @org.junit.Test
+    fun iteration_reportsAllKeys() {
+        for (key in dict) {
+            Truth.assertThat(key).isAnyOf("a", "b", "c", "d")
+        }
+        assertThat(dict.getAccessedKeys()).isEqualTo(dict.keySet())
+    }
+
+    @org.junit.Test
+    fun repr_reportsAllKeys() {
+        val sb: java.lang.StringBuilder = java.lang.StringBuilder()
+        dict.repr(Printer(sb), StarlarkSemantics.DEFAULT)
+        Truth.assertThat(sb.toString()).isEqualTo("{\"a\": 1, \"b\": 2, \"c\": 3, \"d\": 4}")
+        assertThat(dict.getAccessedKeys()).isEqualTo(dict.keySet())
+    }
+
+    @org.junit.Test
+    fun mutableCopy_reportsAllKeys() {
+        val copy: MutableMap<String?, StarlarkInt?>? = Dict.copyOf(Mutability.create("mutable"), dict)
+        Truth.assertThat(copy).isNotSameInstanceAs(dict)
+        assertThat(dict.getAccessedKeys()).isEqualTo(dict.keySet())
+    }
 }

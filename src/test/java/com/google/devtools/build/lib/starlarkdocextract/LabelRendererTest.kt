@@ -11,100 +11,100 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkdocextract
 
-package com.google.devtools.build.lib.starlarkdocextract;
+import com.google.devtools.build.lib.cmdline.Label
 
-import static com.google.common.truth.Truth.assertThat;
+/** Tests for [LabelRenderer].  */
+@RunWith(JUnit4::class)
+class LabelRendererTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun defaultRenderer() {
+        val mainRepoLabel: Label? = Label.parseCanonicalUnchecked("//foo:bar")
+        val depRepoLabel: Label? = Label.parseCanonicalUnchecked("@dep//foo:baz")
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.RepositoryMapping;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import java.util.Optional;
-import net.starlark.java.eval.Dict;
-import net.starlark.java.eval.StarlarkList;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+        assertThat(LabelRenderer.DEFAULT.render(mainRepoLabel)).isEqualTo("//foo:bar")
+        assertThat(LabelRenderer.DEFAULT.reprWithoutLabelConstructor(mainRepoLabel))
+            .isEqualTo("\"//foo:bar\"")
+        assertThat(LabelRenderer.DEFAULT.repr(mainRepoLabel)).isEqualTo("Label(\"//foo:bar\")")
 
-/** Tests for {@link LabelRenderer}. */
-@RunWith(JUnit4.class)
-public final class LabelRendererTest {
+        assertThat(LabelRenderer.DEFAULT.render(depRepoLabel)).isEqualTo("@@dep//foo:baz")
+        assertThat(LabelRenderer.DEFAULT.reprWithoutLabelConstructor(depRepoLabel))
+            .isEqualTo("\"@@dep//foo:baz\"")
+        assertThat(LabelRenderer.DEFAULT.repr(depRepoLabel)).isEqualTo("Label(\"@@dep//foo:baz\")")
+    }
 
-  @Test
-  public void defaultRenderer() throws Exception {
-    Label mainRepoLabel = Label.parseCanonicalUnchecked("//foo:bar");
-    Label depRepoLabel = Label.parseCanonicalUnchecked("@dep//foo:baz");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun mainRepoLabel_withoutMainRepoName() {
+        val label: Label = Label.parseCanonicalUnchecked("//foo:bar")
+        val shorthandLabel: Label = Label.parseCanonicalUnchecked("//foo")
+        val dict: Any? = Dict.immutableCopyOf(com.google.common.collect.ImmutableMap.of<K?, V?>(label, shorthandLabel))
 
-    assertThat(LabelRenderer.DEFAULT.render(mainRepoLabel)).isEqualTo("//foo:bar");
-    assertThat(LabelRenderer.DEFAULT.reprWithoutLabelConstructor(mainRepoLabel))
-        .isEqualTo("\"//foo:bar\"");
-    assertThat(LabelRenderer.DEFAULT.repr(mainRepoLabel)).isEqualTo("Label(\"//foo:bar\")");
+        val repositoryMapping: RepositoryMapping? = RepositoryMapping.EMPTY
+        val labelRenderer: LabelRenderer = LabelRenderer(repositoryMapping, java.util.Optional.empty<T?>())
 
-    assertThat(LabelRenderer.DEFAULT.render(depRepoLabel)).isEqualTo("@@dep//foo:baz");
-    assertThat(LabelRenderer.DEFAULT.reprWithoutLabelConstructor(depRepoLabel))
-        .isEqualTo("\"@@dep//foo:baz\"");
-    assertThat(LabelRenderer.DEFAULT.repr(depRepoLabel)).isEqualTo("Label(\"@@dep//foo:baz\")");
-  }
+        assertThat(labelRenderer.render(label)).isEqualTo("//foo:bar")
+        assertThat(labelRenderer.render(shorthandLabel)).isEqualTo("//foo")
 
-  @Test
-  public void mainRepoLabel_withoutMainRepoName() throws Exception {
-    Label label = Label.parseCanonicalUnchecked("//foo:bar");
-    Label shorthandLabel = Label.parseCanonicalUnchecked("//foo");
-    Object dict = Dict.immutableCopyOf(ImmutableMap.of(label, shorthandLabel));
+        assertThat(labelRenderer.reprWithoutLabelConstructor(dict))
+            .isEqualTo("{\"//foo:bar\": \"//foo\"}")
+        assertThat(labelRenderer.repr(dict)).isEqualTo("{Label(\"//foo:bar\"): Label(\"//foo:foo\")}")
+    }
 
-    RepositoryMapping repositoryMapping = RepositoryMapping.EMPTY;
-    LabelRenderer labelRenderer = new LabelRenderer(repositoryMapping, Optional.empty());
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun mainRepoLabel_withMainRepoName() {
+        val label: Label? = Label.parseCanonicalUnchecked("//foo:bar")
+        val shorthandLabel: Label? = Label.parseCanonicalUnchecked("//foo")
+        val ultraShorthandLabel: Label? = Label.parseCanonicalUnchecked("//:my_main")
+        val list: Any? =
+            StarlarkList.immutableCopyOf(
+                com.google.common.collect.ImmutableList.of<E?>(
+                    label,
+                    shorthandLabel,
+                    ultraShorthandLabel
+                )
+            )
 
-    assertThat(labelRenderer.render(label)).isEqualTo("//foo:bar");
-    assertThat(labelRenderer.render(shorthandLabel)).isEqualTo("//foo");
+        val repositoryMapping: RepositoryMapping? = RepositoryMapping.EMPTY
+        val labelRenderer: LabelRenderer = LabelRenderer(repositoryMapping, java.util.Optional.of<T?>("my_main"))
 
-    assertThat(labelRenderer.reprWithoutLabelConstructor(dict))
-        .isEqualTo("{\"//foo:bar\": \"//foo\"}");
-    assertThat(labelRenderer.repr(dict)).isEqualTo("{Label(\"//foo:bar\"): Label(\"//foo:foo\")}");
-  }
+        assertThat(labelRenderer.render(label)).isEqualTo("@my_main//foo:bar")
+        assertThat(labelRenderer.render(shorthandLabel)).isEqualTo("@my_main//foo")
+        assertThat(labelRenderer.render(ultraShorthandLabel)).isEqualTo("@my_main")
 
-  @Test
-  public void mainRepoLabel_withMainRepoName() throws Exception {
-    Label label = Label.parseCanonicalUnchecked("//foo:bar");
-    Label shorthandLabel = Label.parseCanonicalUnchecked("//foo");
-    Label ultraShorthandLabel = Label.parseCanonicalUnchecked("//:my_main");
-    Object list =
-        StarlarkList.immutableCopyOf(ImmutableList.of(label, shorthandLabel, ultraShorthandLabel));
+        assertThat(labelRenderer.reprWithoutLabelConstructor(list))
+            .isEqualTo("[\"@my_main//foo:bar\", \"@my_main//foo\", \"@my_main\"]")
+        assertThat(labelRenderer.repr(list))
+            .isEqualTo(
+                "[Label(\"@my_main//foo:bar\"), Label(\"@my_main//foo:foo\"),"
+                        + " Label(\"@my_main//:my_main\")]"
+            )
+    }
 
-    RepositoryMapping repositoryMapping = RepositoryMapping.EMPTY;
-    LabelRenderer labelRenderer = new LabelRenderer(repositoryMapping, Optional.of("my_main"));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun remappedRepoLabel() {
+        val label: Label? = Label.parseCanonicalUnchecked("@canonical//foo:bar")
+        val shorthandLabel: Label? = Label.parseCanonicalUnchecked("@canonical//foo")
+        val list: Any? =
+            StarlarkList.immutableCopyOf(com.google.common.collect.ImmutableList.of<E?>(label, shorthandLabel))
 
-    assertThat(labelRenderer.render(label)).isEqualTo("@my_main//foo:bar");
-    assertThat(labelRenderer.render(shorthandLabel)).isEqualTo("@my_main//foo");
-    assertThat(labelRenderer.render(ultraShorthandLabel)).isEqualTo("@my_main");
+        val repositoryMapping: RepositoryMapping? =
+            RepositoryMapping.create(
+                com.google.common.collect.ImmutableMap.of<K?, V?>("local", RepositoryName.create("canonical")),
+                RepositoryName.MAIN
+            )
+        val labelRenderer: LabelRenderer = LabelRenderer(repositoryMapping, java.util.Optional.of<T?>("my_main"))
 
-    assertThat(labelRenderer.reprWithoutLabelConstructor(list))
-        .isEqualTo("[\"@my_main//foo:bar\", \"@my_main//foo\", \"@my_main\"]");
-    assertThat(labelRenderer.repr(list))
-        .isEqualTo(
-            "[Label(\"@my_main//foo:bar\"), Label(\"@my_main//foo:foo\"),"
-                + " Label(\"@my_main//:my_main\")]");
-  }
+        assertThat(labelRenderer.render(label)).isEqualTo("@local//foo:bar")
+        assertThat(labelRenderer.render(shorthandLabel)).isEqualTo("@local//foo")
 
-  @Test
-  public void remappedRepoLabel() throws Exception {
-    Label label = Label.parseCanonicalUnchecked("@canonical//foo:bar");
-    Label shorthandLabel = Label.parseCanonicalUnchecked("@canonical//foo");
-    Object list = StarlarkList.immutableCopyOf(ImmutableList.of(label, shorthandLabel));
-
-    RepositoryMapping repositoryMapping =
-        RepositoryMapping.create(
-            ImmutableMap.of("local", RepositoryName.create("canonical")), RepositoryName.MAIN);
-    LabelRenderer labelRenderer = new LabelRenderer(repositoryMapping, Optional.of("my_main"));
-
-    assertThat(labelRenderer.render(label)).isEqualTo("@local//foo:bar");
-    assertThat(labelRenderer.render(shorthandLabel)).isEqualTo("@local//foo");
-
-    assertThat(labelRenderer.reprWithoutLabelConstructor(list))
-        .isEqualTo("[\"@local//foo:bar\", \"@local//foo\"]");
-    assertThat(labelRenderer.repr(list))
-        .isEqualTo("[Label(\"@local//foo:bar\"), Label(\"@local//foo:foo\")]");
-  }
+        assertThat(labelRenderer.reprWithoutLabelConstructor(list))
+            .isEqualTo("[\"@local//foo:bar\", \"@local//foo\"]")
+        assertThat(labelRenderer.repr(list))
+            .isEqualTo("[Label(\"@local//foo:bar\"), Label(\"@local//foo:foo\")]")
+    }
 }

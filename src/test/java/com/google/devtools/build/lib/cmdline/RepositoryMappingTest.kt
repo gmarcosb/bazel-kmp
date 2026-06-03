@@ -11,61 +11,76 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.cmdline
 
-package com.google.devtools.build.lib.cmdline;
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import static com.google.common.truth.Truth.assertThat;
+/** Tests for [RepositoryMapping].  */
+@RunWith(JUnit4::class)
+class RepositoryMappingTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun neverFallback() {
+        val mapping: RepositoryMapping =
+            RepositoryMapping.create(
+                com.google.common.collect.ImmutableMap.of<K?, V?>("A", RepositoryName.create("com_foo_bar_a")),
+                RepositoryName.create("fake_owner_repo")
+            )
+        assertThat(mapping.get("A")).isEqualTo(RepositoryName.create("com_foo_bar_a"))
+        assertThat(mapping.get("B"))
+            .isEqualTo(
+                RepositoryName.create("B").toNonVisible(RepositoryName.create("fake_owner_repo"))
+            )
+    }
 
-import com.google.common.collect.ImmutableMap;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun additionalMappings_basic() {
+        val mapping: RepositoryMapping =
+            RepositoryMapping.create(
+                com.google.common.collect.ImmutableMap.of<K?, V?>("A", RepositoryName.create("com_foo_bar_a")),
+                RepositoryName.create("fake_owner_repo")
+            )
+                .withAdditionalMappings(
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(
+                        "B",
+                        RepositoryName.create("com_foo_bar_b")
+                    )
+                )
+        assertThat(mapping.get("A")).isEqualTo(RepositoryName.create("com_foo_bar_a"))
+        assertThat(mapping.get("B")).isEqualTo(RepositoryName.create("com_foo_bar_b"))
+        assertThat(mapping.get("C"))
+            .isEqualTo(
+                RepositoryName.create("C").toNonVisible(RepositoryName.create("fake_owner_repo"))
+            )
+    }
 
-/** Tests for {@link RepositoryMapping}. */
-@RunWith(JUnit4.class)
-public final class RepositoryMappingTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun additionalMappings_precedence() {
+        val mapping: RepositoryMapping =
+            RepositoryMapping.create(
+                com.google.common.collect.ImmutableMap.of<K?, V?>("A", RepositoryName.create("A1")), RepositoryName.MAIN
+            )
+                .withAdditionalMappings(
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(
+                        "A",
+                        RepositoryName.create("A2")
+                    )
+                )
+        assertThat(mapping.get("A")).isEqualTo(RepositoryName.create("A1"))
+    }
 
-  @Test
-  public void neverFallback() throws Exception {
-    RepositoryMapping mapping =
-        RepositoryMapping.create(
-            ImmutableMap.of("A", RepositoryName.create("com_foo_bar_a")),
-            RepositoryName.create("fake_owner_repo"));
-    assertThat(mapping.get("A")).isEqualTo(RepositoryName.create("com_foo_bar_a"));
-    assertThat(mapping.get("B"))
-        .isEqualTo(
-            RepositoryName.create("B").toNonVisible(RepositoryName.create("fake_owner_repo")));
-  }
-
-  @Test
-  public void additionalMappings_basic() throws Exception {
-    RepositoryMapping mapping =
-        RepositoryMapping.create(
-                ImmutableMap.of("A", RepositoryName.create("com_foo_bar_a")),
-                RepositoryName.create("fake_owner_repo"))
-            .withAdditionalMappings(ImmutableMap.of("B", RepositoryName.create("com_foo_bar_b")));
-    assertThat(mapping.get("A")).isEqualTo(RepositoryName.create("com_foo_bar_a"));
-    assertThat(mapping.get("B")).isEqualTo(RepositoryName.create("com_foo_bar_b"));
-    assertThat(mapping.get("C"))
-        .isEqualTo(
-            RepositoryName.create("C").toNonVisible(RepositoryName.create("fake_owner_repo")));
-  }
-
-  @Test
-  public void additionalMappings_precedence() throws Exception {
-    RepositoryMapping mapping =
-        RepositoryMapping.create(
-                ImmutableMap.of("A", RepositoryName.create("A1")), RepositoryName.MAIN)
-            .withAdditionalMappings(ImmutableMap.of("A", RepositoryName.create("A2")));
-    assertThat(mapping.get("A")).isEqualTo(RepositoryName.create("A1"));
-  }
-
-  @Test
-  public void unknownRepoDidYouMean() throws LabelSyntaxException {
-    RepositoryMapping mapping =
-        RepositoryMapping.create(
-            ImmutableMap.of("foo", RepositoryName.create("foo_internal")), RepositoryName.MAIN);
-    assertThat(mapping.get("boo").getNameWithAt())
-        .isEqualTo("@@[unknown repo 'boo' requested from @@ (did you mean 'foo'?)]");
-  }
+    @org.junit.Test
+    @Throws(LabelSyntaxException::class)
+    fun unknownRepoDidYouMean() {
+        val mapping: RepositoryMapping =
+            RepositoryMapping.create(
+                com.google.common.collect.ImmutableMap.of<K?, V?>("foo", RepositoryName.create("foo_internal")),
+                RepositoryName.MAIN
+            )
+        assertThat(mapping.get("boo").getNameWithAt())
+            .isEqualTo("@@[unknown repo 'boo' requested from @@ (did you mean 'foo'?)]")
+    }
 }

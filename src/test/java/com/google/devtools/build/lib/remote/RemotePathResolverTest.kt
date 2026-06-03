@@ -11,113 +11,103 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote;
+package com.google.devtools.build.lib.remote
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.Mockito.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import com.google.devtools.build.lib.actions.ActionInput
 
-import com.google.devtools.build.lib.actions.ActionInput;
-import com.google.devtools.build.lib.actions.ActionInputHelper;
-import com.google.devtools.build.lib.exec.SpawnRunner.SpawnExecutionContext;
-import com.google.devtools.build.lib.remote.common.RemotePathResolver;
-import com.google.devtools.build.lib.remote.common.RemotePathResolver.SiblingRepositoryLayoutResolver;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import java.util.SortedMap;
-import java.util.TreeMap;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [RemotePathResolver]  */
+@RunWith(JUnit4::class)
+class RemotePathResolverTest {
+    private var execRoot: Path? = null
+    private var spawnExecutionContext: SpawnExecutionContext? = null
+    private var input: ActionInput? = null
 
-/** Tests for {@link RemotePathResolver} */
-@RunWith(JUnit4.class)
-public class RemotePathResolverTest {
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun setup() {
+        val fs: FileSystem = InMemoryFileSystem(DigestHashFunction.SHA256)
+        execRoot = fs.getPath("/execroot/main")
 
-  private Path execRoot;
-  private SpawnExecutionContext spawnExecutionContext;
-  private ActionInput input;
+        input = ActionInputHelper.fromPath("foo")
+        spawnExecutionContext = Mockito.mock<SpawnExecutionContext>(SpawnExecutionContext::class.java)
+        Mockito.`when`<T?>(
+            spawnExecutionContext.getInputMapping(
+                ArgumentMatchers.any<T?>(),
+                ArgumentMatchers.anyBoolean()
+            )
+        )
+            .thenAnswer(
+                Answer { invocationOnMock: InvocationOnMock? ->
+                    val baseDirectory: PathFragment = invocationOnMock.getArgument<PathFragment>(0)
+                    val inputMap: TreeMap<PathFragment?, ActionInput?> = TreeMap<PathFragment?, ActionInput?>()
+                    inputMap.put(baseDirectory.getRelative(input.getExecPath()), input)
+                    inputMap
+                })
+    }
 
-  @Before
-  public void setup() throws Exception {
-    FileSystem fs = new InMemoryFileSystem(DigestHashFunction.SHA256);
-    execRoot = fs.getPath("/execroot/main");
+    @get:org.junit.Test
+    val workingDirectory_default_isInputRoot: Unit
+        get() {
+            val remotePathResolver: RemotePathResolver = RemotePathResolver.createDefault(execRoot)
 
-    input = ActionInputHelper.fromPath("foo");
-    spawnExecutionContext = mock(SpawnExecutionContext.class);
-    when(spawnExecutionContext.getInputMapping(any(), anyBoolean()))
-        .thenAnswer(
-            invocationOnMock -> {
-              PathFragment baseDirectory = invocationOnMock.getArgument(0);
-              TreeMap<PathFragment, ActionInput> inputMap = new TreeMap<>();
-              inputMap.put(baseDirectory.getRelative(input.getExecPath()), input);
-              return inputMap;
-            });
-  }
+            val workingDirectory: String? = remotePathResolver.getWorkingDirectory().getPathString()
 
-  @Test
-  public void getWorkingDirectory_default_isInputRoot() {
-    RemotePathResolver remotePathResolver = RemotePathResolver.createDefault(execRoot);
+            Truth.assertThat(workingDirectory).isEqualTo("")
+        }
 
-    String workingDirectory = remotePathResolver.getWorkingDirectory().getPathString();
+    @get:org.junit.Test
+    val workingDirectory_sibling_isExecRootBaseName: Unit
+        get() {
+            val remotePathResolver: RemotePathResolver = SiblingRepositoryLayoutResolver(execRoot)
 
-    assertThat(workingDirectory).isEqualTo("");
-  }
+            val workingDirectory: String? = remotePathResolver.getWorkingDirectory().getPathString()
 
-  @Test
-  public void getWorkingDirectory_sibling_isExecRootBaseName() {
-    RemotePathResolver remotePathResolver = new SiblingRepositoryLayoutResolver(execRoot);
+            Truth.assertThat(workingDirectory).isEqualTo("main")
+        }
 
-    String workingDirectory = remotePathResolver.getWorkingDirectory().getPathString();
+    @get:Throws(java.lang.Exception::class)
+    @get:org.junit.Test
+    val inputMapping_default_inputsRelativeToExecRoot: Unit
+        get() {
+            val remotePathResolver: RemotePathResolver = RemotePathResolver.createDefault(execRoot)
 
-    assertThat(workingDirectory).isEqualTo("main");
-  }
+            val inputs: SortedMap<PathFragment?, ActionInput?>? =
+                remotePathResolver.getInputMapping(spawnExecutionContext, false)
 
-  @Test
-  public void getInputMapping_default_inputsRelativeToExecRoot() throws Exception {
-    RemotePathResolver remotePathResolver = RemotePathResolver.createDefault(execRoot);
+            Truth.assertThat(inputs).containsExactly(PathFragment.create("foo"), input)
+        }
 
-    SortedMap<PathFragment, ActionInput> inputs =
-        remotePathResolver.getInputMapping(spawnExecutionContext, false);
+    @get:Throws(java.lang.Exception::class)
+    @get:org.junit.Test
+    val inputMapping_sibling_inputsRelativeToInputRoot: Unit
+        get() {
+            val remotePathResolver: RemotePathResolver = SiblingRepositoryLayoutResolver(execRoot)
 
-    assertThat(inputs).containsExactly(PathFragment.create("foo"), input);
-  }
+            val inputs: SortedMap<PathFragment?, ActionInput?>? =
+                remotePathResolver.getInputMapping(spawnExecutionContext, false)
 
-  @Test
-  public void getInputMapping_sibling_inputsRelativeToInputRoot() throws Exception {
-    RemotePathResolver remotePathResolver = new SiblingRepositoryLayoutResolver(execRoot);
+            Truth.assertThat(inputs).containsExactly(PathFragment.create("main/foo"), input)
+        }
 
-    SortedMap<PathFragment, ActionInput> inputs =
-        remotePathResolver.getInputMapping(spawnExecutionContext, false);
+    @org.junit.Test
+    fun convertPaths_default_relativeToWorkingDirectory() {
+        val remotePathResolver: RemotePathResolver = RemotePathResolver.createDefault(execRoot)
 
-    assertThat(inputs).containsExactly(PathFragment.create("main/foo"), input);
-  }
+        val outputPath: String? = remotePathResolver.localPathToOutputPath(PathFragment.create("bar"))
+        val localPath: Path? = remotePathResolver.outputPathToLocalPath(outputPath)
 
-  @Test
-  public void convertPaths_default_relativeToWorkingDirectory() {
-    RemotePathResolver remotePathResolver = RemotePathResolver.createDefault(execRoot);
+        Truth.assertThat(outputPath).isEqualTo("bar")
+        assertThat(localPath).isEqualTo(execRoot.getRelative("bar"))
+    }
 
-    String outputPath = remotePathResolver.localPathToOutputPath(PathFragment.create("bar"));
-    Path localPath = remotePathResolver.outputPathToLocalPath(outputPath);
+    @org.junit.Test
+    fun convertPaths_siblingCompatible_relativeToWorkingDirectory() {
+        val remotePathResolver: RemotePathResolver = SiblingRepositoryLayoutResolver(execRoot)
 
-    assertThat(outputPath).isEqualTo("bar");
-    assertThat(localPath).isEqualTo(execRoot.getRelative("bar"));
-  }
+        val outputPath: String? = remotePathResolver.localPathToOutputPath(PathFragment.create("bar"))
+        val localPath: Path? = remotePathResolver.outputPathToLocalPath(outputPath)
 
-  @Test
-  public void convertPaths_siblingCompatible_relativeToWorkingDirectory() {
-    RemotePathResolver remotePathResolver = new SiblingRepositoryLayoutResolver(execRoot);
-
-    String outputPath = remotePathResolver.localPathToOutputPath(PathFragment.create("bar"));
-    Path localPath = remotePathResolver.outputPathToLocalPath(outputPath);
-
-    assertThat(outputPath).isEqualTo("bar");
-    assertThat(localPath).isEqualTo(execRoot.getRelative("bar"));
-  }
+        Truth.assertThat(outputPath).isEqualTo("bar")
+        assertThat(localPath).isEqualTo(execRoot.getRelative("bar"))
+    }
 }

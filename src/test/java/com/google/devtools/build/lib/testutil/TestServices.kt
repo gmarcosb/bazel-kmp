@@ -11,17 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.testutil
 
-package com.google.devtools.build.lib.testutil;
+import com.google.devtools.build.lib.bazel.BazelServices.BAZEL_SERVICES
 
-import static com.google.devtools.build.lib.bazel.BazelServices.BAZEL_SERVICES;
-
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.runtime.BlazeService;
-
-/** Test services constants. */
-public final class TestServices {
-  private TestServices() {}
-
-  public static final ImmutableList<BlazeService> BLAZE_SERVICES = BAZEL_SERVICES;
+/** Test services constants.  */
+object TestServices {
+    val BLAZE_SERVICES: com.google.common.collect.ImmutableList<BlazeService?>? = BAZEL_SERVICES
 }

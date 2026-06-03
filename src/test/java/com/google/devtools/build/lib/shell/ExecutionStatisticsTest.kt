@@ -11,129 +11,118 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.shell
 
-package com.google.devtools.build.lib.shell;
+import com.google.devtools.build.lib.vfs.DigestHashFunction
 
-import static com.google.common.truth.Truth.assertThat;
+/** Tests for [ExecutionStatistics].  */
+@RunWith(JUnit4::class)
+class ExecutionStatisticsTest {
+    private var workingDir: Path? = null
 
-import com.google.devtools.build.lib.testutil.TestUtils;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import java.io.BufferedOutputStream;
-import java.time.Duration;
-import java.util.Optional;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link ExecutionStatistics}. */
-@RunWith(JUnit4.class)
-public final class ExecutionStatisticsTest {
-  private Path workingDir;
-
-  @Before
-  public final void createFileSystem() throws Exception {
-    FileSystem testFS = new InMemoryFileSystem(DigestHashFunction.SHA256);
-    workingDir = TestUtils.createUniqueTmpDir(testFS);
-  }
-
-  private Path createExecutionStatisticsProtoFile(
-      com.google.devtools.build.lib.shell.Protos.ExecutionStatistics executionStatisticsProto)
-      throws Exception {
-    Path encodedProtoFile = workingDir.getRelative("encoded_action_execution_proto");
-    try (BufferedOutputStream bufferedOutputStream =
-        new BufferedOutputStream(encodedProtoFile.getOutputStream())) {
-      executionStatisticsProto.writeTo(bufferedOutputStream);
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun createFileSystem() {
+        val testFS: FileSystem = InMemoryFileSystem(DigestHashFunction.SHA256)
+        workingDir = com.google.devtools.build.lib.testutil.TestUtils.createUniqueTmpDir(testFS)
     }
-    return encodedProtoFile;
-  }
 
-  @Test
-  public void testNoResourceUsage_whenNoResourceUsageProto() throws Exception {
-    com.google.devtools.build.lib.shell.Protos.ExecutionStatistics executionStatisticsProto =
-        com.google.devtools.build.lib.shell.Protos.ExecutionStatistics.getDefaultInstance();
-    Path protoFilename = createExecutionStatisticsProtoFile(executionStatisticsProto);
+    @Throws(java.lang.Exception::class)
+    private fun createExecutionStatisticsProtoFile(
+        executionStatisticsProto: com.google.devtools.build.lib.shell.Protos.ExecutionStatistics
+    ): Path {
+        val encodedProtoFile: Path = workingDir.getRelative("encoded_action_execution_proto")
+        BufferedOutputStream(encodedProtoFile.getOutputStream()).use { bufferedOutputStream ->
+            executionStatisticsProto.writeTo(bufferedOutputStream)
+        }
+        return encodedProtoFile
+    }
 
-    Optional<ExecutionStatistics.ResourceUsage> resourceUsage =
-        ExecutionStatistics.getResourceUsage(protoFilename);
-    assertThat(resourceUsage).isEmpty();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNoResourceUsage_whenNoResourceUsageProto() {
+        val executionStatisticsProto: com.google.devtools.build.lib.shell.Protos.ExecutionStatistics =
+            com.google.devtools.build.lib.shell.Protos.ExecutionStatistics.getDefaultInstance()
+        val protoFilename: Path = createExecutionStatisticsProtoFile(executionStatisticsProto)
 
-  @Test
-  public void testStatiticsProvided_fromProtoFilename() throws Exception {
-    Duration riggedUserExecutionTime = Duration.ofSeconds(42).plusNanos(19790000);
-    Duration riggedSystemExecutionTime = Duration.ofSeconds(33).plusNanos(290000);
-    long riggedMaximumResidentSetSize = 1;
-    long riggedIntegralSharedMemorySize = 2;
-    long riggedIntegralUnsharedDataSize = 3;
-    long riggedIntegralUnsharedStackSize = 4;
-    long riggedPageReclaims = 5;
-    long riggedPageFaults = 6;
-    long riggedSwaps = 7;
-    long riggedBlockInputOperations = 8;
-    long riggedBlockOutputOperations = 9;
-    long riggedIpcMessagesSent = 10;
-    long riggedIpcMessagesReceived = 11;
-    long riggedSignalsReceived = 12;
-    long riggedVoluntaryContextSwitches = 13;
-    long riggedInvoluntaryContextSwitches = 14;
+        val resourceUsage: java.util.Optional<ExecutionStatistics.ResourceUsage>? =
+            ExecutionStatistics.getResourceUsage(protoFilename)
+        Truth.assertThat(resourceUsage).isEmpty()
+    }
 
-    com.google.devtools.build.lib.shell.Protos.ResourceUsage resourceUsageProto =
-        com.google.devtools.build.lib.shell.Protos.ResourceUsage.newBuilder()
-            .setUtimeSec(riggedUserExecutionTime.getSeconds())
-            .setUtimeUsec((long) (riggedUserExecutionTime.getNano() / 1000))
-            .setStimeSec(riggedSystemExecutionTime.getSeconds())
-            .setStimeUsec((long) (riggedSystemExecutionTime.getNano() / 1000))
-            .setMaxrss(riggedMaximumResidentSetSize)
-            .setIxrss(riggedIntegralSharedMemorySize)
-            .setIdrss(riggedIntegralUnsharedDataSize)
-            .setIsrss(riggedIntegralUnsharedStackSize)
-            .setMinflt(riggedPageReclaims)
-            .setMajflt(riggedPageFaults)
-            .setNswap(riggedSwaps)
-            .setInblock(riggedBlockInputOperations)
-            .setOublock(riggedBlockOutputOperations)
-            .setMsgsnd(riggedIpcMessagesSent)
-            .setMsgrcv(riggedIpcMessagesReceived)
-            .setNsignals(riggedSignalsReceived)
-            .setNvcsw(riggedVoluntaryContextSwitches)
-            .setNivcsw(riggedInvoluntaryContextSwitches)
-            .build();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStatiticsProvided_fromProtoFilename() {
+        val riggedUserExecutionTime: java.time.Duration = java.time.Duration.ofSeconds(42).plusNanos(19790000)
+        val riggedSystemExecutionTime: java.time.Duration = java.time.Duration.ofSeconds(33).plusNanos(290000)
+        val riggedMaximumResidentSetSize: Long = 1
+        val riggedIntegralSharedMemorySize: Long = 2
+        val riggedIntegralUnsharedDataSize: Long = 3
+        val riggedIntegralUnsharedStackSize: Long = 4
+        val riggedPageReclaims: Long = 5
+        val riggedPageFaults: Long = 6
+        val riggedSwaps: Long = 7
+        val riggedBlockInputOperations: Long = 8
+        val riggedBlockOutputOperations: Long = 9
+        val riggedIpcMessagesSent: Long = 10
+        val riggedIpcMessagesReceived: Long = 11
+        val riggedSignalsReceived: Long = 12
+        val riggedVoluntaryContextSwitches: Long = 13
+        val riggedInvoluntaryContextSwitches: Long = 14
 
-    com.google.devtools.build.lib.shell.Protos.ExecutionStatistics executionStatisticsProto =
-        com.google.devtools.build.lib.shell.Protos.ExecutionStatistics.newBuilder()
-            .setResourceUsage(resourceUsageProto)
-            .build();
-    Path protoFilename = createExecutionStatisticsProtoFile(executionStatisticsProto);
+        val resourceUsageProto: com.google.devtools.build.lib.shell.Protos.ResourceUsage? =
+            com.google.devtools.build.lib.shell.Protos.ResourceUsage.newBuilder()
+                .setUtimeSec(riggedUserExecutionTime.getSeconds())
+                .setUtimeUsec((riggedUserExecutionTime.getNano() / 1000).toLong())
+                .setStimeSec(riggedSystemExecutionTime.getSeconds())
+                .setStimeUsec((riggedSystemExecutionTime.getNano() / 1000).toLong())
+                .setMaxrss(riggedMaximumResidentSetSize)
+                .setIxrss(riggedIntegralSharedMemorySize)
+                .setIdrss(riggedIntegralUnsharedDataSize)
+                .setIsrss(riggedIntegralUnsharedStackSize)
+                .setMinflt(riggedPageReclaims)
+                .setMajflt(riggedPageFaults)
+                .setNswap(riggedSwaps)
+                .setInblock(riggedBlockInputOperations)
+                .setOublock(riggedBlockOutputOperations)
+                .setMsgsnd(riggedIpcMessagesSent)
+                .setMsgrcv(riggedIpcMessagesReceived)
+                .setNsignals(riggedSignalsReceived)
+                .setNvcsw(riggedVoluntaryContextSwitches)
+                .setNivcsw(riggedInvoluntaryContextSwitches)
+                .build()
 
-    Optional<ExecutionStatistics.ResourceUsage> maybeResourceUsage =
-        ExecutionStatistics.getResourceUsage(protoFilename);
-    assertThat(maybeResourceUsage).isPresent();
-    ExecutionStatistics.ResourceUsage resourceUsage = maybeResourceUsage.get();
+        val executionStatisticsProto: com.google.devtools.build.lib.shell.Protos.ExecutionStatistics =
+            com.google.devtools.build.lib.shell.Protos.ExecutionStatistics.newBuilder()
+                .setResourceUsage(resourceUsageProto)
+                .build()
+        val protoFilename: Path = createExecutionStatisticsProtoFile(executionStatisticsProto)
 
-    assertThat(resourceUsage.getUserExecutionTime()).isEqualTo(riggedUserExecutionTime);
-    assertThat(resourceUsage.getSystemExecutionTime()).isEqualTo(riggedSystemExecutionTime);
-    assertThat(resourceUsage.getMaximumResidentSetSize()).isEqualTo(riggedMaximumResidentSetSize);
-    assertThat(resourceUsage.getIntegralSharedMemorySize())
-        .isEqualTo(riggedIntegralSharedMemorySize);
-    assertThat(resourceUsage.getIntegralUnsharedDataSize())
-        .isEqualTo(riggedIntegralUnsharedDataSize);
-    assertThat(resourceUsage.getIntegralUnsharedStackSize())
-        .isEqualTo(riggedIntegralUnsharedStackSize);
-    assertThat(resourceUsage.getPageReclaims()).isEqualTo(riggedPageReclaims);
-    assertThat(resourceUsage.getPageFaults()).isEqualTo(riggedPageFaults);
-    assertThat(resourceUsage.getSwaps()).isEqualTo(riggedSwaps);
-    assertThat(resourceUsage.getBlockInputOperations()).isEqualTo(riggedBlockInputOperations);
-    assertThat(resourceUsage.getBlockOutputOperations()).isEqualTo(riggedBlockOutputOperations);
-    assertThat(resourceUsage.getIpcMessagesSent()).isEqualTo(riggedIpcMessagesSent);
-    assertThat(resourceUsage.getIpcMessagesReceived()).isEqualTo(riggedIpcMessagesReceived);
-    assertThat(resourceUsage.getSignalsReceived()).isEqualTo(riggedSignalsReceived);
-    assertThat(resourceUsage.getVoluntaryContextSwitches())
-        .isEqualTo(riggedVoluntaryContextSwitches);
-    assertThat(resourceUsage.getInvoluntaryContextSwitches())
-        .isEqualTo(riggedInvoluntaryContextSwitches);
-  }
+        val maybeResourceUsage: java.util.Optional<ExecutionStatistics.ResourceUsage>? =
+            ExecutionStatistics.getResourceUsage(protoFilename)
+        Truth.assertThat(maybeResourceUsage).isPresent()
+        val resourceUsage: ExecutionStatistics.ResourceUsage = maybeResourceUsage.get()
+
+        assertThat(resourceUsage.getUserExecutionTime()).isEqualTo(riggedUserExecutionTime)
+        assertThat(resourceUsage.getSystemExecutionTime()).isEqualTo(riggedSystemExecutionTime)
+        assertThat(resourceUsage.getMaximumResidentSetSize()).isEqualTo(riggedMaximumResidentSetSize)
+        assertThat(resourceUsage.getIntegralSharedMemorySize())
+            .isEqualTo(riggedIntegralSharedMemorySize)
+        assertThat(resourceUsage.getIntegralUnsharedDataSize())
+            .isEqualTo(riggedIntegralUnsharedDataSize)
+        assertThat(resourceUsage.getIntegralUnsharedStackSize())
+            .isEqualTo(riggedIntegralUnsharedStackSize)
+        assertThat(resourceUsage.getPageReclaims()).isEqualTo(riggedPageReclaims)
+        assertThat(resourceUsage.getPageFaults()).isEqualTo(riggedPageFaults)
+        assertThat(resourceUsage.getSwaps()).isEqualTo(riggedSwaps)
+        assertThat(resourceUsage.getBlockInputOperations()).isEqualTo(riggedBlockInputOperations)
+        assertThat(resourceUsage.getBlockOutputOperations()).isEqualTo(riggedBlockOutputOperations)
+        assertThat(resourceUsage.getIpcMessagesSent()).isEqualTo(riggedIpcMessagesSent)
+        assertThat(resourceUsage.getIpcMessagesReceived()).isEqualTo(riggedIpcMessagesReceived)
+        assertThat(resourceUsage.getSignalsReceived()).isEqualTo(riggedSignalsReceived)
+        assertThat(resourceUsage.getVoluntaryContextSwitches())
+            .isEqualTo(riggedVoluntaryContextSwitches)
+        assertThat(resourceUsage.getInvoluntaryContextSwitches())
+            .isEqualTo(riggedInvoluntaryContextSwitches)
+    }
 }

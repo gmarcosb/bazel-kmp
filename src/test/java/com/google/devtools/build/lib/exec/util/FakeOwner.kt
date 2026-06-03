@@ -11,206 +11,169 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.exec.util;
+package com.google.devtools.build.lib.exec.util
 
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.base.Preconditions.checkState;
+import com.google.common.base.Preconditions
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.ImmutableMap
+import com.google.devtools.build.lib.actions.ActionExecutionContext
+import net.starlark.java.syntax.Location
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.actions.ActionExecutionContext;
-import com.google.devtools.build.lib.actions.ActionExecutionMetadata;
-import com.google.devtools.build.lib.actions.ActionKeyContext;
-import com.google.devtools.build.lib.actions.ActionOwner;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.BuildConfigurationEvent;
-import com.google.devtools.build.lib.actions.InputMetadataProvider;
-import com.google.devtools.build.lib.analysis.platform.PlatformInfo;
-import com.google.devtools.build.lib.buildeventstream.BuildEventStreamProtos;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.collect.nestedset.Order;
-import java.util.Collection;
-import javax.annotation.Nullable;
-import net.starlark.java.syntax.Location;
+/** Fake implementation of [ActionExecutionMetadata] for testing.  */
+open class FakeOwner internal constructor(
+    val mnemonic: String?,
+    val progressMessage: String,
+    ownerLabel: String?,
+    ownerRuleKind: String?,
+    primaryOutput: Artifact?,
+    platform: PlatformInfo?,
+    combinedExecProperties: ImmutableMap<String?, String?>?,
+    isBuiltForToolConfiguration: Boolean
+) : ActionExecutionMetadata {
+    private val ownerLabel: String
+    private val ownerRuleKind: String
+    private val primaryOutput: Artifact?
+    private val platform: PlatformInfo?
+    private val combinedExecProperties: ImmutableMap<String?, String?>?
+    private val isBuiltForToolConfiguration: Boolean
 
-/** Fake implementation of {@link ActionExecutionMetadata} for testing. */
-public class FakeOwner implements ActionExecutionMetadata {
-  private final String mnemonic;
-  private final String progressMessage;
-  private final String ownerLabel;
-  private final String ownerRuleKind;
-  @Nullable private final Artifact primaryOutput;
-  @Nullable private final PlatformInfo platform;
-  private final ImmutableMap<String, String> combinedExecProperties;
-  private final boolean isBuiltForToolConfiguration;
+    init {
+        this.ownerLabel = Preconditions.checkNotNull<String>(ownerLabel)
+        this.ownerRuleKind = Preconditions.checkNotNull<String>(ownerRuleKind)
+        this.primaryOutput = primaryOutput
+        this.platform = platform
+        this.combinedExecProperties = combinedExecProperties
+        this.isBuiltForToolConfiguration = isBuiltForToolConfiguration
+    }
 
-  FakeOwner(
-      String mnemonic,
-      String progressMessage,
-      String ownerLabel,
-      String ownerRuleKind,
-      @Nullable Artifact primaryOutput,
-      @Nullable PlatformInfo platform,
-      ImmutableMap<String, String> combinedExecProperties,
-      boolean isBuiltForToolConfiguration) {
-    this.mnemonic = mnemonic;
-    this.progressMessage = progressMessage;
-    this.ownerLabel = checkNotNull(ownerLabel);
-    this.ownerRuleKind = checkNotNull(ownerRuleKind);
-    this.primaryOutput = primaryOutput;
-    this.platform = platform;
-    this.combinedExecProperties = combinedExecProperties;
-    this.isBuiltForToolConfiguration = isBuiltForToolConfiguration;
-  }
-
-  private FakeOwner(
-      String mnemonic, String progressMessage, String ownerLabel, @Nullable PlatformInfo platform) {
-    this(
+    private constructor(
+        mnemonic: String?,
+        progressMessage: String,
+        ownerLabel: String?,
+        platform: PlatformInfo?
+    ) : this(
         mnemonic,
         progressMessage,
-        ownerLabel,
-        /* ownerRuleKind= */ "dummy-target-kind",
-        /* primaryOutput= */ null,
+        ownerLabel,  /* ownerRuleKind= */
+        "dummy-target-kind",  /* primaryOutput= */
+        null,
         platform,
-        ImmutableMap.of(),
-        /* isBuiltForToolConfiguration= */ false);
-  }
+        ImmutableMap.of<String?, String?>(),  /* isBuiltForToolConfiguration= */
+        false
+    )
 
-  public FakeOwner(String mnemonic, String progressMessage, String ownerLabel) {
-    this(mnemonic, progressMessage, checkNotNull(ownerLabel), PlatformInfo.EMPTY_PLATFORM_INFO);
-  }
-
-  @Override
-  public ActionOwner getOwner() {
-    return ActionOwner.createDummy(
-        Label.parseCanonicalUnchecked(ownerLabel),
-        new Location("dummy-file", 0, 0),
-        ownerRuleKind,
+    constructor(mnemonic: String?, progressMessage: String, ownerLabel: String?) : this(
         mnemonic,
-        /* configurationChecksum= */ "configurationChecksum",
-        new BuildConfigurationEvent(
-            BuildEventStreamProtos.BuildEventId.getDefaultInstance(),
-            BuildEventStreamProtos.BuildEvent.getDefaultInstance()),
-        /* isToolConfiguration= */ isBuiltForToolConfiguration,
-        /* executionPlatform= */ PlatformInfo.EMPTY_PLATFORM_INFO,
-        /* aspectDescriptors= */ ImmutableList.of(),
-        /* execProperties= */ combinedExecProperties);
-  }
+        progressMessage,
+        Preconditions.checkNotNull<String?>(ownerLabel),
+        PlatformInfo.EMPTY_PLATFORM_INFO
+    )
 
-  @Override
-  public boolean isShareable() {
-    return false;
-  }
+    val owner: ActionOwner
+        get() = ActionOwner.createDummy(
+            Label.parseCanonicalUnchecked(ownerLabel),
+            Location("dummy-file", 0, 0),
+            ownerRuleKind,
+            mnemonic,  /* configurationChecksum= */
+            "configurationChecksum",
+            BuildConfigurationEvent(
+                BuildEventStreamProtos.BuildEventId.getDefaultInstance(),
+                BuildEventStreamProtos.BuildEvent.getDefaultInstance()
+            ),  /* isToolConfiguration= */
+            isBuiltForToolConfiguration,  /* executionPlatform= */
+            PlatformInfo.EMPTY_PLATFORM_INFO,  /* aspectDescriptors= */
+            ImmutableList.of<E?>(),  /* execProperties= */
+            combinedExecProperties
+        )
 
-  @Override
-  public String getMnemonic() {
-    return mnemonic;
-  }
+    val isShareable: Boolean
+        get() = false
 
-  @Override
-  public String getProgressMessage() {
-    return progressMessage;
-  }
+    public override fun inputsKnown(): Boolean {
+        throw UnsupportedOperationException()
+    }
 
-  @Override
-  public boolean inputsKnown() {
-    throw new UnsupportedOperationException();
-  }
+    public override fun discoversInputs(): Boolean {
+        throw UnsupportedOperationException()
+    }
 
-  @Override
-  public boolean discoversInputs() {
-    throw new UnsupportedOperationException();
-  }
+    val tools: NestedSet<Artifact?>?
+        get() {
+            throw UnsupportedOperationException()
+        }
 
-  @Override
-  public NestedSet<Artifact> getTools() {
-    throw new UnsupportedOperationException();
-  }
+    val inputs: NestedSet<Artifact?>?
+        get() {
+            throw UnsupportedOperationException()
+        }
 
-  @Override
-  public NestedSet<Artifact> getInputs() {
-    throw new UnsupportedOperationException();
-  }
+    val originalInputs: NestedSet<Artifact?>?
+        get() {
+            throw UnsupportedOperationException()
+        }
 
-  @Override
-  public NestedSet<Artifact> getOriginalInputs() {
-    throw new UnsupportedOperationException();
-  }
+    val schedulingDependencies: NestedSet<Artifact?>?
+        get() {
+            throw UnsupportedOperationException()
+        }
 
-  @Override
-  public NestedSet<Artifact> getSchedulingDependencies() {
-    throw new UnsupportedOperationException();
-  }
+    val outputs: ImmutableSet<Artifact>?
+        get() {
+            throw UnsupportedOperationException()
+        }
 
-  @Override
-  public ImmutableSet<Artifact> getOutputs() {
-    throw new UnsupportedOperationException();
-  }
+    val clientEnvironmentVariables: MutableCollection<String?>?
+        get() {
+            throw UnsupportedOperationException()
+        }
 
-  @Override
-  public Collection<String> getClientEnvironmentVariables() {
-    throw new UnsupportedOperationException();
-  }
+    val primaryInput: Artifact?
+        get() {
+            throw UnsupportedOperationException()
+        }
 
-  @Override
-  public Artifact getPrimaryInput() {
-    throw new UnsupportedOperationException();
-  }
+    public override fun getPrimaryOutput(): Artifact? {
+        Preconditions.checkState(primaryOutput != null, "primaryOutput not set")
+        return primaryOutput
+    }
 
-  @Override
-  public Artifact getPrimaryOutput() {
-    checkState(primaryOutput != null, "primaryOutput not set");
-    return primaryOutput;
-  }
+    val mandatoryInputs: NestedSet<Artifact?>?
+        get() {
+            throw UnsupportedOperationException()
+        }
 
-  @Override
-  public NestedSet<Artifact> getMandatoryInputs() {
-    throw new UnsupportedOperationException();
-  }
+    public override fun getKey(
+        actionKeyContext: ActionKeyContext?, inputMetadataProvider: InputMetadataProvider?
+    ): String {
+        return "MockOwner.getKey"
+    }
 
-  @Override
-  public String getKey(
-      ActionKeyContext actionKeyContext, @Nullable InputMetadataProvider inputMetadataProvider) {
-    return "MockOwner.getKey";
-  }
+    public override fun describeKey(): String? {
+        throw UnsupportedOperationException()
+    }
 
-  @Override
-  public String describeKey() {
-    throw new UnsupportedOperationException();
-  }
+    public override fun prettyPrint(): String {
+        return "action '" + describe() + "'"
+    }
 
-  @Override
-  public String prettyPrint() {
-    return "action '" + describe() + "'";
-  }
+    public override fun describe(): String {
+        return this.progressMessage
+    }
 
-  @Override
-  public String describe() {
-    return getProgressMessage();
-  }
+    public override fun getInputFilesForExtraAction(
+        actionExecutionContext: ActionExecutionContext?
+    ): NestedSet<Artifact?> {
+        return NestedSetBuilder.emptySet(Order.STABLE_ORDER)
+    }
 
-  @Override
-  public NestedSet<Artifact> getInputFilesForExtraAction(
-      ActionExecutionContext actionExecutionContext) {
-    return NestedSetBuilder.emptySet(Order.STABLE_ORDER);
-  }
+    val mandatoryOutputs: ImmutableSet<Artifact>?
+        get() {
+            throw UnsupportedOperationException()
+        }
 
-  @Override
-  public ImmutableSet<Artifact> getMandatoryOutputs() {
-    throw new UnsupportedOperationException();
-  }
+    val execProperties: ImmutableMap<String?, String?>
+        get() = ImmutableMap.of<String?, String?>()
 
-  @Override
-  public ImmutableMap<String, String> getExecProperties() {
-    return ImmutableMap.of();
-  }
-
-  @Nullable
-  @Override
-  public PlatformInfo getExecutionPlatform() {
-    return platform;
-  }
+    val executionPlatform: PlatformInfo?
+        get() = platform
 }

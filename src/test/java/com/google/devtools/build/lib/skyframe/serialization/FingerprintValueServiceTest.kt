@@ -11,46 +11,44 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static com.google.common.truth.Truth.assertThat;
-import static java.util.concurrent.Executors.newSingleThreadExecutor;
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.util.concurrent.Executors
 
-import java.util.concurrent.Executor;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+@RunWith(JUnit4::class)
+class FingerprintValueServiceTest {
+    @org.junit.Test
+    fun fingerprint_isConsistent() {
+        val service: FingerprintValueService =
+            FingerprintValueService(
+                Executors.newSingleThreadExecutor(),
+                FingerprintValueStore.inMemoryStore(),
+                FingerprintValueCache(),
+                FingerprintValueService.NONPROD_FINGERPRINTER
+            )
 
-@RunWith(JUnit4.class)
-public final class FingerprintValueServiceTest {
-  @Test
-  public void fingerprint_isConsistent() {
-    FingerprintValueService service =
-        new FingerprintValueService(
-            newSingleThreadExecutor(),
-            FingerprintValueStore.inMemoryStore(),
-            new FingerprintValueCache(),
-            FingerprintValueService.NONPROD_FINGERPRINTER);
+        assertThat(service.fingerprintPlaceholder().toBytes().length).isEqualTo(16)
+        assertThat(service.fingerprintLength()).isEqualTo(16)
 
-    assertThat(service.fingerprintPlaceholder().toBytes().length).isEqualTo(16);
-    assertThat(service.fingerprintLength()).isEqualTo(16);
+        val testValue = byteArrayOf(0, 1, 2)
+        val testFingerprint: PackedFingerprint = service.fingerprint(testValue)
 
-    byte[] testValue = new byte[] {0, 1, 2};
-    PackedFingerprint testFingerprint = service.fingerprint(testValue);
+        assertThat(testFingerprint).isNotEqualTo(service.fingerprintPlaceholder())
+        assertThat(testFingerprint.toBytes().length).isEqualTo(16)
+    }
 
-    assertThat(testFingerprint).isNotEqualTo(service.fingerprintPlaceholder());
-    assertThat(testFingerprint.toBytes().length).isEqualTo(16);
-  }
-
-  @Test
-  public void executor_passesThrough() {
-    Executor executor = newSingleThreadExecutor();
-    FingerprintValueService service =
-        new FingerprintValueService(
-            executor,
-            FingerprintValueStore.inMemoryStore(),
-            new FingerprintValueCache(),
-            FingerprintValueService.NONPROD_FINGERPRINTER);
-    assertThat(service.getExecutor()).isSameInstanceAs(executor);
-  }
+    @org.junit.Test
+    fun executor_passesThrough() {
+        val executor: java.util.concurrent.Executor = Executors.newSingleThreadExecutor()
+        val service: FingerprintValueService =
+            FingerprintValueService(
+                executor,
+                FingerprintValueStore.inMemoryStore(),
+                FingerprintValueCache(),
+                FingerprintValueService.NONPROD_FINGERPRINTER
+            )
+        assertThat(service.getExecutor()).isSameInstanceAs(executor)
+    }
 }

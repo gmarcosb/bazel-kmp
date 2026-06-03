@@ -11,38 +11,33 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.annot.processor.testsources
 
-package net.starlark.java.annot.processor.testsources;
-
-import net.starlark.java.annot.Param;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.StarlarkInt;
-import net.starlark.java.eval.StarlarkValue;
+import net.starlark.java.eval.StarlarkInt
 
 /**
  * Test case for a class which contains multiple StarlarkMethod methods with the same name. This
  * should cause a compile failure -- overrides are not allowed.
  */
-public class ConflictingMethodNames implements StarlarkValue {
+class ConflictingMethodNames : StarlarkValue {
+    @StarlarkMethod(
+        name = "conflicting_method",
+        documented = false,
+        parameters = [net.starlark.java.annot.Param(name = "one", named = true)]
+    )
+    fun conflictingMethod(one: String?): String {
+        return "foo"
+    }
 
-  @StarlarkMethod(
-      name = "conflicting_method",
-      documented = false,
-      parameters = {
-        @Param(name = "one", named = true),
-      })
-  public String conflictingMethod(String one) {
-    return "foo";
-  }
-
-  @StarlarkMethod(
-      name = "conflicting_method",
-      documented = false,
-      parameters = {
-        @Param(name = "one", named = true),
-        @Param(name = "two", named = true),
-      })
-  public String conflictingMethodTwo(String one, StarlarkInt two) {
-    return "foo";
-  }
+    @StarlarkMethod(
+        name = "conflicting_method",
+        documented = false,
+        parameters = [net.starlark.java.annot.Param(
+            name = "one",
+            named = true
+        ), net.starlark.java.annot.Param(name = "two", named = true)]
+    )
+    fun conflictingMethodTwo(one: String?, two: StarlarkInt?): String {
+        return "foo"
+    }
 }

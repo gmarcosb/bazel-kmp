@@ -11,33 +11,36 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.common.options.processor;
+package com.google.devtools.common.options.processor
 
-import static com.google.common.truth.Truth.assertAbout;
-import static com.google.testing.compile.JavaSourceSubjectFactory.javaSource;
+import com.google.common.truth.Truth
+import com.google.devtools.common.options.processor.OptionProcessor
+import com.google.testing.compile.JavaFileObjects
+import com.google.testing.compile.JavaSourceSubjectFactory
+import com.google.testing.compile.JavaSourcesSubject.SingleSourceAdapter
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import javax.tools.JavaFileObject
 
-import com.google.common.io.Resources;
-import com.google.testing.compile.JavaFileObjects;
-import javax.tools.JavaFileObject;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Unit tests for the compile-time checks in [OptionProcessor].  */
+@RunWith(JUnit4::class)
+class OptionProcessorTest {
+    @org.junit.Test
+    fun fieldOptionsAreRejected() {
+        Truth.assertAbout<SingleSourceAdapter?, JavaFileObject?>(JavaSourceSubjectFactory.javaSource())
+            .that(getFile("FieldOption.java"))
+            .processedWith(OptionProcessor())
+            .failsToCompile()
+            .withErrorContaining("Field options not supported anymore. Use method options instead.")
+    }
 
-/** Unit tests for the compile-time checks in {@link OptionProcessor}. */
-@RunWith(JUnit4.class)
-public class OptionProcessorTest {
-  private static JavaFileObject getFile(String pathToFile) {
-    return JavaFileObjects.forResource(
-        Resources.getResource(
-            "com/google/devtools/common/options/processor/optiontestsources/" + pathToFile));
-  }
-
-  @Test
-  public void fieldOptionsAreRejected() {
-    assertAbout(javaSource())
-        .that(getFile("FieldOption.java"))
-        .processedWith(new OptionProcessor())
-        .failsToCompile()
-        .withErrorContaining("Field options not supported anymore. Use method options instead.");
-  }
+    companion object {
+        private fun getFile(pathToFile: String?): JavaFileObject {
+            return JavaFileObjects.forResource(
+                com.google.common.io.Resources.getResource(
+                    "com/google/devtools/common/options/processor/optiontestsources/" + pathToFile
+                )
+            )
+        }
+    }
 }

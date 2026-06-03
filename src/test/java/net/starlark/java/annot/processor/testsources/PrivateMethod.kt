@@ -11,17 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.annot.processor.testsources
 
-package net.starlark.java.annot.processor.testsources;
+import net.starlark.java.eval.StarlarkValue
 
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.StarlarkValue;
-
-/** Test case which verifies a method annotated with StarlarkMethod cannot be private. */
-public class PrivateMethod implements StarlarkValue {
-
-  @StarlarkMethod(name = "private_method", doc = "A private method")
-  private String privateMethod() {
-    return "kitten";
-  }
+/** Test case which verifies a method annotated with StarlarkMethod cannot be private.  */
+class PrivateMethod : StarlarkValue {
+    @StarlarkMethod(name = "private_method", doc = "A private method")
+    private fun privateMethod(): String {
+        return "kitten"
+    }
 }

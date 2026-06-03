@@ -11,610 +11,654 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.toolchains;
+package com.google.devtools.build.lib.skyframe.toolchains
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.analysis.testing.ToolchainContextSubject.assertThat;
-import static com.google.devtools.build.skyframe.EvaluationResultSubjectFactory.assertThatEvaluationResult;
+import com.google.devtools.build.lib.analysis.PlatformOptions
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.PlatformOptions;
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.config.ToolchainTypeRequirement;
-import com.google.devtools.build.lib.analysis.platform.PlatformInfo;
-import com.google.devtools.build.lib.analysis.platform.ToolchainTypeInfo;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.rules.platform.ToolchainTestCase;
-import com.google.devtools.build.lib.skyframe.config.BuildConfigurationKey;
-import com.google.devtools.build.lib.skyframe.toolchains.ConstraintValueLookupUtil.InvalidConstraintValueException;
-import com.google.devtools.build.lib.skyframe.toolchains.PlatformLookupUtil.InvalidPlatformException;
-import com.google.devtools.build.lib.skyframe.toolchains.ToolchainTypeLookupUtil.InvalidToolchainTypeException;
-import com.google.devtools.build.lib.skyframe.util.SkyframeExecutorTestUtils;
-import com.google.devtools.build.skyframe.EvaluationResult;
-import com.google.devtools.build.skyframe.SkyKey;
-import java.util.LinkedHashSet;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link UnloadedToolchainContext} and {@link ToolchainResolutionFunction}. */
-@RunWith(JUnit4.class)
-public class ToolchainResolutionFunctionTest extends ToolchainTestCase {
-
-  private EvaluationResult<UnloadedToolchainContext> invokeToolchainResolution(SkyKey key)
-      throws InterruptedException {
-    try {
-      getSkyframeExecutor().getSkyframeBuildView().enableAnalysis(true);
-      return SkyframeExecutorTestUtils.evaluate(
-          getSkyframeExecutor(), key, /*keepGoing=*/ false, reporter);
-    } finally {
-      getSkyframeExecutor().getSkyframeBuildView().enableAnalysis(false);
+/** Tests for [UnloadedToolchainContext] and [ToolchainResolutionFunction].  */
+@RunWith(JUnit4::class)
+class ToolchainResolutionFunctionTest : ToolchainTestCase() {
+    @Throws(java.lang.InterruptedException::class)
+    private fun invokeToolchainResolution(key: SkyKey?): EvaluationResult<UnloadedToolchainContext?> {
+        try {
+            getSkyframeExecutor().getSkyframeBuildView().enableAnalysis(true)
+            return SkyframeExecutorTestUtils.evaluate<T?>(
+                getSkyframeExecutor(), key,  /*keepGoing=*/false, reporter
+            )
+        } finally {
+            getSkyframeExecutor().getSkyframeBuildView().enableAnalysis(false)
+        }
     }
-  }
 
-  @Test
-  public void resolve() throws Exception {
-    // This should select platform mac, toolchain extra_toolchain_mac, because platform
-    // mac is listed first.
-    addToolchain(
-        "extra",
-        "extra_toolchain_linux",
-        ImmutableList.of("//constraints:linux"),
-        ImmutableList.of("//constraints:linux"),
-        "baz");
-    addToolchain(
-        "extra",
-        "extra_toolchain_mac",
-        ImmutableList.of("//constraints:mac"),
-        ImmutableList.of("//constraints:linux"),
-        "baz");
-    rewriteModuleDotBazel(
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolve() {
+        // This should select platform mac, toolchain extra_toolchain_mac, because platform
+        // mac is listed first.
+        addToolchain(
+            "extra",
+            "extra_toolchain_linux",
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),
+            "baz"
+        )
+        addToolchain(
+            "extra",
+            "extra_toolchain_mac",
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:mac"),
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),
+            "baz"
+        )
+        rewriteModuleDotBazel(
+            """
         register_toolchains("//extra:extra_toolchain_linux", "//extra:extra_toolchain_mac")
         register_execution_platforms("//platforms:mac", "//platforms:linux")
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration("--platforms=//platforms:linux");
-    ToolchainContextKey key =
-        ToolchainContextKey.key()
-            .configurationKey(targetConfigKey)
-            .toolchainTypes(testToolchainType)
-            .build();
+        useConfiguration("--platforms=//platforms:linux")
+        val key: ToolchainContextKey? =
+            ToolchainContextKey.key()
+                .configurationKey(targetConfigKey)
+                .toolchainTypes(testToolchainType)
+                .build()
 
-    EvaluationResult<UnloadedToolchainContext> result = invokeToolchainResolution(key);
+        val result: EvaluationResult<UnloadedToolchainContext?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result).hasNoError();
-    UnloadedToolchainContext unloadedToolchainContext = result.get(key);
-    assertThat(unloadedToolchainContext).isNotNull();
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasNoError()
+        val unloadedToolchainContext: UnloadedToolchainContext? = result.get(key)
+        assertThat(unloadedToolchainContext).isNotNull()
 
-    assertThat(unloadedToolchainContext).hasToolchainType(testToolchainTypeLabel);
-    assertThat(unloadedToolchainContext).hasResolvedToolchain("//extra:extra_toolchain_mac_impl");
-    assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:mac");
-    assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux");
-  }
+        assertThat(unloadedToolchainContext).hasToolchainType(testToolchainTypeLabel)
+        assertThat(unloadedToolchainContext).hasResolvedToolchain("//extra:extra_toolchain_mac_impl")
+        assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:mac")
+        assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux")
+    }
 
-  @Test
-  public void resolve_hostPlatform() throws Exception {
-    addToolchain(
-        "extra",
-        "extra_toolchain_linux",
-        ImmutableList.of("//constraints:linux"),
-        ImmutableList.of("//constraints:linux"),
-        "baz");
-    addToolchain(
-        "extra",
-        "extra_toolchain_mac",
-        ImmutableList.of("//constraints:mac"),
-        ImmutableList.of("//constraints:linux"),
-        "baz");
-    rewriteModuleDotBazel(
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolve_hostPlatform() {
+        addToolchain(
+            "extra",
+            "extra_toolchain_linux",
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),
+            "baz"
+        )
+        addToolchain(
+            "extra",
+            "extra_toolchain_mac",
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:mac"),
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),
+            "baz"
+        )
+        rewriteModuleDotBazel(
+            """
         register_toolchains("//extra:extra_toolchain_linux", "//extra:extra_toolchain_mac")
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration("--platforms=//platforms:linux", "--host_platform=//platforms:linux");
-    ToolchainContextKey key =
-        ToolchainContextKey.key()
-            .configurationKey(targetConfigKey)
-            .toolchainTypes(testToolchainType)
-            .build();
+        useConfiguration("--platforms=//platforms:linux", "--host_platform=//platforms:linux")
+        val key: ToolchainContextKey? =
+            ToolchainContextKey.key()
+                .configurationKey(targetConfigKey)
+                .toolchainTypes(testToolchainType)
+                .build()
 
-    EvaluationResult<UnloadedToolchainContext> result = invokeToolchainResolution(key);
+        val result: EvaluationResult<UnloadedToolchainContext?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result).hasNoError();
-    UnloadedToolchainContext unloadedToolchainContext = result.get(key);
-    assertThat(unloadedToolchainContext).isNotNull();
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasNoError()
+        val unloadedToolchainContext: UnloadedToolchainContext? = result.get(key)
+        assertThat(unloadedToolchainContext).isNotNull()
 
-    assertThat(unloadedToolchainContext).hasToolchainType(testToolchainTypeLabel);
-    assertThat(unloadedToolchainContext).hasResolvedToolchain("//extra:extra_toolchain_linux_impl");
-    assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:linux");
-    assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux");
-  }
+        assertThat(unloadedToolchainContext).hasToolchainType(testToolchainTypeLabel)
+        assertThat(unloadedToolchainContext).hasResolvedToolchain("//extra:extra_toolchain_linux_impl")
+        assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:linux")
+        assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux")
+    }
 
-  @Test
-  public void resolve_hostPlatform_alias() throws Exception {
-    addToolchain(
-        "extra",
-        "extra_toolchain_linux",
-        ImmutableList.of("//constraints:linux"),
-        ImmutableList.of("//constraints:linux"),
-        "baz");
-    addToolchain(
-        "extra",
-        "extra_toolchain_mac",
-        ImmutableList.of("//constraints:mac"),
-        ImmutableList.of("//constraints:linux"),
-        "baz");
-    // Set up aliases for the platforms.
-    scratch.file(
-        "alias/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolve_hostPlatform_alias() {
+        addToolchain(
+            "extra",
+            "extra_toolchain_linux",
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),
+            "baz"
+        )
+        addToolchain(
+            "extra",
+            "extra_toolchain_mac",
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:mac"),
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),
+            "baz"
+        )
+        // Set up aliases for the platforms.
+        scratch.file(
+            "alias/BUILD",
+            """
         alias(name = 'mac', actual = '//platforms:mac')
         alias(name = 'linux', actual = '//platforms:linux')
-        """);
-    rewriteModuleDotBazel(
-        """
+        
+        """.trimIndent()
+        )
+        rewriteModuleDotBazel(
+            """
         register_toolchains("//extra:extra_toolchain_linux", "//extra:extra_toolchain_mac")
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration("--platforms=//platforms:linux", "--host_platform=//alias:linux");
-    ToolchainContextKey key =
-        ToolchainContextKey.key()
-            .configurationKey(targetConfigKey)
-            .toolchainTypes(testToolchainType)
-            .build();
+        useConfiguration("--platforms=//platforms:linux", "--host_platform=//alias:linux")
+        val key: ToolchainContextKey? =
+            ToolchainContextKey.key()
+                .configurationKey(targetConfigKey)
+                .toolchainTypes(testToolchainType)
+                .build()
 
-    EvaluationResult<UnloadedToolchainContext> result = invokeToolchainResolution(key);
+        val result: EvaluationResult<UnloadedToolchainContext?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result).hasNoError();
-    UnloadedToolchainContext unloadedToolchainContext = result.get(key);
-    assertThat(unloadedToolchainContext).isNotNull();
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasNoError()
+        val unloadedToolchainContext: UnloadedToolchainContext? = result.get(key)
+        assertThat(unloadedToolchainContext).isNotNull()
 
-    assertThat(unloadedToolchainContext).hasToolchainType(testToolchainTypeLabel);
-    assertThat(unloadedToolchainContext).hasResolvedToolchain("//extra:extra_toolchain_linux_impl");
-    assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:linux");
-    assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux");
-  }
+        assertThat(unloadedToolchainContext).hasToolchainType(testToolchainTypeLabel)
+        assertThat(unloadedToolchainContext).hasResolvedToolchain("//extra:extra_toolchain_linux_impl")
+        assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:linux")
+        assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux")
+    }
 
-  // TODO(katre): Add further tests for optional/mandatory/mixed toolchains.
-
-  @Test
-  public void resolve_optional() throws Exception {
-    // This should select platform mac, toolchain extra_toolchain_mac, because platform
-    // mac is listed first.
-    addOptionalToolchain(
-        "extra",
-        "extra_toolchain_linux",
-        ImmutableList.of("//constraints:linux"),
-        ImmutableList.of("//constraints:linux"),
-        "baz");
-    addOptionalToolchain(
-        "extra",
-        "extra_toolchain_mac",
-        ImmutableList.of("//constraints:mac"),
-        ImmutableList.of("//constraints:linux"),
-        "baz");
-    rewriteModuleDotBazel(
-        """
+    // TODO(katre): Add further tests for optional/mandatory/mixed toolchains.
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolve_optional() {
+        // This should select platform mac, toolchain extra_toolchain_mac, because platform
+        // mac is listed first.
+        addOptionalToolchain(
+            "extra",
+            "extra_toolchain_linux",
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),
+            "baz"
+        )
+        addOptionalToolchain(
+            "extra",
+            "extra_toolchain_mac",
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:mac"),
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),
+            "baz"
+        )
+        rewriteModuleDotBazel(
+            """
         register_toolchains("//extra:extra_toolchain_linux", "//extra:extra_toolchain_mac")
         register_execution_platforms("//platforms:mac", "//platforms:linux")
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration("--platforms=//platforms:linux");
-    ToolchainContextKey key =
-        ToolchainContextKey.key()
-            .configurationKey(targetConfigKey)
-            .toolchainTypes(optionalToolchainType)
-            .build();
+        useConfiguration("--platforms=//platforms:linux")
+        val key: ToolchainContextKey? =
+            ToolchainContextKey.key()
+                .configurationKey(targetConfigKey)
+                .toolchainTypes(optionalToolchainType)
+                .build()
 
-    EvaluationResult<UnloadedToolchainContext> result = invokeToolchainResolution(key);
+        val result: EvaluationResult<UnloadedToolchainContext?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result).hasNoError();
-    UnloadedToolchainContext unloadedToolchainContext = result.get(key);
-    assertThat(unloadedToolchainContext).isNotNull();
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasNoError()
+        val unloadedToolchainContext: UnloadedToolchainContext? = result.get(key)
+        assertThat(unloadedToolchainContext).isNotNull()
 
-    assertThat(unloadedToolchainContext).hasToolchainType(optionalToolchainTypeLabel);
-    assertThat(unloadedToolchainContext).hasResolvedToolchain("//extra:extra_toolchain_mac_impl");
-    assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:mac");
-    assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux");
-  }
+        assertThat(unloadedToolchainContext).hasToolchainType(optionalToolchainTypeLabel)
+        assertThat(unloadedToolchainContext).hasResolvedToolchain("//extra:extra_toolchain_mac_impl")
+        assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:mac")
+        assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux")
+    }
 
-  @Test
-  public void resolve_optional_on_first_platform() throws Exception {
-    // This should select platform mac, toolchain extra_toolchain_mac, independent of platform order
-    addOptionalToolchain(
-        "extra",
-        "extra_toolchain_mac",
-        ImmutableList.of("//constraints:mac"),
-        ImmutableList.of("//constraints:linux"),
-        "baz");
-    rewriteModuleDotBazel(
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolve_optional_on_first_platform() {
+        // This should select platform mac, toolchain extra_toolchain_mac, independent of platform order
+        addOptionalToolchain(
+            "extra",
+            "extra_toolchain_mac",
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:mac"),
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),
+            "baz"
+        )
+        rewriteModuleDotBazel(
+            """
         register_toolchains("//extra:extra_toolchain_mac")
         register_execution_platforms("//platforms:mac", "//platforms:linux")
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration("--platforms=//platforms:linux");
-    ToolchainContextKey key =
-        ToolchainContextKey.key()
-            .configurationKey(targetConfigKey)
-            .toolchainTypes(optionalToolchainType)
-            .build();
+        useConfiguration("--platforms=//platforms:linux")
+        val key: ToolchainContextKey? =
+            ToolchainContextKey.key()
+                .configurationKey(targetConfigKey)
+                .toolchainTypes(optionalToolchainType)
+                .build()
 
-    EvaluationResult<UnloadedToolchainContext> result = invokeToolchainResolution(key);
+        val result: EvaluationResult<UnloadedToolchainContext?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result).hasNoError();
-    UnloadedToolchainContext unloadedToolchainContext = result.get(key);
-    assertThat(unloadedToolchainContext).isNotNull();
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasNoError()
+        val unloadedToolchainContext: UnloadedToolchainContext? = result.get(key)
+        assertThat(unloadedToolchainContext).isNotNull()
 
-    assertThat(unloadedToolchainContext).hasToolchainType(optionalToolchainTypeLabel);
-    assertThat(unloadedToolchainContext).hasResolvedToolchain("//extra:extra_toolchain_mac_impl");
-    assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:mac");
-    assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux");
-  }
+        assertThat(unloadedToolchainContext).hasToolchainType(optionalToolchainTypeLabel)
+        assertThat(unloadedToolchainContext).hasResolvedToolchain("//extra:extra_toolchain_mac_impl")
+        assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:mac")
+        assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux")
+    }
 
-  @Test
-  public void resolve_optional_on_second_platform() throws Exception {
-    // This should select platform mac, toolchain extra_toolchain_mac, independent of platform order
-    addOptionalToolchain(
-        "extra",
-        "extra_toolchain_mac",
-        ImmutableList.of("//constraints:mac"),
-        ImmutableList.of("//constraints:linux"),
-        "baz");
-    rewriteModuleDotBazel(
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolve_optional_on_second_platform() {
+        // This should select platform mac, toolchain extra_toolchain_mac, independent of platform order
+        addOptionalToolchain(
+            "extra",
+            "extra_toolchain_mac",
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:mac"),
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),
+            "baz"
+        )
+        rewriteModuleDotBazel(
+            """
         register_toolchains("//extra:extra_toolchain_mac")
         register_execution_platforms("//platforms:linux", "//platforms:mac")
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration("--platforms=//platforms:linux");
-    ToolchainContextKey key =
-        ToolchainContextKey.key()
-            .configurationKey(targetConfigKey)
-            .toolchainTypes(optionalToolchainType)
-            .build();
+        useConfiguration("--platforms=//platforms:linux")
+        val key: ToolchainContextKey? =
+            ToolchainContextKey.key()
+                .configurationKey(targetConfigKey)
+                .toolchainTypes(optionalToolchainType)
+                .build()
 
-    EvaluationResult<UnloadedToolchainContext> result = invokeToolchainResolution(key);
+        val result: EvaluationResult<UnloadedToolchainContext?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result).hasNoError();
-    UnloadedToolchainContext unloadedToolchainContext = result.get(key);
-    assertThat(unloadedToolchainContext).isNotNull();
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasNoError()
+        val unloadedToolchainContext: UnloadedToolchainContext? = result.get(key)
+        assertThat(unloadedToolchainContext).isNotNull()
 
-    assertThat(unloadedToolchainContext).hasToolchainType(optionalToolchainTypeLabel);
-    assertThat(unloadedToolchainContext).hasResolvedToolchain("//extra:extra_toolchain_mac_impl");
-    assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:mac");
-    assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux");
-  }
+        assertThat(unloadedToolchainContext).hasToolchainType(optionalToolchainTypeLabel)
+        assertThat(unloadedToolchainContext).hasResolvedToolchain("//extra:extra_toolchain_mac_impl")
+        assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:mac")
+        assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux")
+    }
 
-  @Test
-  public void resolve_max_optional_on_second_platform() throws Exception {
-    // This should select platform mac, toolchain extra_toolchain_mac, independent of platform order
-    // and independent of non-existence of the second optional toolchain
-    addOptionalToolchain(
-        "extra",
-        "extra_toolchain_mac",
-        ImmutableList.of("//constraints:mac"),
-        ImmutableList.of("//constraints:linux"),
-        "baz");
-    scratch.appendFile("toolchain/BUILD", "toolchain_type(name = 'extra_optional_toolchain')");
-    Label extraOptionalToolchainTypeLabel =
-        Label.parseCanonicalUnchecked("//toolchain:extra_optional_toolchain");
-    ToolchainTypeRequirement extraOptionalToolchainType =
-        ToolchainTypeRequirement.builder(extraOptionalToolchainTypeLabel).mandatory(false).build();
-    rewriteModuleDotBazel(
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolve_max_optional_on_second_platform() {
+        // This should select platform mac, toolchain extra_toolchain_mac, independent of platform order
+        // and independent of non-existence of the second optional toolchain
+        addOptionalToolchain(
+            "extra",
+            "extra_toolchain_mac",
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:mac"),
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),
+            "baz"
+        )
+        scratch.appendFile("toolchain/BUILD", "toolchain_type(name = 'extra_optional_toolchain')")
+        val extraOptionalToolchainTypeLabel: Label? =
+            Label.parseCanonicalUnchecked("//toolchain:extra_optional_toolchain")
+        val extraOptionalToolchainType: ToolchainTypeRequirement? =
+            ToolchainTypeRequirement.builder(extraOptionalToolchainTypeLabel).mandatory(false).build()
+        rewriteModuleDotBazel(
+            """
         register_toolchains("//extra:extra_toolchain_mac")
         register_execution_platforms('//platforms:linux', '//platforms:mac')
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration("--platforms=//platforms:linux");
-    ToolchainContextKey key =
-        ToolchainContextKey.key()
-            .configurationKey(targetConfigKey)
-            .toolchainTypes(optionalToolchainType, extraOptionalToolchainType)
-            .build();
+        useConfiguration("--platforms=//platforms:linux")
+        val key: ToolchainContextKey? =
+            ToolchainContextKey.key()
+                .configurationKey(targetConfigKey)
+                .toolchainTypes(optionalToolchainType, extraOptionalToolchainType)
+                .build()
 
-    EvaluationResult<UnloadedToolchainContext> result = invokeToolchainResolution(key);
+        val result: EvaluationResult<UnloadedToolchainContext?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result).hasNoError();
-    UnloadedToolchainContext unloadedToolchainContext = result.get(key);
-    assertThat(unloadedToolchainContext).isNotNull();
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasNoError()
+        val unloadedToolchainContext: UnloadedToolchainContext? = result.get(key)
+        assertThat(unloadedToolchainContext).isNotNull()
 
-    assertThat(unloadedToolchainContext).hasToolchainType(optionalToolchainTypeLabel);
-    assertThat(unloadedToolchainContext).hasResolvedToolchain("//extra:extra_toolchain_mac_impl");
-    assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:mac");
-    assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux");
-  }
+        assertThat(unloadedToolchainContext).hasToolchainType(optionalToolchainTypeLabel)
+        assertThat(unloadedToolchainContext).hasResolvedToolchain("//extra:extra_toolchain_mac_impl")
+        assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:mac")
+        assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux")
+    }
 
-  @Test
-  public void resolve_multiple() throws Exception {
-    Label secondToolchainTypeLabel = Label.parseCanonicalUnchecked("//second:toolchain_type");
-    ToolchainTypeRequirement secondToolchainTypeRequirement =
-        ToolchainTypeRequirement.create(secondToolchainTypeLabel);
-    scratch.file("second/BUILD", "toolchain_type(name = 'toolchain_type')");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolve_multiple() {
+        val secondToolchainTypeLabel: Label? = Label.parseCanonicalUnchecked("//second:toolchain_type")
+        val secondToolchainTypeRequirement: ToolchainTypeRequirement? =
+            ToolchainTypeRequirement.create(secondToolchainTypeLabel)
+        scratch.file("second/BUILD", "toolchain_type(name = 'toolchain_type')")
 
-    addToolchain(
-        "main",
-        "main_toolchain_linux",
-        ImmutableList.of("//constraints:linux"),
-        ImmutableList.of("//constraints:linux"),
-        "baz");
-    addToolchain(
-        "main",
-        "second_toolchain_linux",
-        secondToolchainTypeLabel,
-        ImmutableList.of("//constraints:linux"),
-        ImmutableList.of("//constraints:linux"),
-        "baz");
-    rewriteModuleDotBazel(
-        """
+        addToolchain(
+            "main",
+            "main_toolchain_linux",
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),
+            "baz"
+        )
+        addToolchain(
+            "main",
+            "second_toolchain_linux",
+            secondToolchainTypeLabel,
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),
+            "baz"
+        )
+        rewriteModuleDotBazel(
+            """
         register_toolchains("//main:all")
         register_execution_platforms("//platforms:linux")
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration("--platforms=//platforms:linux");
-    ToolchainContextKey key =
-        ToolchainContextKey.key()
-            .configurationKey(targetConfigKey)
-            .toolchainTypes(testToolchainType, secondToolchainTypeRequirement)
-            .build();
+        useConfiguration("--platforms=//platforms:linux")
+        val key: ToolchainContextKey? =
+            ToolchainContextKey.key()
+                .configurationKey(targetConfigKey)
+                .toolchainTypes(testToolchainType, secondToolchainTypeRequirement)
+                .build()
 
-    EvaluationResult<UnloadedToolchainContext> result = invokeToolchainResolution(key);
+        val result: EvaluationResult<UnloadedToolchainContext?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result).hasNoError();
-    UnloadedToolchainContext unloadedToolchainContext = result.get(key);
-    assertThat(unloadedToolchainContext).isNotNull();
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasNoError()
+        val unloadedToolchainContext: UnloadedToolchainContext? = result.get(key)
+        assertThat(unloadedToolchainContext).isNotNull()
 
-    assertThat(unloadedToolchainContext).hasToolchainType(testToolchainTypeLabel);
-    assertThat(unloadedToolchainContext).hasResolvedToolchain("//main:main_toolchain_linux_impl");
-    assertThat(unloadedToolchainContext).hasToolchainType(secondToolchainTypeLabel);
-    assertThat(unloadedToolchainContext).hasResolvedToolchain("//main:second_toolchain_linux_impl");
-    assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:linux");
-    assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux");
-  }
+        assertThat(unloadedToolchainContext).hasToolchainType(testToolchainTypeLabel)
+        assertThat(unloadedToolchainContext).hasResolvedToolchain("//main:main_toolchain_linux_impl")
+        assertThat(unloadedToolchainContext).hasToolchainType(secondToolchainTypeLabel)
+        assertThat(unloadedToolchainContext).hasResolvedToolchain("//main:second_toolchain_linux_impl")
+        assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:linux")
+        assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux")
+    }
 
-  @Test
-  public void resolve_mandatory_missing() throws Exception {
-    // There is no toolchain for the requested type.
-    useConfiguration("--platforms=//platforms:linux");
-    ToolchainContextKey key =
-        ToolchainContextKey.key()
-            .configurationKey(targetConfigKey)
-            .toolchainTypes(testToolchainType)
-            .build();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolve_mandatory_missing() {
+        // There is no toolchain for the requested type.
+        useConfiguration("--platforms=//platforms:linux")
+        val key: ToolchainContextKey? =
+            ToolchainContextKey.key()
+                .configurationKey(targetConfigKey)
+                .toolchainTypes(testToolchainType)
+                .build()
 
-    EvaluationResult<UnloadedToolchainContext> result = invokeToolchainResolution(key);
+        val result: EvaluationResult<UnloadedToolchainContext?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result)
-        .hasErrorEntryForKeyThat(key)
-        .hasExceptionThat()
-        .hasMessageThat()
-        .isEqualTo(
-"""
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result)
+            .hasErrorEntryForKeyThat(key)
+            .hasExceptionThat()
+            .hasMessageThat()
+            .isEqualTo(
+                """
 No matching toolchains found for types:
   //toolchain:test_toolchain
 To debug, rerun with --toolchain_resolution_debug='//toolchain:test_toolchain'
-For more information on platforms or toolchains see https://bazel.build/concepts/platforms-intro.\
-""");
-  }
+For more information on platforms or toolchains see https://bazel.build/concepts/platforms-intro.
+""".trimIndent()
+            )
+    }
 
-  @Test
-  public void unresolved_toolchain_message_regex_quotes() throws Exception {
-    PlatformInfo platformInfo =
-        PlatformInfo.builder()
-            .setLabel(Label.parseCanonicalUnchecked("//platforms:test_platform"))
-            .build();
-    ToolchainTypeInfo toolchainTypeInfo =
-        ToolchainTypeInfo.create(
-            Label.parseCanonicalUnchecked("@@repo+//toolchain:test_toolchain"));
-    LinkedHashSet<ToolchainTypeInfo> missingToolchainTypes = new LinkedHashSet<>();
-    missingToolchainTypes.add(toolchainTypeInfo);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun unresolved_toolchain_message_regex_quotes() {
+        val platformInfo: PlatformInfo? =
+            PlatformInfo.builder()
+                .setLabel(Label.parseCanonicalUnchecked("//platforms:test_platform"))
+                .build()
+        val toolchainTypeInfo: ToolchainTypeInfo? =
+            ToolchainTypeInfo.create(
+                Label.parseCanonicalUnchecked("@@repo+//toolchain:test_toolchain")
+            )
+        val missingToolchainTypes: LinkedHashSet<ToolchainTypeInfo?> = LinkedHashSet<ToolchainTypeInfo?>()
+        missingToolchainTypes.add(toolchainTypeInfo)
 
-    var exception =
-        new ToolchainResolutionFunction.UnresolvedToolchainsException(
-            platformInfo, missingToolchainTypes);
+        val exception: ToolchainResolutionFunction.UnresolvedToolchainsException =
+            UnresolvedToolchainsException(
+                platformInfo, missingToolchainTypes
+            )
 
-    assertThat(exception)
-        .hasMessageThat()
-        .isEqualTo(
-"""
+        assertThat(exception)
+            .hasMessageThat()
+            .isEqualTo(
+                """
 No matching toolchains found for types:
   @@repo+//toolchain:test_toolchain
-To debug, rerun with --toolchain_resolution_debug='\\Q@@repo+//toolchain:test_toolchain\\E'
-""");
-  }
+To debug, rerun with --toolchain_resolution_debug='\Q@@repo+//toolchain:test_toolchain\E'
 
-  @Test
-  public void resolve_mandatory_missing_customPlatformMessage() throws Exception {
-    scratch.appendFile(
-        "platforms/BUILD",
-        """
+""".trimIndent()
+            )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolve_mandatory_missing_customPlatformMessage() {
+        scratch.appendFile(
+            "platforms/BUILD",
+            """
         platform(
             name = "linux_custom_message",
             parents = [":linux"],
             missing_toolchain_error = "Check custom docs for setup instructions",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    // There is no toolchain for the requested type.
-    useConfiguration("--platforms=//platforms:linux_custom_message");
-    ToolchainContextKey key =
-        ToolchainContextKey.key()
-            .configurationKey(targetConfigKey)
-            .toolchainTypes(testToolchainType)
-            .build();
+        // There is no toolchain for the requested type.
+        useConfiguration("--platforms=//platforms:linux_custom_message")
+        val key: ToolchainContextKey? =
+            ToolchainContextKey.key()
+                .configurationKey(targetConfigKey)
+                .toolchainTypes(testToolchainType)
+                .build()
 
-    EvaluationResult<UnloadedToolchainContext> result = invokeToolchainResolution(key);
+        val result: EvaluationResult<UnloadedToolchainContext?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result)
-        .hasErrorEntryForKeyThat(key)
-        .hasExceptionThat()
-        .hasMessageThat()
-        .contains("Check custom docs for setup instructions");
-    assertThatEvaluationResult(result)
-        .hasErrorEntryForKeyThat(key)
-        .hasExceptionThat()
-        .hasMessageThat()
-        .doesNotContain("see https://bazel.build/concepts/platforms-intro");
-  }
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result)
+            .hasErrorEntryForKeyThat(key)
+            .hasExceptionThat()
+            .hasMessageThat()
+            .contains("Check custom docs for setup instructions")
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result)
+            .hasErrorEntryForKeyThat(key)
+            .hasExceptionThat()
+            .hasMessageThat()
+            .doesNotContain("see https://bazel.build/concepts/platforms-intro")
+    }
 
-  @Test
-  public void resolve_multiple_optional() throws Exception {
-    Label secondToolchainTypeLabel = Label.parseCanonicalUnchecked("//second:toolchain_type");
-    ToolchainTypeRequirement secondToolchainTypeRequirement =
-        ToolchainTypeRequirement.builder(secondToolchainTypeLabel).mandatory(false).build();
-    scratch.file("second/BUILD", "toolchain_type(name = 'toolchain_type')");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolve_multiple_optional() {
+        val secondToolchainTypeLabel: Label? = Label.parseCanonicalUnchecked("//second:toolchain_type")
+        val secondToolchainTypeRequirement: ToolchainTypeRequirement? =
+            ToolchainTypeRequirement.builder(secondToolchainTypeLabel).mandatory(false).build()
+        scratch.file("second/BUILD", "toolchain_type(name = 'toolchain_type')")
 
-    addToolchain(
-        "main",
-        "main_toolchain_linux",
-        ImmutableList.of("//constraints:linux"),
-        ImmutableList.of("//constraints:linux"),
-        "baz");
-    addToolchain(
-        "main",
-        "second_toolchain_linux",
-        secondToolchainTypeLabel,
-        ImmutableList.of("//constraints:linux"),
-        ImmutableList.of("//constraints:linux"),
-        "baz");
-    rewriteModuleDotBazel(
-        """
+        addToolchain(
+            "main",
+            "main_toolchain_linux",
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),
+            "baz"
+        )
+        addToolchain(
+            "main",
+            "second_toolchain_linux",
+            secondToolchainTypeLabel,
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),
+            "baz"
+        )
+        rewriteModuleDotBazel(
+            """
         register_toolchains("//main:all")
         register_execution_platforms("//platforms:linux")
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration("--platforms=//platforms:linux");
-    ToolchainContextKey key =
-        ToolchainContextKey.key()
-            .configurationKey(targetConfigKey)
-            .toolchainTypes(testToolchainType, secondToolchainTypeRequirement)
-            .build();
+        useConfiguration("--platforms=//platforms:linux")
+        val key: ToolchainContextKey? =
+            ToolchainContextKey.key()
+                .configurationKey(targetConfigKey)
+                .toolchainTypes(testToolchainType, secondToolchainTypeRequirement)
+                .build()
 
-    EvaluationResult<UnloadedToolchainContext> result = invokeToolchainResolution(key);
+        val result: EvaluationResult<UnloadedToolchainContext?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result).hasNoError();
-    UnloadedToolchainContext unloadedToolchainContext = result.get(key);
-    assertThat(unloadedToolchainContext).isNotNull();
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasNoError()
+        val unloadedToolchainContext: UnloadedToolchainContext? = result.get(key)
+        assertThat(unloadedToolchainContext).isNotNull()
 
-    assertThat(unloadedToolchainContext).hasToolchainType(testToolchainTypeLabel);
-    assertThat(unloadedToolchainContext).hasResolvedToolchain("//main:main_toolchain_linux_impl");
-    assertThat(unloadedToolchainContext).hasToolchainType(secondToolchainTypeLabel);
-    assertThat(unloadedToolchainContext).hasResolvedToolchain("//main:second_toolchain_linux_impl");
-    assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:linux");
-    assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux");
-  }
+        assertThat(unloadedToolchainContext).hasToolchainType(testToolchainTypeLabel)
+        assertThat(unloadedToolchainContext).hasResolvedToolchain("//main:main_toolchain_linux_impl")
+        assertThat(unloadedToolchainContext).hasToolchainType(secondToolchainTypeLabel)
+        assertThat(unloadedToolchainContext).hasResolvedToolchain("//main:second_toolchain_linux_impl")
+        assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:linux")
+        assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux")
+    }
 
-  @Test
-  public void resolve_multiple_optional_missing() throws Exception {
-    Label secondToolchainTypeLabel = Label.parseCanonicalUnchecked("//second:toolchain_type");
-    ToolchainTypeRequirement secondToolchainTypeRequirement =
-        ToolchainTypeRequirement.builder(secondToolchainTypeLabel).mandatory(false).build();
-    scratch.file("second/BUILD", "toolchain_type(name = 'toolchain_type')");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolve_multiple_optional_missing() {
+        val secondToolchainTypeLabel: Label? = Label.parseCanonicalUnchecked("//second:toolchain_type")
+        val secondToolchainTypeRequirement: ToolchainTypeRequirement? =
+            ToolchainTypeRequirement.builder(secondToolchainTypeLabel).mandatory(false).build()
+        scratch.file("second/BUILD", "toolchain_type(name = 'toolchain_type')")
 
-    addToolchain(
-        "main",
-        "main_toolchain_linux",
-        ImmutableList.of("//constraints:linux"),
-        ImmutableList.of("//constraints:linux"),
-        "baz");
-    rewriteModuleDotBazel(
-        """
+        addToolchain(
+            "main",
+            "main_toolchain_linux",
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),
+            "baz"
+        )
+        rewriteModuleDotBazel(
+            """
         register_toolchains("//main:all")
         register_execution_platforms("//platforms:linux")
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration("--platforms=//platforms:linux");
-    ToolchainContextKey key =
-        ToolchainContextKey.key()
-            .configurationKey(targetConfigKey)
-            .toolchainTypes(testToolchainType, secondToolchainTypeRequirement)
-            .build();
+        useConfiguration("--platforms=//platforms:linux")
+        val key: ToolchainContextKey? =
+            ToolchainContextKey.key()
+                .configurationKey(targetConfigKey)
+                .toolchainTypes(testToolchainType, secondToolchainTypeRequirement)
+                .build()
 
-    EvaluationResult<UnloadedToolchainContext> result = invokeToolchainResolution(key);
+        val result: EvaluationResult<UnloadedToolchainContext?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result).hasNoError();
-    UnloadedToolchainContext unloadedToolchainContext = result.get(key);
-    assertThat(unloadedToolchainContext).isNotNull();
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasNoError()
+        val unloadedToolchainContext: UnloadedToolchainContext? = result.get(key)
+        assertThat(unloadedToolchainContext).isNotNull()
 
-    assertThat(unloadedToolchainContext).hasToolchainType(testToolchainTypeLabel);
-    assertThat(unloadedToolchainContext).hasResolvedToolchain("//main:main_toolchain_linux_impl");
-    assertThat(unloadedToolchainContext).hasToolchainType(secondToolchainTypeLabel);
-    assertThat(unloadedToolchainContext)
-        .resolvedToolchainLabels()
-        .doesNotContain(Label.parseCanonicalUnchecked("//main:second_toolchain_linux_impl"));
-    assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:linux");
-    assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux");
-  }
+        assertThat(unloadedToolchainContext).hasToolchainType(testToolchainTypeLabel)
+        assertThat(unloadedToolchainContext).hasResolvedToolchain("//main:main_toolchain_linux_impl")
+        assertThat(unloadedToolchainContext).hasToolchainType(secondToolchainTypeLabel)
+        assertThat(unloadedToolchainContext)
+            .resolvedToolchainLabels()
+            .doesNotContain(Label.parseCanonicalUnchecked("//main:second_toolchain_linux_impl"))
+        assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:linux")
+        assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux")
+    }
 
-  @Test
-  public void resolve_toolchainTypeAlias() throws Exception {
-    addToolchain(
-        "extra",
-        "extra_toolchain_linux",
-        ImmutableList.of("//constraints:linux"),
-        ImmutableList.of("//constraints:linux"),
-        "baz");
-    rewriteModuleDotBazel(
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolve_toolchainTypeAlias() {
+        addToolchain(
+            "extra",
+            "extra_toolchain_linux",
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),
+            "baz"
+        )
+        rewriteModuleDotBazel(
+            """
         register_toolchains("//extra:extra_toolchain_linux")
         register_execution_platforms("//platforms:linux")
-        """);
+        
+        """.trimIndent()
+        )
 
-    // Set up an alias for the toolchain type.
-    Label aliasedToolchainTypeLabel = Label.parseCanonicalUnchecked("//alias:toolchain_type");
-    scratch.file(
-        "alias/BUILD", "alias(name = 'toolchain_type', actual = '//toolchain:test_toolchain')");
+        // Set up an alias for the toolchain type.
+        val aliasedToolchainTypeLabel: Label? = Label.parseCanonicalUnchecked("//alias:toolchain_type")
+        scratch.file(
+            "alias/BUILD", "alias(name = 'toolchain_type', actual = '//toolchain:test_toolchain')"
+        )
 
-    useConfiguration("--platforms=//platforms:linux");
-    ToolchainContextKey key =
-        ToolchainContextKey.key()
-            .configurationKey(targetConfigKey)
-            .toolchainTypes(ToolchainTypeRequirement.create(aliasedToolchainTypeLabel))
-            .build();
+        useConfiguration("--platforms=//platforms:linux")
+        val key: ToolchainContextKey? =
+            ToolchainContextKey.key()
+                .configurationKey(targetConfigKey)
+                .toolchainTypes(ToolchainTypeRequirement.create(aliasedToolchainTypeLabel))
+                .build()
 
-    EvaluationResult<UnloadedToolchainContext> result = invokeToolchainResolution(key);
+        val result: EvaluationResult<UnloadedToolchainContext?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result).hasNoError();
-    UnloadedToolchainContext unloadedToolchainContext = result.get(key);
-    assertThat(unloadedToolchainContext).isNotNull();
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasNoError()
+        val unloadedToolchainContext: UnloadedToolchainContext? = result.get(key)
+        assertThat(unloadedToolchainContext).isNotNull()
 
-    assertThat(unloadedToolchainContext).hasToolchainType(testToolchainTypeLabel);
-    assertThat(unloadedToolchainContext).hasResolvedToolchain("//extra:extra_toolchain_linux_impl");
-    assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:linux");
-    assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux");
-  }
+        assertThat(unloadedToolchainContext).hasToolchainType(testToolchainTypeLabel)
+        assertThat(unloadedToolchainContext).hasResolvedToolchain("//extra:extra_toolchain_linux_impl")
+        assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:linux")
+        assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux")
+    }
 
-  @Test
-  public void resolve_noToolchainType() throws Exception {
-    scratch.file("host/BUILD", "platform(name = 'host')");
-    rewriteModuleDotBazel(
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolve_noToolchainType() {
+        scratch.file("host/BUILD", "platform(name = 'host')")
+        rewriteModuleDotBazel(
+            """
         register_execution_platforms("//platforms:mac", "//platforms:linux")
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration("--host_platform=//host:host", "--platforms=//platforms:linux");
-    ToolchainContextKey key = ToolchainContextKey.key().configurationKey(targetConfigKey).build();
+        useConfiguration("--host_platform=//host:host", "--platforms=//platforms:linux")
+        val key: ToolchainContextKey? = ToolchainContextKey.key().configurationKey(targetConfigKey).build()
 
-    EvaluationResult<UnloadedToolchainContext> result = invokeToolchainResolution(key);
+        val result: EvaluationResult<UnloadedToolchainContext?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result).hasNoError();
-    UnloadedToolchainContext unloadedToolchainContext = result.get(key);
-    assertThat(unloadedToolchainContext).isNotNull();
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasNoError()
+        val unloadedToolchainContext: UnloadedToolchainContext = result.get(key)
+        assertThat(unloadedToolchainContext).isNotNull()
 
-    assertThat(unloadedToolchainContext.toolchainTypes()).isEmpty();
-    // Even with no toolchains requested, should still select the first execution platform.
-    assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:mac");
-    assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux");
-  }
+        assertThat(unloadedToolchainContext.toolchainTypes()).isEmpty()
+        // Even with no toolchains requested, should still select the first execution platform.
+        assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:mac")
+        assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux")
+    }
 
-  @Test
-  public void resolve_noToolchainType_hostNotAvailable() throws Exception {
-    scratch.file("host/BUILD", "platform(name = 'host')");
-    scratch.file(
-        "sample/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolve_noToolchainType_hostNotAvailable() {
+        scratch.file("host/BUILD", "platform(name = 'host')")
+        scratch.file(
+            "sample/BUILD",
+            """
         constraint_setting(name = "demo")
 
         constraint_value(
@@ -636,402 +680,439 @@ To debug, rerun with --toolchain_resolution_debug='\\Q@@repo+//toolchain:test_to
             name = "sample_b",
             constraint_values = [":demo_b"],
         )
-        """);
-    rewriteModuleDotBazel(
-        """
+        
+        """.trimIndent()
+        )
+        rewriteModuleDotBazel(
+            """
         register_execution_platforms(
             "//platforms:mac",
             "//platforms:linux",
             "//sample:sample_a",
             "//sample:sample_b",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration("--host_platform=//host:host", "--platforms=//platforms:linux");
-    ToolchainContextKey key =
-        ToolchainContextKey.key()
-            .configurationKey(targetConfigKey)
-            .execConstraintLabels(Label.parseCanonicalUnchecked("//sample:demo_b"))
-            .build();
+        useConfiguration("--host_platform=//host:host", "--platforms=//platforms:linux")
+        val key: ToolchainContextKey? =
+            ToolchainContextKey.key()
+                .configurationKey(targetConfigKey)
+                .execConstraintLabels(Label.parseCanonicalUnchecked("//sample:demo_b"))
+                .build()
 
-    EvaluationResult<UnloadedToolchainContext> result = invokeToolchainResolution(key);
+        val result: EvaluationResult<UnloadedToolchainContext?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result).hasNoError();
-    UnloadedToolchainContext unloadedToolchainContext = result.get(key);
-    assertThat(unloadedToolchainContext).isNotNull();
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasNoError()
+        val unloadedToolchainContext: UnloadedToolchainContext = result.get(key)
+        assertThat(unloadedToolchainContext).isNotNull()
 
-    assertThat(unloadedToolchainContext.toolchainTypes()).isEmpty();
-    assertThat(unloadedToolchainContext).hasExecutionPlatform("//sample:sample_b");
-    assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux");
-  }
+        assertThat(unloadedToolchainContext.toolchainTypes()).isEmpty()
+        assertThat(unloadedToolchainContext).hasExecutionPlatform("//sample:sample_b")
+        assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux")
+    }
 
-  @Test
-  public void resolve_unavailableToolchainType_single() throws Exception {
-    reporter.removeHandler(failFastHandler);
-    scratch.file("fake/toolchain/BUILD", "");
-    useConfiguration("--host_platform=//platforms:linux", "--platforms=//platforms:mac");
-    ToolchainContextKey key =
-        ToolchainContextKey.key()
-            .configurationKey(targetConfigKey)
-            .toolchainTypes(
-                testToolchainType,
-                ToolchainTypeRequirement.create(
-                    Label.parseCanonicalUnchecked("//fake/toolchain:type_1")))
-            .build();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolve_unavailableToolchainType_single() {
+        reporter.removeHandler(failFastHandler)
+        scratch.file("fake/toolchain/BUILD", "")
+        useConfiguration("--host_platform=//platforms:linux", "--platforms=//platforms:mac")
+        val key: ToolchainContextKey? =
+            ToolchainContextKey.key()
+                .configurationKey(targetConfigKey)
+                .toolchainTypes(
+                    testToolchainType,
+                    ToolchainTypeRequirement.create(
+                        Label.parseCanonicalUnchecked("//fake/toolchain:type_1")
+                    )
+                )
+                .build()
 
-    EvaluationResult<UnloadedToolchainContext> result = invokeToolchainResolution(key);
+        val result: EvaluationResult<UnloadedToolchainContext?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result)
-        .hasErrorEntryForKeyThat(key)
-        .hasExceptionThat()
-        .isInstanceOf(InvalidToolchainTypeException.class);
-    assertContainsEvent("no such target '//fake/toolchain:type_1'");
-  }
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result)
+            .hasErrorEntryForKeyThat(key)
+            .hasExceptionThat()
+            .isInstanceOf(InvalidToolchainTypeException::class.java)
+        assertContainsEvent("no such target '//fake/toolchain:type_1'")
+    }
 
-  @Test
-  public void resolve_optional_unavailableToolchainType_single() throws Exception {
-    reporter.removeHandler(failFastHandler);
-    scratch.file("fake/toolchain/BUILD", "");
-    useConfiguration("--host_platform=//platforms:linux", "--platforms=//platforms:linux");
-    ToolchainContextKey key =
-        ToolchainContextKey.key()
-            .configurationKey(targetConfigKey)
-            .toolchainTypes(optionalToolchainType)
-            .build();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolve_optional_unavailableToolchainType_single() {
+        reporter.removeHandler(failFastHandler)
+        scratch.file("fake/toolchain/BUILD", "")
+        useConfiguration("--host_platform=//platforms:linux", "--platforms=//platforms:linux")
+        val key: ToolchainContextKey? =
+            ToolchainContextKey.key()
+                .configurationKey(targetConfigKey)
+                .toolchainTypes(optionalToolchainType)
+                .build()
 
-    EvaluationResult<UnloadedToolchainContext> result = invokeToolchainResolution(key);
+        val result: EvaluationResult<UnloadedToolchainContext?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result).hasNoError();
-    UnloadedToolchainContext unloadedToolchainContext = result.get(key);
-    assertThat(unloadedToolchainContext).isNotNull();
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasNoError()
+        val unloadedToolchainContext: UnloadedToolchainContext? = result.get(key)
+        assertThat(unloadedToolchainContext).isNotNull()
 
-    assertThat(unloadedToolchainContext).hasToolchainType(optionalToolchainTypeLabel);
-    assertThat(unloadedToolchainContext).resolvedToolchainLabels().isEmpty();
-    assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:linux");
-    assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux");
-  }
+        assertThat(unloadedToolchainContext).hasToolchainType(optionalToolchainTypeLabel)
+        assertThat(unloadedToolchainContext).resolvedToolchainLabels().isEmpty()
+        assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:linux")
+        assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux")
+    }
 
-  @Test
-  public void resolve_unavailableToolchainType_multiple() throws Exception {
-    reporter.removeHandler(failFastHandler);
-    scratch.file("fake/toolchain/BUILD", "");
-    useConfiguration("--host_platform=//platforms:linux", "--platforms=//platforms:mac");
-    ToolchainContextKey key =
-        ToolchainContextKey.key()
-            .configurationKey(targetConfigKey)
-            .toolchainTypes(
-                testToolchainType,
-                ToolchainTypeRequirement.create(
-                    Label.parseCanonicalUnchecked("//fake/toolchain:type_1")),
-                ToolchainTypeRequirement.create(
-                    Label.parseCanonicalUnchecked("//fake/toolchain:type_2")))
-            .build();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolve_unavailableToolchainType_multiple() {
+        reporter.removeHandler(failFastHandler)
+        scratch.file("fake/toolchain/BUILD", "")
+        useConfiguration("--host_platform=//platforms:linux", "--platforms=//platforms:mac")
+        val key: ToolchainContextKey? =
+            ToolchainContextKey.key()
+                .configurationKey(targetConfigKey)
+                .toolchainTypes(
+                    testToolchainType,
+                    ToolchainTypeRequirement.create(
+                        Label.parseCanonicalUnchecked("//fake/toolchain:type_1")
+                    ),
+                    ToolchainTypeRequirement.create(
+                        Label.parseCanonicalUnchecked("//fake/toolchain:type_2")
+                    )
+                )
+                .build()
 
-    EvaluationResult<UnloadedToolchainContext> result = invokeToolchainResolution(key);
+        val result: EvaluationResult<UnloadedToolchainContext?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result)
-        .hasErrorEntryForKeyThat(key)
-        .hasExceptionThat()
-        .isInstanceOf(InvalidToolchainTypeException.class);
-    // Only one of the missing types will be reported, so do not check the specific error message.
-  }
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result)
+            .hasErrorEntryForKeyThat(key)
+            .hasExceptionThat()
+            .isInstanceOf(InvalidToolchainTypeException::class.java)
+        // Only one of the missing types will be reported, so do not check the specific error message.
+    }
 
-  @Test
-  public void resolve_invalidToolchainType() throws Exception {
-    reporter.removeHandler(failFastHandler);
-    scratch.file("fake/toolchain/BUILD", "filegroup(name = 'not_a_toolchain')");
-    useConfiguration("--host_platform=//platforms:linux", "--platforms=//platforms:mac");
-    ToolchainContextKey key =
-        ToolchainContextKey.key()
-            .configurationKey(targetConfigKey)
-            .toolchainTypes(
-                ToolchainTypeRequirement.create(
-                    Label.parseCanonicalUnchecked("//fake/toolchain:not_a_toolchain")))
-            .build();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolve_invalidToolchainType() {
+        reporter.removeHandler(failFastHandler)
+        scratch.file("fake/toolchain/BUILD", "filegroup(name = 'not_a_toolchain')")
+        useConfiguration("--host_platform=//platforms:linux", "--platforms=//platforms:mac")
+        val key: ToolchainContextKey? =
+            ToolchainContextKey.key()
+                .configurationKey(targetConfigKey)
+                .toolchainTypes(
+                    ToolchainTypeRequirement.create(
+                        Label.parseCanonicalUnchecked("//fake/toolchain:not_a_toolchain")
+                    )
+                )
+                .build()
 
-    EvaluationResult<UnloadedToolchainContext> result = invokeToolchainResolution(key);
+        val result: EvaluationResult<UnloadedToolchainContext?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result)
-        .hasErrorEntryForKeyThat(key)
-        .hasExceptionThat()
-        .isInstanceOf(InvalidToolchainTypeException.class);
-    assertThatEvaluationResult(result)
-        .hasErrorEntryForKeyThat(key)
-        .hasExceptionThat()
-        .hasMessageThat()
-        .contains("but does not provide ToolchainTypeInfo");
-  }
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result)
+            .hasErrorEntryForKeyThat(key)
+            .hasExceptionThat()
+            .isInstanceOf(InvalidToolchainTypeException::class.java)
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result)
+            .hasErrorEntryForKeyThat(key)
+            .hasExceptionThat()
+            .hasMessageThat()
+            .contains("but does not provide ToolchainTypeInfo")
+    }
 
-  @Test
-  public void resolve_invalidToolchainType_ignored() throws Exception {
-    reporter.removeHandler(failFastHandler);
-    scratch.file("fake/toolchain/BUILD", "filegroup(name = 'not_a_toolchain')");
-    useConfiguration("--host_platform=//platforms:linux", "--platforms=//platforms:mac");
-    ToolchainContextKey key =
-        ToolchainContextKey.key()
-            .configurationKey(targetConfigKey)
-            .toolchainTypes(
-                ToolchainTypeRequirement.builder(
-                        Label.parseCanonicalUnchecked("//fake/toolchain:not_a_toolchain"))
-                    .ignoreIfInvalid(true)
-                    .build())
-            .build();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolve_invalidToolchainType_ignored() {
+        reporter.removeHandler(failFastHandler)
+        scratch.file("fake/toolchain/BUILD", "filegroup(name = 'not_a_toolchain')")
+        useConfiguration("--host_platform=//platforms:linux", "--platforms=//platforms:mac")
+        val key: ToolchainContextKey? =
+            ToolchainContextKey.key()
+                .configurationKey(targetConfigKey)
+                .toolchainTypes(
+                    ToolchainTypeRequirement.builder(
+                        Label.parseCanonicalUnchecked("//fake/toolchain:not_a_toolchain")
+                    )
+                        .ignoreIfInvalid(true)
+                        .build()
+                )
+                .build()
 
-    EvaluationResult<UnloadedToolchainContext> result = invokeToolchainResolution(key);
+        val result: EvaluationResult<UnloadedToolchainContext?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result).hasNoError();
-    UnloadedToolchainContext unloadedToolchainContext = result.get(key);
-    assertThat(unloadedToolchainContext).isNotNull();
-    assertThat(unloadedToolchainContext)
-        .doesntHaveToolchainType("//fake/toolchain:not_a_toolchain");
-  }
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasNoError()
+        val unloadedToolchainContext: UnloadedToolchainContext? = result.get(key)
+        assertThat(unloadedToolchainContext).isNotNull()
+        assertThat(unloadedToolchainContext)
+            .doesntHaveToolchainType("//fake/toolchain:not_a_toolchain")
+    }
 
-  @Test
-  public void resolve_invalidTargetPlatform_badTarget() throws Exception {
-    scratch.file("invalid/BUILD", "filegroup(name = 'not_a_platform')");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolve_invalidTargetPlatform_badTarget() {
+        scratch.file("invalid/BUILD", "filegroup(name = 'not_a_platform')")
 
-    // Manually create a configuration key: trying to call `useConfiguration` will immediately throw
-    // the exception this is checking for.
-    BuildOptions newOptions = targetConfigKey.getOptions().clone();
-    newOptions
-        .get(PlatformOptions.class)
-        .setPlatforms(ImmutableList.of(Label.parseCanonicalUnchecked("//invalid:not_a_platform")));
-    BuildConfigurationKey configKey = BuildConfigurationKey.create(newOptions);
+        // Manually create a configuration key: trying to call `useConfiguration` will immediately throw
+        // the exception this is checking for.
+        val newOptions: BuildOptions = targetConfigKey.getOptions().clone()
+        newOptions
+            .get(PlatformOptions::class.java)
+            .setPlatforms(com.google.common.collect.ImmutableList.of<E?>(Label.parseCanonicalUnchecked("//invalid:not_a_platform")))
+        val configKey: BuildConfigurationKey? = BuildConfigurationKey.create(newOptions)
 
-    // Create the toolchain context key and evaluate it.
-    ToolchainContextKey key =
-        ToolchainContextKey.key()
-            .configurationKey(configKey)
-            .toolchainTypes(testToolchainType)
-            .build();
+        // Create the toolchain context key and evaluate it.
+        val key: ToolchainContextKey? =
+            ToolchainContextKey.key()
+                .configurationKey(configKey)
+                .toolchainTypes(testToolchainType)
+                .build()
 
-    reporter.removeHandler(failFastHandler); // expect errors
-    EvaluationResult<UnloadedToolchainContext> result = invokeToolchainResolution(key);
+        reporter.removeHandler(failFastHandler) // expect errors
+        val result: EvaluationResult<UnloadedToolchainContext?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result).hasError();
-    assertThatEvaluationResult(result)
-        .hasErrorEntryForKeyThat(key)
-        .hasExceptionThat()
-        .isInstanceOf(InvalidPlatformException.class);
-    assertThatEvaluationResult(result)
-        .hasErrorEntryForKeyThat(key)
-        .hasExceptionThat()
-        .hasMessageThat()
-        .contains(
-            "//invalid:not_a_platform was referenced as a platform, "
-                + "but does not provide PlatformInfo");
-  }
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasError()
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result)
+            .hasErrorEntryForKeyThat(key)
+            .hasExceptionThat()
+            .isInstanceOf(InvalidPlatformException::class.java)
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result)
+            .hasErrorEntryForKeyThat(key)
+            .hasExceptionThat()
+            .hasMessageThat()
+            .contains(
+                "//invalid:not_a_platform was referenced as a platform, "
+                        + "but does not provide PlatformInfo"
+            )
+    }
 
-  @Test
-  public void resolve_invalidTargetPlatform_badPackage() throws Exception {
-    scratch.resolve("invalid").delete();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolve_invalidTargetPlatform_badPackage() {
+        scratch.resolve("invalid").delete()
 
-    // Manually create a configuration key: trying to call `useConfiguration` will immediately throw
-    // the exception this is checking for.
-    BuildOptions newOptions = targetConfigKey.getOptions().clone();
-    newOptions
-        .get(PlatformOptions.class)
-        .setPlatforms(ImmutableList.of(Label.parseCanonicalUnchecked("//invalid:not_a_platform")));
-    BuildConfigurationKey configKey = BuildConfigurationKey.create(newOptions);
+        // Manually create a configuration key: trying to call `useConfiguration` will immediately throw
+        // the exception this is checking for.
+        val newOptions: BuildOptions = targetConfigKey.getOptions().clone()
+        newOptions
+            .get(PlatformOptions::class.java)
+            .setPlatforms(com.google.common.collect.ImmutableList.of<E?>(Label.parseCanonicalUnchecked("//invalid:not_a_platform")))
+        val configKey: BuildConfigurationKey? = BuildConfigurationKey.create(newOptions)
 
-    // Create the toolchain context key and evaluate it.
-    ToolchainContextKey key =
-        ToolchainContextKey.key()
-            .configurationKey(configKey)
-            .toolchainTypes(testToolchainType)
-            .build();
+        // Create the toolchain context key and evaluate it.
+        val key: ToolchainContextKey? =
+            ToolchainContextKey.key()
+                .configurationKey(configKey)
+                .toolchainTypes(testToolchainType)
+                .build()
 
-    reporter.removeHandler(failFastHandler); // expect errors
-    EvaluationResult<UnloadedToolchainContext> result = invokeToolchainResolution(key);
+        reporter.removeHandler(failFastHandler) // expect errors
+        val result: EvaluationResult<UnloadedToolchainContext?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result).hasError();
-    assertThatEvaluationResult(result)
-        .hasErrorEntryForKeyThat(key)
-        .hasExceptionThat()
-        .isInstanceOf(InvalidPlatformException.class);
-    assertThatEvaluationResult(result)
-        .hasErrorEntryForKeyThat(key)
-        .hasExceptionThat()
-        .hasMessageThat()
-        .contains("BUILD file not found");
-  }
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasError()
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result)
+            .hasErrorEntryForKeyThat(key)
+            .hasExceptionThat()
+            .isInstanceOf(InvalidPlatformException::class.java)
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result)
+            .hasErrorEntryForKeyThat(key)
+            .hasExceptionThat()
+            .hasMessageThat()
+            .contains("BUILD file not found")
+    }
 
-  @Test
-  public void resolve_executionPlatform_alias() throws Exception {
-    // This should select platform mac, toolchain extra_toolchain_mac, because platform
-    // mac is listed first.
-    addToolchain(
-        "extra",
-        "extra_toolchain_linux",
-        ImmutableList.of("//constraints:linux"),
-        ImmutableList.of("//constraints:linux"),
-        "baz");
-    addToolchain(
-        "extra",
-        "extra_toolchain_mac",
-        ImmutableList.of("//constraints:mac"),
-        ImmutableList.of("//constraints:linux"),
-        "baz");
-    // Set up aliases for the platforms.
-    scratch.file(
-        "alias/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolve_executionPlatform_alias() {
+        // This should select platform mac, toolchain extra_toolchain_mac, because platform
+        // mac is listed first.
+        addToolchain(
+            "extra",
+            "extra_toolchain_linux",
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),
+            "baz"
+        )
+        addToolchain(
+            "extra",
+            "extra_toolchain_mac",
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:mac"),
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),
+            "baz"
+        )
+        // Set up aliases for the platforms.
+        scratch.file(
+            "alias/BUILD",
+            """
         alias(name = 'mac', actual = '//platforms:mac')
         alias(name = 'linux', actual = '//platforms:linux')
-        """);
-    rewriteModuleDotBazel(
-        """
+        
+        """.trimIndent()
+        )
+        rewriteModuleDotBazel(
+            """
         register_toolchains("//extra:extra_toolchain_linux", "//extra:extra_toolchain_mac")
         register_execution_platforms('//alias:mac', '//alias:linux')
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration("--platforms=//platforms:linux");
-    ToolchainContextKey key =
-        ToolchainContextKey.key()
-            .configurationKey(targetConfigKey)
-            .toolchainTypes(testToolchainType)
-            .build();
+        useConfiguration("--platforms=//platforms:linux")
+        val key: ToolchainContextKey? =
+            ToolchainContextKey.key()
+                .configurationKey(targetConfigKey)
+                .toolchainTypes(testToolchainType)
+                .build()
 
-    EvaluationResult<UnloadedToolchainContext> result = invokeToolchainResolution(key);
+        val result: EvaluationResult<UnloadedToolchainContext?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result).hasNoError();
-    UnloadedToolchainContext unloadedToolchainContext = result.get(key);
-    assertThat(unloadedToolchainContext).isNotNull();
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasNoError()
+        val unloadedToolchainContext: UnloadedToolchainContext? = result.get(key)
+        assertThat(unloadedToolchainContext).isNotNull()
 
-    assertThat(unloadedToolchainContext).hasToolchainType(testToolchainTypeLabel);
-    assertThat(unloadedToolchainContext).hasResolvedToolchain("//extra:extra_toolchain_mac_impl");
-    assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:mac");
-    assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux");
-  }
+        assertThat(unloadedToolchainContext).hasToolchainType(testToolchainTypeLabel)
+        assertThat(unloadedToolchainContext).hasResolvedToolchain("//extra:extra_toolchain_mac_impl")
+        assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:mac")
+        assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux")
+    }
 
-  @Test
-  public void resolve_invalidHostPlatform() throws Exception {
-    scratch.file("invalid/BUILD", "filegroup(name = 'not_a_platform')");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolve_invalidHostPlatform() {
+        scratch.file("invalid/BUILD", "filegroup(name = 'not_a_platform')")
 
-    // Manually create a configuration key: trying to call `useConfiguration` will immediately throw
-    // the exception this is checking for.
-    BuildOptions newOptions = targetConfigKey.getOptions().clone();
-    newOptions
-        .get(PlatformOptions.class)
-        .setHostPlatform(Label.parseCanonicalUnchecked("//invalid:not_a_platform"));
-    BuildConfigurationKey configKey = BuildConfigurationKey.create(newOptions);
+        // Manually create a configuration key: trying to call `useConfiguration` will immediately throw
+        // the exception this is checking for.
+        val newOptions: BuildOptions = targetConfigKey.getOptions().clone()
+        newOptions
+            .get(PlatformOptions::class.java)
+            .setHostPlatform(Label.parseCanonicalUnchecked("//invalid:not_a_platform"))
+        val configKey: BuildConfigurationKey? = BuildConfigurationKey.create(newOptions)
 
-    ToolchainContextKey key =
-        ToolchainContextKey.key()
-            .configurationKey(configKey)
-            .toolchainTypes(testToolchainType)
-            .build();
+        val key: ToolchainContextKey? =
+            ToolchainContextKey.key()
+                .configurationKey(configKey)
+                .toolchainTypes(testToolchainType)
+                .build()
 
-    EvaluationResult<UnloadedToolchainContext> result = invokeToolchainResolution(key);
+        val result: EvaluationResult<UnloadedToolchainContext?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result).hasError();
-    assertThatEvaluationResult(result)
-        .hasErrorEntryForKeyThat(key)
-        .hasExceptionThat()
-        .isInstanceOf(InvalidPlatformException.class);
-    assertThatEvaluationResult(result)
-        .hasErrorEntryForKeyThat(key)
-        .hasExceptionThat()
-        .hasMessageThat()
-        .contains("//invalid:not_a_platform");
-  }
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasError()
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result)
+            .hasErrorEntryForKeyThat(key)
+            .hasExceptionThat()
+            .isInstanceOf(InvalidPlatformException::class.java)
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result)
+            .hasErrorEntryForKeyThat(key)
+            .hasExceptionThat()
+            .hasMessageThat()
+            .contains("//invalid:not_a_platform")
+    }
 
-  @Test
-  public void resolve_invalidExecutionPlatform() throws Exception {
-    // Have to use a rule that doesn't require a target platform, or else there will be a cycle.
-    scratch.file("invalid/BUILD", "toolchain_type(name = 'not_a_platform')");
-    useConfiguration("--extra_execution_platforms=//invalid:not_a_platform");
-    ToolchainContextKey key =
-        ToolchainContextKey.key()
-            .configurationKey(targetConfigKey)
-            .toolchainTypes(testToolchainType)
-            .build();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolve_invalidExecutionPlatform() {
+        // Have to use a rule that doesn't require a target platform, or else there will be a cycle.
+        scratch.file("invalid/BUILD", "toolchain_type(name = 'not_a_platform')")
+        useConfiguration("--extra_execution_platforms=//invalid:not_a_platform")
+        val key: ToolchainContextKey? =
+            ToolchainContextKey.key()
+                .configurationKey(targetConfigKey)
+                .toolchainTypes(testToolchainType)
+                .build()
 
-    EvaluationResult<UnloadedToolchainContext> result = invokeToolchainResolution(key);
+        val result: EvaluationResult<UnloadedToolchainContext?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result).hasError();
-    assertThatEvaluationResult(result)
-        .hasErrorEntryForKeyThat(key)
-        .hasExceptionThat()
-        .isInstanceOf(InvalidPlatformException.class);
-    assertThatEvaluationResult(result)
-        .hasErrorEntryForKeyThat(key)
-        .hasExceptionThat()
-        .hasMessageThat()
-        .contains("//invalid:not_a_platform");
-  }
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasError()
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result)
+            .hasErrorEntryForKeyThat(key)
+            .hasExceptionThat()
+            .isInstanceOf(InvalidPlatformException::class.java)
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result)
+            .hasErrorEntryForKeyThat(key)
+            .hasExceptionThat()
+            .hasMessageThat()
+            .contains("//invalid:not_a_platform")
+    }
 
-  @Test
-  public void resolve_execConstraints() throws Exception {
-    // This should select platform linux, toolchain extra_toolchain_linux, due to extra constraints,
-    // even though platform mac is registered first.
-    addToolchain(
-        /* packageName= */ "extra",
-        /* toolchainName= */ "extra_toolchain_linux",
-        /* execConstraints= */ ImmutableList.of("//constraints:linux"),
-        /* targetConstraints= */ ImmutableList.of("//constraints:linux"),
-        /* data= */ "baz");
-    addToolchain(
-        /* packageName= */ "extra",
-        /* toolchainName= */ "extra_toolchain_mac",
-        /* execConstraints= */ ImmutableList.of("//constraints:mac"),
-        /* targetConstraints= */ ImmutableList.of("//constraints:linux"),
-        /* data= */ "baz");
-    rewriteModuleDotBazel(
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolve_execConstraints() {
+        // This should select platform linux, toolchain extra_toolchain_linux, due to extra constraints,
+        // even though platform mac is registered first.
+        addToolchain( /* packageName= */
+            "extra",  /* toolchainName= */
+            "extra_toolchain_linux",  /* execConstraints= */
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),  /* targetConstraints= */
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),  /* data= */
+            "baz"
+        )
+        addToolchain( /* packageName= */
+            "extra",  /* toolchainName= */
+            "extra_toolchain_mac",  /* execConstraints= */
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:mac"),  /* targetConstraints= */
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),  /* data= */
+            "baz"
+        )
+        rewriteModuleDotBazel(
+            """
         register_toolchains("//extra:extra_toolchain_linux", "//extra:extra_toolchain_mac")
         register_execution_platforms("//platforms:mac", "//platforms:linux")
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration("--platforms=//platforms:linux");
-    ToolchainContextKey key =
-        ToolchainContextKey.key()
-            .configurationKey(targetConfigKey)
-            .toolchainTypes(testToolchainType)
-            .execConstraintLabels(Label.parseCanonicalUnchecked("//constraints:linux"))
-            .build();
+        useConfiguration("--platforms=//platforms:linux")
+        val key: ToolchainContextKey? =
+            ToolchainContextKey.key()
+                .configurationKey(targetConfigKey)
+                .toolchainTypes(testToolchainType)
+                .execConstraintLabels(Label.parseCanonicalUnchecked("//constraints:linux"))
+                .build()
 
-    EvaluationResult<UnloadedToolchainContext> result = invokeToolchainResolution(key);
+        val result: EvaluationResult<UnloadedToolchainContext?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result).hasNoError();
-    UnloadedToolchainContext unloadedToolchainContext = result.get(key);
-    assertThat(unloadedToolchainContext).isNotNull();
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasNoError()
+        val unloadedToolchainContext: UnloadedToolchainContext? = result.get(key)
+        assertThat(unloadedToolchainContext).isNotNull()
 
-    assertThat(unloadedToolchainContext).hasToolchainType(testToolchainTypeLabel);
-    assertThat(unloadedToolchainContext).hasResolvedToolchain("//extra:extra_toolchain_linux_impl");
-    assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:linux");
-    assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux");
-  }
+        assertThat(unloadedToolchainContext).hasToolchainType(testToolchainTypeLabel)
+        assertThat(unloadedToolchainContext).hasResolvedToolchain("//extra:extra_toolchain_linux_impl")
+        assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:linux")
+        assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux")
+    }
 
-  @Test
-  public void resolve_execConstraints_invalid() throws Exception {
-    ToolchainContextKey key =
-        ToolchainContextKey.key()
-            .configurationKey(targetConfigKey)
-            .toolchainTypes(testToolchainType)
-            .execConstraintLabels(Label.parseCanonicalUnchecked("//platforms:linux"))
-            .build();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolve_execConstraints_invalid() {
+        val key: ToolchainContextKey? =
+            ToolchainContextKey.key()
+                .configurationKey(targetConfigKey)
+                .toolchainTypes(testToolchainType)
+                .execConstraintLabels(Label.parseCanonicalUnchecked("//platforms:linux"))
+                .build()
 
-    EvaluationResult<UnloadedToolchainContext> result = invokeToolchainResolution(key);
+        val result: EvaluationResult<UnloadedToolchainContext?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result).hasError();
-    assertThatEvaluationResult(result)
-        .hasErrorEntryForKeyThat(key)
-        .hasExceptionThat()
-        .isInstanceOf(InvalidConstraintValueException.class);
-    assertThatEvaluationResult(result)
-        .hasErrorEntryForKeyThat(key)
-        .hasExceptionThat()
-        .hasMessageThat()
-        .contains("//platforms:linux");
-  }
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasError()
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result)
+            .hasErrorEntryForKeyThat(key)
+            .hasExceptionThat()
+            .isInstanceOf(InvalidConstraintValueException::class.java)
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result)
+            .hasErrorEntryForKeyThat(key)
+            .hasExceptionThat()
+            .hasMessageThat()
+            .contains("//platforms:linux")
+    }
 
-  @Test
-  public void resolve_noMatchingPlatform() throws Exception {
-    // Write toolchain A, and a toolchain implementing it.
-    scratch.appendFile(
-        "a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolve_noMatchingPlatform() {
+        // Write toolchain A, and a toolchain implementing it.
+        scratch.appendFile(
+            "a/BUILD",
+            """
         toolchain_type(name = "toolchain_type_A")
 
         toolchain(
@@ -1043,11 +1124,13 @@ To debug, rerun with --toolchain_resolution_debug='\\Q@@repo+//toolchain:test_to
         )
 
         filegroup(name = "toolchain_impl")
-        """);
-    // Write toolchain B, and a toolchain implementing it.
-    scratch.appendFile(
-        "b/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        // Write toolchain B, and a toolchain implementing it.
+        scratch.appendFile(
+            "b/BUILD",
+            """
         load("//toolchain:toolchain_def.bzl", "test_toolchain")
 
         toolchain_type(name = "toolchain_type_B")
@@ -1061,258 +1144,294 @@ To debug, rerun with --toolchain_resolution_debug='\\Q@@repo+//toolchain:test_to
         )
 
         filegroup(name = "toolchain_impl")
-        """);
+        
+        """.trimIndent()
+        )
 
-    rewriteModuleDotBazel(
-        """
+        rewriteModuleDotBazel(
+            """
         register_toolchains("//a:toolchain", "//b:toolchain")
         register_execution_platforms("//platforms:mac", "//platforms:linux")
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration("--platforms=//platforms:linux");
-    ToolchainContextKey key =
-        ToolchainContextKey.key()
-            .configurationKey(targetConfigKey)
-            .toolchainTypes(
-                ToolchainTypeRequirement.create(
-                    Label.parseCanonicalUnchecked("//a:toolchain_type_A")),
-                ToolchainTypeRequirement.create(
-                    Label.parseCanonicalUnchecked("//b:toolchain_type_B")))
-            .build();
+        useConfiguration("--platforms=//platforms:linux")
+        val key: ToolchainContextKey? =
+            ToolchainContextKey.key()
+                .configurationKey(targetConfigKey)
+                .toolchainTypes(
+                    ToolchainTypeRequirement.create(
+                        Label.parseCanonicalUnchecked("//a:toolchain_type_A")
+                    ),
+                    ToolchainTypeRequirement.create(
+                        Label.parseCanonicalUnchecked("//b:toolchain_type_B")
+                    )
+                )
+                .build()
 
-    EvaluationResult<UnloadedToolchainContext> result = invokeToolchainResolution(key);
-    assertThatEvaluationResult(result).hasNoError();
-    UnloadedToolchainContext unloadedToolchainContext = result.get(key);
-    assertThat(unloadedToolchainContext.errorData()).isNotNull();
-  }
+        val result: EvaluationResult<UnloadedToolchainContext?> = invokeToolchainResolution(key)
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasNoError()
+        val unloadedToolchainContext: UnloadedToolchainContext = result.get(key)
+        assertThat(unloadedToolchainContext.errorData()).isNotNull()
+    }
 
-  @Test
-  public void resolve_forceExecutionPlatform() throws Exception {
-    // This should select execution platform linux, toolchain extra_toolchain_linux, due to the
-    // forced execution platform, even though execution platform mac is registered first.
-    addToolchain(
-        /* packageName= */ "extra",
-        /* toolchainName= */ "extra_toolchain_linux",
-        /* execConstraints= */ ImmutableList.of("//constraints:linux"),
-        /* targetConstraints= */ ImmutableList.of("//constraints:linux"),
-        /* data= */ "baz");
-    addToolchain(
-        /* packageName= */ "extra",
-        /* toolchainName= */ "extra_toolchain_mac",
-        /* execConstraints= */ ImmutableList.of("//constraints:mac"),
-        /* targetConstraints= */ ImmutableList.of("//constraints:linux"),
-        /* data= */ "baz");
-    rewriteModuleDotBazel(
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolve_forceExecutionPlatform() {
+        // This should select execution platform linux, toolchain extra_toolchain_linux, due to the
+        // forced execution platform, even though execution platform mac is registered first.
+        addToolchain( /* packageName= */
+            "extra",  /* toolchainName= */
+            "extra_toolchain_linux",  /* execConstraints= */
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),  /* targetConstraints= */
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),  /* data= */
+            "baz"
+        )
+        addToolchain( /* packageName= */
+            "extra",  /* toolchainName= */
+            "extra_toolchain_mac",  /* execConstraints= */
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:mac"),  /* targetConstraints= */
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),  /* data= */
+            "baz"
+        )
+        rewriteModuleDotBazel(
+            """
         register_toolchains("//extra:extra_toolchain_linux", "//extra:extra_toolchain_mac")
         register_execution_platforms("//platforms:mac", "//platforms:linux")
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration("--platforms=//platforms:linux");
-    ToolchainContextKey key =
-        ToolchainContextKey.key()
-            .configurationKey(targetConfigKey)
-            .toolchainTypes(testToolchainType)
-            .forceExecutionPlatform(Label.parseCanonicalUnchecked("//platforms:linux"))
-            .build();
+        useConfiguration("--platforms=//platforms:linux")
+        val key: ToolchainContextKey? =
+            ToolchainContextKey.key()
+                .configurationKey(targetConfigKey)
+                .toolchainTypes(testToolchainType)
+                .forceExecutionPlatform(Label.parseCanonicalUnchecked("//platforms:linux"))
+                .build()
 
-    EvaluationResult<UnloadedToolchainContext> result = invokeToolchainResolution(key);
+        val result: EvaluationResult<UnloadedToolchainContext?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result).hasNoError();
-    UnloadedToolchainContext unloadedToolchainContext = result.get(key);
-    assertThat(unloadedToolchainContext).isNotNull();
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasNoError()
+        val unloadedToolchainContext: UnloadedToolchainContext? = result.get(key)
+        assertThat(unloadedToolchainContext).isNotNull()
 
-    assertThat(unloadedToolchainContext).hasToolchainType(testToolchainTypeLabel);
-    assertThat(unloadedToolchainContext).hasResolvedToolchain("//extra:extra_toolchain_linux_impl");
-    assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:linux");
-    assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux");
-  }
+        assertThat(unloadedToolchainContext).hasToolchainType(testToolchainTypeLabel)
+        assertThat(unloadedToolchainContext).hasResolvedToolchain("//extra:extra_toolchain_linux_impl")
+        assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:linux")
+        assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux")
+    }
 
-  @Test
-  public void resolve_forceExecutionPlatform_alias() throws Exception {
-    // This should select execution platform linux, toolchain extra_toolchain_linux, due to the
-    // forced execution platform, even though execution platform mac is registered first.
-    addToolchain(
-        /* packageName= */ "extra",
-        /* toolchainName= */ "extra_toolchain_linux",
-        /* execConstraints= */ ImmutableList.of("//constraints:linux"),
-        /* targetConstraints= */ ImmutableList.of("//constraints:linux"),
-        /* data= */ "baz");
-    addToolchain(
-        /* packageName= */ "extra",
-        /* toolchainName= */ "extra_toolchain_mac",
-        /* execConstraints= */ ImmutableList.of("//constraints:mac"),
-        /* targetConstraints= */ ImmutableList.of("//constraints:linux"),
-        /* data= */ "baz");
-    // Set up aliases for the platforms.
-    scratch.file(
-        "alias/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolve_forceExecutionPlatform_alias() {
+        // This should select execution platform linux, toolchain extra_toolchain_linux, due to the
+        // forced execution platform, even though execution platform mac is registered first.
+        addToolchain( /* packageName= */
+            "extra",  /* toolchainName= */
+            "extra_toolchain_linux",  /* execConstraints= */
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),  /* targetConstraints= */
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),  /* data= */
+            "baz"
+        )
+        addToolchain( /* packageName= */
+            "extra",  /* toolchainName= */
+            "extra_toolchain_mac",  /* execConstraints= */
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:mac"),  /* targetConstraints= */
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),  /* data= */
+            "baz"
+        )
+        // Set up aliases for the platforms.
+        scratch.file(
+            "alias/BUILD",
+            """
         alias(name = 'mac', actual = '//platforms:mac')
         alias(name = 'linux', actual = '//platforms:linux')
-        """);
-    rewriteModuleDotBazel(
-        """
+        
+        """.trimIndent()
+        )
+        rewriteModuleDotBazel(
+            """
         register_toolchains("//extra:extra_toolchain_linux", "//extra:extra_toolchain_mac")
         register_execution_platforms("//alias:mac", "//alias:linux")
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration("--platforms=//platforms:linux");
-    ToolchainContextKey key =
-        ToolchainContextKey.key()
-            .configurationKey(targetConfigKey)
-            .toolchainTypes(testToolchainType)
-            .forceExecutionPlatform(Label.parseCanonicalUnchecked("//platforms:linux"))
-            .build();
+        useConfiguration("--platforms=//platforms:linux")
+        val key: ToolchainContextKey? =
+            ToolchainContextKey.key()
+                .configurationKey(targetConfigKey)
+                .toolchainTypes(testToolchainType)
+                .forceExecutionPlatform(Label.parseCanonicalUnchecked("//platforms:linux"))
+                .build()
 
-    EvaluationResult<UnloadedToolchainContext> result = invokeToolchainResolution(key);
+        val result: EvaluationResult<UnloadedToolchainContext?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result).hasNoError();
-    UnloadedToolchainContext unloadedToolchainContext = result.get(key);
-    assertThat(unloadedToolchainContext).isNotNull();
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasNoError()
+        val unloadedToolchainContext: UnloadedToolchainContext? = result.get(key)
+        assertThat(unloadedToolchainContext).isNotNull()
 
-    assertThat(unloadedToolchainContext).hasToolchainType(testToolchainTypeLabel);
-    assertThat(unloadedToolchainContext).hasResolvedToolchain("//extra:extra_toolchain_linux_impl");
-    assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:linux");
-    assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux");
-  }
+        assertThat(unloadedToolchainContext).hasToolchainType(testToolchainTypeLabel)
+        assertThat(unloadedToolchainContext).hasResolvedToolchain("//extra:extra_toolchain_linux_impl")
+        assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:linux")
+        assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux")
+    }
 
-  @Test
-  public void resolve_forceExecutionPlatform_host() throws Exception {
-    // This should select execution platform linux, toolchain extra_toolchain_linux, due to the
-    // forced execution platform, even though execution platform mac is registered first.
-    addToolchain(
-        /* packageName= */ "extra",
-        /* toolchainName= */ "extra_toolchain_linux",
-        /* execConstraints= */ ImmutableList.of("//constraints:linux"),
-        /* targetConstraints= */ ImmutableList.of("//constraints:linux"),
-        /* data= */ "baz");
-    addToolchain(
-        /* packageName= */ "extra",
-        /* toolchainName= */ "extra_toolchain_mac",
-        /* execConstraints= */ ImmutableList.of("//constraints:mac"),
-        /* targetConstraints= */ ImmutableList.of("//constraints:linux"),
-        /* data= */ "baz");
-    rewriteModuleDotBazel(
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolve_forceExecutionPlatform_host() {
+        // This should select execution platform linux, toolchain extra_toolchain_linux, due to the
+        // forced execution platform, even though execution platform mac is registered first.
+        addToolchain( /* packageName= */
+            "extra",  /* toolchainName= */
+            "extra_toolchain_linux",  /* execConstraints= */
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),  /* targetConstraints= */
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),  /* data= */
+            "baz"
+        )
+        addToolchain( /* packageName= */
+            "extra",  /* toolchainName= */
+            "extra_toolchain_mac",  /* execConstraints= */
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:mac"),  /* targetConstraints= */
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),  /* data= */
+            "baz"
+        )
+        rewriteModuleDotBazel(
+            """
         register_toolchains("//extra:extra_toolchain_linux", "//extra:extra_toolchain_mac")
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration("--platforms=//platforms:linux", "--host_platform=//platforms:linux");
-    ToolchainContextKey key =
-        ToolchainContextKey.key()
-            .configurationKey(targetConfigKey)
-            .toolchainTypes(testToolchainType)
-            .forceExecutionPlatform(Label.parseCanonicalUnchecked("//platforms:linux"))
-            .build();
+        useConfiguration("--platforms=//platforms:linux", "--host_platform=//platforms:linux")
+        val key: ToolchainContextKey? =
+            ToolchainContextKey.key()
+                .configurationKey(targetConfigKey)
+                .toolchainTypes(testToolchainType)
+                .forceExecutionPlatform(Label.parseCanonicalUnchecked("//platforms:linux"))
+                .build()
 
-    EvaluationResult<UnloadedToolchainContext> result = invokeToolchainResolution(key);
+        val result: EvaluationResult<UnloadedToolchainContext?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result).hasNoError();
-    UnloadedToolchainContext unloadedToolchainContext = result.get(key);
-    assertThat(unloadedToolchainContext).isNotNull();
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasNoError()
+        val unloadedToolchainContext: UnloadedToolchainContext? = result.get(key)
+        assertThat(unloadedToolchainContext).isNotNull()
 
-    assertThat(unloadedToolchainContext).hasToolchainType(testToolchainTypeLabel);
-    assertThat(unloadedToolchainContext).hasResolvedToolchain("//extra:extra_toolchain_linux_impl");
-    assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:linux");
-    assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux");
-  }
+        assertThat(unloadedToolchainContext).hasToolchainType(testToolchainTypeLabel)
+        assertThat(unloadedToolchainContext).hasResolvedToolchain("//extra:extra_toolchain_linux_impl")
+        assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:linux")
+        assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux")
+    }
 
-  // Regression test for https://github.com/bazelbuild/bazel/issues/22607, where the aliased host
-  // platform didn't match with the dereferenced forced execution platform and so no toolchain
-  // was selected.
-  @Test
-  public void resolve_forceExecutionPlatform_host_alias() throws Exception {
-    // This should select execution platform linux, toolchain extra_toolchain_linux, due to the
-    // forced execution platform, even though execution platform mac is registered first.
-    addToolchain(
-        /* packageName= */ "extra",
-        /* toolchainName= */ "extra_toolchain_linux",
-        /* execConstraints= */ ImmutableList.of("//constraints:linux"),
-        /* targetConstraints= */ ImmutableList.of("//constraints:linux"),
-        /* data= */ "baz");
-    addToolchain(
-        /* packageName= */ "extra",
-        /* toolchainName= */ "extra_toolchain_mac",
-        /* execConstraints= */ ImmutableList.of("//constraints:mac"),
-        /* targetConstraints= */ ImmutableList.of("//constraints:linux"),
-        /* data= */ "baz");
-    // Set up aliases for the platforms.
-    scratch.file(
-        "alias/BUILD",
-        """
+    // Regression test for https://github.com/bazelbuild/bazel/issues/22607, where the aliased host
+    // platform didn't match with the dereferenced forced execution platform and so no toolchain
+    // was selected.
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolve_forceExecutionPlatform_host_alias() {
+        // This should select execution platform linux, toolchain extra_toolchain_linux, due to the
+        // forced execution platform, even though execution platform mac is registered first.
+        addToolchain( /* packageName= */
+            "extra",  /* toolchainName= */
+            "extra_toolchain_linux",  /* execConstraints= */
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),  /* targetConstraints= */
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),  /* data= */
+            "baz"
+        )
+        addToolchain( /* packageName= */
+            "extra",  /* toolchainName= */
+            "extra_toolchain_mac",  /* execConstraints= */
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:mac"),  /* targetConstraints= */
+            com.google.common.collect.ImmutableList.of<E?>("//constraints:linux"),  /* data= */
+            "baz"
+        )
+        // Set up aliases for the platforms.
+        scratch.file(
+            "alias/BUILD",
+            """
         alias(name = 'mac', actual = '//platforms:mac')
         alias(name = 'linux', actual = '//platforms:linux')
-        """);
-    rewriteModuleDotBazel(
-        """
+        
+        """.trimIndent()
+        )
+        rewriteModuleDotBazel(
+            """
         register_toolchains("//extra:extra_toolchain_linux", "//extra:extra_toolchain_mac")
 
         # This test requires an execution platform that isn't the forced platform in order to
         # trigger.
         register_execution_platforms("//alias:mac")
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration("--platforms=//platforms:linux", "--host_platform=//alias:linux");
-    ToolchainContextKey key =
-        ToolchainContextKey.key()
-            .configurationKey(targetConfigKey)
-            .toolchainTypes(testToolchainType)
-            // Use the actual label for the forced exec platform, since this was redeferenced
-            // earlier in analysis.
-            .forceExecutionPlatform(Label.parseCanonicalUnchecked("//platforms:linux"))
-            .build();
+        useConfiguration("--platforms=//platforms:linux", "--host_platform=//alias:linux")
+        val key: ToolchainContextKey? =
+            ToolchainContextKey.key()
+                .configurationKey(targetConfigKey)
+                .toolchainTypes(testToolchainType) // Use the actual label for the forced exec platform, since this was redeferenced
+                // earlier in analysis.
+                .forceExecutionPlatform(Label.parseCanonicalUnchecked("//platforms:linux"))
+                .build()
 
-    EvaluationResult<UnloadedToolchainContext> result = invokeToolchainResolution(key);
+        val result: EvaluationResult<UnloadedToolchainContext?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result).hasNoError();
-    UnloadedToolchainContext unloadedToolchainContext = result.get(key);
-    assertThat(unloadedToolchainContext).isNotNull();
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasNoError()
+        val unloadedToolchainContext: UnloadedToolchainContext? = result.get(key)
+        assertThat(unloadedToolchainContext).isNotNull()
 
-    assertThat(unloadedToolchainContext).hasToolchainType(testToolchainTypeLabel);
-    assertThat(unloadedToolchainContext).hasResolvedToolchain("//extra:extra_toolchain_linux_impl");
-    assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:linux");
-    assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux");
-  }
+        assertThat(unloadedToolchainContext).hasToolchainType(testToolchainTypeLabel)
+        assertThat(unloadedToolchainContext).hasResolvedToolchain("//extra:extra_toolchain_linux_impl")
+        assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:linux")
+        assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux")
+    }
 
-  @Test
-  public void resolve_forceExecutionPlatform_noRequiredToolchains() throws Exception {
-    // This should select execution platform linux, due to the forced execution platform, even
-    // though execution platform mac is registered first.
-    rewriteModuleDotBazel(
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolve_forceExecutionPlatform_noRequiredToolchains() {
+        // This should select execution platform linux, due to the forced execution platform, even
+        // though execution platform mac is registered first.
+        rewriteModuleDotBazel(
+            """
         register_execution_platforms("//platforms:mac", "//platforms:linux")
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration("--platforms=//platforms:linux");
-    ToolchainContextKey key =
-        ToolchainContextKey.key()
-            .configurationKey(targetConfigKey)
-            .forceExecutionPlatform(Label.parseCanonicalUnchecked("//platforms:linux"))
-            .build();
+        useConfiguration("--platforms=//platforms:linux")
+        val key: ToolchainContextKey? =
+            ToolchainContextKey.key()
+                .configurationKey(targetConfigKey)
+                .forceExecutionPlatform(Label.parseCanonicalUnchecked("//platforms:linux"))
+                .build()
 
-    EvaluationResult<UnloadedToolchainContext> result = invokeToolchainResolution(key);
+        val result: EvaluationResult<UnloadedToolchainContext?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result).hasNoError();
-    UnloadedToolchainContext unloadedToolchainContext = result.get(key);
-    assertThat(unloadedToolchainContext).isNotNull();
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasNoError()
+        val unloadedToolchainContext: UnloadedToolchainContext? = result.get(key)
+        assertThat(unloadedToolchainContext).isNotNull()
 
-    assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:linux");
-    assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux");
-  }
+        assertThat(unloadedToolchainContext).hasExecutionPlatform("//platforms:linux")
+        assertThat(unloadedToolchainContext).hasTargetPlatform("//platforms:linux")
+    }
 
-  @Test
-  public void errorProperlyReportedWhenInvalidConfigurationConfiguration() throws Exception {
-    // It would be absolutely insane for a user to have a toolchain w/ a config_setting that reads a
-    // config_feature_flag; however, should still test the InvalidConfigurationException codepath.
-    rewriteModuleDotBazel(
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun errorProperlyReportedWhenInvalidConfigurationConfiguration() {
+        // It would be absolutely insane for a user to have a toolchain w/ a config_setting that reads a
+        // config_feature_flag; however, should still test the InvalidConfigurationException codepath.
+        rewriteModuleDotBazel(
+            """
         register_toolchains("//strange:strange_toolchain")
         register_execution_platforms("//platforms:mac", "//platforms:linux")
-        """);
-    scratch.file(
-        "strange/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "strange/BUILD",
+            """
         load("//toolchain:toolchain_def.bzl", "test_toolchain")
 
         config_setting(
@@ -1342,10 +1461,12 @@ To debug, rerun with --toolchain_resolution_debug='\\Q@@repo+//toolchain:test_to
             name = "strange_test_toolchain",
             data = "foo",
         )
-        """);
-    scratch.file(
-        "rule/rule_def.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "rule/rule_def.bzl",
+            """
         def _impl(ctx):
             pass
 
@@ -1353,32 +1474,38 @@ To debug, rerun with --toolchain_resolution_debug='\\Q@@repo+//toolchain:test_to
             implementation = _impl,
             toolchains = ["//toolchain:test_toolchain"],
         )
-        """);
-    scratch.file(
-        "rule/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "rule/BUILD",
+            """
         load("//rule:rule_def.bzl", "my_rule")
 
         my_rule(
             name = "me",
         )
-        """);
-    // Need this so the feature flag actually gone from the configuration.
-    useConfiguration("--enforce_transitive_configs_for_config_feature_flag");
-    reporter.removeHandler(failFastHandler); // expect errors
-    assertThat(getConfiguredTarget("//rule:me")).isNull();
-    assertContainsEvent(
-        "Unrecoverable errors resolving config_setting associated with"
-            + " //strange:strange_toolchain: For config_setting flagged: Feature flag"
-            + " //strange:flag was accessed in a configuration it is not present in.");
-  }
+        
+        """.trimIndent()
+        )
+        // Need this so the feature flag actually gone from the configuration.
+        useConfiguration("--enforce_transitive_configs_for_config_feature_flag")
+        reporter.removeHandler(failFastHandler) // expect errors
+        assertThat(getConfiguredTarget("//rule:me")).isNull()
+        assertContainsEvent(
+            ("Unrecoverable errors resolving config_setting associated with"
+                    + " //strange:strange_toolchain: For config_setting flagged: Feature flag"
+                    + " //strange:flag was accessed in a configuration it is not present in.")
+        )
+    }
 
-  @Test
-  public void resolve_checkPlatformAllowedToolchains_match() throws Exception {
-    // Define two new execution platforms, only one of which is compatible with the test toolchain.
-    scratch.file(
-        "allowed/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolve_checkPlatformAllowedToolchains_match() {
+        // Define two new execution platforms, only one of which is compatible with the test toolchain.
+        scratch.file(
+            "allowed/BUILD",
+            """
         platform(
             name = "allows_single_toolchain",
             check_toolchain_types = True,
@@ -1390,36 +1517,47 @@ To debug, rerun with --toolchain_resolution_debug='\\Q@@repo+//toolchain:test_to
         platform(
             name = "allows_all",
         )
-        """);
-    addToolchain("toolchain", "toolchain_impl", ImmutableList.of(), ImmutableList.of(), "baz");
-    rewriteModuleDotBazel(
-        """
+        
+        """.trimIndent()
+        )
+        addToolchain(
+            "toolchain",
+            "toolchain_impl",
+            com.google.common.collect.ImmutableList.of<E?>(),
+            com.google.common.collect.ImmutableList.of<E?>(),
+            "baz"
+        )
+        rewriteModuleDotBazel(
+            """
         register_toolchains("//toolchain:toolchain_impl")
         register_execution_platforms("//allowed:allows_single_toolchain", "//allowed:allows_all")
-        """);
+        
+        """.trimIndent()
+        )
 
-    ToolchainContextKey key =
-        ToolchainContextKey.key()
-            .configurationKey(targetConfigKey)
-            .toolchainTypes(testToolchainType)
-            .build();
+        val key: ToolchainContextKey? =
+            ToolchainContextKey.key()
+                .configurationKey(targetConfigKey)
+                .toolchainTypes(testToolchainType)
+                .build()
 
-    EvaluationResult<UnloadedToolchainContext> result = invokeToolchainResolution(key);
+        val result: EvaluationResult<UnloadedToolchainContext?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result).hasNoError();
-    UnloadedToolchainContext unloadedToolchainContext = result.get(key);
-    assertThat(unloadedToolchainContext).isNotNull();
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasNoError()
+        val unloadedToolchainContext: UnloadedToolchainContext? = result.get(key)
+        assertThat(unloadedToolchainContext).isNotNull()
 
-    // The platform allows the required toolchain type, so it is selected.
-    assertThat(unloadedToolchainContext).hasExecutionPlatform("//allowed:allows_single_toolchain");
-  }
+        // The platform allows the required toolchain type, so it is selected.
+        assertThat(unloadedToolchainContext).hasExecutionPlatform("//allowed:allows_single_toolchain")
+    }
 
-  @Test
-  public void resolve_checkPlatformAllowedToolchains_failsMatch() throws Exception {
-    // Define two new execution platforms, only one of which is compatible with the test toolchain.
-    scratch.file(
-        "allowed/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolve_checkPlatformAllowedToolchains_failsMatch() {
+        // Define two new execution platforms, only one of which is compatible with the test toolchain.
+        scratch.file(
+            "allowed/BUILD",
+            """
         toolchain_type(name = "other_toolchain")
 
         platform(
@@ -1433,36 +1571,47 @@ To debug, rerun with --toolchain_resolution_debug='\\Q@@repo+//toolchain:test_to
         platform(
             name = "allows_all",
         )
-        """);
-    addToolchain("toolchain", "toolchain_impl", ImmutableList.of(), ImmutableList.of(), "baz");
-    rewriteModuleDotBazel(
-        """
+        
+        """.trimIndent()
+        )
+        addToolchain(
+            "toolchain",
+            "toolchain_impl",
+            com.google.common.collect.ImmutableList.of<E?>(),
+            com.google.common.collect.ImmutableList.of<E?>(),
+            "baz"
+        )
+        rewriteModuleDotBazel(
+            """
         register_toolchains("//toolchain:toolchain_impl")
         register_execution_platforms("//allowed:allows_single_toolchain", "//allowed:allows_all")
-        """);
+        
+        """.trimIndent()
+        )
 
-    ToolchainContextKey key =
-        ToolchainContextKey.key()
-            .configurationKey(targetConfigKey)
-            .toolchainTypes(testToolchainType)
-            .build();
+        val key: ToolchainContextKey? =
+            ToolchainContextKey.key()
+                .configurationKey(targetConfigKey)
+                .toolchainTypes(testToolchainType)
+                .build()
 
-    EvaluationResult<UnloadedToolchainContext> result = invokeToolchainResolution(key);
+        val result: EvaluationResult<UnloadedToolchainContext?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result).hasNoError();
-    UnloadedToolchainContext unloadedToolchainContext = result.get(key);
-    assertThat(unloadedToolchainContext).isNotNull();
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasNoError()
+        val unloadedToolchainContext: UnloadedToolchainContext? = result.get(key)
+        assertThat(unloadedToolchainContext).isNotNull()
 
-    // The platform does not allow the required toolchain type, so it is not selected.
-    assertThat(unloadedToolchainContext).hasExecutionPlatform("//allowed:allows_all");
-  }
+        // The platform does not allow the required toolchain type, so it is not selected.
+        assertThat(unloadedToolchainContext).hasExecutionPlatform("//allowed:allows_all")
+    }
 
-  @Test
-  public void resolve_checkPlatformAllowedToolchains_noneRequested_failsMatch() throws Exception {
-    // Define two new execution platforms, only one of which is compatible with the test toolchain.
-    scratch.file(
-        "allowed/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolve_checkPlatformAllowedToolchains_noneRequested_failsMatch() {
+        // Define two new execution platforms, only one of which is compatible with the test toolchain.
+        scratch.file(
+            "allowed/BUILD",
+            """
         platform(
             name = "allows_single_toolchain",
             check_toolchain_types = True,
@@ -1474,33 +1623,43 @@ To debug, rerun with --toolchain_resolution_debug='\\Q@@repo+//toolchain:test_to
         platform(
             name = "allows_all",
         )
-        """);
-    addToolchain("toolchain", "toolchain_impl", ImmutableList.of(), ImmutableList.of(), "baz");
-    rewriteModuleDotBazel(
-        """
+        
+        """.trimIndent()
+        )
+        addToolchain(
+            "toolchain",
+            "toolchain_impl",
+            com.google.common.collect.ImmutableList.of<E?>(),
+            com.google.common.collect.ImmutableList.of<E?>(),
+            "baz"
+        )
+        rewriteModuleDotBazel(
+            """
         register_toolchains("//toolchain:toolchain_impl")
         register_execution_platforms("//allowed:allows_single_toolchain", "//allowed:allows_all")
-        """);
+        
+        """.trimIndent()
+        )
 
-    ToolchainContextKey key = ToolchainContextKey.key().configurationKey(targetConfigKey).build();
+        val key: ToolchainContextKey? = ToolchainContextKey.key().configurationKey(targetConfigKey).build()
 
-    EvaluationResult<UnloadedToolchainContext> result = invokeToolchainResolution(key);
+        val result: EvaluationResult<UnloadedToolchainContext?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result).hasNoError();
-    UnloadedToolchainContext unloadedToolchainContext = result.get(key);
-    assertThat(unloadedToolchainContext).isNotNull();
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasNoError()
+        val unloadedToolchainContext: UnloadedToolchainContext? = result.get(key)
+        assertThat(unloadedToolchainContext).isNotNull()
 
-    // The platform requires a toolchain type, so it is not selected.
-    assertThat(unloadedToolchainContext).hasExecutionPlatform("//allowed:allows_all");
-  }
+        // The platform requires a toolchain type, so it is not selected.
+        assertThat(unloadedToolchainContext).hasExecutionPlatform("//allowed:allows_all")
+    }
 
-  @Test
-  public void resolve_checkPlatformAllowedToolchains_noToolchainType_noneRequested()
-      throws Exception {
-    // Define two new execution platforms, only one of which is compatible with the test toolchain.
-    scratch.file(
-        "allowed/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolve_checkPlatformAllowedToolchains_noToolchainType_noneRequested() {
+        // Define two new execution platforms, only one of which is compatible with the test toolchain.
+        scratch.file(
+            "allowed/BUILD",
+            """
         platform(
             name = "allows_none",
             check_toolchain_types = True,
@@ -1512,30 +1671,35 @@ To debug, rerun with --toolchain_resolution_debug='\\Q@@repo+//toolchain:test_to
         platform(
             name = "allows_all",
         )
-        """);
-    rewriteModuleDotBazel(
-        """
+        
+        """.trimIndent()
+        )
+        rewriteModuleDotBazel(
+            """
         register_execution_platforms("//allowed:allows_none", "//allowed:allows_all")
-        """);
+        
+        """.trimIndent()
+        )
 
-    ToolchainContextKey key = ToolchainContextKey.key().configurationKey(targetConfigKey).build();
+        val key: ToolchainContextKey? = ToolchainContextKey.key().configurationKey(targetConfigKey).build()
 
-    EvaluationResult<UnloadedToolchainContext> result = invokeToolchainResolution(key);
+        val result: EvaluationResult<UnloadedToolchainContext?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result).hasNoError();
-    UnloadedToolchainContext unloadedToolchainContext = result.get(key);
-    assertThat(unloadedToolchainContext).isNotNull();
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasNoError()
+        val unloadedToolchainContext: UnloadedToolchainContext? = result.get(key)
+        assertThat(unloadedToolchainContext).isNotNull()
 
-    // The platform doesn't have any toolchains specified.
-    assertThat(unloadedToolchainContext).hasExecutionPlatform("//allowed:allows_all");
-  }
+        // The platform doesn't have any toolchains specified.
+        assertThat(unloadedToolchainContext).hasExecutionPlatform("//allowed:allows_all")
+    }
 
-  @Test
-  public void resolve_checkPlatformAllowedToolchains_noToolchainType() throws Exception {
-    // Define two new execution platforms, only one of which is compatible with the test toolchain.
-    scratch.file(
-        "allowed/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun resolve_checkPlatformAllowedToolchains_noToolchainType() {
+        // Define two new execution platforms, only one of which is compatible with the test toolchain.
+        scratch.file(
+            "allowed/BUILD",
+            """
         platform(
             name = "allows_none",
             check_toolchain_types = True,
@@ -1547,27 +1711,37 @@ To debug, rerun with --toolchain_resolution_debug='\\Q@@repo+//toolchain:test_to
         platform(
             name = "allows_all",
         )
-        """);
-    addToolchain("toolchain", "toolchain_impl", ImmutableList.of(), ImmutableList.of(), "baz");
-    rewriteModuleDotBazel(
-        """
+        
+        """.trimIndent()
+        )
+        addToolchain(
+            "toolchain",
+            "toolchain_impl",
+            com.google.common.collect.ImmutableList.of<E?>(),
+            com.google.common.collect.ImmutableList.of<E?>(),
+            "baz"
+        )
+        rewriteModuleDotBazel(
+            """
         register_toolchains("//toolchain:toolchain_impl")
         register_execution_platforms("//allowed:allows_none", "//allowed:allows_all")
-        """);
+        
+        """.trimIndent()
+        )
 
-    ToolchainContextKey key =
-        ToolchainContextKey.key()
-            .configurationKey(targetConfigKey)
-            .toolchainTypes(testToolchainType)
-            .build();
+        val key: ToolchainContextKey? =
+            ToolchainContextKey.key()
+                .configurationKey(targetConfigKey)
+                .toolchainTypes(testToolchainType)
+                .build()
 
-    EvaluationResult<UnloadedToolchainContext> result = invokeToolchainResolution(key);
+        val result: EvaluationResult<UnloadedToolchainContext?> = invokeToolchainResolution(key)
 
-    assertThatEvaluationResult(result).hasNoError();
-    UnloadedToolchainContext unloadedToolchainContext = result.get(key);
-    assertThat(unloadedToolchainContext).isNotNull();
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasNoError()
+        val unloadedToolchainContext: UnloadedToolchainContext? = result.get(key)
+        assertThat(unloadedToolchainContext).isNotNull()
 
-    // The platform doesn't have any toolchains specified, but the request does.
-    assertThat(unloadedToolchainContext).hasExecutionPlatform("//allowed:allows_all");
-  }
+        // The platform doesn't have any toolchains specified, but the request does.
+        assertThat(unloadedToolchainContext).hasExecutionPlatform("//allowed:allows_all")
+    }
 }

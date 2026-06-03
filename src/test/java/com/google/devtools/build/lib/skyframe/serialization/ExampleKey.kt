@@ -11,46 +11,41 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static com.google.devtools.build.lib.skyframe.serialization.strings.UnsafeStringCodec.stringCodec;
+import com.google.devtools.build.lib.skyframe.serialization.strings.UnsafeStringCodec.stringCodec
 
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.io.IOException;
-
-/** An example {@link SkyKey} for testing serialization involving Skyframe. */
-record ExampleKey(String name) implements SkyKey {
-  @Override
-  public SkyFunctionName functionName() {
-    throw new UnsupportedOperationException();
-  }
-
-  static ExampleKeyCodec exampleKeyCodec() {
-    return ExampleKeyCodec.INSTANCE;
-  }
-
-  private static final class ExampleKeyCodec extends LeafObjectCodec<ExampleKey> {
-    private static final ExampleKeyCodec INSTANCE = new ExampleKeyCodec();
-
-    @Override
-    public Class<ExampleKey> getEncodedClass() {
-      return ExampleKey.class;
+/** An example [SkyKey] for testing serialization involving Skyframe.  */
+@kotlin.jvm.JvmRecord
+internal data class ExampleKey(val name: String?) : SkyKey {
+    public override fun functionName(): SkyFunctionName? {
+        throw java.lang.UnsupportedOperationException()
     }
 
-    @Override
-    public void serialize(
-        LeafSerializationContext context, ExampleKey key, CodedOutputStream codedOut)
-        throws SerializationException, IOException {
-      context.serializeLeaf(key.name(), stringCodec(), codedOut);
+    private class ExampleKeyCodec : LeafObjectCodec<ExampleKey?>() {
+        val encodedClass: java.lang.Class<ExampleKey?>
+            get() = ExampleKey::class.java
+
+        @Throws(SerializationException::class, IOException::class)
+        public override fun serialize(
+            context: LeafSerializationContext, key: ExampleKey, codedOut: CodedOutputStream?
+        ) {
+            context.serializeLeaf(key.name, stringCodec(), codedOut)
+        }
+
+        @Throws(SerializationException::class, IOException::class)
+        public override fun deserialize(context: LeafDeserializationContext, codedIn: CodedInputStream?): ExampleKey {
+            return ExampleKey(context.deserializeLeaf(codedIn, stringCodec()))
+        }
+
+        companion object {
+            private val INSTANCE = ExampleKeyCodec()
+        }
     }
 
-    @Override
-    public ExampleKey deserialize(LeafDeserializationContext context, CodedInputStream codedIn)
-        throws SerializationException, IOException {
-      return new ExampleKey(context.deserializeLeaf(codedIn, stringCodec()));
+    companion object {
+        fun exampleKeyCodec(): ExampleKeyCodec {
+            return ExampleKeyCodec.Companion.INSTANCE
+        }
     }
-  }
 }

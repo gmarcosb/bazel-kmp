@@ -11,151 +11,147 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.buildtool;
+package com.google.devtools.build.lib.buildtool
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.unix.NativePosixFilesServiceImpl
 
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.analysis.util.AnalysisMock;
-import com.google.devtools.build.lib.buildtool.util.BuildIntegrationTestCase;
-import com.google.devtools.build.lib.events.EventKind;
-import com.google.devtools.build.lib.unix.NativePosixFilesServiceImpl;
-import com.google.devtools.build.lib.unix.UnixFileSystem;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.io.IOException;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Test for progress reporting.  */
+@RunWith(JUnit4::class)
+class ProgressReportingTest : BuildIntegrationTestCase() {
+    private enum class PathOp {
+        DELETE,
+    }
 
-/** Test for progress reporting. */
-@RunWith(JUnit4.class)
-public class ProgressReportingTest extends BuildIntegrationTestCase {
-  private enum PathOp {
-    DELETE,
-  }
+    private fun interface Receiver {
+        fun accept(path: PathFragment?, op: PathOp?)
+    }
 
-  @FunctionalInterface
-  private interface Receiver {
-    void accept(PathFragment path, PathOp op);
-  }
+    private var receiver: Receiver? = com.google.devtools.build.lib.buildtool.ProgressReportingTest.Receiver?
+    { x: PathFragment?, y: PathOp? -> }
 
-  private Receiver receiver = (x, y) -> {};
+    override fun additionalEventsToCollect(): com.google.common.collect.ImmutableSet<com.google.devtools.build.lib.events.EventKind?> {
+        return com.google.common.collect.ImmutableSet.of<com.google.devtools.build.lib.events.EventKind?>(
+            com.google.devtools.build.lib.events.EventKind.PROGRESS,
+            com.google.devtools.build.lib.events.EventKind.START
+        )
+    }
 
-  @Override
-  protected ImmutableSet<EventKind> additionalEventsToCollect() {
-    return ImmutableSet.of(EventKind.PROGRESS, EventKind.START);
-  }
+    override fun createFileSystem(): FileSystem? {
+        return object : UnixFileSystem(
+            DigestHashFunction.SHA256,  /* hashAttributeName= */"", NativePosixFilesServiceImpl()
+        ) {
+            fun recordAccess(op: PathOp?, path: PathFragment?) {
+                if (receiver != null) {
+                    receiver!!.accept(path, op)
+                }
+            }
 
-  @Override
-  protected FileSystem createFileSystem() {
-    return new UnixFileSystem(
-        DigestHashFunction.SHA256, /* hashAttributeName= */ "", new NativePosixFilesServiceImpl()) {
-      private void recordAccess(PathOp op, PathFragment path) {
-        if (receiver != null) {
-          receiver.accept(path, op);
+            @Throws(IOException::class)
+            public override fun delete(path: PathFragment?): Boolean {
+                recordAccess(PathOp.DELETE, path)
+                return super.delete(path)
+            }
         }
-      }
+    }
 
-      @Override
-      public boolean delete(PathFragment path) throws IOException {
-        recordAccess(PathOp.DELETE, path);
-        return super.delete(path);
-      }
-    };
-  }
+    /**
+     * Tests that [for tool] tags are added to the progress messages of actions in the exec
+     * configuration, but not in the target configuration.
+     */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAdditionalInfo() {
+        AnalysisMock.get().pySupport().setup(mockToolsConfig)
+        write(
+            "x/BUILD",
+            "genrule(name = 'tool',",
+            "          outs = ['sometool'],",
+            "          cmd = 'touch $@')",
+            "genrule(name = 'x',",
+            ("        outs = ['out'],"
+                    + "        cmd = 'echo test > $@',"
+                    + "        tools = [':tool'])")
+        )
 
-  /**
-   * Tests that [for tool] tags are added to the progress messages of actions in the exec
-   * configuration, but not in the target configuration.
-   */
-  @Test
-  public void testAdditionalInfo() throws Exception {
-    AnalysisMock.get().pySupport().setup(mockToolsConfig);
-    write(
-        "x/BUILD",
-        "genrule(name = 'tool',",
-        "          outs = ['sometool'],",
-        "          cmd = 'touch $@')",
-        "genrule(name = 'x',",
-        "        outs = ['out'],"
-            + "        cmd = 'echo test > $@',"
-            + "        tools = [':tool'])");
+        buildTarget("//x")
 
-    buildTarget("//x");
+        assertContainsEvent("Executing genrule //x:tool [for tool]")
+        assertContainsEvent("Executing genrule //x:x")
+        assertDoesNotContainEvent("Executing genrule //x:x [for tool]")
+    }
 
-    assertContainsEvent("Executing genrule //x:tool [for tool]");
-    assertContainsEvent("Executing genrule //x:x");
-    assertDoesNotContainEvent("Executing genrule //x:x [for tool]");
-  }
-
-  @Test
-  public void testPreparingMessage() throws Exception {
-    write(
-        "x/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testPreparingMessage() {
+        write(
+            "x/BUILD",
+            """
         genrule(
             name = "x",
             outs = ["slowdelete"],
-            cmd = "touch $@",
+            cmd = "touch ${'$'}@",
         )
-        """);
-    buildTarget("//x");
-    Path output = Iterables.getOnlyElement(getArtifacts("//x:x")).getPath();
-    assertThat(output.delete()).isTrue();
-    receiver =
-        (path, op) -> {
-          if (output.asFragment().equals(path) && op == PathOp.DELETE) {
-            try {
-              // When the action tries to delete its outputs (during the "preparing" stage of action
-              // execution), we block on the deletion for enough time that the status reporter
-              // prints out a "Preparing:" progress message.
-              Thread.sleep(4000);
-            } catch (InterruptedException e) {
-              throw new IllegalStateException(e);
+        
+        """.trimIndent()
+        )
+        buildTarget("//x")
+        val output: Path =
+            com.google.common.collect.Iterables.getOnlyElement<Artifact?>(getArtifacts("//x:x")).getPath()
+        assertThat(output.delete()).isTrue()
+        receiver =
+            com.google.devtools.build.lib.buildtool.ProgressReportingTest.Receiver? { path: PathFragment?, op: PathOp? ->
+            if (output.asFragment().equals(path) && op == PathOp.DELETE) {
+                try {
+                    // When the action tries to delete its outputs (during the "preparing" stage of action
+                    // execution), we block on the deletion for enough time that the status reporter
+                    // prints out a "Preparing:" progress message.
+                    java.lang.Thread.sleep(4000)
+                } catch (e: java.lang.InterruptedException) {
+                    throw java.lang.IllegalStateException(e)
+                }
             }
-          }
-        };
-    addOptions("--progress_report_interval=1");
+        }
+        addOptions("--progress_report_interval=1")
 
-    buildTarget("//x");
-    assertContainsEvent("Preparing:");
-    assertContainsEvent("Executing genrule //x:x");
-  }
+        buildTarget("//x")
+        assertContainsEvent("Preparing:")
+        assertContainsEvent("Executing genrule //x:x")
+    }
 
-  @Test
-  public void testWaitForResources() throws Exception {
-    write(
-        "x/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testWaitForResources() {
+        write(
+            "x/BUILD",
+            """
         genrule(
             name = "x",
             outs = ["x.out"],
-            cmd = "sleep 3; touch $@",
+            cmd = "sleep 3; touch ${'$'}@",
             local = 1,
         )
 
         genrule(
             name = "y",
             outs = ["y.out"],
-            cmd = "sleep 3; touch $@",
+            cmd = "sleep 3; touch ${'$'}@",
             local = 1,
         )
-        """);
-    // GenRuleAction currently specifies 300,1.0,0.0. If that changes, this may have to be changed
-    // in order to keep exactly one genrule running at a time.
-    addOptions(
-        "--progress_report_interval=1",
-        "--local_resources=cpu=1",
-        "--local_resources=memory=1000",
-        "--show_progress_rate_limit=-1");
-    buildTarget("//x:x", "//x:y");
+        
+        """.trimIndent()
+        )
+        // GenRuleAction currently specifies 300,1.0,0.0. If that changes, this may have to be changed
+        // in order to keep exactly one genrule running at a time.
+        addOptions(
+            "--progress_report_interval=1",
+            "--local_resources=cpu=1",
+            "--local_resources=memory=1000",
+            "--show_progress_rate_limit=-1"
+        )
+        buildTarget("//x:x", "//x:y")
 
-    assertContainsEvent("Scheduling:");
-    assertContainsEvent("Executing genrule //x:x");
-    assertContainsEvent("Executing genrule //x:y");
-  }
+        assertContainsEvent("Scheduling:")
+        assertContainsEvent("Executing genrule //x:x")
+        assertContainsEvent("Executing genrule //x:y")
+    }
 }

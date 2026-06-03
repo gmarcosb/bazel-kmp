@@ -11,95 +11,87 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util;
+package com.google.devtools.build.lib.util
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.runtime.BlazeRuntime
 
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.analysis.util.AnalysisMock;
-import com.google.devtools.build.lib.buildtool.util.BuildIntegrationTestCase;
-import com.google.devtools.build.lib.buildtool.util.BuildIntegrationTestCase.RecordingBugReporter;
-import com.google.devtools.build.lib.runtime.BlazeRuntime;
-import com.google.devtools.build.lib.runtime.MemoryPressureModule;
-import com.google.devtools.build.lib.runtime.MemoryPressureOptions;
-import java.util.regex.Pattern;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests HeapOffsetHelper and verify we are properly pulling heap data.  */
+@RunWith(JUnit4::class)
+class HeapOffsetHelperTest : BuildIntegrationTestCase() {
+    private val memoryPressureModule: MemoryPressureModule = MemoryPressureModule()
 
-/** Tests HeapOffsetHelper and verify we are properly pulling heap data. */
-@RunWith(JUnit4.class)
-public final class HeapOffsetHelperTest extends BuildIntegrationTestCase {
-  private final MemoryPressureModule memoryPressureModule = new MemoryPressureModule();
+    @get:Throws(java.lang.Exception::class)
+    val runtimeBuilder: BlazeRuntime.Builder
+        get() = super.runtimeBuilder.addBlazeModule(memoryPressureModule)
 
-  @Override
-  protected BlazeRuntime.Builder getRuntimeBuilder() throws Exception {
-    return super.getRuntimeBuilder().addBlazeModule(memoryPressureModule);
-  }
-
-  @Before
-  public void writeTrivialFooTarget() throws Exception {
-    write(
-        "foo/BUILD",
-        """
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun writeTrivialFooTarget() {
+        write(
+            "foo/BUILD",
+            """
         genrule(
             name = "foo",
             outs = ["out"],
-            cmd = "touch $@",
+            cmd = "touch ${'$'}@",
         )
-        """);
-  }
-
-  @Test
-  public void testBadPattern() throws Exception {
-    RecordingBugReporter bugReporter = recordBugReportsAndReinitialize();
-
-    // short-circuit this test when our version isn't JDK 21 or in Bazel
-    // environments where JDK 21 doesn't have this.
-    if (!HeapOffsetHelper.isWorkaroundNeeded() || AnalysisMock.get().isThisBazel()) {
-      return;
+        
+        """.trimIndent()
+        )
     }
 
-    buildTarget("//foo:foo");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBadPattern() {
+        val bugReporter: RecordingBugReporter = recordBugReportsAndReinitialize()
 
-    Pattern badPattern = Pattern.compile("horse");
+        // short-circuit this test when our version isn't JDK 21 or in Bazel
+        // environments where JDK 21 doesn't have this.
+        if (!HeapOffsetHelper.isWorkaroundNeeded() || AnalysisMock.get().isThisBazel()) {
+            return
+        }
 
-    long offset = HeapOffsetHelper.getSizeOfFillerArrayOnHeap(badPattern, bugReporter);
-    assertThat(offset).isEqualTo(0);
+        buildTarget("//foo:foo")
 
-    assertThat(bugReporter.getExceptions()).hasSize(1);
-    Throwable reported = Iterables.getOnlyElement(bugReporter.getExceptions());
+        val badPattern: java.util.regex.Pattern = java.util.regex.Pattern.compile("horse")
 
-    assertThat(reported).isInstanceOf(IllegalStateException.class);
-    assertThat(reported).hasMessageThat().contains("JDK 21");
-  }
+        val offset: Long = HeapOffsetHelper.getSizeOfFillerArrayOnHeap(badPattern, bugReporter)
+        Truth.assertThat(offset).isEqualTo(0)
 
-  @Test
-  public void matchesOpenJdk21Filler() throws Exception {
-    // short-circuit this test when our version isn't JDK 21 or in Bazel
-    // environments where JDK 21 doesn't have this.
-    if (!HeapOffsetHelper.isWorkaroundNeeded() || AnalysisMock.get().isThisBazel()) {
-      return;
+        Truth.assertThat(bugReporter.getExceptions()).hasSize(1)
+        val reported: Throwable? =
+            com.google.common.collect.Iterables.getOnlyElement<Throwable?>(bugReporter.getExceptions())
+
+        Truth.assertThat(reported).isInstanceOf(java.lang.IllegalStateException::class.java)
+        Truth.assertThat(reported).hasMessageThat().contains("JDK 21")
     }
 
-    // NOTE: If this test fails, it means that the JDK has changed and we need to update the
-    // pattern in MemoryPressureOptions.  The flag can also be set in rc files to override the
-    // default before a release.
-    RecordingBugReporter bugReporter = recordBugReportsAndReinitialize();
-    buildTarget("//foo:foo");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun matchesOpenJdk21Filler() {
+        // short-circuit this test when our version isn't JDK 21 or in Bazel
+        // environments where JDK 21 doesn't have this.
+        if (!HeapOffsetHelper.isWorkaroundNeeded() || AnalysisMock.get().isThisBazel()) {
+            return
+        }
 
-    Pattern defaultOptionPattern =
-        getRuntimeWrapper()
-            .getCommandEnvironment()
-            .getOptions()
-            .getOptions(MemoryPressureOptions.class)
-            .getJvmHeapHistogramInternalObjectPattern()
-            .regexPattern();
+        // NOTE: If this test fails, it means that the JDK has changed and we need to update the
+        // pattern in MemoryPressureOptions.  The flag can also be set in rc files to override the
+        // default before a release.
+        val bugReporter: RecordingBugReporter = recordBugReportsAndReinitialize()
+        buildTarget("//foo:foo")
 
-    long offset = HeapOffsetHelper.getSizeOfFillerArrayOnHeap(defaultOptionPattern, bugReporter);
-    bugReporter.assertNoExceptions();
+        val defaultOptionPattern: java.util.regex.Pattern? =
+            runtimeWrapper
+                .commandEnvironment
+                .getOptions()
+                .getOptions(MemoryPressureOptions::class.java)
+                .getJvmHeapHistogramInternalObjectPattern()
+                .regexPattern()
 
-    assertThat(offset).isGreaterThan(0);
-  }
+        val offset: Long = HeapOffsetHelper.getSizeOfFillerArrayOnHeap(defaultOptionPattern, bugReporter)
+        bugReporter.assertNoExceptions()
+
+        Truth.assertThat(offset).isGreaterThan(0)
+    }
 }

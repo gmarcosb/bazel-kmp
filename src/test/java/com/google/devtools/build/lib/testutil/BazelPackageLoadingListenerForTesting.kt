@@ -11,111 +11,113 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.testutil;
+package com.google.devtools.build.lib.testutil
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Sets;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.packages.NoSuchPackageException;
-import com.google.devtools.build.lib.packages.Package;
-import com.google.devtools.build.lib.packages.PackageLoadingListener;
-import com.google.devtools.build.lib.packages.Target;
-import com.google.devtools.build.lib.pkgcache.PackageOptions.LazyMacroExpansionPackages;
-import com.google.devtools.build.lib.skyframe.PrecomputedValue.Injected;
-import com.google.devtools.build.lib.skyframe.packages.BazelPackageLoader;
-import com.google.devtools.build.lib.skyframe.packages.PackageLoader;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import net.starlark.java.eval.StarlarkSemantics;
+import com.google.devtools.build.lib.analysis.BlazeDirectories
 
 /**
- * A {@link PackageLoadingListener} for use in tests that a check with {@link BazelPackageLoader}
+ * A [PackageLoadingListener] for use in tests that a check with [BazelPackageLoader]
  * for each loaded package, for the sake of getting pretty nice test coverage.
  */
-public class BazelPackageLoadingListenerForTesting implements PackageLoadingListener {
-  private final ConfiguredRuleClassProvider ruleClassProvider;
-  private final BlazeDirectories directories;
-  private final ImmutableList<Injected> extraPrecomputedValues;
-  private final ImmutableMap<SkyFunctionName, SkyFunction> extraSkyFunctions;
+class BazelPackageLoadingListenerForTesting(
+    ruleClassProvider: ConfiguredRuleClassProvider?,
+    directories: BlazeDirectories,
+    extraPrecomputedValues: com.google.common.collect.ImmutableList<Injected?>?,
+    extraSkyFunctions: com.google.common.collect.ImmutableMap<SkyFunctionName?, SkyFunction?>?
+) : PackageLoadingListener {
+    private val ruleClassProvider: ConfiguredRuleClassProvider?
+    private val directories: BlazeDirectories
+    private val extraPrecomputedValues: com.google.common.collect.ImmutableList<Injected?>?
+    private val extraSkyFunctions: com.google.common.collect.ImmutableMap<SkyFunctionName?, SkyFunction?>?
 
-  public BazelPackageLoadingListenerForTesting(
-      ConfiguredRuleClassProvider ruleClassProvider,
-      BlazeDirectories directories,
-      ImmutableList<Injected> extraPrecomputedValues,
-      ImmutableMap<SkyFunctionName, SkyFunction> extraSkyFunctions) {
-    this.ruleClassProvider = ruleClassProvider;
-    this.directories = directories;
-    this.extraPrecomputedValues = extraPrecomputedValues;
-    this.extraSkyFunctions = extraSkyFunctions;
-  }
+    init {
+        this.ruleClassProvider = ruleClassProvider
+        this.directories = directories
+        this.extraPrecomputedValues = extraPrecomputedValues
+        this.extraSkyFunctions = extraSkyFunctions
+    }
 
-  @Override
-  public void onLoadingCompleteAndSuccessful(
-      Package pkg,
-      StarlarkSemantics starlarkSemantics,
-      LazyMacroExpansionPackages lazyMacroExpansionPackages,
-      Metrics metrics) {
-    sanityCheckBazelPackageLoader(
-        pkg, ruleClassProvider, starlarkSemantics, lazyMacroExpansionPackages);
-  }
+    public override fun onLoadingCompleteAndSuccessful(
+        pkg: Package,
+        starlarkSemantics: StarlarkSemantics?,
+        lazyMacroExpansionPackages: LazyMacroExpansionPackages?,
+        metrics: Metrics?
+    ) {
+        sanityCheckBazelPackageLoader(
+            pkg, ruleClassProvider, starlarkSemantics, lazyMacroExpansionPackages
+        )
+    }
 
-  private PackageLoader makeFreshPackageLoader(
-      ConfiguredRuleClassProvider ruleClassProvider,
-      StarlarkSemantics starlarkSemantics,
-      LazyMacroExpansionPackages lazyMacroExpansionPackages) {
-    return BazelPackageLoader.builder(
+    private fun makeFreshPackageLoader(
+        ruleClassProvider: ConfiguredRuleClassProvider?,
+        starlarkSemantics: StarlarkSemantics?,
+        lazyMacroExpansionPackages: LazyMacroExpansionPackages?
+    ): PackageLoader {
+        return BazelPackageLoader.builder(
             Root.fromPath(directories.getWorkspace()),
             directories.getInstallBase(),
-            directories.getOutputBase())
-        .setStarlarkSemantics(starlarkSemantics)
-        .setRuleClassProvider(ruleClassProvider)
-        .addExtraPrecomputedValues(extraPrecomputedValues)
-        .addExtraSkyFunctions(extraSkyFunctions)
-        .setLazyMacroExpansionPackages(lazyMacroExpansionPackages)
-        .build();
-  }
+            directories.getOutputBase()
+        )
+            .setStarlarkSemantics(starlarkSemantics)
+            .setRuleClassProvider(ruleClassProvider)
+            .addExtraPrecomputedValues(extraPrecomputedValues)
+            .addExtraSkyFunctions(extraSkyFunctions)
+            .setLazyMacroExpansionPackages(lazyMacroExpansionPackages)
+            .build()
+    }
 
-  private void sanityCheckBazelPackageLoader(
-      Package pkg,
-      ConfiguredRuleClassProvider ruleClassProvider,
-      StarlarkSemantics starlarkSemantics,
-      LazyMacroExpansionPackages lazyMacroExpansionPackages) {
-    PackageIdentifier pkgId = pkg.getPackageIdentifier();
-    Package newlyLoadedPkg;
-    try (PackageLoader packageLoader =
-        makeFreshPackageLoader(ruleClassProvider, starlarkSemantics, lazyMacroExpansionPackages)) {
-      newlyLoadedPkg = packageLoader.loadPackage(pkg.getPackageIdentifier());
-    } catch (InterruptedException e) {
-      return;
-    } catch (NoSuchPackageException e) {
-      throw new IllegalStateException(e);
+    private fun sanityCheckBazelPackageLoader(
+        pkg: Package,
+        ruleClassProvider: ConfiguredRuleClassProvider?,
+        starlarkSemantics: StarlarkSemantics?,
+        lazyMacroExpansionPackages: LazyMacroExpansionPackages?
+    ) {
+        val pkgId: PackageIdentifier? = pkg.getPackageIdentifier()
+        val newlyLoadedPkg: Package
+        try {
+            makeFreshPackageLoader(
+                ruleClassProvider,
+                starlarkSemantics,
+                lazyMacroExpansionPackages
+            ).use { packageLoader ->
+                newlyLoadedPkg = packageLoader.loadPackage(pkg.getPackageIdentifier())
+            }
+        } catch (e: java.lang.InterruptedException) {
+            return
+        } catch (e: NoSuchPackageException) {
+            throw java.lang.IllegalStateException(e)
+        }
+        val targetsInPkg: com.google.common.collect.ImmutableSet<Label?> =
+            com.google.common.collect.ImmutableSet.copyOf<E?>(
+                com.google.common.collect.Iterables.transform<F?, T?>(
+                    pkg.getTargets().values(), Target::getLabel
+                )
+            )
+        val targetsInNewlyLoadedPkg: com.google.common.collect.ImmutableSet<Label?> =
+            com.google.common.collect.ImmutableSet.copyOf<E?>(
+                com.google.common.collect.Iterables.transform<F?, T?>(
+                    newlyLoadedPkg.getTargets().values(),
+                    Target::getLabel
+                )
+            )
+        if (targetsInPkg != targetsInNewlyLoadedPkg) {
+            val unsatisfied: com.google.common.collect.Sets.SetView<Label?> =
+                com.google.common.collect.Sets.difference<Label?>(targetsInPkg, targetsInNewlyLoadedPkg)
+            val unexpected: com.google.common.collect.Sets.SetView<Label?> =
+                com.google.common.collect.Sets.difference<Label?>(targetsInNewlyLoadedPkg, targetsInPkg)
+            throw java.lang.IllegalStateException(
+                String.format(
+                    ("The Package for %s had a different set of targets (<targetsInPkg> - "
+                            + "<targetsInNewlyLoadedPkg> = %s, <targetsInNewlyLoadedPkg> - <targetsInPkg> = "
+                            + "%s) when loaded normally during execution of the current test than it did "
+                            + "when loaded via BazelPackageLoader (done automatically by the "
+                            + "BazelPackageLoadingListenerForTesting hook). This either means: (i) Skyframe "
+                            + "package loading semantics have diverged from "
+                            + "BazelPackageLoader semantics (ii) The test in question is doing something "
+                            + "that confuses BazelPackageLoadingListenerForTesting."),
+                    pkgId, unsatisfied, unexpected
+                )
+            )
+        }
     }
-    ImmutableSet<Label> targetsInPkg =
-        ImmutableSet.copyOf(Iterables.transform(pkg.getTargets().values(), Target::getLabel));
-    ImmutableSet<Label> targetsInNewlyLoadedPkg =
-        ImmutableSet.copyOf(
-            Iterables.transform(newlyLoadedPkg.getTargets().values(), Target::getLabel));
-    if (!targetsInPkg.equals(targetsInNewlyLoadedPkg)) {
-      Sets.SetView<Label> unsatisfied = Sets.difference(targetsInPkg, targetsInNewlyLoadedPkg);
-      Sets.SetView<Label> unexpected = Sets.difference(targetsInNewlyLoadedPkg, targetsInPkg);
-      throw new IllegalStateException(
-          String.format(
-              "The Package for %s had a different set of targets (<targetsInPkg> - "
-                  + "<targetsInNewlyLoadedPkg> = %s, <targetsInNewlyLoadedPkg> - <targetsInPkg> = "
-                  + "%s) when loaded normally during execution of the current test than it did "
-                  + "when loaded via BazelPackageLoader (done automatically by the "
-                  + "BazelPackageLoadingListenerForTesting hook). This either means: (i) Skyframe "
-                  + "package loading semantics have diverged from "
-                  + "BazelPackageLoader semantics (ii) The test in question is doing something "
-                  + "that confuses BazelPackageLoadingListenerForTesting.",
-              pkgId, unsatisfied, unexpected));
-    }
-  }
 }

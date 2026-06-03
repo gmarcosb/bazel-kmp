@@ -11,386 +11,503 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages;
+package com.google.devtools.build.lib.packages
 
-import static com.google.common.truth.Truth.assertThat;
-import static java.util.Objects.requireNonNull;
-import static org.junit.Assert.assertThrows;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.packages.SnapshottableBiMapTest
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.util.AbstractMap
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.BiMap;
-import com.google.common.collect.ImmutableBiMap;
-import com.google.common.collect.ImmutableMap;
-import java.util.AbstractMap;
-import java.util.Collection;
-import java.util.Iterator;
-import java.util.Map;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [SnapshottableBiMap].  */
+@RunWith(JUnit4::class)
+class SnapshottableBiMapTest {
+    // Dummy value type for maps under test. AutoValue for correct hash/equals behavior.
+    @kotlin.jvm.JvmRecord
+    internal data class Value(val name: String?, val tracked: Boolean) {
+        init {
+            java.util.Objects.requireNonNull<String?>(name, "name")
+        }
 
-/** Tests for {@link SnapshottableBiMap}. */
-@RunWith(JUnit4.class)
-public final class SnapshottableBiMapTest {
-  // Dummy value type for maps under test. AutoValue for correct hash/equals behavior.
-  record Value(String name, boolean tracked) {
-    Value {
-      requireNonNull(name, "name");
+        companion object {
+            fun trackedOf(name: String?): Value {
+                return com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value(name, true)
+            }
+
+            fun untrackedOf(name: String?): Value {
+                return com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value(name, false)
+            }
+
+            fun track(value: Value): Boolean {
+                return value.tracked
+            }
+        }
     }
 
-    static Value trackedOf(String name) {
-      return new Value(name, true);
+    @org.junit.Test
+    fun containsInsertedEntries() {
+        val map: SnapshottableBiMap<String?, Value?> = SnapshottableBiMap({ value: Value ->
+            com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.track(value)
+        })
+        verifyBiMapIsEmpty<Any?, Any?>(map)
+        val a: Value = com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.trackedOf("a")
+        val b: Value = com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.untrackedOf("b")
+        val c: Value = com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.trackedOf("c")
+        val z: Value = com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.trackedOf("z")
+
+        map.put("a", a)
+        verifyBiMapSizeAndContentsInOrder<String?, Value?>(map, "a", a)
+
+        map.put("b", b)
+        verifyBiMapSizeAndContentsInOrder<String?, Value?>(map, "a", a, "b", b)
+
+        map.put("c", c)
+        verifyBiMapSizeAndContentsInOrder<String?, Value?>(map, "a", a, "b", b, "c", c)
+
+        // verify that the map's various contains*() methods don't always return true.
+        verifyMapDoesNotContainEntry<String?, Value?>(map, "z", z)
     }
 
-    static Value untrackedOf(String name) {
-      return new Value(name, false);
+    @org.junit.Test
+    fun put_replacesEntries() {
+        val map: SnapshottableBiMap<String?, Value?> = SnapshottableBiMap({ value: Value ->
+            com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.track(value)
+        })
+        val trackedA: Value =
+            com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.trackedOf("a")
+        val replaceA: Value =
+            com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.trackedOf("replace a")
+        val untrackedB: Value =
+            com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.untrackedOf("b")
+        val replaceB: Value =
+            com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.untrackedOf("b")
+
+        map.put("a", trackedA)
+        map.put("a", replaceA)
+        map.put("b", untrackedB)
+        map.put("b", replaceB)
+        verifyBiMapSizeAndContentsInOrder<String?, Value?>(map, "a", replaceA, "b", replaceB)
     }
 
-    static boolean track(Value value) {
-      return value.tracked();
+    @org.junit.Test
+    fun put_nonUniqueValue_illegal() {
+        val map: SnapshottableBiMap<String?, Value?> = SnapshottableBiMap({ value: Value ->
+            com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.track(value)
+        })
+        val tracked: Value =
+            com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.trackedOf("a")
+        val untracked: Value =
+            com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.untrackedOf("b")
+
+        map.put("a", tracked)
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable { map.put("aa", tracked) })
+        map.put("b", untracked)
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable { map.put("bb", untracked) })
     }
 
-  }
+    @org.junit.Test
+    fun put_replacingUntrackedWithTracked_legal() {
+        val map: SnapshottableBiMap<String?, Value?> = SnapshottableBiMap({ value: Value ->
+            com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.track(value)
+        })
+        val tracked: Value =
+            com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.trackedOf("a")
+        val untracked: Value =
+            com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.untrackedOf("A")
 
-  private static <E> void verifyCollectionSizeAndContentsInOrder(
-      Collection<E> collection, Collection<E> expected) {
-    // Exhaustive testing of a collection's methods; we cannot rely on a minimal usual set of JUnit
-    // helpers because we want to verify that the collection has valid Collection semantics.
-    if (expected.isEmpty()) {
-      assertThat(collection).isEmpty();
-    } else {
-      assertThat(collection).isNotEmpty();
-    }
-    assertThat(collection).hasSize(expected.size());
-    assertThat(collection).containsExactlyElementsIn(expected).inOrder();
-    for (E entry : expected) {
-      // JUnit's containsExactlyElementsIn iterates over the collection under test, but doesn't call
-      // its contains() method.
-      assertThat(collection).contains(entry);
-    }
-  }
-
-  private static <K, V> void verifyMapSizeAndContentsInOrder(Map<K, V> map, Map<K, V> expectedMap) {
-    // Exhaustive testing of a map's methods; we cannot rely on a minimal usual set of JUnit helpers
-    // because we want to verify that the map has valid Map semantics.
-    if (expectedMap.isEmpty()) {
-      assertThat(map).isEmpty();
-    } else {
-      assertThat(map).isNotEmpty();
+        map.getTrackedSnapshot() // start tracking
+        map.put("a", untracked)
+        map.put("a", tracked)
+        verifyBiMapSizeAndContentsInOrder<String?, Value?>(map, "a", tracked)
     }
 
-    assertThat(map).hasSize(expectedMap.size());
-    assertThat(map).containsExactlyEntriesIn(expectedMap).inOrder();
+    @org.junit.Test
+    fun put_replacingTrackedWithUntracked_illegal() {
+        val map: SnapshottableBiMap<String?, Value?> = SnapshottableBiMap({ value: Value ->
+            com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.track(value)
+        })
+        val tracked: Value =
+            com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.trackedOf("a")
+        val untracked: Value =
+            com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.untrackedOf("A")
 
-    for (Map.Entry<K, V> entry : expectedMap.entrySet()) {
-      assertThat(map.containsKey(entry.getKey()))
-          .isTrue(); // JUnit's containsKey implementation does not explicitly call map.containsKey
-      assertThat(map.containsValue(entry.getValue())).isTrue();
+        map.getTrackedSnapshot() // start tracking
+        map.put("a", tracked)
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable { map.put("a", untracked) })
     }
 
-    verifyCollectionSizeAndContentsInOrder(map.entrySet(), expectedMap.entrySet());
-    verifyCollectionSizeAndContentsInOrder(map.keySet(), expectedMap.keySet());
-    verifyCollectionSizeAndContentsInOrder(map.values(), expectedMap.values());
-  }
+    @org.junit.Test
+    @Suppress("deprecation") // test verifying that deprecated methods don't work
+    fun deletions_unsupported() {
+        val map: SnapshottableBiMap<String?, Value?> = SnapshottableBiMap({ value: Value ->
+            com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.track(value)
+        })
+        val value: Value = com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.trackedOf("a")
+        val replacement: Value =
+            com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.trackedOf("replacement a")
 
-  @SuppressWarnings("unchecked") // test-only convenience vararg transformation
-  private static <K, V> void verifyMapSizeAndContentsInOrder(
-      Map<K, V> map, K key0, V value0, Object... rest) {
-    ImmutableMap.Builder<K, V> expectedBuilder = ImmutableMap.builder();
-    expectedBuilder.put(key0, value0);
-    Preconditions.checkArgument(
-        rest.length % 2 == 0, "rest must be a flattened list of key-value pairs");
-    for (int i = 0; i < rest.length; i += 2) {
-      expectedBuilder.put((K) rest[i], (V) rest[i + 1]);
-    }
-    Map<K, V> expectedMap = expectedBuilder.build();
-    verifyMapSizeAndContentsInOrder(map, expectedMap);
-  }
-
-  private static <K, V> void verifyMapDoesNotContainEntry(Map<K, V> map, K key, V value) {
-    Map.Entry<K, V> entry = new AbstractMap.SimpleEntry<>(key, value);
-
-    // Exhaustive testing of a map's methods; we cannot rely on a minimal usual set of JUnit helpers
-    // because we want to verify that the map has valid Map semantics.
-    assertThat(map.containsKey(key))
-        .isFalse(); // JUnit's containsKey implementation does not explicitly call map.containsKeys
-    assertThat(map.containsValue(value)).isFalse();
-    assertThat(map.entrySet()).doesNotContain(entry);
-    assertThat(map.keySet()).doesNotContain(key);
-    assertThat(map.values()).doesNotContain(value);
-  }
-
-  private static <K, V> void verifyMapIsEmpty(Map<K, V> map) {
-    verifyMapSizeAndContentsInOrder(map, ImmutableMap.of());
-  }
-
-  private static <E> void verifyIteratorDoesNotAllowDeletions(Iterator<E> iterator) {
-    while (iterator.hasNext()) {
-      iterator.next();
-      assertThrows(UnsupportedOperationException.class, iterator::remove);
-    }
-  }
-
-  private static <K, V> void verifyMapDoesNotAllowDeletions(Map<K, V> map) {
-    for (Map.Entry<K, V> entry : map.entrySet()) {
-      K key = entry.getKey();
-      V value = entry.getValue();
-      assertThrows(UnsupportedOperationException.class, () -> map.remove(key));
-      assertThrows(UnsupportedOperationException.class, () -> map.keySet().remove(key));
-      assertThrows(UnsupportedOperationException.class, () -> map.values().remove(value));
-      assertThrows(UnsupportedOperationException.class, () -> map.entrySet().remove(entry));
+        map.put("a", value)
+        verifyMapDoesNotAllowDeletions<Any?, Any?>(map)
+        Companion.verifyMapDoesNotAllowDeletions<K?, V?>(map.inverse())
+        org.junit.Assert.assertThrows<java.lang.UnsupportedOperationException?>(
+            java.lang.UnsupportedOperationException::class.java,
+            org.junit.function.ThrowingRunnable { map.forcePut("a", replacement) })
+        org.junit.Assert.assertThrows<java.lang.UnsupportedOperationException?>(
+            java.lang.UnsupportedOperationException::class.java,
+            org.junit.function.ThrowingRunnable { map.inverse().forcePut(value, "aa") })
     }
 
-    verifyIteratorDoesNotAllowDeletions(map.keySet().iterator());
-    verifyIteratorDoesNotAllowDeletions(map.values().iterator());
-    verifyIteratorDoesNotAllowDeletions(map.entrySet().iterator());
+    @get:org.junit.Test
+    val underlyingBiMap_returnsBiMapSupportingRemove: Unit
+        get() {
+            val map: SnapshottableBiMap<String?, Value?> =
+                SnapshottableBiMap({ value: Value ->
+                    com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.track(value)
+                })
+            val a: Value =
+                com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.trackedOf("a")
+            val b: Value =
+                com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.untrackedOf("b")
+            val c: Value =
+                com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.trackedOf("c")
 
-    assertThrows(UnsupportedOperationException.class, map::clear);
-  }
+            map.put("a", a)
+            map.put("b", b)
+            map.put("c", c)
+            val underlying: com.google.common.collect.BiMap<String?, Value?> =
+                map.getUnderlyingBiMap()
+            verifyBiMapSizeAndContentsInOrder<String?, Value?>(
+                underlying,
+                "a",
+                a,
+                "b",
+                b,
+                "c",
+                c
+            )
 
-  @SuppressWarnings("unchecked") // test-only convenience vararg transformation
-  private static <K, V> void verifyBiMapSizeAndContentsInOrder(
-      BiMap<K, V> bimap, K key0, V value0, Object... rest) {
-    ImmutableBiMap.Builder<K, V> expectedBuilder = ImmutableBiMap.builder();
-    expectedBuilder.put(key0, value0);
-    Preconditions.checkArgument(
-        rest.length % 2 == 0, "rest must be a flattened list of key-value pairs");
-    for (int i = 0; i < rest.length; i += 2) {
-      expectedBuilder.put((K) rest[i], (V) rest[i + 1]);
+            underlying.remove("a")
+            verifyBiMapSizeAndContentsInOrder<String?, Value?>(
+                underlying,
+                "b",
+                b,
+                "c",
+                c
+            )
+        }
+
+    @org.junit.Test
+    fun snapshot_containsExpectedEntries() {
+        val map: SnapshottableBiMap<String?, Value?> = SnapshottableBiMap({ value: Value ->
+            com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.track(value)
+        })
+        val trackedA: Value =
+            com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.trackedOf("a")
+        val untrackedB: Value =
+            com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.untrackedOf("b")
+        val trackedC: Value =
+            com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.trackedOf("c")
+        val z: Value = com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.trackedOf("z")
+
+        val snapshot0: MutableMap<String?, Value?>? = map.getTrackedSnapshot()
+        verifyMapIsEmpty<String?, Value?>(snapshot0)
+
+        map.put("a", trackedA)
+        val snapshot1: MutableMap<String?, Value?> = map.getTrackedSnapshot()
+        verifyMapIsEmpty<String?, Value?>(snapshot0)
+        verifyMapSizeAndContentsInOrder<String?, Value?>(snapshot1, "a", trackedA)
+
+        map.put("b", untrackedB)
+        val snapshot2: MutableMap<String?, Value?> = map.getTrackedSnapshot()
+        verifyMapIsEmpty<String?, Value?>(snapshot0)
+        verifyMapSizeAndContentsInOrder<String?, Value?>(snapshot1, "a", trackedA)
+        verifyMapSizeAndContentsInOrder<String?, Value?>(snapshot2, "a", trackedA) // b is untracked
+
+        map.put("c", com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.trackedOf("c"))
+        val snapshot3: MutableMap<String?, Value?> = map.getTrackedSnapshot()
+        verifyMapIsEmpty<String?, Value?>(snapshot0)
+        verifyMapSizeAndContentsInOrder<String?, Value?>(snapshot1, "a", trackedA) // c was added after snapshot
+        verifyMapSizeAndContentsInOrder<String?, Value?>(snapshot2, "a", trackedA)
+        verifyMapSizeAndContentsInOrder<String?, Value?>(snapshot3, "a", trackedA, "c", trackedC)
+
+        // verify that a snapshot's various contains*() methods don't always return true.
+        verifyMapDoesNotContainEntry<String?, Value?>(snapshot1, "z", z)
+        verifyMapDoesNotContainEntry<String?, Value?>(snapshot2, "z", z)
+        verifyMapDoesNotContainEntry<String?, Value?>(snapshot3, "z", z)
     }
-    BiMap<K, V> expectedBiMap = expectedBuilder.buildOrThrow();
-    verifyMapSizeAndContentsInOrder(bimap, expectedBiMap);
-    verifyMapSizeAndContentsInOrder(bimap.inverse(), expectedBiMap.inverse());
-  }
 
-  private static <K, V> void verifyBiMapIsEmpty(BiMap<K, V> bimap) {
-    verifyMapSizeAndContentsInOrder(bimap, ImmutableMap.of());
-    verifyMapSizeAndContentsInOrder(bimap.inverse(), ImmutableMap.of());
-  }
+    @org.junit.Test
+    fun snapshot_isUnmodifiable() {
+        val map: SnapshottableBiMap<String?, Value?> = SnapshottableBiMap({ value: Value ->
+            com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.track(value)
+        })
+        map.put("a", com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.trackedOf("a"))
+        map.put("b", com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.untrackedOf("b"))
+        map.put("c", com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.trackedOf("c"))
+        val snapshot: MutableMap<String?, Value?> = map.getTrackedSnapshot()
 
-  @Test
-  public void containsInsertedEntries() {
-    SnapshottableBiMap<String, Value> map = new SnapshottableBiMap<>(Value::track);
-    verifyBiMapIsEmpty(map);
-    Value a = Value.trackedOf("a");
-    Value b = Value.untrackedOf("b");
-    Value c = Value.trackedOf("c");
-    Value z = Value.trackedOf("z");
+        verifyMapDoesNotAllowDeletions<String?, Value?>(snapshot)
+        org.junit.Assert.assertThrows<java.lang.UnsupportedOperationException?>(
+            java.lang.UnsupportedOperationException::class.java,
+            org.junit.function.ThrowingRunnable {
+                snapshot.put(
+                    "a",
+                    com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.trackedOf("replace a")
+                )
+            })
+        org.junit.Assert.assertThrows<java.lang.UnsupportedOperationException?>(
+            java.lang.UnsupportedOperationException::class.java,
+            org.junit.function.ThrowingRunnable {
+                snapshot.put(
+                    "d",
+                    com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.trackedOf("d")
+                )
+            })
+    }
 
-    map.put("a", a);
-    verifyBiMapSizeAndContentsInOrder(map, "a", a);
+    @org.junit.Test
+    fun snapshot_containsReplacementsPerformedBeforeSnapshotCreation() {
+        val map: SnapshottableBiMap<String?, Value?> = SnapshottableBiMap({ value: Value ->
+            com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.track(value)
+        })
+        val trackedA: Value =
+            com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.trackedOf("a")
+        val replacementA: Value =
+            com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.trackedOf("replacement a")
+        val untrackedB: Value =
+            com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.untrackedOf("b")
+        val replacementB: Value =
+            com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.trackedOf("replacement b")
 
-    map.put("b", b);
-    verifyBiMapSizeAndContentsInOrder(map, "a", a, "b", b);
+        map.put("a", trackedA)
+        map.put("b", untrackedB)
+        verifyMapSizeAndContentsInOrder<String?, Value?>(map, "a", trackedA, "b", untrackedB)
+        map.put("a", replacementA)
+        map.put("b", replacementB)
+        verifyMapSizeAndContentsInOrder<String?, Value?>(map, "a", replacementA, "b", replacementB)
 
-    map.put("c", c);
-    verifyBiMapSizeAndContentsInOrder(map, "a", a, "b", b, "c", c);
+        val snapshot: MutableMap<String?, Value?>? = map.getTrackedSnapshot()
+        verifyMapSizeAndContentsInOrder<String?, Value?>(snapshot, "a", replacementA, "b", replacementB)
+    }
 
-    // verify that the map's various contains*() methods don't always return true.
-    verifyMapDoesNotContainEntry(map, "z", z);
-  }
+    @org.junit.Test
+    fun snapshot_afterReplacingEntryInSnapshot_containsReplacement() {
+        val map: SnapshottableBiMap<String?, Value?> = SnapshottableBiMap({ value: Value ->
+            com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.track(value)
+        })
+        val original: Value =
+            com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.trackedOf("a")
+        val replacement: Value =
+            com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.trackedOf("replacement a")
 
-  @Test
-  public void put_replacesEntries() {
-    SnapshottableBiMap<String, Value> map = new SnapshottableBiMap<>(Value::track);
-    Value trackedA = Value.trackedOf("a");
-    Value replaceA = Value.trackedOf("replace a");
-    Value untrackedB = Value.untrackedOf("b");
-    Value replaceB = Value.untrackedOf("b");
+        map.put("a", original)
+        val snapshot: MutableMap<String?, Value?>? = map.getTrackedSnapshot()
+        verifyMapSizeAndContentsInOrder<String?, Value?>(snapshot, "a", original)
 
-    map.put("a", trackedA);
-    map.put("a", replaceA);
-    map.put("b", untrackedB);
-    map.put("b", replaceB);
-    verifyBiMapSizeAndContentsInOrder(map, "a", replaceA, "b", replaceB);
-  }
+        map.put("a", replacement)
+        verifyMapSizeAndContentsInOrder<String?, Value?>(snapshot, "a", replacement)
+    }
 
-  @Test
-  public void put_nonUniqueValue_illegal() {
-    SnapshottableBiMap<String, Value> map = new SnapshottableBiMap<>(Value::track);
-    Value tracked = Value.trackedOf("a");
-    Value untracked = Value.untrackedOf("b");
+    @org.junit.Test
+    fun snapshot_afterReplacingEntryNotInSnapshot_doesNotContainReplacement() {
+        val map: SnapshottableBiMap<String?, Value?> = SnapshottableBiMap({ value: Value ->
+            com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.track(value)
+        })
+        val untrackedA: Value =
+            com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.untrackedOf("a")
+        val replacementA: Value =
+            com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.trackedOf("replacement a")
+        val trackedB: Value =
+            com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.trackedOf("b")
+        val replacementB: Value =
+            com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.trackedOf("replacement b")
 
-    map.put("a", tracked);
-    assertThrows(IllegalArgumentException.class, () -> map.put("aa", tracked));
-    map.put("b", untracked);
-    assertThrows(IllegalArgumentException.class, () -> map.put("bb", untracked));
-  }
+        map.put("a", untrackedA)
+        val snapshot: MutableMap<String?, Value?>? = map.getTrackedSnapshot()
+        verifyMapIsEmpty<String?, Value?>(snapshot)
 
-  @Test
-  public void put_replacingUntrackedWithTracked_legal() {
-    SnapshottableBiMap<String, Value> map = new SnapshottableBiMap<>(Value::track);
-    Value tracked = Value.trackedOf("a");
-    Value untracked = Value.untrackedOf("A");
+        map.put("a", replacementA)
+        map.put("b", trackedB)
+        map.put("b", replacementB)
+        verifyMapSizeAndContentsInOrder<String?, Value?>(map, "a", replacementA, "b", replacementB)
+        verifyMapIsEmpty<String?, Value?>(snapshot)
+    }
 
-    map.getTrackedSnapshot(); // start tracking
-    map.put("a", untracked);
-    map.put("a", tracked);
-    verifyBiMapSizeAndContentsInOrder(map, "a", tracked);
-  }
+    @org.junit.Test
+    fun snapshot_containsReplacementEntries_inOriginalKeyInsertionOrder() {
+        val map: SnapshottableBiMap<String?, Value?> = SnapshottableBiMap({ value: Value ->
+            com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.track(value)
+        })
+        val a: Value = com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.trackedOf("a")
+        val b: Value = com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.trackedOf("b")
+        val replaceB: Value =
+            com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.trackedOf("replacement b")
+        val c: Value = com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.trackedOf("c")
+        val replaceC: Value =
+            com.google.devtools.build.lib.packages.SnapshottableBiMapTest.Value.Companion.trackedOf("replacement c")
 
-  @Test
-  public void put_replacingTrackedWithUntracked_illegal() {
-    SnapshottableBiMap<String, Value> map = new SnapshottableBiMap<>(Value::track);
-    Value tracked = Value.trackedOf("a");
-    Value untracked = Value.untrackedOf("A");
+        map.put("a", a)
+        map.put("b", b)
+        map.put("c", c)
 
-    map.getTrackedSnapshot(); // start tracking
-    map.put("a", tracked);
-    assertThrows(IllegalArgumentException.class, () -> map.put("a", untracked));
-  }
+        val snapshot: MutableMap<String?, Value?>? = map.getTrackedSnapshot()
+        verifyMapSizeAndContentsInOrder<String?, Value?>(snapshot, "a", a, "b", b, "c", c)
 
-  @Test
-  @SuppressWarnings("deprecation") // test verifying that deprecated methods don't work
-  public void deletions_unsupported() {
-    SnapshottableBiMap<String, Value> map = new SnapshottableBiMap<>(Value::track);
-    Value value = Value.trackedOf("a");
-    Value replacement = Value.trackedOf("replacement a");
+        map.put("c", replaceC)
+        map.put("b", replaceB)
+        verifyMapSizeAndContentsInOrder<String?, Value?>(snapshot, "a", a, "b", replaceB, "c", replaceC)
+    }
 
-    map.put("a", value);
-    verifyMapDoesNotAllowDeletions(map);
-    verifyMapDoesNotAllowDeletions(map.inverse());
-    assertThrows(UnsupportedOperationException.class, () -> map.forcePut("a", replacement));
-    assertThrows(UnsupportedOperationException.class, () -> map.inverse().forcePut(value, "aa"));
-  }
+    companion object {
+        private fun <E> verifyCollectionSizeAndContentsInOrder(
+            collection: MutableCollection<E?>?, expected: MutableCollection<E?>
+        ) {
+            // Exhaustive testing of a collection's methods; we cannot rely on a minimal usual set of JUnit
+            // helpers because we want to verify that the collection has valid Collection semantics.
+            if (expected.isEmpty()) {
+                Truth.assertThat(collection).isEmpty()
+            } else {
+                Truth.assertThat(collection).isNotEmpty()
+            }
+            Truth.assertThat(collection).hasSize(expected.size)
+            Truth.assertThat(collection).containsExactlyElementsIn(expected).inOrder()
+            for (entry in expected) {
+                // JUnit's containsExactlyElementsIn iterates over the collection under test, but doesn't call
+                // its contains() method.
+                Truth.assertThat(collection).contains(entry)
+            }
+        }
 
-  @Test
-  public void getUnderlyingBiMap_returnsBiMapSupportingRemove() {
-    SnapshottableBiMap<String, Value> map = new SnapshottableBiMap<>(Value::track);
-    Value a = Value.trackedOf("a");
-    Value b = Value.untrackedOf("b");
-    Value c = Value.trackedOf("c");
+        private fun <K, V> verifyMapSizeAndContentsInOrder(map: MutableMap<K?, V?>?, expectedMap: MutableMap<K?, V?>) {
+            // Exhaustive testing of a map's methods; we cannot rely on a minimal usual set of JUnit helpers
+            // because we want to verify that the map has valid Map semantics.
+            if (expectedMap.isEmpty()) {
+                Truth.assertThat(map).isEmpty()
+            } else {
+                Truth.assertThat(map).isNotEmpty()
+            }
 
-    map.put("a", a);
-    map.put("b", b);
-    map.put("c", c);
-    BiMap<String, Value> underlying = map.getUnderlyingBiMap();
-    verifyBiMapSizeAndContentsInOrder(underlying, "a", a, "b", b, "c", c);
+            Truth.assertThat(map).hasSize(expectedMap.size)
+            Truth.assertThat(map).containsExactlyEntriesIn(expectedMap).inOrder()
 
-    underlying.remove("a");
-    verifyBiMapSizeAndContentsInOrder(underlying, "b", b, "c", c);
-  }
+            for (entry in expectedMap.entries) {
+                Truth.assertThat(map!!.containsKey(entry.key))
+                    .isTrue() // JUnit's containsKey implementation does not explicitly call map.containsKey
+                Truth.assertThat(map.containsValue(entry.value)).isTrue()
+            }
 
-  @Test
-  public void snapshot_containsExpectedEntries() {
-    SnapshottableBiMap<String, Value> map = new SnapshottableBiMap<>(Value::track);
-    Value trackedA = Value.trackedOf("a");
-    Value untrackedB = Value.untrackedOf("b");
-    Value trackedC = Value.trackedOf("c");
-    Value z = Value.trackedOf("z");
+            Companion.verifyCollectionSizeAndContentsInOrder<MutableMap.MutableEntry<K?, V?>?>(
+                map!!.entries,
+                expectedMap.entries
+            )
+            verifyCollectionSizeAndContentsInOrder<K?>(map.keys, expectedMap.keys)
+            verifyCollectionSizeAndContentsInOrder<V?>(map.values, expectedMap.values)
+        }
 
-    Map<String, Value> snapshot0 = map.getTrackedSnapshot();
-    verifyMapIsEmpty(snapshot0);
+        // test-only convenience vararg transformation
+        private fun <K, V> verifyMapSizeAndContentsInOrder(
+            map: MutableMap<K?, V?>?, key0: K?, value0: V?, vararg rest: Any?
+        ) {
+            val expectedBuilder: com.google.common.collect.ImmutableMap.Builder<K?, V?> =
+                com.google.common.collect.ImmutableMap.builder<K?, V?>()
+            expectedBuilder.put(key0, value0)
+            com.google.common.base.Preconditions.checkArgument(
+                rest.size % 2 == 0, "rest must be a flattened list of key-value pairs"
+            )
+            var i = 0
+            while (i < rest.size) {
+                expectedBuilder.put(rest[i] as K?, rest[i + 1] as V?)
+                i += 2
+            }
+            val expectedMap: MutableMap<K?, V?> = expectedBuilder.build()
+            verifyMapSizeAndContentsInOrder<K?, V?>(map, expectedMap)
+        }
 
-    map.put("a", trackedA);
-    Map<String, Value> snapshot1 = map.getTrackedSnapshot();
-    verifyMapIsEmpty(snapshot0);
-    verifyMapSizeAndContentsInOrder(snapshot1, "a", trackedA);
+        private fun <K, V> verifyMapDoesNotContainEntry(map: MutableMap<K?, V?>, key: K?, value: V?) {
+            val entry: MutableMap.MutableEntry<K?, V?> = AbstractMap.SimpleEntry<K?, V?>(key, value)
 
-    map.put("b", untrackedB);
-    Map<String, Value> snapshot2 = map.getTrackedSnapshot();
-    verifyMapIsEmpty(snapshot0);
-    verifyMapSizeAndContentsInOrder(snapshot1, "a", trackedA);
-    verifyMapSizeAndContentsInOrder(snapshot2, "a", trackedA); // b is untracked
+            // Exhaustive testing of a map's methods; we cannot rely on a minimal usual set of JUnit helpers
+            // because we want to verify that the map has valid Map semantics.
+            Truth.assertThat(map.containsKey(key))
+                .isFalse() // JUnit's containsKey implementation does not explicitly call map.containsKeys
+            Truth.assertThat(map.containsValue(value)).isFalse()
+            Truth.assertThat(map.entries).doesNotContain(entry)
+            Truth.assertThat(map.keys).doesNotContain(key)
+            Truth.assertThat(map.values).doesNotContain(value)
+        }
 
-    map.put("c", Value.trackedOf("c"));
-    Map<String, Value> snapshot3 = map.getTrackedSnapshot();
-    verifyMapIsEmpty(snapshot0);
-    verifyMapSizeAndContentsInOrder(snapshot1, "a", trackedA); // c was added after snapshot
-    verifyMapSizeAndContentsInOrder(snapshot2, "a", trackedA);
-    verifyMapSizeAndContentsInOrder(snapshot3, "a", trackedA, "c", trackedC);
+        private fun <K, V> verifyMapIsEmpty(map: MutableMap<K?, V?>?) {
+            verifyMapSizeAndContentsInOrder<K?, V?>(map, com.google.common.collect.ImmutableMap.of<K?, V?>())
+        }
 
-    // verify that a snapshot's various contains*() methods don't always return true.
-    verifyMapDoesNotContainEntry(snapshot1, "z", z);
-    verifyMapDoesNotContainEntry(snapshot2, "z", z);
-    verifyMapDoesNotContainEntry(snapshot3, "z", z);
-  }
+        private fun <E> verifyIteratorDoesNotAllowDeletions(iterator: MutableIterator<E?>) {
+            while (iterator.hasNext()) {
+                iterator.next()
+                org.junit.Assert.assertThrows<java.lang.UnsupportedOperationException?>(
+                    java.lang.UnsupportedOperationException::class.java,
+                    org.junit.function.ThrowingRunnable { iterator.remove() })
+            }
+        }
 
-  @Test
-  public void snapshot_isUnmodifiable() {
-    SnapshottableBiMap<String, Value> map = new SnapshottableBiMap<>(Value::track);
-    map.put("a", Value.trackedOf("a"));
-    map.put("b", Value.untrackedOf("b"));
-    map.put("c", Value.trackedOf("c"));
-    Map<String, Value> snapshot = map.getTrackedSnapshot();
+        private fun <K, V> verifyMapDoesNotAllowDeletions(map: MutableMap<K?, V?>) {
+            for (entry in map.entries) {
+                val key = entry.key
+                val value = entry.value
+                org.junit.Assert.assertThrows<java.lang.UnsupportedOperationException?>(
+                    java.lang.UnsupportedOperationException::class.java,
+                    org.junit.function.ThrowingRunnable { map.remove(key) })
+                org.junit.Assert.assertThrows<java.lang.UnsupportedOperationException?>(
+                    java.lang.UnsupportedOperationException::class.java,
+                    org.junit.function.ThrowingRunnable { map.keys.remove(key) })
+                org.junit.Assert.assertThrows<java.lang.UnsupportedOperationException?>(
+                    java.lang.UnsupportedOperationException::class.java,
+                    org.junit.function.ThrowingRunnable { map.values.remove(value) })
+                org.junit.Assert.assertThrows<java.lang.UnsupportedOperationException?>(
+                    java.lang.UnsupportedOperationException::class.java,
+                    org.junit.function.ThrowingRunnable { map.entries.remove(entry) })
+            }
 
-    verifyMapDoesNotAllowDeletions(snapshot);
-    assertThrows(
-        UnsupportedOperationException.class, () -> snapshot.put("a", Value.trackedOf("replace a")));
-    assertThrows(
-        UnsupportedOperationException.class, () -> snapshot.put("d", Value.trackedOf("d")));
-  }
+            verifyIteratorDoesNotAllowDeletions<K?>(map.keys.iterator())
+            verifyIteratorDoesNotAllowDeletions<V?>(map.values.iterator())
+            verifyIteratorDoesNotAllowDeletions<MutableMap.MutableEntry<K?, V?>?>(map.entries.iterator())
 
-  @Test
-  public void snapshot_containsReplacementsPerformedBeforeSnapshotCreation() {
-    SnapshottableBiMap<String, Value> map = new SnapshottableBiMap<>(Value::track);
-    Value trackedA = Value.trackedOf("a");
-    Value replacementA = Value.trackedOf("replacement a");
-    Value untrackedB = Value.untrackedOf("b");
-    Value replacementB = Value.trackedOf("replacement b");
+            org.junit.Assert.assertThrows<java.lang.UnsupportedOperationException?>(
+                java.lang.UnsupportedOperationException::class.java,
+                org.junit.function.ThrowingRunnable { map.clear() })
+        }
 
-    map.put("a", trackedA);
-    map.put("b", untrackedB);
-    verifyMapSizeAndContentsInOrder(map, "a", trackedA, "b", untrackedB);
-    map.put("a", replacementA);
-    map.put("b", replacementB);
-    verifyMapSizeAndContentsInOrder(map, "a", replacementA, "b", replacementB);
+        // test-only convenience vararg transformation
+        private fun <K, V> verifyBiMapSizeAndContentsInOrder(
+            bimap: com.google.common.collect.BiMap<K?, V?>, key0: K?, value0: V?, vararg rest: Any?
+        ) {
+            val expectedBuilder: com.google.common.collect.ImmutableBiMap.Builder<K?, V?> =
+                com.google.common.collect.ImmutableBiMap.builder<K?, V?>()
+            expectedBuilder.put(key0, value0)
+            com.google.common.base.Preconditions.checkArgument(
+                rest.size % 2 == 0, "rest must be a flattened list of key-value pairs"
+            )
+            var i = 0
+            while (i < rest.size) {
+                expectedBuilder.put(rest[i] as K?, rest[i + 1] as V?)
+                i += 2
+            }
+            val expectedBiMap: com.google.common.collect.BiMap<K?, V?> = expectedBuilder.buildOrThrow()
+            verifyMapSizeAndContentsInOrder<K?, V?>(bimap, expectedBiMap)
+            verifyMapSizeAndContentsInOrder<V?, K?>(bimap.inverse(), expectedBiMap.inverse())
+        }
 
-    Map<String, Value> snapshot = map.getTrackedSnapshot();
-    verifyMapSizeAndContentsInOrder(snapshot, "a", replacementA, "b", replacementB);
-  }
-
-  @Test
-  public void snapshot_afterReplacingEntryInSnapshot_containsReplacement() {
-    SnapshottableBiMap<String, Value> map = new SnapshottableBiMap<>(Value::track);
-    Value original = Value.trackedOf("a");
-    Value replacement = Value.trackedOf("replacement a");
-
-    map.put("a", original);
-    Map<String, Value> snapshot = map.getTrackedSnapshot();
-    verifyMapSizeAndContentsInOrder(snapshot, "a", original);
-
-    map.put("a", replacement);
-    verifyMapSizeAndContentsInOrder(snapshot, "a", replacement);
-  }
-
-  @Test
-  public void snapshot_afterReplacingEntryNotInSnapshot_doesNotContainReplacement() {
-    SnapshottableBiMap<String, Value> map = new SnapshottableBiMap<>(Value::track);
-    Value untrackedA = Value.untrackedOf("a");
-    Value replacementA = Value.trackedOf("replacement a");
-    Value trackedB = Value.trackedOf("b");
-    Value replacementB = Value.trackedOf("replacement b");
-
-    map.put("a", untrackedA);
-    Map<String, Value> snapshot = map.getTrackedSnapshot();
-    verifyMapIsEmpty(snapshot);
-
-    map.put("a", replacementA);
-    map.put("b", trackedB);
-    map.put("b", replacementB);
-    verifyMapSizeAndContentsInOrder(map, "a", replacementA, "b", replacementB);
-    verifyMapIsEmpty(snapshot);
-  }
-
-  @Test
-  public void snapshot_containsReplacementEntries_inOriginalKeyInsertionOrder() {
-    SnapshottableBiMap<String, Value> map = new SnapshottableBiMap<>(Value::track);
-    Value a = Value.trackedOf("a");
-    Value b = Value.trackedOf("b");
-    Value replaceB = Value.trackedOf("replacement b");
-    Value c = Value.trackedOf("c");
-    Value replaceC = Value.trackedOf("replacement c");
-
-    map.put("a", a);
-    map.put("b", b);
-    map.put("c", c);
-
-    Map<String, Value> snapshot = map.getTrackedSnapshot();
-    verifyMapSizeAndContentsInOrder(snapshot, "a", a, "b", b, "c", c);
-
-    map.put("c", replaceC);
-    map.put("b", replaceB);
-    verifyMapSizeAndContentsInOrder(snapshot, "a", a, "b", replaceB, "c", replaceC);
-  }
+        private fun <K, V> verifyBiMapIsEmpty(bimap: com.google.common.collect.BiMap<K?, V?>) {
+            verifyMapSizeAndContentsInOrder<K?, V?>(bimap, com.google.common.collect.ImmutableMap.of<K?, V?>())
+            verifyMapSizeAndContentsInOrder<V?, K?>(
+                bimap.inverse(),
+                com.google.common.collect.ImmutableMap.of<V?, K?>()
+            )
+        }
+    }
 }

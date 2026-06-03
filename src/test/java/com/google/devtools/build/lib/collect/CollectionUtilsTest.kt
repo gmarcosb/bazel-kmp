@@ -11,48 +11,63 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.collect;
+package com.google.devtools.build.lib.collect
 
-import static com.google.common.truth.Truth.assertThat;
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import java.util.List;
-import java.util.Set;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [CollectionUtils].  */
+@RunWith(JUnit4::class)
+class CollectionUtilsTest {
+    @org.junit.Test
+    fun testDuplicatedElementsOf() {
+        assertDups(
+            com.google.common.collect.ImmutableList.of<Int?>(),
+            com.google.common.collect.ImmutableSet.of<Int?>()
+        )
+        assertDups(
+            com.google.common.collect.ImmutableList.of<Int?>(0),
+            com.google.common.collect.ImmutableSet.of<Int?>()
+        )
+        assertDups(
+            com.google.common.collect.ImmutableList.of<Int?>(0, 0, 0),
+            com.google.common.collect.ImmutableSet.of<Int?>(0)
+        )
+        assertDups(
+            com.google.common.collect.ImmutableList.of<Int?>(1, 2, 3, 1, 2, 3),
+            com.google.common.collect.ImmutableSet.of<Int?>(1, 2, 3)
+        )
+        assertDups(
+            com.google.common.collect.ImmutableList.of<Int?>(1, 2, 3, 1, 2, 3, 4),
+            com.google.common.collect.ImmutableSet.of<Int?>(1, 2, 3)
+        )
+        assertDups(
+            com.google.common.collect.ImmutableList.of<Int?>(1, 2, 3, 4),
+            com.google.common.collect.ImmutableSet.of<Int?>()
+        )
+    }
 
-/** Tests for {@link CollectionUtils}. */
-@RunWith(JUnit4.class)
-public final class CollectionUtilsTest {
+    @get:org.junit.Test
+    val isNullOrEmpty_null: Unit
+        get() {
+            assertThat(CollectionUtils.isNullOrEmpty(null)).isTrue()
+        }
 
-  @Test
-  public void testDuplicatedElementsOf() {
-    assertDups(ImmutableList.of(), ImmutableSet.of());
-    assertDups(ImmutableList.of(0), ImmutableSet.of());
-    assertDups(ImmutableList.of(0, 0, 0), ImmutableSet.of(0));
-    assertDups(ImmutableList.of(1, 2, 3, 1, 2, 3), ImmutableSet.of(1, 2, 3));
-    assertDups(ImmutableList.of(1, 2, 3, 1, 2, 3, 4), ImmutableSet.of(1, 2, 3));
-    assertDups(ImmutableList.of(1, 2, 3, 4), ImmutableSet.of());
-  }
+    @get:org.junit.Test
+    val isNullOrEmpty_empty: Unit
+        get() {
+            assertThat(CollectionUtils.isNullOrEmpty(com.google.common.collect.ImmutableList.of<E?>())).isTrue()
+        }
 
-  private static void assertDups(List<Integer> collection, Set<Integer> dups) {
-    assertThat(CollectionUtils.duplicatedElementsOf(collection)).isEqualTo(dups);
-  }
+    @get:org.junit.Test
+    val isNullOrEmpty_nonEmpty: Unit
+        get() {
+            assertThat(CollectionUtils.isNullOrEmpty(com.google.common.collect.ImmutableList.of<E?>(1))).isFalse()
+        }
 
-  @Test
-  public void isNullOrEmpty_null() {
-    assertThat(CollectionUtils.isNullOrEmpty(null)).isTrue();
-  }
-
-  @Test
-  public void isNullOrEmpty_empty() {
-    assertThat(CollectionUtils.isNullOrEmpty(ImmutableList.of())).isTrue();
-  }
-
-  @Test
-  public void isNullOrEmpty_nonEmpty() {
-    assertThat(CollectionUtils.isNullOrEmpty(ImmutableList.of(1))).isFalse();
-  }
+    companion object {
+        private fun assertDups(collection: MutableList<Int?>?, dups: MutableSet<Int?>?) {
+            assertThat(CollectionUtils.duplicatedElementsOf(collection)).isEqualTo(dups)
+        }
+    }
 }

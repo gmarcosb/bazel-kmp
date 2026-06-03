@@ -11,28 +11,22 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.annot.processor.testsources
 
-package net.starlark.java.annot.processor.testsources;
-
-import net.starlark.java.annot.Param;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.Sequence;
-import net.starlark.java.eval.StarlarkValue;
+import net.starlark.java.eval.Sequence
 
 /**
  * Test case for a StarlarkMethod method which has a parameter with an unsafely specified generic
  * type. (Parameters, if generic, may only have wildcards, as the types of these parameters must be
  * validated dynamically.)
  */
-public class SpecifiedGenericType implements StarlarkValue {
-
-  @StarlarkMethod(
-      name = "specified_generic_type",
-      documented = false,
-      parameters = {
-        @Param(name = "one", named = true),
-      })
-  public String specifiedGenericType(Sequence<String> one) {
-    return "bar";
-  }
+class SpecifiedGenericType : StarlarkValue {
+    @StarlarkMethod(
+        name = "specified_generic_type",
+        documented = false,
+        parameters = [net.starlark.java.annot.Param(name = "one", named = true)]
+    )
+    fun specifiedGenericType(one: Sequence<String?>?): String {
+        return "bar"
+    }
 }

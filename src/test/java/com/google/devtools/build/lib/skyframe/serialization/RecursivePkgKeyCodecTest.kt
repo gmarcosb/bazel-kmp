@@ -11,35 +11,32 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.cmdline.IgnoredSubdirectories;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.skyframe.RecursivePkgKey;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.FsUtils;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.cmdline.IgnoredSubdirectories
 
-/** Tests for {@link RecursivePkgKey}'s codec. */
-@RunWith(JUnit4.class)
-public class RecursivePkgKeyCodecTest {
-
-  @Test
-  public void testCodec() throws Exception {
-    SerializationTester serializationTester =
-        new SerializationTester(
-            new RecursivePkgKey(
-                RepositoryName.MAIN, FsUtils.TEST_ROOTED_PATH, IgnoredSubdirectories.EMPTY),
-            new RecursivePkgKey(
-                RepositoryName.MAIN,
-                FsUtils.TEST_ROOTED_PATH,
-                IgnoredSubdirectories.of(
-                    ImmutableSet.of(
-                        FsUtils.rootPathRelative("here"), FsUtils.rootPathRelative("there")))));
-    FsUtils.addDependencies(serializationTester);
-    serializationTester.runTests();
-  }
+/** Tests for [RecursivePkgKey]'s codec.  */
+@RunWith(JUnit4::class)
+class RecursivePkgKeyCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCodec() {
+        val serializationTester: SerializationTester =
+            SerializationTester(
+                RecursivePkgKey(
+                    RepositoryName.MAIN, FsUtils.TEST_ROOTED_PATH, IgnoredSubdirectories.EMPTY
+                ),
+                RecursivePkgKey(
+                    RepositoryName.MAIN,
+                    FsUtils.TEST_ROOTED_PATH,
+                    IgnoredSubdirectories.of(
+                        com.google.common.collect.ImmutableSet.of<E?>(
+                            FsUtils.rootPathRelative("here"), FsUtils.rootPathRelative("there")
+                        )
+                    )
+                )
+            )
+        FsUtils.addDependencies(serializationTester)
+        serializationTester.runTests()
+    }
 }

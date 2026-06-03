@@ -11,501 +11,527 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote;
+package com.google.devtools.build.lib.remote
 
-import static com.google.common.truth.Truth.assertThat;
-import static java.util.concurrent.TimeUnit.SECONDS;
-import static org.junit.Assert.assertThrows;
+import build.bazel.remote.execution.v2.ActionResult
 
-import build.bazel.remote.execution.v2.ActionResult;
-import build.bazel.remote.execution.v2.Digest;
-import build.bazel.remote.execution.v2.ExecuteRequest;
-import build.bazel.remote.execution.v2.ExecuteResponse;
-import build.bazel.remote.execution.v2.ExecutionCapabilities;
-import build.bazel.remote.execution.v2.OutputFile;
-import build.bazel.remote.execution.v2.RequestMetadata;
-import build.bazel.remote.execution.v2.ServerCapabilities;
-import com.google.common.util.concurrent.ListeningScheduledExecutorService;
-import com.google.common.util.concurrent.MoreExecutors;
-import com.google.devtools.build.lib.authandtls.CallCredentialsProvider;
-import com.google.devtools.build.lib.remote.RemoteRetrier.ExponentialBackoff;
-import com.google.devtools.build.lib.remote.common.OperationObserver;
-import com.google.devtools.build.lib.remote.common.RemoteActionExecutionContext;
-import com.google.devtools.build.lib.remote.common.RemoteExecutionClient;
-import com.google.devtools.build.lib.remote.options.RemoteOptions;
-import com.google.devtools.build.lib.remote.util.TestUtils;
-import com.google.devtools.build.lib.remote.util.TracingMetadataUtils;
-import com.google.devtools.common.options.Options;
-import com.google.longrunning.Operation;
-import com.google.rpc.Code;
-import io.grpc.ManagedChannel;
-import io.grpc.Server;
-import io.grpc.Status;
-import io.grpc.inprocess.InProcessChannelBuilder;
-import io.grpc.inprocess.InProcessServerBuilder;
-import io.reactivex.rxjava3.core.Single;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.Executors;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [GrpcRemoteExecutor].  */
+@RunWith(JUnit4::class)
+class GrpcRemoteExecutorTest {
+    // ---------------------------------------------------------------------------
+    // Test fixture fields
+    // ---------------------------------------------------------------------------
+    private var context: RemoteActionExecutionContext? = null
+    private var executionService: FakeExecutionService? = null
+    private var remoteOptions: RemoteOptions? = null
+    private var fakeServer: io.grpc.Server? = null
+    private var executor: RemoteExecutionClient? = null
 
-/** Tests for {@link GrpcRemoteExecutor}. */
-@RunWith(JUnit4.class)
-public class GrpcRemoteExecutorTest {
+    private var retryService: com.google.common.util.concurrent.ListeningScheduledExecutorService? = null
 
-  // ---------------------------------------------------------------------------
-  // Test fixture fields
-  // ---------------------------------------------------------------------------
+    // ---------------------------------------------------------------------------
+    // Lifecycle
+    // ---------------------------------------------------------------------------
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun setUp() {
+        // The derived test previously created the retryService before invoking the
+        // base setUp(). We replicate the same ordering here.
+        retryService =
+            com.google.common.util.concurrent.MoreExecutors.listeningDecorator(Executors.newScheduledThreadPool(1))
 
-  private RemoteActionExecutionContext context;
-  private FakeExecutionService executionService;
-  private RemoteOptions remoteOptions;
-  private Server fakeServer;
-  private RemoteExecutionClient executor;
+        context = RemoteActionExecutionContext.create(RequestMetadata.getDefaultInstance())
 
-  private ListeningScheduledExecutorService retryService;
+        executionService = FakeExecutionService()
 
-  private static final int MAX_RETRY_ATTEMPTS = 5;
+        val fakeServerName = "fake server for " + javaClass
+        fakeServer =
+            InProcessServerBuilder.forName(fakeServerName)
+                .addService(executionService)
+                .directExecutor()
+                .build()
+                .start()
 
-  // ---------------------------------------------------------------------------
-  // Test constants
-  // ---------------------------------------------------------------------------
+        remoteOptions = com.google.devtools.common.options.Options.getDefaults<O>(RemoteOptions::class.java)
+        remoteOptions.remoteMaxRetryAttempts = MAX_RETRY_ATTEMPTS
 
-  private static final OutputFile DUMMY_OUTPUT =
-      OutputFile.newBuilder()
-          .setPath("dummy.txt")
-          .setDigest(
-              Digest.newBuilder()
-                  .setHash("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
-                  .setSizeBytes(0)
-                  .build())
-          .build();
+        val channel: ReferenceCountedChannel =
+            ReferenceCountedChannel(
+                object : ChannelConnectionWithServerCapabilitiesFactory() {
+                    public override fun create(): Single<ChannelConnectionWithServerCapabilities?>? {
+                        val ch: ManagedChannel? =
+                            InProcessChannelBuilder.forName(fakeServerName)
+                                .intercept(TracingMetadataUtils.newExecHeadersInterceptor(remoteOptions))
+                                .directExecutor()
+                                .build()
+                        val caps: ServerCapabilities =
+                            ServerCapabilities.newBuilder()
+                                .setExecutionCapabilities(
+                                    ExecutionCapabilities.newBuilder().setExecEnabled(true).build()
+                                )
+                                .build()
+                        return Single.just<ChannelConnectionWithServerCapabilities?>(
+                            ChannelConnectionWithServerCapabilities(ch, Single.just<T?>(caps))
+                        )
+                    }
 
-  private static final ExecuteRequest DUMMY_REQUEST =
-      ExecuteRequest.newBuilder()
-          .setInstanceName("dummy")
-          .setActionDigest(
-              Digest.newBuilder()
-                  .setHash("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
-                  .setSizeBytes(0)
-                  .build())
-          .build();
+                    public override fun maxConcurrency(): Int {
+                        return 100
+                    }
+                })
 
-  private static final ExecuteResponse DUMMY_RESPONSE =
-      ExecuteResponse.newBuilder()
-          .setResult(ActionResult.newBuilder().addOutputFiles(DUMMY_OUTPUT).build())
-          .build();
+        executor = createExecutionService(channel)
+    }
 
-  // ---------------------------------------------------------------------------
-  // Lifecycle
-  // ---------------------------------------------------------------------------
+    @org.junit.After
+    @Throws(java.lang.Exception::class)
+    fun tearDown() {
+        retryService.shutdownNow()
+        retryService.awaitTermination(
+            com.google.devtools.build.lib.testutil.TestUtils.WAIT_TIMEOUT_SECONDS, TimeUnit.SECONDS
+        )
 
-  @Before
-  public void setUp() throws Exception {
-    // The derived test previously created the retryService before invoking the
-    // base setUp(). We replicate the same ordering here.
-    retryService = MoreExecutors.listeningDecorator(Executors.newScheduledThreadPool(1));
+        fakeServer.shutdownNow()
+        fakeServer.awaitTermination()
 
-    context = RemoteActionExecutionContext.create(RequestMetadata.getDefaultInstance());
+        executor.close()
+    }
 
-    executionService = new FakeExecutionService();
+    @Throws(java.lang.Exception::class)
+    private fun createExecutionService(channel: ReferenceCountedChannel?): RemoteExecutionClient {
+        val retrier: RemoteRetrier =
+            com.google.devtools.build.lib.remote.util.TestUtils.newRemoteRetrier(
+                java.util.function.Supplier { ExponentialBackoff(remoteOptions) },
+                RemoteRetrier.GRPC_RESULT_CLASSIFIER,
+                retryService
+            )
 
-    String fakeServerName = "fake server for " + getClass();
-    fakeServer =
-        InProcessServerBuilder.forName(fakeServerName)
-            .addService(executionService)
-            .directExecutor()
+        return GrpcRemoteExecutor(channel, CallCredentialsProvider.NO_CREDENTIALS, retrier)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun executeRemotely_smoke() {
+        executionService.whenExecute(DUMMY_REQUEST).thenAck().thenAck().thenDone(DUMMY_RESPONSE)
+
+        val response: ExecuteResponse? =
+            executor.executeRemotely(context, DUMMY_REQUEST, OperationObserver.NO_OP)
+
+        assertThat(response).isEqualTo(DUMMY_RESPONSE)
+        Truth.assertThat(executionService.getExecTimes()).isEqualTo(1)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun executeRemotely_errorInOperation_retryExecute() {
+        executionService.whenExecute(DUMMY_REQUEST).thenError(java.lang.RuntimeException("Unavailable"))
+        executionService.whenExecute(DUMMY_REQUEST).thenError(Code.UNAVAILABLE)
+        executionService.whenExecute(DUMMY_REQUEST).thenAck().thenDone(DUMMY_RESPONSE)
+
+        val response: ExecuteResponse? =
+            executor.executeRemotely(context, DUMMY_REQUEST, OperationObserver.NO_OP)
+
+        Truth.assertThat(executionService.getExecTimes()).isEqualTo(3)
+        assertThat(response).isEqualTo(DUMMY_RESPONSE)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun executeRemotely_errorInResponse_retryExecute() {
+        executionService
+            .whenExecute(DUMMY_REQUEST)
+            .thenDone(
+                ExecuteResponse.newBuilder()
+                    .setStatus(com.google.rpc.Status.newBuilder().setCode(Code.UNAVAILABLE_VALUE))
+                    .build()
+            )
+        executionService.whenExecute(DUMMY_REQUEST).thenAck().thenDone(DUMMY_RESPONSE)
+
+        val response: ExecuteResponse? =
+            executor.executeRemotely(context, DUMMY_REQUEST, OperationObserver.NO_OP)
+
+        Truth.assertThat(executionService.getExecTimes()).isEqualTo(2)
+        assertThat(response).isEqualTo(DUMMY_RESPONSE)
+    }
+
+    @org.junit.Test
+    fun executeRemotely_unretriableErrorInResponse_reportError() {
+        executionService
+            .whenExecute(DUMMY_REQUEST)
+            .thenDone(
+                ExecuteResponse.newBuilder()
+                    .setStatus(com.google.rpc.Status.newBuilder().setCode(Code.INVALID_ARGUMENT_VALUE))
+                    .build()
+            )
+        executionService.whenExecute(DUMMY_REQUEST).thenAck().thenDone(DUMMY_RESPONSE)
+
+        val e: IOException? =
+            org.junit.Assert.assertThrows<IOException?>(
+                IOException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    executor.executeRemotely(
+                        context,
+                        DUMMY_REQUEST,
+                        OperationObserver.NO_OP
+                    )
+                })
+
+        Truth.assertThat(e).hasMessageThat().contains("INVALID_ARGUMENT")
+        Truth.assertThat(executionService.getExecTimes()).isEqualTo(1)
+    }
+
+    @org.junit.Test
+    fun executeRemotely_retryExecuteAndFail() {
+        for (i in 0..MAX_RETRY_ATTEMPTS * 2) {
+            executionService.whenExecute(DUMMY_REQUEST).thenError(Code.UNAVAILABLE)
+        }
+
+        val exception: IOException? =
+            org.junit.Assert.assertThrows<IOException?>(
+                IOException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    executor.executeRemotely(
+                        context,
+                        DUMMY_REQUEST,
+                        OperationObserver.NO_OP
+                    )
+                })
+
+        Truth.assertThat(executionService.getExecTimes()).isEqualTo(MAX_RETRY_ATTEMPTS + 1)
+        Truth.assertThat(exception).hasMessageThat().contains("UNAVAILABLE")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun executeRemotely_executeAndWait() {
+        executionService.whenExecute(DUMMY_REQUEST).thenAck().finish()
+        executionService.whenWaitExecution(DUMMY_REQUEST).thenDone(DUMMY_RESPONSE)
+
+        val response: ExecuteResponse? =
+            executor.executeRemotely(context, DUMMY_REQUEST, OperationObserver.NO_OP)
+
+        Truth.assertThat(executionService.getExecTimes()).isEqualTo(1)
+        Truth.assertThat(executionService.getWaitTimes()).isEqualTo(1)
+        assertThat(response).isEqualTo(DUMMY_RESPONSE)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun executeRemotely_executeAndRetryWait() {
+        executionService.whenExecute(DUMMY_REQUEST).thenAck().finish()
+        executionService.whenWaitExecution(DUMMY_REQUEST).thenDone(DUMMY_RESPONSE)
+
+        val response: ExecuteResponse? =
+            executor.executeRemotely(context, DUMMY_REQUEST, OperationObserver.NO_OP)
+
+        Truth.assertThat(executionService.getExecTimes()).isEqualTo(1)
+        Truth.assertThat(executionService.getWaitTimes()).isEqualTo(1)
+        assertThat(response).isEqualTo(DUMMY_RESPONSE)
+    }
+
+    @org.junit.Test
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    fun executeRemotely_retryExecuteWhenUnauthenticated() {
+        executionService.whenExecute(DUMMY_REQUEST).thenError(Code.UNAUTHENTICATED)
+        executionService.whenExecute(DUMMY_REQUEST).thenAck().thenDone(DUMMY_RESPONSE)
+
+        val response: ExecuteResponse? =
+            executor.executeRemotely(context, DUMMY_REQUEST, OperationObserver.NO_OP)
+
+        Truth.assertThat(executionService.getExecTimes()).isEqualTo(2)
+        assertThat(response).isEqualTo(DUMMY_RESPONSE)
+    }
+
+    @org.junit.Test
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    fun executeRemotely_retryWaitExecutionWhenUnauthenticated_errorRuntimeException() {
+        // This test corresponds to the one in the original base class that used a
+        // Status runtime exception while waiting.
+        executionService.whenExecute(DUMMY_REQUEST).thenAck().finish()
+        executionService
+            .whenWaitExecution(DUMMY_REQUEST)
+            .thenError(io.grpc.Status.UNAUTHENTICATED.asRuntimeException())
+        executionService.whenWaitExecution(DUMMY_REQUEST).thenAck().thenDone(DUMMY_RESPONSE)
+
+        val response: ExecuteResponse? =
+            executor.executeRemotely(context, DUMMY_REQUEST, OperationObserver.NO_OP)
+
+        Truth.assertThat(executionService.getExecTimes()).isEqualTo(1)
+        Truth.assertThat(executionService.getWaitTimes()).isEqualTo(2)
+        assertThat(response).isEqualTo(DUMMY_RESPONSE)
+    }
+
+    @org.junit.Test
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    fun executeRemotely_retryWaitExecutionWhenUnauthenticated_errorCodeUnauthenticated() {
+        // Variant from the former derived test that injected an UNAUTHENTICATED
+        // status through the fake execution service using Code.UNAUTHENTICATED.
+        executionService.whenExecute(DUMMY_REQUEST).thenAck().finish()
+        executionService.whenWaitExecution(DUMMY_REQUEST).thenError(Code.UNAUTHENTICATED)
+        executionService.whenExecute(DUMMY_REQUEST).thenAck().thenDone(DUMMY_RESPONSE)
+
+        val response: ExecuteResponse? =
+            executor.executeRemotely(context, DUMMY_REQUEST, OperationObserver.NO_OP)
+
+        Truth.assertThat(executionService.getExecTimes()).isEqualTo(2)
+        Truth.assertThat(executionService.getWaitTimes()).isEqualTo(1)
+        assertThat(response).isEqualTo(DUMMY_RESPONSE)
+    }
+
+    @org.junit.Test
+    fun executeRemotely_operationWithoutResult_crashes() {
+        executionService.whenExecute(DUMMY_REQUEST).thenDone()
+
+        org.junit.Assert.assertThrows<java.lang.IllegalStateException?>(
+            java.lang.IllegalStateException::class.java,
+            org.junit.function.ThrowingRunnable {
+                executor.executeRemotely(
+                    context,
+                    DUMMY_REQUEST,
+                    OperationObserver.NO_OP
+                )
+            })
+
+        // Shouldn't retry in this case
+        Truth.assertThat(executionService.getExecTimes()).isEqualTo(1)
+    }
+
+    @org.junit.Test
+    fun executeRemotely_responseWithoutResult_crashes() {
+        executionService.whenExecute(DUMMY_REQUEST).thenDone(ExecuteResponse.getDefaultInstance())
+
+        org.junit.Assert.assertThrows<java.lang.IllegalStateException?>(
+            java.lang.IllegalStateException::class.java,
+            org.junit.function.ThrowingRunnable {
+                executor.executeRemotely(
+                    context,
+                    DUMMY_REQUEST,
+                    OperationObserver.NO_OP
+                )
+            })
+
+        Truth.assertThat(executionService.getExecTimes()).isEqualTo(1)
+    }
+
+    @org.junit.Test
+    fun executeRemotely_operationWithoutResult_shouldNotCrash() {
+        executionService.whenExecute(DUMMY_REQUEST).thenDone()
+
+        Truth.assertThat(
+            org.junit.Assert.assertThrows<java.lang.IllegalStateException?>(
+                java.lang.IllegalStateException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    executor.executeRemotely(
+                        context,
+                        DUMMY_REQUEST,
+                        OperationObserver.NO_OP
+                    )
+                })
+        )
+            .hasMessageThat()
+            .contains("Unexpected result of remote execution: result not set")
+
+        // Shouldn't retry in this case
+        Truth.assertThat(executionService.getExecTimes()).isEqualTo(1)
+    }
+
+    @org.junit.Test
+    fun executeRemotely_responseWithoutResult_shouldNotRetry() {
+        executionService.whenExecute(DUMMY_REQUEST).thenDone(ExecuteResponse.getDefaultInstance())
+
+        Truth.assertThat(
+            org.junit.Assert.assertThrows<java.lang.IllegalStateException?>(
+                java.lang.IllegalStateException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    executor.executeRemotely(
+                        context,
+                        DUMMY_REQUEST,
+                        OperationObserver.NO_OP
+                    )
+                })
+        )
+            .hasMessageThat()
+            .contains("Unexpected result of remote execution: no result")
+
+        // Shouldn't retry in this case
+        Truth.assertThat(executionService.getExecTimes()).isEqualTo(1)
+    }
+
+    @org.junit.Test
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    fun executeRemotely_retryExecuteIfNotFound() {
+        executionService.whenExecute(DUMMY_REQUEST).thenAck().finish()
+        executionService.whenWaitExecution(DUMMY_REQUEST).thenError(Code.NOT_FOUND)
+        executionService.whenExecute(DUMMY_REQUEST).thenAck().finish()
+        executionService.whenWaitExecution(DUMMY_REQUEST).thenDone(DUMMY_RESPONSE)
+
+        val response: ExecuteResponse? =
+            executor.executeRemotely(context, DUMMY_REQUEST, OperationObserver.NO_OP)
+
+        Truth.assertThat(executionService.getExecTimes()).isEqualTo(2)
+        Truth.assertThat(executionService.getWaitTimes()).isEqualTo(2)
+        assertThat(response).isEqualTo(DUMMY_RESPONSE)
+    }
+
+    @org.junit.Test
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    fun executeRemotely_retryExecuteIfNotFoundStream() {
+        executionService.whenExecute(DUMMY_REQUEST).thenAck().finish()
+        executionService
+            .whenWaitExecution(DUMMY_REQUEST)
+            .thenError(io.grpc.Status.NOT_FOUND.asRuntimeException())
+        executionService.whenExecute(DUMMY_REQUEST).thenAck().finish()
+        executionService.whenWaitExecution(DUMMY_REQUEST).thenDone(DUMMY_RESPONSE)
+
+        val response: ExecuteResponse? =
+            executor.executeRemotely(context, DUMMY_REQUEST, OperationObserver.NO_OP)
+
+        Truth.assertThat(executionService.getExecTimes()).isEqualTo(2)
+        Truth.assertThat(executionService.getWaitTimes()).isEqualTo(2)
+        assertThat(response).isEqualTo(DUMMY_RESPONSE)
+    }
+
+    @org.junit.Test
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    fun executeRemotely_retryExecuteOnFinish() {
+        executionService.whenExecute(DUMMY_REQUEST).thenAck().finish()
+        executionService.whenWaitExecution(DUMMY_REQUEST).thenAck().finish()
+        executionService.whenWaitExecution(DUMMY_REQUEST).thenAck().thenDone(DUMMY_RESPONSE)
+
+        val response: ExecuteResponse? =
+            executor.executeRemotely(context, DUMMY_REQUEST, OperationObserver.NO_OP)
+
+        Truth.assertThat(executionService.getExecTimes()).isEqualTo(1)
+        Truth.assertThat(executionService.getWaitTimes()).isEqualTo(2)
+        assertThat(response).isEqualTo(DUMMY_RESPONSE)
+    }
+
+    @org.junit.Test
+    fun executeRemotely_notFoundLoop_reportError() {
+        for (i in 0..MAX_RETRY_ATTEMPTS) {
+            executionService.whenExecute(DUMMY_REQUEST).thenAck().finish()
+            executionService.whenWaitExecution(DUMMY_REQUEST).thenError(Code.NOT_FOUND)
+        }
+
+        val e: IOException =
+            org.junit.Assert.assertThrows<IOException>(
+                IOException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    executor.executeRemotely(
+                        context,
+                        DUMMY_REQUEST,
+                        OperationObserver.NO_OP
+                    )
+                })
+
+        Truth.assertThat(e).hasCauseThat().isInstanceOf(ExecutionStatusException::class.java)
+        val executionStatusException: ExecutionStatusException = e.cause as ExecutionStatusException
+        assertThat(executionStatusException.getStatus().getCode()).isEqualTo(io.grpc.Status.Code.NOT_FOUND)
+        Truth.assertThat(executionService.getExecTimes()).isEqualTo(MAX_RETRY_ATTEMPTS + 1)
+        Truth.assertThat(executionService.getWaitTimes()).isEqualTo(MAX_RETRY_ATTEMPTS + 1)
+    }
+
+    @org.junit.Test
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    fun executeRemotely_notifyObserver() {
+        executionService.whenExecute(DUMMY_REQUEST).thenAck().thenDone(DUMMY_RESPONSE)
+
+        val notified: MutableList<Operation?> = java.util.ArrayList<Operation?>()
+        val unused: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            executor.executeRemotely(context, DUMMY_REQUEST, notified::add)
+
+        Truth.assertThat(notified)
+            .containsExactly(
+                FakeExecutionService.Companion.ackOperation(DUMMY_REQUEST),
+                FakeExecutionService.Companion.doneOperation(DUMMY_REQUEST, DUMMY_RESPONSE)
+            )
+    }
+
+    @org.junit.Test
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    fun executeRemotely_retryExecuteOnNoResultDoneOperation() {
+        executionService.whenExecute(DUMMY_REQUEST).thenError(Code.UNAVAILABLE)
+        executionService.whenExecute(DUMMY_REQUEST).thenAck().thenDone(DUMMY_RESPONSE)
+
+        val response: ExecuteResponse? =
+            executor.executeRemotely(context, DUMMY_REQUEST, OperationObserver.NO_OP)
+
+        Truth.assertThat(executionService.getExecTimes()).isEqualTo(2)
+        Truth.assertThat(executionService.getWaitTimes()).isEqualTo(0)
+        assertThat(response).isEqualTo(DUMMY_RESPONSE)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun executeRemotely_executeAndRetryWait_forever() {
+        executionService.whenExecute(DUMMY_REQUEST).thenAck().finish()
+        val errorTimes = MAX_RETRY_ATTEMPTS
+        for (i in 0..<errorTimes) {
+            executionService
+                .whenWaitExecution(DUMMY_REQUEST)
+                .thenError(io.grpc.Status.DEADLINE_EXCEEDED.asRuntimeException())
+        }
+        executionService.whenWaitExecution(DUMMY_REQUEST).thenDone(DUMMY_RESPONSE)
+
+        val response: ExecuteResponse? =
+            executor.executeRemotely(context, DUMMY_REQUEST, OperationObserver.NO_OP)
+
+        Truth.assertThat(executionService.getExecTimes()).isEqualTo(1)
+        Truth.assertThat(executionService.getWaitTimes()).isEqualTo(errorTimes + 1)
+        assertThat(response).isEqualTo(DUMMY_RESPONSE)
+    }
+
+    @org.junit.Test
+    fun executeRemotely_executeAndRetryWait_failForConsecutiveErrors() {
+        executionService.whenExecute(DUMMY_REQUEST).thenAck().finish()
+        for (i in 0..<MAX_RETRY_ATTEMPTS * 2) {
+            executionService
+                .whenWaitExecution(DUMMY_REQUEST)
+                .thenError(io.grpc.Status.UNAVAILABLE.asRuntimeException())
+        }
+
+        org.junit.Assert.assertThrows<IOException?>(
+            IOException::class.java,
+            org.junit.function.ThrowingRunnable {
+                executor.executeRemotely(
+                    context,
+                    DUMMY_REQUEST,
+                    OperationObserver.NO_OP
+                )
+            })
+
+        Truth.assertThat(executionService.getExecTimes()).isEqualTo(1)
+        Truth.assertThat(executionService.getWaitTimes()).isEqualTo(MAX_RETRY_ATTEMPTS + 1)
+    }
+
+    companion object {
+        private const val MAX_RETRY_ATTEMPTS = 5
+
+        // ---------------------------------------------------------------------------
+        // Test constants
+        // ---------------------------------------------------------------------------
+        private val DUMMY_OUTPUT: OutputFile? = OutputFile.newBuilder()
+            .setPath("dummy.txt")
+            .setDigest(
+                Digest.newBuilder()
+                    .setHash("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+                    .setSizeBytes(0)
+                    .build()
+            )
             .build()
-            .start();
 
-    remoteOptions = Options.getDefaults(RemoteOptions.class);
-    remoteOptions.setRemoteMaxRetryAttempts(MAX_RETRY_ATTEMPTS);
+        private val DUMMY_REQUEST: ExecuteRequest? = ExecuteRequest.newBuilder()
+            .setInstanceName("dummy")
+            .setActionDigest(
+                Digest.newBuilder()
+                    .setHash("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+                    .setSizeBytes(0)
+                    .build()
+            )
+            .build()
 
-    ReferenceCountedChannel channel =
-        new ReferenceCountedChannel(
-            new ChannelConnectionWithServerCapabilitiesFactory() {
-              @Override
-              public Single<ChannelConnectionWithServerCapabilities> create() {
-                ManagedChannel ch =
-                    InProcessChannelBuilder.forName(fakeServerName)
-                        .intercept(TracingMetadataUtils.newExecHeadersInterceptor(remoteOptions))
-                        .directExecutor()
-                        .build();
-                ServerCapabilities caps =
-                    ServerCapabilities.newBuilder()
-                        .setExecutionCapabilities(
-                            ExecutionCapabilities.newBuilder().setExecEnabled(true).build())
-                        .build();
-                return Single.just(
-                    new ChannelConnectionWithServerCapabilities(ch, Single.just(caps)));
-              }
-
-              @Override
-              public int maxConcurrency() {
-                return 100;
-              }
-            });
-
-    executor = createExecutionService(channel);
-  }
-
-  @After
-  public void tearDown() throws Exception {
-    retryService.shutdownNow();
-    retryService.awaitTermination(
-        com.google.devtools.build.lib.testutil.TestUtils.WAIT_TIMEOUT_SECONDS, SECONDS);
-
-    fakeServer.shutdownNow();
-    fakeServer.awaitTermination();
-
-    executor.close();
-  }
-
-  private RemoteExecutionClient createExecutionService(ReferenceCountedChannel channel)
-      throws Exception {
-    RemoteRetrier retrier =
-        TestUtils.newRemoteRetrier(
-            () -> new ExponentialBackoff(remoteOptions),
-            RemoteRetrier.GRPC_RESULT_CLASSIFIER,
-            retryService);
-
-    return new GrpcRemoteExecutor(channel, CallCredentialsProvider.NO_CREDENTIALS, retrier);
-  }
-
-  @Test
-  public void executeRemotely_smoke() throws Exception {
-    executionService.whenExecute(DUMMY_REQUEST).thenAck().thenAck().thenDone(DUMMY_RESPONSE);
-
-    ExecuteResponse response =
-        executor.executeRemotely(context, DUMMY_REQUEST, OperationObserver.NO_OP);
-
-    assertThat(response).isEqualTo(DUMMY_RESPONSE);
-    assertThat(executionService.getExecTimes()).isEqualTo(1);
-  }
-
-  @Test
-  public void executeRemotely_errorInOperation_retryExecute() throws Exception {
-    executionService.whenExecute(DUMMY_REQUEST).thenError(new RuntimeException("Unavailable"));
-    executionService.whenExecute(DUMMY_REQUEST).thenError(Code.UNAVAILABLE);
-    executionService.whenExecute(DUMMY_REQUEST).thenAck().thenDone(DUMMY_RESPONSE);
-
-    ExecuteResponse response =
-        executor.executeRemotely(context, DUMMY_REQUEST, OperationObserver.NO_OP);
-
-    assertThat(executionService.getExecTimes()).isEqualTo(3);
-    assertThat(response).isEqualTo(DUMMY_RESPONSE);
-  }
-
-  @Test
-  public void executeRemotely_errorInResponse_retryExecute() throws Exception {
-    executionService
-        .whenExecute(DUMMY_REQUEST)
-        .thenDone(
-            ExecuteResponse.newBuilder()
-                .setStatus(com.google.rpc.Status.newBuilder().setCode(Code.UNAVAILABLE_VALUE))
-                .build());
-    executionService.whenExecute(DUMMY_REQUEST).thenAck().thenDone(DUMMY_RESPONSE);
-
-    ExecuteResponse response =
-        executor.executeRemotely(context, DUMMY_REQUEST, OperationObserver.NO_OP);
-
-    assertThat(executionService.getExecTimes()).isEqualTo(2);
-    assertThat(response).isEqualTo(DUMMY_RESPONSE);
-  }
-
-  @Test
-  public void executeRemotely_unretriableErrorInResponse_reportError() {
-    executionService
-        .whenExecute(DUMMY_REQUEST)
-        .thenDone(
-            ExecuteResponse.newBuilder()
-                .setStatus(com.google.rpc.Status.newBuilder().setCode(Code.INVALID_ARGUMENT_VALUE))
-                .build());
-    executionService.whenExecute(DUMMY_REQUEST).thenAck().thenDone(DUMMY_RESPONSE);
-
-    IOException e =
-        assertThrows(
-            IOException.class,
-            () -> executor.executeRemotely(context, DUMMY_REQUEST, OperationObserver.NO_OP));
-
-    assertThat(e).hasMessageThat().contains("INVALID_ARGUMENT");
-    assertThat(executionService.getExecTimes()).isEqualTo(1);
-  }
-
-  @Test
-  public void executeRemotely_retryExecuteAndFail() {
-    for (int i = 0; i <= MAX_RETRY_ATTEMPTS * 2; ++i) {
-      executionService.whenExecute(DUMMY_REQUEST).thenError(Code.UNAVAILABLE);
+        private val DUMMY_RESPONSE: ExecuteResponse? = ExecuteResponse.newBuilder()
+            .setResult(ActionResult.newBuilder().addOutputFiles(DUMMY_OUTPUT).build())
+            .build()
     }
-
-    IOException exception =
-        assertThrows(
-            IOException.class,
-            () -> executor.executeRemotely(context, DUMMY_REQUEST, OperationObserver.NO_OP));
-
-    assertThat(executionService.getExecTimes()).isEqualTo(MAX_RETRY_ATTEMPTS + 1);
-    assertThat(exception).hasMessageThat().contains("UNAVAILABLE");
-  }
-
-  @Test
-  public void executeRemotely_executeAndWait() throws Exception {
-    executionService.whenExecute(DUMMY_REQUEST).thenAck().finish();
-    executionService.whenWaitExecution(DUMMY_REQUEST).thenDone(DUMMY_RESPONSE);
-
-    ExecuteResponse response =
-        executor.executeRemotely(context, DUMMY_REQUEST, OperationObserver.NO_OP);
-
-    assertThat(executionService.getExecTimes()).isEqualTo(1);
-    assertThat(executionService.getWaitTimes()).isEqualTo(1);
-    assertThat(response).isEqualTo(DUMMY_RESPONSE);
-  }
-
-  @Test
-  public void executeRemotely_executeAndRetryWait() throws Exception {
-    executionService.whenExecute(DUMMY_REQUEST).thenAck().finish();
-    executionService.whenWaitExecution(DUMMY_REQUEST).thenDone(DUMMY_RESPONSE);
-
-    ExecuteResponse response =
-        executor.executeRemotely(context, DUMMY_REQUEST, OperationObserver.NO_OP);
-
-    assertThat(executionService.getExecTimes()).isEqualTo(1);
-    assertThat(executionService.getWaitTimes()).isEqualTo(1);
-    assertThat(response).isEqualTo(DUMMY_RESPONSE);
-  }
-
-  @Test
-  public void executeRemotely_retryExecuteWhenUnauthenticated()
-      throws IOException, InterruptedException {
-    executionService.whenExecute(DUMMY_REQUEST).thenError(Code.UNAUTHENTICATED);
-    executionService.whenExecute(DUMMY_REQUEST).thenAck().thenDone(DUMMY_RESPONSE);
-
-    ExecuteResponse response =
-        executor.executeRemotely(context, DUMMY_REQUEST, OperationObserver.NO_OP);
-
-    assertThat(executionService.getExecTimes()).isEqualTo(2);
-    assertThat(response).isEqualTo(DUMMY_RESPONSE);
-  }
-
-  @Test
-  public void executeRemotely_retryWaitExecutionWhenUnauthenticated_errorRuntimeException()
-      throws IOException, InterruptedException {
-    // This test corresponds to the one in the original base class that used a
-    // Status runtime exception while waiting.
-    executionService.whenExecute(DUMMY_REQUEST).thenAck().finish();
-    executionService
-        .whenWaitExecution(DUMMY_REQUEST)
-        .thenError(Status.UNAUTHENTICATED.asRuntimeException());
-    executionService.whenWaitExecution(DUMMY_REQUEST).thenAck().thenDone(DUMMY_RESPONSE);
-
-    ExecuteResponse response =
-        executor.executeRemotely(context, DUMMY_REQUEST, OperationObserver.NO_OP);
-
-    assertThat(executionService.getExecTimes()).isEqualTo(1);
-    assertThat(executionService.getWaitTimes()).isEqualTo(2);
-    assertThat(response).isEqualTo(DUMMY_RESPONSE);
-  }
-
-  @Test
-  public void executeRemotely_retryWaitExecutionWhenUnauthenticated_errorCodeUnauthenticated()
-      throws IOException, InterruptedException {
-    // Variant from the former derived test that injected an UNAUTHENTICATED
-    // status through the fake execution service using Code.UNAUTHENTICATED.
-    executionService.whenExecute(DUMMY_REQUEST).thenAck().finish();
-    executionService.whenWaitExecution(DUMMY_REQUEST).thenError(Code.UNAUTHENTICATED);
-    executionService.whenExecute(DUMMY_REQUEST).thenAck().thenDone(DUMMY_RESPONSE);
-
-    ExecuteResponse response =
-        executor.executeRemotely(context, DUMMY_REQUEST, OperationObserver.NO_OP);
-
-    assertThat(executionService.getExecTimes()).isEqualTo(2);
-    assertThat(executionService.getWaitTimes()).isEqualTo(1);
-    assertThat(response).isEqualTo(DUMMY_RESPONSE);
-  }
-
-  @Test
-  public void executeRemotely_operationWithoutResult_crashes() {
-    executionService.whenExecute(DUMMY_REQUEST).thenDone();
-
-    assertThrows(
-        IllegalStateException.class,
-        () -> executor.executeRemotely(context, DUMMY_REQUEST, OperationObserver.NO_OP));
-
-    // Shouldn't retry in this case
-    assertThat(executionService.getExecTimes()).isEqualTo(1);
-  }
-
-  @Test
-  public void executeRemotely_responseWithoutResult_crashes() {
-    executionService.whenExecute(DUMMY_REQUEST).thenDone(ExecuteResponse.getDefaultInstance());
-
-    assertThrows(
-        IllegalStateException.class,
-        () -> executor.executeRemotely(context, DUMMY_REQUEST, OperationObserver.NO_OP));
-
-    assertThat(executionService.getExecTimes()).isEqualTo(1);
-  }
-
-  @Test
-  public void executeRemotely_operationWithoutResult_shouldNotCrash() {
-    executionService.whenExecute(DUMMY_REQUEST).thenDone();
-
-    assertThat(
-            assertThrows(
-                IllegalStateException.class,
-                () -> executor.executeRemotely(context, DUMMY_REQUEST, OperationObserver.NO_OP)))
-        .hasMessageThat()
-        .contains("Unexpected result of remote execution: result not set");
-
-    // Shouldn't retry in this case
-    assertThat(executionService.getExecTimes()).isEqualTo(1);
-  }
-
-  @Test
-  public void executeRemotely_responseWithoutResult_shouldNotRetry() {
-    executionService.whenExecute(DUMMY_REQUEST).thenDone(ExecuteResponse.getDefaultInstance());
-
-    assertThat(
-            assertThrows(
-                IllegalStateException.class,
-                () -> executor.executeRemotely(context, DUMMY_REQUEST, OperationObserver.NO_OP)))
-        .hasMessageThat()
-        .contains("Unexpected result of remote execution: no result");
-
-    // Shouldn't retry in this case
-    assertThat(executionService.getExecTimes()).isEqualTo(1);
-  }
-
-  @Test
-  public void executeRemotely_retryExecuteIfNotFound() throws IOException, InterruptedException {
-    executionService.whenExecute(DUMMY_REQUEST).thenAck().finish();
-    executionService.whenWaitExecution(DUMMY_REQUEST).thenError(Code.NOT_FOUND);
-    executionService.whenExecute(DUMMY_REQUEST).thenAck().finish();
-    executionService.whenWaitExecution(DUMMY_REQUEST).thenDone(DUMMY_RESPONSE);
-
-    ExecuteResponse response =
-        executor.executeRemotely(context, DUMMY_REQUEST, OperationObserver.NO_OP);
-
-    assertThat(executionService.getExecTimes()).isEqualTo(2);
-    assertThat(executionService.getWaitTimes()).isEqualTo(2);
-    assertThat(response).isEqualTo(DUMMY_RESPONSE);
-  }
-
-  @Test
-  public void executeRemotely_retryExecuteIfNotFoundStream()
-      throws IOException, InterruptedException {
-    executionService.whenExecute(DUMMY_REQUEST).thenAck().finish();
-    executionService
-        .whenWaitExecution(DUMMY_REQUEST)
-        .thenError(Status.NOT_FOUND.asRuntimeException());
-    executionService.whenExecute(DUMMY_REQUEST).thenAck().finish();
-    executionService.whenWaitExecution(DUMMY_REQUEST).thenDone(DUMMY_RESPONSE);
-
-    ExecuteResponse response =
-        executor.executeRemotely(context, DUMMY_REQUEST, OperationObserver.NO_OP);
-
-    assertThat(executionService.getExecTimes()).isEqualTo(2);
-    assertThat(executionService.getWaitTimes()).isEqualTo(2);
-    assertThat(response).isEqualTo(DUMMY_RESPONSE);
-  }
-
-  @Test
-  public void executeRemotely_retryExecuteOnFinish() throws IOException, InterruptedException {
-    executionService.whenExecute(DUMMY_REQUEST).thenAck().finish();
-    executionService.whenWaitExecution(DUMMY_REQUEST).thenAck().finish();
-    executionService.whenWaitExecution(DUMMY_REQUEST).thenAck().thenDone(DUMMY_RESPONSE);
-
-    ExecuteResponse response =
-        executor.executeRemotely(context, DUMMY_REQUEST, OperationObserver.NO_OP);
-
-    assertThat(executionService.getExecTimes()).isEqualTo(1);
-    assertThat(executionService.getWaitTimes()).isEqualTo(2);
-    assertThat(response).isEqualTo(DUMMY_RESPONSE);
-  }
-
-  @Test
-  public void executeRemotely_notFoundLoop_reportError() {
-    for (int i = 0; i <= MAX_RETRY_ATTEMPTS; ++i) {
-      executionService.whenExecute(DUMMY_REQUEST).thenAck().finish();
-      executionService.whenWaitExecution(DUMMY_REQUEST).thenError(Code.NOT_FOUND);
-    }
-
-    IOException e =
-        assertThrows(
-            IOException.class,
-            () -> executor.executeRemotely(context, DUMMY_REQUEST, OperationObserver.NO_OP));
-
-    assertThat(e).hasCauseThat().isInstanceOf(ExecutionStatusException.class);
-    ExecutionStatusException executionStatusException = (ExecutionStatusException) e.getCause();
-    assertThat(executionStatusException.getStatus().getCode()).isEqualTo(Status.Code.NOT_FOUND);
-    assertThat(executionService.getExecTimes()).isEqualTo(MAX_RETRY_ATTEMPTS + 1);
-    assertThat(executionService.getWaitTimes()).isEqualTo(MAX_RETRY_ATTEMPTS + 1);
-  }
-
-  @Test
-  public void executeRemotely_notifyObserver() throws IOException, InterruptedException {
-    executionService.whenExecute(DUMMY_REQUEST).thenAck().thenDone(DUMMY_RESPONSE);
-
-    List<Operation> notified = new ArrayList<>();
-    var unused = executor.executeRemotely(context, DUMMY_REQUEST, notified::add);
-
-    assertThat(notified)
-        .containsExactly(
-            FakeExecutionService.ackOperation(DUMMY_REQUEST),
-            FakeExecutionService.doneOperation(DUMMY_REQUEST, DUMMY_RESPONSE));
-  }
-
-  @Test
-  public void executeRemotely_retryExecuteOnNoResultDoneOperation()
-      throws IOException, InterruptedException {
-    executionService.whenExecute(DUMMY_REQUEST).thenError(Code.UNAVAILABLE);
-    executionService.whenExecute(DUMMY_REQUEST).thenAck().thenDone(DUMMY_RESPONSE);
-
-    ExecuteResponse response =
-        executor.executeRemotely(context, DUMMY_REQUEST, OperationObserver.NO_OP);
-
-    assertThat(executionService.getExecTimes()).isEqualTo(2);
-    assertThat(executionService.getWaitTimes()).isEqualTo(0);
-    assertThat(response).isEqualTo(DUMMY_RESPONSE);
-  }
-
-  @Test
-  public void executeRemotely_executeAndRetryWait_forever() throws Exception {
-    executionService.whenExecute(DUMMY_REQUEST).thenAck().finish();
-    int errorTimes = MAX_RETRY_ATTEMPTS;
-    for (int i = 0; i < errorTimes; ++i) {
-      executionService
-          .whenWaitExecution(DUMMY_REQUEST)
-          .thenError(Status.DEADLINE_EXCEEDED.asRuntimeException());
-    }
-    executionService.whenWaitExecution(DUMMY_REQUEST).thenDone(DUMMY_RESPONSE);
-
-    ExecuteResponse response =
-        executor.executeRemotely(context, DUMMY_REQUEST, OperationObserver.NO_OP);
-
-    assertThat(executionService.getExecTimes()).isEqualTo(1);
-    assertThat(executionService.getWaitTimes()).isEqualTo(errorTimes + 1);
-    assertThat(response).isEqualTo(DUMMY_RESPONSE);
-  }
-
-  @Test
-  public void executeRemotely_executeAndRetryWait_failForConsecutiveErrors() {
-    executionService.whenExecute(DUMMY_REQUEST).thenAck().finish();
-    for (int i = 0; i < MAX_RETRY_ATTEMPTS * 2; ++i) {
-      executionService
-          .whenWaitExecution(DUMMY_REQUEST)
-          .thenError(Status.UNAVAILABLE.asRuntimeException());
-    }
-
-    assertThrows(
-        IOException.class,
-        () -> executor.executeRemotely(context, DUMMY_REQUEST, OperationObserver.NO_OP));
-
-    assertThat(executionService.getExecTimes()).isEqualTo(1);
-    assertThat(executionService.getWaitTimes()).isEqualTo(MAX_RETRY_ATTEMPTS + 1);
-  }
 }

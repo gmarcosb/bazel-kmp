@@ -11,144 +11,172 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.rules.cpp;
+package com.google.devtools.build.lib.rules.cpp
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.analysis.util.AnalysisTestCase.getConfiguredTarget
+import com.google.devtools.build.lib.analysis.util.AnalysisTestCase.useConfiguration
+import com.google.devtools.build.lib.analysis.util.BuildViewTestCase
+import com.google.devtools.build.lib.analysis.util.BuildViewTestCase.getConfiguredTarget
+import com.google.devtools.build.lib.analysis.util.BuildViewTestCase.getStarlarkProvider
+import com.google.devtools.build.lib.analysis.util.BuildViewTestCase.useConfiguration
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.io.IOException
 
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import java.io.IOException;
-import net.starlark.java.eval.NoneType;
-import net.starlark.java.eval.Sequence;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for C++ fragments in Starlark.  */
+@RunWith(JUnit4::class)
+class CppConfigurationStarlarkTest : BuildViewTestCase() {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMinimumOsVersion() {
+        useConfiguration("--minimum_os_version=-wololoo")
+        writeRuleReturning("ctx.fragments.cpp.minimum_os_version()")
 
-/** Tests for C++ fragments in Starlark. */
-@RunWith(JUnit4.class)
-public final class CppConfigurationStarlarkTest extends BuildViewTestCase {
+        val result = getResult<String?>(String::class.java)
+        Truth.assertThat(result).isEqualTo("-wololoo")
+    }
 
-  @Test
-  public void testMinimumOsVersion() throws Exception {
-    useConfiguration("--minimum_os_version=-wololoo");
-    writeRuleReturning("ctx.fragments.cpp.minimum_os_version()");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNullMinimumOsVersion() {
+        writeRuleReturning("ctx.fragments.cpp.minimum_os_version()")
 
-    String result = getResult(String.class);
-    assertThat(result).isEqualTo("-wololoo");
-  }
+        val result = getResult<Any?>(Any::class.java)
+        Truth.assertThat(result).isInstanceOf(net.starlark.java.eval.NoneType::class.java)
+    }
 
-  @Test
-  public void testNullMinimumOsVersion() throws Exception {
-    writeRuleReturning("ctx.fragments.cpp.minimum_os_version()");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCopts() {
+        writeRuleReturning("ctx.fragments.cpp.copts")
+        useConfiguration("--copt=-wololoo")
 
-    Object result = getResult(Object.class);
-    assertThat(result).isInstanceOf(NoneType.class);
-  }
+        val result: net.starlark.java.eval.Sequence<String?>? =
+            getResult<net.starlark.java.eval.Sequence?>(net.starlark.java.eval.Sequence::class.java)
+        Truth.assertThat(result).containsExactly("-wololoo")
+    }
 
-  @Test
-  public void testCopts() throws Exception {
-    writeRuleReturning("ctx.fragments.cpp.copts");
-    useConfiguration("--copt=-wololoo");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCxxopts() {
+        writeRuleReturning("ctx.fragments.cpp.cxxopts")
+        useConfiguration("--cxxopt=-wololoo")
 
-    @SuppressWarnings("unchecked")
-    Sequence<String> result = getResult(Sequence.class);
-    assertThat(result).containsExactly("-wololoo");
-  }
+        val result: net.starlark.java.eval.Sequence<String?>? =
+            getResult<net.starlark.java.eval.Sequence?>(net.starlark.java.eval.Sequence::class.java)
+        Truth.assertThat(result).containsExactly("-wololoo")
+    }
 
-  @Test
-  public void testCxxopts() throws Exception {
-    writeRuleReturning("ctx.fragments.cpp.cxxopts");
-    useConfiguration("--cxxopt=-wololoo");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testConlyopts() {
+        writeRuleReturning("ctx.fragments.cpp.conlyopts")
+        useConfiguration("--conlyopt=-wololoo")
 
-    @SuppressWarnings("unchecked")
-    Sequence<String> result = getResult(Sequence.class);
-    assertThat(result).containsExactly("-wololoo");
-  }
+        val result: net.starlark.java.eval.Sequence<String?>? =
+            getResult<net.starlark.java.eval.Sequence?>(net.starlark.java.eval.Sequence::class.java)
+        Truth.assertThat(result).containsExactly("-wololoo")
+    }
 
-  @Test
-  public void testConlyopts() throws Exception {
-    writeRuleReturning("ctx.fragments.cpp.conlyopts");
-    useConfiguration("--conlyopt=-wololoo");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testObjcopts() {
+        writeRuleReturning("ctx.fragments.cpp.objccopts")
+        useConfiguration("--objccopt=-wololoo")
 
-    @SuppressWarnings("unchecked")
-    Sequence<String> result = getResult(Sequence.class);
-    assertThat(result).containsExactly("-wololoo");
-  }
+        val result: net.starlark.java.eval.Sequence<String?>? =
+            getResult<net.starlark.java.eval.Sequence?>(net.starlark.java.eval.Sequence::class.java)
+        Truth.assertThat(result).containsExactly("-wololoo")
+    }
 
-  @Test
-  public void testObjcopts() throws Exception {
-    writeRuleReturning("ctx.fragments.cpp.objccopts");
-    useConfiguration("--objccopt=-wololoo");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLinkopts() {
+        writeRuleReturning("ctx.fragments.cpp.linkopts")
+        useConfiguration("--linkopt=-wololoo")
 
-    @SuppressWarnings("unchecked")
-    Sequence<String> result = getResult(Sequence.class);
-    assertThat(result).containsExactly("-wololoo");
-  }
+        val result: net.starlark.java.eval.Sequence<String?>? =
+            getResult<net.starlark.java.eval.Sequence?>(net.starlark.java.eval.Sequence::class.java)
+        Truth.assertThat(result).containsExactly("-wololoo")
+    }
 
-  @Test
-  public void testLinkopts() throws Exception {
-    writeRuleReturning("ctx.fragments.cpp.linkopts");
-    useConfiguration("--linkopt=-wololoo");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExpandedApiBlocked() {
+        writeRuleReturning("foo", "pic.bzl", "pic", "ctx.fragments.cpp.force_pic()")
+        writeRuleReturning("foo", "lcov.bzl", "lcov", "ctx.fragments.cpp.generate_llvm_lcov()")
+        writeRuleReturning("foo", "fdo.bzl", "fdo", "ctx.fragments.cpp.fdo_instrument()")
+        writeRuleReturning(
+            "foo", "hdr_deps.bzl", "hdr_deps", "ctx.fragments.cpp.process_headers_in_dependencies()"
+        )
+        writeRuleReturning("foo", "save.bzl", "save", "ctx.fragments.cpp.save_feature_state()")
+        writeRuleReturning(
+            "foo",
+            "fission.bzl",
+            "fission",
+            "ctx.fragments.cpp.fission_active_for_current_compilation_mode()"
+        )
+        var e: java.lang.AssertionError?
+        e = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//foo:pic") })
+        assertBlockedFeature(e, "force_pic")
+        e = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//foo:lcov") })
+        assertBlockedFeature(e, "generate_llvm_lcov")
+        e = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//foo:fdo") })
+        assertBlockedFeature(e, "fdo_instrument")
+        e = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//foo:hdr_deps") })
+        Truth.assertThat(e).hasMessageThat().contains("cannot use private API")
+        e = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//foo:save") })
+        Truth.assertThat(e).hasMessageThat().contains("cannot use private API")
+        e = org.junit.Assert.assertThrows<java.lang.AssertionError?>(
+            java.lang.AssertionError::class.java,
+            org.junit.function.ThrowingRunnable { getConfiguredTarget("//foo:fission") })
+        Truth.assertThat(e).hasMessageThat().contains("cannot use private API")
+    }
 
-    @SuppressWarnings("unchecked")
-    Sequence<String> result = getResult(Sequence.class);
-    assertThat(result).containsExactly("-wololoo");
-  }
+    @Throws(IOException::class)
+    private fun writeRuleReturning(returns: String?) {
+        writeRuleReturning("foo", "lib.bzl", "bar", returns)
+    }
 
-  private static void assertBlockedFeature(AssertionError e, String feature) {
-    assertThat(e)
-        .hasMessageThat()
-        .contains(
-            String.format("cannot use private API (feature '%s' in CppConfiguration)", feature));
-  }
+    @Throws(IOException::class)
+    private fun writeRuleReturning(path: String?, lib: String?, target: String?, returns: String?) {
+        scratch.file(
+            path + "/" + lib,
+            "Info = provider()",
+            "def _impl(ctx):",
+            "  return Info(",
+            "    result = " + returns,
+            "  )",
+            "foo = rule(implementation=_impl, fragments = ['cpp'])"
+        )
+        scratch.appendFile(
+            path + "/BUILD", "load(':" + lib + "', 'foo')", "foo(name='" + target + "')"
+        )
+    }
 
-  @Test
-  public void testExpandedApiBlocked() throws Exception {
-    writeRuleReturning("foo", "pic.bzl", "pic", "ctx.fragments.cpp.force_pic()");
-    writeRuleReturning("foo", "lcov.bzl", "lcov", "ctx.fragments.cpp.generate_llvm_lcov()");
-    writeRuleReturning("foo", "fdo.bzl", "fdo", "ctx.fragments.cpp.fdo_instrument()");
-    writeRuleReturning(
-        "foo", "hdr_deps.bzl", "hdr_deps", "ctx.fragments.cpp.process_headers_in_dependencies()");
-    writeRuleReturning("foo", "save.bzl", "save", "ctx.fragments.cpp.save_feature_state()");
-    writeRuleReturning(
-        "foo",
-        "fission.bzl",
-        "fission",
-        "ctx.fragments.cpp.fission_active_for_current_compilation_mode()");
-    AssertionError e;
-    e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//foo:pic"));
-    assertBlockedFeature(e, "force_pic");
-    e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//foo:lcov"));
-    assertBlockedFeature(e, "generate_llvm_lcov");
-    e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//foo:fdo"));
-    assertBlockedFeature(e, "fdo_instrument");
-    e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//foo:hdr_deps"));
-    assertThat(e).hasMessageThat().contains("cannot use private API");
-    e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//foo:save"));
-    assertThat(e).hasMessageThat().contains("cannot use private API");
-    e = assertThrows(AssertionError.class, () -> getConfiguredTarget("//foo:fission"));
-    assertThat(e).hasMessageThat().contains("cannot use private API");
-  }
+    @Throws(java.lang.Exception::class)
+    private fun <T> getResult(type: java.lang.Class<T?>?): T? {
+        return getStarlarkProvider(getConfiguredTarget("//foo:bar"), "Info").getValue("result", type)
+    }
 
-  private void writeRuleReturning(String returns) throws IOException {
-    writeRuleReturning("foo", "lib.bzl", "bar", returns);
-  }
-
-  private void writeRuleReturning(String path, String lib, String target, String returns)
-      throws IOException {
-    scratch.file(
-        path + "/" + lib,
-        "Info = provider()",
-        "def _impl(ctx):",
-        "  return Info(",
-        "    result = " + returns,
-        "  )",
-        "foo = rule(implementation=_impl, fragments = ['cpp'])");
-    scratch.appendFile(
-        path + "/BUILD", "load(':" + lib + "', 'foo')", "foo(name='" + target + "')");
-  }
-
-  private <T> T getResult(Class<T> type) throws Exception {
-    return getStarlarkProvider(getConfiguredTarget("//foo:bar"), "Info").getValue("result", type);
-  }
+    companion object {
+        private fun assertBlockedFeature(e: java.lang.AssertionError?, feature: String?) {
+            Truth.assertThat(e)
+                .hasMessageThat()
+                .contains(
+                    String.format("cannot use private API (feature '%s' in CppConfiguration)", feature)
+                )
+        }
+    }
 }

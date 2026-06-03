@@ -11,80 +11,61 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
+import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider
 
-import static com.google.common.truth.Truth.assertThat;
+/** Tests for `native.existing_rule` and `native.existing_rules` functions.  */
+@RunWith(JUnit4::class)
+class NativeExistingRulesTest : BuildViewTestCase() {
+    private var testStarlarkBuiltin: TestStarlarkBuiltin? = null // initialized by createRuleClassProvider()
 
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.testutil.TestRuleClassProvider;
-import java.util.HashMap;
-import java.util.Map;
-import net.starlark.java.annot.Param;
-import net.starlark.java.annot.StarlarkBuiltin;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.Dict;
-import net.starlark.java.eval.Mutability;
-import net.starlark.java.eval.Starlark;
-import net.starlark.java.eval.StarlarkInt;
-import net.starlark.java.eval.StarlarkList;
-import net.starlark.java.eval.StarlarkValue;
-import net.starlark.java.eval.Tuple;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @StarlarkBuiltin(name = "test")
+    private class TestStarlarkBuiltin : StarlarkValue {
+        private val saved: MutableMap<String?, Any?> = HashMap<String?, Any?>()
 
-/** Tests for {@code native.existing_rule} and {@code native.existing_rules} functions. */
-@RunWith(JUnit4.class)
-public class NativeExistingRulesTest extends BuildViewTestCase {
-  private TestStarlarkBuiltin testStarlarkBuiltin; // initialized by createRuleClassProvider()
-
-  @StarlarkBuiltin(name = "test")
-  private static final class TestStarlarkBuiltin implements StarlarkValue {
-
-    private final Map<String, Object> saved = new HashMap<>();
-
-    @StarlarkMethod(
-        name = "save",
-        parameters = {
-          @Param(name = "name", doc = "Name under which to save the value"),
-          @Param(name = "value", doc = "Value to save")
-        },
-        doc = "Saves a Starlark value for testing from Java")
-    public synchronized void save(String name, Object value) {
-      saved.put(name, value);
+        @StarlarkMethod(
+            name = "save",
+            parameters = [net.starlark.java.annot.Param(
+                name = "name",
+                doc = "Name under which to save the value"
+            ), net.starlark.java.annot.Param(name = "value", doc = "Value to save")],
+            doc = "Saves a Starlark value for testing from Java"
+        )
+        @kotlin.jvm.Synchronized
+        fun save(name: String?, value: Any?) {
+            saved.put(name, value)
+        }
     }
-  }
 
-  @Override
-  protected ConfiguredRuleClassProvider createRuleClassProvider() {
-    ConfiguredRuleClassProvider.Builder builder = new ConfiguredRuleClassProvider.Builder();
-    TestRuleClassProvider.addStandardRules(builder);
-    testStarlarkBuiltin = new TestStarlarkBuiltin();
-    builder.addBzlToplevel("test", testStarlarkBuiltin);
-    return builder.build();
-  }
+    override fun createRuleClassProvider(): ConfiguredRuleClassProvider {
+        val builder: ConfiguredRuleClassProvider.Builder = Builder()
+        TestRuleClassProvider.addStandardRules(builder)
+        testStarlarkBuiltin = com.google.devtools.build.lib.packages.NativeExistingRulesTest.TestStarlarkBuiltin()
+        builder.addBzlToplevel("test", testStarlarkBuiltin)
+        return builder.build()
+    }
 
-  private Object getSaved(String name) {
-    return testStarlarkBuiltin.saved.get(name);
-  }
+    private fun getSaved(name: String?): Any? {
+        return testStarlarkBuiltin.saved.get(name)
+    }
 
-  @Test
-  public void existingRule_handlesSelect() throws Exception {
-    scratch.file("test/starlark/BUILD");
-    scratch.file(
-        "test/starlark/rulestr.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun existingRule_handlesSelect() {
+        scratch.file("test/starlark/BUILD")
+        scratch.file(
+            "test/starlark/rulestr.bzl",
+            """
         def rule_dict(name):
             return native.existing_rule(name)
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "test/getrule/BUILD",
-        """
+        scratch.file(
+            "test/getrule/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         load("//test/starlark:rulestr.bzl", "rule_dict")
 
@@ -94,19 +75,22 @@ public class NativeExistingRulesTest extends BuildViewTestCase {
         )
 
         rule_dict("x")
-        """);
+        
+        """.trimIndent()
+        )
 
-    // Parse the BUILD file, to make sure select() makes it out of native.existing_rule().
-    assertThat(getConfiguredTarget("//test/getrule:x")).isNotNull();
-  }
+        // Parse the BUILD file, to make sure select() makes it out of native.existing_rule().
+        assertThat(getConfiguredTarget("//test/getrule:x")).isNotNull()
+    }
 
-  // Regression test for b/355432322
-  @Test
-  public void existingRule_handlesSelectWithNoneValues_forLabelValuedAttributes() throws Exception {
-    scratch.file("test/starlark/BUILD");
-    scratch.file(
-        "test/starlark/rulestr.bzl",
-        """
+    // Regression test for b/355432322
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun existingRule_handlesSelectWithNoneValues_forLabelValuedAttributes() {
+        scratch.file("test/starlark/BUILD")
+        scratch.file(
+            "test/starlark/rulestr.bzl",
+            """
         def save_dep(rule_name):
             r = native.existing_rule(rule_name)
             test.save("dep", r["dep"])
@@ -120,11 +104,13 @@ public class NativeExistingRulesTest extends BuildViewTestCase {
                 "dep": attr.label(),
             },
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "test/getrule/BUILD",
-        """
+        scratch.file(
+            "test/getrule/BUILD",
+            """
         load("//test/starlark:rulestr.bzl", "my_rule", "save_dep")
 
         # Needed to avoid select() being eliminated as trivial.
@@ -142,53 +128,65 @@ public class NativeExistingRulesTest extends BuildViewTestCase {
         )
 
         save_dep("x")
-        """);
+        
+        """.trimIndent()
+        )
 
-    // Parse the BUILD file, to make sure select() makes it out of native.existing_rule().
-    assertThat(getConfiguredTarget("//test/getrule:x")).isNotNull();
+        // Parse the BUILD file, to make sure select() makes it out of native.existing_rule().
+        assertThat(getConfiguredTarget("//test/getrule:x")).isNotNull()
 
-    assertThat(getSaved("dep"))
-        .isEqualTo(
-            SelectorList.of(
-                new SelectorValue(
-                    ImmutableMap.of(
-                        Label.parseCanonicalUnchecked("//test/getrule:config"),
-                        Starlark.NONE,
-                        Label.parseCanonicalUnchecked("//conditions:default"),
-                        Starlark.NONE),
-                    "")));
-  }
+        Truth.assertThat(getSaved("dep"))
+            .isEqualTo(
+                SelectorList.of(
+                    SelectorValue(
+                        com.google.common.collect.ImmutableMap.of<K?, V?>(
+                            Label.parseCanonicalUnchecked("//test/getrule:config"),
+                            Starlark.NONE,
+                            Label.parseCanonicalUnchecked("//conditions:default"),
+                            Starlark.NONE
+                        ),
+                        ""
+                    )
+                )
+            )
+    }
 
-  @Test
-  public void existingRule_returnsNone() throws Exception {
-    scratch.file(
-        "test/rulestr.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun existingRule_returnsNone() {
+        scratch.file(
+            "test/rulestr.bzl",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         def test_rule(name, x):
             print(native.existing_rule(x))
             if native.existing_rule(x) == None:
                 cc_library(name = name)
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load("//test:rulestr.bzl", "test_rule")
 
         test_rule("a", "does not exist")
 
         test_rule("b", "BUILD")
-        """); // exists, but as a target and not a rule
+        
+        """.trimIndent()
+        ) // exists, but as a target and not a rule
 
-    assertThat(getConfiguredTarget("//test:a")).isNotNull();
-    assertThat(getConfiguredTarget("//test:b")).isNotNull();
-  }
+        assertThat(getConfiguredTarget("//test:a")).isNotNull()
+        assertThat(getConfiguredTarget("//test:b")).isNotNull()
+    }
 
-  @Test
-  public void existingRule_roundTripsSelect() throws Exception {
-    scratch.file(
-        "test/existing_rule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun existingRule_roundTripsSelect() {
+        scratch.file(
+            "test/existing_rule.bzl",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         def macro():
             s = select({"//foo": ["//bar"]})
@@ -198,10 +196,12 @@ public class NativeExistingRulesTest extends BuildViewTestCase {
 
             # The value returned here should round-trip fine.
             cc_library(name = "y", srcs = native.existing_rule("x")["srcs"])
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         load("//test:existing_rule.bzl", "macro")
 
@@ -211,37 +211,52 @@ public class NativeExistingRulesTest extends BuildViewTestCase {
             name = "a",
             srcs = [],
         )
-        """);
-    getConfiguredTarget("//test:a");
-    assertThat(getSaved("passed"))
-        .isEqualTo(
-            SelectorList.of(
-                new SelectorValue(
-                    ImmutableMap.of("//foo", StarlarkList.of(Mutability.create("temp"), "//bar")),
-                    "")));
-    // The select key is now a label, the short label string is in canonical form, and the sequence
-    // is represented as tuple instead of list, but the meaning is unchanged.
-    assertThat(getSaved("returned"))
-        .isEqualTo(
-            SelectorList.of(
-                new SelectorValue(
-                    ImmutableMap.of(
-                        Label.parseCanonicalUnchecked("//foo:foo"), Tuple.of("//bar:bar")),
-                    "")));
-  }
+        
+        """.trimIndent()
+        )
+        getConfiguredTarget("//test:a")
+        Truth.assertThat(getSaved("passed"))
+            .isEqualTo(
+                SelectorList.of(
+                    SelectorValue(
+                        com.google.common.collect.ImmutableMap.of<K?, V?>(
+                            "//foo",
+                            StarlarkList.of<String?>(Mutability.create("temp"), "//bar")
+                        ),
+                        ""
+                    )
+                )
+            )
+        // The select key is now a label, the short label string is in canonical form, and the sequence
+        // is represented as tuple instead of list, but the meaning is unchanged.
+        Truth.assertThat(getSaved("returned"))
+            .isEqualTo(
+                SelectorList.of(
+                    SelectorValue(
+                        com.google.common.collect.ImmutableMap.of<K?, V?>(
+                            Label.parseCanonicalUnchecked("//foo:foo"), Tuple.of("//bar:bar")
+                        ),
+                        ""
+                    )
+                )
+            )
+    }
 
-  @Test
-  public void existingRule_labelStringification() throws Exception {
-    scratch.file(
-        "test/existing_rule.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun existingRule_labelStringification() {
+        scratch.file(
+            "test/existing_rule.bzl",
+            """
         def save_deps():
             r = native.existing_rule("b")
             test.save("r['deps']", r["deps"])
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load("//test:existing_rule.bzl", "save_deps")
         load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
@@ -261,20 +276,23 @@ public class NativeExistingRulesTest extends BuildViewTestCase {
         )
 
         save_deps()
-        """);
-    getTarget("//test:b");
-    assertThat(Starlark.toIterable(getSaved("r['deps']")))
-        .containsExactly(":a", "//other_package:a", "@@bazel_tools//test:a")
-        .inOrder();
-  }
+        
+        """.trimIndent()
+        )
+        getTarget("//test:b")
+        Truth.assertThat(Starlark.toIterable(getSaved("r['deps']")))
+            .containsExactly(":a", "//other_package:a", "@@bazel_tools//test:a")
+            .inOrder()
+    }
 
-  @Test
-  public void existingRules_findsRulesAndAttributes() throws Exception {
-    scratch.file("test/BUILD");
-    scratch.file("test/starlark/BUILD");
-    scratch.file(
-        "test/starlark/rulestr.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun existingRules_findsRulesAndAttributes() {
+        scratch.file("test/BUILD")
+        scratch.file("test/starlark/BUILD")
+        scratch.file(
+            "test/starlark/rulestr.bzl",
+            """
         def rule_dict(name):
             return native.existing_rule(name)
 
@@ -288,17 +306,19 @@ public class NativeExistingRulesTest extends BuildViewTestCase {
 
         def test_save(name, value):
             test.save(name, value)
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "test/getrule/BUILD",
-        """
+        scratch.file(
+            "test/getrule/BUILD",
+            """
         load("//test/starlark:rulestr.bzl", "nop_rule", "rule_dict", "rules_dict", "test_save")
 
         genrule(
             name = "a",
             outs = ["a.txt"],
-            cmd = "touch $@",
+            cmd = "touch ${'$'}@",
             licenses = ["notice"],
             output_to_bindir = False,
             tools = ["//test:bla"],
@@ -348,50 +368,54 @@ public class NativeExistingRulesTest extends BuildViewTestCase {
             "adict.keys()",
             adict.keys(),
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    getConfiguredTarget("//test/getrule:BUILD");
-    assertThat(Starlark.toIterable(getSaved("all_str")))
-        .containsExactly("genrule", "a", "nop_rule", "c")
-        .inOrder();
-    assertThat(Starlark.toIterable(getSaved("a_str")))
-        .containsExactly("genrule", "a", ":a.txt", "//test:bla")
-        .inOrder();
-    assertThat(Starlark.toIterable(getSaved("c_str")))
-        .containsExactly("nop_rule", "c", ":a")
-        .inOrder();
-    assertThat(Starlark.toIterable(getSaved("adict.keys()")))
-        .containsAtLeast(
-            "name",
-            "visibility",
-            "transitive_configs",
-            "tags",
-            "generator_name",
-            "generator_function",
-            "generator_location",
-            "features",
-            "compatible_with",
-            "target_compatible_with",
-            "restricted_to",
-            "srcs",
-            "tools",
-            "toolchains",
-            "outs",
-            "cmd",
-            "output_to_bindir",
-            "local",
-            "message",
-            "executable",
-            "stamp",
-            "heuristic_label_expansion",
-            "kind");
-  }
+        getConfiguredTarget("//test/getrule:BUILD")
+        Truth.assertThat(Starlark.toIterable(getSaved("all_str")))
+            .containsExactly("genrule", "a", "nop_rule", "c")
+            .inOrder()
+        Truth.assertThat(Starlark.toIterable(getSaved("a_str")))
+            .containsExactly("genrule", "a", ":a.txt", "//test:bla")
+            .inOrder()
+        Truth.assertThat(Starlark.toIterable(getSaved("c_str")))
+            .containsExactly("nop_rule", "c", ":a")
+            .inOrder()
+        Truth.assertThat(Starlark.toIterable(getSaved("adict.keys()")))
+            .containsAtLeast(
+                "name",
+                "visibility",
+                "transitive_configs",
+                "tags",
+                "generator_name",
+                "generator_function",
+                "generator_location",
+                "features",
+                "compatible_with",
+                "target_compatible_with",
+                "restricted_to",
+                "srcs",
+                "tools",
+                "toolchains",
+                "outs",
+                "cmd",
+                "output_to_bindir",
+                "local",
+                "message",
+                "executable",
+                "stamp",
+                "heuristic_label_expansion",
+                "kind"
+            )
+    }
 
-  @Test
-  public void existingRule_ignoresHiddenAttributes() throws Exception {
-    scratch.file(
-        "test/inc.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun existingRule_ignoresHiddenAttributes() {
+        scratch.file(
+            "test/inc.bzl",
+            """
         def _check_hidden_attr_exists(ctx):
             if ctx.attr._hidden_attr != "hidden_val":
                 fail('ctx.attr._hidden_attr != "hidden_val"')
@@ -411,60 +435,72 @@ public class NativeExistingRulesTest extends BuildViewTestCase {
             test.save("r.keys()", r.keys())
             test.save("r.values()", r.values())
             test.save('"_hidden_attr" in r', "_hidden_attr" in r)
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load("inc.bzl", "f")
 
         f()
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertThat(getConfiguredTarget("//test:rulename")).isNotNull();
-    assertThat(Starlark.toIterable(getSaved("r.keys()")))
-        .containsAtLeast("name", "kind", "normal_attr");
-    assertThat(Starlark.toIterable(getSaved("r.keys()"))).doesNotContain("_hidden_attr");
-    assertThat(Starlark.toIterable(getSaved("r.values()")))
-        .containsAtLeast("rulename", "my_rule", "normal_val");
-    assertThat(Starlark.toIterable(getSaved("r.values()"))).doesNotContain("hidden_val");
-    assertThat((Boolean) getSaved("\"_hidden_attr\" in r")).isFalse();
-  }
+        assertThat(getConfiguredTarget("//test:rulename")).isNotNull()
+        Truth.assertThat(Starlark.toIterable(getSaved("r.keys()")))
+            .containsAtLeast("name", "kind", "normal_attr")
+        Truth.assertThat(Starlark.toIterable(getSaved("r.keys()"))).doesNotContain("_hidden_attr")
+        Truth.assertThat(Starlark.toIterable(getSaved("r.values()")))
+            .containsAtLeast("rulename", "my_rule", "normal_val")
+        Truth.assertThat(Starlark.toIterable(getSaved("r.values()"))).doesNotContain("hidden_val")
+        Truth.assertThat(getSaved("\"_hidden_attr\" in r") as Boolean?).isFalse()
+    }
 
-  @Test
-  public void existingRule_returnsImmutableObject() throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun existingRule_returnsImmutableObject() {
+        scratch.file(
+            "test/BUILD",
+            """
         load("inc.bzl", "f")
 
         f()
-        """);
-    scratch.file(
-        "test/inc.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/inc.bzl",
+            """
         def f():
             native.config_setting(name = "x", define_values = {"key": "value"})
             r = native.existing_rule("x")
             r["no_such_attribute"] = 123
-        """); // mutate the view
+        
+        """.trimIndent()
+        ) // mutate the view
 
-    reporter.removeHandler(failFastHandler);
-    assertThat(getConfiguredTarget("//test:BUILD")).isNull(); // mutation fails
-    assertContainsEvent("can only assign an element in a dictionary or a list");
-  }
+        reporter.removeHandler(failFastHandler)
+        assertThat(getConfiguredTarget("//test:BUILD")).isNull() // mutation fails
+        assertContainsEvent("can only assign an element in a dictionary or a list")
+    }
 
-  @Test
-  public void existingRule_returnsDictLikeObject() throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun existingRule_returnsDictLikeObject() {
+        scratch.file(
+            "test/BUILD",
+            """
         load("inc.bzl", "f")
 
         f()
-        """);
-    scratch.file(
-        "test/inc.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/inc.bzl",
+            """
         def f():
             native.config_setting(name = "x", define_values = {"key": "value"})
             r = native.existing_rule("x")
@@ -479,43 +515,49 @@ public class NativeExistingRulesTest extends BuildViewTestCase {
             test.save("r.get('invalid_attr', 123)", r.get("invalid_attr", 123))
             test.save("'define_values' in r", "define_values" in r)
             test.save("'invalid_attr' in r", "invalid_attr" in r)
-        """);
+        
+        """.trimIndent()
+        )
 
-    Dict<?, ?> expectedDefineValues = Dict.builder().put("key", "value").buildImmutable();
-    assertThat(getConfiguredTarget("//test:BUILD")).isNotNull(); // no error
-    assertThat(Starlark.toIterable(getSaved("[key for key in r]")))
-        .containsAtLeast("define_values", "name", "kind");
-    assertThat(Starlark.toIterable(getSaved("list(r)")))
-        .containsAtLeast("define_values", "name", "kind");
-    assertThat(Starlark.toIterable(getSaved("r.keys()")))
-        .containsAtLeast("define_values", "name", "kind");
-    assertThat(Starlark.toIterable(getSaved("r.values()")))
-        .containsAtLeast(expectedDefineValues, "x", "config_setting");
-    assertThat(Starlark.toIterable(getSaved("r.items()")))
-        .containsAtLeast(
-            Tuple.of("define_values", expectedDefineValues),
-            Tuple.of("name", "x"),
-            Tuple.of("kind", "config_setting"));
-    assertThat(getSaved("r['define_values']")).isEqualTo(expectedDefineValues);
-    assertThat(getSaved("r.get('define_values', 123)")).isEqualTo(expectedDefineValues);
-    assertThat(getSaved("r.get('invalid_attr', 123)")).isEqualTo(StarlarkInt.of(123));
-    assertThat(getSaved("'define_values' in r")).isEqualTo(true);
-    assertThat(getSaved("'invalid_attr' in r")).isEqualTo(false);
-  }
+        val expectedDefineValues: Dict<*, *>? = Dict.builder<Any?, Any?>().put("key", "value").buildImmutable()
+        assertThat(getConfiguredTarget("//test:BUILD")).isNotNull() // no error
+        Truth.assertThat(Starlark.toIterable(getSaved("[key for key in r]")))
+            .containsAtLeast("define_values", "name", "kind")
+        Truth.assertThat(Starlark.toIterable(getSaved("list(r)")))
+            .containsAtLeast("define_values", "name", "kind")
+        Truth.assertThat(Starlark.toIterable(getSaved("r.keys()")))
+            .containsAtLeast("define_values", "name", "kind")
+        Truth.assertThat(Starlark.toIterable(getSaved("r.values()")))
+            .containsAtLeast(expectedDefineValues, "x", "config_setting")
+        Truth.assertThat(Starlark.toIterable(getSaved("r.items()")))
+            .containsAtLeast(
+                Tuple.of("define_values", expectedDefineValues),
+                Tuple.of("name", "x"),
+                Tuple.of("kind", "config_setting")
+            )
+        Truth.assertThat(getSaved("r['define_values']")).isEqualTo(expectedDefineValues)
+        Truth.assertThat(getSaved("r.get('define_values', 123)")).isEqualTo(expectedDefineValues)
+        Truth.assertThat(getSaved("r.get('invalid_attr', 123)")).isEqualTo(StarlarkInt.of(123))
+        Truth.assertThat(getSaved("'define_values' in r")).isEqualTo(true)
+        Truth.assertThat(getSaved("'invalid_attr' in r")).isEqualTo(false)
+    }
 
-  @Test
-  public void existingRule_asDictArgument() throws Exception {
-    scratch.file(
-        "test/test.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun existingRule_asDictArgument() {
+        scratch.file(
+            "test/test.bzl",
+            """
         def save_as_dict(r):
             test.save("type(dict(r))", type(dict(r)))
             test.save('dict(r)["name"]', dict(r)["name"])
             test.save('dict(r)["kind"]', dict(r)["kind"])
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         load("//test:test.bzl", "save_as_dict")
 
@@ -524,30 +566,35 @@ public class NativeExistingRulesTest extends BuildViewTestCase {
         )
 
         save_as_dict(existing_rule("rulename"))
-        """);
-    getConfiguredTarget("//test:rulename");
-    assertThat(getSaved("type(dict(r))")).isEqualTo("dict");
-    assertThat(getSaved("dict(r)[\"name\"]")).isEqualTo("rulename");
-    assertThat(getSaved("dict(r)[\"kind\"]")).isEqualTo("cc_library");
-  }
+        
+        """.trimIndent()
+        )
+        getConfiguredTarget("//test:rulename")
+        Truth.assertThat(getSaved("type(dict(r))")).isEqualTo("dict")
+        Truth.assertThat(getSaved("dict(r)[\"name\"]")).isEqualTo("rulename")
+        Truth.assertThat(getSaved("dict(r)[\"kind\"]")).isEqualTo("cc_library")
+    }
 
-  @Test
-  public void existingRule_asDictUpdateArgument() throws Exception {
-    // We do not test `existing_rule(r).update({...})` because `existing_rule(r)` may be immutable
-    // (as verified by other test cases).
-    scratch.file(
-        "test/test.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun existingRule_asDictUpdateArgument() {
+        // We do not test `existing_rule(r).update({...})` because `existing_rule(r)` may be immutable
+        // (as verified by other test cases).
+        scratch.file(
+            "test/test.bzl",
+            """
         def save_as_updated_dict(r):
             updated_dict = {"name": "dictname", "dictkey": 1}
             updated_dict.update(r)
             test.save('updated_dict["name"]', updated_dict["name"])
             test.save('updated_dict["kind"]', updated_dict["kind"])
             test.save('updated_dict["dictkey"]', updated_dict["dictkey"])
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         load("//test:test.bzl", "save_as_updated_dict")
 
@@ -556,27 +603,32 @@ public class NativeExistingRulesTest extends BuildViewTestCase {
         )
 
         save_as_updated_dict(existing_rule("rulename"))
-        """);
-    getConfiguredTarget("//test:rulename");
-    assertThat(getSaved("updated_dict[\"name\"]")).isEqualTo("rulename");
-    assertThat(getSaved("updated_dict[\"kind\"]")).isEqualTo("cc_library");
-    assertThat(getSaved("updated_dict[\"dictkey\"]")).isEqualTo(StarlarkInt.of(1));
-  }
+        
+        """.trimIndent()
+        )
+        getConfiguredTarget("//test:rulename")
+        Truth.assertThat(getSaved("updated_dict[\"name\"]")).isEqualTo("rulename")
+        Truth.assertThat(getSaved("updated_dict[\"kind\"]")).isEqualTo("cc_library")
+        Truth.assertThat(getSaved("updated_dict[\"dictkey\"]")).isEqualTo(StarlarkInt.of(1))
+    }
 
-  @Test
-  public void existingRule_unionableWithDict() throws Exception {
-    scratch.file(
-        "test/test.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun existingRule_unionableWithDict() {
+        scratch.file(
+            "test/test.bzl",
+            """
         def save_as_union(dict_val, r):
             test.save("dict_val | r", dict_val | r)
             test.save("r | dict_val", r | dict_val)
             dict_val |= r
             test.save("dict_val |= r", dict_val)
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         load("//test:test.bzl", "save_as_union")
 
@@ -591,37 +643,42 @@ public class NativeExistingRulesTest extends BuildViewTestCase {
             },
             existing_rule("rulename"),
         )
-        """);
-    getConfiguredTarget("//test:rulename");
-    Map<String, Object> unionDictWithExistingRule =
-        Dict.cast(getSaved("dict_val | r"), String.class, Object.class, "dict_val | r");
-    assertThat(unionDictWithExistingRule)
-        .containsAtLeast("name", "rulename", "dictkey", StarlarkInt.of(1), "kind", "cc_library");
-    Map<String, Object> unionExistingRuleWithDict =
-        Dict.cast(getSaved("r | dict_val"), String.class, Object.class, "r | dict_val");
-    assertThat(unionExistingRuleWithDict)
-        .containsAtLeast("name", "dictname", "dictkey", StarlarkInt.of(1), "kind", "cc_library");
-    Map<String, Object> inPlaceUnionDictWithExistingRule =
-        Dict.cast(getSaved("dict_val |= r"), String.class, Object.class, "dict_val | r");
-    assertThat(inPlaceUnionDictWithExistingRule)
-        .containsAtLeast("name", "rulename", "dictkey", StarlarkInt.of(1), "kind", "cc_library");
-  }
+        
+        """.trimIndent()
+        )
+        getConfiguredTarget("//test:rulename")
+        val unionDictWithExistingRule: MutableMap<String?, Any?> =
+            Dict.cast<String?, Any?>(getSaved("dict_val | r"), String::class.java, Any::class.java, "dict_val | r")
+        Truth.assertThat(unionDictWithExistingRule)
+            .containsAtLeast("name", "rulename", "dictkey", StarlarkInt.of(1), "kind", "cc_library")
+        val unionExistingRuleWithDict: MutableMap<String?, Any?> =
+            Dict.cast<String?, Any?>(getSaved("r | dict_val"), String::class.java, Any::class.java, "r | dict_val")
+        Truth.assertThat(unionExistingRuleWithDict)
+            .containsAtLeast("name", "dictname", "dictkey", StarlarkInt.of(1), "kind", "cc_library")
+        val inPlaceUnionDictWithExistingRule: MutableMap<String?, Any?> =
+            Dict.cast<String?, Any?>(getSaved("dict_val |= r"), String::class.java, Any::class.java, "dict_val | r")
+        Truth.assertThat(inPlaceUnionDictWithExistingRule)
+            .containsAtLeast("name", "rulename", "dictkey", StarlarkInt.of(1), "kind", "cc_library")
+    }
 
-  @Test
-  public void existingRule_asKwargs() throws Exception {
-    scratch.file(
-        "test/test.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun existingRule_asKwargs() {
+        scratch.file(
+            "test/test.bzl",
+            """
         def save_kwargs(**kwargs):
             test.save('kwargs["name"]', kwargs["name"])
             test.save('kwargs["kind"]', kwargs["kind"])
 
         def save_kwargs_of_existing_rule(name):
             save_kwargs(**native.existing_rule(name))
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         load("//test:test.bzl", "save_kwargs_of_existing_rule")
 
@@ -630,20 +687,23 @@ public class NativeExistingRulesTest extends BuildViewTestCase {
         )
 
         save_kwargs_of_existing_rule("rulename")
-        """);
-    getConfiguredTarget("//test:rulename");
-    assertThat(getSaved("kwargs[\"name\"]")).isEqualTo("rulename");
-    assertThat(getSaved("kwargs[\"kind\"]")).isEqualTo("cc_library");
-  }
+        
+        """.trimIndent()
+        )
+        getConfiguredTarget("//test:rulename")
+        Truth.assertThat(getSaved("kwargs[\"name\"]")).isEqualTo("rulename")
+        Truth.assertThat(getSaved("kwargs[\"kind\"]")).isEqualTo("cc_library")
+    }
 
-  // Regression test for https://github.com/bazelbuild/bazel/issues/16256
-  @Test
-  public void existingRule_encodesToJson() throws Exception {
-    // We need a Starlark rule - native rules can have attribute values that the json encoder
-    // doesn't handle.
-    scratch.file(
-        "test/test.bzl",
-        """
+    // Regression test for https://github.com/bazelbuild/bazel/issues/16256
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun existingRule_encodesToJson() {
+        // We need a Starlark rule - native rules can have attribute values that the json encoder
+        // doesn't handle.
+        scratch.file(
+            "test/test.bzl",
+            """
         def _dummy_impl(ctx):
             pass
 
@@ -662,10 +722,12 @@ public class NativeExistingRulesTest extends BuildViewTestCase {
 
         def save(name, object):
             test.save(name, object)
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load("//test:test.bzl", "json_decode", "json_encode", "save", "test_library")
 
         test_library(
@@ -677,124 +739,145 @@ public class NativeExistingRulesTest extends BuildViewTestCase {
             "foo",
             json_decode(json_encode(existing_rule("foo"))),
         )
-        """);
-    scratch.file("test/foo.cc");
-    getConfiguredTarget("//test:foo");
-    // We test a subset of attributes after an encode-decode round trip because the rule also has
-    // default attributes with default values, which will get encoded to json and which will change
-    // whenever default attributes get introduced, making string comparison of encoded json fragile.
-    Map<String, Object> jsonRoundTripValue =
-        Dict.cast(
-            getSaved("foo"), String.class, Object.class, "json round trip of existing_rule('foo')");
-    assertThat(jsonRoundTripValue)
-        .containsAtLeast(
-            "name", "foo", "kind", "test_library", "srcs", StarlarkList.immutableOf(":foo.cc"));
-  }
+        
+        """.trimIndent()
+        )
+        scratch.file("test/foo.cc")
+        getConfiguredTarget("//test:foo")
+        // We test a subset of attributes after an encode-decode round trip because the rule also has
+        // default attributes with default values, which will get encoded to json and which will change
+        // whenever default attributes get introduced, making string comparison of encoded json fragile.
+        val jsonRoundTripValue: MutableMap<String?, Any?> =
+            Dict.cast<String?, Any?>(
+                getSaved("foo"), String::class.java, Any::class.java, "json round trip of existing_rule('foo')"
+            )
+        Truth.assertThat(jsonRoundTripValue)
+            .containsAtLeast(
+                "name", "foo", "kind", "test_library", "srcs", StarlarkList.immutableOf<String?>(":foo.cc")
+            )
+    }
 
-  @Test
-  public void existingRules_returnsImmutableObject() throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun existingRules_returnsImmutableObject() {
+        scratch.file(
+            "test/BUILD",
+            """
         load("inc.bzl", "f")
 
         f()
-        """);
-    scratch.file(
-        "test/inc.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/inc.bzl",
+            """
         def f():
             native.config_setting(name = "x", define_values = {"key": "value"})
             rs = native.existing_rules()
             rs["no_such_rule"] = {"name": "no_such_rule", "kind": "config_setting"}
-        """); // mutate
+        
+        """.trimIndent()
+        ) // mutate
 
-    reporter.removeHandler(failFastHandler);
-    assertThat(getConfiguredTarget("//test:BUILD")).isNull(); // mutation fails
-    assertContainsEvent("can only assign an element in a dictionary or a list");
-  }
+        reporter.removeHandler(failFastHandler)
+        assertThat(getConfiguredTarget("//test:BUILD")).isNull() // mutation fails
+        assertContainsEvent("can only assign an element in a dictionary or a list")
+    }
 
-  @Test
-  public void existingRules_returnsDeeplyImmutableView() throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun existingRules_returnsDeeplyImmutableView() {
+        scratch.file(
+            "test/BUILD",
+            """
         load("inc.bzl", "f")
 
         f()
-        """);
-    scratch.file(
-        "test/inc.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/inc.bzl",
+            """
         def f():
             native.config_setting(name = "x", define_values = {"key": "value"})
             rs = native.existing_rules()
             rs["x"]["define_values"]["key"] = 123
-        """); // mutate an attribute value within the view
+        
+        """.trimIndent()
+        ) // mutate an attribute value within the view
 
-    reporter.removeHandler(failFastHandler);
-    assertThat(getConfiguredTarget("//test:BUILD")).isNull();
-    assertContainsEvent("trying to mutate a frozen dict value");
-  }
+        reporter.removeHandler(failFastHandler)
+        assertThat(getConfiguredTarget("//test:BUILD")).isNull()
+        assertContainsEvent("trying to mutate a frozen dict value")
+    }
 
-  @Test
-  public void existingRules_returnsDictLikeObject() throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun existingRules_returnsDictLikeObject() {
+        scratch.file(
+            "test/BUILD",
+            """
         load("inc.bzl", "f")
 
         f()
-        """);
-    scratch.file(
-        "test/inc.bzl", //
-        "def f():",
-        "  native.config_setting(name='x', define_values={'key_x': 'value_x'})",
-        "  native.config_setting(name='y', define_values={'key_y': 'value_y'})",
-        "  rs = native.existing_rules()",
-        "  print('rs == %s' % repr(rs))",
-        "  test.save('[key for key in rs]', [key for key in rs])",
-        "  test.save('list(rs)', list(rs))",
-        "  test.save('rs.keys()', rs.keys())",
-        "  test.save(\"[v['name'] for v in rs.values()]\", [v['name'] for v in rs.values()])",
-        "  test.save(\"[(i[0], i[1]['name']) for i in rs.items()]\", [(i[0], i[1]['name']) for i in"
-            + " rs.items()])",
-        "  test.save(\"rs['x']['define_values']\", rs['x']['define_values'])",
-        "  test.save(\"rs.get('x', {'name': 'z'})['name']\", rs.get('x', {'name': 'z'})['name'])",
-        "  test.save(\"rs.get('invalid_rule', {'name': 'invalid_rule'})\", rs.get('invalid_rule',"
-            + " {'name': 'invalid_rule'}))",
-        "  test.save(\"'x' in rs\", 'x' in rs)",
-        "  test.save(\"'invalid_rule' in rs\", 'invalid_rule' in rs)");
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/inc.bzl",  //
+            "def f():",
+            "  native.config_setting(name='x', define_values={'key_x': 'value_x'})",
+            "  native.config_setting(name='y', define_values={'key_y': 'value_y'})",
+            "  rs = native.existing_rules()",
+            "  print('rs == %s' % repr(rs))",
+            "  test.save('[key for key in rs]', [key for key in rs])",
+            "  test.save('list(rs)', list(rs))",
+            "  test.save('rs.keys()', rs.keys())",
+            "  test.save(\"[v['name'] for v in rs.values()]\", [v['name'] for v in rs.values()])",
+            "  test.save(\"[(i[0], i[1]['name']) for i in rs.items()]\", [(i[0], i[1]['name']) for i in"
+                    + " rs.items()])",
+            "  test.save(\"rs['x']['define_values']\", rs['x']['define_values'])",
+            "  test.save(\"rs.get('x', {'name': 'z'})['name']\", rs.get('x', {'name': 'z'})['name'])",
+            "  test.save(\"rs.get('invalid_rule', {'name': 'invalid_rule'})\", rs.get('invalid_rule',"
+                    + " {'name': 'invalid_rule'}))",
+            "  test.save(\"'x' in rs\", 'x' in rs)",
+            "  test.save(\"'invalid_rule' in rs\", 'invalid_rule' in rs)"
+        )
 
-    assertThat(getConfiguredTarget("//test:BUILD")).isNotNull(); // no error
-    assertThat(Starlark.toIterable(getSaved("[key for key in rs]"))).containsExactly("x", "y");
-    assertThat(Starlark.toIterable(getSaved("list(rs)"))).containsExactly("x", "y");
-    assertThat(Starlark.toIterable(getSaved("rs.keys()"))).containsExactly("x", "y");
-    assertThat(Starlark.toIterable(getSaved("[v['name'] for v in rs.values()]")))
-        .containsExactly("x", "y");
-    assertThat(Starlark.toIterable(getSaved("[(i[0], i[1]['name']) for i in rs.items()]")))
-        .containsExactly(Tuple.of("x", "x"), Tuple.of("y", "y"));
-    assertThat(getSaved("rs['x']['define_values']"))
-        .isEqualTo(Dict.builder().put("key_x", "value_x").buildImmutable());
-    assertThat(getSaved("rs.get('x', {'name': 'z'})['name']")).isEqualTo("x");
-    assertThat(getSaved("rs.get('invalid_rule', {'name': 'invalid_rule'})"))
-        .isEqualTo(Dict.builder().put("name", "invalid_rule").buildImmutable());
-    assertThat(getSaved("'x' in rs")).isEqualTo(true);
-    assertThat(getSaved("'invalid_rule' in rs")).isEqualTo(false);
-  }
+        assertThat(getConfiguredTarget("//test:BUILD")).isNotNull() // no error
+        Truth.assertThat(Starlark.toIterable(getSaved("[key for key in rs]"))).containsExactly("x", "y")
+        Truth.assertThat(Starlark.toIterable(getSaved("list(rs)"))).containsExactly("x", "y")
+        Truth.assertThat(Starlark.toIterable(getSaved("rs.keys()"))).containsExactly("x", "y")
+        Truth.assertThat(Starlark.toIterable(getSaved("[v['name'] for v in rs.values()]")))
+            .containsExactly("x", "y")
+        Truth.assertThat(Starlark.toIterable(getSaved("[(i[0], i[1]['name']) for i in rs.items()]")))
+            .containsExactly(Tuple.of("x", "x"), Tuple.of("y", "y"))
+        Truth.assertThat(getSaved("rs['x']['define_values']"))
+            .isEqualTo(Dict.builder<Any?, Any?>().put("key_x", "value_x").buildImmutable())
+        Truth.assertThat(getSaved("rs.get('x', {'name': 'z'})['name']")).isEqualTo("x")
+        Truth.assertThat(getSaved("rs.get('invalid_rule', {'name': 'invalid_rule'})"))
+            .isEqualTo(Dict.builder<Any?, Any?>().put("name", "invalid_rule").buildImmutable())
+        Truth.assertThat(getSaved("'x' in rs")).isEqualTo(true)
+        Truth.assertThat(getSaved("'invalid_rule' in rs")).isEqualTo(false)
+    }
 
-  @Test
-  public void existingRules_returnsSnapshotOfOnlyRulesInstantiatedUpToThatPoint() throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun existingRules_returnsSnapshotOfOnlyRulesInstantiatedUpToThatPoint() {
+        scratch.file(
+            "test/BUILD",
+            """
         load("inc.bzl", "f")
 
         f()
-        """);
-    scratch.file(
-        "test/inc.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/inc.bzl",
+            """
         def f():
             native.config_setting(name = "x", define_values = {"key_x": "value_x"})
             rs1 = native.existing_rules()
@@ -805,22 +888,25 @@ public class NativeExistingRulesTest extends BuildViewTestCase {
             test.save("rs1.keys()", rs1.keys())
             test.save("rs2.keys()", rs2.keys())
             test.save("rs3.keys()", rs3.keys())
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertThat(getConfiguredTarget("//test:BUILD")).isNotNull(); // no error
-    assertThat(Starlark.toIterable(getSaved("rs1.keys()"))).containsExactly("x");
-    assertThat(Starlark.toIterable(getSaved("rs2.keys()"))).containsExactly("x", "y");
-    assertThat(Starlark.toIterable(getSaved("rs3.keys()"))).containsExactly("x", "y", "z");
-  }
+        assertThat(getConfiguredTarget("//test:BUILD")).isNotNull() // no error
+        Truth.assertThat(Starlark.toIterable(getSaved("rs1.keys()"))).containsExactly("x")
+        Truth.assertThat(Starlark.toIterable(getSaved("rs2.keys()"))).containsExactly("x", "y")
+        Truth.assertThat(Starlark.toIterable(getSaved("rs3.keys()"))).containsExactly("x", "y", "z")
+    }
 
-  // Regression test for https://github.com/bazelbuild/bazel/issues/16256
-  @Test
-  public void existingRules_encodeToJson() throws Exception {
-    // We need a Starlark rule - native rules can have attribute values that the json encoder
-    // doesn't handle.
-    scratch.file(
-        "test/test.bzl",
-        """
+    // Regression test for https://github.com/bazelbuild/bazel/issues/16256
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun existingRules_encodeToJson() {
+        // We need a Starlark rule - native rules can have attribute values that the json encoder
+        // doesn't handle.
+        scratch.file(
+            "test/test.bzl",
+            """
         def _dummy_impl(ctx):
             pass
 
@@ -839,10 +925,12 @@ public class NativeExistingRulesTest extends BuildViewTestCase {
 
         def save(name, object):
             test.save(name, object)
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load("//test:test.bzl", "json_decode", "json_encode", "save", "test_library")
 
         test_library(
@@ -859,45 +947,53 @@ public class NativeExistingRulesTest extends BuildViewTestCase {
             "rules",
             json_decode(json_encode(existing_rules())),
         )
-        """);
-    scratch.file("test/foo.cc");
-    getConfiguredTarget("//test:bar");
-    // We test a subset of attributes after an encode-decode round trip because the rule also has
-    // default attributes with default values, which will get encoded to json and which will change
-    // whenever default attributes get introduced, making string comparison of encoded json fragile.
-    Dict<String, Object> jsonRoundTripRulesValue =
-        Dict.cast(
-            getSaved("rules"), String.class, Object.class, "json round trip of `existing_rules()`");
-    assertThat(jsonRoundTripRulesValue.keySet()).containsExactly("foo", "bar");
-    Map<String, Object> jsonRoundTripFooValue =
-        Dict.cast(
-            jsonRoundTripRulesValue.get("foo"),
-            String.class,
-            Object.class,
-            "json round trip of `existing_rule('foo')`");
-    assertThat(jsonRoundTripFooValue)
-        .containsAtLeast(
-            "name", "foo", "kind", "test_library", "srcs", StarlarkList.immutableOf(":foo.cc"));
-    Map<String, Object> jsonRoundTripBarValue =
-        Dict.cast(
-            jsonRoundTripRulesValue.get("bar"),
-            String.class,
-            Object.class,
-            "json round trip of `existing_rule('bar')`");
-    assertThat(jsonRoundTripBarValue)
-        .containsAtLeast(
-            "name", "bar", "kind", "test_library", "srcs", StarlarkList.immutableOf(":bar.cc"));
-  }
+        
+        """.trimIndent()
+        )
+        scratch.file("test/foo.cc")
+        getConfiguredTarget("//test:bar")
+        // We test a subset of attributes after an encode-decode round trip because the rule also has
+        // default attributes with default values, which will get encoded to json and which will change
+        // whenever default attributes get introduced, making string comparison of encoded json fragile.
+        val jsonRoundTripRulesValue: Dict<String?, Any?> =
+            Dict.cast<String?, Any?>(
+                getSaved("rules"), String::class.java, Any::class.java, "json round trip of `existing_rules()`"
+            )
+        Truth.assertThat(jsonRoundTripRulesValue.keys).containsExactly("foo", "bar")
+        val jsonRoundTripFooValue: MutableMap<String?, Any?> =
+            Dict.cast<String?, Any?>(
+                jsonRoundTripRulesValue.get("foo"),
+                String::class.java,
+                Any::class.java,
+                "json round trip of `existing_rule('foo')`"
+            )
+        Truth.assertThat(jsonRoundTripFooValue)
+            .containsAtLeast(
+                "name", "foo", "kind", "test_library", "srcs", StarlarkList.immutableOf<String?>(":foo.cc")
+            )
+        val jsonRoundTripBarValue: MutableMap<String?, Any?> =
+            Dict.cast<String?, Any?>(
+                jsonRoundTripRulesValue.get("bar"),
+                String::class.java,
+                Any::class.java,
+                "json round trip of `existing_rule('bar')`"
+            )
+        Truth.assertThat(jsonRoundTripBarValue)
+            .containsAtLeast(
+                "name", "bar", "kind", "test_library", "srcs", StarlarkList.immutableOf<String?>(":bar.cc")
+            )
+    }
 
-  @Test
-  public void existingRule_roundTripThroughRule() throws Exception {
-    // Verify that the set of native attributes captured by native.existing_rule() are
-    // round-trippable (e.g. we don't attempt to capture computed defaults, etc.), with the
-    // exception of name/kind pseudo-attributes, and restricted_to/visibility which have special
-    // semantics.
-    scratch.file(
-        "test/macros.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun existingRule_roundTripThroughRule() {
+        // Verify that the set of native attributes captured by native.existing_rule() are
+        // round-trippable (e.g. we don't attempt to capture computed defaults, etc.), with the
+        // exception of name/kind pseudo-attributes, and restricted_to/visibility which have special
+        // semantics.
+        scratch.file(
+            "test/macros.bzl",
+            """
         def lib(name, **kwargs):
             native.filegroup(name=name, **kwargs)
 
@@ -913,20 +1009,24 @@ public class NativeExistingRulesTest extends BuildViewTestCase {
             test.save("src_attrs", src_attrs)
             native.filegroup(name = name, **src_attrs)
             test.save("copy_attrs", get_round_trippable_attrs(name))
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load(":macros.bzl", "lib", "copy")
         lib(name = "a", srcs = ["BUILD"])
         copy(name = "b", src = "a")
-        """);
-    getConfiguredTarget("//test:b");
-    Dict<String, Object> srcAttrs =
-        Dict.cast(getSaved("src_attrs"), String.class, Object.class, "copy_args");
-    Dict<String, Object> copyAttrs =
-        Dict.cast(getSaved("copy_attrs"), String.class, Object.class, "copy_attrs");
+        
+        """.trimIndent()
+        )
+        getConfiguredTarget("//test:b")
+        val srcAttrs: Dict<String?, Any?> =
+            Dict.cast<String?, Any?>(getSaved("src_attrs"), String::class.java, Any::class.java, "copy_args")
+        val copyAttrs: Dict<String?, Any?> =
+            Dict.cast<String?, Any?>(getSaved("copy_attrs"), String::class.java, Any::class.java, "copy_attrs")
 
-    assertThat(copyAttrs.entrySet()).containsExactlyElementsIn(srcAttrs.entrySet());
-  }
+        Truth.assertThat(copyAttrs.entries).containsExactlyElementsIn(srcAttrs.entries)
+    }
 }

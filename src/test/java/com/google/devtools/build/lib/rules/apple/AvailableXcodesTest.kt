@@ -11,45 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.apple
 
-package com.google.devtools.build.lib.rules.apple;
+import com.google.devtools.build.lib.skyframe.BzlLoadValue.keyForBuild
+import net.starlark.java.eval.Sequence
+import org.junit.Test
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.skyframe.BzlLoadValue.keyForBuild;
-
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.Provider;
-import com.google.devtools.build.lib.packages.StarlarkProvider;
-import com.google.devtools.build.lib.packages.StructImpl;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import net.starlark.java.eval.Sequence;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Unit tests for the {@code available_xcodes} rule. */
-@RunWith(JUnit4.class)
-public final class AvailableXcodesTest extends BuildViewTestCase {
-  private static final Provider.Key AVAILABLE_XCODES_PROVIDER_KEY =
-      new StarlarkProvider.Key(
-          keyForBuild(Label.parseCanonicalUnchecked("@build_bazel_apple_support//xcode:available_xcodes.bzl")),
-          "AvailableXcodesInfo");
-
-  private static final Provider.Key XCODE_VERSION_PROPERTIES_PROVIDER_KEY =
-      new StarlarkProvider.Key(
-          keyForBuild(Label.parseCanonicalUnchecked("@build_bazel_apple_support//xcode:xcode_version.bzl")),
-          "XcodeVersionPropertiesInfo");
-
-  @Test
-  public void testXcodeVersionCanBeReadFromNative() throws Exception {
-    if (TestConstants.PRODUCT_NAME.equals("bazel")) {
-      return; // TODO(bazel-team@): Key for AvailableXcodesInfo is wrong
-    }
-    scratch.file(
-        "examples/apple/BUILD",
-        """
+/** Unit tests for the `available_xcodes` rule.  */
+@RunWith(JUnit4::class)
+class AvailableXcodesTest : BuildViewTestCase() {
+    @Test
+    @Throws(Exception::class)
+    fun testXcodeVersionCanBeReadFromNative() {
+        if (TestConstants.PRODUCT_NAME == "bazel") {
+            return  // TODO(bazel-team@): Key for AvailableXcodesInfo is wrong
+        }
+        scratch.file(
+            "examples/apple/BUILD",
+            """
         load("@build_bazel_apple_support//xcode:available_xcodes.bzl", "available_xcodes")
         load("@build_bazel_apple_support//xcode:xcode_version.bzl", "xcode_version")
 
@@ -81,35 +60,39 @@ public final class AvailableXcodesTest extends BuildViewTestCase {
             default_watchos_sdk_version = "10.1",
             version = "9",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget nativeTarget = getConfiguredTarget("//examples/apple:my_xcodes");
-    StructImpl availableXcodesInfo = (StructImpl) nativeTarget.get(AVAILABLE_XCODES_PROVIDER_KEY);
-    ConfiguredTarget version8 = getConfiguredTarget("//examples/apple:xcode_8");
-    StructImpl version8properties =
-        (StructImpl) version8.get(XCODE_VERSION_PROPERTIES_PROVIDER_KEY);
-    ConfiguredTarget version9 = getConfiguredTarget("//examples/apple:xcode_9");
-    StructImpl version9properties =
-        (StructImpl) version9.get(XCODE_VERSION_PROPERTIES_PROVIDER_KEY);
-    Sequence<StructImpl> availableVersions =
-        Sequence.cast(
-            availableXcodesInfo.getValue("available_versions"),
-            StructImpl.class,
-            "available_versions");
-    assertThat(availableVersions).hasSize(2);
-    assertThat(availableVersions.get(0).getValue("xcode_version_properties"))
-        .isEqualTo(version8properties);
-    assertThat(availableVersions.get(1).getValue("xcode_version_properties"))
-        .isEqualTo(version9properties);
-    StructImpl defaultVersion = availableXcodesInfo.getValue("default_version", StructImpl.class);
-    assertThat(defaultVersion.getValue("xcode_version_properties")).isEqualTo(version8properties);
-  }
+        val nativeTarget: ConfiguredTarget = getConfiguredTarget("//examples/apple:my_xcodes")
+        val availableXcodesInfo: StructImpl = nativeTarget.get(AVAILABLE_XCODES_PROVIDER_KEY) as StructImpl
+        val version8: ConfiguredTarget = getConfiguredTarget("//examples/apple:xcode_8")
+        val version8properties: StructImpl? =
+            version8.get(XCODE_VERSION_PROPERTIES_PROVIDER_KEY) as StructImpl?
+        val version9: ConfiguredTarget = getConfiguredTarget("//examples/apple:xcode_9")
+        val version9properties: StructImpl? =
+            version9.get(XCODE_VERSION_PROPERTIES_PROVIDER_KEY) as StructImpl?
+        val availableVersions: Sequence<StructImpl?> =
+            Sequence.cast<T?>(
+                availableXcodesInfo.getValue("available_versions"),
+                StructImpl::class.java,
+                "available_versions"
+            )
+        Truth.assertThat(availableVersions).hasSize(2)
+        assertThat(availableVersions.get(0).getValue("xcode_version_properties"))
+            .isEqualTo(version8properties)
+        assertThat(availableVersions.get(1).getValue("xcode_version_properties"))
+            .isEqualTo(version9properties)
+        val defaultVersion: StructImpl = availableXcodesInfo.getValue("default_version", StructImpl::class.java)
+        assertThat(defaultVersion.getValue("xcode_version_properties")).isEqualTo(version8properties)
+    }
 
-  @Test
-  public void testXcodeVersionRequiresDefault() throws Exception {
-    scratch.file(
-        "examples/apple/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testXcodeVersionRequiresDefault() {
+        scratch.file(
+            "examples/apple/BUILD",
+            """
         load("@build_bazel_apple_support//xcode:available_xcodes.bzl", "available_xcodes")
         load("@build_bazel_apple_support//xcode:xcode_version.bzl", "xcode_version")
 
@@ -128,10 +111,25 @@ public final class AvailableXcodesTest extends BuildViewTestCase {
             default_watchos_sdk_version = "9.1",
             version = "8",
         )
-        """);
-    reporter.removeHandler(failFastHandler);
-    getConfiguredTarget("//examples/apple:my_xcodes");
-    assertContainsEvent(
-        "missing value for mandatory attribute 'default' in 'available_xcodes' rule");
-  }
+        
+        """.trimIndent()
+        )
+        reporter.removeHandler(failFastHandler)
+        getConfiguredTarget("//examples/apple:my_xcodes")
+        assertContainsEvent(
+            "missing value for mandatory attribute 'default' in 'available_xcodes' rule"
+        )
+    }
+
+    companion object {
+        private val AVAILABLE_XCODES_PROVIDER_KEY: Provider.Key = Key(
+            keyForBuild(Label.parseCanonicalUnchecked("@build_bazel_apple_support//xcode:available_xcodes.bzl")),
+            "AvailableXcodesInfo"
+        )
+
+        private val XCODE_VERSION_PROPERTIES_PROVIDER_KEY: Provider.Key = Key(
+            keyForBuild(Label.parseCanonicalUnchecked("@build_bazel_apple_support//xcode:xcode_version.bzl")),
+            "XcodeVersionPropertiesInfo"
+        )
+    }
 }

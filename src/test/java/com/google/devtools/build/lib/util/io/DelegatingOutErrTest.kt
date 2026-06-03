@@ -11,71 +11,66 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util.io;
+package com.google.devtools.build.lib.util.io
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.util.StringUtilities.joinLines;
-
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.util.StringUtilities.joinLines
+import org.junit.After
+import org.junit.Test
 
 /**
- * A test for {@link DelegatingOutErr}.
+ * A test for [DelegatingOutErr].
  */
-@RunWith(JUnit4.class)
-public class DelegatingOutErrTest {
+@RunWith(JUnit4::class)
+class DelegatingOutErrTest {
+    private var delegate: DelegatingOutErr? = null
 
-  private DelegatingOutErr delegate;
+    @Before
+    fun createDelegate() {
+        delegate = DelegatingOutErr()
+    }
 
-  @Before
-  public final void createDelegate() {
-    delegate = new DelegatingOutErr();
-  }
+    @After
+    @Throws(Exception::class)
+    fun closeDelegate() {
+        delegate.close()
+    }
 
-  @After
-  public final void closeDelegate() throws Exception {
-    delegate.close();
-  }
+    @Test
+    fun testNewDelegateIsLikeDevNull() {
+        delegate.printOut("Hello, world.\n")
+        delegate.printErr("Feel free to ignore me.\n")
+    }
 
-  @Test
-  public void testNewDelegateIsLikeDevNull() {
-    delegate.printOut("Hello, world.\n");
-    delegate.printErr("Feel free to ignore me.\n");
-  }
+    @Test
+    fun testSubscribeAndUnsubscribeSink() {
+        delegate.printOut("Nobody will listen to this.\n")
+        val sink: RecordingOutErr = RecordingOutErr()
+        delegate.addSink(sink)
+        delegate.printOutLn("Hello, sink.")
+        delegate.removeSink(sink)
+        delegate.printOutLn("... and alone again ...")
+        delegate.addSink(sink)
+        delegate.printOutLn("How are things?")
+        assertThat(sink.outAsLatin1()).isEqualTo("Hello, sink.\nHow are things?\n")
+    }
 
-  @Test
-  public void testSubscribeAndUnsubscribeSink() {
-    delegate.printOut("Nobody will listen to this.\n");
-    RecordingOutErr sink = new RecordingOutErr();
-    delegate.addSink(sink);
-    delegate.printOutLn("Hello, sink.");
-    delegate.removeSink(sink);
-    delegate.printOutLn("... and alone again ...");
-    delegate.addSink(sink);
-    delegate.printOutLn("How are things?");
-    assertThat(sink.outAsLatin1()).isEqualTo("Hello, sink.\nHow are things?\n");
-  }
-
-  @Test
-  public void testSubscribeMultipleSinks() {
-    RecordingOutErr left = new RecordingOutErr();
-    RecordingOutErr right = new RecordingOutErr();
-    delegate.addSink(left);
-    delegate.printOutLn("left only");
-    delegate.addSink(right);
-    delegate.printOutLn("both");
-    delegate.removeSink(left);
-    delegate.printOutLn("right only");
-    delegate.removeSink(right);
-    delegate.printOutLn("silence");
-    delegate.addSink(left);
-    delegate.addSink(right);
-    delegate.printOutLn("left and right");
-    assertThat(left.outAsLatin1()).isEqualTo(joinLines("left only", "both", "left and right", ""));
-    assertThat(right.outAsLatin1())
-        .isEqualTo(joinLines("both", "right only", "left and right", ""));
-  }
+    @Test
+    fun testSubscribeMultipleSinks() {
+        val left: RecordingOutErr = RecordingOutErr()
+        val right: RecordingOutErr = RecordingOutErr()
+        delegate.addSink(left)
+        delegate.printOutLn("left only")
+        delegate.addSink(right)
+        delegate.printOutLn("both")
+        delegate.removeSink(left)
+        delegate.printOutLn("right only")
+        delegate.removeSink(right)
+        delegate.printOutLn("silence")
+        delegate.addSink(left)
+        delegate.addSink(right)
+        delegate.printOutLn("left and right")
+        assertThat(left.outAsLatin1()).isEqualTo(joinLines("left only", "both", "left and right", ""))
+        assertThat(right.outAsLatin1())
+            .isEqualTo(joinLines("both", "right only", "left and right", ""))
+    }
 }

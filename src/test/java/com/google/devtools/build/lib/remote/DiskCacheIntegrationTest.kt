@@ -11,223 +11,182 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote;
+package com.google.devtools.build.lib.remote
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.truth.Truth.assertWithMessage;
-import static com.google.devtools.build.lib.testutil.TestUtils.tmpDirFile;
-import static java.nio.charset.StandardCharsets.UTF_8;
+import build.bazel.remote.execution.v2.Digest
 
-import build.bazel.remote.execution.v2.Digest;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.actions.ActionUploadFinishedEvent;
-import com.google.devtools.build.lib.authandtls.credentialhelper.CredentialModule;
-import com.google.devtools.build.lib.buildtool.util.BuildIntegrationTestCase;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.ExtendedEventHandler;
-import com.google.devtools.build.lib.remote.options.RemoteStartupOptions;
-import com.google.devtools.build.lib.remote.util.DigestUtil;
-import com.google.devtools.build.lib.remote.util.IntegrationTestUtils;
-import com.google.devtools.build.lib.remote.util.IntegrationTestUtils.WorkerInstance;
-import com.google.devtools.build.lib.runtime.BlazeModule;
-import com.google.devtools.build.lib.runtime.BlazeRuntime;
-import com.google.devtools.build.lib.runtime.BlockWaitingModule;
-import com.google.devtools.build.lib.runtime.BuildSummaryStatsModule;
-import com.google.devtools.build.lib.standalone.StandaloneModule;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import com.google.devtools.common.options.OptionsBase;
-import java.io.IOException;
-import java.time.Instant;
-import java.util.ArrayDeque;
-import java.util.Collection;
-import java.util.HashSet;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.ClassRule;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-@RunWith(JUnit4.class)
-public class DiskCacheIntegrationTest extends BuildIntegrationTestCase {
-  // Collect digests of AC entries uploaded to the disk cache during the build.
-  // Filter out actions other than genrules (e.g. WorkspaceStatusAction).
-  private final HashSet<Digest> actionDigests = new HashSet<>();
-  private final ExtendedEventHandler actionDigestCollector =
-      new ExtendedEventHandler() {
-        @Override
-        public void post(Postable obj) {
-          if (obj instanceof ActionUploadFinishedEvent event) {
-            if (!event.action().getMnemonic().equals("Genrule") || event.store() != Store.AC) {
-              return;
+@RunWith(JUnit4::class)
+class DiskCacheIntegrationTest : BuildIntegrationTestCase() {
+    // Collect digests of AC entries uploaded to the disk cache during the build.
+    // Filter out actions other than genrules (e.g. WorkspaceStatusAction).
+    private val actionDigests: HashSet<Digest?> = HashSet<Digest?>()
+    private val actionDigestCollector: ExtendedEventHandler = object : ExtendedEventHandler {
+        override fun post(obj: Postable?) {
+            if (obj is ActionUploadFinishedEvent) {
+                if (!obj.action().getMnemonic().equals("Genrule") || obj.store() !== Store.AC) {
+                    return
+                }
+                actionDigests.add(obj.digest())
             }
-            actionDigests.add(event.digest());
-          }
         }
 
-        @Override
-        public void handle(Event event) {}
-      };
+        override fun handle(event: com.google.devtools.build.lib.events.Event?) {}
+    }
 
-  private DigestUtil digestUtil;
+    private var digestUtil: DigestUtil? = null
 
-  @ClassRule @Rule public static final WorkerInstance worker = IntegrationTestUtils.createWorker();
+    private fun enableRemoteExec(vararg additionalOptions: String?) {
+        addOptions("--remote_executor=grpc://localhost:" + worker.getPort())
+        addOptions(*additionalOptions)
+    }
 
-  private void enableRemoteExec(String... additionalOptions) {
-    addOptions("--remote_executor=grpc://localhost:" + worker.getPort());
-    addOptions(additionalOptions);
-  }
+    private fun enableRemoteCache(vararg additionalOptions: String?) {
+        addOptions("--remote_cache=grpc://localhost:" + worker.getPort())
+        addOptions(*additionalOptions)
+    }
 
-  private void enableRemoteCache(String... additionalOptions) {
-    addOptions("--remote_cache=grpc://localhost:" + worker.getPort());
-    addOptions(additionalOptions);
-  }
+    val startupOptionClasses: com.google.common.collect.ImmutableList<java.lang.Class<out OptionsBase?>?>?
+        get() = com.google.common.collect.ImmutableList.builder<java.lang.Class<out OptionsBase?>?>()
+            .addAll(super.startupOptionClasses)
+            .add(RemoteStartupOptions::class.java)
+            .build()
 
-  private static PathFragment getDiskCacheDir() {
-    PathFragment testTmpDir = PathFragment.create(tmpDirFile().getAbsolutePath());
-    return testTmpDir.getRelative("disk_cache");
-  }
+    @Throws(java.lang.Exception::class)
+    override fun setupOptions() {
+        super.setupOptions()
 
-  @Override
-  protected ImmutableList<Class<? extends OptionsBase>> getStartupOptionClasses() {
-    return ImmutableList.<Class<? extends OptionsBase>>builder()
-        .addAll(super.getStartupOptionClasses())
-        .add(RemoteStartupOptions.class)
-        .build();
-  }
+        addOptions("--disk_cache=" + diskCacheDir)
+    }
 
-  @Override
-  protected void setupOptions() throws Exception {
-    super.setupOptions();
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun setUp() {
+        digestUtil = DigestUtil(SyscallCache.NO_CACHE, getFileSystem().getDigestFunction())
+        events.addHandler(actionDigestCollector)
+    }
 
-    addOptions("--disk_cache=" + getDiskCacheDir());
-  }
+    @org.junit.After
+    @Throws(IOException::class)
+    fun tearDown() {
+        getWorkspace().getFileSystem().getPath(diskCacheDir).deleteTree()
+    }
 
-  @Before
-  public void setUp() throws Exception {
-    digestUtil = new DigestUtil(SyscallCache.NO_CACHE, getFileSystem().getDigestFunction());
-    events.addHandler(actionDigestCollector);
-  }
+    val spawnModules: com.google.common.collect.ImmutableList<BlazeModule?>?
+        get() = com.google.common.collect.ImmutableList.builder<BlazeModule?>()
+            .addAll(super.spawnModules)
+            .add(StandaloneModule())
+            .build()
 
-  @After
-  public void tearDown() throws IOException {
-    getWorkspace().getFileSystem().getPath(getDiskCacheDir()).deleteTree();
-  }
+    @get:Throws(java.lang.Exception::class)
+    val runtimeBuilder: BlazeRuntime.Builder
+        get() = super.runtimeBuilder
+            .addBlazeModule(CredentialModule())
+            .addBlazeModule(RemoteModule())
+            .addBlazeModule(BuildSummaryStatsModule())
+            .addBlazeModule(BlockWaitingModule())
 
-  @Override
-  protected ImmutableList<BlazeModule> getSpawnModules() {
-    return ImmutableList.<BlazeModule>builder()
-        .addAll(super.getSpawnModules())
-        .add(new StandaloneModule())
-        .build();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun hitDiskCache() {
+        // Arrange: Prepare the workspace and populate disk cache.
+        setupWorkspace()
+        buildTarget("//:foobar")
+        Truth.assertThat(actionDigests).hasSize(2)
+        assertRecentlyModified(actionDigests, getBlobDigests("foo", "foobar", "out", "err"))
 
-  @Override
-  protected BlazeRuntime.Builder getRuntimeBuilder() throws Exception {
-    return super.getRuntimeBuilder()
-        .addBlazeModule(new CredentialModule())
-        .addBlazeModule(new RemoteModule())
-        .addBlazeModule(new BuildSummaryStatsModule())
-        .addBlazeModule(new BlockWaitingModule());
-  }
+        // Act: Reset mtime on cache entries and do a clean build.
+        resetRecentlyModified()
+        cleanAndRestartServer()
+        buildTarget("//:foobar")
 
-  @Test
-  public void hitDiskCache() throws Exception {
-    // Arrange: Prepare the workspace and populate disk cache.
-    setupWorkspace();
-    buildTarget("//:foobar");
-    assertThat(actionDigests).hasSize(2);
-    assertRecentlyModified(actionDigests, getBlobDigests("foo", "foobar", "out", "err"));
+        // Assert: Should download action results from cache and refresh mtime on cache entries.
+        events.assertContainsInfo("2 disk cache hit")
+        assertRecentlyModified(actionDigests, getBlobDigests("foo", "foobar", "out", "err"))
+    }
 
-    // Act: Reset mtime on cache entries and do a clean build.
-    resetRecentlyModified();
-    cleanAndRestartServer();
-    buildTarget("//:foobar");
+    @Throws(java.lang.Exception::class)
+    private fun doBlobsReferencedInAcAreMissingFromCasIgnoresAc(vararg additionalOptions: String?) {
+        // Arrange: Prepare the workspace and populate disk cache.
+        setupWorkspace()
+        addOptions(*additionalOptions)
+        buildTarget("//:foobar")
 
-    // Assert: Should download action results from cache and refresh mtime on cache entries.
-    events.assertContainsInfo("2 disk cache hit");
-    assertRecentlyModified(actionDigests, getBlobDigests("foo", "foobar", "out", "err"));
-  }
+        // Act: Delete blobs in CAS from disk cache and do a clean build.
+        getWorkspace().getFileSystem().getPath(diskCacheDir.getRelative("cas")).deleteTree()
+        cleanAndRestartServer()
+        addOptions(*additionalOptions)
+        buildTarget("//:foobar")
 
-  private void doBlobsReferencedInAcAreMissingFromCasIgnoresAc(String... additionalOptions)
-      throws Exception {
-    // Arrange: Prepare the workspace and populate disk cache.
-    setupWorkspace();
-    addOptions(additionalOptions);
-    buildTarget("//:foobar");
+        // Assert: Should ignore the stale AC and rerun the generating action.
+        events.assertDoesNotContainEvent("disk cache hit")
+    }
 
-    // Act: Delete blobs in CAS from disk cache and do a clean build.
-    getWorkspace().getFileSystem().getPath(getDiskCacheDir().getRelative("cas")).deleteTree();
-    cleanAndRestartServer();
-    addOptions(additionalOptions);
-    buildTarget("//:foobar");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun blobsReferencedInAcAreMissingFromCas_ignoresAc() {
+        doBlobsReferencedInAcAreMissingFromCasIgnoresAc()
+    }
 
-    // Assert: Should ignore the stale AC and rerun the generating action.
-    events.assertDoesNotContainEvent("disk cache hit");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun bwob_blobsReferencedInAcAreMissingFromCas_ignoresAc() {
+        doBlobsReferencedInAcAreMissingFromCasIgnoresAc("--remote_download_minimal")
+    }
 
-  @Test
-  public void blobsReferencedInAcAreMissingFromCas_ignoresAc() throws Exception {
-    doBlobsReferencedInAcAreMissingFromCasIgnoresAc();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun bwobAndRemoteExec_blobsReferencedInAcAreMissingFromCas_ignoresAc() {
+        enableRemoteExec("--remote_download_minimal")
+        doBlobsReferencedInAcAreMissingFromCasIgnoresAc()
+    }
 
-  @Test
-  public void bwob_blobsReferencedInAcAreMissingFromCas_ignoresAc() throws Exception {
-    doBlobsReferencedInAcAreMissingFromCasIgnoresAc("--remote_download_minimal");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun bwobAndRemoteCache_blobsReferencedInAcAreMissingFromCas_ignoresAc() {
+        enableRemoteCache("--remote_download_minimal")
+        doBlobsReferencedInAcAreMissingFromCasIgnoresAc()
+    }
 
-  @Test
-  public void bwobAndRemoteExec_blobsReferencedInAcAreMissingFromCas_ignoresAc() throws Exception {
-    enableRemoteExec("--remote_download_minimal");
-    doBlobsReferencedInAcAreMissingFromCasIgnoresAc();
-  }
+    @Throws(java.lang.Exception::class)
+    private fun doRemoteExecWithDiskCache(vararg additionalOptions: String?) {
+        // Arrange: Prepare the workspace and populate disk cache.
+        setupWorkspace()
+        enableRemoteExec(*additionalOptions)
+        buildTarget("//:foobar")
 
-  @Test
-  public void bwobAndRemoteCache_blobsReferencedInAcAreMissingFromCas_ignoresAc() throws Exception {
-    enableRemoteCache("--remote_download_minimal");
-    doBlobsReferencedInAcAreMissingFromCasIgnoresAc();
-  }
+        // Act: Do a clean build.
+        cleanAndRestartServer()
+        enableRemoteExec("--remote_download_minimal")
+        buildTarget("//:foobar")
+    }
 
-  private void doRemoteExecWithDiskCache(String... additionalOptions) throws Exception {
-    // Arrange: Prepare the workspace and populate disk cache.
-    setupWorkspace();
-    enableRemoteExec(additionalOptions);
-    buildTarget("//:foobar");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun remoteExecWithDiskCache_hitDiskCache() {
+        // Download all outputs to populate the disk cache.
+        doRemoteExecWithDiskCache("--remote_download_all")
 
-    // Act: Do a clean build.
-    cleanAndRestartServer();
-    enableRemoteExec("--remote_download_minimal");
-    buildTarget("//:foobar");
-  }
+        // Assert: Should hit the disk cache.
+        events.assertContainsInfo("2 disk cache hit")
+    }
 
-  @Test
-  public void remoteExecWithDiskCache_hitDiskCache() throws Exception {
-    // Download all outputs to populate the disk cache.
-    doRemoteExecWithDiskCache("--remote_download_all");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun bwob_remoteExecWithDiskCache_hitRemoteCache() {
+        doRemoteExecWithDiskCache("--remote_download_minimal")
 
-    // Assert: Should hit the disk cache.
-    events.assertContainsInfo("2 disk cache hit");
-  }
+        // Assert: Should hit the remote cache because blobs referenced by the AC are missing from disk
+        // cache due to BwoB.
+        events.assertContainsInfo("2 remote cache hit")
+    }
 
-  @Test
-  public void bwob_remoteExecWithDiskCache_hitRemoteCache() throws Exception {
-    doRemoteExecWithDiskCache("--remote_download_minimal");
-
-    // Assert: Should hit the remote cache because blobs referenced by the AC are missing from disk
-    // cache due to BwoB.
-    events.assertContainsInfo("2 remote cache hit");
-  }
-
-  @Test
-  public void remoteExecWithDiskCache_inputsNotUploadedToDiskCache() throws Exception {
-    // Arrange: Set up workspace with tree artifact, runfiles, and source file as inputs.
-    write(
-        "defs.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun remoteExecWithDiskCache_inputsNotUploadedToDiskCache() {
+        // Arrange: Set up workspace with tree artifact, runfiles, and source file as inputs.
+        write(
+            "defs.bzl",
+            """
         def _tree_impl(ctx):
             out = ctx.actions.declare_directory(ctx.attr.name + "_tree")
             ctx.actions.run_shell(
@@ -277,11 +236,13 @@ public class DiskCacheIntegrationTest extends BuildIntegrationTestCase {
                 "src": attr.label(mandatory = True, allow_single_file = True),
             },
         )
-        """);
-    write("source_input.txt", "source_content");
-    write(
-        "BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        write("source_input.txt", "source_content")
+        write(
+            "BUILD",
+            """
         load(":defs.bzl", "tree", "runfiles_lib", "consumer")
         tree(name = "my_tree")
         runfiles_lib(name = "my_runfiles")
@@ -291,120 +252,148 @@ public class DiskCacheIntegrationTest extends BuildIntegrationTestCase {
             runfiles_lib = ":my_runfiles",
             src = "source_input.txt",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    enableRemoteExec();
-    buildTarget("//:my_consumer");
+        enableRemoteExec()
+        buildTarget("//:my_consumer")
 
-    // Assert: The tree artifact content, runfiles content, and source content should be in the
-    // remote cache but NOT in the disk cache (inputs should only be uploaded to remote, not disk
-    // cache).
-    Digest treeContentDigest = digestUtil.compute("tree_content".getBytes(UTF_8));
-    Digest runfilesContentDigest = digestUtil.compute("runfiles_content".getBytes(UTF_8));
-    Digest sourceContentDigest = digestUtil.compute("source_content\n".getBytes(UTF_8));
+        // Assert: The tree artifact content, runfiles content, and source content should be in the
+        // remote cache but NOT in the disk cache (inputs should only be uploaded to remote, not disk
+        // cache).
+        val treeContentDigest: Digest =
+            digestUtil.compute("tree_content".toByteArray(java.nio.charset.StandardCharsets.UTF_8))
+        val runfilesContentDigest: Digest =
+            digestUtil.compute("runfiles_content".toByteArray(java.nio.charset.StandardCharsets.UTF_8))
+        val sourceContentDigest: Digest =
+            digestUtil.compute("source_content\n".toByteArray(java.nio.charset.StandardCharsets.UTF_8))
 
-    // Verify inputs are in the remote cache (so the remote action could execute).
-    assertThat(remoteCacheEntryExists(treeContentDigest)).isTrue();
-    assertThat(remoteCacheEntryExists(runfilesContentDigest)).isTrue();
-    assertThat(remoteCacheEntryExists(sourceContentDigest)).isTrue();
+        // Verify inputs are in the remote cache (so the remote action could execute).
+        Truth.assertThat(remoteCacheEntryExists(treeContentDigest)).isTrue()
+        Truth.assertThat(remoteCacheEntryExists(runfilesContentDigest)).isTrue()
+        Truth.assertThat(remoteCacheEntryExists(sourceContentDigest)).isTrue()
 
-    // Verify inputs are NOT in the disk cache.
-    assertThat(diskCacheEntryExists(Store.CAS, treeContentDigest)).isFalse();
-    assertThat(diskCacheEntryExists(Store.CAS, runfilesContentDigest)).isFalse();
-    assertThat(diskCacheEntryExists(Store.CAS, sourceContentDigest)).isFalse();
-  }
-
-  private void cleanAndRestartServer() throws Exception {
-    getOutputBase().getRelative("action_cache").deleteTreesBelow();
-    // Simulates a server restart
-    createRuntimeWrapper();
-  }
-
-  private void setupWorkspace() throws IOException {
-    write(
-        "BUILD",
-        "genrule(",
-        "  name = 'foo',",
-        "  srcs = ['foo.in'],",
-        "  outs = ['foo.out'],",
-        "  cmd = 'echo -n foo > $@',",
-        ")",
-        "genrule(",
-        "  name = 'foobar',",
-        "  srcs = [':foo.out', 'bar.in'],",
-        "  outs = ['foobar.out'],",
-        "  cmd = 'echo -n out && echo -n err 1>&2 && echo -n foobar > $@',",
-        ")");
-    write("foo.in", "foo");
-    write("bar.in", "bar");
-  }
-
-  private ImmutableSet<Digest> getBlobDigests(String... blobs) {
-    // Uploaded CAS entries include the Action and Command protos which we don't care about,
-    // so we can't collect them in the same manner as AC entries.
-    ImmutableSet.Builder<Digest> digests = ImmutableSet.builder();
-    for (String blob : blobs) {
-      digests.add(digestUtil.compute(blob.getBytes(UTF_8)));
+        // Verify inputs are NOT in the disk cache.
+        Truth.assertThat(diskCacheEntryExists(Store.CAS, treeContentDigest)).isFalse()
+        Truth.assertThat(diskCacheEntryExists(Store.CAS, runfilesContentDigest)).isFalse()
+        Truth.assertThat(diskCacheEntryExists(Store.CAS, sourceContentDigest)).isFalse()
     }
-    return digests.build();
-  }
 
-  private void resetRecentlyModified() throws IOException {
-    ArrayDeque<Path> dirs = new ArrayDeque<>();
-    dirs.add(getWorkspace().getFileSystem().getPath(getDiskCacheDir()));
-    while (!dirs.isEmpty()) {
-      Path dir = dirs.remove();
-      for (Path child : dir.getDirectoryEntries()) {
-        child.setLastModifiedTime(0);
-        if (child.isDirectory()) {
-          dirs.add(child);
+    @Throws(java.lang.Exception::class)
+    private fun cleanAndRestartServer() {
+        getOutputBase().getRelative("action_cache").deleteTreesBelow()
+        // Simulates a server restart
+        createRuntimeWrapper()
+    }
+
+    @Throws(IOException::class)
+    private fun setupWorkspace() {
+        write(
+            "BUILD",
+            "genrule(",
+            "  name = 'foo',",
+            "  srcs = ['foo.in'],",
+            "  outs = ['foo.out'],",
+            "  cmd = 'echo -n foo > $@',",
+            ")",
+            "genrule(",
+            "  name = 'foobar',",
+            "  srcs = [':foo.out', 'bar.in'],",
+            "  outs = ['foobar.out'],",
+            "  cmd = 'echo -n out && echo -n err 1>&2 && echo -n foobar > $@',",
+            ")"
+        )
+        write("foo.in", "foo")
+        write("bar.in", "bar")
+    }
+
+    private fun getBlobDigests(vararg blobs: String): com.google.common.collect.ImmutableSet<Digest?> {
+        // Uploaded CAS entries include the Action and Command protos which we don't care about,
+        // so we can't collect them in the same manner as AC entries.
+        val digests: com.google.common.collect.ImmutableSet.Builder<Digest?> =
+            com.google.common.collect.ImmutableSet.builder<Digest?>()
+        for (blob in blobs) {
+            digests.add(digestUtil.compute(blob.toByteArray(java.nio.charset.StandardCharsets.UTF_8)))
         }
-      }
+        return digests.build()
     }
-  }
 
-  private void assertRecentlyModified(Collection<Digest> acDigests, Collection<Digest> casDigests)
-      throws IOException {
-    for (Digest digest : acDigests) {
-      assertRecentlyModified(Store.AC, digest);
+    @Throws(IOException::class)
+    private fun resetRecentlyModified() {
+        val dirs: ArrayDeque<Path> = ArrayDeque<Path>()
+        dirs.add(getWorkspace().getFileSystem().getPath(diskCacheDir))
+        while (!dirs.isEmpty()) {
+            val dir: Path = dirs.remove()
+            for (child in dir.getDirectoryEntries()) {
+                child.setLastModifiedTime(0)
+                if (child.isDirectory()) {
+                    dirs.add(child)
+                }
+            }
+        }
     }
-    for (Digest digest : casDigests) {
-      assertRecentlyModified(Store.CAS, digest);
+
+    @Throws(IOException::class)
+    private fun assertRecentlyModified(acDigests: MutableCollection<Digest?>, casDigests: MutableCollection<Digest?>) {
+        for (digest in acDigests) {
+            assertRecentlyModified(Store.AC, digest)
+        }
+        for (digest in casDigests) {
+            assertRecentlyModified(Store.CAS, digest)
+        }
     }
-  }
 
-  private void assertRecentlyModified(Store store, Digest digest) throws IOException {
-    Path path = getDiskCacheEntryPath(store, digest);
-    assertWithMessage("disk cache entry %s/%s does not exist", store, digest.getHash())
-        .that(path.exists())
-        .isTrue();
-    assertWithMessage("disk cache entry %s/%s is too old", store, digest.getHash())
-        .that(path.getLastModifiedTime())
-        .isGreaterThan(Instant.now().minusSeconds(60).toEpochMilli());
-  }
+    @Throws(IOException::class)
+    private fun assertRecentlyModified(store: Store, digest: Digest) {
+        val path: Path = getDiskCacheEntryPath(store, digest)
+        Truth.assertWithMessage("disk cache entry %s/%s does not exist", store, digest.getHash())
+            .that(path.exists())
+            .isTrue()
+        Truth.assertWithMessage("disk cache entry %s/%s is too old", store, digest.getHash())
+            .that(path.getLastModifiedTime())
+            .isGreaterThan(Instant.now().minusSeconds(60).toEpochMilli())
+    }
 
-  private Path getDiskCacheEntryPath(Store store, Digest digest) throws IOException {
-    return getWorkspace()
-        .getFileSystem()
-        .getPath(
-            getDiskCacheDir()
-                .getRelative(store.toString())
-                .getRelative(digest.getHash().substring(0, 2))
-                .getRelative(digest.getHash()));
-  }
+    @Throws(IOException::class)
+    private fun getDiskCacheEntryPath(store: Store, digest: Digest): Path {
+        return getWorkspace()
+            .getFileSystem()
+            .getPath(
+                diskCacheDir
+                    .getRelative(store.toString())
+                    .getRelative(digest.getHash().substring(0, 2))
+                    .getRelative(digest.getHash())
+            )
+    }
 
-  private boolean diskCacheEntryExists(Store store, Digest digest) throws IOException {
-    return getDiskCacheEntryPath(store, digest).exists();
-  }
+    @Throws(IOException::class)
+    private fun diskCacheEntryExists(store: Store, digest: Digest): Boolean {
+        return getDiskCacheEntryPath(store, digest).exists()
+    }
 
-  private boolean remoteCacheEntryExists(Digest digest) {
-    return fileSystem
-        .getPath(
-            worker
-                .getCasPath()
-                .getRelative("cas")
-                .getRelative(digest.getHash().substring(0, 2))
-                .getRelative(digest.getHash()))
-        .exists();
-  }
+    private fun remoteCacheEntryExists(digest: Digest): Boolean {
+        return fileSystem
+            .getPath(
+                worker
+                    .getCasPath()
+                    .getRelative("cas")
+                    .getRelative(digest.getHash().substring(0, 2))
+                    .getRelative(digest.getHash())
+            )
+            .exists()
+    }
+
+    companion object {
+        @ClassRule
+        @org.junit.Rule
+        val worker: WorkerInstance = createWorker()
+
+        private val diskCacheDir: PathFragment
+            get() {
+                val testTmpDir: PathFragment =
+                    PathFragment.create(com.google.devtools.build.lib.testutil.TestUtils.tmpDirFile().getAbsolutePath())
+                return testTmpDir.getRelative("disk_cache")
+            }
+    }
 }

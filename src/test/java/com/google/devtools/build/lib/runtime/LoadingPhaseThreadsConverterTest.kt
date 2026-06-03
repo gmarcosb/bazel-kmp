@@ -11,53 +11,48 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.actions.LocalHostCapacity
 
-import com.google.devtools.build.lib.actions.LocalHostCapacity;
-import com.google.devtools.build.lib.actions.ResourceSet;
-import com.google.devtools.build.lib.runtime.LoadingPhaseThreadsOption.LoadingPhaseThreadCountConverter;
-import com.google.devtools.common.options.OptionsParsingException;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests [LoadingPhaseThreadCountConverter].  */
+@RunWith(JUnit4::class)
+class LoadingPhaseThreadsConverterTest {
+    private var loadingPhaseThreadCountConverter: LoadingPhaseThreadCountConverter? = null
 
-/** Tests {@link LoadingPhaseThreadCountConverter}. */
-@RunWith(JUnit4.class)
-public class LoadingPhaseThreadsConverterTest {
+    @Before
+    @Throws(OptionsParsingException::class)
+    fun setUp() {
+        loadingPhaseThreadCountConverter = LoadingPhaseThreadCountConverter()
+    }
 
-  private LoadingPhaseThreadCountConverter loadingPhaseThreadCountConverter;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAutoLoadingPhaseThreadsUsesHardwareSettings() {
+        LocalHostCapacity.setLocalHostCapacity(ResourceSet.createWithRamCpu(1, 7))
+        assertThat(loadingPhaseThreadCountConverter.convert("auto")).isEqualTo(7)
+    }
 
-  @Before
-  public void setUp() throws OptionsParsingException {
-    loadingPhaseThreadCountConverter = new LoadingPhaseThreadCountConverter();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAutoLoadingPhaseThreadsCappedForTests() {
+        LocalHostCapacity.setLocalHostCapacity(ResourceSet.createWithRamCpu(1, 123))
+        assertThat(loadingPhaseThreadCountConverter.convert("auto")).isEqualTo(20)
+    }
 
-  @Test
-  public void testAutoLoadingPhaseThreadsUsesHardwareSettings() throws Exception {
-    LocalHostCapacity.setLocalHostCapacity(ResourceSet.createWithRamCpu(1, 7));
-    assertThat(loadingPhaseThreadCountConverter.convert("auto")).isEqualTo(7);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExplicitLoadingPhaseThreadsCappedForTests() {
+        assertThat(loadingPhaseThreadCountConverter.convert("200")).isEqualTo(20)
+    }
 
-  @Test
-  public void testAutoLoadingPhaseThreadsCappedForTests() throws Exception {
-    LocalHostCapacity.setLocalHostCapacity(ResourceSet.createWithRamCpu(1, 123));
-    assertThat(loadingPhaseThreadCountConverter.convert("auto")).isEqualTo(20);
-  }
-
-  @Test
-  public void testExplicitLoadingPhaseThreadsCappedForTests() throws Exception {
-    assertThat(loadingPhaseThreadCountConverter.convert("200")).isEqualTo(20);
-  }
-
-  @Test
-  public void testExplicitLoadingPhaseThreadsMustBeAtLeast1() throws Exception {
-    OptionsParsingException thrown =
-        assertThrows(
-            OptionsParsingException.class, () -> loadingPhaseThreadCountConverter.convert("0"));
-    assertThat(thrown).hasMessageThat().contains("must be at least 1");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExplicitLoadingPhaseThreadsMustBeAtLeast1() {
+        val thrown: OptionsParsingException? =
+            org.junit.Assert.assertThrows<OptionsParsingException?>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable { loadingPhaseThreadCountConverter.convert("0") })
+        Truth.assertThat(thrown).hasMessageThat().contains("must be at least 1")
+    }
 }

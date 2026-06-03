@@ -11,291 +11,288 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.collect.nestedset;
+package com.google.devtools.build.lib.collect.nestedset
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.fail;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
-import org.junit.Test;
+import com.google.common.truth.Truth
 
 /**
- * Base class for tests of {@link NestedSet} iteration behavior.
- *
- * <p>This class provides test cases for representative nested set structures; the expected results
+ * Base class for tests of [NestedSet] iteration behavior.
+ * 
+ * 
+ * This class provides test cases for representative nested set structures; the expected results
  * must be provided by overriding the corresponding methods.
  */
-public abstract class ExpanderTestBase {
+abstract class ExpanderTestBase {
+    /**
+     * Returns the type of the expander under test.
+     */
+    protected abstract fun expanderOrder(): Order?
 
-  /**
-   * Returns the type of the expander under test.
-   */
-  protected abstract Order expanderOrder();
+    @org.junit.Test
+    fun simple() {
+        val s: NestedSet<String?> = prepareBuilder("c", "a", "b").build()
 
-  @Test
-  public void simple() {
-    NestedSet<String> s = prepareBuilder("c", "a", "b").build();
-
-    assertThat(s.toList()).isEqualTo(simpleResult());
-    assertSetContents(simpleResult(), s);
-  }
-
-  @Test
-  public void simpleNoDuplicates() {
-    NestedSet<String> s = prepareBuilder("c", "a", "a", "a", "b").build();
-
-    assertThat(s.toList()).isEqualTo(simpleResult());
-    assertSetContents(simpleResult(), s);
-  }
-
-  @Test
-  public void nesting() {
-    NestedSet<String> subset = prepareBuilder("c", "a", "e").build();
-    NestedSet<String> s = prepareBuilder("b", "d").addTransitive(subset).build();
-
-    assertSetContents(nestedResult(), s);
-  }
-
-  @Test
-  public void builderReuse() {
-    NestedSetBuilder<String> builder = prepareBuilder();
-    assertSetContents(Collections.<String>emptyList(), builder.build());
-
-    builder.add("b");
-    assertSetContents(ImmutableList.of("b"), builder.build());
-
-    builder.addAll(ImmutableList.of("d"));
-    List<String> expected = prepareBuilder("b", "d").build().toList();
-    assertSetContents(expected, builder.build());
-
-    NestedSet<String> child = prepareBuilder("c", "a", "e").build();
-    builder.addTransitive(child);
-    assertSetContents(nestedResult(), builder.build());
-  }
-
-  @Test
-  public void builderChaining() {
-    NestedSet<String> s = prepareBuilder().add("b").addAll(ImmutableList.of("d"))
-        .addTransitive(prepareBuilder("c", "a", "e").build()).build();
-    assertSetContents(nestedResult(), s);
-  }
-
-  @Test
-  public void addAllOrdering() {
-    NestedSet<String> s1 = prepareBuilder().add("a").add("c").add("b").build();
-    NestedSet<String> s2 = prepareBuilder().addAll(ImmutableList.of("a", "c", "b")).build();
-
-    assertCollectionsEqual(s1.toList(), s2.toList());
-  }
-
-  @Test
-  public void mixedAddAllOrdering() {
-    NestedSet<String> s1 = prepareBuilder().add("a").add("b").add("c").add("d").build();
-    NestedSet<String> s2 = prepareBuilder().add("a").addAll(ImmutableList.of("b", "c")).add("d")
-        .build();
-
-    assertCollectionsEqual(s1.toList(), s2.toList());
-  }
-
-  @Test
-  public void transitiveDepsHandledSeparately() {
-    NestedSet<String> subset = prepareBuilder("c", "a", "e").build();
-    NestedSetBuilder<String> b = prepareBuilder();
-    // The fact that we add the transitive subset between the add("b") and add("d") calls should
-    // not change the result.
-    b.add("b");
-    b.addTransitive(subset);
-    b.add("d");
-    NestedSet<String> s = b.build();
-
-    assertSetContents(nestedResult(), s);
-  }
-
-  @Test
-  public void nestingNoDuplicates() {
-    NestedSet<String> subset = prepareBuilder("c", "a", "e").build();
-    NestedSet<String> s = prepareBuilder("b", "d", "e").addTransitive(subset).build();
-
-    assertSetContents(nestedDuplicatesResult(), s);
-  }
-
-  @Test
-  public void chain() {
-    NestedSet<String> c = prepareBuilder("c").build();
-    NestedSet<String> b = prepareBuilder("b").addTransitive(c).build();
-    NestedSet<String> a = prepareBuilder("a").addTransitive(b).build();
-
-    assertSetContents(chainResult(), a);
-  }
-
-  @Test
-  public void diamond() {
-    NestedSet<String> d = prepareBuilder("d").build();
-    NestedSet<String> c = prepareBuilder("c").addTransitive(d).build();
-    NestedSet<String> b = prepareBuilder("b").addTransitive(d).build();
-    NestedSet<String> a = prepareBuilder("a").addTransitive(b).addTransitive(c).build();
-
-    assertSetContents(diamondResult(), a);
-  }
-
-  @Test
-  public void extendedDiamond() {
-    NestedSet<String> d = prepareBuilder("d").build();
-    NestedSet<String> e = prepareBuilder("e").build();
-    NestedSet<String> b = prepareBuilder("b").addTransitive(d).addTransitive(e).build();
-    NestedSet<String> c = prepareBuilder("c").addTransitive(e).addTransitive(d).build();
-    NestedSet<String> a = prepareBuilder("a").addTransitive(b).addTransitive(c).build();
-    assertSetContents(extendedDiamondResult(), a);
-  }
-
-  @Test
-  public void extendedDiamondRightArm() {
-    NestedSet<String> d = prepareBuilder("d").build();
-    NestedSet<String> e = prepareBuilder("e").build();
-    NestedSet<String> b = prepareBuilder("b").addTransitive(d).addTransitive(e).build();
-    NestedSet<String> c2 = prepareBuilder("c2").addTransitive(e).addTransitive(d).build();
-    NestedSet<String> c = prepareBuilder("c").addTransitive(c2).build();
-    NestedSet<String> a = prepareBuilder("a").addTransitive(b).addTransitive(c).build();
-    assertSetContents(extendedDiamondRightArmResult(), a);
-  }
-
-  @Test
-  public void orderConflict() {
-    NestedSet<String> child1 = prepareBuilder("a", "b").build();
-    NestedSet<String> child2 = prepareBuilder("b", "a").build();
-    NestedSet<String> parent = prepareBuilder().addTransitive(child1).addTransitive(child2).build();
-    assertSetContents(orderConflictResult(), parent);
-  }
-
-  @Test
-  public void orderConflictNested() {
-    NestedSet<String> a = prepareBuilder("a").build();
-    NestedSet<String> b = prepareBuilder("b").build();
-    NestedSet<String> child1 = prepareBuilder().addTransitive(a).addTransitive(b).build();
-    NestedSet<String> child2 = prepareBuilder().addTransitive(b).addTransitive(a).build();
-    NestedSet<String> parent = prepareBuilder().addTransitive(child1).addTransitive(child2).build();
-    assertSetContents(orderConflictResult(), parent);
-  }
-
-  @Test
-  public void getOrderingEmpty() {
-    NestedSet<String> s = prepareBuilder().build();
-    assertThat(s.isEmpty()).isTrue();
-    assertThat(s.getOrder()).isEqualTo(expanderOrder());
-  }
-
-  @Test
-  public void getOrdering() {
-    NestedSet<String> s = prepareBuilder("a", "b").build();
-    assertThat(s.isEmpty()).isFalse();
-    assertThat(s.getOrder()).isEqualTo(expanderOrder());
-  }
-
-  @Test
-  public void nestingValidation() {
-    for (Order ordering : Order.values()) {
-      NestedSet<String> a = prepareBuilder("a", "b").build();
-      NestedSetBuilder<String> b = NestedSetBuilder.newBuilder(ordering);
-      try {
-        b.addTransitive(a);
-        if (ordering != expanderOrder() && ordering != Order.STABLE_ORDER) {
-          fail();  // An exception was expected.
-        }
-      } catch (IllegalArgumentException e) {
-        if (ordering == expanderOrder() || ordering == Order.STABLE_ORDER) {
-          fail();  // No exception was expected.
-        }
-      }
+        assertThat(s.toList()).isEqualTo(simpleResult())
+        assertSetContents(simpleResult(), s)
     }
-  }
 
-  private NestedSetBuilder<String> prepareBuilder(String... directMembers) {
-    NestedSetBuilder<String> builder = NestedSetBuilder.newBuilder(expanderOrder());
-    builder.addAll(Lists.newArrayList(directMembers));
-    return builder;
-  }
+    @org.junit.Test
+    fun simpleNoDuplicates() {
+        val s: NestedSet<String?> = prepareBuilder("c", "a", "a", "a", "b").build()
 
-  protected final void assertSetContents(List<String> expected, NestedSet<String> set) {
-    assertThat(new ArrayList<>(set.toList())).isEqualTo(expected);
-    assertThat(new ArrayList<>(set.toSet())).isEqualTo(expected);
-  }
+        assertThat(s.toList()).isEqualTo(simpleResult())
+        assertSetContents(simpleResult(), s)
+    }
 
-  protected final void assertCollectionsEqual(
-      Collection<String> expected, Collection<String> actual) {
-    assertThat(new ArrayList<>(actual)).isEqualTo(new ArrayList<>(expected));
-  }
+    @org.junit.Test
+    fun nesting() {
+        val subset: NestedSet<String?>? = prepareBuilder("c", "a", "e").build()
+        val s: NestedSet<String?> = prepareBuilder("b", "d").addTransitive(subset).build()
 
-  /**
-   * Returns the enumeration of the nested set {"c", "a", "b"} in the implementation's enumeration
-   * order.
-   *
-   * @see #simple()
-   * @see #simpleNoDuplicates()
-   */
-  protected List<String> simpleResult() {
-    return ImmutableList.of("c", "a", "b");
-  }
+        assertSetContents(nestedResult(), s)
+    }
 
-  /**
-   * Returns the enumeration of the nested set {"b", "d", {"c", "a", "e"}} in the implementation's
-   * enumeration order.
-   *
-   * @see #nesting()
-   */
-  protected abstract List<String> nestedResult();
+    @org.junit.Test
+    fun builderReuse() {
+        val builder: NestedSetBuilder<String?> = prepareBuilder()
+        assertSetContents(mutableListOf<String?>(), builder.build())
 
-  /**
-   * Returns the enumeration of the nested set {"b", "d", "e", {"c", "a", "e"}} in the
-   * implementation's enumeration order.
-   *
-   * @see #nestingNoDuplicates()
-   */
-  protected abstract List<String> nestedDuplicatesResult();
+        builder.add("b")
+        assertSetContents(com.google.common.collect.ImmutableList.of<String?>("b"), builder.build())
 
-  /**
-   * Returns the enumeration of nested set {"a", {"b", {"c"}}} in the implementation's enumeration
-   * order.
-   *
-   * @see #chain()
-   */
-  protected abstract List<String> chainResult();
+        builder.addAll(com.google.common.collect.ImmutableList.of<E?>("d"))
+        val expected: MutableList<String?>? = prepareBuilder("b", "d").build().toList()
+        assertSetContents(expected, builder.build())
 
-  /**
-   * Returns the enumeration of the nested set {"a", {"b", D}, {"c", D}}, where D is {"d"}, in the
-   * implementation's enumeration order.
-   *
-   * @see #diamond()
-   */
-  protected abstract List<String> diamondResult();
+        val child: NestedSet<String?>? = prepareBuilder("c", "a", "e").build()
+        builder.addTransitive(child)
+        assertSetContents(nestedResult(), builder.build())
+    }
 
-  /**
-   * Returns the enumeration of the nested set {"a", {"b", E, D}, {"c", D, E}}, where D is {"d"} and
-   * E is {"e"}, in the implementation's enumeration order.
-   *
-   * @see #extendedDiamond()
-   */
-  protected abstract List<String> extendedDiamondResult();
+    @org.junit.Test
+    fun builderChaining() {
+        val s: NestedSet<String?> =
+            prepareBuilder().add("b").addAll(com.google.common.collect.ImmutableList.of<E?>("d"))
+                .addTransitive(prepareBuilder("c", "a", "e").build()).build()
+        assertSetContents(nestedResult(), s)
+    }
 
-  /**
-   * Returns the enumeration of the nested set {"a", {"b", E, D}, {"c", C2}}, where D is {"d"}, E is
-   * {"e"} and C2 is {"c2", D, E}, in the implementation's enumeration order.
-   *
-   * @see #extendedDiamondRightArm()
-   */
-  protected abstract List<String> extendedDiamondRightArmResult();
+    @org.junit.Test
+    fun addAllOrdering() {
+        val s1: NestedSet<String?> = prepareBuilder().add("a").add("c").add("b").build()
+        val s2: NestedSet<String?> =
+            prepareBuilder().addAll(com.google.common.collect.ImmutableList.of<E?>("a", "c", "b")).build()
 
-  /**
-   * Returns the enumeration of the nested set {{"a", "b"}, {"b", "a"}}.
-   *
-   * @see #orderConflict()
-   * @see #orderConflictNested()
-   */
-  protected List<String> orderConflictResult() {
-    return ImmutableList.of("a", "b");
-  }
+        assertCollectionsEqual(s1.toList(), s2.toList())
+    }
+
+    @org.junit.Test
+    fun mixedAddAllOrdering() {
+        val s1: NestedSet<String?> = prepareBuilder().add("a").add("b").add("c").add("d").build()
+        val s2: NestedSet<String?> =
+            prepareBuilder().add("a").addAll(com.google.common.collect.ImmutableList.of<E?>("b", "c")).add("d")
+                .build()
+
+        assertCollectionsEqual(s1.toList(), s2.toList())
+    }
+
+    @org.junit.Test
+    fun transitiveDepsHandledSeparately() {
+        val subset: NestedSet<String?>? = prepareBuilder("c", "a", "e").build()
+        val b: NestedSetBuilder<String?> = prepareBuilder()
+        // The fact that we add the transitive subset between the add("b") and add("d") calls should
+        // not change the result.
+        b.add("b")
+        b.addTransitive(subset)
+        b.add("d")
+        val s: NestedSet<String?> = b.build()
+
+        assertSetContents(nestedResult(), s)
+    }
+
+    @org.junit.Test
+    fun nestingNoDuplicates() {
+        val subset: NestedSet<String?>? = prepareBuilder("c", "a", "e").build()
+        val s: NestedSet<String?> = prepareBuilder("b", "d", "e").addTransitive(subset).build()
+
+        assertSetContents(nestedDuplicatesResult(), s)
+    }
+
+    @org.junit.Test
+    fun chain() {
+        val c: NestedSet<String?>? = prepareBuilder("c").build()
+        val b: NestedSet<String?>? = prepareBuilder("b").addTransitive(c).build()
+        val a: NestedSet<String?> = prepareBuilder("a").addTransitive(b).build()
+
+        assertSetContents(chainResult(), a)
+    }
+
+    @org.junit.Test
+    fun diamond() {
+        val d: NestedSet<String?>? = prepareBuilder("d").build()
+        val c: NestedSet<String?>? = prepareBuilder("c").addTransitive(d).build()
+        val b: NestedSet<String?>? = prepareBuilder("b").addTransitive(d).build()
+        val a: NestedSet<String?> = prepareBuilder("a").addTransitive(b).addTransitive(c).build()
+
+        assertSetContents(diamondResult(), a)
+    }
+
+    @org.junit.Test
+    fun extendedDiamond() {
+        val d: NestedSet<String?>? = prepareBuilder("d").build()
+        val e: NestedSet<String?>? = prepareBuilder("e").build()
+        val b: NestedSet<String?>? = prepareBuilder("b").addTransitive(d).addTransitive(e).build()
+        val c: NestedSet<String?>? = prepareBuilder("c").addTransitive(e).addTransitive(d).build()
+        val a: NestedSet<String?> = prepareBuilder("a").addTransitive(b).addTransitive(c).build()
+        assertSetContents(extendedDiamondResult(), a)
+    }
+
+    @org.junit.Test
+    fun extendedDiamondRightArm() {
+        val d: NestedSet<String?>? = prepareBuilder("d").build()
+        val e: NestedSet<String?>? = prepareBuilder("e").build()
+        val b: NestedSet<String?>? = prepareBuilder("b").addTransitive(d).addTransitive(e).build()
+        val c2: NestedSet<String?>? = prepareBuilder("c2").addTransitive(e).addTransitive(d).build()
+        val c: NestedSet<String?>? = prepareBuilder("c").addTransitive(c2).build()
+        val a: NestedSet<String?> = prepareBuilder("a").addTransitive(b).addTransitive(c).build()
+        assertSetContents(extendedDiamondRightArmResult(), a)
+    }
+
+    @org.junit.Test
+    fun orderConflict() {
+        val child1: NestedSet<String?>? = prepareBuilder("a", "b").build()
+        val child2: NestedSet<String?>? = prepareBuilder("b", "a").build()
+        val parent: NestedSet<String?> = prepareBuilder().addTransitive(child1).addTransitive(child2).build()
+        assertSetContents(orderConflictResult(), parent)
+    }
+
+    @org.junit.Test
+    fun orderConflictNested() {
+        val a: NestedSet<String?>? = prepareBuilder("a").build()
+        val b: NestedSet<String?>? = prepareBuilder("b").build()
+        val child1: NestedSet<String?>? = prepareBuilder().addTransitive(a).addTransitive(b).build()
+        val child2: NestedSet<String?>? = prepareBuilder().addTransitive(b).addTransitive(a).build()
+        val parent: NestedSet<String?> = prepareBuilder().addTransitive(child1).addTransitive(child2).build()
+        assertSetContents(orderConflictResult(), parent)
+    }
+
+    @get:org.junit.Test
+    val orderingEmpty: Unit
+        get() {
+            val s: NestedSet<String?> = prepareBuilder().build()
+            assertThat(s.isEmpty()).isTrue()
+            assertThat(s.getOrder()).isEqualTo(expanderOrder())
+        }
+
+    @get:org.junit.Test
+    val ordering: Unit
+        get() {
+            val s: NestedSet<String?> = prepareBuilder("a", "b").build()
+            assertThat(s.isEmpty()).isFalse()
+            assertThat(s.getOrder()).isEqualTo(expanderOrder())
+        }
+
+    @org.junit.Test
+    fun nestingValidation() {
+        for (ordering in Order.values()) {
+            val a: NestedSet<String?>? = prepareBuilder("a", "b").build()
+            val b: NestedSetBuilder<String?> = NestedSetBuilder.newBuilder(ordering)
+            try {
+                b.addTransitive(a)
+                if (ordering !== expanderOrder() && ordering !== Order.STABLE_ORDER) {
+                    org.junit.Assert.fail() // An exception was expected.
+                }
+            } catch (e: java.lang.IllegalArgumentException) {
+                if (ordering === expanderOrder() || ordering === Order.STABLE_ORDER) {
+                    org.junit.Assert.fail() // No exception was expected.
+                }
+            }
+        }
+    }
+
+    private fun prepareBuilder(vararg directMembers: String?): NestedSetBuilder<String?> {
+        val builder: NestedSetBuilder<String?> = NestedSetBuilder.newBuilder(expanderOrder())
+        builder.addAll(com.google.common.collect.Lists.< E > newArrayList < E ? > (directMembers))
+        return builder
+    }
+
+    protected fun assertSetContents(expected: MutableList<String?>?, set: NestedSet<String?>) {
+        Truth.assertThat(java.util.ArrayList<Any?>(set.toList())).isEqualTo(expected)
+        Truth.assertThat(java.util.ArrayList<Any?>(set.toSet())).isEqualTo(expected)
+    }
+
+    protected fun assertCollectionsEqual(
+        expected: MutableCollection<String?>, actual: MutableCollection<String?>
+    ) {
+        Truth.assertThat(java.util.ArrayList<String?>(actual)).isEqualTo(java.util.ArrayList<String?>(expected))
+    }
+
+    /**
+     * Returns the enumeration of the nested set {"c", "a", "b"} in the implementation's enumeration
+     * order.
+     * 
+     * @see .simple
+     * @see .simpleNoDuplicates
+     */
+    protected fun simpleResult(): MutableList<String?> {
+        return com.google.common.collect.ImmutableList.of<String?>("c", "a", "b")
+    }
+
+    /**
+     * Returns the enumeration of the nested set {"b", "d", {"c", "a", "e"}} in the implementation's
+     * enumeration order.
+     * 
+     * @see .nesting
+     */
+    protected abstract fun nestedResult(): MutableList<String?>?
+
+    /**
+     * Returns the enumeration of the nested set {"b", "d", "e", {"c", "a", "e"}} in the
+     * implementation's enumeration order.
+     * 
+     * @see .nestingNoDuplicates
+     */
+    protected abstract fun nestedDuplicatesResult(): MutableList<String?>?
+
+    /**
+     * Returns the enumeration of nested set {"a", {"b", {"c"}}} in the implementation's enumeration
+     * order.
+     * 
+     * @see .chain
+     */
+    protected abstract fun chainResult(): MutableList<String?>?
+
+    /**
+     * Returns the enumeration of the nested set {"a", {"b", D}, {"c", D}}, where D is {"d"}, in the
+     * implementation's enumeration order.
+     * 
+     * @see .diamond
+     */
+    protected abstract fun diamondResult(): MutableList<String?>?
+
+    /**
+     * Returns the enumeration of the nested set {"a", {"b", E, D}, {"c", D, E}}, where D is {"d"} and
+     * E is {"e"}, in the implementation's enumeration order.
+     * 
+     * @see .extendedDiamond
+     */
+    protected abstract fun extendedDiamondResult(): MutableList<String?>?
+
+    /**
+     * Returns the enumeration of the nested set {"a", {"b", E, D}, {"c", C2}}, where D is {"d"}, E is
+     * {"e"} and C2 is {"c2", D, E}, in the implementation's enumeration order.
+     * 
+     * @see .extendedDiamondRightArm
+     */
+    protected abstract fun extendedDiamondRightArmResult(): MutableList<String?>?
+
+    /**
+     * Returns the enumeration of the nested set {{"a", "b"}, {"b", "a"}}.
+     * 
+     * @see .orderConflict
+     * @see .orderConflictNested
+     */
+    protected open fun orderConflictResult(): MutableList<String?>? {
+        return com.google.common.collect.ImmutableList.of<String?>("a", "b")
+    }
 }

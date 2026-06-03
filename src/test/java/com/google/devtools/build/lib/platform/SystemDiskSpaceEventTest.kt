@@ -11,77 +11,66 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.platform
 
-package com.google.devtools.build.lib.platform;
+import com.google.devtools.build.lib.runtime.BlazeModule
 
-import static com.google.common.truth.Truth.assertThat;
+/** Tests [SystemDiskSpaceEvent] by sending fake notifications.  */
+@RunWith(JUnit4::class)
+class SystemDiskSpaceEventTest : BuildIntegrationTestCase() {
+    internal class SystemDiskSpaceEventListener : BlazeModule() {
+        var lowDiskSpaceEventCount: Int = 0
+        var veryLowDiskSpaceEventCount: Int = 0
 
-import com.google.common.eventbus.Subscribe;
-import com.google.devtools.build.lib.buildtool.util.BuildIntegrationTestCase;
-import com.google.devtools.build.lib.runtime.BlazeModule;
-import com.google.devtools.build.lib.runtime.BlazeRuntime;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.util.OS;
-import com.google.devtools.build.runfiles.Runfiles;
-import org.junit.Assume;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+        public override fun beforeCommand(env: CommandEnvironment) {
+            env.getEventBus().register(this)
+        }
 
-/** Tests {@link SystemDiskSpaceEvent} by sending fake notifications. */
-@RunWith(JUnit4.class)
-public final class SystemDiskSpaceEventTest extends BuildIntegrationTestCase {
-  static class SystemDiskSpaceEventListener extends BlazeModule {
-    public int lowDiskSpaceEventCount = 0;
-    public int veryLowDiskSpaceEventCount = 0;
+        @com.google.common.eventbus.Subscribe
+        fun diskSpaceEvent(event: SystemDiskSpaceEvent) {
+            when (event.level()) {
+                LOW -> {
+                    ++lowDiskSpaceEventCount
+                    assertThat(event.logString()).isEqualTo("SystemDiskSpaceEvent: Low")
+                }
 
-    @Override
-    public void beforeCommand(CommandEnvironment env) {
-      env.getEventBus().register(this);
+                VERY_LOW -> {
+                    ++veryLowDiskSpaceEventCount
+                    assertThat(event.logString()).isEqualTo("SystemDiskSpaceEvent: Very Low")
+                }
+            }
+        }
     }
 
-    @Subscribe
-    public void diskSpaceEvent(SystemDiskSpaceEvent event) {
-      switch (event.level()) {
-        case LOW:
-          ++lowDiskSpaceEventCount;
-          assertThat(event.logString()).isEqualTo("SystemDiskSpaceEvent: Low");
-          break;
-        case VERY_LOW:
-          ++veryLowDiskSpaceEventCount;
-          assertThat(event.logString()).isEqualTo("SystemDiskSpaceEvent: Very Low");
-          break;
-      }
+    private val eventListener = SystemDiskSpaceEventListener()
+
+    @get:Throws(java.lang.Exception::class)
+    val runtimeBuilder: BlazeRuntime.Builder
+        get() = super.runtimeBuilder
+            .addBlazeModule(eventListener)
+            .addBlazeModule(SystemDiskSpaceModule())
+            .addBlazeService(PlatformNativeDepsServiceImpl())
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDiskSpace() {
+        Assume.assumeTrue(com.google.devtools.build.lib.util.OS.getCurrent() == com.google.devtools.build.lib.util.OS.DARWIN)
+        val runfiles: Runfiles = Runfiles.create()
+        val notifierFilePath: String? =
+            runfiles.rlocation(
+                "io_bazel/src/test/java/com/google/devtools/build/lib/platform/darwin/notifier"
+            )
+        write(
+            "system_diskSpace_event/BUILD",
+            "genrule(",
+            "  name = 'fire_diskSpace_notifications',",
+            "  outs = ['fire_diskSpace_notifications.out'],",
+            "  cmd = '" + notifierFilePath + " com.google.bazel.test.diskspace.low 0 > $@ && ' + ",
+            "        '" + notifierFilePath + " com.google.bazel.test.diskspace.verylow 0 >> $@',",
+            ")"
+        )
+        buildTarget("//system_diskSpace_event:fire_diskSpace_notifications")
+        Truth.assertThat(eventListener.lowDiskSpaceEventCount).isGreaterThan(0)
+        Truth.assertThat(eventListener.veryLowDiskSpaceEventCount).isGreaterThan(0)
     }
-  }
-
-  private final SystemDiskSpaceEventListener eventListener = new SystemDiskSpaceEventListener();
-
-  @Override
-  protected BlazeRuntime.Builder getRuntimeBuilder() throws Exception {
-    return super.getRuntimeBuilder()
-        .addBlazeModule(eventListener)
-        .addBlazeModule(new SystemDiskSpaceModule())
-        .addBlazeService(new PlatformNativeDepsServiceImpl());
-  }
-
-  @Test
-  public void testDiskSpace() throws Exception {
-    Assume.assumeTrue(OS.getCurrent() == OS.DARWIN);
-    Runfiles runfiles = Runfiles.create();
-    String notifierFilePath =
-        runfiles.rlocation(
-            "io_bazel/src/test/java/com/google/devtools/build/lib/platform/darwin/notifier");
-    write(
-        "system_diskSpace_event/BUILD",
-        "genrule(",
-        "  name = 'fire_diskSpace_notifications',",
-        "  outs = ['fire_diskSpace_notifications.out'],",
-        "  cmd = '" + notifierFilePath + " com.google.bazel.test.diskspace.low 0 > $@ && ' + ",
-        "        '" + notifierFilePath + " com.google.bazel.test.diskspace.verylow 0 >> $@',",
-        ")");
-    buildTarget("//system_diskSpace_event:fire_diskSpace_notifications");
-    assertThat(eventListener.lowDiskSpaceEventCount).isGreaterThan(0);
-    assertThat(eventListener.veryLowDiskSpaceEventCount).isGreaterThan(0);
-  }
 }

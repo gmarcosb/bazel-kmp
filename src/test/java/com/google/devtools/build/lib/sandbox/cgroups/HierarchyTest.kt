@@ -11,40 +11,41 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.sandbox.cgroups
 
-package com.google.devtools.build.lib.sandbox.cgroups;
+import com.google.common.collect.ImmutableList
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.vfs.util.FsApparatus
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.io.IOException
+import java.nio.file.Path
 
-import static com.google.common.truth.Truth.assertThat;
+@RunWith(JUnit4::class)
+class HierarchyTest {
+    private val scratch: FsApparatus = FsApparatus.newNative()
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.vfs.util.FsApparatus;
-import java.io.IOException;
-import java.nio.file.Path;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @Test
+    @Throws(IOException::class)
+    fun testParse() {
+        val hierarchies: ImmutableList<Hierarchy?>? =
+            Hierarchy.parse(
+                scratch
+                    .file(
+                        "proc/self/cgroup",
+                        "1:cpu,cpuacct:/user.slice",
+                        "0::/user.slice/session-1.scope"
+                    )
+                    .getPathFile()
+            )
 
-@RunWith(JUnit4.class)
-public class HierarchyTest {
-  private final FsApparatus scratch = FsApparatus.newNative();
-
-  @Test
-  public void testParse() throws IOException {
-    ImmutableList<Hierarchy> hierarchies =
-        Hierarchy.parse(
-            scratch
-                .file(
-                    "proc/self/cgroup",
-                    "1:cpu,cpuacct:/user.slice",
-                    "0::/user.slice/session-1.scope")
-                .getPathFile());
-
-    assertThat(hierarchies).hasSize(2);
-    assertThat(hierarchies.get(0).isV2()).isFalse();
-    assertThat(hierarchies.get(1).isV2()).isTrue();
-    assertThat(hierarchies.get(0).controllers()).containsExactly("cpu", "cpuacct");
-    assertThat(hierarchies.get(1).controllers()).containsExactly("");
-    assertThat(hierarchies.get(0).path()).isEqualTo(Path.of("/user.slice"));
-    assertThat(hierarchies.get(1).path()).isEqualTo(Path.of("/user.slice/session-1.scope"));
-  }
+        Truth.assertThat(hierarchies).hasSize(2)
+        assertThat(hierarchies!!.get(0).isV2()).isFalse()
+        assertThat(hierarchies.get(1).isV2()).isTrue()
+        assertThat(hierarchies.get(0).controllers()).containsExactly("cpu", "cpuacct")
+        assertThat(hierarchies.get(1).controllers()).containsExactly("")
+        assertThat(hierarchies.get(0).path()).isEqualTo(Path.of("/user.slice"))
+        assertThat(hierarchies.get(1).path()).isEqualTo(Path.of("/user.slice/session-1.scope"))
+    }
 }

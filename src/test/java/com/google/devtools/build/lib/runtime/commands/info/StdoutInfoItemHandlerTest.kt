@@ -11,51 +11,45 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime.commands.info;
+package com.google.devtools.build.lib.runtime.commands.info
 
-import static com.google.common.truth.Truth.assertThat;
-import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.mockito.Mockito.mock;
+import com.google.devtools.build.lib.runtime.CommandEnvironment
 
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.runtime.commands.info.InfoItemHandler.InfoItemHandlerFactoryImpl;
-import com.google.devtools.build.lib.runtime.commands.info.InfoItemHandler.InfoItemOutputType;
-import com.google.devtools.build.lib.util.io.RecordingOutErr;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-@RunWith(JUnit4.class)
-public class StdoutInfoItemHandlerTest {
-  @Test
-  public void testStdOutputItemHandlerCreation() {
-    InfoItemHandler infoItemHandler =
-        new InfoItemHandlerFactoryImpl()
-            .create(
-                mock(CommandEnvironment.class), InfoItemOutputType.STDOUT, /* printKeys= */ true);
-    assertThat(infoItemHandler).isInstanceOf(StdoutInfoItemHandler.class);
-  }
-
-  @Test
-  public void testStdOutputItemHandler_addOneItemWithoutPrintingKey() throws Exception {
-    RecordingOutErr outErr = new RecordingOutErr();
-    try (StdoutInfoItemHandler stdoutInfoItemHandler =
-        new StdoutInfoItemHandler(outErr, /* printKeys= */ false)) {
-      stdoutInfoItemHandler.addInfoItem("info-1", "value-1\n".getBytes(UTF_8));
+@RunWith(JUnit4::class)
+class StdoutInfoItemHandlerTest {
+    @org.junit.Test
+    fun testStdOutputItemHandlerCreation() {
+        val infoItemHandler: InfoItemHandler =
+            InfoItemHandlerFactoryImpl()
+                .create(
+                    Mockito.mock<CommandEnvironment?>(CommandEnvironment::class.java),
+                    InfoItemOutputType.STDOUT,  /* printKeys= */
+                    true
+                )
+        Truth.assertThat(infoItemHandler).isInstanceOf(StdoutInfoItemHandler::class.java)
     }
 
-    assertThat(outErr.outAsLatin1()).isEqualTo("value-1\n");
-  }
-
-  @Test
-  public void testStdOutputItemHandler_addTwoItemWithPrintingKey() throws Exception {
-    RecordingOutErr outErr = new RecordingOutErr();
-    try (StdoutInfoItemHandler stdoutInfoItemHandler =
-        new StdoutInfoItemHandler(outErr, /* printKeys= */ true)) {
-      stdoutInfoItemHandler.addInfoItem("foo", "value-foo\n".getBytes(UTF_8));
-      stdoutInfoItemHandler.addInfoItem("bar", "value-bar\n".getBytes(UTF_8));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStdOutputItemHandler_addOneItemWithoutPrintingKey() {
+        val outErr: RecordingOutErr = RecordingOutErr()
+        StdoutInfoItemHandler(outErr,  /* printKeys= */false).use { stdoutInfoItemHandler ->
+            stdoutInfoItemHandler.addInfoItem(
+                "info-1",
+                "value-1\n".toByteArray(java.nio.charset.StandardCharsets.UTF_8)
+            )
+        }
+        assertThat(outErr.outAsLatin1()).isEqualTo("value-1\n")
     }
 
-    assertThat(outErr.outAsLatin1()).isEqualTo("foo: value-foo\nbar: value-bar\n");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStdOutputItemHandler_addTwoItemWithPrintingKey() {
+        val outErr: RecordingOutErr = RecordingOutErr()
+        StdoutInfoItemHandler(outErr,  /* printKeys= */true).use { stdoutInfoItemHandler ->
+            stdoutInfoItemHandler.addInfoItem("foo", "value-foo\n".toByteArray(java.nio.charset.StandardCharsets.UTF_8))
+            stdoutInfoItemHandler.addInfoItem("bar", "value-bar\n".toByteArray(java.nio.charset.StandardCharsets.UTF_8))
+        }
+        assertThat(outErr.outAsLatin1()).isEqualTo("foo: value-foo\nbar: value-bar\n")
+    }
 }

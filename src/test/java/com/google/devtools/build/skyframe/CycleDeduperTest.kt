@@ -11,44 +11,48 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import com.google.common.collect.ImmutableList;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Simple tests for [CycleDeduper].  */
+@RunWith(JUnit4::class)
+class CycleDeduperTest {
+    private val cycleDeduper: CycleDeduper<String?> = CycleDeduper()
 
-/** Simple tests for {@link CycleDeduper}. */
-@RunWith(JUnit4.class)
-public class CycleDeduperTest {
+    @org.junit.Test
+    fun simple() {
+        assertThat(cycleDeduper.alreadySeen(com.google.common.collect.ImmutableList.of<E?>("a", "b"))).isFalse()
+        assertThat(cycleDeduper.alreadySeen(com.google.common.collect.ImmutableList.of<E?>("a", "b"))).isTrue()
+        assertThat(cycleDeduper.alreadySeen(com.google.common.collect.ImmutableList.of<E?>("b", "a"))).isTrue()
 
-  private CycleDeduper<String> cycleDeduper = new CycleDeduper<>();
+        assertThat(cycleDeduper.alreadySeen(com.google.common.collect.ImmutableList.of<E?>("a", "b", "c"))).isFalse()
+        assertThat(cycleDeduper.alreadySeen(com.google.common.collect.ImmutableList.of<E?>("b", "c", "a"))).isTrue()
+        assertThat(cycleDeduper.alreadySeen(com.google.common.collect.ImmutableList.of<E?>("c", "a", "b"))).isTrue()
+        assertThat(cycleDeduper.alreadySeen(com.google.common.collect.ImmutableList.of<E?>("b", "a", "c"))).isFalse()
+        assertThat(cycleDeduper.alreadySeen(com.google.common.collect.ImmutableList.of<E?>("c", "b", "a"))).isTrue()
+    }
 
-  @Test
-  public void simple() {
-    assertThat(cycleDeduper.alreadySeen(ImmutableList.of("a", "b"))).isFalse();
-    assertThat(cycleDeduper.alreadySeen(ImmutableList.of("a", "b"))).isTrue();
-    assertThat(cycleDeduper.alreadySeen(ImmutableList.of("b", "a"))).isTrue();
+    @org.junit.Test
+    fun badCycle_empty() {
+        org.junit.Assert.assertThrows<java.lang.IllegalStateException?>(
+            java.lang.IllegalStateException::class.java,
+            org.junit.function.ThrowingRunnable { cycleDeduper.alreadySeen(com.google.common.collect.ImmutableList.of<E?>()) })
+    }
 
-    assertThat(cycleDeduper.alreadySeen(ImmutableList.of("a", "b", "c"))).isFalse();
-    assertThat(cycleDeduper.alreadySeen(ImmutableList.of("b", "c", "a"))).isTrue();
-    assertThat(cycleDeduper.alreadySeen(ImmutableList.of("c", "a", "b"))).isTrue();
-    assertThat(cycleDeduper.alreadySeen(ImmutableList.of("b", "a", "c"))).isFalse();
-    assertThat(cycleDeduper.alreadySeen(ImmutableList.of("c", "b", "a"))).isTrue();
-  }
-
-  @Test
-  public void badCycle_empty() {
-    assertThrows(IllegalStateException.class, () -> cycleDeduper.alreadySeen(ImmutableList.of()));
-  }
-
-  @Test
-  public void badCycle_nonUniqueMembers() {
-    assertThrows(
-        IllegalStateException.class,
-        () -> cycleDeduper.alreadySeen(ImmutableList.of("a", "b", "a")));
-  }
+    @org.junit.Test
+    fun badCycle_nonUniqueMembers() {
+        org.junit.Assert.assertThrows<java.lang.IllegalStateException?>(
+            java.lang.IllegalStateException::class.java,
+            org.junit.function.ThrowingRunnable {
+                cycleDeduper.alreadySeen(
+                    com.google.common.collect.ImmutableList.of<E?>(
+                        "a",
+                        "b",
+                        "a"
+                    )
+                )
+            })
+    }
 }

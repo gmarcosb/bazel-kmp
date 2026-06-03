@@ -11,317 +11,304 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-package com.google.devtools.build.lib.buildtool;
+package com.google.devtools.build.lib.buildtool
 
 // For debugging, uncomment these and the call to setupLogging() below.
 //
 // import com.google.devtools.build.lib.blaze.BlazeRuntime;
 // import java.util.logging.Level;
 
-import static com.google.common.collect.Iterables.getOnlyElement;
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-import static org.junit.Assert.fail;
+import com.google.devtools.build.lib.actions.Artifact
 
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.BuildFailedException;
-import com.google.devtools.build.lib.buildtool.util.BuildIntegrationTestCase;
-import com.google.devtools.build.lib.events.Event;
-import java.io.IOException;
-import java.util.Iterator;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** A test of the semantics of the keepGoing flag: continue as much as possible after an error. */
-@RunWith(JUnit4.class)
-public class KeepGoingTest extends BuildIntegrationTestCase {
-
-  @Before
-  public final void addOptions() {
-    addOptions("--keep_going");
-  }
-
-  private static String genrule(String name, String deps, int succeeds) {
-    String out = name + ".out";
-    String cmd = (succeeds != 0) ? "cp $(location in) $(location " + out + ")" : "exit 42";
-    return "genrule(name='"
-        + name
-        + "', "
-        + "           srcs=['in',"
-        + deps
-        + "], "
-        + "           outs=['"
-        + out
-        + "'], "
-        + "           cmd='"
-        + cmd
-        + "')\n";
-  }
-
-  private static final int A = 0x01;
-  private static final int B = 0x02;
-  private static final int C = 0x04;
-  private static final int D = 0x08;
-  private static final int E = 0x10;
-
-  private static final String[] labels = {
-    "//keepgoing:A", "//keepgoing:B", "//keepgoing:C", "//keepgoing:D", "//keepgoing:E"
-  };
-
-  // "mask" is a bitmask of rules that succeed.
-  private void writeFiles(int mask) throws IOException {
-    // A --> B --> C
-    // |     +---> D
-    // |
-    // +---> E
-    write(
-        "keepgoing/BUILD",
-        genrule("A", "'B','E'", mask & A)
-            + genrule("B", "'C','D'", mask & B)
-            + genrule("C", "", mask & C)
-            + genrule("D", "", mask & D)
-            + genrule("E", "", mask & E));
-
-    write("keepgoing/in", "(input)");
-  }
-
-  // "mask" is a bitmask of rules that succeed.
-  private void assertBuilt(int mask) throws Exception {
-    for (int ii = 0; ii < labels.length; ii++) {
-      assertOneBuilt(labels[ii], (mask & (1 << ii)) != 0);
+/** A test of the semantics of the keepGoing flag: continue as much as possible after an error.  */
+@RunWith(JUnit4::class)
+class KeepGoingTest : BuildIntegrationTestCase() {
+    @Before
+    fun addOptions() {
+        addOptions("--keep_going")
     }
-  }
 
-  private void assertOneBuilt(String label, boolean shouldBeBuilt) throws Exception {
-    Iterable<Artifact> files = getArtifacts(label);
-    for (Artifact file : files) {
-      boolean isActuallyBuilt = file.getPath().exists();
-      if (file.getPath().exists() != shouldBeBuilt) {
-        fail(
-            file.prettyPrint()
-                + ": shouldBeBuilt="
-                + shouldBeBuilt
-                + ", isActuallyBuilt="
-                + isActuallyBuilt);
-      }
+    // "mask" is a bitmask of rules that succeed.
+    @Throws(IOException::class)
+    private fun writeFiles(mask: Int) {
+        // A --> B --> C
+        // |     +---> D
+        // |
+        // +---> E
+        write(
+            "keepgoing/BUILD",
+            (genrule("A", "'B','E'", mask and A)
+                    + genrule("B", "'C','D'", mask and B)
+                    + genrule("C", "", mask and C)
+                    + genrule("D", "", mask and D)
+                    + genrule("E", "", mask and E))
+        )
+
+        write("keepgoing/in", "(input)")
     }
-  }
 
-  private void assertNoMoreEvents(Iterator<Event> events) {
-    boolean ok = true;
-    while (events.hasNext()) {
-      System.err.println(events.next());
-      ok = false;
+    // "mask" is a bitmask of rules that succeed.
+    @Throws(java.lang.Exception::class)
+    private fun assertBuilt(mask: Int) {
+        for (ii in labels.indices) {
+            assertOneBuilt(labels[ii], (mask and (1 shl ii)) != 0)
+        }
     }
-    assertThat(ok).isTrue();
-  }
 
-  // Build //keepgoing:A, expecting failure.  (The BuildResult instance is
-  // subsequently available via getRequest() for later assertions.)
-  private void buildA() throws Exception {
-    BuildFailedException e =
-        assertThrows(BuildFailedException.class, () -> buildTarget("//keepgoing:A"));
-    assertThat(e).hasMessageThat().isNull();
-  }
-
-  /********************************************************************
-   *                                                                  *
-   *                         Actual tests...                          *
-   *                                                                  *
-   ********************************************************************/
-
-  @Test
-  public void testKeepGoingAfterCFails() throws Exception {
-    // C fails due to error (logged).
-    // B fails due to failed prereqs (logged).
-    // A fails due to failed prereqs (logged).
-    // D and E are built.
-    // Then a BuildFailedException is thrown.
-    writeFiles(A | B | D | E);
-    buildA();
-
-    Iterator<Event> errors = events.errors().iterator();
-    assertThat(errors.next().getMessage())
-        .containsMatch("Executing genrule //keepgoing:C failed: .*Exit 42.*");
-    assertNoMoreEvents(errors);
-
-    assertBuilt(D | E);
-  }
-
-  @Test
-  public void testKeepGoingAfterDFails() throws Exception {
-    // D fails due to error (logged).
-    // B fails due to failed prereqs (logged).
-    // A fails due to failed prereqs (logged).
-    // C and E are built.
-    // Then a BuildFailedException is thrown.
-    writeFiles(A | B | C | E);
-    buildA();
-
-    Iterator<Event> errors = events.errors().iterator();
-    assertThat(errors.next().getMessage())
-        .containsMatch("Executing genrule //keepgoing:D failed: .*Exit 42.*");
-    assertNoMoreEvents(errors);
-
-    assertBuilt(C | E);
-  }
-
-  @Test
-  public void testKeepGoingAfterCAndDFail() throws Exception {
-    // C and D fail due to error (logged).
-    // B fails due to failed prereqs (logged).
-    // A fails due to failed prereqs (logged).
-    // E is built.
-    // Then a BuildFailedException is thrown.
-    writeFiles(A | B | E);
-    buildA();
-
-    // C, D events are unordered:
-    Iterator<Event> errors = events.errors().iterator();
-    assertThat(errors.next().getMessage())
-        .containsMatch("Executing genrule //keepgoing:(C|D) failed: .*Exit 42.*");
-    assertThat(errors.next().getMessage())
-        .containsMatch("Executing genrule //keepgoing:(C|D) failed: .*Exit 42.*");
-
-    assertNoMoreEvents(errors);
-
-    assertBuilt(E);
-  }
-
-  @Test
-  public void testKeepGoingAfterEFails() throws Exception {
-    // E fails due to error (logged).
-    // A fails due to failed prereqs (logged).
-    // B,C,D  are built.
-    // Then a BuildFailedException is thrown.
-    writeFiles(A | B | C | D);
-    buildA();
-
-    Iterator<Event> errors = events.errors().iterator();
-    assertThat(errors.next().getMessage())
-        .containsMatch("Executing genrule //keepgoing:E failed: .*Exit 42.*");
-    assertNoMoreEvents(errors);
-
-    assertBuilt(B | C | D);
-  }
-
-  // Regression test for b/8826301, incremental builder does not correctly set root actions.
-  // Check that keep going works on second build. Note that this test failed non-deterministically
-  // in b/8826301, because it depended on HashSet iteration order.
-  @Test
-  public void testKeepGoingOnSecondBuild() throws Exception {
-    StringBuilder buildFile = new StringBuilder();
-    buildFile
-        .append("genrule(name='topgen', tools=[':badgen'], outs=['top.out'], ")
-        .append("cmd='touch $@')\n")
-        .append("genrule(name='badgen', executable=1, srcs=['badsrc.sh'], ")
-        .append("outs=['bad.out'], cmd='bash $< >  $@', tools = [");
-    // Make graph large so incremental dependency checker does graph culling, if enabled.
-    for (int i = 0; i < 60; i++) {
-      buildFile.append("':gen" + i + "', ");
+    @Throws(java.lang.Exception::class)
+    private fun assertOneBuilt(label: String?, shouldBeBuilt: Boolean) {
+        val files: Iterable<Artifact> = getArtifacts(label)
+        for (file in files) {
+            val isActuallyBuilt: Boolean = file.getPath().exists()
+            if (file.getPath().exists() !== shouldBeBuilt) {
+                org.junit.Assert.fail(
+                    (file.prettyPrint()
+                            + ": shouldBeBuilt="
+                            + shouldBeBuilt
+                            + ", isActuallyBuilt="
+                            + isActuallyBuilt)
+                )
+            }
+        }
     }
-    buildFile.append("])\n");
-    for (int i = 0; i < 60; i++) {
-      buildFile
-          .append("genrule(name='gen")
-          .append(i)
-          .append("', " + "outs=['gen")
-          .append(i)
-          .append(".out'], executable=1, cmd = 'echo \"#!/bin/true\" > $@')\n");
+
+    private fun assertNoMoreEvents(events: MutableIterator<com.google.devtools.build.lib.events.Event?>) {
+        var ok = true
+        while (events.hasNext()) {
+            java.lang.System.err.println(events.next())
+            ok = false
+        }
+        Truth.assertThat(ok).isTrue()
     }
-    write("keepgoing/BUILD", buildFile.toString());
-    write("keepgoing/badsrc.sh", "exit 0");
-    buildTarget("//keepgoing:topgen");
-    write("keepgoing/badsrc.sh", "exit 42");
-    BuildFailedException e =
-        assertThrows(BuildFailedException.class, () -> buildTarget("//keepgoing:topgen"));
-    assertThat(e).hasMessageThat().isNull();
-    Iterator<Event> errors = events.errors().iterator();
-    assertThat(errors.next().getMessage())
-        .containsMatch("Executing genrule //keepgoing:badgen.* failed: .*Exit 42.*");
-    assertNoMoreEvents(errors);
-  }
 
-  @Test
-  public void testConfigurationErrorsAreToleratedWithKeepGoing() throws Exception {
-    runtimeWrapper.addOptions("--experimental_builtins_injection_override=+cc_library");
-    write(
-        "a/BUILD",
-        "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
-        "cc_library(name='a', srcs=['missing.foo'])");
-    write(
-        "b/BUILD",
-        "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
-        "cc_library(name='b')");
+    // Build //keepgoing:A, expecting failure.  (The BuildResult instance is
+    // subsequently available via getRequest() for later assertions.)
+    @Throws(java.lang.Exception::class)
+    private fun buildA() {
+        val e: BuildFailedException? =
+            org.junit.Assert.assertThrows<T?>(
+                BuildFailedException::class.java,
+                org.junit.function.ThrowingRunnable { buildTarget("//keepgoing:A") })
+        assertThat(e).hasMessageThat().isNull()
+    }
 
-    /**
-     * Regression coverage for bug 1191396: "blaze build -k exits zero if execution succeeds, even
-     * if there were analysis errors".
+    /********************************************************************
+     * *
+     * Actual tests...                          *
+     * *
      */
-    assertBuildFailedExceptionFromBuilding(
-        "command succeeded, but not all targets were analyzed", "//a", "//b");
-    events.assertContainsError(
-        "in srcs attribute of cc_library rule @@//a:a: source file '@@//a:missing.foo' is misplaced"
-            + " here");
-    events.assertContainsInfo("Build succeeded for only 1 of 2 top-level targets");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testKeepGoingAfterCFails() {
+        // C fails due to error (logged).
+        // B fails due to failed prereqs (logged).
+        // A fails due to failed prereqs (logged).
+        // D and E are built.
+        // Then a BuildFailedException is thrown.
+        writeFiles(A or B or D or E)
+        buildA()
 
-    assertSameConfiguredTarget("//b:b");
-  }
+        val errors: MutableIterator<com.google.devtools.build.lib.events.Event?> = events.errors().iterator()
+        Truth.assertThat(errors.next().getMessage())
+            .containsMatch("Executing genrule //keepgoing:C failed: .*Exit 42.*")
+        assertNoMoreEvents(errors)
 
-  @Test
-  public void testKeepGoingAfterLoadingPhaseErrors() throws Exception {
-    write(
-        "a/BUILD",
-        "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
-        "cc_library(name='a')");
-    write(
-        "b/BUILD",
-        "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
-        "cc_library(name='b', deps = ['//missing:lib'])");
+        assertBuilt(D or E)
+    }
 
-    assertBuildFailedExceptionFromBuilding(
-        "command succeeded, but not all targets were analyzed", "//a", "//b"); //
-    events.assertContainsError("no such package 'missing': BUILD file not found in any of the");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testKeepGoingAfterDFails() {
+        // D fails due to error (logged).
+        // B fails due to failed prereqs (logged).
+        // A fails due to failed prereqs (logged).
+        // C and E are built.
+        // Then a BuildFailedException is thrown.
+        writeFiles(A or B or C or E)
+        buildA()
 
-    assertSameConfiguredTarget("//a:a");
-    events.assertContainsInfo(" succeeded for only 1 of ");
-  }
+        val errors: MutableIterator<com.google.devtools.build.lib.events.Event?> = events.errors().iterator()
+        Truth.assertThat(errors.next().getMessage())
+            .containsMatch("Executing genrule //keepgoing:D failed: .*Exit 42.*")
+        assertNoMoreEvents(errors)
 
-  @Test
-  public void testKeepGoingAfterTargetParsingErrors() throws Exception {
-    write(
-        "a/BUILD",
-        "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
-        "cc_library(name='a', xyz)");
-    write(
-        "b/BUILD",
-        "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
-        "cc_library(name='b', xyz)");
-    write(
-        "b/b1/BUILD",
-        "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
-        "cc_library(name='b1')");
-    write(
-        "b/b2/BUILD",
-        "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
-        "cc_library(name='b2', xyz)");
+        assertBuilt(C or E)
+    }
 
-    assertBuildFailedExceptionFromBuilding(
-        "command succeeded, but there were errors parsing the target pattern", "b/...", "//a");
-    events.assertContainsWarning("Target pattern parsing failed.");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testKeepGoingAfterCAndDFail() {
+        // C and D fail due to error (logged).
+        // B fails due to failed prereqs (logged).
+        // A fails due to failed prereqs (logged).
+        // E is built.
+        // Then a BuildFailedException is thrown.
+        writeFiles(A or B or E)
+        buildA()
 
-    assertSameConfiguredTarget("//b/b1");
-  }
+        // C, D events are unordered:
+        val errors: MutableIterator<com.google.devtools.build.lib.events.Event?> = events.errors().iterator()
+        Truth.assertThat(errors.next().getMessage())
+            .containsMatch("Executing genrule //keepgoing:(C|D) failed: .*Exit 42.*")
+        Truth.assertThat(errors.next().getMessage())
+            .containsMatch("Executing genrule //keepgoing:(C|D) failed: .*Exit 42.*")
 
-  @Test
-  public void testKeepGoingAfterSchedulingDependencyFailure() throws Exception {
-    write("foo/foo.cc", "int main() { return 0; }");
-    write(
-        "foo/BUILD",
-        """
+        assertNoMoreEvents(errors)
+
+        assertBuilt(E)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testKeepGoingAfterEFails() {
+        // E fails due to error (logged).
+        // A fails due to failed prereqs (logged).
+        // B,C,D  are built.
+        // Then a BuildFailedException is thrown.
+        writeFiles(A or B or C or D)
+        buildA()
+
+        val errors: MutableIterator<com.google.devtools.build.lib.events.Event?> = events.errors().iterator()
+        Truth.assertThat(errors.next().getMessage())
+            .containsMatch("Executing genrule //keepgoing:E failed: .*Exit 42.*")
+        assertNoMoreEvents(errors)
+
+        assertBuilt(B or C or D)
+    }
+
+    // Regression test for b/8826301, incremental builder does not correctly set root actions.
+    // Check that keep going works on second build. Note that this test failed non-deterministically
+    // in b/8826301, because it depended on HashSet iteration order.
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testKeepGoingOnSecondBuild() {
+        val buildFile: java.lang.StringBuilder = java.lang.StringBuilder()
+        buildFile
+            .append("genrule(name='topgen', tools=[':badgen'], outs=['top.out'], ")
+            .append("cmd='touch $@')\n")
+            .append("genrule(name='badgen', executable=1, srcs=['badsrc.sh'], ")
+            .append("outs=['bad.out'], cmd='bash $< >  $@', tools = [")
+        // Make graph large so incremental dependency checker does graph culling, if enabled.
+        for (i in 0..59) {
+            buildFile.append("':gen" + i + "', ")
+        }
+        buildFile.append("])\n")
+        for (i in 0..59) {
+            buildFile
+                .append("genrule(name='gen")
+                .append(i)
+                .append("', " + "outs=['gen")
+                .append(i)
+                .append(".out'], executable=1, cmd = 'echo \"#!/bin/true\" > $@')\n")
+        }
+        write("keepgoing/BUILD", buildFile.toString())
+        write("keepgoing/badsrc.sh", "exit 0")
+        buildTarget("//keepgoing:topgen")
+        write("keepgoing/badsrc.sh", "exit 42")
+        val e: BuildFailedException? =
+            org.junit.Assert.assertThrows<T?>(
+                BuildFailedException::class.java,
+                org.junit.function.ThrowingRunnable { buildTarget("//keepgoing:topgen") })
+        assertThat(e).hasMessageThat().isNull()
+        val errors: MutableIterator<com.google.devtools.build.lib.events.Event?> = events.errors().iterator()
+        Truth.assertThat(errors.next().getMessage())
+            .containsMatch("Executing genrule //keepgoing:badgen.* failed: .*Exit 42.*")
+        assertNoMoreEvents(errors)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testConfigurationErrorsAreToleratedWithKeepGoing() {
+        runtimeWrapper.addOptions("--experimental_builtins_injection_override=+cc_library")
+        write(
+            "a/BUILD",
+            "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
+            "cc_library(name='a', srcs=['missing.foo'])"
+        )
+        write(
+            "b/BUILD",
+            "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
+            "cc_library(name='b')"
+        )
+
+        /**
+         * Regression coverage for bug 1191396: "blaze build -k exits zero if execution succeeds, even
+         * if there were analysis errors".
+         */
+        assertBuildFailedExceptionFromBuilding(
+            "command succeeded, but not all targets were analyzed", "//a", "//b"
+        )
+        events.assertContainsError(
+            "in srcs attribute of cc_library rule @@//a:a: source file '@@//a:missing.foo' is misplaced"
+                    + " here"
+        )
+        events.assertContainsInfo("Build succeeded for only 1 of 2 top-level targets")
+
+        assertSameConfiguredTarget("//b:b")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testKeepGoingAfterLoadingPhaseErrors() {
+        write(
+            "a/BUILD",
+            "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
+            "cc_library(name='a')"
+        )
+        write(
+            "b/BUILD",
+            "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
+            "cc_library(name='b', deps = ['//missing:lib'])"
+        )
+
+        assertBuildFailedExceptionFromBuilding(
+            "command succeeded, but not all targets were analyzed", "//a", "//b"
+        ) //
+        events.assertContainsError("no such package 'missing': BUILD file not found in any of the")
+
+        assertSameConfiguredTarget("//a:a")
+        events.assertContainsInfo(" succeeded for only 1 of ")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testKeepGoingAfterTargetParsingErrors() {
+        write(
+            "a/BUILD",
+            "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
+            "cc_library(name='a', xyz)"
+        )
+        write(
+            "b/BUILD",
+            "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
+            "cc_library(name='b', xyz)"
+        )
+        write(
+            "b/b1/BUILD",
+            "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
+            "cc_library(name='b1')"
+        )
+        write(
+            "b/b2/BUILD",
+            "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
+            "cc_library(name='b2', xyz)"
+        )
+
+        assertBuildFailedExceptionFromBuilding(
+            "command succeeded, but there were errors parsing the target pattern", "b/...", "//a"
+        )
+        events.assertContainsWarning("Target pattern parsing failed.")
+
+        assertSameConfiguredTarget("//b/b1")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testKeepGoingAfterSchedulingDependencyFailure() {
+        write("foo/foo.cc", "int main() { return 0; }")
+        write(
+            "foo/BUILD",
+            """
         load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_binary(
@@ -344,29 +331,37 @@ public class KeepGoingTest extends BuildIntegrationTestCase {
             outs = ["gen.h"],
             cmd = "exit 1",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertThrows(BuildFailedException.class, () -> buildTarget("//foo:foo"));
-  }
+        org.junit.Assert.assertThrows<T?>(
+            BuildFailedException::class.java,
+            org.junit.function.ThrowingRunnable { buildTarget("//foo:foo") })
+    }
 
-  private void assertSameConfiguredTarget(String label) throws Exception {
-    assertThat(getOnlyElement(getResult().getSuccessfulTargets()))
-        .isSameInstanceAs(getConfiguredTarget(label));
-  }
+    @Throws(java.lang.Exception::class)
+    private fun assertSameConfiguredTarget(label: String?) {
+        assertThat(com.google.common.collect.Iterables.getOnlyElement<T?>(getResult().getSuccessfulTargets()))
+            .isSameInstanceAs(getConfiguredTarget(label))
+    }
 
-  @Test
-  public void testKeepGoingAfterAnalysisFailure() throws Exception {
-    write(
-        "analysiserror/failer.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testKeepGoingAfterAnalysisFailure() {
+        write(
+            "analysiserror/failer.bzl",
+            """
         def _failer_impl(ctx):
             fail("BOOM!")
 
         failer = rule(implementation = _failer_impl)
-        """);
-    write(
-        "analysiserror/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        write(
+            "analysiserror/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         load(":failer.bzl", "failer")
 
@@ -381,20 +376,54 @@ public class KeepGoingTest extends BuildIntegrationTestCase {
         failer(name = "foo")
 
         cc_library(name = "bar")
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertBuildFailedExceptionFromBuilding(
-        "command succeeded, but not all targets were analyzed",
-        "//analysiserror:foo",
-        "//analysiserror:bar");
-    events.assertContainsError("Error in fail: BOOM!");
+        assertBuildFailedExceptionFromBuilding(
+            "command succeeded, but not all targets were analyzed",
+            "//analysiserror:foo",
+            "//analysiserror:bar"
+        )
+        events.assertContainsError("Error in fail: BOOM!")
 
-    assertSameConfiguredTarget("//analysiserror:bar");
-  }
+        assertSameConfiguredTarget("//analysiserror:bar")
+    }
 
-  private void assertBuildFailedExceptionFromBuilding(String msg, String... targets) {
-    BuildFailedException e = assertThrows(BuildFailedException.class, () -> buildTarget(targets));
-    assertThat(e).hasMessageThat().isEqualTo(msg);
-    assertThat(getResult().getSuccess()).isFalse();
-  }
+    private fun assertBuildFailedExceptionFromBuilding(msg: String?, vararg targets: String?) {
+        val e: BuildFailedException? = org.junit.Assert.assertThrows<T?>(
+            BuildFailedException::class.java,
+            org.junit.function.ThrowingRunnable { buildTarget(*targets) })
+        assertThat(e).hasMessageThat().isEqualTo(msg)
+        assertThat(getResult().getSuccess()).isFalse()
+    }
+
+    companion object {
+        private fun genrule(name: String, deps: String?, succeeds: Int): String {
+            val out = name + ".out"
+            val cmd = if (succeeds != 0) "cp $(location in) $(location " + out + ")" else "exit 42"
+            return ("genrule(name='"
+                    + name
+                    + "', "
+                    + "           srcs=['in',"
+                    + deps
+                    + "], "
+                    + "           outs=['"
+                    + out
+                    + "'], "
+                    + "           cmd='"
+                    + cmd
+                    + "')\n")
+        }
+
+        private const val A = 0x01
+        private const val B = 0x02
+        private const val C = 0x04
+        private const val D = 0x08
+        private const val E = 0x10
+
+        private val labels = arrayOf<String?>(
+            "//keepgoing:A", "//keepgoing:B", "//keepgoing:C", "//keepgoing:D", "//keepgoing:E"
+        )
+    }
 }

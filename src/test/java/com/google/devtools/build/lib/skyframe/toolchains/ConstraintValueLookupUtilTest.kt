@@ -11,211 +11,200 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.toolchains
 
-package com.google.devtools.build.lib.skyframe.toolchains;
+import com.google.devtools.build.lib.analysis.BlazeDirectories
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.skyframe.EvaluationResultSubjectFactory.assertThatEvaluationResult;
-import static java.util.Objects.requireNonNull;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.analysis.platform.ConstraintValueInfo;
-import com.google.devtools.build.lib.analysis.util.AnalysisMock;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.NoSuchPackageException;
-import com.google.devtools.build.lib.rules.platform.ToolchainTestCase;
-import com.google.devtools.build.lib.skyframe.ConfiguredTargetKey;
-import com.google.devtools.build.lib.skyframe.serialization.autocodec.AutoCodec;
-import com.google.devtools.build.lib.skyframe.toolchains.ConstraintValueLookupUtil.InvalidConstraintValueException;
-import com.google.devtools.build.lib.skyframe.util.SkyframeExecutorTestUtils;
-import com.google.devtools.build.skyframe.EvaluationResult;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionException;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.util.List;
-import javax.annotation.Nullable;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link ConstraintValueLookupUtil}. */
-@RunWith(JUnit4.class)
-public class ConstraintValueLookupUtilTest extends ToolchainTestCase {
-
-  /**
-   * An {@link AnalysisMock} that injects {@link GetConstraintValueInfoFunction} into the Skyframe
-   * executor.
-   */
-  private static final class AnalysisMockWithGetPlatformInfoFunction extends AnalysisMock.Delegate {
-    AnalysisMockWithGetPlatformInfoFunction() {
-      super(AnalysisMock.get());
-    }
-
-    @Override
-    public ImmutableMap<SkyFunctionName, SkyFunction> getSkyFunctions(
-        BlazeDirectories directories) {
-      return ImmutableMap.<SkyFunctionName, SkyFunction>builder()
-          .putAll(super.getSkyFunctions(directories))
-          .put(GET_CONSTRAINT_VALUE_INFO_FUNCTION, new GetConstraintValueInfoFunction())
-          .buildOrThrow();
-    }
-  }
-
-  @Override
-  protected AnalysisMock getAnalysisMock() {
-    return new AnalysisMockWithGetPlatformInfoFunction();
-  }
-
-  @Test
-  public void testConstraintValueLookup() throws Exception {
-    ConfiguredTargetKey linuxKey =
-        ConfiguredTargetKey.builder()
-            .setLabel(Label.parseCanonicalUnchecked("//constraints:linux"))
-            .setConfigurationKey(targetConfigKey)
-            .build();
-    ConfiguredTargetKey macKey =
-        ConfiguredTargetKey.builder()
-            .setLabel(Label.parseCanonicalUnchecked("//constraints:mac"))
-            .setConfigurationKey(targetConfigKey)
-            .build();
-    GetConstraintValueInfoKey key =
-        GetConstraintValueInfoKey.create(ImmutableList.of(linuxKey, macKey));
-
-    EvaluationResult<GetConstraintValueInfoValue> result = getConstraintValueInfo(key);
-
-    assertThatEvaluationResult(result).hasNoError();
-    assertThatEvaluationResult(result).hasEntryThat(key).isNotNull();
-
-    List<ConstraintValueInfo> constraintValues = result.get(key).constraintValues();
-    assertThat(constraintValues).contains(linuxConstraint);
-    assertThat(constraintValues).contains(macConstraint);
-    assertThat(constraintValues).hasSize(2);
-  }
-
-  @Test
-  public void testConstraintValueLookup_targetNotConstraintValue() throws Exception {
-    scratch.file("invalid/BUILD", "filegroup(name = 'not_a_constraint')");
-
-    ConfiguredTargetKey targetKey =
-        ConfiguredTargetKey.builder()
-            .setLabel(Label.parseCanonicalUnchecked("//invalid:not_a_constraint"))
-            .setConfigurationKey(targetConfigKey)
-            .build();
-    GetConstraintValueInfoKey key = GetConstraintValueInfoKey.create(ImmutableList.of(targetKey));
-
-    EvaluationResult<GetConstraintValueInfoValue> result = getConstraintValueInfo(key);
-
-    assertThatEvaluationResult(result).hasError();
-    assertThatEvaluationResult(result)
-        .hasErrorEntryForKeyThat(key)
-        .hasExceptionThat()
-        .isInstanceOf(InvalidConstraintValueException.class);
-    assertThatEvaluationResult(result)
-        .hasErrorEntryForKeyThat(key)
-        .hasExceptionThat()
-        .hasMessageThat()
-        .contains("//invalid:not_a_constraint");
-  }
-
-  @Test
-  public void testConstraintValueLookup_targetDoesNotExist() throws Exception {
-    ConfiguredTargetKey targetKey =
-        ConfiguredTargetKey.builder()
-            .setLabel(Label.parseCanonicalUnchecked("//fake:missing"))
-            .setConfigurationKey(targetConfigKey)
-            .build();
-    GetConstraintValueInfoKey key = GetConstraintValueInfoKey.create(ImmutableList.of(targetKey));
-
-    reporter.removeHandler(failFastHandler);
-    EvaluationResult<GetConstraintValueInfoValue> result = getConstraintValueInfo(key);
-
-    assertThatEvaluationResult(result).hasError();
-    assertThatEvaluationResult(result)
-        .hasErrorEntryForKeyThat(key)
-        .hasExceptionThat()
-        .isInstanceOf(InvalidConstraintValueException.class);
-    assertThatEvaluationResult(result)
-        .hasErrorEntryForKeyThat(key)
-        .hasExceptionThat()
-        .hasCauseThat()
-        .isInstanceOf(NoSuchPackageException.class);
-
-    assertContainsEvent("no such package 'fake': BUILD file not found");
-  }
-
-  // Calls ConstraintValueLookupUtil.getConstraintValueInfo.
-  private static final SkyFunctionName GET_CONSTRAINT_VALUE_INFO_FUNCTION =
-      SkyFunctionName.createHermetic("GET_CONSTRAINT_VALUE_INFO_FUNCTION");
-
-  @AutoCodec
-  record GetConstraintValueInfoKey(Iterable<ConfiguredTargetKey> constraintValueKeys)
-      implements SkyKey {
-    GetConstraintValueInfoKey {
-      requireNonNull(constraintValueKeys, "constraintValueKeys");
-    }
-
-    @Override
-    public SkyFunctionName functionName() {
-      return GET_CONSTRAINT_VALUE_INFO_FUNCTION;
-    }
-
-    public static GetConstraintValueInfoKey create(
-        Iterable<ConfiguredTargetKey> constraintValueKeys) {
-      return new GetConstraintValueInfoKey(constraintValueKeys);
-    }
-  }
-
-  EvaluationResult<GetConstraintValueInfoValue> getConstraintValueInfo(
-      GetConstraintValueInfoKey key) throws InterruptedException {
-    try {
-      // Must re-enable analysis for Skyframe functions that create configured targets.
-      skyframeExecutor.getSkyframeBuildView().enableAnalysis(true);
-      return SkyframeExecutorTestUtils.evaluate(
-          skyframeExecutor, key, /*keepGoing=*/ false, reporter);
-    } finally {
-      skyframeExecutor.getSkyframeBuildView().enableAnalysis(false);
-    }
-  }
-
-  @AutoCodec
-  record GetConstraintValueInfoValue(List<ConstraintValueInfo> constraintValues)
-      implements SkyValue {
-    GetConstraintValueInfoValue {
-      requireNonNull(constraintValues, "constraintValues");
-    }
-
-    static GetConstraintValueInfoValue create(List<ConstraintValueInfo> constraintValues) {
-      return new GetConstraintValueInfoValue(constraintValues);
-    }
-  }
-
-  private static final class GetConstraintValueInfoFunction implements SkyFunction {
-
-    @Nullable
-    @Override
-    public SkyValue compute(SkyKey skyKey, Environment env)
-        throws SkyFunctionException, InterruptedException {
-      GetConstraintValueInfoKey key = (GetConstraintValueInfoKey) skyKey;
-      try {
-        List<ConstraintValueInfo> constraintValues =
-            ConstraintValueLookupUtil.getConstraintValueInfo(key.constraintValueKeys(), env);
-        if (env.valuesMissing()) {
-          return null;
+/** Tests for [ConstraintValueLookupUtil].  */
+@RunWith(JUnit4::class)
+class ConstraintValueLookupUtilTest : ToolchainTestCase() {
+    /**
+     * An [AnalysisMock] that injects [GetConstraintValueInfoFunction] into the Skyframe
+     * executor.
+     */
+    private class AnalysisMockWithGetPlatformInfoFunction :
+        com.google.devtools.build.lib.analysis.util.AnalysisMock.Delegate(AnalysisMock.get()) {
+        public override fun getSkyFunctions(
+            directories: BlazeDirectories
+        ): com.google.common.collect.ImmutableMap<SkyFunctionName?, SkyFunction?> {
+            return com.google.common.collect.ImmutableMap.builder<SkyFunctionName?, SkyFunction?>()
+                .putAll(super.getSkyFunctions(directories))
+                .put(GET_CONSTRAINT_VALUE_INFO_FUNCTION, GetConstraintValueInfoFunction())
+                .buildOrThrow()
         }
-        return GetConstraintValueInfoValue.create(constraintValues);
-      } catch (InvalidConstraintValueException e) {
-        throw new GetConstraintValueInfoFunctionException(e);
-      }
     }
-  }
 
-  private static class GetConstraintValueInfoFunctionException extends SkyFunctionException {
-    public GetConstraintValueInfoFunctionException(InvalidConstraintValueException e) {
-      super(e, Transience.PERSISTENT);
+    protected val analysisMock: AnalysisMock
+        get() = com.google.devtools.build.lib.skyframe.toolchains.ConstraintValueLookupUtilTest.AnalysisMockWithGetPlatformInfoFunction()
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testConstraintValueLookup() {
+        val linuxKey: ConfiguredTargetKey? =
+            ConfiguredTargetKey.builder()
+                .setLabel(Label.parseCanonicalUnchecked("//constraints:linux"))
+                .setConfigurationKey(targetConfigKey)
+                .build()
+        val macKey: ConfiguredTargetKey? =
+            ConfiguredTargetKey.builder()
+                .setLabel(Label.parseCanonicalUnchecked("//constraints:mac"))
+                .setConfigurationKey(targetConfigKey)
+                .build()
+        val key =
+            GetConstraintValueInfoKey.Companion.create(
+                com.google.common.collect.ImmutableList.of<ConfiguredTargetKey?>(
+                    linuxKey,
+                    macKey
+                )
+            )
+
+        val result: EvaluationResult<GetConstraintValueInfoValue?> = getConstraintValueInfo(key)
+
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasNoError()
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasEntryThat(key).isNotNull()
+
+        val constraintValues: MutableList<ConstraintValueInfo?>? = result.get(key).constraintValues()
+        Truth.assertThat(constraintValues).contains(linuxConstraint)
+        Truth.assertThat(constraintValues).contains(macConstraint)
+        Truth.assertThat(constraintValues).hasSize(2)
     }
-  }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testConstraintValueLookup_targetNotConstraintValue() {
+        scratch.file("invalid/BUILD", "filegroup(name = 'not_a_constraint')")
+
+        val targetKey: ConfiguredTargetKey =
+            ConfiguredTargetKey.builder()
+                .setLabel(Label.parseCanonicalUnchecked("//invalid:not_a_constraint"))
+                .setConfigurationKey(targetConfigKey)
+                .build()
+        val key = GetConstraintValueInfoKey.Companion.create(
+            com.google.common.collect.ImmutableList.of<ConfiguredTargetKey?>(targetKey)
+        )
+
+        val result: EvaluationResult<GetConstraintValueInfoValue?> = getConstraintValueInfo(key)
+
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasError()
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result)
+            .hasErrorEntryForKeyThat(key)
+            .hasExceptionThat()
+            .isInstanceOf(InvalidConstraintValueException::class.java)
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result)
+            .hasErrorEntryForKeyThat(key)
+            .hasExceptionThat()
+            .hasMessageThat()
+            .contains("//invalid:not_a_constraint")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testConstraintValueLookup_targetDoesNotExist() {
+        val targetKey: ConfiguredTargetKey =
+            ConfiguredTargetKey.builder()
+                .setLabel(Label.parseCanonicalUnchecked("//fake:missing"))
+                .setConfigurationKey(targetConfigKey)
+                .build()
+        val key = GetConstraintValueInfoKey.Companion.create(
+            com.google.common.collect.ImmutableList.of<ConfiguredTargetKey?>(targetKey)
+        )
+
+        reporter.removeHandler(failFastHandler)
+        val result: EvaluationResult<GetConstraintValueInfoValue?> = getConstraintValueInfo(key)
+
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result).hasError()
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result)
+            .hasErrorEntryForKeyThat(key)
+            .hasExceptionThat()
+            .isInstanceOf(InvalidConstraintValueException::class.java)
+        EvaluationResultSubjectFactory.assertThatEvaluationResult(result)
+            .hasErrorEntryForKeyThat(key)
+            .hasExceptionThat()
+            .hasCauseThat()
+            .isInstanceOf(NoSuchPackageException::class.java)
+
+        assertContainsEvent("no such package 'fake': BUILD file not found")
+    }
+
+    @AutoCodec
+    internal class GetConstraintValueInfoKey(constraintValueKeys: Iterable<ConfiguredTargetKey?>?) : SkyKey {
+        public override fun functionName(): SkyFunctionName? {
+            return GET_CONSTRAINT_VALUE_INFO_FUNCTION
+        }
+
+        val constraintValueKeys: Iterable<ConfiguredTargetKey?>?
+
+        init {
+            this.constraintValueKeys = constraintValueKeys
+            java.util.Objects.requireNonNull<Iterable<ConfiguredTargetKey?>?>(
+                constraintValueKeys,
+                "constraintValueKeys"
+            )
+        }
+
+        companion object {
+            fun create(
+                constraintValueKeys: Iterable<ConfiguredTargetKey?>?
+            ): GetConstraintValueInfoKey {
+                return GetConstraintValueInfoKey(constraintValueKeys)
+            }
+        }
+    }
+
+    @Throws(java.lang.InterruptedException::class)
+    fun getConstraintValueInfo(
+        key: GetConstraintValueInfoKey?
+    ): EvaluationResult<GetConstraintValueInfoValue?> {
+        try {
+            // Must re-enable analysis for Skyframe functions that create configured targets.
+            skyframeExecutor.getSkyframeBuildView().enableAnalysis(true)
+            return SkyframeExecutorTestUtils.evaluate<T?>(
+                skyframeExecutor, key,  /*keepGoing=*/false, reporter
+            )
+        } finally {
+            skyframeExecutor.getSkyframeBuildView().enableAnalysis(false)
+        }
+    }
+
+    @AutoCodec
+    internal class GetConstraintValueInfoValue(constraintValues: MutableList<ConstraintValueInfo?>?) : SkyValue {
+        val constraintValues: MutableList<ConstraintValueInfo?>?
+
+        init {
+            this.constraintValues = constraintValues
+            java.util.Objects.requireNonNull<MutableList<ConstraintValueInfo?>?>(constraintValues, "constraintValues")
+        }
+
+        companion object {
+            fun create(constraintValues: MutableList<ConstraintValueInfo?>?): GetConstraintValueInfoValue {
+                return GetConstraintValueInfoValue(constraintValues)
+            }
+        }
+    }
+
+    private class GetConstraintValueInfoFunction : SkyFunction {
+        @Throws(SkyFunctionException::class, java.lang.InterruptedException::class)
+        public override fun compute(skyKey: SkyKey?, env: Environment): SkyValue? {
+            val key = skyKey as GetConstraintValueInfoKey
+            try {
+                val constraintValues: MutableList<ConstraintValueInfo?>? =
+                    ConstraintValueLookupUtil.getConstraintValueInfo(key.constraintValueKeys, env)
+                if (env.valuesMissing()) {
+                    return null
+                }
+                return GetConstraintValueInfoValue.Companion.create(constraintValues)
+            } catch (e: InvalidConstraintValueException) {
+                throw GetConstraintValueInfoFunctionException(e)
+            }
+        }
+    }
+
+    private class GetConstraintValueInfoFunctionException(e: InvalidConstraintValueException?) :
+        SkyFunctionException(e, Transience.PERSISTENT)
+
+    companion object {
+        // Calls ConstraintValueLookupUtil.getConstraintValueInfo.
+        private val GET_CONSTRAINT_VALUE_INFO_FUNCTION: SkyFunctionName? =
+            SkyFunctionName.createHermetic("GET_CONSTRAINT_VALUE_INFO_FUNCTION")
+    }
 }

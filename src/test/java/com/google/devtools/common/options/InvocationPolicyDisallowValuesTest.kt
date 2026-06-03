@@ -11,281 +11,328 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.common.options;
+package com.google.devtools.common.options
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.runtime.proto.InvocationPolicyOuterClass.DisallowValues
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.runtime.proto.InvocationPolicyOuterClass.DisallowValues;
-import com.google.devtools.build.lib.runtime.proto.InvocationPolicyOuterClass.InvocationPolicy;
-import com.google.devtools.build.lib.runtime.proto.InvocationPolicyOuterClass.UseDefault;
-import java.util.Arrays;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Test InvocationPolicies with the DisallowValues operation.  */
+@RunWith(JUnit4::class)
+class InvocationPolicyDisallowValuesTest : InvocationPolicyEnforcerTestBase() {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDisallowValuesAllowsValue() {
+        val invocationPolicyBuilder: InvocationPolicy.Builder = InvocationPolicy.newBuilder()
+        invocationPolicyBuilder
+            .addFlagPoliciesBuilder()
+            .setFlagName("test_string")
+            .getDisallowValuesBuilder()
+            .addDisallowedValues(DISALLOWED_VALUE_1)
+            .addDisallowedValues(DISALLOWED_VALUE_2)
 
-/** Test InvocationPolicies with the DisallowValues operation. */
-@RunWith(JUnit4.class)
-public class InvocationPolicyDisallowValuesTest extends InvocationPolicyEnforcerTestBase {
+        val enforcer: InvocationPolicyEnforcer =
+            InvocationPolicyEnforcerTestBase.Companion.createOptionsPolicyEnforcer(invocationPolicyBuilder)
+        parser.parse("--test_string=" + UNFILTERED_VALUE)
 
-  // Useful constants
-  public static final String BUILD_COMMAND = "build";
-  public static final String DISALLOWED_VALUE_1 = "foo";
-  public static final String DISALLOWED_VALUE_2 = "bar";
-  public static final String UNFILTERED_VALUE = "baz";
+        // Option should be "baz" as specified by the user.
+        var testOptions: com.google.devtools.common.options.TestOptions = getTestOptions()
+        Truth.assertThat(testOptions.getTestString()).isEqualTo(UNFILTERED_VALUE)
 
-  @Test
-  public void testDisallowValuesAllowsValue() throws Exception {
-    InvocationPolicy.Builder invocationPolicyBuilder = InvocationPolicy.newBuilder();
-    invocationPolicyBuilder
-        .addFlagPoliciesBuilder()
-        .setFlagName("test_string")
-        .getDisallowValuesBuilder()
-        .addDisallowedValues(DISALLOWED_VALUE_1)
-        .addDisallowedValues(DISALLOWED_VALUE_2);
+        enforcer.enforce(parser, BUILD_COMMAND, com.google.common.collect.ImmutableList.builder<E?>())
 
-    InvocationPolicyEnforcer enforcer = createOptionsPolicyEnforcer(invocationPolicyBuilder);
-    parser.parse("--test_string=" + UNFILTERED_VALUE);
+        // Still "baz" since "baz" is allowed by the policy.
+        testOptions = getTestOptions()
+        Truth.assertThat(testOptions.getTestString()).isEqualTo(UNFILTERED_VALUE)
+    }
 
-    // Option should be "baz" as specified by the user.
-    TestOptions testOptions = getTestOptions();
-    assertThat(testOptions.getTestString()).isEqualTo(UNFILTERED_VALUE);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDisallowValuesDisallowsValue() {
+        val invocationPolicyBuilder: InvocationPolicy.Builder = InvocationPolicy.newBuilder()
+        invocationPolicyBuilder
+            .addFlagPoliciesBuilder()
+            .setFlagName("test_string")
+            .getDisallowValuesBuilder()
+            .addDisallowedValues(DISALLOWED_VALUE_1)
+            .addDisallowedValues(DISALLOWED_VALUE_2)
 
-    enforcer.enforce(parser, BUILD_COMMAND, ImmutableList.builder());
+        val enforcer: InvocationPolicyEnforcer =
+            InvocationPolicyEnforcerTestBase.Companion.createOptionsPolicyEnforcer(invocationPolicyBuilder)
+        parser.parse("--test_string=" + DISALLOWED_VALUE_1)
 
-    // Still "baz" since "baz" is allowed by the policy.
-    testOptions = getTestOptions();
-    assertThat(testOptions.getTestString()).isEqualTo(UNFILTERED_VALUE);
-  }
+        // Option should be "foo" as specified by the user.
+        val testOptions: com.google.devtools.common.options.TestOptions = getTestOptions()
+        Truth.assertThat(testOptions.getTestString()).isEqualTo(DISALLOWED_VALUE_1)
 
-  @Test
-  public void testDisallowValuesDisallowsValue() throws Exception {
-    InvocationPolicy.Builder invocationPolicyBuilder = InvocationPolicy.newBuilder();
-    invocationPolicyBuilder
-        .addFlagPoliciesBuilder()
-        .setFlagName("test_string")
-        .getDisallowValuesBuilder()
-        .addDisallowedValues(DISALLOWED_VALUE_1)
-        .addDisallowedValues(DISALLOWED_VALUE_2);
+        // expected, since foo is disallowed.
+        org.junit.Assert.assertThrows<OptionsParsingException?>(
+            OptionsParsingException::class.java,
+            org.junit.function.ThrowingRunnable {
+                enforcer.enforce(
+                    parser,
+                    BUILD_COMMAND,
+                    com.google.common.collect.ImmutableList.builder<E?>()
+                )
+            })
+    }
 
-    InvocationPolicyEnforcer enforcer = createOptionsPolicyEnforcer(invocationPolicyBuilder);
-    parser.parse("--test_string=" + DISALLOWED_VALUE_1);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDisallowValuesDisallowsMultipleValues() {
+        val invocationPolicyBuilder: InvocationPolicy.Builder = InvocationPolicy.newBuilder()
+        invocationPolicyBuilder
+            .addFlagPoliciesBuilder()
+            .setFlagName("test_multiple_string")
+            .getDisallowValuesBuilder()
+            .addDisallowedValues(DISALLOWED_VALUE_1)
+            .addDisallowedValues(DISALLOWED_VALUE_2)
 
-    // Option should be "foo" as specified by the user.
-    TestOptions testOptions = getTestOptions();
-    assertThat(testOptions.getTestString()).isEqualTo(DISALLOWED_VALUE_1);
+        val enforcer: InvocationPolicyEnforcer =
+            InvocationPolicyEnforcerTestBase.Companion.createOptionsPolicyEnforcer(invocationPolicyBuilder)
+        parser.parse(
+            "--test_multiple_string=" + UNFILTERED_VALUE,
+            "--test_multiple_string=" + DISALLOWED_VALUE_2
+        )
 
-    // expected, since foo is disallowed.
-    assertThrows(
-        OptionsParsingException.class,
-        () -> enforcer.enforce(parser, BUILD_COMMAND, ImmutableList.builder()));
-  }
+        // Option should be "baz" and "bar" as specified by the user.
+        val testOptions: com.google.devtools.common.options.TestOptions = getTestOptions()
+        Truth.assertThat(testOptions.getTestMultipleString())
+            .containsExactly(UNFILTERED_VALUE, DISALLOWED_VALUE_2)
+            .inOrder()
 
-  @Test
-  public void testDisallowValuesDisallowsMultipleValues() throws Exception {
-    InvocationPolicy.Builder invocationPolicyBuilder = InvocationPolicy.newBuilder();
-    invocationPolicyBuilder
-        .addFlagPoliciesBuilder()
-        .setFlagName("test_multiple_string")
-        .getDisallowValuesBuilder()
-        .addDisallowedValues(DISALLOWED_VALUE_1)
-        .addDisallowedValues(DISALLOWED_VALUE_2);
+        // expected, since bar is disallowed.
+        org.junit.Assert.assertThrows<OptionsParsingException?>(
+            OptionsParsingException::class.java,
+            org.junit.function.ThrowingRunnable {
+                enforcer.enforce(
+                    parser,
+                    BUILD_COMMAND,
+                    com.google.common.collect.ImmutableList.builder<E?>()
+                )
+            })
+    }
 
-    InvocationPolicyEnforcer enforcer = createOptionsPolicyEnforcer(invocationPolicyBuilder);
-    parser.parse(
-        "--test_multiple_string=" + UNFILTERED_VALUE,
-        "--test_multiple_string=" + DISALLOWED_VALUE_2);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDisallowValuesSetsNewValue() {
+        val invocationPolicyBuilder: InvocationPolicy.Builder = InvocationPolicy.newBuilder()
+        invocationPolicyBuilder
+            .addFlagPoliciesBuilder()
+            .setFlagName("test_string")
+            .getDisallowValuesBuilder()
+            .addDisallowedValues(DISALLOWED_VALUE_1)
+            .setNewValue(UNFILTERED_VALUE)
 
-    // Option should be "baz" and "bar" as specified by the user.
-    TestOptions testOptions = getTestOptions();
-    assertThat(testOptions.getTestMultipleString())
-        .containsExactly(UNFILTERED_VALUE, DISALLOWED_VALUE_2)
-        .inOrder();
+        val enforcer: InvocationPolicyEnforcer =
+            InvocationPolicyEnforcerTestBase.Companion.createOptionsPolicyEnforcer(invocationPolicyBuilder)
+        parser.parse("--test_string=" + DISALLOWED_VALUE_1)
 
-    // expected, since bar is disallowed.
-    assertThrows(
-        OptionsParsingException.class,
-        () -> enforcer.enforce(parser, BUILD_COMMAND, ImmutableList.builder()));
-  }
+        var testOptions: com.google.devtools.common.options.TestOptions = getTestOptions()
+        Truth.assertThat(testOptions.getTestString()).isEqualTo(DISALLOWED_VALUE_1)
 
-  @Test
-  public void testDisallowValuesSetsNewValue() throws Exception {
-    InvocationPolicy.Builder invocationPolicyBuilder = InvocationPolicy.newBuilder();
-    invocationPolicyBuilder
-        .addFlagPoliciesBuilder()
-        .setFlagName("test_string")
-        .getDisallowValuesBuilder()
-        .addDisallowedValues(DISALLOWED_VALUE_1)
-        .setNewValue(UNFILTERED_VALUE);
+        enforcer.enforce(parser, BUILD_COMMAND, com.google.common.collect.ImmutableList.builder<E?>())
 
-    InvocationPolicyEnforcer enforcer = createOptionsPolicyEnforcer(invocationPolicyBuilder);
-    parser.parse("--test_string=" + DISALLOWED_VALUE_1);
+        // Should now be "baz" because the policy forces disallowed values to "baz"
+        testOptions = getTestOptions()
+        Truth.assertThat(testOptions.getTestString()).isEqualTo(UNFILTERED_VALUE)
+    }
 
-    TestOptions testOptions = getTestOptions();
-    assertThat(testOptions.getTestString()).isEqualTo(DISALLOWED_VALUE_1);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDisallowValuesSetsDefaultValue() {
+        val invocationPolicyBuilder: InvocationPolicy.Builder = InvocationPolicy.newBuilder()
+        invocationPolicyBuilder
+            .addFlagPoliciesBuilder()
+            .setFlagName("test_string")
+            .getDisallowValuesBuilder()
+            .addDisallowedValues(DISALLOWED_VALUE_1)
+            .getUseDefaultBuilder()
 
-    enforcer.enforce(parser, BUILD_COMMAND, ImmutableList.builder());
+        val enforcer: InvocationPolicyEnforcer =
+            InvocationPolicyEnforcerTestBase.Companion.createOptionsPolicyEnforcer(invocationPolicyBuilder)
+        parser.parse("--test_string=" + DISALLOWED_VALUE_1)
 
-    // Should now be "baz" because the policy forces disallowed values to "baz"
-    testOptions = getTestOptions();
-    assertThat(testOptions.getTestString()).isEqualTo(UNFILTERED_VALUE);
-  }
+        var testOptions: com.google.devtools.common.options.TestOptions = getTestOptions()
+        Truth.assertThat(testOptions.getTestString()).isEqualTo(DISALLOWED_VALUE_1)
 
-  @Test
-  public void testDisallowValuesSetsDefaultValue() throws Exception {
-    InvocationPolicy.Builder invocationPolicyBuilder = InvocationPolicy.newBuilder();
-    invocationPolicyBuilder
-        .addFlagPoliciesBuilder()
-        .setFlagName("test_string")
-        .getDisallowValuesBuilder()
-        .addDisallowedValues(DISALLOWED_VALUE_1)
-        .getUseDefaultBuilder();
+        enforcer.enforce(parser, BUILD_COMMAND, com.google.common.collect.ImmutableList.builder<E?>())
 
-    InvocationPolicyEnforcer enforcer = createOptionsPolicyEnforcer(invocationPolicyBuilder);
-    parser.parse("--test_string=" + DISALLOWED_VALUE_1);
+        testOptions = getTestOptions()
+        Truth.assertThat(testOptions.getTestString())
+            .isEqualTo(com.google.devtools.common.options.TestOptions.Companion.TEST_STRING_DEFAULT)
+    }
 
-    TestOptions testOptions = getTestOptions();
-    assertThat(testOptions.getTestString()).isEqualTo(DISALLOWED_VALUE_1);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDisallowValuesSetsDefaultValueForRepeatableFlag() {
+        val invocationPolicyBuilder: InvocationPolicy.Builder = InvocationPolicy.newBuilder()
+        invocationPolicyBuilder
+            .addFlagPoliciesBuilder()
+            .setFlagName("test_multiple_string")
+            .getDisallowValuesBuilder()
+            .addDisallowedValues(DISALLOWED_VALUE_1)
+            .getUseDefaultBuilder()
 
-    enforcer.enforce(parser, BUILD_COMMAND, ImmutableList.builder());
+        val enforcer: InvocationPolicyEnforcer =
+            InvocationPolicyEnforcerTestBase.Companion.createOptionsPolicyEnforcer(invocationPolicyBuilder)
+        parser.parse("--test_multiple_string=" + DISALLOWED_VALUE_1)
 
-    testOptions = getTestOptions();
-    assertThat(testOptions.getTestString()).isEqualTo(TestOptions.TEST_STRING_DEFAULT);
-  }
+        var testOptions: com.google.devtools.common.options.TestOptions = getTestOptions()
+        Truth.assertThat(testOptions.getTestMultipleString()).containsExactly(DISALLOWED_VALUE_1)
 
-  @Test
-  public void testDisallowValuesSetsDefaultValueForRepeatableFlag() throws Exception {
-    InvocationPolicy.Builder invocationPolicyBuilder = InvocationPolicy.newBuilder();
-    invocationPolicyBuilder
-        .addFlagPoliciesBuilder()
-        .setFlagName("test_multiple_string")
-        .getDisallowValuesBuilder()
-        .addDisallowedValues(DISALLOWED_VALUE_1)
-        .getUseDefaultBuilder();
+        enforcer.enforce(parser, BUILD_COMMAND, com.google.common.collect.ImmutableList.builder<E?>())
 
-    InvocationPolicyEnforcer enforcer = createOptionsPolicyEnforcer(invocationPolicyBuilder);
-    parser.parse("--test_multiple_string=" + DISALLOWED_VALUE_1);
+        testOptions = getTestOptions()
+        // Default for repeatable flags is always empty.
+        Truth.assertThat(testOptions.getTestMultipleString()).isEmpty()
+    }
 
-    TestOptions testOptions = getTestOptions();
-    assertThat(testOptions.getTestMultipleString()).containsExactly(DISALLOWED_VALUE_1);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDisallowValuesRaisesErrorIfDefaultIsDisallowedAndSetsUseDefault() {
+        val invocationPolicyBuilder: InvocationPolicy.Builder = InvocationPolicy.newBuilder()
+        invocationPolicyBuilder
+            .addFlagPoliciesBuilder()
+            .setFlagName("test_string")
+            .getDisallowValuesBuilder()
+            .addDisallowedValues(com.google.devtools.common.options.TestOptions.Companion.TEST_STRING_DEFAULT)
+            .getUseDefaultBuilder()
 
-    enforcer.enforce(parser, BUILD_COMMAND, ImmutableList.builder());
+        val enforcer: InvocationPolicyEnforcer =
+            InvocationPolicyEnforcerTestBase.Companion.createOptionsPolicyEnforcer(invocationPolicyBuilder)
 
-    testOptions = getTestOptions();
-    // Default for repeatable flags is always empty.
-    assertThat(testOptions.getTestMultipleString()).isEmpty();
-  }
+        val e: OptionsParsingException? =
+            org.junit.Assert.assertThrows<OptionsParsingException?>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    enforcer.enforce(
+                        parser,
+                        BUILD_COMMAND,
+                        com.google.common.collect.ImmutableList.builder<E?>()
+                    )
+                })
+        Truth.assertThat(e).hasMessageThat().contains("but also specifies to use the default value")
+    }
 
-  @Test
-  public void testDisallowValuesRaisesErrorIfDefaultIsDisallowedAndSetsUseDefault()
-      throws Exception {
-    InvocationPolicy.Builder invocationPolicyBuilder = InvocationPolicy.newBuilder();
-    invocationPolicyBuilder
-        .addFlagPoliciesBuilder()
-        .setFlagName("test_string")
-        .getDisallowValuesBuilder()
-        .addDisallowedValues(TestOptions.TEST_STRING_DEFAULT)
-        .getUseDefaultBuilder();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDisallowValuesSetsNewValueWhenDefaultIsDisallowed() {
+        val invocationPolicyBuilder: InvocationPolicy.Builder = InvocationPolicy.newBuilder()
+        invocationPolicyBuilder
+            .addFlagPoliciesBuilder()
+            .setFlagName("test_string")
+            .getDisallowValuesBuilder()
+            .addDisallowedValues(com.google.devtools.common.options.TestOptions.Companion.TEST_STRING_DEFAULT)
+            .setNewValue(UNFILTERED_VALUE)
 
-    InvocationPolicyEnforcer enforcer = createOptionsPolicyEnforcer(invocationPolicyBuilder);
+        val enforcer: InvocationPolicyEnforcer =
+            InvocationPolicyEnforcerTestBase.Companion.createOptionsPolicyEnforcer(invocationPolicyBuilder)
 
-    OptionsParsingException e =
-        assertThrows(
-            OptionsParsingException.class,
-            () -> enforcer.enforce(parser, BUILD_COMMAND, ImmutableList.builder()));
-    assertThat(e).hasMessageThat().contains("but also specifies to use the default value");
-  }
-  
-  @Test
-  public void testDisallowValuesSetsNewValueWhenDefaultIsDisallowed() throws Exception {
-    InvocationPolicy.Builder invocationPolicyBuilder = InvocationPolicy.newBuilder();
-    invocationPolicyBuilder
-        .addFlagPoliciesBuilder()
-        .setFlagName("test_string")
-        .getDisallowValuesBuilder()
-        .addDisallowedValues(TestOptions.TEST_STRING_DEFAULT)
-        .setNewValue(UNFILTERED_VALUE);
+        // Option should be the default since the use didn't specify a value.
+        var testOptions: com.google.devtools.common.options.TestOptions = getTestOptions()
+        Truth.assertThat(testOptions.getTestString())
+            .isEqualTo(com.google.devtools.common.options.TestOptions.Companion.TEST_STRING_DEFAULT)
 
-    InvocationPolicyEnforcer enforcer = createOptionsPolicyEnforcer(invocationPolicyBuilder);
+        enforcer.enforce(parser, BUILD_COMMAND, com.google.common.collect.ImmutableList.builder<E?>())
 
-    // Option should be the default since the use didn't specify a value.
-    TestOptions testOptions = getTestOptions();
-    assertThat(testOptions.getTestString()).isEqualTo(TestOptions.TEST_STRING_DEFAULT);
+        // Should now be "baz" because the policy set the new default to "baz"
+        testOptions = getTestOptions()
+        Truth.assertThat(testOptions.getTestString()).isEqualTo(UNFILTERED_VALUE)
+    }
 
-    enforcer.enforce(parser, BUILD_COMMAND, ImmutableList.builder());
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDisallowValuesDisallowsFlagDefaultButNoPolicyDefault() {
+        val invocationPolicyBuilder: InvocationPolicy.Builder = InvocationPolicy.newBuilder()
+        invocationPolicyBuilder
+            .addFlagPoliciesBuilder()
+            .setFlagName("test_string")
+            .getDisallowValuesBuilder() // No new default is set
+            .addDisallowedValues(com.google.devtools.common.options.TestOptions.Companion.TEST_STRING_DEFAULT)
 
-    // Should now be "baz" because the policy set the new default to "baz"
-    testOptions = getTestOptions();
-    assertThat(testOptions.getTestString()).isEqualTo(UNFILTERED_VALUE);
-  }
+        val enforcer: InvocationPolicyEnforcer =
+            InvocationPolicyEnforcerTestBase.Companion.createOptionsPolicyEnforcer(invocationPolicyBuilder)
 
-  @Test
-  public void testDisallowValuesDisallowsFlagDefaultButNoPolicyDefault() throws Exception {
-    InvocationPolicy.Builder invocationPolicyBuilder = InvocationPolicy.newBuilder();
-    invocationPolicyBuilder
-        .addFlagPoliciesBuilder()
-        .setFlagName("test_string")
-        .getDisallowValuesBuilder()
-        // No new default is set
-        .addDisallowedValues(TestOptions.TEST_STRING_DEFAULT);
+        // Option should be the default since the use didn't specify a value.
+        val testOptions: com.google.devtools.common.options.TestOptions = getTestOptions()
+        Truth.assertThat(testOptions.getTestString())
+            .isEqualTo(com.google.devtools.common.options.TestOptions.Companion.TEST_STRING_DEFAULT)
 
-    InvocationPolicyEnforcer enforcer = createOptionsPolicyEnforcer(invocationPolicyBuilder);
+        org.junit.Assert.assertThrows<OptionsParsingException?>(
+            OptionsParsingException::class.java,
+            org.junit.function.ThrowingRunnable {
+                enforcer.enforce(
+                    parser,
+                    BUILD_COMMAND,
+                    com.google.common.collect.ImmutableList.builder<E?>()
+                )
+            })
+    }
 
-    // Option should be the default since the use didn't specify a value.
-    TestOptions testOptions = getTestOptions();
-    assertThat(testOptions.getTestString()).isEqualTo(TestOptions.TEST_STRING_DEFAULT);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDisallowValuesDisallowsListConverterFlag() {
+        val invocationPolicyBuilder: InvocationPolicy.Builder = InvocationPolicy.newBuilder()
+        invocationPolicyBuilder
+            .addFlagPoliciesBuilder()
+            .setFlagName("test_list_converters")
+            .getDisallowValuesBuilder()
+            .addDisallowedValues("a")
 
-    assertThrows(
-        OptionsParsingException.class,
-        () -> enforcer.enforce(parser, BUILD_COMMAND, ImmutableList.builder()));
-  }
+        val enforcer: InvocationPolicyEnforcer =
+            InvocationPolicyEnforcerTestBase.Companion.createOptionsPolicyEnforcer(invocationPolicyBuilder)
+        parser.parse("--test_list_converters=a,b,c")
 
-  @Test
-  public void testDisallowValuesDisallowsListConverterFlag() throws Exception {
-    InvocationPolicy.Builder invocationPolicyBuilder = InvocationPolicy.newBuilder();
-    invocationPolicyBuilder
-        .addFlagPoliciesBuilder()
-        .setFlagName("test_list_converters")
-        .getDisallowValuesBuilder()
-        .addDisallowedValues("a");
+        val testOptions: com.google.devtools.common.options.TestOptions = getTestOptions()
+        Truth.assertThat(testOptions.getTestListConverters()).isEqualTo(mutableListOf<String?>("a", "b", "c"))
 
-    InvocationPolicyEnforcer enforcer = createOptionsPolicyEnforcer(invocationPolicyBuilder);
-    parser.parse("--test_list_converters=a,b,c");
+        val e: OptionsParsingException? =
+            org.junit.Assert.assertThrows<OptionsParsingException?>(
+                OptionsParsingException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    enforcer.enforce(
+                        parser,
+                        BUILD_COMMAND,
+                        com.google.common.collect.ImmutableList.builder<E?>()
+                    )
+                })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains(
+                "Flag value 'a' for option '--test_list_converters' is not allowed by invocation "
+                        + "policy"
+            )
+    }
 
-    TestOptions testOptions = getTestOptions();
-    assertThat(testOptions.getTestListConverters()).isEqualTo(Arrays.asList("a", "b", "c"));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAllowValuesWithNullDefault_DoesNotConfuseNullForDefault() {
+        val invocationPolicyBuilder: InvocationPolicy.Builder = InvocationPolicy.newBuilder()
+        invocationPolicyBuilder
+            .addFlagPoliciesBuilder()
+            .setFlagName("test_string_null_by_default")
+            .setDisallowValues(
+                DisallowValues.newBuilder()
+                    .addDisallowedValues("null")
+                    .setUseDefault(UseDefault.getDefaultInstance())
+            )
+        val enforcer: InvocationPolicyEnforcer =
+            InvocationPolicyEnforcerTestBase.Companion.createOptionsPolicyEnforcer(invocationPolicyBuilder)
+        // Check the value before invocation policy enforcement.
+        parser.parse("--test_string_null_by_default=null")
+        var testOptions: com.google.devtools.common.options.TestOptions = getTestOptions()
+        Truth.assertThat(testOptions.getTestStringNullByDefault()).isEqualTo("null")
 
-    OptionsParsingException e =
-        assertThrows(
-            OptionsParsingException.class,
-            () -> enforcer.enforce(parser, BUILD_COMMAND, ImmutableList.builder()));
-    assertThat(e)
-        .hasMessageThat()
-        .contains(
-            "Flag value 'a' for option '--test_list_converters' is not allowed by invocation "
-                + "policy");
-  }
+        // Check the value afterwards.
+        enforcer.enforce(parser, BUILD_COMMAND, com.google.common.collect.ImmutableList.builder<E?>())
+        testOptions = getTestOptions()
+        Truth.assertThat(testOptions.getTestStringNullByDefault()).isNull()
+    }
 
-  @Test
-  public void testAllowValuesWithNullDefault_DoesNotConfuseNullForDefault() throws Exception {
-    InvocationPolicy.Builder invocationPolicyBuilder = InvocationPolicy.newBuilder();
-    invocationPolicyBuilder
-        .addFlagPoliciesBuilder()
-        .setFlagName("test_string_null_by_default")
-        .setDisallowValues(
-            DisallowValues.newBuilder()
-                .addDisallowedValues("null")
-                .setUseDefault(UseDefault.getDefaultInstance()));
-    InvocationPolicyEnforcer enforcer = createOptionsPolicyEnforcer(invocationPolicyBuilder);
-    // Check the value before invocation policy enforcement.
-    parser.parse("--test_string_null_by_default=null");
-    TestOptions testOptions = getTestOptions();
-    assertThat(testOptions.getTestStringNullByDefault()).isEqualTo("null");
-
-    // Check the value afterwards.
-    enforcer.enforce(parser, BUILD_COMMAND, ImmutableList.builder());
-    testOptions = getTestOptions();
-    assertThat(testOptions.getTestStringNullByDefault()).isNull();
-  }
+    companion object {
+        // Useful constants
+        const val BUILD_COMMAND: String = "build"
+        const val DISALLOWED_VALUE_1: String = "foo"
+        const val DISALLOWED_VALUE_2: String = "bar"
+        const val UNFILTERED_VALUE: String = "baz"
+    }
 }

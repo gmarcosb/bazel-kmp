@@ -11,89 +11,64 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.testutil;
+package com.google.devtools.build.lib.testutil
 
-import static com.google.common.truth.Truth.assertWithMessage;
+import com.google.devtools.build.lib.cmdline.Label
 
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.Attribute;
-import com.google.devtools.build.lib.packages.AttributeMap;
-import com.google.devtools.build.lib.packages.DependencyFilter;
-import com.google.devtools.build.lib.packages.PackageArgs;
-import com.google.devtools.build.lib.packages.Type;
-import java.util.function.BiConsumer;
-import java.util.function.Consumer;
-import javax.annotation.Nullable;
+/** Faked implementation of [AttributeMap] for use in testing.  */
+class FakeAttributeMapper : AttributeMap {
+    val label: Label
+        get() = Label.parseCanonicalUnchecked("//fake:rule")
 
-/** Faked implementation of {@link AttributeMap} for use in testing. */
-public class FakeAttributeMapper implements AttributeMap {
+    public override fun has(attrName: String?): Boolean {
+        return false
+    }
 
-  public static FakeAttributeMapper empty() {
-    return new FakeAttributeMapper();
-  }
+    public override fun <T> has(attrName: String?, type: Type<T?>?): Boolean {
+        return false
+    }
 
-  @Override
-  public Label getLabel() {
-    return Label.parseCanonicalUnchecked("//fake:rule");
-  }
+    public override fun <T> get(attributeName: String, type: Type<T?>?): T? {
+        // Not specified in attributes or defaults
+        Truth.assertWithMessage("Attribute %s not in attributes!", attributeName).fail()
+        return null
+    }
 
-  @Override
-  public boolean has(String attrName) {
-    return false;
-  }
+    public override fun isConfigurable(attributeName: String?): Boolean {
+        return false
+    }
 
-  @Override
-  public <T> boolean has(String attrName, Type<T> type) {
-    return false;
-  }
+    val attributeNames: Iterable<String?>
+        get() = com.google.common.collect.ImmutableSet.of<String?>()
 
-  @Override
-  @Nullable
-  public <T> T get(String attributeName, Type<T> type) {
-    // Not specified in attributes or defaults
-    assertWithMessage("Attribute %s not in attributes!", attributeName).fail();
-      return null;
-  }
+    public override fun getAttributeType(attrName: String?): Type<*>? {
+        return null
+    }
 
-  @Override
-  public boolean isConfigurable(String attributeName) {
-    return false;
-  }
+    public override fun getAttributeDefinition(attrName: String?): Attribute? {
+        return null
+    }
 
-  @Override
-  public Iterable<String> getAttributeNames() {
-    return ImmutableSet.of();
-  }
+    public override fun isAttributeValueExplicitlySpecified(attributeName: String?): Boolean {
+        return false
+    }
 
-  @Nullable
-  @Override
-  public Type<?> getAttributeType(String attrName) {
-    return null;
-  }
+    public override fun visitAllLabels(consumer: java.util.function.BiConsumer<Attribute?, Label?>?) {}
 
-  @Nullable
-  @Override
-  public Attribute getAttributeDefinition(String attrName) {
-    return null;
-  }
+    public override fun visitLabels(attributeName: String?, consumer: java.util.function.Consumer<Label?>?) {}
 
-  @Override
-  public boolean isAttributeValueExplicitlySpecified(String attributeName) {
-    return false;
-  }
+    public override fun visitLabels(
+        filter: DependencyFilter?,
+        consumer: java.util.function.BiConsumer<Attribute?, Label?>?
+    ) {
+    }
 
-  @Override
-  public void visitAllLabels(BiConsumer<Attribute, Label> consumer) {}
+    val packageArgs: PackageArgs
+        get() = PackageArgs.DEFAULT
 
-  @Override
-  public void visitLabels(String attributeName, Consumer<Label> consumer) {}
-
-  @Override
-  public void visitLabels(DependencyFilter filter, BiConsumer<Attribute, Label> consumer) {}
-
-  @Override
-  public PackageArgs getPackageArgs() {
-    return PackageArgs.DEFAULT;
-  }
+    companion object {
+        fun empty(): FakeAttributeMapper {
+            return FakeAttributeMapper()
+        }
+    }
 }

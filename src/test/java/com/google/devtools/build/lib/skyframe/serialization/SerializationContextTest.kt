@@ -11,259 +11,294 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.skyframe.serialization.SerializationContextTest
+import com.google.protobuf.ByteString
+import com.google.protobuf.CodedInputStream
+import com.google.protobuf.CodedOutputStream
+import com.google.testing.junit.testparameterinjector.TestParameter
+import com.google.testing.junit.testparameterinjector.TestParameterInjector
+import org.junit.runner.RunWith
+import java.io.IOException
 
-import static com.google.common.truth.Truth.assertThat;
-import static java.util.Objects.requireNonNull;
-import static org.junit.Assert.assertThrows;
+/** Tests for [SerializationContext].  */
+@RunWith(TestParameterInjector::class)
+class SerializationContextTest {
+    @kotlin.jvm.JvmRecord
+    internal data class Example(val dataToSerialize: String?) {
+        init {
+            java.util.Objects.requireNonNull<String?>(dataToSerialize, "dataToSerialize")
+        }
 
-import com.google.common.collect.ImmutableClassToInstanceMap;
-import com.google.protobuf.ByteString;
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.util.ArrayList;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-
-/** Tests for {@link SerializationContext}. */
-@RunWith(TestParameterInjector.class)
-public final class SerializationContextTest {
-
-  private static final Object CONSTANT = new Object();
-
-  record Example(String dataToSerialize) {
-    Example {
-      requireNonNull(dataToSerialize, "dataToSerialize");
+        companion object {
+            fun withData(data: String?): Example {
+                return com.google.devtools.build.lib.skyframe.serialization.SerializationContextTest.Example(data)
+            }
+        }
     }
 
-    static Example withData(String data) {
-      return new Example(data);
-    }
-  }
+    private inner class ExampleCodec : ObjectCodec<Example?> {
+        val encodedClass: java.lang.Class<Example?>
+            get() = com.google.devtools.build.lib.skyframe.serialization.SerializationContextTest.Example::class.java
 
-  private final class ExampleCodec implements ObjectCodec<Example> {
+        @Throws(IOException::class)
+        public override fun serialize(context: SerializationContext?, obj: Example, codedOut: CodedOutputStream) {
+            exampleCodecSerializeCalls++
+            codedOut.writeStringNoTag(obj.dataToSerialize)
+        }
 
-    @Override
-    public Class<Example> getEncodedClass() {
-      return Example.class;
-    }
-
-    @Override
-    public void serialize(SerializationContext context, Example obj, CodedOutputStream codedOut)
-        throws IOException {
-      exampleCodecSerializeCalls++;
-      codedOut.writeStringNoTag(obj.dataToSerialize());
-    }
-
-    @Override
-    public Example deserialize(DeserializationContext context, CodedInputStream codedIn)
-        throws IOException {
-      exampleCodecDeserializeCalls++;
-      return Example.withData(codedIn.readString());
-    }
-  }
-
-  private final ObjectCodecRegistry registry =
-      ObjectCodecRegistry.newBuilder()
-          .addReferenceConstant(CONSTANT)
-          .add(new ExampleCodec())
-          .build();
-
-  private int exampleCodecSerializeCalls = 0;
-
-  @SuppressWarnings("UnusedVariable")
-  private int exampleCodecDeserializeCalls = 0;
-
-  @Test
-  public void nullSerialize(@TestParameter boolean memoize) throws Exception {
-    SerializationContext context = getSerializationContext(memoize);
-    ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-    CodedOutputStream codedOut = CodedOutputStream.newInstance(bytes);
-
-    context.serialize(null, codedOut);
-    codedOut.flush();
-
-    CodedInputStream codedIn = CodedInputStream.newInstance(bytes.toByteArray());
-    assertThat(codedIn.readSInt32()).isEqualTo(0);
-    assertThat(codedIn.isAtEnd()).isTrue();
-  }
-
-  @Test
-  public void constantSerialize(@TestParameter boolean memoize) throws Exception {
-    SerializationContext context = getSerializationContext(memoize);
-    ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-    CodedOutputStream codedOut = CodedOutputStream.newInstance(bytes);
-
-    context.serialize(CONSTANT, codedOut);
-    codedOut.flush();
-
-    CodedInputStream codedIn = CodedInputStream.newInstance(bytes.toByteArray());
-    assertThat(codedIn.readSInt32()).isEqualTo(registry.maybeGetTagForConstant(CONSTANT));
-    assertThat(codedIn.isAtEnd()).isTrue();
-  }
-
-  @Test
-  public void descriptorSerialize() throws SerializationException, IOException {
-    Example obj = Example.withData("data");
-    SerializationContext context = getSerializationContext(/* memoizing= */ false);
-    ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-    CodedOutputStream codedOut = CodedOutputStream.newInstance(bytes);
-
-    context.serialize(obj, codedOut);
-    codedOut.flush();
-
-    CodedInputStream codedIn = CodedInputStream.newInstance(bytes.toByteArray());
-    assertThat(codedIn.readSInt32()).isEqualTo(registry.getCodecDescriptorForObject(obj).tag());
-    assertThat(codedIn.readString()).isEqualTo(obj.dataToSerialize());
-    assertThat(codedIn.isAtEnd()).isTrue();
-  }
-
-  @Test
-  public void descriptorSerialize_memoizing() throws SerializationException, IOException {
-    Example obj = Example.withData("data");
-    SerializationContext context = getSerializationContext(/* memoizing= */ true);
-    ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-    CodedOutputStream codedOut = CodedOutputStream.newInstance(bytes);
-
-    context.serialize(obj, codedOut);
-    context.serialize(obj, codedOut);
-    codedOut.flush();
-
-    CodedInputStream codedIn = CodedInputStream.newInstance(bytes.toByteArray());
-    assertThat(codedIn.readSInt32()).isEqualTo(registry.getCodecDescriptorForObject(obj).tag());
-    assertThat(codedIn.readString()).isEqualTo(obj.dataToSerialize());
-    assertThat(codedIn.isAtEnd()).isFalse();
-    assertThat(exampleCodecSerializeCalls).isEqualTo(1);
-  }
-
-  @Test
-  public void explicitlyAllowedClassCheck() throws SerializationException {
-    SerializationContext context = getSerializationContext(/* memoizing= */ true);
-    context.addExplicitlyAllowedClass(String.class);
-    context.checkClassExplicitlyAllowed(String.class, "str");
-    assertThrows(
-        SerializationException.class, () -> context.checkClassExplicitlyAllowed(Integer.class, 0));
-    // Explicitly registered classes do not carry over to a new context.
-    assertThrows(
-        SerializationException.class,
-        () -> context.getFreshContext().checkClassExplicitlyAllowed(String.class, "str"));
-  }
-
-  @Test
-  public void explicitlyAllowedClassCheckFailsIfNotMemoizing() {
-    SerializationContext context = getSerializationContext(/* memoizing= */ false);
-    assertThrows(
-        SerializationException.class, () -> context.addExplicitlyAllowedClass(String.class));
-  }
-
-  @Test
-  public void mismatchMemoizingRoundtrip() throws Exception {
-    ObjectCodecRegistry registry =
-        ObjectCodecRegistry.newBuilder().add(new ArrayListCodec()).build();
-    ArrayList<Object> repeatedObject = new ArrayList<>();
-    repeatedObject.add(null);
-    repeatedObject.add(null);
-    ArrayList<Object> container = new ArrayList<>();
-    container.add(repeatedObject);
-    ArrayList<Object> toSerialize = new ArrayList<>();
-    toSerialize.add(repeatedObject);
-    toSerialize.add(container);
-
-    ObjectCodecs codecs = new ObjectCodecs(registry);
-    ByteString bytes = codecs.serialize(toSerialize);
-    assertThrows(SerializationException.class, () -> codecs.deserializeMemoized(bytes));
-  }
-
-  private static final class ArrayListCodec implements ObjectCodec<ArrayList<?>> {
-    @SuppressWarnings("unchecked")
-    @Override
-    public Class<ArrayList<?>> getEncodedClass() {
-      return (Class<ArrayList<?>>) (Class<?>) ArrayList.class;
+        @Throws(IOException::class)
+        public override fun deserialize(context: DeserializationContext?, codedIn: CodedInputStream): Example {
+            exampleCodecDeserializeCalls++
+            return com.google.devtools.build.lib.skyframe.serialization.SerializationContextTest.Example.Companion.withData(
+                codedIn.readString()
+            )
+        }
     }
 
-    @Override
-    public boolean autoRegister() {
-      return false;
+    private val registry: ObjectCodecRegistry = ObjectCodecRegistry.newBuilder()
+        .addReferenceConstant(CONSTANT)
+        .add(ExampleCodec())
+        .build()
+
+    private var exampleCodecSerializeCalls = 0
+
+    private var exampleCodecDeserializeCalls = 0
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun nullSerialize(@TestParameter memoize: Boolean) {
+        val context: SerializationContext = getSerializationContext(memoize)
+        val bytes: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        val codedOut: CodedOutputStream = CodedOutputStream.newInstance(bytes)
+
+        context.serialize(null, codedOut)
+        codedOut.flush()
+
+        val codedIn: CodedInputStream = CodedInputStream.newInstance(bytes.toByteArray())
+        Truth.assertThat(codedIn.readSInt32()).isEqualTo(0)
+        Truth.assertThat(codedIn.isAtEnd()).isTrue()
     }
 
-    @Override
-    public void serialize(
-        SerializationContext context, ArrayList<?> obj, CodedOutputStream codedOut)
-        throws SerializationException, IOException {
-      codedOut.writeInt32NoTag(obj.size());
-      for (Object item : obj) {
-        context.serialize(item, codedOut);
-      }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun constantSerialize(@TestParameter memoize: Boolean) {
+        val context: SerializationContext = getSerializationContext(memoize)
+        val bytes: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        val codedOut: CodedOutputStream = CodedOutputStream.newInstance(bytes)
+
+        context.serialize(CONSTANT, codedOut)
+        codedOut.flush()
+
+        val codedIn: CodedInputStream = CodedInputStream.newInstance(bytes.toByteArray())
+        Truth.assertThat(codedIn.readSInt32()).isEqualTo(registry.maybeGetTagForConstant(CONSTANT))
+        Truth.assertThat(codedIn.isAtEnd()).isTrue()
     }
 
-    @Override
-    public ArrayList<?> deserialize(DeserializationContext context, CodedInputStream codedIn)
-        throws SerializationException, IOException {
-      int size = codedIn.readInt32();
-      ArrayList<?> result = new ArrayList<>();
-      for (int i = 0; i < size; i++) {
-        result.add(context.deserialize(codedIn));
-      }
-      return result;
+    @org.junit.Test
+    @Throws(SerializationException::class, IOException::class)
+    fun descriptorSerialize() {
+        val obj: Example =
+            com.google.devtools.build.lib.skyframe.serialization.SerializationContextTest.Example.Companion.withData("data")
+        val context: SerializationContext = getSerializationContext( /* memoizing= */false)
+        val bytes: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        val codedOut: CodedOutputStream = CodedOutputStream.newInstance(bytes)
+
+        context.serialize(obj, codedOut)
+        codedOut.flush()
+
+        val codedIn: CodedInputStream = CodedInputStream.newInstance(bytes.toByteArray())
+        Truth.assertThat(codedIn.readSInt32()).isEqualTo(registry.getCodecDescriptorForObject(obj).tag())
+        Truth.assertThat(codedIn.readString()).isEqualTo(obj.dataToSerialize)
+        Truth.assertThat(codedIn.isAtEnd()).isTrue()
     }
-  }
 
-  @Test
-  public void getDependency() {
-    SerializationContext context =
-        new ObjectCodecs(registry, ImmutableClassToInstanceMap.of(String.class, "abc"))
-            .getSerializationContextForTesting();
-    assertThat(context.getDependency(String.class)).isEqualTo("abc");
-  }
+    @org.junit.Test
+    @Throws(SerializationException::class, IOException::class)
+    fun descriptorSerialize_memoizing() {
+        val obj: Example =
+            com.google.devtools.build.lib.skyframe.serialization.SerializationContextTest.Example.Companion.withData("data")
+        val context: SerializationContext = getSerializationContext( /* memoizing= */true)
+        val bytes: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        val codedOut: CodedOutputStream = CodedOutputStream.newInstance(bytes)
 
-  @Test
-  public void getDependency_notPresent() {
-    SerializationContext context = getSerializationContext(/* memoizing= */ false);
-    Exception e =
-        assertThrows(NullPointerException.class, () -> context.getDependency(String.class));
-    assertThat(e).hasMessageThat().contains("Missing dependency of type " + String.class);
-  }
+        context.serialize(obj, codedOut)
+        context.serialize(obj, codedOut)
+        codedOut.flush()
 
-  @Test
-  public void dependencyOverrides_alreadyPresent() {
-    ObjectCodecs codecs =
-        new ObjectCodecs(registry, ImmutableClassToInstanceMap.of(String.class, "abc"));
-    ObjectCodecs overridden =
-        codecs.withDependencyOverridesForTesting(
-            ImmutableClassToInstanceMap.of(String.class, "xyz"));
-    assertThat(overridden.getSerializationContextForTesting().getDependency(String.class))
-        .isEqualTo("xyz");
-  }
+        val codedIn: CodedInputStream = CodedInputStream.newInstance(bytes.toByteArray())
+        Truth.assertThat(codedIn.readSInt32()).isEqualTo(registry.getCodecDescriptorForObject(obj).tag())
+        Truth.assertThat(codedIn.readString()).isEqualTo(obj.dataToSerialize)
+        Truth.assertThat(codedIn.isAtEnd()).isFalse()
+        Truth.assertThat(exampleCodecSerializeCalls).isEqualTo(1)
+    }
 
-  @Test
-  public void dependencyOverrides_new() {
-    ObjectCodecs codecs =
-        new ObjectCodecs(registry, ImmutableClassToInstanceMap.of(String.class, "abc"));
-    ObjectCodecs overridden =
-        codecs.withDependencyOverridesForTesting(ImmutableClassToInstanceMap.of(Integer.class, 1));
-    assertThat(overridden.getSerializationContextForTesting().getDependency(Integer.class))
-        .isEqualTo(1);
-  }
+    @org.junit.Test
+    @Throws(SerializationException::class)
+    fun explicitlyAllowedClassCheck() {
+        val context: SerializationContext = getSerializationContext( /* memoizing= */true)
+        context.addExplicitlyAllowedClass(String::class.java)
+        context.checkClassExplicitlyAllowed(String::class.java, "str")
+        org.junit.Assert.assertThrows<T?>(
+            SerializationException::class.java,
+            org.junit.function.ThrowingRunnable { context.checkClassExplicitlyAllowed(Int::class.java, 0) })
+        // Explicitly registered classes do not carry over to a new context.
+        org.junit.Assert.assertThrows<T?>(
+            SerializationException::class.java,
+            org.junit.function.ThrowingRunnable {
+                context.getFreshContext().checkClassExplicitlyAllowed(String::class.java, "str")
+            })
+    }
 
-  @Test
-  public void dependencyOverrides_unchanged() {
-    ObjectCodecs codecs =
-        new ObjectCodecs(registry, ImmutableClassToInstanceMap.of(String.class, "abc"));
-    ObjectCodecs overridden =
-        codecs.withDependencyOverridesForTesting(ImmutableClassToInstanceMap.of(Integer.class, 1));
-    assertThat(overridden.getSerializationContextForTesting().getDependency(String.class))
-        .isEqualTo("abc");
-  }
+    @org.junit.Test
+    fun explicitlyAllowedClassCheckFailsIfNotMemoizing() {
+        val context: SerializationContext = getSerializationContext( /* memoizing= */false)
+        org.junit.Assert.assertThrows<T?>(
+            SerializationException::class.java, org.junit.function.ThrowingRunnable {
+                context.addExplicitlyAllowedClass(
+                    String::class.java
+                )
+            })
+    }
 
-  private SerializationContext getSerializationContext(boolean memoizing) {
-    ObjectCodecs codecs = new ObjectCodecs(registry);
-    return (memoizing
-        ? codecs.getMemoizingSerializationContextForTesting()
-        : codecs.getSerializationContextForTesting());
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun mismatchMemoizingRoundtrip() {
+        val registry: ObjectCodecRegistry? =
+            ObjectCodecRegistry.newBuilder().add(ArrayListCodec()).build()
+        val repeatedObject: java.util.ArrayList<Any?> = java.util.ArrayList<Any?>()
+        repeatedObject.add(null)
+        repeatedObject.add(null)
+        val container: java.util.ArrayList<Any?> = java.util.ArrayList<Any?>()
+        container.add(repeatedObject)
+        val toSerialize: java.util.ArrayList<Any?> = java.util.ArrayList<Any?>()
+        toSerialize.add(repeatedObject)
+        toSerialize.add(container)
+
+        val codecs: ObjectCodecs = ObjectCodecs(registry)
+        val bytes: ByteString? = codecs.serialize(toSerialize)
+        org.junit.Assert.assertThrows<T?>(
+            SerializationException::class.java,
+            org.junit.function.ThrowingRunnable { codecs.deserializeMemoized(bytes) })
+    }
+
+    private class ArrayListCodec : ObjectCodec<java.util.ArrayList<*>?> {
+        val encodedClass: java.lang.Class<java.util.ArrayList<*>?>
+            get() = java.util.ArrayList::class.java as java.lang.Class<*> as java.lang.Class<java.util.ArrayList<*>?>
+
+        public override fun autoRegister(): Boolean {
+            return false
+        }
+
+        @Throws(SerializationException::class, IOException::class)
+        public override fun serialize(
+            context: SerializationContext, obj: java.util.ArrayList<*>, codedOut: CodedOutputStream
+        ) {
+            codedOut.writeInt32NoTag(obj.size())
+            for (item in obj) {
+                context.serialize(item, codedOut)
+            }
+        }
+
+        @Throws(SerializationException::class, IOException::class)
+        public override fun deserialize(
+            context: DeserializationContext,
+            codedIn: CodedInputStream
+        ): java.util.ArrayList<*> {
+            val size: Int = codedIn.readInt32()
+            val result: java.util.ArrayList<*> = java.util.ArrayList<Any?>()
+            for (i in 0..<size) {
+                result.add(context.deserialize(codedIn))
+            }
+            return result
+        }
+    }
+
+    @get:org.junit.Test
+    val dependency: Unit
+        get() {
+            val context: SerializationContext =
+                ObjectCodecs(
+                    registry,
+                    com.google.common.collect.ImmutableClassToInstanceMap.of<B?, T?>(String::class.java, "abc")
+                )
+                    .getSerializationContextForTesting()
+            assertThat(context.getDependency(String::class.java)).isEqualTo("abc")
+        }
+
+    @get:org.junit.Test
+    val dependency_notPresent: Unit
+        get() {
+            val context: SerializationContext = getSerializationContext( /* memoizing= */false)
+            val e: java.lang.Exception? =
+                org.junit.Assert.assertThrows<java.lang.NullPointerException?>(
+                    java.lang.NullPointerException::class.java,
+                    org.junit.function.ThrowingRunnable { context.getDependency(String::class.java) })
+            Truth.assertThat(e).hasMessageThat().contains("Missing dependency of type " + String::class.java)
+        }
+
+    @org.junit.Test
+    fun dependencyOverrides_alreadyPresent() {
+        val codecs: ObjectCodecs =
+            ObjectCodecs(
+                registry,
+                com.google.common.collect.ImmutableClassToInstanceMap.of<B?, T?>(String::class.java, "abc")
+            )
+        val overridden: ObjectCodecs =
+            codecs.withDependencyOverridesForTesting(
+                com.google.common.collect.ImmutableClassToInstanceMap.of<B?, T?>(String::class.java, "xyz")
+            )
+        assertThat(overridden.getSerializationContextForTesting().getDependency(String::class.java))
+            .isEqualTo("xyz")
+    }
+
+    @org.junit.Test
+    fun dependencyOverrides_new() {
+        val codecs: ObjectCodecs =
+            ObjectCodecs(
+                registry,
+                com.google.common.collect.ImmutableClassToInstanceMap.of<B?, T?>(String::class.java, "abc")
+            )
+        val overridden: ObjectCodecs =
+            codecs.withDependencyOverridesForTesting(
+                com.google.common.collect.ImmutableClassToInstanceMap.of<B?, T?>(
+                    Int::class.java,
+                    1
+                )
+            )
+        assertThat(overridden.getSerializationContextForTesting().getDependency(Int::class.java))
+            .isEqualTo(1)
+    }
+
+    @org.junit.Test
+    fun dependencyOverrides_unchanged() {
+        val codecs: ObjectCodecs =
+            ObjectCodecs(
+                registry,
+                com.google.common.collect.ImmutableClassToInstanceMap.of<B?, T?>(String::class.java, "abc")
+            )
+        val overridden: ObjectCodecs =
+            codecs.withDependencyOverridesForTesting(
+                com.google.common.collect.ImmutableClassToInstanceMap.of<B?, T?>(
+                    Int::class.java,
+                    1
+                )
+            )
+        assertThat(overridden.getSerializationContextForTesting().getDependency(String::class.java))
+            .isEqualTo("abc")
+    }
+
+    private fun getSerializationContext(memoizing: Boolean): SerializationContext {
+        val codecs: ObjectCodecs = ObjectCodecs(registry)
+        return (if (memoizing)
+            codecs.getMemoizingSerializationContextForTesting()
+        else
+            codecs.getSerializationContextForTesting())
+    }
+
+    companion object {
+        private val CONSTANT = Any()
+    }
 }

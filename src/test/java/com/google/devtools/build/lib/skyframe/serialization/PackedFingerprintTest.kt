@@ -11,75 +11,72 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import java.util.HexFormat;
-import java.util.Random;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+@RunWith(JUnit4::class)
+class PackedFingerprintTest {
+    private val rng: Random = Random()
 
-@RunWith(JUnit4.class)
-public final class PackedFingerprintTest {
-  private final Random rng = new Random();
+    @org.junit.Test
+    fun plainConversion_preservesBytes() {
+        for (i in 0..10000 - 1) {
+            val bytes = randomFingerprintBytes()
 
-  @Test
-  public void plainConversion_preservesBytes() {
-    for (int i = 0; i < 10_000; i++) {
-      byte[] bytes = randomFingerprintBytes();
-
-      PackedFingerprint fingerprint = PackedFingerprint.fromBytes(bytes);
-      assertThat(fingerprint.toBytes()).isEqualTo(bytes);
-    }
-  }
-
-  @Test
-  public void concat_appendsBytes() {
-    var fingerprint =
-        PackedFingerprint.fromBytes(parseHex("deadbeef" + "facefeed" + "8badf00d" + "f005ba11"));
-    assertThat(fingerprint.concat(parseHex("0ff1ce")))
-        .isEqualTo(parseHex("deadbeeffacefeed8badf00df005ba110ff1ce"));
-  }
-
-  @Test
-  public void copyTo_honorsOffset() {
-    var fingerprint = PackedFingerprint.fromBytes(randomFingerprintBytes());
-
-    byte[] target = new byte[4 + PackedFingerprint.BYTES];
-    fingerprint.copyTo(target, 4);
-
-    for (int i = 0; i < 4; i++) {
-      assertThat(target[i]).isEqualTo(0);
+            val fingerprint: PackedFingerprint = PackedFingerprint.fromBytes(bytes)
+            assertThat(fingerprint.toBytes()).isEqualTo(bytes)
+        }
     }
 
-    byte[] fingerprintBytes = fingerprint.toBytes();
-    for (int i = 0; i < PackedFingerprint.BYTES; i++) {
-      assertThat(target[i + 4]).isEqualTo(fingerprintBytes[i]);
+    @org.junit.Test
+    fun concat_appendsBytes() {
+        val fingerprint: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            PackedFingerprint.fromBytes(parseHex("deadbeef" + "facefeed" + "8badf00d" + "f005ba11"))
+        assertThat(fingerprint.concat(parseHex("0ff1ce")))
+            .isEqualTo(parseHex("deadbeeffacefeed8badf00df005ba110ff1ce"))
     }
-  }
 
-  @Test
-  public void codec_roundTrips() throws Exception {
-    var subjects = ImmutableList.<PackedFingerprint>builder();
-    for (int i = 0; i < 10; i++) {
-      byte[] bytes = randomFingerprintBytes();
+    @org.junit.Test
+    fun copyTo_honorsOffset() {
+        val fingerprint: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            PackedFingerprint.fromBytes(randomFingerprintBytes())
 
-      subjects.add(PackedFingerprint.fromBytes(bytes));
+        val target = ByteArray(4 + PackedFingerprint.BYTES)
+        fingerprint.copyTo(target, 4)
+
+        for (i in 0..3) {
+            Truth.assertThat<Byte?>(target[i]).isEqualTo(0)
+        }
+
+        val fingerprintBytes: ByteArray = fingerprint.toBytes()
+        for (i in 0..<PackedFingerprint.BYTES) {
+            Truth.assertThat<Byte?>(target[i + 4]).isEqualTo(fingerprintBytes[i])
+        }
     }
-    new SerializationTester(subjects.build()).runTests();
-  }
 
-  private byte[] randomFingerprintBytes() {
-    byte[] bytes = new byte[PackedFingerprint.BYTES];
-    rng.nextBytes(bytes);
-    return bytes;
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun codec_roundTrips() {
+        val subjects: com.google.common.collect.ImmutableList.Builder<PackedFingerprint?> =
+            com.google.common.collect.ImmutableList.builder<PackedFingerprint?>()
+        for (i in 0..9) {
+            val bytes = randomFingerprintBytes()
 
-  private static byte[] parseHex(String hex) {
-    return HexFormat.of().parseHex(hex);
-  }
+            subjects.add(PackedFingerprint.fromBytes(bytes))
+        }
+        SerializationTester(subjects.build()).runTests()
+    }
+
+    private fun randomFingerprintBytes(): ByteArray {
+        val bytes = ByteArray(PackedFingerprint.BYTES)
+        rng.nextBytes(bytes)
+        return bytes
+    }
+
+    companion object {
+        private fun parseHex(hex: String): ByteArray? {
+            return HexFormat.of().parseHex(hex)
+        }
+    }
 }

@@ -11,75 +11,80 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.buildtool;
+package com.google.devtools.build.lib.buildtool
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.vfs.PathFragment
 
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+@RunWith(JUnit4::class)
+class PathPrettyPrinterTest {
+    @get:org.junit.Test
+    val prettyPath_pathUnderSymlinkTarget_returnsPathUnderConvenienceLink: Unit
+        get() {
+            val underTest: PathPrettyPrinter =
+                PathPrettyPrinter( /* workspaceRelativeWorkingDirectory= */
+                    PathFragment.EMPTY_FRAGMENT,  /* symlinkPrefix= */
+                    "ignored",
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(
+                        PathFragment.create("not-blaze-out"),
+                        PathFragment.create("/output/execroot/not-stuff"),
+                        PathFragment.create("blaze-out"),
+                        PathFragment.create("/output/execroot/stuff")
+                    )
+                )
 
-@RunWith(JUnit4.class)
-public class PathPrettyPrinterTest {
+            val path: PathFragment? = PathFragment.create("/output/execroot/stuff/really")
+            assertThat(underTest.getPrettyPath(path)).isEqualTo(PathFragment.create("blaze-out/really"))
+        }
 
-  @Test
-  public void getPrettyPath_pathUnderSymlinkTarget_returnsPathUnderConvenienceLink() {
-    PathPrettyPrinter underTest =
-        new PathPrettyPrinter(
-            /* workspaceRelativeWorkingDirectory= */ PathFragment.EMPTY_FRAGMENT,
-            /* symlinkPrefix= */ "ignored",
-            ImmutableMap.of(
-                PathFragment.create("not-blaze-out"),
-                PathFragment.create("/output/execroot/not-stuff"),
-                PathFragment.create("blaze-out"),
-                PathFragment.create("/output/execroot/stuff")));
+    @get:org.junit.Test
+    val prettyPath_workingDirectoryUnderWorkspace_returnsUpLevelReference: Unit
+        get() {
+            val underTest: PathPrettyPrinter =
+                PathPrettyPrinter(
+                    PathFragment.create("relative/working/directory"),  /* symlinkPrefix= */
+                    "ignored",
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(
+                        PathFragment.create("not-blaze-out"),
+                        PathFragment.create("/output/execroot/not-stuff"),
+                        PathFragment.create("blaze-out"),
+                        PathFragment.create("/output/execroot/stuff")
+                    )
+                )
 
-    PathFragment path = PathFragment.create("/output/execroot/stuff/really");
-    assertThat(underTest.getPrettyPath(path)).isEqualTo(PathFragment.create("blaze-out/really"));
-  }
+            val path: PathFragment? = PathFragment.create("/output/execroot/stuff/really")
+            assertThat(underTest.getPrettyPath(path))
+                .isEqualTo(PathFragment.create("../../../blaze-out/really"))
+        }
 
-  @Test
-  public void getPrettyPath_workingDirectoryUnderWorkspace_returnsUpLevelReference() {
-    PathPrettyPrinter underTest =
-        new PathPrettyPrinter(
-            PathFragment.create("relative/working/directory"),
-            /* symlinkPrefix= */ "ignored",
-            ImmutableMap.of(
-                PathFragment.create("not-blaze-out"),
-                PathFragment.create("/output/execroot/not-stuff"),
-                PathFragment.create("blaze-out"),
-                PathFragment.create("/output/execroot/stuff")));
+    @get:org.junit.Test
+    val prettyPath_pathNotUnderSymlinkTarget_returnsOriginalPath: Unit
+        get() {
+            val underTest: PathPrettyPrinter =
+                PathPrettyPrinter( /* workspaceRelativeWorkingDirectory= */
+                    PathFragment.EMPTY_FRAGMENT,  /* symlinkPrefix= */
+                    "ignored",
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(
+                        PathFragment.create("blaze-out"), PathFragment.create("/output/execroot/stuff")
+                    )
+                )
 
-    PathFragment path = PathFragment.create("/output/execroot/stuff/really");
-    assertThat(underTest.getPrettyPath(path))
-        .isEqualTo(PathFragment.create("../../../blaze-out/really"));
-  }
+            val path: PathFragment? = PathFragment.create("/output/execroot/not-stuff/really")
+            assertThat(underTest.getPrettyPath(path)).isEqualTo(path)
+        }
 
-  @Test
-  public void getPrettyPath_pathNotUnderSymlinkTarget_returnsOriginalPath() {
-    PathPrettyPrinter underTest =
-        new PathPrettyPrinter(
-            /* workspaceRelativeWorkingDirectory= */ PathFragment.EMPTY_FRAGMENT,
-            /* symlinkPrefix= */ "ignored",
-            ImmutableMap.of(
-                PathFragment.create("blaze-out"), PathFragment.create("/output/execroot/stuff")));
+    @get:org.junit.Test
+    val prettyPath_noCreateSymlinksPrefix_returnsOriginalPath: Unit
+        get() {
+            val underTest: PathPrettyPrinter =
+                PathPrettyPrinter( /* workspaceRelativeWorkingDirectory= */
+                    PathFragment.EMPTY_FRAGMENT,  /* symlinkPrefix= */
+                    "/",
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(
+                        PathFragment.create("blaze-out"), PathFragment.create("/output/execroot/stuff")
+                    )
+                )
 
-    PathFragment path = PathFragment.create("/output/execroot/not-stuff/really");
-    assertThat(underTest.getPrettyPath(path)).isEqualTo(path);
-  }
-
-  @Test
-  public void getPrettyPath_noCreateSymlinksPrefix_returnsOriginalPath() {
-    PathPrettyPrinter underTest =
-        new PathPrettyPrinter(
-            /* workspaceRelativeWorkingDirectory= */ PathFragment.EMPTY_FRAGMENT,
-            /* symlinkPrefix= */ "/",
-            ImmutableMap.of(
-                PathFragment.create("blaze-out"), PathFragment.create("/output/execroot/stuff")));
-
-    PathFragment path = PathFragment.create("/output/execroot/stuff/really");
-    assertThat(underTest.getPrettyPath(path)).isEqualTo(path);
-  }
+            val path: PathFragment? = PathFragment.create("/output/execroot/stuff/really")
+            assertThat(underTest.getPrettyPath(path)).isEqualTo(path)
+        }
 }

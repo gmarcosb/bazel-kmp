@@ -11,1109 +11,1171 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.actions.FileStateValue
 
-import com.google.common.base.Suppliers;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
-import com.google.common.testing.EqualsTester;
-import com.google.devtools.build.lib.actions.FileStateValue;
-import com.google.devtools.build.lib.actions.FileValue;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.analysis.ServerDirectories;
-import com.google.devtools.build.lib.analysis.util.AnalysisMock;
-import com.google.devtools.build.lib.bazel.repository.RepoDefinitionValue;
-import com.google.devtools.build.lib.clock.BlazeClock;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.events.NullEventHandler;
-import com.google.devtools.build.lib.io.FileSymlinkCycleUniquenessFunction;
-import com.google.devtools.build.lib.io.FileSymlinkInfiniteExpansionException;
-import com.google.devtools.build.lib.io.FileSymlinkInfiniteExpansionUniquenessFunction;
-import com.google.devtools.build.lib.io.InconsistentFilesystemException;
-import com.google.devtools.build.lib.packages.Globber;
-import com.google.devtools.build.lib.packages.Globber.Operation;
-import com.google.devtools.build.lib.packages.RuleClassProvider;
-import com.google.devtools.build.lib.pkgcache.PathPackageLocator;
-import com.google.devtools.build.lib.rules.repository.RepositoryDirectoryValue;
-import com.google.devtools.build.lib.skyframe.ExternalFilesHelper.ExternalFileAction;
-import com.google.devtools.build.lib.skyframe.PackageLookupFunction.CrossRepositoryLabelViolationStrategy;
-import com.google.devtools.build.lib.testutil.ManualClock;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import com.google.devtools.build.lib.util.io.TimestampGranularityMonitor;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.Dirent;
-import com.google.devtools.build.lib.vfs.FileStateKey;
-import com.google.devtools.build.lib.vfs.FileStatus;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.lib.vfs.RootedPath;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import com.google.devtools.build.lib.vfs.UnixGlob;
-import com.google.devtools.build.lib.vfs.UnixGlob.FilesystemOps;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import com.google.devtools.build.skyframe.Differencer.DiffWithDelta.Delta;
-import com.google.devtools.build.skyframe.ErrorInfo;
-import com.google.devtools.build.skyframe.EvaluationContext;
-import com.google.devtools.build.skyframe.EvaluationResult;
-import com.google.devtools.build.skyframe.InMemoryMemoizingEvaluator;
-import com.google.devtools.build.skyframe.MemoizingEvaluator;
-import com.google.devtools.build.skyframe.RecordingDifferencer;
-import com.google.devtools.build.skyframe.SequencedRecordingDifferencer;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import com.google.errorprone.annotations.ForOverride;
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import java.io.IOException;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
-import java.util.concurrent.atomic.AtomicReference;
-import javax.annotation.Nullable;
-import net.starlark.java.eval.StarlarkSemantics;
-import org.junit.Before;
-import org.junit.Test;
+abstract class GlobTestBase {
+    private var fs: CustomInMemoryFs? = null
+    protected var evaluator: MemoizingEvaluator? = null
+    private var differencer: RecordingDifferencer? = null
+    protected var root: Path? = null
+    private var writableRoot: Path? = null
+    protected var pkgPath: Path? = null
+    private var pkgLocator: AtomicReference<PathPackageLocator?>? = null
 
-public abstract class GlobTestBase {
-  protected static final EvaluationContext EVALUATION_OPTIONS =
-      EvaluationContext.newBuilder()
-          .setKeepGoing(false)
-          .setParallelism(SkyframeExecutor.DEFAULT_THREAD_COUNT)
-          .setEventHandler(NullEventHandler.INSTANCE)
-          .build();
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun setUp() {
+        fs =
+            com.google.devtools.build.lib.skyframe.GlobTestBase.CustomInMemoryFs(com.google.devtools.build.lib.testutil.ManualClock())
+        root = fs.getPath("/root/workspace")
+        writableRoot = fs.getPath("/writableRoot/workspace")
+        pkgPath = root.getRelative(PKG_ID.getPackageFragment())
 
-  private CustomInMemoryFs fs;
-  protected MemoizingEvaluator evaluator;
-  private RecordingDifferencer differencer;
-  protected Path root;
-  private Path writableRoot;
-  protected Path pkgPath;
-  private AtomicReference<PathPackageLocator> pkgLocator;
+        pkgLocator =
+            AtomicReference<PathPackageLocator?>(
+                PathPackageLocator(
+                    fs.getPath("/output_base"),
+                    com.google.common.collect.ImmutableList.of<E?>(Root.fromPath(writableRoot), Root.fromPath(root)),
+                    BazelSkyframeExecutorConstants.BUILD_FILES_BY_PRIORITY
+                )
+            )
 
-  protected static final PackageIdentifier PKG_ID = PackageIdentifier.createInMainRepo("pkg");
+        differencer = SequencedRecordingDifferencer()
+        evaluator = InMemoryMemoizingEvaluator(createFunctionMap(), differencer)
+        PrecomputedValue.BUILD_ID.set(differencer, UUID.randomUUID())
+        PrecomputedValue.PATH_PACKAGE_LOCATOR.set(differencer, pkgLocator.get())
+        PrecomputedValue.STARLARK_SEMANTICS.set(differencer, StarlarkSemantics.DEFAULT)
+        RepositoryDirectoryValue.VENDOR_DIRECTORY.set(differencer, java.util.Optional.empty<T?>())
 
-  @Before
-  public final void setUp() throws Exception {
-    fs = new CustomInMemoryFs(new ManualClock());
-    root = fs.getPath("/root/workspace");
-    writableRoot = fs.getPath("/writableRoot/workspace");
-    pkgPath = root.getRelative(PKG_ID.getPackageFragment());
-
-    pkgLocator =
-        new AtomicReference<>(
-            new PathPackageLocator(
-                fs.getPath("/output_base"),
-                ImmutableList.of(Root.fromPath(writableRoot), Root.fromPath(root)),
-                BazelSkyframeExecutorConstants.BUILD_FILES_BY_PRIORITY));
-
-    differencer = new SequencedRecordingDifferencer();
-    evaluator = new InMemoryMemoizingEvaluator(createFunctionMap(), differencer);
-    PrecomputedValue.BUILD_ID.set(differencer, UUID.randomUUID());
-    PrecomputedValue.PATH_PACKAGE_LOCATOR.set(differencer, pkgLocator.get());
-    PrecomputedValue.STARLARK_SEMANTICS.set(differencer, StarlarkSemantics.DEFAULT);
-    RepositoryDirectoryValue.VENDOR_DIRECTORY.set(differencer, Optional.empty());
-
-    createTestFiles();
-  }
-
-  private Map<SkyFunctionName, SkyFunction> createFunctionMap() {
-    AtomicReference<ImmutableSet<PackageIdentifier>> deletedPackages =
-        new AtomicReference<>(ImmutableSet.of());
-    BlazeDirectories directories =
-        new BlazeDirectories(
-            new ServerDirectories(root, root, root), root, TestConstants.PRODUCT_NAME);
-    ExternalFilesHelper externalFilesHelper =
-        ExternalFilesHelper.createForTesting(
-            pkgLocator,
-            ExternalFileAction.DEPEND_ON_EXTERNAL_PKG_FOR_EXTERNAL_REPO_PATHS,
-            directories);
-
-    AnalysisMock analysisMock = AnalysisMock.get();
-    RuleClassProvider ruleClassProvider = analysisMock.createRuleClassProvider();
-    Map<SkyFunctionName, SkyFunction> skyFunctions = new HashMap<>();
-    createGlobSkyFunction(skyFunctions);
-    skyFunctions.put(
-        SkyFunctions.DIRECTORY_LISTING_STATE,
-        new DirectoryListingStateFunction(externalFilesHelper, SyscallCache.NO_CACHE));
-    skyFunctions.put(SkyFunctions.DIRECTORY_LISTING, new DirectoryListingFunction());
-    skyFunctions.put(
-        SkyFunctions.PACKAGE_LOOKUP,
-        new PackageLookupFunction(
-            deletedPackages,
-            CrossRepositoryLabelViolationStrategy.ERROR,
-            BazelSkyframeExecutorConstants.BUILD_FILES_BY_PRIORITY));
-    skyFunctions.put(
-        SkyFunctions.REPO_FILE,
-        new RepoFileFunction(
-            ruleClassProvider.getBazelStarlarkEnvironment(),
-            Root.fromPath(directories.getWorkspace())));
-    skyFunctions.put(SkyFunctions.IGNORED_SUBDIRECTORIES, IgnoredSubdirectoriesFunction.INSTANCE);
-    skyFunctions.put(
-        FileStateKey.FILE_STATE,
-        new FileStateFunction(
-            Suppliers.ofInstance(new TimestampGranularityMonitor(BlazeClock.instance())),
-            SyscallCache.NO_CACHE,
-            externalFilesHelper));
-    skyFunctions.put(
-        FileSymlinkInfiniteExpansionUniquenessFunction.NAME,
-        new FileSymlinkCycleUniquenessFunction());
-    skyFunctions.put(SkyFunctions.FILE, new FileFunction(pkgLocator, directories));
-    skyFunctions.put(
-        FileSymlinkCycleUniquenessFunction.NAME, new FileSymlinkCycleUniquenessFunction());
-    skyFunctions.put(SkyFunctions.LOCAL_REPOSITORY_LOOKUP, new LocalRepositoryLookupFunction());
-    skyFunctions.put(
-        SkyFunctions.REPOSITORY_MAPPING,
-        new SkyFunction() {
-          @Override
-          public SkyValue compute(SkyKey skyKey, Environment env) {
-            return RepositoryMappingValue.VALUE_FOR_EMPTY_ROOT_MODULE;
-          }
-        });
-    skyFunctions.put(
-        RepoDefinitionValue.REPO_DEFINITION,
-        new SkyFunction() {
-          @Override
-          public SkyValue compute(SkyKey skyKey, Environment env) {
-            return RepoDefinitionValue.NOT_FOUND;
-          }
-        });
-    return skyFunctions;
-  }
-
-  @ForOverride
-  protected abstract void createGlobSkyFunction(Map<SkyFunctionName, SkyFunction> skyFunctions);
-
-  protected boolean alwaysUsesDirListing() {
-    return false;
-  }
-
-  private void createTestFiles() throws IOException {
-    pkgPath.createDirectoryAndParents();
-    FileSystemUtils.createEmptyFile(pkgPath.getRelative("BUILD"));
-    for (String dir :
-        ImmutableList.of(
-            "foo/bar/wiz", "foo/barnacle/wiz", "food/barnacle/wiz", "fool/barnacle/wiz")) {
-      pkgPath.getRelative(dir).createDirectoryAndParents();
-    }
-    FileSystemUtils.createEmptyFile(pkgPath.getRelative("foo/bar/wiz/file"));
-
-    // Used for testing the behavior of globbing into nested subpackages.
-    for (String dir : ImmutableList.of("a1/b1/c", "a2/b2/c")) {
-      pkgPath.getRelative(dir).createDirectoryAndParents();
-    }
-    FileSystemUtils.createEmptyFile(pkgPath.getRelative("a2/b2/BUILD"));
-  }
-
-  @Test
-  public void testSimple() throws Exception {
-    assertSingleGlobMatches("food", /* => */ "food");
-  }
-
-  @Test
-  public void testIgnoreList() throws Exception {
-    FileSystemUtils.writeContentAsLatin1(root.getRelative(".bazelignore"), "pkg/foo/bar");
-    assertSingleGlobMatches("foo/**", "foo/barnacle/wiz", "foo/barnacle", "foo");
-    differencer.invalidate(
-        ImmutableList.of(
-            FileStateValue.key(
-                RootedPath.toRootedPath(
-                    Root.fromPath(root), PathFragment.create(".bazelignore")))));
-
-    FileSystemUtils.createEmptyFile(root.getRelative(".bazelignore"));
-    assertSingleGlobMatches(
-        "foo/**",
-        "foo/bar/wiz",
-        "foo/bar/wiz/file",
-        "foo/bar",
-        "foo/barnacle/wiz",
-        "foo/barnacle",
-        "foo");
-  }
-
-  @Test
-  public void testStartsWithStar() throws Exception {
-    assertSingleGlobMatches("*oo", /* => */ "foo");
-  }
-
-  @Test
-  public void testStartsWithStarWithMiddleStar() throws Exception {
-    assertSingleGlobMatches("*f*o", /* => */ "foo");
-  }
-
-  @Test
-  public void testSingleMatchEqual() throws Exception {
-    assertGlobsEqual("*oo", "*f*o"); // both produce "foo"
-  }
-
-  @Test
-  public void testEndsWithStar() throws Exception {
-    assertSingleGlobMatches("foo*", /* => */ "foo", "food", "fool");
-  }
-
-  @Test
-  public void testEndsWithStarWithMiddleStar() throws Exception {
-    assertSingleGlobMatches("f*oo*", /* => */ "foo", "food", "fool");
-  }
-
-  @Test
-  public void testMultipleMatchesEqual() throws Exception {
-    assertGlobsEqual("foo*", "f*oo*"); // both produce "foo", "food", "fool"
-  }
-
-  @Test
-  public void testMiddleStar() throws Exception {
-    assertSingleGlobMatches("f*o", /* => */ "foo");
-  }
-
-  @Test
-  public void testTwoMiddleStars() throws Exception {
-    assertSingleGlobMatches("f*o*o", /* => */ "foo");
-  }
-
-  @Test
-  public void testSingleStarPatternWithNamedChild() throws Exception {
-    assertSingleGlobMatches("*/bar", /* => */ "foo/bar");
-  }
-
-  @Test
-  public void testDeepSubpackages() throws Exception {
-    assertSingleGlobMatches("*/*/c", /* => */ "a1/b1/c");
-  }
-
-  @Test
-  public void testSingleStarPatternWithChildGlob() throws Exception {
-    assertSingleGlobMatches(
-        "*/bar*", /* => */ "foo/bar", "foo/barnacle", "food/barnacle", "fool/barnacle");
-  }
-
-  @Test
-  public void testSingleStarAsChildGlob() throws Exception {
-    assertSingleGlobMatches("foo/*/wiz", /* => */ "foo/bar/wiz", "foo/barnacle/wiz");
-  }
-
-  @Test
-  public void testNoAsteriskAndFilesDontExist() throws Exception {
-    // Note un-UNIX like semantics:
-    assertSingleGlobMatches("ceci/n'est/pas/une/globbe" /* => nothing */);
-  }
-
-  @Test
-  public void testSingleAsteriskUnderNonexistentDirectory() throws Exception {
-    // Note un-UNIX like semantics:
-    assertSingleGlobMatches("not-there/*" /* => nothing */);
-  }
-
-  @Test
-  public void testDifferentGlobsSameResultEqual() throws Exception {
-    // Once the globs are run, it doesn't matter what pattern ran; only the output.
-    assertGlobsEqual("not-there/*", "syzygy/*"); // Both produce nothing.
-  }
-
-  @Test
-  public void testGlobUnderFile() throws Exception {
-    assertSingleGlobMatches("foo/bar/wiz/file/*" /* => nothing */);
-  }
-
-  @Test
-  public void testGlobEqualsHashCode() throws Exception {
-    // Each "equality group" forms a set of elements that are all equals() to one another,
-    // and also produce the same hashCode.
-    new EqualsTester()
-        .addEqualityGroup(
-            runSingleGlob("no-such-file", Globber.Operation.FILES_AND_DIRS)) // Matches nothing.
-        .addEqualityGroup(
-            runSingleGlob("BUILD", Globber.Operation.FILES_AND_DIRS),
-            runSingleGlob("BUILD", Globber.Operation.FILES)) // Matches BUILD.
-        .addEqualityGroup(
-            runSingleGlob("**", Globber.Operation.FILES_AND_DIRS)) // Matches lots of things.
-        .addEqualityGroup(
-            runSingleGlob("f*o/bar*", Globber.Operation.FILES_AND_DIRS),
-            runSingleGlob(
-                "foo/bar*", Globber.Operation.FILES_AND_DIRS)) // Matches foo/bar and foo/barnacle.
-        .testEquals();
-  }
-
-  @Test
-  public void testGlobDoesNotCrossPackageBoundary() throws Exception {
-    FileSystemUtils.createEmptyFile(pkgPath.getRelative("foo/BUILD"));
-    // "foo/bar" should not be in the results because foo is a separate package.
-    assertSingleGlobMatches("f*/*", /* => */ "food/barnacle", "fool/barnacle");
-  }
-
-  @Test
-  public void testGlobDirectoryMatchDoesNotCrossPackageBoundary() throws Exception {
-    FileSystemUtils.createEmptyFile(pkgPath.getRelative("foo/bar/BUILD"));
-    // "foo/bar" should not be in the results because foo/bar is a separate package.
-    assertSingleGlobMatches("foo/*", /* => */ "foo/barnacle");
-  }
-
-  @Test
-  public void testStarStarDoesNotCrossPackageBoundary() throws Exception {
-    FileSystemUtils.createEmptyFile(pkgPath.getRelative("foo/bar/BUILD"));
-    // "foo/bar" should not be in the results because foo/bar is a separate package.
-    assertSingleGlobMatches("foo/**", /* => */ "foo/barnacle/wiz", "foo/barnacle", "foo");
-  }
-
-  @Test
-  public void testGlobDoesNotCrossPackageBoundaryUnderOtherPackagePath() throws Exception {
-    writableRoot.getRelative("pkg/foo/bar").createDirectoryAndParents();
-    FileSystemUtils.createEmptyFile(writableRoot.getRelative("pkg/foo/bar/BUILD"));
-    // "foo/bar" should not be in the results because foo/bar is detected as a separate package,
-    // even though it is under a different package path.
-    assertSingleGlobMatches("foo/**", /* => */ "foo/barnacle/wiz", "foo/barnacle", "foo");
-  }
-
-  /**
-   * For {@link GlobFunctionTest}, creates a {@link GlobDescriptor} using the input pattern.
-   *
-   * <p>For {@link GlobsFunctionTest}, creates a {@link GlobsValue.Key} whose {@code globRequests}
-   * member contains only one element. The sole element's pattern is the input one.
-   *
-   * <p>Queries the {@link GlobDescriptor} or {@link GlobsValue.Key} in Skyframe and asserts that
-   * matches in the result {@link GlobValue} or {@link GlobsValue} is equal to the input {@code
-   * expecteds}.
-   */
-  private void assertSingleGlobMatches(String pattern, String... expecteds) throws Exception {
-    assertSingleGlobMatches(pattern, Operation.FILES_AND_DIRS, expecteds);
-  }
-
-  protected abstract void assertSingleGlobMatches(
-      String pattern, Globber.Operation globberOperation, String... expecteds) throws Exception;
-
-  private void assertGlobWithoutDirsMatches(String pattern, String... expecteds) throws Exception {
-    assertSingleGlobMatches(pattern, Globber.Operation.FILES, expecteds);
-  }
-
-  protected void assertGlobsEqual(String pattern1, String pattern2) throws Exception {
-    SkyValue value1 = runSingleGlob(pattern1, Globber.Operation.FILES_AND_DIRS);
-    SkyValue value2 = runSingleGlob(pattern2, Globber.Operation.FILES_AND_DIRS);
-    new EqualsTester().addEqualityGroup(value1, value2).testEquals();
-  }
-
-  protected abstract SkyValue runSingleGlob(String pattern, Globber.Operation globberOperation)
-      throws Exception;
-
-  @Test
-  public void testGlobWithoutWildcards() throws Exception {
-    String pattern = "foo/bar/wiz/file";
-
-    assertSingleGlobMatches(pattern, "foo/bar/wiz/file");
-    // Ensure that the glob depends on the FileValue and not on the DirectoryListingValue.
-    pkgPath.getRelative("foo/bar/wiz/file").delete();
-
-    // Nothing has been invalidated yet, so the cached result is returned.
-    assertSingleGlobMatches(pattern, "foo/bar/wiz/file");
-
-    if (alwaysUsesDirListing()) {
-      differencer.invalidate(
-          ImmutableList.of(
-              FileStateValue.key(
-                  RootedPath.toRootedPath(
-                      Root.fromPath(root), pkgPath.getRelative("foo/bar/wiz/file")))));
-      // The result should not rely on the FileStateValue, so it's still a cache hit.
-      assertSingleGlobMatches(pattern, "foo/bar/wiz/file");
-
-      differencer.invalidate(
-          ImmutableList.of(
-              DirectoryListingStateValue.key(
-                  RootedPath.toRootedPath(
-                      Root.fromPath(root), pkgPath.getRelative("foo/bar/wiz")))));
-    } else {
-      differencer.invalidate(
-          ImmutableList.of(
-              DirectoryListingStateValue.key(
-                  RootedPath.toRootedPath(
-                      Root.fromPath(root), pkgPath.getRelative("foo/bar/wiz")))));
-      // The result should not rely on the DirectoryListingValue, so it's still a cache hit.
-      assertSingleGlobMatches(pattern, "foo/bar/wiz/file");
-
-      differencer.invalidate(
-          ImmutableList.of(
-              FileStateValue.key(
-                  RootedPath.toRootedPath(
-                      Root.fromPath(root), pkgPath.getRelative("foo/bar/wiz/file")))));
+        createTestFiles()
     }
 
-    // This should have invalidated the glob result.
-    assertSingleGlobMatches(pattern /* => nothing */);
-  }
+    private fun createFunctionMap(): MutableMap<SkyFunctionName?, SkyFunction?> {
+        val deletedPackages: AtomicReference<com.google.common.collect.ImmutableSet<PackageIdentifier?>?> =
+            AtomicReference<com.google.common.collect.ImmutableSet<PackageIdentifier?>?>(com.google.common.collect.ImmutableSet.of<PackageIdentifier?>())
+        val directories: BlazeDirectories =
+            BlazeDirectories(
+                ServerDirectories(root, root, root), root, TestConstants.PRODUCT_NAME
+            )
+        val externalFilesHelper: ExternalFilesHelper? =
+            ExternalFilesHelper.createForTesting(
+                pkgLocator,
+                ExternalFileAction.DEPEND_ON_EXTERNAL_PKG_FOR_EXTERNAL_REPO_PATHS,
+                directories
+            )
 
-  @Test
-  public void testIllegalPatterns() {
-    assertIllegalPattern("foo**bar");
-    assertIllegalPattern("?");
-    assertIllegalPattern("");
-    assertIllegalPattern(".");
-    assertIllegalPattern("/foo");
-    assertIllegalPattern("./foo");
-    assertIllegalPattern("foo/");
-    assertIllegalPattern("foo/./bar");
-    assertIllegalPattern("../foo/bar");
-    assertIllegalPattern("foo//bar");
-  }
-
-  @Test
-  public void testIllegalRecursivePatterns() throws Exception {
-    for (String prefix : Lists.newArrayList("", "*/", "**/", "ba/")) {
-      String suffix = ("/" + prefix).substring(0, prefix.length());
-      for (String pattern : Lists.newArrayList("**fo", "fo**", "**fo**", "fo**fo", "fo**fo**fo")) {
-        assertIllegalPattern(prefix + pattern);
-        assertIllegalPattern(pattern + suffix);
-      }
+        val analysisMock: AnalysisMock = AnalysisMock.get()
+        val ruleClassProvider: RuleClassProvider = analysisMock.createRuleClassProvider()
+        val skyFunctions: MutableMap<SkyFunctionName?, SkyFunction?> = HashMap<SkyFunctionName?, SkyFunction?>()
+        createGlobSkyFunction(skyFunctions)
+        skyFunctions.put(
+            SkyFunctions.DIRECTORY_LISTING_STATE,
+            DirectoryListingStateFunction(externalFilesHelper, SyscallCache.NO_CACHE)
+        )
+        skyFunctions.put(SkyFunctions.DIRECTORY_LISTING, DirectoryListingFunction())
+        skyFunctions.put(
+            SkyFunctions.PACKAGE_LOOKUP,
+            PackageLookupFunction(
+                deletedPackages,
+                CrossRepositoryLabelViolationStrategy.ERROR,
+                BazelSkyframeExecutorConstants.BUILD_FILES_BY_PRIORITY
+            )
+        )
+        skyFunctions.put(
+            SkyFunctions.REPO_FILE,
+            RepoFileFunction(
+                ruleClassProvider.getBazelStarlarkEnvironment(),
+                Root.fromPath(directories.getWorkspace())
+            )
+        )
+        skyFunctions.put(SkyFunctions.IGNORED_SUBDIRECTORIES, IgnoredSubdirectoriesFunction.INSTANCE)
+        skyFunctions.put(
+            FileStateKey.FILE_STATE,
+            FileStateFunction(
+                com.google.common.base.Suppliers.ofInstance<T?>(TimestampGranularityMonitor(com.google.devtools.build.lib.clock.BlazeClock.instance())),
+                SyscallCache.NO_CACHE,
+                externalFilesHelper
+            )
+        )
+        skyFunctions.put(
+            FileSymlinkInfiniteExpansionUniquenessFunction.NAME,
+            FileSymlinkCycleUniquenessFunction()
+        )
+        skyFunctions.put(SkyFunctions.FILE, FileFunction(pkgLocator, directories))
+        skyFunctions.put(
+            FileSymlinkCycleUniquenessFunction.NAME, FileSymlinkCycleUniquenessFunction()
+        )
+        skyFunctions.put(SkyFunctions.LOCAL_REPOSITORY_LOOKUP, LocalRepositoryLookupFunction())
+        skyFunctions.put(
+            SkyFunctions.REPOSITORY_MAPPING,
+            object : SkyFunction() {
+                public override fun compute(skyKey: SkyKey?, env: Environment?): SkyValue {
+                    return RepositoryMappingValue.VALUE_FOR_EMPTY_ROOT_MODULE
+                }
+            })
+        skyFunctions.put(
+            RepoDefinitionValue.REPO_DEFINITION,
+            object : SkyFunction() {
+                public override fun compute(skyKey: SkyKey?, env: Environment?): SkyValue {
+                    return RepoDefinitionValue.NOT_FOUND
+                }
+            })
+        return skyFunctions
     }
-  }
 
-  protected abstract void assertIllegalPattern(String pattern);
+    @com.google.errorprone.annotations.ForOverride
+    protected abstract fun createGlobSkyFunction(skyFunctions: MutableMap<SkyFunctionName?, SkyFunction?>?)
 
-  /** Tests that globs can contain Java regular expression special characters */
-  @Test
-  public void testSpecialRegexCharacter() throws Exception {
-    Path aDotB = pkgPath.getChild("a.b");
-    FileSystemUtils.createEmptyFile(aDotB);
-    FileSystemUtils.createEmptyFile(pkgPath.getChild("aab"));
-    // Note: this contains two asterisks because otherwise a RE is not built,
-    // as an optimization.
-    assertThat(
-            new UnixGlob.Builder(pkgPath, FilesystemOps.DIRECT)
+    protected open fun alwaysUsesDirListing(): Boolean {
+        return false
+    }
+
+    @Throws(IOException::class)
+    private fun createTestFiles() {
+        pkgPath.createDirectoryAndParents()
+        FileSystemUtils.createEmptyFile(pkgPath.getRelative("BUILD"))
+        for (dir in com.google.common.collect.ImmutableList.of<String?>(
+            "foo/bar/wiz", "foo/barnacle/wiz", "food/barnacle/wiz", "fool/barnacle/wiz"
+        )) {
+            pkgPath.getRelative(dir).createDirectoryAndParents()
+        }
+        FileSystemUtils.createEmptyFile(pkgPath.getRelative("foo/bar/wiz/file"))
+
+        // Used for testing the behavior of globbing into nested subpackages.
+        for (dir in com.google.common.collect.ImmutableList.of<String?>("a1/b1/c", "a2/b2/c")) {
+            pkgPath.getRelative(dir).createDirectoryAndParents()
+        }
+        FileSystemUtils.createEmptyFile(pkgPath.getRelative("a2/b2/BUILD"))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSimple() {
+        assertSingleGlobMatches("food",  /* => */"food")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testIgnoreList() {
+        FileSystemUtils.writeContentAsLatin1(root.getRelative(".bazelignore"), "pkg/foo/bar")
+        assertSingleGlobMatches("foo/**", "foo/barnacle/wiz", "foo/barnacle", "foo")
+        differencer.invalidate(
+            com.google.common.collect.ImmutableList.of<E?>(
+                FileStateValue.key(
+                    RootedPath.toRootedPath(
+                        Root.fromPath(root), PathFragment.create(".bazelignore")
+                    )
+                )
+            )
+        )
+
+        FileSystemUtils.createEmptyFile(root.getRelative(".bazelignore"))
+        assertSingleGlobMatches(
+            "foo/**",
+            "foo/bar/wiz",
+            "foo/bar/wiz/file",
+            "foo/bar",
+            "foo/barnacle/wiz",
+            "foo/barnacle",
+            "foo"
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStartsWithStar() {
+        assertSingleGlobMatches("*oo",  /* => */"foo")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStartsWithStarWithMiddleStar() {
+        assertSingleGlobMatches("*f*o",  /* => */"foo")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSingleMatchEqual() {
+        assertGlobsEqual("*oo", "*f*o") // both produce "foo"
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEndsWithStar() {
+        assertSingleGlobMatches("foo*",  /* => */"foo", "food", "fool")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEndsWithStarWithMiddleStar() {
+        assertSingleGlobMatches("f*oo*",  /* => */"foo", "food", "fool")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMultipleMatchesEqual() {
+        assertGlobsEqual("foo*", "f*oo*") // both produce "foo", "food", "fool"
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMiddleStar() {
+        assertSingleGlobMatches("f*o",  /* => */"foo")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTwoMiddleStars() {
+        assertSingleGlobMatches("f*o*o",  /* => */"foo")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSingleStarPatternWithNamedChild() {
+        assertSingleGlobMatches("*/bar",  /* => */"foo/bar")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDeepSubpackages() {
+        assertSingleGlobMatches("*/*/c",  /* => */"a1/b1/c")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSingleStarPatternWithChildGlob() {
+        assertSingleGlobMatches(
+            "*/bar*",  /* => */"foo/bar", "foo/barnacle", "food/barnacle", "fool/barnacle"
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSingleStarAsChildGlob() {
+        assertSingleGlobMatches("foo/*/wiz",  /* => */"foo/bar/wiz", "foo/barnacle/wiz")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNoAsteriskAndFilesDontExist() {
+        // Note un-UNIX like semantics:
+        assertSingleGlobMatches("ceci/n'est/pas/une/globbe" /* => nothing */)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSingleAsteriskUnderNonexistentDirectory() {
+        // Note un-UNIX like semantics:
+        assertSingleGlobMatches("not-there/*" /* => nothing */)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDifferentGlobsSameResultEqual() {
+        // Once the globs are run, it doesn't matter what pattern ran; only the output.
+        assertGlobsEqual("not-there/*", "syzygy/*") // Both produce nothing.
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGlobUnderFile() {
+        assertSingleGlobMatches("foo/bar/wiz/file/*" /* => nothing */)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGlobEqualsHashCode() {
+        // Each "equality group" forms a set of elements that are all equals() to one another,
+        // and also produce the same hashCode.
+        EqualsTester()
+            .addEqualityGroup(
+                runSingleGlob("no-such-file", Globber.Operation.FILES_AND_DIRS)
+            ) // Matches nothing.
+            .addEqualityGroup(
+                runSingleGlob("BUILD", Globber.Operation.FILES_AND_DIRS),
+                runSingleGlob("BUILD", Globber.Operation.FILES)
+            ) // Matches BUILD.
+            .addEqualityGroup(
+                runSingleGlob("**", Globber.Operation.FILES_AND_DIRS)
+            ) // Matches lots of things.
+            .addEqualityGroup(
+                runSingleGlob("f*o/bar*", Globber.Operation.FILES_AND_DIRS),
+                runSingleGlob(
+                    "foo/bar*", Globber.Operation.FILES_AND_DIRS
+                )
+            ) // Matches foo/bar and foo/barnacle.
+            .testEquals()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGlobDoesNotCrossPackageBoundary() {
+        FileSystemUtils.createEmptyFile(pkgPath.getRelative("foo/BUILD"))
+        // "foo/bar" should not be in the results because foo is a separate package.
+        assertSingleGlobMatches("f*/*",  /* => */"food/barnacle", "fool/barnacle")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGlobDirectoryMatchDoesNotCrossPackageBoundary() {
+        FileSystemUtils.createEmptyFile(pkgPath.getRelative("foo/bar/BUILD"))
+        // "foo/bar" should not be in the results because foo/bar is a separate package.
+        assertSingleGlobMatches("foo/*",  /* => */"foo/barnacle")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStarStarDoesNotCrossPackageBoundary() {
+        FileSystemUtils.createEmptyFile(pkgPath.getRelative("foo/bar/BUILD"))
+        // "foo/bar" should not be in the results because foo/bar is a separate package.
+        assertSingleGlobMatches("foo/**",  /* => */"foo/barnacle/wiz", "foo/barnacle", "foo")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGlobDoesNotCrossPackageBoundaryUnderOtherPackagePath() {
+        writableRoot.getRelative("pkg/foo/bar").createDirectoryAndParents()
+        FileSystemUtils.createEmptyFile(writableRoot.getRelative("pkg/foo/bar/BUILD"))
+        // "foo/bar" should not be in the results because foo/bar is detected as a separate package,
+        // even though it is under a different package path.
+        assertSingleGlobMatches("foo/**",  /* => */"foo/barnacle/wiz", "foo/barnacle", "foo")
+    }
+
+    /**
+     * For [GlobFunctionTest], creates a [GlobDescriptor] using the input pattern.
+     * 
+     * 
+     * For [GlobsFunctionTest], creates a [GlobsValue.Key] whose `globRequests`
+     * member contains only one element. The sole element's pattern is the input one.
+     * 
+     * 
+     * Queries the [GlobDescriptor] or [GlobsValue.Key] in Skyframe and asserts that
+     * matches in the result [GlobValue] or [GlobsValue] is equal to the input `expecteds`.
+     */
+    @Throws(java.lang.Exception::class)
+    private fun assertSingleGlobMatches(pattern: String?, vararg expecteds: String?) {
+        assertSingleGlobMatches(pattern, Operation.FILES_AND_DIRS, expecteds)
+    }
+
+    @Throws(java.lang.Exception::class)
+    protected abstract fun assertSingleGlobMatches(
+        pattern: String?, globberOperation: Globber.Operation?, vararg expecteds: String?
+    )
+
+    @Throws(java.lang.Exception::class)
+    private fun assertGlobWithoutDirsMatches(pattern: String?, vararg expecteds: String?) {
+        assertSingleGlobMatches(pattern, Globber.Operation.FILES, expecteds)
+    }
+
+    @Throws(java.lang.Exception::class)
+    protected fun assertGlobsEqual(pattern1: String?, pattern2: String?) {
+        val value1: SkyValue? = runSingleGlob(pattern1, Globber.Operation.FILES_AND_DIRS)
+        val value2: SkyValue? = runSingleGlob(pattern2, Globber.Operation.FILES_AND_DIRS)
+        EqualsTester().addEqualityGroup(value1, value2).testEquals()
+    }
+
+    @Throws(java.lang.Exception::class)
+    protected abstract fun runSingleGlob(pattern: String?, globberOperation: Globber.Operation?): SkyValue?
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGlobWithoutWildcards() {
+        val pattern = "foo/bar/wiz/file"
+
+        assertSingleGlobMatches(pattern, "foo/bar/wiz/file")
+        // Ensure that the glob depends on the FileValue and not on the DirectoryListingValue.
+        pkgPath.getRelative("foo/bar/wiz/file").delete()
+
+        // Nothing has been invalidated yet, so the cached result is returned.
+        assertSingleGlobMatches(pattern, "foo/bar/wiz/file")
+
+        if (alwaysUsesDirListing()) {
+            differencer.invalidate(
+                com.google.common.collect.ImmutableList.of<E?>(
+                    FileStateValue.key(
+                        RootedPath.toRootedPath(
+                            Root.fromPath(root), pkgPath.getRelative("foo/bar/wiz/file")
+                        )
+                    )
+                )
+            )
+            // The result should not rely on the FileStateValue, so it's still a cache hit.
+            assertSingleGlobMatches(pattern, "foo/bar/wiz/file")
+
+            differencer.invalidate(
+                com.google.common.collect.ImmutableList.of<E?>(
+                    DirectoryListingStateValue.key(
+                        RootedPath.toRootedPath(
+                            Root.fromPath(root), pkgPath.getRelative("foo/bar/wiz")
+                        )
+                    )
+                )
+            )
+        } else {
+            differencer.invalidate(
+                com.google.common.collect.ImmutableList.of<E?>(
+                    DirectoryListingStateValue.key(
+                        RootedPath.toRootedPath(
+                            Root.fromPath(root), pkgPath.getRelative("foo/bar/wiz")
+                        )
+                    )
+                )
+            )
+            // The result should not rely on the DirectoryListingValue, so it's still a cache hit.
+            assertSingleGlobMatches(pattern, "foo/bar/wiz/file")
+
+            differencer.invalidate(
+                com.google.common.collect.ImmutableList.of<E?>(
+                    FileStateValue.key(
+                        RootedPath.toRootedPath(
+                            Root.fromPath(root), pkgPath.getRelative("foo/bar/wiz/file")
+                        )
+                    )
+                )
+            )
+        }
+
+        // This should have invalidated the glob result.
+        assertSingleGlobMatches(pattern /* => nothing */)
+    }
+
+    @org.junit.Test
+    fun testIllegalPatterns() {
+        assertIllegalPattern("foo**bar")
+        assertIllegalPattern("?")
+        assertIllegalPattern("")
+        assertIllegalPattern(".")
+        assertIllegalPattern("/foo")
+        assertIllegalPattern("./foo")
+        assertIllegalPattern("foo/")
+        assertIllegalPattern("foo/./bar")
+        assertIllegalPattern("../foo/bar")
+        assertIllegalPattern("foo//bar")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testIllegalRecursivePatterns() {
+        for (prefix in com.google.common.collect.Lists.newArrayList<String>("", "*/", "**/", "ba/")) {
+            val suffix: String = ("/" + prefix).substring(0, prefix.length)
+            for (pattern in com.google.common.collect.Lists.newArrayList<String?>(
+                "**fo",
+                "fo**",
+                "**fo**",
+                "fo**fo",
+                "fo**fo**fo"
+            )) {
+                assertIllegalPattern(prefix + pattern)
+                assertIllegalPattern(pattern + suffix)
+            }
+        }
+    }
+
+    protected abstract fun assertIllegalPattern(pattern: String?)
+
+    /** Tests that globs can contain Java regular expression special characters  */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSpecialRegexCharacter() {
+        val aDotB: Path? = pkgPath.getChild("a.b")
+        FileSystemUtils.createEmptyFile(aDotB)
+        FileSystemUtils.createEmptyFile(pkgPath.getChild("aab"))
+        // Note: this contains two asterisks because otherwise a RE is not built,
+        // as an optimization.
+        assertThat(
+            Builder(pkgPath, FilesystemOps.DIRECT)
                 .addPattern("*a.b*")
-                .globInterruptible())
-        .containsExactly(aDotB);
-  }
-
-  @Test
-  public void testMatchesCallWithNoCache() {
-    assertThat(UnixGlob.matches("*a*b", "CaCb", null)).isTrue();
-  }
-
-  @Test
-  public void testHiddenFiles() throws Exception {
-    for (String dir : ImmutableList.of(".hidden", "..also.hidden", "not.hidden")) {
-      pkgPath.getRelative(dir).createDirectoryAndParents();
-    }
-    // Note that these are not in the result: ".", ".."
-    assertSingleGlobMatches(
-        "*", "..also.hidden", ".hidden", "BUILD", "a1", "a2", "foo", "food", "fool", "not.hidden");
-    assertSingleGlobMatches("*.hidden", "not.hidden");
-  }
-
-  @Test
-  public void testDoubleStar() throws Exception {
-    assertSingleGlobMatches(
-        "**",
-        "a1/b1/c",
-        "a1/b1",
-        "a1",
-        "a2",
-        "foo/bar/wiz",
-        "foo/bar/wiz/file",
-        "foo/bar",
-        "foo/barnacle/wiz",
-        "foo/barnacle",
-        "foo",
-        "food/barnacle/wiz",
-        "food/barnacle",
-        "food",
-        "fool/barnacle/wiz",
-        "fool/barnacle",
-        "fool",
-        "BUILD");
-  }
-
-  @Test
-  public void testDoubleStarExcludeDirs() throws Exception {
-    assertGlobWithoutDirsMatches("**", "foo/bar/wiz/file", "BUILD");
-  }
-
-  @Test
-  public void testDoubleDoubleStar() throws Exception {
-    assertSingleGlobMatches(
-        "**/**",
-        "a1/b1/c",
-        "a1/b1",
-        "a1",
-        "a2",
-        "foo/bar/wiz",
-        "foo/bar/wiz/file",
-        "foo/bar",
-        "foo/barnacle/wiz",
-        "foo/barnacle",
-        "foo",
-        "food/barnacle/wiz",
-        "food/barnacle",
-        "food",
-        "fool/barnacle/wiz",
-        "fool/barnacle",
-        "fool",
-        "BUILD");
-  }
-
-  @Test
-  public void testDirectoryWithDoubleStar() throws Exception {
-    assertSingleGlobMatches(
-        "foo/**",
-        "foo/bar/wiz",
-        "foo/bar/wiz/file",
-        "foo/bar",
-        "foo/barnacle/wiz",
-        "foo/barnacle",
-        "foo");
-  }
-
-  @Test
-  public void testDoubleStarPatternWithNamedChild() throws Exception {
-    assertSingleGlobMatches("**/bar", "foo/bar");
-  }
-
-  @Test
-  public void testDoubleStarPatternWithErrorChild() throws Exception {
-    FileSystemUtils.ensureSymbolicLink(pkgPath.getChild("self"), "self");
-
-    IOException ioException =
-        assertThrows(IOException.class, () -> runSingleGlob("**/self", Operation.FILES));
-    assertThat(ioException).hasMessageThat().matches("Symlink cycle");
-  }
-
-  @Test
-  public void testDoubleStarPatternWithChildGlob() throws Exception {
-    assertSingleGlobMatches("**/ba*", "foo/bar", "foo/barnacle", "food/barnacle", "fool/barnacle");
-  }
-
-  @Test
-  public void testDoubleStarAsChildGlob() throws Exception {
-    FileSystemUtils.createEmptyFile(pkgPath.getRelative("foo/barnacle/wiz/wiz"));
-    pkgPath.getRelative("foo/barnacle/baz/wiz").createDirectoryAndParents();
-
-    assertSingleGlobMatches(
-        "foo/**/wiz",
-        "foo/bar/wiz",
-        "foo/barnacle/wiz",
-        "foo/barnacle/baz/wiz",
-        "foo/barnacle/wiz/wiz");
-  }
-
-  @Test
-  public void testDoubleStarUnderNonexistentDirectory() throws Exception {
-    assertSingleGlobMatches("not-there/**" /* => nothing */);
-  }
-
-  @Test
-  public void testDoubleStarUnderFile() throws Exception {
-    assertSingleGlobMatches("foo/bar/wiz/file/**" /* => nothing */);
-  }
-
-  protected abstract SkyKey createdGlobRelatedSkyKey(
-      String pattern, Globber.Operation globberOperation) throws InvalidGlobPatternException;
-
-  /** Regression test for b/13319874: Directory listing crash. */
-  @Test
-  public void testResilienceToFilesystemInconsistencies_directoryExistence() throws Exception {
-    // Our custom filesystem says "pkgPath/BUILD" exists but "pkgPath" does not exist.
-    fs.stubStat(pkgPath, null);
-    RootedPath pkgRootedPath = RootedPath.toRootedPath(Root.fromPath(root), pkgPath);
-    FileStateValue pkgDirFileStateValue =
-        FileStateValue.create(pkgRootedPath, SyscallCache.NO_CACHE, /* tsgm= */ null);
-    FileValue pkgDirValue =
-        FileValue.value(
-            ImmutableList.of(pkgRootedPath),
-            null,
-            null,
-            pkgRootedPath,
-            pkgDirFileStateValue,
-            pkgRootedPath,
-            pkgDirFileStateValue);
-    differencer.inject(ImmutableMap.of(FileValue.key(pkgRootedPath), Delta.justNew(pkgDirValue)));
-    String expectedMessage = "/root/workspace/pkg is no longer an existing directory";
-    SkyKey skyKey = createdGlobRelatedSkyKey("*/foo", Operation.FILES_AND_DIRS);
-    EvaluationResult<GlobValue> result =
-        evaluator.evaluate(ImmutableList.of(skyKey), EVALUATION_OPTIONS);
-    assertThat(result.hasError()).isTrue();
-    ErrorInfo errorInfo = result.getError(skyKey);
-    assertThat(errorInfo.getException()).isInstanceOf(InconsistentFilesystemException.class);
-    assertThat(errorInfo.getException()).hasMessageThat().contains(expectedMessage);
-  }
-
-  @Test
-  public void testResilienceToFilesystemInconsistencies_subdirectoryExistence() throws Exception {
-    // Our custom filesystem says directory "pkgPath/foo/bar" contains a subdirectory "wiz" but a
-    // direct stat on "pkgPath/foo/bar/wiz" says it does not exist.
-    Path fooBarDir = pkgPath.getRelative("foo/bar");
-    fs.stubStat(fooBarDir.getRelative("wiz"), null);
-    RootedPath fooBarDirRootedPath = RootedPath.toRootedPath(Root.fromPath(root), fooBarDir);
-    SkyValue fooBarDirListingValue =
-        DirectoryListingStateValue.create(
-            ImmutableList.of(new Dirent("wiz", Dirent.Type.DIRECTORY)));
-    differencer.inject(
-        ImmutableMap.of(
-            DirectoryListingStateValue.key(fooBarDirRootedPath),
-            Delta.justNew(fooBarDirListingValue)));
-    String expectedMessage = "/root/workspace/pkg/foo/bar/wiz is no longer an existing directory.";
-    SkyKey skyKey = createdGlobRelatedSkyKey("**/wiz", Globber.Operation.FILES_AND_DIRS);
-    EvaluationResult<GlobValue> result =
-        evaluator.evaluate(ImmutableList.of(skyKey), EVALUATION_OPTIONS);
-    assertThat(result.hasError()).isTrue();
-    ErrorInfo errorInfo = result.getError(skyKey);
-    assertThat(errorInfo.getException()).isInstanceOf(InconsistentFilesystemException.class);
-    assertThat(errorInfo.getException()).hasMessageThat().contains(expectedMessage);
-  }
-
-  @Test
-  public void testResilienceToFilesystemInconsistencies_symlinkType() throws Exception {
-    RootedPath wizRootedPath =
-        RootedPath.toRootedPath(Root.fromPath(root), pkgPath.getRelative("foo/bar/wiz"));
-    RootedPath fileRootedPath =
-        RootedPath.toRootedPath(Root.fromPath(root), pkgPath.getRelative("foo/bar/wiz/file"));
-    final FileStatus realStat = fileRootedPath.asPath().stat();
-    fs.stubStat(
-        fileRootedPath.asPath(),
-        new FileStatus() {
-
-          @Override
-          public boolean isFile() {
-            // The stat says foo/bar/wiz/file is a real file, not a symlink.
-            return true;
-          }
-
-          @Override
-          public boolean isSpecialFile() {
-            return false;
-          }
-
-          @Override
-          public boolean isDirectory() {
-            return false;
-          }
-
-          @Override
-          public boolean isSymbolicLink() {
-            return false;
-          }
-
-          @Override
-          public long getSize() throws IOException {
-            return realStat.size;
-          }
-
-          @Override
-          public long getLastModifiedTime() throws IOException {
-            return realStat.lastModifiedTime;
-          }
-
-          @Override
-          public long getLastChangeTime() throws IOException {
-            return realStat.lastChangeTime;
-          }
-
-          @Override
-          public long getNodeId() throws IOException {
-            return realStat.nodeId;
-          }
-        });
-    // But the dir listing say foo/bar/wiz/file is a symlink.
-    SkyValue wizDirListingValue =
-        DirectoryListingStateValue.create(
-            ImmutableList.of(new Dirent("file", Dirent.Type.SYMLINK)));
-    differencer.inject(
-        ImmutableMap.of(
-            DirectoryListingStateValue.key(wizRootedPath), Delta.justNew(wizDirListingValue)));
-    String expectedMessage =
-        "readdir and stat disagree about whether " + fileRootedPath.asPath() + " is a symlink";
-    SkyKey skyKey = createdGlobRelatedSkyKey("foo/bar/wiz/*", Globber.Operation.FILES_AND_DIRS);
-    EvaluationResult<GlobValue> result =
-        evaluator.evaluate(ImmutableList.of(skyKey), EVALUATION_OPTIONS);
-    assertThat(result.hasError()).isTrue();
-    ErrorInfo errorInfo = result.getError(skyKey);
-    assertThat(errorInfo.getException()).isInstanceOf(InconsistentFilesystemException.class);
-    assertThat(errorInfo.getException()).hasMessageThat().contains(expectedMessage);
-  }
-
-  /**
-   * When globbing symlinks, the returned path should use the path of the symlink source instead of
-   * the symlink target, regardless of whether glob pattern contains wildcard character or not.
-   */
-  @Test
-  public void testSymlinks(@TestParameter boolean withWildcard) throws Exception {
-    pkgPath.getRelative("symlinks").createDirectoryAndParents();
-    FileSystemUtils.ensureSymbolicLink(pkgPath.getRelative("symlinks/dangling.txt"), "nope");
-    FileSystemUtils.createEmptyFile(pkgPath.getRelative("symlinks/yup"));
-    FileSystemUtils.ensureSymbolicLink(pkgPath.getRelative("symlinks/existing.txt"), "yup");
-
-    String globPattern = withWildcard ? "symlinks/*.txt" : "symlinks/existing.txt";
-    assertSingleGlobMatches(globPattern, "symlinks/existing.txt");
-  }
-
-  @Test
-  public void testSymlinks_symlinkPointToDirectory() throws Exception {
-    root.getRelative("target_direc").createDirectoryAndParents();
-    FileSystemUtils.createEmptyFile(root.getRelative("target_direc/file1"));
-    root.getRelative("target_direc/sub").createDirectoryAndParents();
-    FileSystemUtils.createEmptyFile(root.getRelative("target_direc/sub/file2"));
-
-    FileSystemUtils.ensureSymbolicLink(
-        pkgPath.getRelative("symlink"), root.getRelative("target_direc"));
-    assertSingleGlobMatches(
-        "symlink/**", "symlink/sub", "symlink/sub/file2", "symlink", "symlink/file1");
-  }
-
-  @Test
-  public void symlinkFileValueWithError_symlinkCycleToSelf() throws Exception {
-    FileSystemUtils.ensureSymbolicLink(pkgPath.getChild("self"), "self");
-
-    IOException ioException =
-        assertThrows(IOException.class, () -> runSingleGlob("self", Operation.FILES_AND_DIRS));
-    assertThat(ioException).hasMessageThat().matches("Symlink cycle");
-  }
-
-  @Test
-  public void symlinkFileValueWithError_symlinkCycleBetweenTwoSymlinks(
-      @TestParameter boolean withWildcard) throws Exception {
-    pkgPath.getRelative("foo").createDirectoryAndParents();
-    pkgPath.getRelative("bar").createDirectoryAndParents();
-
-    FileSystemUtils.ensureSymbolicLink(pkgPath.getRelative("foo/a"), pkgPath.getRelative("bar/b"));
-    FileSystemUtils.ensureSymbolicLink(pkgPath.getRelative("bar/b"), pkgPath.getRelative("foo/a"));
-
-    String globPattern = withWildcard ? "foo/*" : "foo/a";
-    IOException ioException =
-        assertThrows(IOException.class, () -> runSingleGlob(globPattern, Operation.FILES_AND_DIRS));
-    assertThat(ioException).hasMessageThat().matches("Symlink cycle");
-  }
-
-  @Test
-  public void symlinkSubdirValueWithError() throws Exception {
-    Path cycle = pkgPath.getChild("cycle");
-    FileSystemUtils.ensureSymbolicLink(cycle.getChild("self"), "self");
-    FileSystemUtils.ensureSymbolicLink(pkgPath.getChild("symlink"), cycle);
-
-    IOException ioException =
-        assertThrows(
-            IOException.class, () -> runSingleGlob("symlink/self", Operation.FILES_AND_DIRS));
-    assertThat(ioException).hasMessageThat().matches("Symlink cycle");
-  }
-
-  @Test
-  public void testSymlinks_unboundedSymlinkExpansion(@TestParameter boolean withRecursiveWildcard)
-      throws Exception {
-    pkgPath.getRelative("parent/sub").createDirectoryAndParents();
-    FileSystemUtils.ensureSymbolicLink(
-        pkgPath.getRelative("parent/sub/symlink"), pkgPath.getRelative("parent"));
-
-    String globPattern = withRecursiveWildcard ? "parent/**" : "parent/sub/symlink";
-    SkyKey skyKey = createdGlobRelatedSkyKey(globPattern, Globber.Operation.FILES_AND_DIRS);
-
-    EvaluationResult<GlobValue> result =
-        evaluator.evaluate(ImmutableList.of(skyKey), EVALUATION_OPTIONS);
-
-    if (withRecursiveWildcard || alwaysUsesDirListing()) {
-      assertThat(result.hasError()).isTrue();
-      ErrorInfo errorInfo = result.getError(skyKey);
-      assertThat(errorInfo.getException())
-          .isInstanceOf(FileSymlinkInfiniteExpansionException.class);
-      assertThat(errorInfo.getException()).hasMessageThat().contains("Infinite symlink expansion");
-    } else {
-      assertThat(result.hasError()).isFalse();
-    }
-  }
-
-  /**
-   * Covers the scenario when a directory has two symlinks of different status.
-   *
-   * <p>One of the symlinks is a normal one whose path should be accepted by {@code
-   * SymlinkProducer}.
-   *
-   * <p>The other symlink shows different {@code readdir} and {@code stat} status. {@code readdir}
-   * shows that it is a symlink but {@code stat} shows that it is a normal file. A {@link
-   * InconsistentFilesystemException} should be accepted for this path by {@code SymlinkProducer}.
-   *
-   * <p>{@code PatternWithWildcardProducer} immediately returns {@code DONE} when knowing the number
-   * of accepted symlink paths (1) is smaller than the number of symlink queried (2). The size
-   * mismatch indicates that one of the symlinks goes wrong.
-   */
-  @Test
-  public void testSymlinks_oneNormalOneInconsistencyFilesystemError() throws Exception {
-    pkgPath.getRelative("inconsistent").createDirectoryAndParents();
-    FileSystemUtils.createEmptyFile(pkgPath.getRelative("target"));
-    FileSystemUtils.ensureSymbolicLink(
-        pkgPath.getRelative("inconsistent/good"), pkgPath.getRelative("target"));
-    FileSystemUtils.ensureSymbolicLink(
-        pkgPath.getRelative("inconsistent/bad"), pkgPath.getRelative("target"));
-
-    RootedPath badRootedPath =
-        RootedPath.toRootedPath(Root.fromPath(root), pkgPath.getRelative("inconsistent/bad"));
-    final FileStatus realStat = badRootedPath.asPath().stat();
-    fs.stubStat(
-        badRootedPath.asPath(),
-        new FileStatus() {
-
-          @Override
-          public boolean isFile() {
-            // Intentionally set `isFile` as true, which disagree with filesystem.
-            return true;
-          }
-
-          @Override
-          public boolean isSpecialFile() {
-            return false;
-          }
-
-          @Override
-          public boolean isDirectory() {
-            return false;
-          }
-
-          @Override
-          public boolean isSymbolicLink() {
-            // Intentionally set `isSymbolicLink` as false, which disagree with filesystem.
-            return false;
-          }
-
-          @Override
-          public long getSize() throws IOException {
-            return realStat.size;
-          }
-
-          @Override
-          public long getLastModifiedTime() throws IOException {
-            return realStat.lastModifiedTime;
-          }
-
-          @Override
-          public long getLastChangeTime() throws IOException {
-            return realStat.lastChangeTime;
-          }
-
-          @Override
-          public long getNodeId() throws IOException {
-            return realStat.nodeId;
-          }
-        });
-
-    SkyKey skyKey = createdGlobRelatedSkyKey("inconsistent/*", Globber.Operation.FILES_AND_DIRS);
-    EvaluationResult<GlobValue> result =
-        evaluator.evaluate(ImmutableList.of(skyKey), EVALUATION_OPTIONS);
-    assertThat(result.hasError()).isTrue();
-    ErrorInfo errorInfo = result.getError(skyKey);
-    assertThat(errorInfo.getException()).isInstanceOf(InconsistentFilesystemException.class);
-    assertThat(errorInfo.getException())
-        .hasMessageThat()
-        .contains("Inconsistent filesystem operations. readdir and stat disagree");
-  }
-
-  /**
-   * The test below covers the case when {@link DirectoryListingValue} contains multiple symlinks,
-   * which is common for bazel shell integration tests. Bazel shell integration tests usually create
-   * symlinks for all source files.
-   *
-   * <p>Expect all matches to be returned when globbing multiple symlinks under the directory.
-   */
-  @Test
-  public void testSymlinksUnderDirectory_shouldAllBeGlobbed() throws Exception {
-    root.getRelative("targets").createDirectoryAndParents();
-    pkgPath.getRelative("symlinks").createDirectoryAndParents();
-    for (char c = 'a'; c <= 'z'; ++c) {
-      FileSystemUtils.createEmptyFile(root.getRelative("targets/" + c + ".ext"));
-      FileSystemUtils.ensureSymbolicLink(
-          pkgPath.getRelative("symlinks/" + c + ".ext"), root.getRelative("targets/" + c + ".ext"));
+                .globInterruptible()
+        )
+            .containsExactly(aDotB)
     }
 
-    String[] allExpectedPathsInStr = new String[26];
-    for (int i = 0; i < 26; ++i) {
-      allExpectedPathsInStr[i] = "symlinks/" + (char) ('a' + i) + ".ext";
-    }
-    assertSingleGlobMatches("symlinks/*.ext", Operation.FILES_AND_DIRS, allExpectedPathsInStr);
-  }
-
-  static final class CustomInMemoryFs extends InMemoryFileSystem {
-    private final Map<PathFragment, FileStatus> stubbedStats = Maps.newHashMap();
-
-    CustomInMemoryFs(ManualClock manualClock) {
-      super(manualClock, DigestHashFunction.SHA256);
+    @org.junit.Test
+    fun testMatchesCallWithNoCache() {
+        assertThat(UnixGlob.matches("*a*b", "CaCb", null)).isTrue()
     }
 
-    public void stubStat(Path path, @Nullable FileStatus stubbedResult) {
-      stubbedStats.put(path.asFragment(), stubbedResult);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testHiddenFiles() {
+        for (dir in com.google.common.collect.ImmutableList.of<String?>(".hidden", "..also.hidden", "not.hidden")) {
+            pkgPath.getRelative(dir).createDirectoryAndParents()
+        }
+        // Note that these are not in the result: ".", ".."
+        assertSingleGlobMatches(
+            "*", "..also.hidden", ".hidden", "BUILD", "a1", "a2", "foo", "food", "fool", "not.hidden"
+        )
+        assertSingleGlobMatches("*.hidden", "not.hidden")
     }
 
-    @Override
-    public FileStatus statIfFound(PathFragment path, boolean followSymlinks) throws IOException {
-      if (stubbedStats.containsKey(path)) {
-        return stubbedStats.get(path);
-      }
-      return super.statIfFound(path, followSymlinks);
-    }
-  }
-
-  private void assertSubpackageMatches(String pattern, String... expecteds) throws Exception {
-    assertThat(getSubpackagesMatches(pattern))
-        .containsExactlyElementsIn(ImmutableList.copyOf(expecteds));
-  }
-
-  protected abstract Iterable<String> getSubpackagesMatches(String pattern) throws Exception;
-
-  private void makeEmptyPackage(Path newPackagePath) throws Exception {
-    newPackagePath.createDirectoryAndParents();
-    FileSystemUtils.createEmptyFile(newPackagePath.getRelative("BUILD"));
-  }
-
-  private void makeEmptyPackage(String path) throws Exception {
-    makeEmptyPackage(pkgPath.getRelative(path));
-  }
-
-  @Test
-  public void subpackages_simple() throws Exception {
-    makeEmptyPackage("horse");
-    makeEmptyPackage("monkey");
-    makeEmptyPackage("horse/saddle");
-
-    // "horse/saddle" should not be in the results because horse/saddle is too deep. a2/b2 added by
-    // setup().
-    assertSubpackageMatches("**", /* => */ "a2/b2", "horse", "monkey");
-  }
-
-  @Test
-  public void subpackages_empty() throws Exception {
-    assertSubpackageMatches("foo/*");
-    assertSubpackageMatches("foo/**");
-  }
-
-  @Test
-  public void subpackages_doubleStarPatternWithNamedChild() throws Exception {
-    assertSubpackageMatches("**/bar");
-  }
-
-  @Test
-  public void subpackages_noWildcard() throws Exception {
-    makeEmptyPackage("sub1");
-    makeEmptyPackage("sub2");
-    makeEmptyPackage("sub3/deep");
-    makeEmptyPackage("sub4/deeper/deeper");
-
-    assertSubpackageMatches("sub");
-    assertSubpackageMatches("sub1", "sub1");
-    assertSubpackageMatches("sub2", "sub2");
-    assertSubpackageMatches("sub3/deep", "sub3/deep");
-    assertSubpackageMatches("sub4/deeper/deeper", "sub4/deeper/deeper");
-  }
-
-  @Test
-  public void subpackages_zeroLevelDeep(@TestParameter boolean withDeeperSubpackage)
-      throws Exception {
-    makeEmptyPackage("sub");
-    if (withDeeperSubpackage) {
-      makeEmptyPackage("sub/subOfSub");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDoubleStar() {
+        assertSingleGlobMatches(
+            "**",
+            "a1/b1/c",
+            "a1/b1",
+            "a1",
+            "a2",
+            "foo/bar/wiz",
+            "foo/bar/wiz/file",
+            "foo/bar",
+            "foo/barnacle/wiz",
+            "foo/barnacle",
+            "foo",
+            "food/barnacle/wiz",
+            "food/barnacle",
+            "food",
+            "fool/barnacle/wiz",
+            "fool/barnacle",
+            "fool",
+            "BUILD"
+        )
     }
 
-    assertSubpackageMatches("sub/*");
-
-    // `**` is considered to matching nothing below.
-    assertSubpackageMatches("sub/**", "sub");
-    assertSubpackageMatches("sub/**/**", "sub");
-
-    assertSubpackageMatches("sub/**/foo");
-    assertSubpackageMatches("sub/**/foo/**");
-  }
-
-  @Test
-  public void subpackages_oneLevelDeep() throws Exception {
-    makeEmptyPackage("base/sub");
-    makeEmptyPackage("base/sub2");
-    makeEmptyPackage("base/sub3");
-
-    List<String> matchingPatterns =
-        Arrays.asList("base/*", "base/**", "base/**/**", "base/**/sub*", "base/**/sub*/**");
-
-    for (String pattern : matchingPatterns) {
-      assertSubpackageMatches(pattern, /* => */ "base/sub", "base/sub2", "base/sub3");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDoubleStarExcludeDirs() {
+        assertGlobWithoutDirsMatches("**", "foo/bar/wiz/file", "BUILD")
     }
-  }
 
-  @Test
-  public void subpackages_deepRecurse() throws Exception {
-    makeEmptyPackage("base/sub/1");
-    makeEmptyPackage("base/sub/2");
-    makeEmptyPackage("base/sub2/3");
-    makeEmptyPackage("base/sub2/4");
-    makeEmptyPackage("base/sub3/5");
-    makeEmptyPackage("base/sub3/6");
-
-    FileSystemUtils.createEmptyFile(pkgPath.getRelative("foo/bar/BUILD"));
-
-    // * doesn't go deep enough, so no matches
-    assertSubpackageMatches("base/*");
-
-    List<String> matchingPatterns =
-        Arrays.asList("base/**", "base/*/*", "base/*/*/**", "base/*/*/**/**", "base/**/sub*/**");
-
-    for (String pattern : matchingPatterns) {
-      assertSubpackageMatches(
-          pattern,
-          "base/sub/1",
-          "base/sub/2",
-          "base/sub2/3",
-          "base/sub2/4",
-          "base/sub3/5",
-          "base/sub3/6");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDoubleDoubleStar() {
+        assertSingleGlobMatches(
+            "**/**",
+            "a1/b1/c",
+            "a1/b1",
+            "a1",
+            "a2",
+            "foo/bar/wiz",
+            "foo/bar/wiz/file",
+            "foo/bar",
+            "foo/barnacle/wiz",
+            "foo/barnacle",
+            "foo",
+            "food/barnacle/wiz",
+            "food/barnacle",
+            "food",
+            "fool/barnacle/wiz",
+            "fool/barnacle",
+            "fool",
+            "BUILD"
+        )
     }
-  }
 
-  @Test
-  public void subpackages_middleWildcard() throws Exception {
-    makeEmptyPackage("base/same");
-    makeEmptyPackage("base/sub1/same");
-    makeEmptyPackage("base/sub2/same");
-    makeEmptyPackage("base/sub3/same");
-    makeEmptyPackage("base/sub4/same");
-    makeEmptyPackage("base/sub5/same");
-    makeEmptyPackage("base/sub6/same");
-    makeEmptyPackage("base/sub7/sub8/same");
-    makeEmptyPackage("base/sub9/sub10/sub11/same");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDirectoryWithDoubleStar() {
+        assertSingleGlobMatches(
+            "foo/**",
+            "foo/bar/wiz",
+            "foo/bar/wiz/file",
+            "foo/bar",
+            "foo/barnacle/wiz",
+            "foo/barnacle",
+            "foo"
+        )
+    }
 
-    assertSubpackageMatches(
-        "base/*/same",
-        "base/sub1/same",
-        "base/sub2/same",
-        "base/sub3/same",
-        "base/sub4/same",
-        "base/sub5/same",
-        "base/sub6/same");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDoubleStarPatternWithNamedChild() {
+        assertSingleGlobMatches("**/bar", "foo/bar")
+    }
 
-    assertSubpackageMatches(
-        "base/**/same",
-        "base/same",
-        "base/sub1/same",
-        "base/sub2/same",
-        "base/sub3/same",
-        "base/sub4/same",
-        "base/sub5/same",
-        "base/sub6/same",
-        "base/sub7/sub8/same",
-        "base/sub9/sub10/sub11/same");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDoubleStarPatternWithErrorChild() {
+        FileSystemUtils.ensureSymbolicLink(pkgPath.getChild("self"), "self")
 
-  @Test
-  public void subpackages_testSymlinks() throws Exception {
-    Path newPackagePath = pkgPath.getRelative("path/to/pkg");
-    makeEmptyPackage(newPackagePath);
+        val ioException: IOException? =
+            org.junit.Assert.assertThrows<IOException?>(
+                IOException::class.java,
+                org.junit.function.ThrowingRunnable { runSingleGlob("**/self", Operation.FILES) })
+        Truth.assertThat(ioException).hasMessageThat().matches("Symlink cycle")
+    }
 
-    pkgPath.getRelative("symlinks").createDirectoryAndParents();
-    FileSystemUtils.ensureSymbolicLink(pkgPath.getRelative("symlinks/deeplink"), newPackagePath);
-    FileSystemUtils.ensureSymbolicLink(pkgPath.getRelative("shallowlink"), newPackagePath);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDoubleStarPatternWithChildGlob() {
+        assertSingleGlobMatches("**/ba*", "foo/bar", "foo/barnacle", "food/barnacle", "fool/barnacle")
+    }
 
-    assertSubpackageMatches("**", "a2/b2", "symlinks/deeplink", "path/to/pkg", "shallowlink");
-    assertSubpackageMatches("*", "shallowlink");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDoubleStarAsChildGlob() {
+        FileSystemUtils.createEmptyFile(pkgPath.getRelative("foo/barnacle/wiz/wiz"))
+        pkgPath.getRelative("foo/barnacle/baz/wiz").createDirectoryAndParents()
 
-    assertSubpackageMatches("symlinks/**", "symlinks/deeplink");
-    assertSubpackageMatches("symlinks/*", "symlinks/deeplink");
-  }
+        assertSingleGlobMatches(
+            "foo/**/wiz",
+            "foo/bar/wiz",
+            "foo/barnacle/wiz",
+            "foo/barnacle/baz/wiz",
+            "foo/barnacle/wiz/wiz"
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDoubleStarUnderNonexistentDirectory() {
+        assertSingleGlobMatches("not-there/**" /* => nothing */)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDoubleStarUnderFile() {
+        assertSingleGlobMatches("foo/bar/wiz/file/**" /* => nothing */)
+    }
+
+    @Throws(InvalidGlobPatternException::class)
+    protected abstract fun createdGlobRelatedSkyKey(
+        pattern: String?, globberOperation: Globber.Operation?
+    ): SkyKey
+
+    /** Regression test for b/13319874: Directory listing crash.  */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testResilienceToFilesystemInconsistencies_directoryExistence() {
+        // Our custom filesystem says "pkgPath/BUILD" exists but "pkgPath" does not exist.
+        fs!!.stubStat(pkgPath, null)
+        val pkgRootedPath: RootedPath = RootedPath.toRootedPath(Root.fromPath(root), pkgPath)
+        val pkgDirFileStateValue: FileStateValue? =
+            FileStateValue.create(pkgRootedPath, SyscallCache.NO_CACHE,  /* tsgm= */null)
+        val pkgDirValue: FileValue? =
+            FileValue.value(
+                com.google.common.collect.ImmutableList.of<E?>(pkgRootedPath),
+                null,
+                null,
+                pkgRootedPath,
+                pkgDirFileStateValue,
+                pkgRootedPath,
+                pkgDirFileStateValue
+            )
+        differencer.inject(
+            com.google.common.collect.ImmutableMap.of<K?, V?>(
+                FileValue.key(pkgRootedPath),
+                Delta.justNew(pkgDirValue)
+            )
+        )
+        val expectedMessage = "/root/workspace/pkg is no longer an existing directory"
+        val skyKey: SkyKey = createdGlobRelatedSkyKey("*/foo", Operation.FILES_AND_DIRS)
+        val result: EvaluationResult<GlobValue?> =
+            evaluator.evaluate(com.google.common.collect.ImmutableList.of<E?>(skyKey), EVALUATION_OPTIONS)
+        assertThat(result.hasError()).isTrue()
+        val errorInfo: ErrorInfo = result.getError(skyKey)
+        assertThat(errorInfo.getException()).isInstanceOf(InconsistentFilesystemException::class.java)
+        assertThat(errorInfo.getException()).hasMessageThat().contains(expectedMessage)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testResilienceToFilesystemInconsistencies_subdirectoryExistence() {
+        // Our custom filesystem says directory "pkgPath/foo/bar" contains a subdirectory "wiz" but a
+        // direct stat on "pkgPath/foo/bar/wiz" says it does not exist.
+        val fooBarDir: Path = pkgPath.getRelative("foo/bar")
+        fs!!.stubStat(fooBarDir.getRelative("wiz"), null)
+        val fooBarDirRootedPath: RootedPath? = RootedPath.toRootedPath(Root.fromPath(root), fooBarDir)
+        val fooBarDirListingValue: SkyValue? =
+            DirectoryListingStateValue.create(
+                com.google.common.collect.ImmutableList.of<E?>(Dirent("wiz", Dirent.Type.DIRECTORY))
+            )
+        differencer.inject(
+            com.google.common.collect.ImmutableMap.of<K?, V?>(
+                DirectoryListingStateValue.key(fooBarDirRootedPath),
+                Delta.justNew(fooBarDirListingValue)
+            )
+        )
+        val expectedMessage = "/root/workspace/pkg/foo/bar/wiz is no longer an existing directory."
+        val skyKey: SkyKey = createdGlobRelatedSkyKey("**/wiz", Globber.Operation.FILES_AND_DIRS)
+        val result: EvaluationResult<GlobValue?> =
+            evaluator.evaluate(com.google.common.collect.ImmutableList.of<E?>(skyKey), EVALUATION_OPTIONS)
+        assertThat(result.hasError()).isTrue()
+        val errorInfo: ErrorInfo = result.getError(skyKey)
+        assertThat(errorInfo.getException()).isInstanceOf(InconsistentFilesystemException::class.java)
+        assertThat(errorInfo.getException()).hasMessageThat().contains(expectedMessage)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testResilienceToFilesystemInconsistencies_symlinkType() {
+        val wizRootedPath: RootedPath? =
+            RootedPath.toRootedPath(Root.fromPath(root), pkgPath.getRelative("foo/bar/wiz"))
+        val fileRootedPath: RootedPath =
+            RootedPath.toRootedPath(Root.fromPath(root), pkgPath.getRelative("foo/bar/wiz/file"))
+        val realStat: FileStatus = fileRootedPath.asPath().stat()
+        fs!!.stubStat(
+            fileRootedPath.asPath(),
+            object : FileStatus() {
+                val isFile: Boolean
+                    get() =// The stat says foo/bar/wiz/file is a real file, not a symlink.
+                        true
+
+                val isSpecialFile: Boolean
+                    get() = false
+
+                val isDirectory: Boolean
+                    get() = false
+
+                val isSymbolicLink: Boolean
+                    get() = false
+
+                @get:Throws(IOException::class)
+                val size: Long
+                    get() = realStat.size
+
+                @get:Throws(IOException::class)
+                val lastModifiedTime: Long
+                    get() = realStat.lastModifiedTime
+
+                @get:Throws(IOException::class)
+                val lastChangeTime: Long
+                    get() = realStat.lastChangeTime
+
+                @get:Throws(IOException::class)
+                val nodeId: Long
+                    get() = realStat.nodeId
+            })
+        // But the dir listing say foo/bar/wiz/file is a symlink.
+        val wizDirListingValue: SkyValue? =
+            DirectoryListingStateValue.create(
+                com.google.common.collect.ImmutableList.of<E?>(Dirent("file", Dirent.Type.SYMLINK))
+            )
+        differencer.inject(
+            com.google.common.collect.ImmutableMap.of<K?, V?>(
+                DirectoryListingStateValue.key(wizRootedPath), Delta.justNew(wizDirListingValue)
+            )
+        )
+        val expectedMessage =
+            "readdir and stat disagree about whether " + fileRootedPath.asPath() + " is a symlink"
+        val skyKey: SkyKey = createdGlobRelatedSkyKey("foo/bar/wiz/*", Globber.Operation.FILES_AND_DIRS)
+        val result: EvaluationResult<GlobValue?> =
+            evaluator.evaluate(com.google.common.collect.ImmutableList.of<E?>(skyKey), EVALUATION_OPTIONS)
+        assertThat(result.hasError()).isTrue()
+        val errorInfo: ErrorInfo = result.getError(skyKey)
+        assertThat(errorInfo.getException()).isInstanceOf(InconsistentFilesystemException::class.java)
+        assertThat(errorInfo.getException()).hasMessageThat().contains(expectedMessage)
+    }
+
+    /**
+     * When globbing symlinks, the returned path should use the path of the symlink source instead of
+     * the symlink target, regardless of whether glob pattern contains wildcard character or not.
+     */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSymlinks(@TestParameter withWildcard: Boolean) {
+        pkgPath.getRelative("symlinks").createDirectoryAndParents()
+        FileSystemUtils.ensureSymbolicLink(pkgPath.getRelative("symlinks/dangling.txt"), "nope")
+        FileSystemUtils.createEmptyFile(pkgPath.getRelative("symlinks/yup"))
+        FileSystemUtils.ensureSymbolicLink(pkgPath.getRelative("symlinks/existing.txt"), "yup")
+
+        val globPattern = if (withWildcard) "symlinks/*.txt" else "symlinks/existing.txt"
+        assertSingleGlobMatches(globPattern, "symlinks/existing.txt")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSymlinks_symlinkPointToDirectory() {
+        root.getRelative("target_direc").createDirectoryAndParents()
+        FileSystemUtils.createEmptyFile(root.getRelative("target_direc/file1"))
+        root.getRelative("target_direc/sub").createDirectoryAndParents()
+        FileSystemUtils.createEmptyFile(root.getRelative("target_direc/sub/file2"))
+
+        FileSystemUtils.ensureSymbolicLink(
+            pkgPath.getRelative("symlink"), root.getRelative("target_direc")
+        )
+        assertSingleGlobMatches(
+            "symlink/**", "symlink/sub", "symlink/sub/file2", "symlink", "symlink/file1"
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun symlinkFileValueWithError_symlinkCycleToSelf() {
+        FileSystemUtils.ensureSymbolicLink(pkgPath.getChild("self"), "self")
+
+        val ioException: IOException? =
+            org.junit.Assert.assertThrows<IOException?>(
+                IOException::class.java,
+                org.junit.function.ThrowingRunnable { runSingleGlob("self", Operation.FILES_AND_DIRS) })
+        Truth.assertThat(ioException).hasMessageThat().matches("Symlink cycle")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun symlinkFileValueWithError_symlinkCycleBetweenTwoSymlinks(
+        @TestParameter withWildcard: Boolean
+    ) {
+        pkgPath.getRelative("foo").createDirectoryAndParents()
+        pkgPath.getRelative("bar").createDirectoryAndParents()
+
+        FileSystemUtils.ensureSymbolicLink(pkgPath.getRelative("foo/a"), pkgPath.getRelative("bar/b"))
+        FileSystemUtils.ensureSymbolicLink(pkgPath.getRelative("bar/b"), pkgPath.getRelative("foo/a"))
+
+        val globPattern = if (withWildcard) "foo/*" else "foo/a"
+        val ioException: IOException? =
+            org.junit.Assert.assertThrows<IOException?>(
+                IOException::class.java,
+                org.junit.function.ThrowingRunnable { runSingleGlob(globPattern, Operation.FILES_AND_DIRS) })
+        Truth.assertThat(ioException).hasMessageThat().matches("Symlink cycle")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun symlinkSubdirValueWithError() {
+        val cycle: Path = pkgPath.getChild("cycle")
+        FileSystemUtils.ensureSymbolicLink(cycle.getChild("self"), "self")
+        FileSystemUtils.ensureSymbolicLink(pkgPath.getChild("symlink"), cycle)
+
+        val ioException: IOException? =
+            org.junit.Assert.assertThrows<IOException?>(
+                IOException::class.java,
+                org.junit.function.ThrowingRunnable { runSingleGlob("symlink/self", Operation.FILES_AND_DIRS) })
+        Truth.assertThat(ioException).hasMessageThat().matches("Symlink cycle")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSymlinks_unboundedSymlinkExpansion(@TestParameter withRecursiveWildcard: Boolean) {
+        pkgPath.getRelative("parent/sub").createDirectoryAndParents()
+        FileSystemUtils.ensureSymbolicLink(
+            pkgPath.getRelative("parent/sub/symlink"), pkgPath.getRelative("parent")
+        )
+
+        val globPattern = if (withRecursiveWildcard) "parent/**" else "parent/sub/symlink"
+        val skyKey: SkyKey = createdGlobRelatedSkyKey(globPattern, Globber.Operation.FILES_AND_DIRS)
+
+        val result: EvaluationResult<GlobValue?> =
+            evaluator.evaluate(com.google.common.collect.ImmutableList.of<E?>(skyKey), EVALUATION_OPTIONS)
+
+        if (withRecursiveWildcard || alwaysUsesDirListing()) {
+            assertThat(result.hasError()).isTrue()
+            val errorInfo: ErrorInfo = result.getError(skyKey)
+            assertThat(errorInfo.getException())
+                .isInstanceOf(FileSymlinkInfiniteExpansionException::class.java)
+            assertThat(errorInfo.getException()).hasMessageThat().contains("Infinite symlink expansion")
+        } else {
+            assertThat(result.hasError()).isFalse()
+        }
+    }
+
+    /**
+     * Covers the scenario when a directory has two symlinks of different status.
+     * 
+     * 
+     * One of the symlinks is a normal one whose path should be accepted by `SymlinkProducer`.
+     * 
+     * 
+     * The other symlink shows different `readdir` and `stat` status. `readdir`
+     * shows that it is a symlink but `stat` shows that it is a normal file. A [ ] should be accepted for this path by `SymlinkProducer`.
+     * 
+     * 
+     * `PatternWithWildcardProducer` immediately returns `DONE` when knowing the number
+     * of accepted symlink paths (1) is smaller than the number of symlink queried (2). The size
+     * mismatch indicates that one of the symlinks goes wrong.
+     */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSymlinks_oneNormalOneInconsistencyFilesystemError() {
+        pkgPath.getRelative("inconsistent").createDirectoryAndParents()
+        FileSystemUtils.createEmptyFile(pkgPath.getRelative("target"))
+        FileSystemUtils.ensureSymbolicLink(
+            pkgPath.getRelative("inconsistent/good"), pkgPath.getRelative("target")
+        )
+        FileSystemUtils.ensureSymbolicLink(
+            pkgPath.getRelative("inconsistent/bad"), pkgPath.getRelative("target")
+        )
+
+        val badRootedPath: RootedPath =
+            RootedPath.toRootedPath(Root.fromPath(root), pkgPath.getRelative("inconsistent/bad"))
+        val realStat: FileStatus = badRootedPath.asPath().stat()
+        fs!!.stubStat(
+            badRootedPath.asPath(),
+            object : FileStatus() {
+                val isFile: Boolean
+                    get() =// Intentionally set `isFile` as true, which disagree with filesystem.
+                        true
+
+                public override fun isSpecialFile(): Boolean {
+                    return false
+                }
+
+                public override fun isDirectory(): Boolean {
+                    return false
+                }
+
+                public override fun isSymbolicLink(): Boolean {
+                    // Intentionally set `isSymbolicLink` as false, which disagree with filesystem.
+                    return false
+                }
+
+                @Throws(IOException::class)
+                public override fun getSize(): Long {
+                    return realStat.size
+                }
+
+                @Throws(IOException::class)
+                public override fun getLastModifiedTime(): Long {
+                    return realStat.lastModifiedTime
+                }
+
+                @Throws(IOException::class)
+                public override fun getLastChangeTime(): Long {
+                    return realStat.lastChangeTime
+                }
+
+                @Throws(IOException::class)
+                public override fun getNodeId(): Long {
+                    return realStat.nodeId
+                }
+            })
+
+        val skyKey: SkyKey = createdGlobRelatedSkyKey("inconsistent/*", Globber.Operation.FILES_AND_DIRS)
+        val result: EvaluationResult<GlobValue?> =
+            evaluator.evaluate(com.google.common.collect.ImmutableList.of<E?>(skyKey), EVALUATION_OPTIONS)
+        assertThat(result.hasError()).isTrue()
+        val errorInfo: ErrorInfo = result.getError(skyKey)
+        assertThat(errorInfo.getException()).isInstanceOf(InconsistentFilesystemException::class.java)
+        assertThat(errorInfo.getException())
+            .hasMessageThat()
+            .contains("Inconsistent filesystem operations. readdir and stat disagree")
+    }
+
+    /**
+     * The test below covers the case when [DirectoryListingValue] contains multiple symlinks,
+     * which is common for bazel shell integration tests. Bazel shell integration tests usually create
+     * symlinks for all source files.
+     * 
+     * 
+     * Expect all matches to be returned when globbing multiple symlinks under the directory.
+     */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSymlinksUnderDirectory_shouldAllBeGlobbed() {
+        root.getRelative("targets").createDirectoryAndParents()
+        pkgPath.getRelative("symlinks").createDirectoryAndParents()
+        var c = 'a'
+        while (c <= 'z') {
+            FileSystemUtils.createEmptyFile(root.getRelative("targets/" + c + ".ext"))
+            FileSystemUtils.ensureSymbolicLink(
+                pkgPath.getRelative("symlinks/" + c + ".ext"), root.getRelative("targets/" + c + ".ext")
+            )
+            ++c
+        }
+
+        val allExpectedPathsInStr = arrayOfNulls<String>(26)
+        for (i in 0..25) {
+            allExpectedPathsInStr[i] = "symlinks/" + ('a'.code + i).toChar() + ".ext"
+        }
+        assertSingleGlobMatches("symlinks/*.ext", Operation.FILES_AND_DIRS, allExpectedPathsInStr)
+    }
+
+    internal class CustomInMemoryFs(manualClock: com.google.devtools.build.lib.testutil.ManualClock) :
+        InMemoryFileSystem(manualClock, DigestHashFunction.SHA256) {
+        private val stubbedStats: MutableMap<PathFragment?, FileStatus> =
+            com.google.common.collect.Maps.newHashMap<PathFragment?, FileStatus>()
+
+        fun stubStat(path: Path, stubbedResult: FileStatus?) {
+            stubbedStats.put(path.asFragment(), stubbedResult)
+        }
+
+        @Throws(IOException::class)
+        public override fun statIfFound(path: PathFragment, followSymlinks: Boolean): FileStatus {
+            if (stubbedStats.containsKey(path)) {
+                return stubbedStats.get(path)
+            }
+            return super.statIfFound(path, followSymlinks)
+        }
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun assertSubpackageMatches(pattern: String?, vararg expecteds: String?) {
+        Truth.assertThat(getSubpackagesMatches(pattern))
+            .containsExactlyElementsIn(com.google.common.collect.ImmutableList.copyOf<String?>(expecteds))
+    }
+
+    @Throws(java.lang.Exception::class)
+    protected abstract fun getSubpackagesMatches(pattern: String?): Iterable<String?>?
+
+    @Throws(java.lang.Exception::class)
+    private fun makeEmptyPackage(newPackagePath: Path) {
+        newPackagePath.createDirectoryAndParents()
+        FileSystemUtils.createEmptyFile(newPackagePath.getRelative("BUILD"))
+    }
+
+    @Throws(java.lang.Exception::class)
+    private fun makeEmptyPackage(path: String?) {
+        makeEmptyPackage(pkgPath.getRelative(path))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun subpackages_simple() {
+        makeEmptyPackage("horse")
+        makeEmptyPackage("monkey")
+        makeEmptyPackage("horse/saddle")
+
+        // "horse/saddle" should not be in the results because horse/saddle is too deep. a2/b2 added by
+        // setup().
+        assertSubpackageMatches("**",  /* => */"a2/b2", "horse", "monkey")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun subpackages_empty() {
+        assertSubpackageMatches("foo/*")
+        assertSubpackageMatches("foo/**")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun subpackages_doubleStarPatternWithNamedChild() {
+        assertSubpackageMatches("**/bar")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun subpackages_noWildcard() {
+        makeEmptyPackage("sub1")
+        makeEmptyPackage("sub2")
+        makeEmptyPackage("sub3/deep")
+        makeEmptyPackage("sub4/deeper/deeper")
+
+        assertSubpackageMatches("sub")
+        assertSubpackageMatches("sub1", "sub1")
+        assertSubpackageMatches("sub2", "sub2")
+        assertSubpackageMatches("sub3/deep", "sub3/deep")
+        assertSubpackageMatches("sub4/deeper/deeper", "sub4/deeper/deeper")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun subpackages_zeroLevelDeep(@TestParameter withDeeperSubpackage: Boolean) {
+        makeEmptyPackage("sub")
+        if (withDeeperSubpackage) {
+            makeEmptyPackage("sub/subOfSub")
+        }
+
+        assertSubpackageMatches("sub/*")
+
+        // `**` is considered to matching nothing below.
+        assertSubpackageMatches("sub/**", "sub")
+        assertSubpackageMatches("sub/**/**", "sub")
+
+        assertSubpackageMatches("sub/**/foo")
+        assertSubpackageMatches("sub/**/foo/**")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun subpackages_oneLevelDeep() {
+        makeEmptyPackage("base/sub")
+        makeEmptyPackage("base/sub2")
+        makeEmptyPackage("base/sub3")
+
+        val matchingPatterns: MutableList<String?> =
+            mutableListOf<String?>("base/*", "base/**", "base/**/**", "base/**/sub*", "base/**/sub*/**")
+
+        for (pattern in matchingPatterns) {
+            assertSubpackageMatches(pattern,  /* => */"base/sub", "base/sub2", "base/sub3")
+        }
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun subpackages_deepRecurse() {
+        makeEmptyPackage("base/sub/1")
+        makeEmptyPackage("base/sub/2")
+        makeEmptyPackage("base/sub2/3")
+        makeEmptyPackage("base/sub2/4")
+        makeEmptyPackage("base/sub3/5")
+        makeEmptyPackage("base/sub3/6")
+
+        FileSystemUtils.createEmptyFile(pkgPath.getRelative("foo/bar/BUILD"))
+
+        // * doesn't go deep enough, so no matches
+        assertSubpackageMatches("base/*")
+
+        val matchingPatterns: MutableList<String?> =
+            mutableListOf<String?>("base/**", "base/*/*", "base/*/*/**", "base/*/*/**/**", "base/**/sub*/**")
+
+        for (pattern in matchingPatterns) {
+            assertSubpackageMatches(
+                pattern,
+                "base/sub/1",
+                "base/sub/2",
+                "base/sub2/3",
+                "base/sub2/4",
+                "base/sub3/5",
+                "base/sub3/6"
+            )
+        }
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun subpackages_middleWildcard() {
+        makeEmptyPackage("base/same")
+        makeEmptyPackage("base/sub1/same")
+        makeEmptyPackage("base/sub2/same")
+        makeEmptyPackage("base/sub3/same")
+        makeEmptyPackage("base/sub4/same")
+        makeEmptyPackage("base/sub5/same")
+        makeEmptyPackage("base/sub6/same")
+        makeEmptyPackage("base/sub7/sub8/same")
+        makeEmptyPackage("base/sub9/sub10/sub11/same")
+
+        assertSubpackageMatches(
+            "base/*/same",
+            "base/sub1/same",
+            "base/sub2/same",
+            "base/sub3/same",
+            "base/sub4/same",
+            "base/sub5/same",
+            "base/sub6/same"
+        )
+
+        assertSubpackageMatches(
+            "base/**/same",
+            "base/same",
+            "base/sub1/same",
+            "base/sub2/same",
+            "base/sub3/same",
+            "base/sub4/same",
+            "base/sub5/same",
+            "base/sub6/same",
+            "base/sub7/sub8/same",
+            "base/sub9/sub10/sub11/same"
+        )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun subpackages_testSymlinks() {
+        val newPackagePath: Path = pkgPath.getRelative("path/to/pkg")
+        makeEmptyPackage(newPackagePath)
+
+        pkgPath.getRelative("symlinks").createDirectoryAndParents()
+        FileSystemUtils.ensureSymbolicLink(pkgPath.getRelative("symlinks/deeplink"), newPackagePath)
+        FileSystemUtils.ensureSymbolicLink(pkgPath.getRelative("shallowlink"), newPackagePath)
+
+        assertSubpackageMatches("**", "a2/b2", "symlinks/deeplink", "path/to/pkg", "shallowlink")
+        assertSubpackageMatches("*", "shallowlink")
+
+        assertSubpackageMatches("symlinks/**", "symlinks/deeplink")
+        assertSubpackageMatches("symlinks/*", "symlinks/deeplink")
+    }
+
+    companion object {
+        protected val EVALUATION_OPTIONS: EvaluationContext? = EvaluationContext.newBuilder()
+            .setKeepGoing(false)
+            .setParallelism(SkyframeExecutor.DEFAULT_THREAD_COUNT)
+            .setEventHandler(NullEventHandler.INSTANCE)
+            .build()
+
+        protected val PKG_ID: PackageIdentifier = PackageIdentifier.createInMainRepo("pkg")
+    }
 }

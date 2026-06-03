@@ -11,83 +11,66 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.starlark;
+package com.google.devtools.build.lib.starlark
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.skyframe.BzlLoadValue.keyForBuild;
+import com.google.devtools.build.lib.skyframe.BzlLoadValue.keyForBuild
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.actions.AbstractAction;
-import com.google.devtools.build.lib.actions.ActionAnalysisMetadata;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.analysis.AnalysisResult;
-import com.google.devtools.build.lib.analysis.ConfiguredAspect;
-import com.google.devtools.build.lib.analysis.util.AnalysisTestCase;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.StarlarkProvider;
-import com.google.devtools.build.lib.packages.StructImpl;
-import java.util.List;
-import java.util.stream.Collectors;
-import net.starlark.java.eval.Dict;
-import net.starlark.java.eval.Sequence;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for the Starlark-accessible actions provider on rule configured targets. */
-@RunWith(JUnit4.class)
-public class StarlarkActionProviderTest extends AnalysisTestCase {
-
-  @Test
-  public void aspectGetsActionProviderForNativeRule() throws Exception {
-    scratch.file(
-        "test/aspect.bzl",
-        """
+/** Tests for the Starlark-accessible actions provider on rule configured targets.  */
+@RunWith(JUnit4::class)
+class StarlarkActionProviderTest : AnalysisTestCase() {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun aspectGetsActionProviderForNativeRule() {
+        scratch.file(
+            "test/aspect.bzl",
+            """
         foo = provider()
 
         def _impl(target, ctx):
             return [foo(actions = target.actions)]
 
         MyAspect = aspect(implementation = _impl)
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         genrule(
             name = "xxx",
             outs = ["mygen.out"],
-            cmd = 'echo "hello" > $@',
+            cmd = 'echo "hello" > ${'$'}@',
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    AnalysisResult analysisResult =
-        update(ImmutableList.of("test/aspect.bzl%MyAspect"), "//test:xxx");
+        val analysisResult: AnalysisResult =
+            update(com.google.common.collect.ImmutableList.of<String?>("test/aspect.bzl%MyAspect"), "//test:xxx")
 
-    ConfiguredAspect configuredAspect =
-        Iterables.getOnlyElement(analysisResult.getAspectsMap().values());
+        val configuredAspect: ConfiguredAspect? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(analysisResult.getAspectsMap().values())
 
-    StarlarkProvider.Key fooKey =
-        new StarlarkProvider.Key(keyForBuild(Label.parseCanonical("//test:aspect.bzl")), "foo");
+        val fooKey: StarlarkProvider.Key =
+            Key(keyForBuild(Label.parseCanonical("//test:aspect.bzl")), "foo")
 
-    StructImpl fooProvider = (StructImpl) configuredAspect.get(fooKey);
-    assertThat(fooProvider.getValue("actions")).isNotNull();
-    @SuppressWarnings("unchecked")
-    Sequence<ActionAnalysisMetadata> actions =
-        (Sequence<ActionAnalysisMetadata>) fooProvider.getValue("actions");
-    assertThat(actions).isNotEmpty();
+        val fooProvider: StructImpl = configuredAspect.get(fooKey) as StructImpl
+        assertThat(fooProvider.getValue("actions")).isNotNull()
+        val actions: net.starlark.java.eval.Sequence<ActionAnalysisMetadata>? =
+            fooProvider.getValue("actions") as net.starlark.java.eval.Sequence<ActionAnalysisMetadata>?
+        Truth.assertThat(actions).isNotEmpty()
 
-    ActionAnalysisMetadata action = actions.get(0);
-    assertThat(action.getMnemonic()).isEqualTo("Genrule");
-    assertThat(action).isInstanceOf(AbstractAction.class);
-  }
+        val action: ActionAnalysisMetadata = actions.get(0)
+        assertThat(action.getMnemonic()).isEqualTo("Genrule")
+        assertThat(action).isInstanceOf(AbstractAction::class.java)
+    }
 
-  @Test
-  @SuppressWarnings("unchecked")
-  public void aspectGetsActionProviderForStarlarkRule() throws Exception {
-    scratch.file(
-        "test/aspect.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun aspectGetsActionProviderForStarlarkRule() {
+        scratch.file(
+            "test/aspect.bzl",
+            """
         foo = provider()
 
         def _impl(target, ctx):
@@ -108,10 +91,12 @@ public class StarlarkActionProviderTest extends AnalysisTestCase {
             )]
 
         MyAspect = aspect(implementation = _impl)
-        """);
-    scratch.file(
-        "test/rule.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/rule.bzl",
+            """
         def impl(ctx):
             output_file0 = ctx.actions.declare_file("myfile0")
             output_file1 = ctx.actions.declare_file("myfile1")
@@ -132,65 +117,74 @@ public class StarlarkActionProviderTest extends AnalysisTestCase {
             return None
 
         my_rule = rule(impl)
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load("//test:rule.bzl", "my_rule")
 
         my_rule(
             name = "xxx",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration("--experimental_google_legacy_api");
-    AnalysisResult analysisResult =
-        update(ImmutableList.of("test/aspect.bzl%MyAspect"), "//test:xxx");
+        useConfiguration("--experimental_google_legacy_api")
+        val analysisResult: AnalysisResult =
+            update(com.google.common.collect.ImmutableList.of<String?>("test/aspect.bzl%MyAspect"), "//test:xxx")
 
-    ConfiguredAspect configuredAspect =
-        Iterables.getOnlyElement(analysisResult.getAspectsMap().values());
+        val configuredAspect: ConfiguredAspect? =
+            com.google.common.collect.Iterables.getOnlyElement<T?>(analysisResult.getAspectsMap().values())
 
-    StarlarkProvider.Key fooKey =
-        new StarlarkProvider.Key(keyForBuild(Label.parseCanonical("//test:aspect.bzl")), "foo");
-    StructImpl fooProvider = (StructImpl) configuredAspect.get(fooKey);
-    assertThat(fooProvider.getValue("actions")).isNotNull();
+        val fooKey: StarlarkProvider.Key =
+            Key(keyForBuild(Label.parseCanonical("//test:aspect.bzl")), "foo")
+        val fooProvider: StructImpl = configuredAspect.get(fooKey) as StructImpl
+        assertThat(fooProvider.getValue("actions")).isNotNull()
 
-    Sequence<ActionAnalysisMetadata> actions =
-        (Sequence<ActionAnalysisMetadata>) fooProvider.getValue("actions");
-    assertThat(actions).hasSize(2);
+        val actions: net.starlark.java.eval.Sequence<ActionAnalysisMetadata>? =
+            fooProvider.getValue("actions") as net.starlark.java.eval.Sequence<ActionAnalysisMetadata>?
+        Truth.assertThat(actions).hasSize(2)
 
-    Sequence<String> mnemonics = (Sequence<String>) fooProvider.getValue("mnemonics");
-    assertThat(mnemonics).containsExactly("MyAction0", "MyAction1");
+        val mnemonics: net.starlark.java.eval.Sequence<String>? =
+            fooProvider.getValue("mnemonics") as net.starlark.java.eval.Sequence<String>?
+        Truth.assertThat(mnemonics).containsExactly("MyAction0", "MyAction1")
 
-    Sequence<Dict<String, String>> envs =
-        (Sequence<Dict<String, String>>) fooProvider.getValue("envs");
-    assertThat(envs)
-        .containsExactly(
-            Dict.builder().put("foo", "bar").put("pet", "puppy").buildImmutable(),
-            Dict.builder().put("pet", "bunny").buildImmutable());
+        val envs: net.starlark.java.eval.Sequence<Dict<String?, String?>>? =
+            fooProvider.getValue("envs") as net.starlark.java.eval.Sequence<Dict<String?, String?>>?
+        Truth.assertThat(envs)
+            .containsExactly(
+                Dict.builder<Any?, Any?>().put("foo", "bar").put("pet", "puppy").buildImmutable(),
+                Dict.builder<Any?, Any?>().put("pet", "bunny").buildImmutable()
+            )
 
-    Sequence<Dict<String, String>> executionInfo =
-        (Sequence<Dict<String, String>>) fooProvider.getValue("execution_info");
-    assertThat(executionInfo).isNotNull();
+        val executionInfo: net.starlark.java.eval.Sequence<Dict<String?, String?>>? =
+            fooProvider.getValue("execution_info") as net.starlark.java.eval.Sequence<Dict<String?, String?>>?
+        Truth.assertThat(executionInfo).isNotNull()
 
-    Sequence<Sequence<Artifact>> inputs =
-        (Sequence<Sequence<Artifact>>) fooProvider.getValue("inputs");
-    assertThat(flattenArtifactNames(inputs)).containsExactly("executable");
+        val inputs: net.starlark.java.eval.Sequence<net.starlark.java.eval.Sequence<Artifact?>?> =
+            fooProvider.getValue("inputs") as net.starlark.java.eval.Sequence<net.starlark.java.eval.Sequence<Artifact?>?>
+        Truth.assertThat(flattenArtifactNames(inputs)).containsExactly("executable")
 
-    Sequence<Sequence<Artifact>> outputs =
-        (Sequence<Sequence<Artifact>>) fooProvider.getValue("outputs");
-    assertThat(flattenArtifactNames(outputs)).containsExactly("myfile0", "executable", "myfile1");
+        val outputs: net.starlark.java.eval.Sequence<net.starlark.java.eval.Sequence<Artifact?>?> =
+            fooProvider.getValue("outputs") as net.starlark.java.eval.Sequence<net.starlark.java.eval.Sequence<Artifact?>?>
+        Truth.assertThat(flattenArtifactNames(outputs)).containsExactly("myfile0", "executable", "myfile1")
 
-    Sequence<Sequence<String>> argv = (Sequence<Sequence<String>>) fooProvider.getValue("argv");
-    assertThat(argv.get(0)).hasSize(1);
-    assertThat(argv.get(0).get(0)).endsWith("executable");
-    assertThat(argv.get(1)).contains("fakecmd");
-  }
+        val argv: net.starlark.java.eval.Sequence<net.starlark.java.eval.Sequence<String?>?> =
+            fooProvider.getValue("argv") as net.starlark.java.eval.Sequence<net.starlark.java.eval.Sequence<String?>?>
+        Truth.assertThat(argv.get(0)).hasSize(1)
+        Truth.assertThat(argv.get(0).get(0)).endsWith("executable")
+        Truth.assertThat(argv.get(1)).contains("fakecmd")
+    }
 
-  private static List<String> flattenArtifactNames(Sequence<Sequence<Artifact>> artifactLists) {
-    return artifactLists.stream()
-        .flatMap(artifacts -> artifacts.stream())
-        .map(artifact -> artifact.getFilename())
-        .collect(Collectors.toList());
-  }
+    companion object {
+        private fun flattenArtifactNames(artifactLists: net.starlark.java.eval.Sequence<net.starlark.java.eval.Sequence<Artifact?>?>): MutableList<String> {
+            return artifactLists.stream()
+                .flatMap<Artifact?> { artifacts: net.starlark.java.eval.Sequence<Artifact?>? -> artifacts.stream() }
+                .map<Any?> { artifact: Artifact? -> artifact.getFilename() }
+                .collect(Collectors.toList())
+        }
+    }
 }

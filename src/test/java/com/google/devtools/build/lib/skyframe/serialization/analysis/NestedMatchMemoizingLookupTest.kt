@@ -11,372 +11,371 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization.analysis;
+package com.google.devtools.build.lib.skyframe.serialization.analysis
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.skyframe.serialization.analysis.AlwaysMatch.ALWAYS_MATCH_RESULT;
-import static com.google.devtools.build.lib.skyframe.serialization.analysis.NestedMatchResultTypes.createNestedMatchResult;
-import static com.google.devtools.build.lib.skyframe.serialization.analysis.NoMatch.NO_MATCH_RESULT;
-import static com.google.devtools.build.lib.skyframe.serialization.analysis.VersionedChanges.NO_MATCH;
+import com.google.devtools.build.lib.skyframe.serialization.analysis.AlwaysMatch.ALWAYS_MATCH_RESULT
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.FileDependencies.AvailableFileDependencies;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.FileOpMatchResultTypes.FileOpMatchResult;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.FileOpMatchResultTypes.FutureFileOpMatchResult;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.FileSystemDependencies.FileOpDependency;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.NestedMatchResultTypes.AnalysisAndSourceMatch;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.NestedMatchResultTypes.AnalysisMatch;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.NestedMatchResultTypes.FutureNestedMatchResult;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.NestedMatchResultTypes.NestedMatchResult;
-import com.google.devtools.build.lib.skyframe.serialization.analysis.NestedMatchResultTypes.SourceMatch;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import com.google.testing.junit.testparameterinjector.TestParameters;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executor;
-import java.util.concurrent.ForkJoinPool;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+@RunWith(TestParameterInjector::class)
+class NestedMatchMemoizingLookupTest {
+    private val executor: java.util.concurrent.Executor = ForkJoinPool(THREAD_COUNT)
+    private val changes: VersionedChanges = VersionedChanges(com.google.common.collect.ImmutableList.of<E?>())
+    private val fileOpMatches: FileOpMatchMemoizingLookup =
+        FileOpMatchMemoizingLookup(executor, changes, ConcurrentHashMap<K?, V?>())
+    private val lookup: NestedMatchMemoizingLookup =
+        NestedMatchMemoizingLookup(executor, fileOpMatches, ConcurrentHashMap<K?, V?>())
 
-@RunWith(TestParameterInjector.class)
-public final class NestedMatchMemoizingLookupTest {
-  private static final int THREAD_COUNT = 10;
+    @org.junit.Test
+    fun matchingNested_inRangeValidityHorizon_matches() {
+        changes.registerFileChange("abc/def", 100)
 
-  private final Executor executor = new ForkJoinPool(THREAD_COUNT);
-  private final VersionedChanges changes = new VersionedChanges(ImmutableList.of());
-  private final FileOpMatchMemoizingLookup fileOpMatches =
-      new FileOpMatchMemoizingLookup(executor, changes, new ConcurrentHashMap<>());
-  private final NestedMatchMemoizingLookup lookup =
-      new NestedMatchMemoizingLookup(executor, fileOpMatches, new ConcurrentHashMap<>());
+        val key: NestedDependencies = createNestedDependencies(FileDependencies.builder("abc/def").build())
+        assertThat(getLookupResult(key, 99)).isEqualTo(AnalysisMatch(100))
+    }
 
-  @Test
-  public void matchingNested_inRangeValidityHorizon_matches() {
-    changes.registerFileChange("abc/def", 100);
+    @org.junit.Test
+    fun matchingNested_outOfRangeValidityHorizon_doesNotMatch() {
+        changes.registerFileChange("abc/def", 100)
 
-    var key = createNestedDependencies(FileDependencies.builder("abc/def").build());
-    assertThat(getLookupResult(key, 99)).isEqualTo(new AnalysisMatch(100));
-  }
+        val key: NestedDependencies = createNestedDependencies(FileDependencies.builder("abc/def").build())
+        assertThat(getLookupResult(key, 100)).isEqualTo(NO_MATCH_RESULT)
+    }
 
-  @Test
-  public void matchingNested_outOfRangeValidityHorizon_doesNotMatch() {
-    changes.registerFileChange("abc/def", 100);
+    @org.junit.Test
+    @TestParameters("{validityHorizon: 97, expectedAnalysisMatch: 99, expectedSourceMatch: 98}")
+    @TestParameters("{validityHorizon: 98, expectedAnalysisMatch: 99, expectedSourceMatch: 2147483647}")
+    @TestParameters("{validityHorizon: 99, expectedAnalysisMatch: 100, expectedSourceMatch: 2147483647}")
+    @TestParameters("{validityHorizon: 100, expectedAnalysisMatch: 101, expectedSourceMatch: 2147483647}")
+    @TestParameters("{validityHorizon: 101, expectedAnalysisMatch: 2147483647, expectedSourceMatch: 2147483647}")
+    fun matchingNested_withDependencies_aggregatesDependencies(
+        validityHorizon: Int, expectedAnalysisMatch: Int, expectedSourceMatch: Int
+    ) {
+        changes.registerFileChange("dep/a", 99)
+        changes.registerFileChange("dep/b", 100)
+        changes.registerFileChange("dep/c", 101)
+        changes.registerFileChange("src/a", 98)
 
-    var key = createNestedDependencies(FileDependencies.builder("abc/def").build());
-    assertThat(getLookupResult(key, 100)).isEqualTo(NO_MATCH_RESULT);
-  }
+        val key: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            NestedDependencies.from(
+                com.google.common.collect.ImmutableList.of<E?>(
+                    FileDependencies.builder("dep/a").build(),
+                    FileDependencies.builder("dep/b").build(),
+                    FileDependencies.builder("dep/c").build()
+                ),
+                com.google.common.collect.ImmutableList.of<E?>(FileDependencies.builder("src/a").build())
+            )
 
-  @Test
-  @TestParameters("{validityHorizon: 97, expectedAnalysisMatch: 99, expectedSourceMatch: 98}")
-  @TestParameters(
-      "{validityHorizon: 98, expectedAnalysisMatch: 99, expectedSourceMatch: 2147483647}")
-  @TestParameters(
-      "{validityHorizon: 99, expectedAnalysisMatch: 100, expectedSourceMatch: 2147483647}")
-  @TestParameters(
-      "{validityHorizon: 100, expectedAnalysisMatch: 101, expectedSourceMatch: 2147483647}")
-  @TestParameters(
-      "{validityHorizon: 101, expectedAnalysisMatch: 2147483647, expectedSourceMatch: 2147483647}")
-  public void matchingNested_withDependencies_aggregatesDependencies(
-      int validityHorizon, int expectedAnalysisMatch, int expectedSourceMatch) {
-    changes.registerFileChange("dep/a", 99);
-    changes.registerFileChange("dep/b", 100);
-    changes.registerFileChange("dep/c", 101);
-    changes.registerFileChange("src/a", 98);
+        val expectedResult: NestedMatchResult? =
+            createNestedMatchResult(expectedAnalysisMatch, expectedSourceMatch)
+        Truth.assertThat(getLookupResult(key, validityHorizon)).isEqualTo(expectedResult)
+    }
 
-    var key =
-        NestedDependencies.from(
-            ImmutableList.of(
-                FileDependencies.builder("dep/a").build(),
-                FileDependencies.builder("dep/b").build(),
-                FileDependencies.builder("dep/c").build()),
-            ImmutableList.of(FileDependencies.builder("src/a").build()));
+    @org.junit.Test
+    @TestParameters("{validityHorizon: 98, expectedAnalysisMatch: 99, expectedSourceMatch: 2147483647}")
+    @TestParameters("{validityHorizon: 99, expectedAnalysisMatch: 100, expectedSourceMatch: 2147483647}")
+    @TestParameters("{validityHorizon: 100, expectedAnalysisMatch: 101, expectedSourceMatch: 2147483647}")
+    @TestParameters("{validityHorizon: 101, expectedAnalysisMatch: 2147483647, expectedSourceMatch: 102}")
+    @TestParameters("{validityHorizon: 102, expectedAnalysisMatch: 2147483647, expectedSourceMatch: 2147483647}")
+    @Throws(java.lang.Exception::class)
+    fun matchingNested_withAsyncDependencies_aggregatesDependencies(
+        validityHorizon: Int, expectedAnalysisMatch: Int, expectedSourceMatch: Int
+    ) {
+        // This test covers the futures handling code path in AggregatingFutureFileOpMatchResult.
+        changes.registerFileChange("dep/a", 99)
+        changes.registerFileChange("dep/b", 100)
+        changes.registerFileChange("dep/c", 101)
+        changes.registerFileChange("src/a", 102)
 
-    NestedMatchResult expectedResult =
-        createNestedMatchResult(expectedAnalysisMatch, expectedSourceMatch);
-    assertThat(getLookupResult(key, validityHorizon)).isEqualTo(expectedResult);
-  }
+        val depA: ControllableFileDependencies = ControllableFileDependencies(
+            com.google.common.collect.ImmutableList.of<String?>("dep/a"),
+            com.google.common.collect.ImmutableList.of<AvailableFileDependencies?>()
+        )
+        val depB: ControllableFileDependencies = ControllableFileDependencies(
+            com.google.common.collect.ImmutableList.of<String?>("dep/b"),
+            com.google.common.collect.ImmutableList.of<AvailableFileDependencies?>()
+        )
+        val depC: ControllableFileDependencies = ControllableFileDependencies(
+            com.google.common.collect.ImmutableList.of<String?>("dep/c"),
+            com.google.common.collect.ImmutableList.of<AvailableFileDependencies?>()
+        )
+        val srcA: ControllableFileDependencies = ControllableFileDependencies(
+            com.google.common.collect.ImmutableList.of<String?>("src/a"),
+            com.google.common.collect.ImmutableList.of<AvailableFileDependencies?>()
+        )
+        val key: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            NestedDependencies.from(
+                com.google.common.collect.ImmutableList.of<E?>(depA, depB, depC),
+                com.google.common.collect.ImmutableList.of<E?>(srcA)
+            )
 
-  @Test
-  @TestParameters(
-      "{validityHorizon: 98, expectedAnalysisMatch: 99, expectedSourceMatch: 2147483647}")
-  @TestParameters(
-      "{validityHorizon: 99, expectedAnalysisMatch: 100, expectedSourceMatch: 2147483647}")
-  @TestParameters(
-      "{validityHorizon: 100, expectedAnalysisMatch: 101, expectedSourceMatch: 2147483647}")
-  @TestParameters(
-      "{validityHorizon: 101, expectedAnalysisMatch: 2147483647, expectedSourceMatch: 102}")
-  @TestParameters(
-      "{validityHorizon: 102, expectedAnalysisMatch: 2147483647, expectedSourceMatch: 2147483647}")
-  public void matchingNested_withAsyncDependencies_aggregatesDependencies(
-      int validityHorizon, int expectedAnalysisMatch, int expectedSourceMatch) throws Exception {
-    // This test covers the futures handling code path in AggregatingFutureFileOpMatchResult.
-    changes.registerFileChange("dep/a", 99);
-    changes.registerFileChange("dep/b", 100);
-    changes.registerFileChange("dep/c", 101);
-    changes.registerFileChange("src/a", 102);
+        val pool: ForkJoinPool = ForkJoinPool(4) // one for each dependency and source
+        pool.execute(
+            java.lang.Runnable {
+                val unused: Any? = getLookupResult(depA, validityHorizon)
+            })
+        pool.execute(
+            java.lang.Runnable {
+                val unused: Any? = getLookupResult(depB, validityHorizon)
+            })
+        pool.execute(
+            java.lang.Runnable {
+                val unused: Any? = getLookupResult(depC, validityHorizon)
+            })
+        pool.execute(
+            java.lang.Runnable {
+                val unused: Any? = getLookupResult(srcA, validityHorizon)
+            })
 
-    var depA = new ControllableFileDependencies(ImmutableList.of("dep/a"), ImmutableList.of());
-    var depB = new ControllableFileDependencies(ImmutableList.of("dep/b"), ImmutableList.of());
-    var depC = new ControllableFileDependencies(ImmutableList.of("dep/c"), ImmutableList.of());
-    var srcA = new ControllableFileDependencies(ImmutableList.of("src/a"), ImmutableList.of());
-    var key = NestedDependencies.from(ImmutableList.of(depA, depB, depC), ImmutableList.of(srcA));
+        // Waits for all the dependency threads to take ownership of their entries.
+        depA.awaitEarliestMatchEntered()
+        depB.awaitEarliestMatchEntered()
+        depC.awaitEarliestMatchEntered()
+        srcA.awaitEarliestMatchEntered()
 
-    var pool = new ForkJoinPool(4); // one for each dependency and source
-    pool.execute(
-        () -> {
-          var unused = getLookupResult(depA, validityHorizon);
-        });
-    pool.execute(
-        () -> {
-          var unused = getLookupResult(depB, validityHorizon);
-        });
-    pool.execute(
-        () -> {
-          var unused = getLookupResult(depC, validityHorizon);
-        });
-    pool.execute(
-        () -> {
-          var unused = getLookupResult(srcA, validityHorizon);
-        });
+        val lookupResult: FutureNestedMatchResult =
+            lookup.getValueOrFuture(key, validityHorizon) as FutureNestedMatchResult
+        assertThat(lookupResult.isDone()).isFalse()
 
-    // Waits for all the dependency threads to take ownership of their entries.
-    depA.awaitEarliestMatchEntered();
-    depB.awaitEarliestMatchEntered();
-    depC.awaitEarliestMatchEntered();
-    srcA.awaitEarliestMatchEntered();
+        // The lookupResult cannot complete until all the dependencies complete. Releases the
+        // dependencies.
+        depA.enable()
+        depB.enable()
+        depC.enable()
+        srcA.enable()
 
-    var lookupResult = (FutureNestedMatchResult) lookup.getValueOrFuture(key, validityHorizon);
-    assertThat(lookupResult.isDone()).isFalse();
+        val expectedResult: NestedMatchResult? =
+            createNestedMatchResult(expectedAnalysisMatch, expectedSourceMatch)
+        assertThat(lookupResult.get()).isEqualTo(expectedResult)
+    }
 
-    // The lookupResult cannot complete until all the dependencies complete. Releases the
-    // dependencies.
-    depA.enable();
-    depB.enable();
-    depC.enable();
-    srcA.enable();
+    @org.junit.Test
+    @TestParameters("{validityHorizon: 98, expectedAnalysisMatch: 99, expectedSourceMatch: 2147483647}")
+    @TestParameters("{validityHorizon: 99, expectedAnalysisMatch: 100, expectedSourceMatch: 2147483647}")
+    @TestParameters("{validityHorizon: 100, expectedAnalysisMatch: 101, expectedSourceMatch: 2147483647}")
+    @TestParameters("{validityHorizon: 101, expectedAnalysisMatch: 2147483647, expectedSourceMatch: 102}")
+    fun matchingNested_withNestedDependencies_aggregatesDependencies(
+        validityHorizon: Int, expectedAnalysisMatch: Int, expectedSourceMatch: Int
+    ) {
+        changes.registerFileChange("dep/a", 99)
+        changes.registerFileChange("dep/b", 100)
+        changes.registerFileChange("dep/c", 101)
+        changes.registerFileChange("src/a", 102)
 
-    NestedMatchResult expectedResult =
-        createNestedMatchResult(expectedAnalysisMatch, expectedSourceMatch);
-    assertThat(lookupResult.get()).isEqualTo(expectedResult);
-  }
+        val nestedDep: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            NestedDependencies.from(
+                com.google.common.collect.ImmutableList.of<E?>(
+                    FileDependencies.builder("dep/b").build(),
+                    FileDependencies.builder("dep/c").build()
+                ),
+                com.google.common.collect.ImmutableList.of<E?>(FileDependencies.builder("src/a").build())
+            )
 
-  @Test
-  @TestParameters(
-      "{validityHorizon: 98, expectedAnalysisMatch: 99, expectedSourceMatch: 2147483647}")
-  @TestParameters(
-      "{validityHorizon: 99, expectedAnalysisMatch: 100, expectedSourceMatch: 2147483647}")
-  @TestParameters(
-      "{validityHorizon: 100, expectedAnalysisMatch: 101, expectedSourceMatch: 2147483647}")
-  @TestParameters(
-      "{validityHorizon: 101, expectedAnalysisMatch: 2147483647, expectedSourceMatch: 102}")
-  public void matchingNested_withNestedDependencies_aggregatesDependencies(
-      int validityHorizon, int expectedAnalysisMatch, int expectedSourceMatch) {
-    changes.registerFileChange("dep/a", 99);
-    changes.registerFileChange("dep/b", 100);
-    changes.registerFileChange("dep/c", 101);
-    changes.registerFileChange("src/a", 102);
+        val key: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            NestedDependencies.from(
+                com.google.common.collect.ImmutableList.of<E?>(FileDependencies.builder("dep/a").build(), nestedDep),
+                com.google.common.collect.ImmutableList.of<E?>()
+            )
 
-    var nestedDep =
-        NestedDependencies.from(
-            ImmutableList.of(
-                FileDependencies.builder("dep/b").build(),
-                FileDependencies.builder("dep/c").build()),
-            ImmutableList.of(FileDependencies.builder("src/a").build()));
+        val expectedResult: NestedMatchResult? =
+            createNestedMatchResult(expectedAnalysisMatch, expectedSourceMatch)
+        Truth.assertThat(getLookupResult(key, validityHorizon)).isEqualTo(expectedResult)
+    }
 
-    var key =
-        NestedDependencies.from(
-            ImmutableList.of(FileDependencies.builder("dep/a").build(), nestedDep),
-            ImmutableList.of());
+    @org.junit.Test
+    @TestParameters("{validityHorizon: 98, expectedAnalysisMatch: 99, expectedSourceMatch: 2147483647}")
+    @TestParameters("{validityHorizon: 99, expectedAnalysisMatch: 100, expectedSourceMatch: 2147483647}")
+    @TestParameters("{validityHorizon: 100, expectedAnalysisMatch: 101, expectedSourceMatch: 2147483647}")
+    @TestParameters("{validityHorizon: 101, expectedAnalysisMatch: 2147483647, expectedSourceMatch: 102}")
+    @TestParameters("{validityHorizon: 102, expectedAnalysisMatch: 2147483647, expectedSourceMatch: 2147483647}")
+    @Throws(java.lang.Exception::class)
+    fun matchingNested_withAsyncNestedDependencies_aggregatesDependencies(
+        validityHorizon: Int, expectedAnalysisMatch: Int, expectedSourceMatch: Int
+    ) {
+        changes.registerFileChange("dep/a", 99)
+        changes.registerFileChange("dep/b", 100)
+        changes.registerFileChange("dep/c", 101)
+        changes.registerFileChange("src/a", 102)
 
-    NestedMatchResult expectedResult =
-        createNestedMatchResult(expectedAnalysisMatch, expectedSourceMatch);
-    assertThat(getLookupResult(key, validityHorizon)).isEqualTo(expectedResult);
-  }
+        val nestedDep: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            NestedDependencies.from(
+                com.google.common.collect.ImmutableList.of<E?>(
+                    FileDependencies.builder("dep/b").build(),
+                    FileDependencies.builder("dep/c").build()
+                ),
+                com.google.common.collect.ImmutableList.of<E?>(FileDependencies.builder("src/a").build())
+            )
 
-  @Test
-  @TestParameters(
-      "{validityHorizon: 98, expectedAnalysisMatch: 99, expectedSourceMatch: 2147483647}")
-  @TestParameters(
-      "{validityHorizon: 99, expectedAnalysisMatch: 100, expectedSourceMatch: 2147483647}")
-  @TestParameters(
-      "{validityHorizon: 100, expectedAnalysisMatch: 101, expectedSourceMatch: 2147483647}")
-  @TestParameters(
-      "{validityHorizon: 101, expectedAnalysisMatch: 2147483647, expectedSourceMatch: 102}")
-  @TestParameters(
-      "{validityHorizon: 102, expectedAnalysisMatch: 2147483647, expectedSourceMatch: 2147483647}")
-  public void matchingNested_withAsyncNestedDependencies_aggregatesDependencies(
-      int validityHorizon, int expectedAnalysisMatch, int expectedSourceMatch) throws Exception {
-    changes.registerFileChange("dep/a", 99);
-    changes.registerFileChange("dep/b", 100);
-    changes.registerFileChange("dep/c", 101);
-    changes.registerFileChange("src/a", 102);
+        val key: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            NestedDependencies.from(
+                com.google.common.collect.ImmutableList.of<E?>(FileDependencies.builder("dep/a").build(), nestedDep),
+                com.google.common.collect.ImmutableList.of<E?>()
+            )
 
-    var nestedDep =
-        NestedDependencies.from(
-            ImmutableList.of(
-                FileDependencies.builder("dep/b").build(),
-                FileDependencies.builder("dep/c").build()),
-            ImmutableList.of(FileDependencies.builder("src/a").build()));
+        val expectedResult: NestedMatchResult? =
+            createNestedMatchResult(expectedAnalysisMatch, expectedSourceMatch)
 
-    var key =
-        NestedDependencies.from(
-            ImmutableList.of(FileDependencies.builder("dep/a").build(), nestedDep),
-            ImmutableList.of());
+        // Spawns THREAD_COUNT threads to test parallel nested dependency lookups.
+        val executor: ForkJoinPool = ForkJoinPool(THREAD_COUNT)
+        val latch: CountDownLatch = CountDownLatch(THREAD_COUNT)
+        for (i in 0..<THREAD_COUNT) {
+            executor.execute(
+                java.lang.Runnable {
+                    when (lookup.getValueOrFuture(key, validityHorizon)) {
+                        -> assertThat(value).isEqualTo(expectedResult)
+                        -> try {
+                            assertThat(future.get()).isEqualTo(expectedResult)
+                        } catch (e: java.lang.Exception) {
+                            if (e is java.lang.InterruptedException) {
+                                java.lang.Thread.currentThread().interrupt()
+                            }
+                            throw java.lang.AssertionError(e)
+                        }
+                    }
+                    latch.countDown()
+                })
+        }
+        latch.await()
+    }
 
-    NestedMatchResult expectedResult =
-        createNestedMatchResult(expectedAnalysisMatch, expectedSourceMatch);
+    @org.junit.Test
+    fun createNestedMatchResult_analysisVersionNoMatch_sourceVersionPositive_sourceMatch() {
+        val result: NestedMatchResult? = createNestedMatchResult(NO_MATCH, 5)
+        assertThat(result).isEqualTo(SourceMatch(5))
+    }
 
-    // Spawns THREAD_COUNT threads to test parallel nested dependency lookups.
-    var executor = new ForkJoinPool(THREAD_COUNT);
-    var latch = new CountDownLatch(THREAD_COUNT);
-    for (int i = 0; i < THREAD_COUNT; i++) {
-      executor.execute(
-          () -> {
-            switch (lookup.getValueOrFuture(key, validityHorizon)) {
-              case NestedMatchResult value:
-                assertThat(value).isEqualTo(expectedResult);
-                break;
-              case FutureNestedMatchResult future:
-                try {
-                  assertThat(future.get()).isEqualTo(expectedResult);
-                } catch (Exception e) {
-                  if (e instanceof InterruptedException) {
-                    Thread.currentThread().interrupt();
-                  }
-                  throw new AssertionError(e);
-                }
+    @org.junit.Test
+    fun createNestedMatchResult_analysisVersionLessEqualSourceVersion_analysisMatch() {
+        val result: NestedMatchResult? = createNestedMatchResult(10, 20)
+        assertThat(result).isEqualTo(AnalysisMatch(10))
+    }
+
+    @org.junit.Test
+    fun createNestedMatchResult_analysisVersionGreaterSourceVersion_analysisNonNoMatch() {
+        val result: NestedMatchResult? = createNestedMatchResult(20, 5)
+        assertThat(result).isEqualTo(AnalysisAndSourceMatch(20, 5))
+    }
+
+    @org.junit.Test
+    fun createNestedMatchResult_analysisVersionGreaterSourceVersion_analysisAndSourceMatch() {
+        val result: NestedMatchResult? = createNestedMatchResult(20, 10)
+        assertThat(result).isEqualTo(AnalysisAndSourceMatch(20, 10))
+    }
+
+    @org.junit.Test
+    fun createNestedMatchResult_analysisVersionEqualSourceVersion_analysisMatch() {
+        val result: NestedMatchResult? = createNestedMatchResult(10, 10)
+        assertThat(result).isEqualTo(AnalysisMatch(10))
+    }
+
+    @org.junit.Test
+    fun createNestedMatchResult_analysisVersionNoMatch_sourceVersionNoMatch_noMatchResult() {
+        val result: NestedMatchResult? = createNestedMatchResult(NO_MATCH, NO_MATCH)
+        assertThat(result).isEqualTo(NO_MATCH_RESULT)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun invalidation_missingNested() {
+        val missingNested: NestedDependencies? = NestedDependencies.newMissingInstance()
+
+        val lookupResult: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            lookup.getValueOrFuture(missingNested, 99)
+
+        assertThat(lookupResult).isEqualTo(ALWAYS_MATCH_RESULT)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun invalidation_missingAnalysisDependency_file() {
+        val key: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            NestedDependencies.from(
+                com.google.common.collect.ImmutableList.of<E?>(
+                    createAvailableFileDependencies("dep/a"), FileDependencies.newMissingInstance()
+                ),
+                com.google.common.collect.ImmutableList.of<E?>(createAvailableFileDependencies("src/a"))
+            )
+
+        Truth.assertThat(getLookupResult(key, 99)).isEqualTo(ALWAYS_MATCH_RESULT)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun invalidation_missingAnalysisDependency_listing() {
+        val key: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            NestedDependencies.from(
+                com.google.common.collect.ImmutableList.of<E?>(
+                    createAvailableFileDependencies("dep/a"), ListingDependencies.newMissingInstance()
+                ),
+                com.google.common.collect.ImmutableList.of<E?>(createAvailableFileDependencies("src/a"))
+            )
+
+        Truth.assertThat(getLookupResult(key, 99)).isEqualTo(ALWAYS_MATCH_RESULT)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun invalidation_missingSourceDependency() {
+        val key: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            NestedDependencies.from(
+                com.google.common.collect.ImmutableList.of<E?>(createAvailableFileDependencies("dep/a")),
+                com.google.common.collect.ImmutableList.of<E?>(
+                    createAvailableFileDependencies("src/a"), FileDependencies.newMissingInstance()
+                )
+            )
+
+        Truth.assertThat(getLookupResult(key, 99)).isEqualTo(ALWAYS_MATCH_RESULT)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun invalidation_allMissing() {
+        val key: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            NestedDependencies.from(
+                com.google.common.collect.ImmutableList.of<E?>(FileDependencies.newMissingInstance()),
+                com.google.common.collect.ImmutableList.of<E?>(FileDependencies.newMissingInstance())
+            )
+
+        Truth.assertThat(getLookupResult(key, 99)).isEqualTo(ALWAYS_MATCH_RESULT)
+    }
+
+    private fun getLookupResult(key: NestedDependencies?, validityHorizon: Int): NestedMatchResult? {
+        try {
+            when (lookup.getValueOrFuture(key, validityHorizon)) {
+                -> return result
+                -> return future.get()
             }
-            latch.countDown();
-          });
+        } catch (e: java.lang.Exception) {
+            if (e is java.lang.InterruptedException) {
+                java.lang.Thread.currentThread().interrupt()
+            }
+            throw java.lang.AssertionError(e)
+        }
     }
-    latch.await();
-  }
 
-  @Test
-  public void createNestedMatchResult_analysisVersionNoMatch_sourceVersionPositive_sourceMatch() {
-    NestedMatchResult result = createNestedMatchResult(NO_MATCH, 5);
-    assertThat(result).isEqualTo(new SourceMatch(5));
-  }
-
-  @Test
-  public void createNestedMatchResult_analysisVersionLessEqualSourceVersion_analysisMatch() {
-    NestedMatchResult result = createNestedMatchResult(10, 20);
-    assertThat(result).isEqualTo(new AnalysisMatch(10));
-  }
-
-  @Test
-  public void createNestedMatchResult_analysisVersionGreaterSourceVersion_analysisNonNoMatch() {
-    NestedMatchResult result = createNestedMatchResult(20, 5);
-    assertThat(result).isEqualTo(new AnalysisAndSourceMatch(20, 5));
-  }
-
-  @Test
-  public void createNestedMatchResult_analysisVersionGreaterSourceVersion_analysisAndSourceMatch() {
-    NestedMatchResult result = createNestedMatchResult(20, 10);
-    assertThat(result).isEqualTo(new AnalysisAndSourceMatch(20, 10));
-  }
-
-  @Test
-  public void createNestedMatchResult_analysisVersionEqualSourceVersion_analysisMatch() {
-    NestedMatchResult result = createNestedMatchResult(10, 10);
-    assertThat(result).isEqualTo(new AnalysisMatch(10));
-  }
-
-  @Test
-  public void createNestedMatchResult_analysisVersionNoMatch_sourceVersionNoMatch_noMatchResult() {
-    NestedMatchResult result = createNestedMatchResult(NO_MATCH, NO_MATCH);
-    assertThat(result).isEqualTo(NO_MATCH_RESULT);
-  }
-
-  @Test
-  public void invalidation_missingNested() throws Exception {
-    NestedDependencies missingNested = NestedDependencies.newMissingInstance();
-
-    var lookupResult = lookup.getValueOrFuture(missingNested, 99);
-
-    assertThat(lookupResult).isEqualTo(ALWAYS_MATCH_RESULT);
-  }
-
-  @Test
-  public void invalidation_missingAnalysisDependency_file() throws Exception {
-    var key =
-        NestedDependencies.from(
-            ImmutableList.of(
-                createAvailableFileDependencies("dep/a"), FileDependencies.newMissingInstance()),
-            ImmutableList.of(createAvailableFileDependencies("src/a")));
-
-    assertThat(getLookupResult(key, 99)).isEqualTo(ALWAYS_MATCH_RESULT);
-  }
-
-  @Test
-  public void invalidation_missingAnalysisDependency_listing() throws Exception {
-    var key =
-        NestedDependencies.from(
-            ImmutableList.of(
-                createAvailableFileDependencies("dep/a"), ListingDependencies.newMissingInstance()),
-            ImmutableList.of(createAvailableFileDependencies("src/a")));
-
-    assertThat(getLookupResult(key, 99)).isEqualTo(ALWAYS_MATCH_RESULT);
-  }
-
-  @Test
-  public void invalidation_missingSourceDependency() throws Exception {
-    var key =
-        NestedDependencies.from(
-            ImmutableList.of(createAvailableFileDependencies("dep/a")),
-            ImmutableList.of(
-                createAvailableFileDependencies("src/a"), FileDependencies.newMissingInstance()));
-
-    assertThat(getLookupResult(key, 99)).isEqualTo(ALWAYS_MATCH_RESULT);
-  }
-
-  @Test
-  public void invalidation_allMissing() throws Exception {
-    var key =
-        NestedDependencies.from(
-            ImmutableList.of(FileDependencies.newMissingInstance()),
-            ImmutableList.of(FileDependencies.newMissingInstance()));
-
-    assertThat(getLookupResult(key, 99)).isEqualTo(ALWAYS_MATCH_RESULT);
-  }
-
-  private NestedMatchResult getLookupResult(NestedDependencies key, int validityHorizon) {
-    try {
-      switch (lookup.getValueOrFuture(key, validityHorizon)) {
-        case NestedMatchResult result:
-          return result;
-        case FutureNestedMatchResult future:
-          return future.get();
-      }
-    } catch (Exception e) {
-      if (e instanceof InterruptedException) {
-        Thread.currentThread().interrupt();
-      }
-      throw new AssertionError(e);
+    private fun getLookupResult(key: FileOpDependency?, validityHorizon: Int): FileOpMatchResult? {
+        try {
+            when (fileOpMatches.getValueOrFuture(key, validityHorizon)) {
+                -> return result
+                -> return future.get()
+            }
+        } catch (e: java.lang.Exception) {
+            if (e is java.lang.InterruptedException) {
+                java.lang.Thread.currentThread().interrupt()
+            }
+            throw java.lang.AssertionError(e)
+        }
     }
-  }
 
-  private FileOpMatchResult getLookupResult(FileOpDependency key, int validityHorizon) {
-    try {
-      switch (fileOpMatches.getValueOrFuture(key, validityHorizon)) {
-        case FileOpMatchResult result:
-          return result;
-        case FutureFileOpMatchResult future:
-          return future.get();
-      }
-    } catch (Exception e) {
-      if (e instanceof InterruptedException) {
-        Thread.currentThread().interrupt();
-      }
-      throw new AssertionError(e);
+    companion object {
+        private const val THREAD_COUNT = 10
+
+        private fun createNestedDependencies(fileDependency: FileDependencies?): NestedDependencies {
+            return NestedDependencies.from(
+                arrayOf<FileSystemDependencies?>(fileDependency), NestedDependencies.EMPTY_SOURCES
+            )
+        }
+
+        private fun createAvailableFileDependencies(path: String?): AvailableFileDependencies? {
+            return FileDependencies.builder(path).build() as AvailableFileDependencies?
+        }
     }
-  }
-
-  private static NestedDependencies createNestedDependencies(FileDependencies fileDependency) {
-    return NestedDependencies.from(
-        new FileSystemDependencies[] {fileDependency}, NestedDependencies.EMPTY_SOURCES);
-  }
-
-  private static AvailableFileDependencies createAvailableFileDependencies(String path) {
-    return (AvailableFileDependencies) FileDependencies.builder(path).build();
-  }
 }

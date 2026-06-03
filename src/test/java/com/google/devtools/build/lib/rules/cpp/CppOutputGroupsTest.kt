@@ -11,34 +11,26 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.cpp
 
-package com.google.devtools.build.lib.rules.cpp;
+import com.google.devtools.build.lib.analysis.ConfiguredTarget
 
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.packages.util.Crosstool.CcToolchainConfig;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests the output groups of cc_library. */
-@RunWith(JUnit4.class)
-public class CppOutputGroupsTest extends BuildViewTestCase {
-
-  @Test
-  public void testStaticLibraryOnlyOutputGroups() throws Exception {
-    getAnalysisMock()
-        .ccSupport()
-        .setupCcToolchainConfig(
-            mockToolsConfig,
-            CcToolchainConfig.builder().withFeatures(CppRuleClasses.SUPPORTS_DYNAMIC_LINKER));
-    scratch.file("src.cc");
-    scratch.file(
-        "a/BUILD",
-        """
+/** Tests the output groups of cc_library.  */
+@RunWith(JUnit4::class)
+class CppOutputGroupsTest : BuildViewTestCase() {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStaticLibraryOnlyOutputGroups() {
+        getAnalysisMock()
+            .ccSupport()
+            .setupCcToolchainConfig(
+                mockToolsConfig,
+                CcToolchainConfig.builder().withFeatures(CppRuleClasses.SUPPORTS_DYNAMIC_LINKER)
+            )
+        scratch.file("src.cc")
+        scratch.file(
+            "a/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_library(
             name = "lib",
@@ -58,27 +50,31 @@ public class CppOutputGroupsTest extends BuildViewTestCase {
             srcs = [":lib"],
             output_group = "dynamic_library",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget groupArchive = getConfiguredTarget("//a:group_archive");
-    ConfiguredTarget groupDynamic = getConfiguredTarget("//a:group_dynamic");
+        val groupArchive: ConfiguredTarget = getConfiguredTarget("//a:group_archive")
+        val groupDynamic: ConfiguredTarget = getConfiguredTarget("//a:group_dynamic")
 
-    assertThat(ActionsTestUtil.prettyArtifactNames(getFilesToBuild(groupArchive)))
-        .containsExactly("a/liblib.a");
-    assertThat(ActionsTestUtil.prettyArtifactNames(getFilesToBuild(groupDynamic))).isEmpty();
-  }
+        assertThat(ActionsTestUtil.prettyArtifactNames(getFilesToBuild(groupArchive)))
+            .containsExactly("a/liblib.a")
+        assertThat(ActionsTestUtil.prettyArtifactNames(getFilesToBuild(groupDynamic))).isEmpty()
+    }
 
-  @Test
-  public void testSharedLibraryOnlyOutputGroups() throws Exception {
-    getAnalysisMock()
-        .ccSupport()
-        .setupCcToolchainConfig(
-            mockToolsConfig,
-            CcToolchainConfig.builder().withFeatures(CppRuleClasses.SUPPORTS_DYNAMIC_LINKER));
-    scratch.file("src.cc");
-    scratch.file(
-        "a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSharedLibraryOnlyOutputGroups() {
+        getAnalysisMock()
+            .ccSupport()
+            .setupCcToolchainConfig(
+                mockToolsConfig,
+                CcToolchainConfig.builder().withFeatures(CppRuleClasses.SUPPORTS_DYNAMIC_LINKER)
+            )
+        scratch.file("src.cc")
+        scratch.file(
+            "a/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_library(
             name = "lib",
@@ -98,27 +94,31 @@ public class CppOutputGroupsTest extends BuildViewTestCase {
             srcs = [":lib"],
             output_group = "dynamic_library",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget groupArchive = getConfiguredTarget("//a:group_archive");
-    ConfiguredTarget groupDynamic = getConfiguredTarget("//a:group_dynamic");
+        val groupArchive: ConfiguredTarget = getConfiguredTarget("//a:group_archive")
+        val groupDynamic: ConfiguredTarget = getConfiguredTarget("//a:group_dynamic")
 
-    assertThat(ActionsTestUtil.prettyArtifactNames(getFilesToBuild(groupArchive)))
-        .containsExactly("a/liblib.lo");
-    assertThat(ActionsTestUtil.prettyArtifactNames(getFilesToBuild(groupDynamic))).isEmpty();
-  }
+        assertThat(ActionsTestUtil.prettyArtifactNames(getFilesToBuild(groupArchive)))
+            .containsExactly("a/liblib.lo")
+        assertThat(ActionsTestUtil.prettyArtifactNames(getFilesToBuild(groupDynamic))).isEmpty()
+    }
 
-  @Test
-  public void testStaticAndDynamicLibraryOutputGroups() throws Exception {
-    getAnalysisMock()
-        .ccSupport()
-        .setupCcToolchainConfig(
-            mockToolsConfig,
-            CcToolchainConfig.builder().withFeatures(CppRuleClasses.SUPPORTS_DYNAMIC_LINKER));
-    scratch.file("src.cc");
-    scratch.file(
-        "a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testStaticAndDynamicLibraryOutputGroups() {
+        getAnalysisMock()
+            .ccSupport()
+            .setupCcToolchainConfig(
+                mockToolsConfig,
+                CcToolchainConfig.builder().withFeatures(CppRuleClasses.SUPPORTS_DYNAMIC_LINKER)
+            )
+        scratch.file("src.cc")
+        scratch.file(
+            "a/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_library(
             name = "lib",
@@ -138,30 +138,33 @@ public class CppOutputGroupsTest extends BuildViewTestCase {
             srcs = [":lib"],
             output_group = "dynamic_library",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget groupArchive = getConfiguredTarget("//a:group_archive");
-    ConfiguredTarget groupDynamic = getConfiguredTarget("//a:group_dynamic");
+        val groupArchive: ConfiguredTarget = getConfiguredTarget("//a:group_archive")
+        val groupDynamic: ConfiguredTarget = getConfiguredTarget("//a:group_dynamic")
 
-    assertThat(ActionsTestUtil.prettyArtifactNames(getFilesToBuild(groupArchive)))
-        .containsExactly("a/liblib.a");
-    // If supports_interface_shared_objects is true, .ifso could also be generated.
-    // So we here use contains instead containsExactly.
-    assertThat(ActionsTestUtil.prettyArtifactNames(getFilesToBuild(groupDynamic)))
-        .contains("a/liblib.so");
-  }
+        assertThat(ActionsTestUtil.prettyArtifactNames(getFilesToBuild(groupArchive)))
+            .containsExactly("a/liblib.a")
+        // If supports_interface_shared_objects is true, .ifso could also be generated.
+        // So we here use contains instead containsExactly.
+        com.google.common.truth.Subject.contains("a/liblib.so")
+    }
 
-  @Test
-  public void testSharedAndDynamicLibraryOutputGroups() throws Exception {
-    getAnalysisMock()
-        .ccSupport()
-        .setupCcToolchainConfig(
-            mockToolsConfig,
-            CcToolchainConfig.builder().withFeatures(CppRuleClasses.SUPPORTS_DYNAMIC_LINKER));
-    scratch.file("src.cc");
-    scratch.file(
-        "a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSharedAndDynamicLibraryOutputGroups() {
+        getAnalysisMock()
+            .ccSupport()
+            .setupCcToolchainConfig(
+                mockToolsConfig,
+                CcToolchainConfig.builder().withFeatures(CppRuleClasses.SUPPORTS_DYNAMIC_LINKER)
+            )
+        scratch.file("src.cc")
+        scratch.file(
+            "a/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_library(
             name = "lib",
@@ -181,30 +184,33 @@ public class CppOutputGroupsTest extends BuildViewTestCase {
             srcs = [":lib"],
             output_group = "dynamic_library",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget groupArchive = getConfiguredTarget("//a:group_archive");
-    ConfiguredTarget groupDynamic = getConfiguredTarget("//a:group_dynamic");
+        val groupArchive: ConfiguredTarget = getConfiguredTarget("//a:group_archive")
+        val groupDynamic: ConfiguredTarget = getConfiguredTarget("//a:group_dynamic")
 
-    assertThat(ActionsTestUtil.prettyArtifactNames(getFilesToBuild(groupArchive)))
-        .containsExactly("a/liblib.lo");
-    // If supports_interface_shared_objects is true, .ifso could also be generated.
-    // So we here use contains instead containsExactly.
-    assertThat(ActionsTestUtil.prettyArtifactNames(getFilesToBuild(groupDynamic)))
-        .contains("a/liblib.so");
-  }
+        assertThat(ActionsTestUtil.prettyArtifactNames(getFilesToBuild(groupArchive)))
+            .containsExactly("a/liblib.lo")
+        // If supports_interface_shared_objects is true, .ifso could also be generated.
+        // So we here use contains instead containsExactly.
+        com.google.common.truth.Subject.contains("a/liblib.so")
+    }
 
-  @Test
-  public void testModuleOutputGroups() throws Exception {
-    getAnalysisMock()
-        .ccSupport()
-        .setupCcToolchainConfig(
-            mockToolsConfig,
-            CcToolchainConfig.builder().withFeatures("header_modules_feature_configuration"));
-    scratch.file("header.h");
-    scratch.file(
-        "a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testModuleOutputGroups() {
+        getAnalysisMock()
+            .ccSupport()
+            .setupCcToolchainConfig(
+                mockToolsConfig,
+                CcToolchainConfig.builder().withFeatures("header_modules_feature_configuration")
+            )
+        scratch.file("header.h")
+        scratch.file(
+            "a/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_library(
             name = "lib",
@@ -217,11 +223,13 @@ public class CppOutputGroupsTest extends BuildViewTestCase {
             srcs = [":lib"],
             output_group = "module_files",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget groupArchive = getConfiguredTarget("//a:group_modules");
+        val groupArchive: ConfiguredTarget = getConfiguredTarget("//a:group_modules")
 
-    assertThat(ActionsTestUtil.prettyArtifactNames(getFilesToBuild(groupArchive)))
-        .containsExactly("a/_objs/lib/lib.pcm");
-  }
+        assertThat(ActionsTestUtil.prettyArtifactNames(getFilesToBuild(groupArchive)))
+            .containsExactly("a/_objs/lib/lib.pcm")
+    }
 }

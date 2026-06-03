@@ -11,34 +11,31 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [ErrorTransienceValue].  */
+@RunWith(JUnit4::class)
+class ErrorTransienceValueTest {
+    @org.junit.Test
+    fun testHashCodeNotSupported() {
+        org.junit.Assert.assertThrows<java.lang.UnsupportedOperationException?>(
+            java.lang.UnsupportedOperationException::class.java,
+            ErrorTransienceValue.INSTANCE::hashCode
+        )
+    }
 
-/** Tests for {@link ErrorTransienceValue}. */
-@RunWith(JUnit4.class)
-public final class ErrorTransienceValueTest {
+    @org.junit.Test
+    fun testToStringWorks() {
+        assertThat(ErrorTransienceValue.INSTANCE.toString()).isEqualTo("ErrorTransienceValue")
+    }
 
-  @Test
-  public void testHashCodeNotSupported() {
-    assertThrows(UnsupportedOperationException.class, ErrorTransienceValue.INSTANCE::hashCode);
-  }
-
-  @Test
-  public void testToStringWorks() {
-    assertThat(ErrorTransienceValue.INSTANCE.toString()).isEqualTo("ErrorTransienceValue");
-  }
-
-  @Test
-  @SuppressWarnings("SelfEquals")
-  public void testIsntEqualToSelf() {
-    // assertThat(...).isNotEqualTo(...) does ref equality check, so use equals explicitly.
-    assertThat(ErrorTransienceValue.INSTANCE.equals(ErrorTransienceValue.INSTANCE)).isFalse();
-  }
+    @org.junit.Test
+    fun testIsntEqualToSelf() {
+        // assertThat(...).isNotEqualTo(...) does ref equality check, so use equals explicitly.
+        assertThat(ErrorTransienceValue.INSTANCE.equals(ErrorTransienceValue.INSTANCE)).isFalse()
+    }
 }
 

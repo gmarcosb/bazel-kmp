@@ -11,11 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.engine;
+package com.google.devtools.build.lib.query2.engine
 
-import com.google.devtools.build.lib.testutil.ClasspathSuite;
-import org.junit.runner.RunWith;
+import com.google.devtools.build.lib.testutil.ClasspathSuite
+import org.junit.runner.RunWith
 
-/** Runs all tests in the classpath. */
-@RunWith(ClasspathSuite.class)
-public class AllTests {}
+/** Runs all tests in the classpath.  */
+@RunWith(ClasspathSuite::class)
+class AllTests 

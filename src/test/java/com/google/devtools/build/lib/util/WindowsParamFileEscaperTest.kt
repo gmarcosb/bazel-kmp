@@ -11,45 +11,39 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.util
 
-package com.google.devtools.build.lib.util;
+import com.google.devtools.build.lib.util.WindowsParamFileEscaper.escapeString
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.util.WindowsParamFileEscaper.escapeString;
+/** Tests for [WindowsParamFileEscaper].  */
+@RunWith(JUnit4::class)
+class WindowsParamFileEscaperTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEscapeString() {
+        assertThat(escapeString("")).isEmpty()
+        assertThat(escapeString("foo")).isEqualTo("foo")
+        assertThat(escapeString("'foo'")).isEqualTo("'foo'")
+        assertThat(escapeString("\"foo\"")).isEqualTo("\\\"foo\\\"")
+        assertThat(escapeString("\\foo")).isEqualTo("\\foo")
+        assertThat(escapeString("foo bar")).isEqualTo("\"foo bar\"")
+        assertThat(escapeString("foo\tbar")).isEqualTo("\"foo\tbar\"")
+        assertThat(escapeString("foo\rbar")).isEqualTo("\"foo\rbar\"")
+        assertThat(escapeString("foo\n'foo'\n")).isEqualTo("\"foo\n'foo'\n\"")
+        assertThat(escapeString("foo\u000cbar")).isEqualTo("foo\u000cbar")
+        assertThat(escapeString("foo\u000Bbar")).isEqualTo("foo\u000Bbar")
+        assertThat(escapeString("\${filename%.c}.o")).isEqualTo("\${filename%.c}.o")
+    }
 
-import com.google.common.collect.ImmutableSet;
-import java.util.Arrays;
-import java.util.Set;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link WindowsParamFileEscaper}. */
-@RunWith(JUnit4.class)
-public class WindowsParamFileEscaperTest {
-
-  @Test
-  public void testEscapeString() throws Exception {
-    assertThat(escapeString("")).isEmpty();
-    assertThat(escapeString("foo")).isEqualTo("foo");
-    assertThat(escapeString("'foo'")).isEqualTo("'foo'");
-    assertThat(escapeString("\"foo\"")).isEqualTo("\\\"foo\\\"");
-    assertThat(escapeString("\\foo")).isEqualTo("\\foo");
-    assertThat(escapeString("foo bar")).isEqualTo("\"foo bar\"");
-    assertThat(escapeString("foo\tbar")).isEqualTo("\"foo\tbar\"");
-    assertThat(escapeString("foo\rbar")).isEqualTo("\"foo\rbar\"");
-    assertThat(escapeString("foo\n'foo'\n")).isEqualTo("\"foo\n'foo'\n\"");
-    assertThat(escapeString("foo\fbar")).isEqualTo("foo\fbar");
-    assertThat(escapeString("foo\u000Bbar")).isEqualTo("foo\u000Bbar");
-    assertThat(escapeString("${filename%.c}.o")).isEqualTo("${filename%.c}.o");
-  }
-
-  @Test
-  public void testEscapeAll() throws Exception {
-    Set<String> escaped =
-        ImmutableSet.copyOf(
-            WindowsParamFileEscaper.escapeAll(
-                Arrays.asList("foo", "'foo'", "foo\n", "\"foo", "foo \tbar")));
-    assertThat(escaped).containsExactly("foo", "'foo'", "\"foo\n\"", "\\\"foo", "\"foo \tbar\"");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEscapeAll() {
+        val escaped: MutableSet<String?> =
+            com.google.common.collect.ImmutableSet.copyOf(
+                WindowsParamFileEscaper.escapeAll(
+                    mutableListOf<T?>("foo", "'foo'", "foo\n", "\"foo", "foo \tbar")
+                )
+            )
+        Truth.assertThat(escaped).containsExactly("foo", "'foo'", "\"foo\n\"", "\\\"foo", "\"foo \tbar\"")
+    }
 }

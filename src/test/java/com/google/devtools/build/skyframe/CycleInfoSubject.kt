@@ -11,29 +11,27 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import com.google.common.truth.FailureMetadata;
-import com.google.common.truth.IterableSubject;
-import com.google.common.truth.Subject;
-import javax.annotation.Nullable;
+import com.google.common.truth.FailureMetadata
+import com.google.common.truth.IterableSubject
 
 /**
- * {@link Subject} for {@link CycleInfo}. Please add to this class if you need more functionality!
+ * [Subject] for [CycleInfo]. Please add to this class if you need more functionality!
  */
-public class CycleInfoSubject extends Subject {
-  private final CycleInfo actual;
+class CycleInfoSubject internal constructor(failureMetadata: FailureMetadata?, cycleInfo: CycleInfo?) :
+    com.google.common.truth.Subject(failureMetadata, cycleInfo) {
+    private val actual: CycleInfo?
 
-  CycleInfoSubject(FailureMetadata failureMetadata, @Nullable CycleInfo cycleInfo) {
-    super(failureMetadata, cycleInfo);
-    this.actual = cycleInfo;
-  }
+    init {
+        this.actual = cycleInfo
+    }
 
-  public IterableSubject hasPathToCycleThat() {
-    return check("getPathToCycle()").that(actual.pathToCycle);
-  }
+    fun hasPathToCycleThat(): IterableSubject? {
+        return check("getPathToCycle()").that(actual.pathToCycle)
+    }
 
-  public IterableSubject hasCycleThat() {
-    return check("getCycle()").that(actual.cycle);
-  }
+    fun hasCycleThat(): IterableSubject? {
+        return check("getCycle()").that(actual.cycle)
+    }
 }

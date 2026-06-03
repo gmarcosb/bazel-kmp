@@ -11,44 +11,68 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.exec.local
 
-package com.google.devtools.build.lib.exec.local;
+import com.google.common.truth.Truth
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import static com.google.common.truth.Truth.assertThat;
+/** Unit tests for [PosixLocalEnvProvider].  */
+@RunWith(JUnit4::class)
+class PosixLocalEnvProviderTest {
+    /** Should use the client environment's TMPDIR envvar if specified.  */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRewriteEnvWithClientTmpdir() {
+        val p: PosixLocalEnvProvider =
+            PosixLocalEnvProvider(com.google.common.collect.ImmutableMap.of<K?, V?>("TMPDIR", "client-env/tmp"))
+        Truth.assertThat(rewriteEnv(p, com.google.common.collect.ImmutableMap.of<String?, String?>("key1", "value1")))
+            .isEqualTo(
+                com.google.common.collect.ImmutableMap.of<String?, String?>(
+                    "key1",
+                    "value1",
+                    "TMPDIR",
+                    "client-env/tmp"
+                )
+            )
+        Truth.assertThat(
+            rewriteEnv(
+                p,
+                com.google.common.collect.ImmutableMap.of<String?, String?>("key1", "value1", "TMPDIR", "ignored")
+            )
+        )
+            .isEqualTo(
+                com.google.common.collect.ImmutableMap.of<String?, String?>(
+                    "key1",
+                    "value1",
+                    "TMPDIR",
+                    "client-env/tmp"
+                )
+            )
+    }
 
-import com.google.common.collect.ImmutableMap;
-import java.util.Map;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    /** Should use the default temp dir when the client env doesn't define TMPDIR.  */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRewriteEnvWithDefaultTmpdir() {
+        val p: PosixLocalEnvProvider =
+            PosixLocalEnvProvider(com.google.common.collect.ImmutableMap.of<String?, String?>())
+        Truth.assertThat(rewriteEnv(p, com.google.common.collect.ImmutableMap.of<String?, String?>("key1", "value1")))
+            .isEqualTo(com.google.common.collect.ImmutableMap.of<String?, String?>("key1", "value1", "TMPDIR", "/tmp"))
+        Truth.assertThat(
+            rewriteEnv(
+                p,
+                com.google.common.collect.ImmutableMap.of<String?, String?>("key1", "value1", "TMPDIR", "ignored")
+            )
+        )
+            .isEqualTo(com.google.common.collect.ImmutableMap.of<String?, String?>("key1", "value1", "TMPDIR", "/tmp"))
+    }
 
-/** Unit tests for {@link PosixLocalEnvProvider}. */
-@RunWith(JUnit4.class)
-public final class PosixLocalEnvProviderTest {
-
-  private static Map<String, String> rewriteEnv(
-      PosixLocalEnvProvider p, ImmutableMap<String, String> env) {
-    return p.rewriteLocalEnv(env, null, null);
-  }
-
-  /** Should use the client environment's TMPDIR envvar if specified. */
-  @Test
-  public void testRewriteEnvWithClientTmpdir() throws Exception {
-    PosixLocalEnvProvider p =
-        new PosixLocalEnvProvider(ImmutableMap.of("TMPDIR", "client-env/tmp"));
-    assertThat(rewriteEnv(p, ImmutableMap.of("key1", "value1")))
-        .isEqualTo(ImmutableMap.of("key1", "value1", "TMPDIR", "client-env/tmp"));
-    assertThat(rewriteEnv(p, ImmutableMap.of("key1", "value1", "TMPDIR", "ignored")))
-        .isEqualTo(ImmutableMap.of("key1", "value1", "TMPDIR", "client-env/tmp"));
-  }
-
-  /** Should use the default temp dir when the client env doesn't define TMPDIR. */
-  @Test
-  public void testRewriteEnvWithDefaultTmpdir() throws Exception {
-    PosixLocalEnvProvider p = new PosixLocalEnvProvider(ImmutableMap.<String, String>of());
-    assertThat(rewriteEnv(p, ImmutableMap.of("key1", "value1")))
-        .isEqualTo(ImmutableMap.of("key1", "value1", "TMPDIR", "/tmp"));
-    assertThat(rewriteEnv(p, ImmutableMap.of("key1", "value1", "TMPDIR", "ignored")))
-        .isEqualTo(ImmutableMap.of("key1", "value1", "TMPDIR", "/tmp"));
-  }
+    companion object {
+        private fun rewriteEnv(
+            p: PosixLocalEnvProvider, env: com.google.common.collect.ImmutableMap<String?, String?>?
+        ): MutableMap<String?, String?> {
+            return p.rewriteLocalEnv(env, null, null)
+        }
+    }
 }

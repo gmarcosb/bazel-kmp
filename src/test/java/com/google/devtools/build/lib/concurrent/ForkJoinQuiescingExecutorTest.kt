@@ -11,102 +11,105 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.concurrent;
+package com.google.devtools.build.lib.concurrent
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
+import com.google.common.truth.Truth
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import org.mockito.ArgumentMatchers
+import org.mockito.Mockito
+import java.util.concurrent.ForkJoinPool
+import java.util.concurrent.ForkJoinTask
+import java.util.concurrent.atomic.AtomicReference
 
-import java.util.concurrent.ForkJoinPool;
-import java.util.concurrent.ForkJoinTask;
-import java.util.concurrent.atomic.AtomicReference;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [com.google.devtools.build.lib.concurrent.ForkJoinQuiescingExecutor].  */
+@RunWith(JUnit4::class)
+class ForkJoinQuiescingExecutorTest {
+    @Test
+    @Throws(Exception::class)
+    fun testExecuteFromTaskForksInSamePool() {
+        // Spy as an easy way to track calls to #execute.
+        val forkJoinPool = Mockito.spy<ForkJoinPool>(ForkJoinPool())
+        try {
+            val underTest: ForkJoinQuiescingExecutor =
+                ForkJoinQuiescingExecutor.newBuilder().withOwnershipOf(forkJoinPool).build()
 
-/** Tests for {@link com.google.devtools.build.lib.concurrent.ForkJoinQuiescingExecutor}. */
-@RunWith(JUnit4.class)
-public class ForkJoinQuiescingExecutorTest {
+            val subtaskRanIn = AtomicReference<ForkJoinPool?>()
+            val subTask = Runnable { subtaskRanIn.set(ForkJoinTask.getPool()) }
 
-  @Test
-  public void testExecuteFromTaskForksInSamePool() throws Exception {
-    // Spy as an easy way to track calls to #execute.
-    ForkJoinPool forkJoinPool = spy(new ForkJoinPool());
-    try {
-      ForkJoinQuiescingExecutor underTest =
-          ForkJoinQuiescingExecutor.newBuilder().withOwnershipOf(forkJoinPool).build();
+            val taskRanIn = AtomicReference<ForkJoinPool?>()
+            underTest.execute(
+                {
+                    taskRanIn.set(ForkJoinTask.getPool())
+                    underTest.execute(subTask)
+                })
+            underTest.awaitQuiescence( /*interruptWorkers=*/false)
 
-      AtomicReference<ForkJoinPool> subtaskRanIn = new AtomicReference<>();
-      Runnable subTask = () -> subtaskRanIn.set(ForkJoinTask.getPool());
+            Truth.assertThat(taskRanIn.get()).isSameInstanceAs(forkJoinPool)
+            Truth.assertThat(subtaskRanIn.get()).isSameInstanceAs(forkJoinPool)
 
-      AtomicReference<ForkJoinPool> taskRanIn = new AtomicReference<>();
-      underTest.execute(
-          () -> {
-            taskRanIn.set(ForkJoinTask.getPool());
-            underTest.execute(subTask);
-          });
-      underTest.awaitQuiescence(/*interruptWorkers=*/ false);
-
-      assertThat(taskRanIn.get()).isSameInstanceAs(forkJoinPool);
-      assertThat(subtaskRanIn.get()).isSameInstanceAs(forkJoinPool);
-
-      // Confirm only one thing (the first task) was submitted via execute, the other should have
-      // gone through the ForkJoinTask#fork() machinery.
-      verify(forkJoinPool, times(1)).execute(any(Runnable.class));
-    } finally {
-      // Avoid leaving dangling threads.
-      forkJoinPool.shutdownNow();
+            // Confirm only one thing (the first task) was submitted via execute, the other should have
+            // gone through the ForkJoinTask#fork() machinery.
+            Mockito.verify<ForkJoinPool?>(forkJoinPool, Mockito.times(1)).execute(
+                ArgumentMatchers.any<Runnable?>(
+                    Runnable::class.java
+                )
+            )
+        } finally {
+            // Avoid leaving dangling threads.
+            forkJoinPool.shutdownNow()
+        }
     }
-  }
 
-  /** Confirm our fork-new-work-if-in-forkjoinpool logic works as expected. */
-  @Test
-  public void testExecuteFromTaskInDifferentPoolRunsInRightPool() throws Exception {
-    ForkJoinPool forkJoinPool = new ForkJoinPool();
-    ForkJoinPool otherForkJoinPool = new ForkJoinPool();
-    try {
-      ForkJoinQuiescingExecutor originalExecutor =
-          ForkJoinQuiescingExecutor.newBuilder().withOwnershipOf(forkJoinPool).build();
-      ForkJoinQuiescingExecutor otherExecutor =
-          ForkJoinQuiescingExecutor.newBuilder().withOwnershipOf(otherForkJoinPool).build();
+    /** Confirm our fork-new-work-if-in-forkjoinpool logic works as expected.  */
+    @Test
+    @Throws(Exception::class)
+    fun testExecuteFromTaskInDifferentPoolRunsInRightPool() {
+        val forkJoinPool = ForkJoinPool()
+        val otherForkJoinPool = ForkJoinPool()
+        try {
+            val originalExecutor: ForkJoinQuiescingExecutor =
+                ForkJoinQuiescingExecutor.newBuilder().withOwnershipOf(forkJoinPool).build()
+            val otherExecutor: ForkJoinQuiescingExecutor =
+                ForkJoinQuiescingExecutor.newBuilder().withOwnershipOf(otherForkJoinPool).build()
 
-      AtomicReference<ForkJoinPool> subtaskRanIn = new AtomicReference<>();
-      Runnable subTask = () -> subtaskRanIn.set(ForkJoinTask.getPool());
+            val subtaskRanIn = AtomicReference<ForkJoinPool?>()
+            val subTask = Runnable { subtaskRanIn.set(ForkJoinTask.getPool()) }
 
-      AtomicReference<ForkJoinPool> taskRanIn = new AtomicReference<>();
-      originalExecutor.execute(
-          () -> {
-            taskRanIn.set(ForkJoinTask.getPool());
-            otherExecutor.execute(subTask);
-          });
+            val taskRanIn = AtomicReference<ForkJoinPool?>()
+            originalExecutor.execute(
+                {
+                    taskRanIn.set(ForkJoinTask.getPool())
+                    otherExecutor.execute(subTask)
+                })
 
-      originalExecutor.awaitQuiescence(/*interruptWorkers=*/ false);
-      otherExecutor.awaitQuiescence(/*interruptWorkers=*/ false);
+            originalExecutor.awaitQuiescence( /*interruptWorkers=*/false)
+            otherExecutor.awaitQuiescence( /*interruptWorkers=*/false)
 
-      assertThat(taskRanIn.get()).isSameInstanceAs(forkJoinPool);
-      assertThat(subtaskRanIn.get()).isSameInstanceAs(otherForkJoinPool);
-    } finally {
-      // Avoid leaving dangling threads.
-      forkJoinPool.shutdownNow();
-      otherForkJoinPool.shutdownNow();
+            Truth.assertThat(taskRanIn.get()).isSameInstanceAs(forkJoinPool)
+            Truth.assertThat(subtaskRanIn.get()).isSameInstanceAs(otherForkJoinPool)
+        } finally {
+            // Avoid leaving dangling threads.
+            forkJoinPool.shutdownNow()
+            otherForkJoinPool.shutdownNow()
+        }
     }
-  }
 
-  @Test
-  public void testAwaitTerminationShutsDownPool() throws Exception {
-    ForkJoinPool forkJoinPool = new ForkJoinPool();
-    try {
-      ForkJoinQuiescingExecutor underTest =
-          ForkJoinQuiescingExecutor.newBuilder().withOwnershipOf(forkJoinPool).build();
+    @Test
+    @Throws(Exception::class)
+    fun testAwaitTerminationShutsDownPool() {
+        val forkJoinPool = ForkJoinPool()
+        try {
+            val underTest: ForkJoinQuiescingExecutor =
+                ForkJoinQuiescingExecutor.newBuilder().withOwnershipOf(forkJoinPool).build()
 
-      underTest.awaitTermination(/*interruptWorkers=*/ false);
+            underTest.awaitTermination( /*interruptWorkers=*/false)
 
-      assertThat(forkJoinPool.isTerminated()).isTrue();
-    } finally {
-      // Avoid leaving dangling threads.
-      forkJoinPool.shutdownNow();
+            Truth.assertThat(forkJoinPool.isTerminated()).isTrue()
+        } finally {
+            // Avoid leaving dangling threads.
+            forkJoinPool.shutdownNow()
+        }
     }
-  }
 }

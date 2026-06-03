@@ -11,133 +11,116 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.remote.worker;
+package com.google.devtools.build.remote.worker
 
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.devtools.build.lib.remote.util.Utils.getFromFuture;
-import static com.google.devtools.build.lib.util.StringEncoding.unicodeToInternal;
+import com.google.devtools.build.lib.remote.util.Utils.getFromFuture
 
-import build.bazel.remote.execution.v2.ActionCacheUpdateCapabilities;
-import build.bazel.remote.execution.v2.CacheCapabilities;
-import build.bazel.remote.execution.v2.Digest;
-import build.bazel.remote.execution.v2.Directory;
-import build.bazel.remote.execution.v2.DirectoryNode;
-import build.bazel.remote.execution.v2.FileNode;
-import build.bazel.remote.execution.v2.SymlinkAbsolutePathStrategy;
-import build.bazel.remote.execution.v2.SymlinkNode;
-import com.google.common.util.concurrent.Futures;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.devtools.build.lib.remote.CombinedCache;
-import com.google.devtools.build.lib.remote.Store;
-import com.google.devtools.build.lib.remote.common.RemoteActionExecutionContext;
-import com.google.devtools.build.lib.remote.disk.DiskCacheClient;
-import com.google.devtools.build.lib.remote.util.DigestUtil;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.io.IOException;
-import java.util.HashSet;
-import java.util.concurrent.ConcurrentHashMap;
+/** A [CombinedCache] backed by an [DiskCacheClient].  */
+internal class OnDiskBlobStoreCache(cacheDir: Path, digestUtil: DigestUtil, remoteWorkerOptions: RemoteWorkerOptions) :
+    CombinedCache( /* remoteCacheClient= */
+        null,
+        DiskCacheClient(cacheDir, digestUtil),  /* symlinkTemplate= */
+        null,
+        digestUtil,  /* chunkingEnabled= */
+        false
+    ) {
+    private class DigestAndInvocation(digest: Digest?, invocationId: String?) {
+        val digest: Digest?
+        val invocationId: String?
 
-/** A {@link CombinedCache} backed by an {@link DiskCacheClient}. */
-class OnDiskBlobStoreCache extends CombinedCache {
-
-  private record DigestAndInvocation(Digest digest, String invocationId) {}
-
-  private final RemoteWorkerOptions remoteWorkerOptions;
-  private final ConcurrentHashMap<DigestAndInvocation, Integer>
-      numberOfDownloadsPerDigestAndInvocation = new ConcurrentHashMap<>();
-
-  public OnDiskBlobStoreCache(
-      Path cacheDir, DigestUtil digestUtil, RemoteWorkerOptions remoteWorkerOptions)
-      throws IOException {
-    super(
-        /* remoteCacheClient= */ null,
-        new DiskCacheClient(cacheDir, digestUtil),
-        /* symlinkTemplate= */ null,
-        digestUtil,
-        /* chunkingEnabled= */ false);
-    this.remoteWorkerOptions = remoteWorkerOptions;
-  }
-
-  @Override
-  public CacheCapabilities getRemoteCacheCapabilities() {
-    return CacheCapabilities.newBuilder()
-        .setActionCacheUpdateCapabilities(
-            ActionCacheUpdateCapabilities.newBuilder().setUpdateEnabled(true).build())
-        .setSymlinkAbsolutePathStrategy(SymlinkAbsolutePathStrategy.Value.ALLOWED)
-        .build();
-  }
-
-  /** If the given blob exists, updates its mtime and returns true. Otherwise, returns false. */
-  boolean refresh(Digest digest) throws IOException {
-    return diskCacheClient.refresh(diskCacheClient.toPath(digest, Store.CAS));
-  }
-
-  @SuppressWarnings("ProtoParseWithRegistry")
-  public void downloadTree(
-      RemoteActionExecutionContext context, Digest rootDigest, Path rootLocation)
-      throws IOException, InterruptedException {
-    rootLocation.createDirectoryAndParents();
-    Directory directory = Directory.parseFrom(getFromFuture(downloadBlob(context, rootDigest)));
-    HashSet<Path> childrenSeen = new HashSet<>();
-    for (FileNode file : directory.getFilesList()) {
-      Path dst = rootLocation.getRelative(unicodeToInternal(file.getName()));
-      if (!childrenSeen.add(dst)) {
-        throw new IOException("Duplicate child '%s' in directory %s".formatted(dst, directory));
-      }
-      getFromFuture(downloadFile(context, dst, file.getDigest()));
-      dst.setExecutable(file.getIsExecutable());
-    }
-    for (SymlinkNode symlink : directory.getSymlinksList()) {
-      Path dst = rootLocation.getRelative(unicodeToInternal(symlink.getName()));
-      if (!childrenSeen.add(dst)) {
-        throw new IOException("Duplicate child '%s' in directory %s".formatted(dst, directory));
-      }
-      // TODO(fmeum): The following line is not generally correct: The remote execution API allows
-      //  for non-normalized symlink targets, but the normalization applied by PathFragment.create
-      //  does not take directory symlinks into account. However, Bazel's file system API does not
-      //  currently offer a way to specify a raw String as a symlink target.
-      // https://github.com/bazelbuild/bazel/issues/14224
-      dst.createSymbolicLink(PathFragment.create(unicodeToInternal(symlink.getTarget())));
-    }
-    for (DirectoryNode child : directory.getDirectoriesList()) {
-      Path dst = rootLocation.getRelative(unicodeToInternal(child.getName()));
-      if (!childrenSeen.add(dst)) {
-        throw new IOException("Duplicate child '%s' in directory %s".formatted(dst, directory));
-      }
-      downloadTree(context, child.getDigest(), dst);
-    }
-  }
-
-  @Override
-  public ListenableFuture<byte[]> downloadBlob(
-      RemoteActionExecutionContext context, Digest digest) {
-    if (remoteWorkerOptions.getErrorOnDuplicateDownloads()) {
-      // Only populate numberOfDownloadsPerDigestAndInvocation when fakeErrorForDuplicatedDownloads
-      // is enabled to avoid unnecessary unbounded memory growth.
-      int numberOfDownloads =
-          numberOfDownloadsPerDigestAndInvocation.merge(
-              new DigestAndInvocation(digest, context.getRequestMetadata().getToolInvocationId()),
-              1,
-              Integer::sum);
-      if (numberOfDownloads > 1) {
-        return Futures.immediateFailedFuture(
-            new IOException(
-                String.format(
-                    "Duplicate download of blob digest %s for invocation id %s",
-                    DigestUtil.toString(digest),
-                    context.getRequestMetadata().getToolInvocationId())));
-      }
+        init {
+            this.digest = digest
+            this.invocationId = invocationId
+        }
     }
 
-    return super.downloadBlob(context, digest);
-  }
+    private val remoteWorkerOptions: RemoteWorkerOptions
+    private val numberOfDownloadsPerDigestAndInvocation: ConcurrentHashMap<DigestAndInvocation?, Int?> =
+        ConcurrentHashMap<DigestAndInvocation?, Int?>()
 
-  public DigestUtil getDigestUtil() {
-    return digestUtil;
-  }
+    init {
+        this.remoteWorkerOptions = remoteWorkerOptions
+    }
 
-  public DiskCacheClient getDiskCacheClient() {
-    return checkNotNull(diskCacheClient);
-  }
+    val remoteCacheCapabilities: CacheCapabilities
+        get() = CacheCapabilities.newBuilder()
+            .setActionCacheUpdateCapabilities(
+                ActionCacheUpdateCapabilities.newBuilder().setUpdateEnabled(true).build()
+            )
+            .setSymlinkAbsolutePathStrategy(SymlinkAbsolutePathStrategy.Value.ALLOWED)
+            .build()
+
+    /** If the given blob exists, updates its mtime and returns true. Otherwise, returns false.  */
+    @Throws(IOException::class)
+    fun refresh(digest: Digest?): Boolean {
+        return diskCacheClient.refresh(diskCacheClient.toPath(digest, Store.CAS))
+    }
+
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    fun downloadTree(
+        context: RemoteActionExecutionContext, rootDigest: Digest?, rootLocation: Path
+    ) {
+        rootLocation.createDirectoryAndParents()
+        val directory: Directory = Directory.parseFrom(getFromFuture(downloadBlob(context, rootDigest)))
+        val childrenSeen: HashSet<Path?> = HashSet<Path?>()
+        for (file in directory.getFilesList()) {
+            val dst: Path = rootLocation.getRelative(unicodeToInternal(file.getName()))
+            if (!childrenSeen.add(dst)) {
+                throw IOException("Duplicate child '%s' in directory %s".formatted(dst, directory))
+            }
+            getFromFuture(downloadFile(context, dst, file.getDigest()))
+            dst.setExecutable(file.getIsExecutable())
+        }
+        for (symlink in directory.getSymlinksList()) {
+            val dst: Path = rootLocation.getRelative(unicodeToInternal(symlink.getName()))
+            if (!childrenSeen.add(dst)) {
+                throw IOException("Duplicate child '%s' in directory %s".formatted(dst, directory))
+            }
+            // TODO(fmeum): The following line is not generally correct: The remote execution API allows
+            //  for non-normalized symlink targets, but the normalization applied by PathFragment.create
+            //  does not take directory symlinks into account. However, Bazel's file system API does not
+            //  currently offer a way to specify a raw String as a symlink target.
+            // https://github.com/bazelbuild/bazel/issues/14224
+            dst.createSymbolicLink(PathFragment.create(unicodeToInternal(symlink.getTarget())))
+        }
+        for (child in directory.getDirectoriesList()) {
+            val dst: Path = rootLocation.getRelative(unicodeToInternal(child.getName()))
+            if (!childrenSeen.add(dst)) {
+                throw IOException("Duplicate child '%s' in directory %s".formatted(dst, directory))
+            }
+            downloadTree(context, child.getDigest(), dst)
+        }
+    }
+
+    public override fun downloadBlob(
+        context: RemoteActionExecutionContext, digest: Digest?
+    ): com.google.common.util.concurrent.ListenableFuture<ByteArray?>? {
+        if (remoteWorkerOptions.getErrorOnDuplicateDownloads()) {
+            // Only populate numberOfDownloadsPerDigestAndInvocation when fakeErrorForDuplicatedDownloads
+            // is enabled to avoid unnecessary unbounded memory growth.
+            val numberOfDownloads: Int =
+                numberOfDownloadsPerDigestAndInvocation.merge(
+                    DigestAndInvocation(digest, context.getRequestMetadata().getToolInvocationId()),
+                    1
+                ) { a: Int?, b: Int? -> java.lang.Integer.sum(a, b) }
+            if (numberOfDownloads > 1) {
+                return com.google.common.util.concurrent.Futures.immediateFailedFuture<ByteArray?>(
+                    IOException(
+                        java.lang.String.format(
+                            "Duplicate download of blob digest %s for invocation id %s",
+                            DigestUtil.toString(digest),
+                            context.getRequestMetadata().getToolInvocationId()
+                        )
+                    )
+                )
+            }
+        }
+
+        return super.downloadBlob(context, digest)
+    }
+
+    val digestUtil: DigestUtil
+
+    val diskCacheClient: DiskCacheClient
+        get() = com.google.common.base.Preconditions.checkNotNull<DiskCacheClient>(field)
 }

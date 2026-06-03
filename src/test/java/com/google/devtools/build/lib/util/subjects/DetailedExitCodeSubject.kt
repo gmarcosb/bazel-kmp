@@ -11,39 +11,36 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util.subjects;
+package com.google.devtools.build.lib.util.subjects
 
-import static com.google.common.truth.Fact.simpleFact;
+import com.google.common.truth.Subject
+import com.google.devtools.build.lib.util.DetailedExitCode
 
-import com.google.common.truth.FailureMetadata;
-import com.google.common.truth.Subject;
-import com.google.devtools.build.lib.util.DetailedExitCode;
-import com.google.devtools.build.lib.util.ExitCode;
+/** A Truth-compatible [Subject] for [DetailedExitCode].  */
+class DetailedExitCodeSubject(failureMetadata: FailureMetadata?, exitCode: DetailedExitCode) :
+    Subject(failureMetadata, exitCode) {
+    private val actual: DetailedExitCode
 
-/** A Truth-compatible {@link Subject} for {@link DetailedExitCode}. */
-public class DetailedExitCodeSubject extends Subject {
-
-  private final DetailedExitCode actual;
-
-  public DetailedExitCodeSubject(FailureMetadata failureMetadata, DetailedExitCode exitCode) {
-    super(failureMetadata, exitCode);
-    this.actual = exitCode;
-  }
-
-  public void hasExitCode(ExitCode exitCode) {
-    isNotNull();
-    check("getExitCode()").that(actual.getExitCode()).isEqualTo(exitCode);
-  }
-
-  public void isSuccessful() {
-    if (!actual.isSuccess()) {
-      failWithActual(simpleFact("expected to be SUCCESS"));
+    init {
+        this.actual = exitCode
     }
-  }
 
-  public void isNotSuccessful() {
-    if (actual.isSuccess()) {
-      failWithActual(simpleFact("expected *not* to be SUCCESS"));
+    fun hasExitCode(exitCode: ExitCode?) {
+        isNotNull()
+        check("getExitCode()").that(actual.getExitCode()).isEqualTo(exitCode)
     }
-  }
+
+    val isSuccessful: Unit
+        get() {
+            if (!actual.isSuccess()) {
+                failWithActual(Fact.simpleFact("expected to be SUCCESS"))
+            }
+        }
+
+    val isNotSuccessful: Unit
+        get() {
+            if (actual.isSuccess()) {
+                failWithActual(Fact.simpleFact("expected *not* to be SUCCESS"))
+            }
+        }
 }

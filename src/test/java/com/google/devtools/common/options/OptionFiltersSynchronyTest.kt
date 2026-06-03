@@ -11,70 +11,67 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.common.options;
+package com.google.devtools.common.options
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.truth.Truth.assertWithMessage;
-
-import com.google.devtools.common.options.proto.OptionFilters;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.common.options.proto.OptionFilters
 
 /**
  * This test makes sure that the two java filtering enums, OptionMetadataTag and OptionEffectTag,
  * are kept in sync with the matching proto.
  */
-@RunWith(JUnit4.class)
-public class OptionFiltersSynchronyTest {
+@RunWith(JUnit4::class)
+class OptionFiltersSynchronyTest {
+    @org.junit.Test
+    fun optionEffectTags() {
+        // Check that the number of tags are equal. The proto version automatically defines an
+        // UNRECOGNIZED value at -1, the sizes should actually be offset by one.
+        assertThat(OptionFilters.OptionEffectTag.values())
+            .hasLength(OptionEffectTag.entries.size + 1)
 
-  @Test
-  public void optionEffectTags() {
-    // Check that the number of tags are equal. The proto version automatically defines an
-    // UNRECOGNIZED value at -1, the sizes should actually be offset by one.
-    assertThat(OptionFilters.OptionEffectTag.values())
-        .hasLength(OptionEffectTag.values().length + 1);
+        // Now go through each and check that the names are equal.
+        for (javaTag in OptionEffectTag.entries) {
+            val protoTag: OptionEffectTag =
+                OptionFilters.OptionEffectTag.forNumber(javaTag.value)
 
-    // Now go through each and check that the names are equal.
-    for (OptionEffectTag javaTag : OptionEffectTag.values()) {
-      OptionFilters.OptionEffectTag protoTag =
-          OptionFilters.OptionEffectTag.forNumber(javaTag.value);
-
-      // First check that the tag exists with this value, then that the names are equal.
-      assertWithMessage(
-              "OptionEffectTag %s does not have a proto equivalent with the same value", javaTag)
-          .that(protoTag)
-          .isNotNull();
-      assertWithMessage(
-              "OptionEffectTag %s does not have the same name as the proto equivalent %s",
-              javaTag, protoTag)
-          .that(javaTag.name())
-          .isEqualTo(protoTag.name());
+            // First check that the tag exists with this value, then that the names are equal.
+            Truth.assertWithMessage(
+                "OptionEffectTag %s does not have a proto equivalent with the same value", javaTag
+            )
+                .that(protoTag)
+                .isNotNull()
+            Truth.assertWithMessage(
+                "OptionEffectTag %s does not have the same name as the proto equivalent %s",
+                javaTag, protoTag
+            )
+                .that(javaTag.name)
+                .isEqualTo(protoTag.name())
+        }
     }
-  }
 
-  @Test
-  public void optionMetadataTags() {
-    // Check that the number of tags are equal. The proto version automatically defines an
-    // UNRECOGNIZED value at -1, the sizes should actually be offset by one.
-    assertThat(OptionFilters.OptionMetadataTag.values())
-        .hasLength(OptionMetadataTag.values().length + 1);
+    @org.junit.Test
+    fun optionMetadataTags() {
+        // Check that the number of tags are equal. The proto version automatically defines an
+        // UNRECOGNIZED value at -1, the sizes should actually be offset by one.
+        assertThat(OptionFilters.OptionMetadataTag.values())
+            .hasLength(OptionMetadataTag.entries.size + 1)
 
-    // Now go through each and check that the names are equal.
-    for (OptionMetadataTag javaTag : OptionMetadataTag.values()) {
-      OptionFilters.OptionMetadataTag protoTag =
-          OptionFilters.OptionMetadataTag.forNumber(javaTag.value);
+        // Now go through each and check that the names are equal.
+        for (javaTag in OptionMetadataTag.entries) {
+            val protoTag: OptionMetadataTag =
+                OptionFilters.OptionMetadataTag.forNumber(javaTag.value)
 
-      // First check that the tag exists with this value, then that the names are equal.
-      assertWithMessage(
-              "OptionMetadataTag %s does not have a proto equivalent with the same value", javaTag)
-          .that(protoTag)
-          .isNotNull();
-      assertWithMessage(
-              "OptionMetadataTag %s does not have the same name as the proto equivalent %s",
-              javaTag, protoTag)
-          .that(javaTag.name())
-          .isEqualTo(protoTag.name());
+            // First check that the tag exists with this value, then that the names are equal.
+            Truth.assertWithMessage(
+                "OptionMetadataTag %s does not have a proto equivalent with the same value", javaTag
+            )
+                .that(protoTag)
+                .isNotNull()
+            Truth.assertWithMessage(
+                "OptionMetadataTag %s does not have the same name as the proto equivalent %s",
+                javaTag, protoTag
+            )
+                .that(javaTag.name)
+                .isEqualTo(protoTag.name())
+        }
     }
-  }
 }

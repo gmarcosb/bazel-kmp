@@ -11,26 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester
 
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import java.util.concurrent.atomic.AtomicReference;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link AtomicReferenceCodec}. */
-@RunWith(JUnit4.class)
-public class AtomicReferenceCodecTest {
-  @Test
-  public void smoke() throws Exception {
-    new SerializationTester(new AtomicReference<>(), new AtomicReference<>("hello"))
-        .<AtomicReference<?>>setVerificationFunction(
-            (original, deserialized) ->
-                assertThat(deserialized.get()).isEqualTo(deserialized.get()))
-        .runTests();
-  }
+/** Tests for [AtomicReferenceCodec].  */
+@RunWith(JUnit4::class)
+class AtomicReferenceCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun smoke() {
+        SerializationTester(AtomicReference<V?>(), AtomicReference<V?>("hello"))
+            .< AtomicReference <?>>setVerificationFunction<AtomicReference<*>?>(
+        { original, deserialized -> assertThat(deserialized.get()).isEqualTo(deserialized.get()) })
+        .runTests()
+    }
 }

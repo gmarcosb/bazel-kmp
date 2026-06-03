@@ -11,275 +11,324 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util;
+package com.google.devtools.build.lib.util
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-import static org.junit.Assert.fail;
+import com.google.devtools.build.lib.vfs.FileSystem
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Sets;
-import com.google.devtools.build.lib.testutil.Scratch;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import java.io.IOException;
-import java.nio.charset.Charset;
-import java.util.Collection;
-import java.util.Set;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+@RunWith(JUnit4::class)
+class DependencySetTest {
+    private val scratch: Scratch = Scratch()
+    private val fileSystem: FileSystem = scratch.getFileSystem()
+    private val root: Path = scratch.resolve("/")
 
-@RunWith(JUnit4.class)
-public class DependencySetTest {
+    private fun newDependencySet(): DependencySet {
+        return DependencySet(root)
+    }
 
-  private Scratch scratch = new Scratch();
-  private FileSystem fileSystem = scratch.getFileSystem();
-  private Path root = scratch.resolve("/");
-
-  private DependencySet newDependencySet() {
-    return new DependencySet(root);
-  }
-
-  @Test
-  public void dotDParser_simple() throws Exception {
-    Path file1 = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.cc");
-    Path file2 = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.h");
-    String filename = "hello.o";
-    Path dotd = scratch.file("/tmp/foo.d",
-        filename + ": \\",
-        " " + file1 + " \\",
-        " " + file2 + " ");
-    DependencySet depset = newDependencySet().read(dotd);
-    assertThat(depset.getDependencies()).containsExactlyElementsIn(Sets.newHashSet(file1, file2));
-    assertThat(filename).isEqualTo(depset.outputFileName);
-  }
-
-  @Test
-  public void dotDParser_simple_crlf() throws Exception {
-    Path file1 = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.cc");
-    Path file2 = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.h");
-    String filename = "hello.o";
-    Path dotd = scratch.file("/tmp/foo.d",
-        filename + ": \\\r",
-        " " + file1 + " \\\r",
-        " " + file2 + " ");
-    DependencySet depset = newDependencySet().read(dotd);
-    assertThat(depset.getDependencies()).containsExactlyElementsIn(Sets.newHashSet(file1, file2));
-    assertThat(filename).isEqualTo(depset.outputFileName);
-  }
-
-  @Test
-  public void dotDParser_simple_cr() throws Exception {
-    Path file1 = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.cc");
-    Path file2 = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.h");
-    String filename = "hello.o";
-    Path dotd =
-        scratch.file("/tmp/foo.d", filename + ": \\\r " + file1 + " \\\r " + file2 + " ");
-    DependencySet depset = newDependencySet().read(dotd);
-    assertThat(depset.getDependencies()).containsExactlyElementsIn(Sets.newHashSet(file1, file2));
-    assertThat(filename).isEqualTo(depset.outputFileName);
-  }
-
-  @Test
-  public void dotDParser_leading_crlf() throws Exception {
-    Path file1 = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.cc");
-    Path file2 = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.h");
-    String filename = "hello.o";
-    Path dotd =
-        scratch.file(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun dotDParser_simple() {
+        val file1: Path = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.cc")
+        val file2: Path? = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.h")
+        val filename = "hello.o"
+        val dotd: Path = scratch.file(
             "/tmp/foo.d",
-            "\r\n" + filename + ": \\\r\n " + file1 + " \\\r\n " + file2 + " ");
-    DependencySet depset = newDependencySet().read(dotd);
-    assertThat(depset.getDependencies()).containsExactlyElementsIn(Sets.newHashSet(file1, file2));
-    assertThat(filename).isEqualTo(depset.outputFileName);
-  }
+            filename + ": \\",
+            " " + file1 + " \\",
+            " " + file2 + " "
+        )
+        val depset: DependencySet = newDependencySet().read(dotd)
+        assertThat(depset.getDependencies()).containsExactlyElementsIn(
+            com.google.common.collect.Sets.newHashSet<E?>(
+                file1,
+                file2
+            )
+        )
+        Truth.assertThat(filename).isEqualTo(depset.outputFileName)
+    }
 
-  @Test
-  public void dotDParser_oddFormatting() throws Exception {
-    Path file1 = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.cc");
-    Path file2 = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.h");
-    Path file3 = fileSystem.getPath("/usr/local/blah/blah/genhello/other.h");
-    Path file4 = fileSystem.getPath("/usr/local/blah/blah/genhello/onemore.h");
-    String filename = "hello.o";
-    Path dotd = scratch.file("/tmp/foo.d",
-        filename + ": " + file1 + " \\",
-        " " + file2 + "\\",
-        " " + file3 + " " + file4);
-    DependencySet depset = newDependencySet().read(dotd);
-    assertThat(depset.getDependencies())
-        .containsExactlyElementsIn(Sets.newHashSet(file1, file2, file3, file4));
-    assertThat(filename).isEqualTo(depset.outputFileName);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun dotDParser_simple_crlf() {
+        val file1: Path = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.cc")
+        val file2: Path? = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.h")
+        val filename = "hello.o"
+        val dotd: Path = scratch.file(
+            "/tmp/foo.d",
+            filename + ": \\\r",
+            " " + file1 + " \\\r",
+            " " + file2 + " "
+        )
+        val depset: DependencySet = newDependencySet().read(dotd)
+        assertThat(depset.getDependencies()).containsExactlyElementsIn(
+            com.google.common.collect.Sets.newHashSet<E?>(
+                file1,
+                file2
+            )
+        )
+        Truth.assertThat(filename).isEqualTo(depset.outputFileName)
+    }
 
-  @Test
-  public void dotDParser_relativeFilenames() throws Exception {
-    Path file1 = root.getRelative("hello.cc");
-    Path file2 = root.getRelative("hello.h");
-    String filename = "hello.o";
-    Path dotd = scratch.file("/tmp/foo.d",
-        filename + ": \\",
-        " " + file1.relativeTo(root) + " \\",
-        " " + file2.relativeTo(root) + " ");
-    DependencySet depset = newDependencySet().read(dotd);
-    assertThat(depset.getDependencies()).containsExactlyElementsIn(Sets.newHashSet(file1, file2));
-    assertThat(filename).isEqualTo(depset.outputFileName);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun dotDParser_simple_cr() {
+        val file1: Path = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.cc")
+        val file2: Path? = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.h")
+        val filename = "hello.o"
+        val dotd: Path =
+            scratch.file("/tmp/foo.d", filename + ": \\\r " + file1 + " \\\r " + file2 + " ")
+        val depset: DependencySet = newDependencySet().read(dotd)
+        assertThat(depset.getDependencies()).containsExactlyElementsIn(
+            com.google.common.collect.Sets.newHashSet<E?>(
+                file1,
+                file2
+            )
+        )
+        Truth.assertThat(filename).isEqualTo(depset.outputFileName)
+    }
 
-  @Test
-  public void dotDParser_escapeDollar() throws Exception {
-    Path dotd =
-        scratch.file(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun dotDParser_leading_crlf() {
+        val file1: Path = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.cc")
+        val file2: Path? = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.h")
+        val filename = "hello.o"
+        val dotd: Path =
+            scratch.file(
+                "/tmp/foo.d",
+                "\r\n" + filename + ": \\\r\n " + file1 + " \\\r\n " + file2 + " "
+            )
+        val depset: DependencySet = newDependencySet().read(dotd)
+        assertThat(depset.getDependencies()).containsExactlyElementsIn(
+            com.google.common.collect.Sets.newHashSet<E?>(
+                file1,
+                file2
+            )
+        )
+        Truth.assertThat(filename).isEqualTo(depset.outputFileName)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun dotDParser_oddFormatting() {
+        val file1: Path = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.cc")
+        val file2: Path? = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.h")
+        val file3: Path? = fileSystem.getPath("/usr/local/blah/blah/genhello/other.h")
+        val file4: Path? = fileSystem.getPath("/usr/local/blah/blah/genhello/onemore.h")
+        val filename = "hello.o"
+        val dotd: Path = scratch.file(
+            "/tmp/foo.d",
+            filename + ": " + file1 + " \\",
+            " " + file2 + "\\",
+            " " + file3 + " " + file4
+        )
+        val depset: DependencySet = newDependencySet().read(dotd)
+        assertThat(depset.getDependencies())
+            .containsExactlyElementsIn(com.google.common.collect.Sets.newHashSet<E?>(file1, file2, file3, file4))
+        Truth.assertThat(filename).isEqualTo(depset.outputFileName)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun dotDParser_relativeFilenames() {
+        val file1: Path = root.getRelative("hello.cc")
+        val file2: Path = root.getRelative("hello.h")
+        val filename = "hello.o"
+        val dotd: Path = scratch.file(
+            "/tmp/foo.d",
+            filename + ": \\",
+            " " + file1.relativeTo(root) + " \\",
+            " " + file2.relativeTo(root) + " "
+        )
+        val depset: DependencySet = newDependencySet().read(dotd)
+        assertThat(depset.getDependencies()).containsExactlyElementsIn(
+            com.google.common.collect.Sets.newHashSet<E?>(
+                file1,
+                file2
+            )
+        )
+        Truth.assertThat(filename).isEqualTo(depset.outputFileName)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun dotDParser_escapeDollar() {
+        val dotd: Path =
+            scratch.file(
+                "/tmp/foo.d",
+                "hello.o: \\",
+                " /usr/local/blah/$\$blah/$\$hello.cc \\",
+                " /usr/local/blah/blah/hel$$$\$lo.h \\",
+                " /usr/local/blah/$\$blah/hello.h"
+            )
+
+        val expected: MutableSet<Path?> =
+            com.google.common.collect.Sets.newHashSet<E?>(
+                fileSystem.getPath("/usr/local/blah/\$blah/\$hello.cc"),
+                fileSystem.getPath("/usr/local/blah/blah/hel$\$lo.h"),
+                fileSystem.getPath("/usr/local/blah/\$blah/hello.h")
+            )
+
+        assertThat(newDependencySet().read(dotd).getDependencies()).containsExactlyElementsIn(expected)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun dotDParser_emptyFile() {
+        val dotd: Path = scratch.file("/tmp/empty.d")
+        val depset: DependencySet = newDependencySet().read(dotd)
+        val headers: MutableCollection<Path?> = depset.getDependencies()
+        if (!headers.isEmpty()) {
+            org.junit.Assert.fail("Not empty: " + headers.size + " " + headers)
+        }
+        assertThat(depset.outputFileName).isNull()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun dotDParser_multipleTargets() {
+        val file1: Path = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.cc")
+        val file2: Path? = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.h")
+        val dotd: Path = scratch.file(
             "/tmp/foo.d",
             "hello.o: \\",
-            " /usr/local/blah/$$blah/$$hello.cc \\",
-            " /usr/local/blah/blah/hel$$$$lo.h \\",
-            " /usr/local/blah/$$blah/hello.h");
-
-    Set<Path> expected =
-        Sets.newHashSet(
-            fileSystem.getPath("/usr/local/blah/$blah/$hello.cc"),
-            fileSystem.getPath("/usr/local/blah/blah/hel$$lo.h"),
-            fileSystem.getPath("/usr/local/blah/$blah/hello.h"));
-
-    assertThat(newDependencySet().read(dotd).getDependencies()).containsExactlyElementsIn(expected);
-  }
-
-  @Test
-  public void dotDParser_emptyFile() throws Exception {
-    Path dotd = scratch.file("/tmp/empty.d");
-    DependencySet depset = newDependencySet().read(dotd);
-    Collection<Path> headers = depset.getDependencies();
-    if (!headers.isEmpty()) {
-      fail("Not empty: " + headers.size() + " " + headers);
+            " " + file1,
+            "hello2.o: \\",
+            " " + file2
+        )
+        assertThat(newDependencySet().read(dotd).getDependencies())
+            .containsExactlyElementsIn(com.google.common.collect.Sets.newHashSet<E?>(file1, file2))
     }
-    assertThat(depset.outputFileName).isNull();
-  }
 
-  @Test
-  public void dotDParser_multipleTargets() throws Exception {
-    Path file1 = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.cc");
-    Path file2 = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.h");
-    Path dotd = scratch.file("/tmp/foo.d",
-        "hello.o: \\",
-        " " + file1,
-        "hello2.o: \\",
-        " " + file2);
-    assertThat(newDependencySet().read(dotd).getDependencies())
-        .containsExactlyElementsIn(Sets.newHashSet(file1, file2));
-  }
-
-  /*
+    /*
    * Regression test: if gcc fails to execute remotely, and we retry locally, then the behavior
    * of gcc's DEPENDENCIES_OUTPUT option is to append, not overwrite, the .d file. As a result,
    * during retry, a second stanza is written to the file.
    *
    * We handle this by merging all of the stanzas.
    */
-  @Test
-  public void dotDParser_duplicateStanza() throws Exception {
-    Path file1 = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.cc");
-    Path file2 = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.h");
-    Path file3 = fileSystem.getPath("/usr/local/blah/blah/genhello/other.h");
-    Path dotd = scratch.file("/tmp/foo.d",
-        "hello.o: \\",
-        " " + file1 + " \\",
-        " " + file2 + " ",
-        "hello.o: \\",
-        " " + file1 + " \\",
-        " " + file3 + " ");
-    assertThat(newDependencySet().read(dotd).getDependencies())
-        .containsExactly(file1, file1, file2, file3);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun dotDParser_duplicateStanza() {
+        val file1: Path? = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.cc")
+        val file2: Path? = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.h")
+        val file3: Path? = fileSystem.getPath("/usr/local/blah/blah/genhello/other.h")
+        val dotd: Path = scratch.file(
+            "/tmp/foo.d",
+            "hello.o: \\",
+            " " + file1 + " \\",
+            " " + file2 + " ",
+            "hello.o: \\",
+            " " + file1 + " \\",
+            " " + file3 + " "
+        )
+        assertThat(newDependencySet().read(dotd).getDependencies())
+            .containsExactly(file1, file1, file2, file3)
+    }
 
-  @Test
-  public void dotDParser_errorOnNoTrailingNewline() throws Exception {
-    Path file1 = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.cc");
-    Path dotd = scratch.file("/tmp/foo.d");
-    FileSystemUtils.writeContent(
-        dotd, ("hello.o: \\\n " + file1).getBytes(Charset.forName("UTF-8")));
-    IOException e = assertThrows(IOException.class, () -> newDependencySet().read(dotd));
-    assertThat(e).hasMessageThat().contains("File does not end in a newline");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun dotDParser_errorOnNoTrailingNewline() {
+        val file1: Path? = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.cc")
+        val dotd: Path = scratch.file("/tmp/foo.d")
+        FileSystemUtils.writeContent(
+            dotd, ("hello.o: \\\n " + file1).toByteArray(java.nio.charset.Charset.forName("UTF-8"))
+        )
+        val e: IOException? = org.junit.Assert.assertThrows<IOException?>(
+            IOException::class.java,
+            org.junit.function.ThrowingRunnable { newDependencySet().read(dotd) })
+        Truth.assertThat(e).hasMessageThat().contains("File does not end in a newline")
+    }
 
-  /*
+    /*
    * Test compatibility with --config=nvcc, which writes an extra space before the colon.
    */
-  @Test
-  public void dotDParser_spaceBeforeColon() throws Exception {
-    Path file1 = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.cc");
-    Path file2 = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.h");
-    String filename = "hello.o";
-    Path dotd = scratch.file("/tmp/foo.d",
-        filename + " : \\",
-        " " + file1 + " \\",
-        " " + file2 + " ");
-    DependencySet depset = newDependencySet().read(dotd);
-    assertThat(depset.getDependencies()).containsExactlyElementsIn(Sets.newHashSet(file1, file2));
-    assertThat(filename).isEqualTo(depset.outputFileName);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun dotDParser_spaceBeforeColon() {
+        val file1: Path = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.cc")
+        val file2: Path? = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.h")
+        val filename = "hello.o"
+        val dotd: Path = scratch.file(
+            "/tmp/foo.d",
+            filename + " : \\",
+            " " + file1 + " \\",
+            " " + file2 + " "
+        )
+        val depset: DependencySet = newDependencySet().read(dotd)
+        assertThat(depset.getDependencies()).containsExactlyElementsIn(
+            com.google.common.collect.Sets.newHashSet<E?>(
+                file1,
+                file2
+            )
+        )
+        Truth.assertThat(filename).isEqualTo(depset.outputFileName)
+    }
 
-  /*
+    /*
    * Bug-for-bug compatibility with --config=msvc, which writes malformed .d files.
    */
-  @Test
-  public void dotDParser_missingBackslash() throws Exception {
-    Path file1 = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.cc");
-    Path file2 = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.h");
-    String filename = "hello.o";
-    Path dotd = scratch.file("/tmp/foo.d",
-        filename + ": ",
-        " " + file1 + " \\",
-        " " + file2 + " ");
-    DependencySet depset = newDependencySet().read(dotd);
-    assertThat(depset.getDependencies()).isEmpty();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun dotDParser_missingBackslash() {
+        val file1: Path? = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.cc")
+        val file2: Path? = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.h")
+        val filename = "hello.o"
+        val dotd: Path = scratch.file(
+            "/tmp/foo.d",
+            filename + ": ",
+            " " + file1 + " \\",
+            " " + file2 + " "
+        )
+        val depset: DependencySet = newDependencySet().read(dotd)
+        assertThat(depset.getDependencies()).isEmpty()
+    }
 
-  @Test
-  public void writeSet() throws Exception {
-    Path file1 = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.cc");
-    Path file2 = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.h");
-    Path file3 = fileSystem.getPath("/usr/local/blah/blah/genhello/other.h");
-    String filename = "/usr/local/blah/blah/genhello/hello.o";
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun writeSet() {
+        val file1: Path? = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.cc")
+        val file2: Path? = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.h")
+        val file3: Path? = fileSystem.getPath("/usr/local/blah/blah/genhello/other.h")
+        val filename = "/usr/local/blah/blah/genhello/hello.o"
 
-    DependencySet depSet1 = newDependencySet();
-    depSet1.addDependencies(ImmutableList.of(file1, file2, file3));
-    depSet1.outputFileName = filename;
+        val depSet1: DependencySet = newDependencySet()
+        depSet1.addDependencies(com.google.common.collect.ImmutableList.of<E?>(file1, file2, file3))
+        depSet1.outputFileName = filename
 
-    Path outfile = scratch.resolve(filename);
-    Path dotd = scratch.resolve("/usr/local/blah/blah/genhello/hello.d");
-    dotd.getParentDirectory().createDirectoryAndParents();
-    depSet1.write(outfile, ".d");
+        val outfile: Path = scratch.resolve(filename)
+        val dotd: Path = scratch.resolve("/usr/local/blah/blah/genhello/hello.d")
+        dotd.getParentDirectory().createDirectoryAndParents()
+        depSet1.write(outfile, ".d")
 
-    String dotdContents = new String(FileSystemUtils.readContentAsLatin1(dotd));
-    String expected =
-        "usr/local/blah/blah/genhello/hello.o:  \\\n"
-            + "  /usr/local/blah/blah/genhello/hello.cc \\\n"
-            + "  /usr/local/blah/blah/genhello/hello.h \\\n"
-            + "  /usr/local/blah/blah/genhello/other.h\n";
-    assertThat(dotdContents).isEqualTo(expected);
-    assertThat(depSet1.outputFileName).isEqualTo(filename);
-  }
+        val dotdContents = String(FileSystemUtils.readContentAsLatin1(dotd))
+        val expected =
+            ("usr/local/blah/blah/genhello/hello.o:  \\\n"
+                    + "  /usr/local/blah/blah/genhello/hello.cc \\\n"
+                    + "  /usr/local/blah/blah/genhello/hello.h \\\n"
+                    + "  /usr/local/blah/blah/genhello/other.h\n")
+        Truth.assertThat(dotdContents).isEqualTo(expected)
+        assertThat(depSet1.outputFileName).isEqualTo(filename)
+    }
 
-  @Test
-  public void writeReadSet() throws Exception {
-    String filename = "/usr/local/blah/blah/genhello/hello.d";
-    Path file1 = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.cc");
-    Path file2 = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.h");
-    Path file3 = fileSystem.getPath("/usr/local/blah/blah/genhello/other.h");
-    DependencySet depSet1 = newDependencySet();
-    depSet1.addDependencies(ImmutableList.of(file1, file2, file3));
-    depSet1.outputFileName = filename;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun writeReadSet() {
+        val filename = "/usr/local/blah/blah/genhello/hello.d"
+        val file1: Path? = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.cc")
+        val file2: Path? = fileSystem.getPath("/usr/local/blah/blah/genhello/hello.h")
+        val file3: Path? = fileSystem.getPath("/usr/local/blah/blah/genhello/other.h")
+        val depSet1: DependencySet = newDependencySet()
+        depSet1.addDependencies(com.google.common.collect.ImmutableList.of<E?>(file1, file2, file3))
+        depSet1.outputFileName = filename
 
-    Path dotd = scratch.resolve(filename);
-    dotd.getParentDirectory().createDirectoryAndParents();
-    depSet1.write(dotd, ".d");
+        val dotd: Path = scratch.resolve(filename)
+        dotd.getParentDirectory().createDirectoryAndParents()
+        depSet1.write(dotd, ".d")
 
-    DependencySet depSet2 = newDependencySet().read(dotd);
-    assertThat(depSet2).isEqualTo(depSet1);
-    // due to how pic.d files are written, absolute paths are changed into relatives
-    assertThat("/" + depSet2.outputFileName).isEqualTo(depSet1.outputFileName);
-  }
-
+        val depSet2: DependencySet = newDependencySet().read(dotd)
+        assertThat(depSet2).isEqualTo(depSet1)
+        // due to how pic.d files are written, absolute paths are changed into relatives
+        Truth.assertThat("/" + depSet2.outputFileName).isEqualTo(depSet1.outputFileName)
+    }
 }

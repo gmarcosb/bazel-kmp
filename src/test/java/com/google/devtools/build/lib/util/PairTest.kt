@@ -11,38 +11,35 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util;
+package com.google.devtools.build.lib.util
 
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.common.testing.EqualsTester;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.common.testing.EqualsTester
+import com.google.devtools.common.options.testing.ConverterTester.addEqualityGroup
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
 /**
- * Tests for {@link Pair}.
+ * Tests for [Pair].
  */
-@RunWith(JUnit4.class)
-public class PairTest {
+@RunWith(JUnit4::class)
+class PairTest {
+    @org.junit.Test
+    fun constructor() {
+        val a = Any()
+        val b = Any()
+        val p: Pair<Any?, Any?> = Pair.of(a, b)
+        assertThat(p.first).isSameInstanceAs(a)
+        assertThat(p.second).isSameInstanceAs(b)
+        assertThat(p).isEqualTo(Pair.of(a, b))
+        assertThat(p.hashCode()).isEqualTo(31 * a.hashCode() + b.hashCode())
+    }
 
-  @Test
-  public void constructor() {
-    Object a = new Object();
-    Object b = new Object();
-    Pair<Object, Object> p = Pair.of(a, b);
-    assertThat(p.first).isSameInstanceAs(a);
-    assertThat(p.second).isSameInstanceAs(b);
-    assertThat(p).isEqualTo(Pair.of(a, b));
-    assertThat(p.hashCode()).isEqualTo(31 * a.hashCode() + b.hashCode());
-  }
-
-  @Test
-  public void nullable() {
-    Pair<Object, Object> p = Pair.of(null, null);
-    assertThat(p.first).isNull();
-    assertThat(p.second).isNull();
-    int unused = p.hashCode(); // Should not throw.
-    new EqualsTester().addEqualityGroup(p).testEquals();
-  }
+    @org.junit.Test
+    fun nullable() {
+        val p: Pair<Any?, Any?> = Pair.of(null, null)
+        assertThat(p.first).isNull()
+        assertThat(p.second).isNull()
+        val unused: Int = p.hashCode() // Should not throw.
+        EqualsTester().addEqualityGroup(p).testEquals()
+    }
 }

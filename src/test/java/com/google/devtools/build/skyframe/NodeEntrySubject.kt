@@ -11,37 +11,34 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.skyframe;
+package com.google.devtools.build.skyframe
 
-import com.google.common.collect.Iterables;
-import com.google.common.truth.FailureMetadata;
-import com.google.common.truth.IterableSubject;
-import com.google.common.truth.Subject;
-import javax.annotation.Nullable;
+import com.google.common.truth.FailureMetadata
+import com.google.common.truth.IterableSubject
 
 /**
- * {@link Subject} for {@link NodeEntry}. Please add to this class if you need more functionality!
+ * [Subject] for [NodeEntry]. Please add to this class if you need more functionality!
  */
-public class NodeEntrySubject extends Subject {
-  private final NodeEntry actual;
+class NodeEntrySubject internal constructor(failureMetadata: FailureMetadata?, nodeEntry: NodeEntry) :
+    com.google.common.truth.Subject(failureMetadata, nodeEntry) {
+    private val actual: NodeEntry
 
-  NodeEntrySubject(FailureMetadata failureMetadata, NodeEntry nodeEntry) {
-    super(failureMetadata, nodeEntry);
-    this.actual = nodeEntry;
-  }
+    init {
+        this.actual = nodeEntry
+    }
 
-  public Subject hasVersionThat() {
-    return check("getVersion()").that(actual.getVersion());
-  }
+    fun hasVersionThat(): com.google.common.truth.Subject? {
+        return check("getVersion()").that(actual.getVersion())
+    }
 
-  public IterableSubject hasTemporaryDirectDepsThat() {
-    return check("getTemporaryDirectDeps()")
-        .that(Iterables.concat(actual.getTemporaryDirectDeps()));
-  }
+    fun hasTemporaryDirectDepsThat(): IterableSubject {
+        return check("getTemporaryDirectDeps()")
+            .that(com.google.common.collect.Iterables.concat(actual.getTemporaryDirectDeps()))
+    }
 
-  public Subject addReverseDepAndCheckIfDone(@Nullable SkyKey reverseDep)
-      throws InterruptedException {
-    return check("addReverseDepAndCheckIfDone()")
-        .that(actual.addReverseDepAndCheckIfDone(reverseDep));
-  }
+    @Throws(java.lang.InterruptedException::class)
+    fun addReverseDepAndCheckIfDone(reverseDep: SkyKey?): com.google.common.truth.Subject? {
+        return check("addReverseDepAndCheckIfDone()")
+            .that(actual.addReverseDepAndCheckIfDone(reverseDep))
+    }
 }

@@ -11,80 +11,37 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.objc
 
-package com.google.devtools.build.lib.rules.objc;
+import com.google.common.base.Function
+import com.google.common.base.Joiner
+import com.google.common.base.Optional
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.Iterables
+import com.google.common.collect.MoreCollectors
+import com.google.common.truth.Subject
+import com.google.devtools.build.lib.actions.ActionAnalysisMetadata
+import net.starlark.java.eval.EvalException
+import org.junit.Assert
+import org.junit.Test
+import org.junit.function.ThrowingRunnable
+import java.lang.String
+import kotlin.AssertionError
+import kotlin.Boolean
+import kotlin.Exception
+import kotlin.IllegalArgumentException
+import kotlin.RuntimeException
+import kotlin.plus
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.common.collect.MoreCollectors.onlyElement;
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.truth.Truth.assertWithMessage;
-import static com.google.devtools.build.lib.actions.util.ActionsTestUtil.baseArtifactNames;
-import static com.google.devtools.build.lib.rules.objc.CompilationSupport.ABSOLUTE_INCLUDES_PATH_FORMAT;
-import static org.junit.Assert.assertThrows;
-
-import com.google.common.base.Joiner;
-import com.google.common.base.Optional;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.actions.ActionAnalysisMetadata;
-import com.google.devtools.build.lib.actions.ActionExecutionException;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.CommandAction;
-import com.google.devtools.build.lib.actions.ExecutionRequirements;
-import com.google.devtools.build.lib.actions.PathMapper;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.FilesToRunProvider;
-import com.google.devtools.build.lib.analysis.OutputGroupInfo;
-import com.google.devtools.build.lib.analysis.RunfilesProvider;
-import com.google.devtools.build.lib.analysis.actions.SpawnAction;
-import com.google.devtools.build.lib.analysis.config.CompilationMode;
-import com.google.devtools.build.lib.analysis.config.InvalidConfigurationException;
-import com.google.devtools.build.lib.analysis.configuredtargets.RuleConfiguredTarget;
-import com.google.devtools.build.lib.analysis.test.InstrumentedFilesInfo;
-import com.google.devtools.build.lib.analysis.util.AnalysisMock;
-import com.google.devtools.build.lib.analysis.util.ScratchAttributeWriter;
-import com.google.devtools.build.lib.cmdline.LabelSyntaxException;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.packages.NoSuchTargetException;
-import com.google.devtools.build.lib.packages.RuleClass.ConfiguredTargetFactory.RuleErrorException;
-import com.google.devtools.build.lib.packages.StarlarkInfo;
-import com.google.devtools.build.lib.packages.util.MockObjcSupport;
-import com.google.devtools.build.lib.packages.util.MockToolsConfig;
-import com.google.devtools.build.lib.rules.cpp.CcCompilationContext;
-import com.google.devtools.build.lib.rules.cpp.CcInfo;
-import com.google.devtools.build.lib.rules.cpp.CcLinkingContext;
-import com.google.devtools.build.lib.rules.cpp.CcLinkingContext.LinkerInput;
-import com.google.devtools.build.lib.rules.cpp.CcToolchainProvider;
-import com.google.devtools.build.lib.rules.cpp.CppCompileAction;
-import com.google.devtools.build.lib.rules.cpp.CppRuleClasses;
-import com.google.devtools.build.lib.rules.cpp.LibraryToLink;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import java.util.Collection;
-import java.util.List;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.Mutability;
-import net.starlark.java.eval.Starlark;
-import net.starlark.java.eval.StarlarkFunction;
-import net.starlark.java.eval.StarlarkSemantics;
-import net.starlark.java.eval.StarlarkThread;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-
-/** Test case for objc_library. */
-@RunWith(TestParameterInjector.class)
-public class ObjcLibraryTest extends ObjcRuleTestCase {
-
-  private static final RuleType RULE_TYPE = new OnlyNeedsSourcesRuleType("objc_library");
-  private static final String WRAPPED_CLANG = "wrapped_clang";
-
-  @Test
-  public void testConfigTransitionWithTopLevelAppleConfiguration() throws Exception {
-    scratch.file(
-        "bin/BUILD",
-        """
+/** Test case for objc_library.  */
+@RunWith(TestParameterInjector::class)
+class ObjcLibraryTest : ObjcRuleTestCase() {
+    @Test
+    @Throws(Exception::class)
+    fun testConfigTransitionWithTopLevelAppleConfiguration() {
+        scratch.file(
+            "bin/BUILD",
+            """
         load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
         load("@rules_cc//cc:objc_library.bzl", "objc_library")
         objc_library(
@@ -97,567 +54,630 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
             srcs = ["cc.cc"],
             deps = [":objc"],
         )
-        """);
-
-    setBuildLanguageOptions("--noincompatible_disable_objc_library_transition");
-    useConfiguration(
-        "--apple_platform_type=ios",
-        "--ios_multi_cpus=x86_64",
-        "--platforms=" + MockObjcSupport.IOS_X86_64,
-        "--experimental_platform_in_output_dir");
-
-    ConfiguredTarget cc = getConfiguredTarget("//bin:cc");
-    Artifact objcObject =
-        ActionsTestUtil.getFirstArtifactEndingWith(
-            actionsTestUtil().artifactClosureOf(getFilesToBuild(cc)), "objc.o");
-    assertThat(objcObject.getExecPathString()).contains("ios_x86_64");
-  }
-
-  @Test
-  public void testNoTransition() throws Exception {
-    scratch.file(
-        "bin/BUILD",
-        """
-        load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
-        load("@rules_cc//cc:objc_library.bzl", "objc_library")
-        objc_library(
-            name = "objc",
-            srcs = ["objc.m"],
+        
+        """.trimIndent()
         )
 
-        cc_binary(
-            name = "cc",
-            srcs = ["cc.cc"],
-            deps = [":objc"],
+        setBuildLanguageOptions("--noincompatible_disable_objc_library_transition")
+        useConfiguration(
+            "--apple_platform_type=ios",
+            "--ios_multi_cpus=x86_64",
+            "--platforms=" + MockObjcSupport.IOS_X86_64,
+            "--experimental_platform_in_output_dir"
         )
-        """);
 
-    setBuildLanguageOptions("--incompatible_disable_objc_library_transition");
-    useConfiguration("--macos_cpus=arm64,x86_64", "--platforms=" + TestConstants.PLATFORM_LABEL);
-
-    // fails to find appropriate toolchain for `objc_library` given the default platform with
-    // transition disabled
-    assertThrows(AssertionError.class, () -> getConfiguredTarget("//bin:cc"));
-    assertContainsEvent("objc_library rule //bin:objc");
-  }
-
-  @Test
-  public void testFilesToBuild() throws Exception {
-    ConfiguredTarget target =
-        createLibraryTargetWriter("//objc:One")
-            .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
-            .write();
-
-    NestedSet<Artifact> files = getFilesToBuild(target);
-    assertThat(Artifact.toRootRelativePaths(files)).containsExactly("objc/libOne.a");
-  }
-
-  @Test
-  public void testCompilesSources() throws Exception {
-    createLibraryTargetWriter("//objc/lib1")
-        .setAndCreateFiles("srcs", "a.m")
-        .setAndCreateFiles("hdrs", "hdr.h")
-        .write();
-
-    createLibraryTargetWriter("//objc/lib2")
-        .setAndCreateFiles("srcs", "b.m")
-        .setAndCreateFiles("hdrs", "private.h")
-        .write();
-
-    createLibraryTargetWriter("//objc/lib3")
-        .setAndCreateFiles("srcs", "a.m")
-        .setAndCreateFiles("hdrs", "hdr.h")
-        .setList("deps", "//objc/lib1")
-        .setList("implementation_deps", "//objc/lib2")
-        .write();
-
-    createLibraryTargetWriter("//objc:x")
-        .setAndCreateFiles("srcs", "a.m", "private.h")
-        .setAndCreateFiles("hdrs", "hdr.h")
-        .setList("deps", "//objc/lib3:lib3")
-        .write();
-
-    CppCompileAction compileA = (CppCompileAction) compileAction("//objc:x", "a.o");
-
-    assertThat(Artifact.toRootRelativePaths(compileA.getPossibleInputsForTesting()))
-        .containsAtLeast("objc/a.m", "objc/hdr.h", "objc/private.h");
-    assertThat(Artifact.toRootRelativePaths(compileA.getOutputs()))
-        .containsExactly("objc/_objs/x/arc/a.o", "objc/_objs/x/arc/a.d");
-  }
-
-  @Test
-  public void testSerializedDiagnosticsFileFeature() throws Exception {
-    useConfiguration("--features=serialized_diagnostics_file");
-
-    createLibraryTargetWriter("//objc/lib1")
-        .setAndCreateFiles("srcs", "a.m")
-        .setAndCreateFiles("hdrs", "hdr.h")
-        .write();
-
-    createLibraryTargetWriter("//objc/lib2")
-        .setAndCreateFiles("srcs", "a.m")
-        .setAndCreateFiles("hdrs", "hdr.h")
-        .setList("deps", "//objc/lib1")
-        .write();
-
-    createLibraryTargetWriter("//objc:x")
-        .setAndCreateFiles("srcs", "a.m", "private.h")
-        .setAndCreateFiles("hdrs", "hdr.h")
-        .setList("deps", "//objc/lib2:lib2")
-        .write();
-
-    CppCompileAction compileA = (CppCompileAction) compileAction("//objc:x", "a.o");
-
-    assertThat(Artifact.toRootRelativePaths(compileA.getOutputs()))
-        .containsExactly("objc/_objs/x/arc/a.o", "objc/_objs/x/arc/a.d", "objc/_objs/x/arc/a.dia");
-  }
-
-  @Test
-  public void testCompilesSourcesWithSameBaseName() throws Exception {
-    createLibraryTargetWriter("//foo:lib")
-        .setAndCreateFiles("srcs", "a.m", "pkg1/a.m", "b.m")
-        .setAndCreateFiles("non_arc_srcs", "pkg2/a.m")
-        .write();
-
-    getConfiguredTarget("//foo:lib");
-
-    Artifact a0 = getBinArtifact("_objs/lib/arc/0/a.o", getConfiguredTarget("//foo:lib"));
-    Artifact a1 = getBinArtifact("_objs/lib/arc/1/a.o", getConfiguredTarget("//foo:lib"));
-    Artifact a2 = getBinArtifact("_objs/lib/non_arc/a.o", getConfiguredTarget("//foo:lib"));
-    Artifact b = getBinArtifact("_objs/lib/arc/b.o", getConfiguredTarget("//foo:lib"));
-
-    assertThat(getGeneratingAction(a0)).isNotNull();
-    assertThat(getGeneratingAction(a1)).isNotNull();
-    assertThat(getGeneratingAction(a2)).isNotNull();
-    assertThat(getGeneratingAction(b)).isNotNull();
-
-    assertThat(getGeneratingAction(a0).getInputs().toList()).contains(getSourceArtifact("foo/a.m"));
-    assertThat(getGeneratingAction(a1).getInputs().toList())
-        .contains(getSourceArtifact("foo/pkg1/a.m"));
-    assertThat(getGeneratingAction(a2).getInputs().toList())
-        .contains(getSourceArtifact("foo/pkg2/a.m"));
-    assertThat(getGeneratingAction(b).getInputs().toList()).contains(getSourceArtifact("foo/b.m"));
-  }
-
-  @Test
-  public void testObjcPlusPlusCompile() throws Exception {
-    MockObjcSupport.setupCcToolchainConfig(mockToolsConfig, MockObjcSupport.ios_arm64());
-    useConfiguration(
-        "--apple_platform_type=ios",
-        "--ios_multi_cpus=arm64",
-        "--platforms=" + MockObjcSupport.IOS_ARM64);
-    createLibraryTargetWriter("//objc:lib").setList("srcs", "a.mm").write();
-    CommandAction compileAction = compileAction("//objc:lib", "a.o");
-    assertThat(compileAction.getArguments()).containsAtLeast("-stdlib=libc++", "-std=gnu++11");
-  }
-
-  @Test
-  public void testObjcPlusPlusCompileDarwin() throws Exception {
-    MockObjcSupport.setupCcToolchainConfig(mockToolsConfig, MockObjcSupport.darwinX86_64());
-    useConfiguration("--platforms=" + MockObjcSupport.DARWIN_X86_64);
-    createLibraryTargetWriter("//objc:lib").setList("srcs", "a.mm").write();
-    CommandAction compileAction = compileAction("//objc:lib", "a.o");
-    assertThat(compileAction.getArguments()).containsAtLeast("-stdlib=libc++", "-std=gnu++11");
-  }
-
-  @Test
-  public void testObjcSourceContainsObjccopt() throws Exception {
-    useConfiguration("--objccopt=--xyzzy");
-    scratch.file("objc/a.m");
-    scratch.file(
-        "objc/BUILD",
-        "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
-        RULE_TYPE.target(scratch, "objc", "lib", "srcs", "['a.m']"));
-
-    CommandAction compileActionA = compileAction("//objc:lib", "a.o");
-    assertThat(compileActionA.getArguments()).contains("--xyzzy");
-  }
-
-  @Test
-  public void testObjcppSourceContainsObjccopt() throws Exception {
-    useConfiguration("--objccopt=--xyzzy");
-    scratch.file("objc/a.mm");
-    scratch.file(
-        "objc/BUILD",
-        "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
-        RULE_TYPE.target(scratch, "objc", "lib", "srcs", "['a.mm']"));
-
-    CommandAction compileActionA = compileAction("//objc:lib", "a.o");
-    assertThat(compileActionA.getArguments()).contains("--xyzzy");
-  }
-
-  @Test
-  public void testCSourceDoesNotContainObjccopt() throws Exception {
-    useConfiguration("--objccopt=--xyzzy");
-    scratch.file("objc/a.c");
-    scratch.file(
-        "objc/BUILD",
-        "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
-        RULE_TYPE.target(scratch, "objc", "lib", "srcs", "['a.c']"));
-
-    CommandAction compileActionA = compileAction("//objc:lib", "a.o");
-    assertThat(compileActionA.getArguments()).doesNotContain("--xyzzy");
-  }
-
-  @Test
-  public void testCppSourceDoesNotContainObjccopt() throws Exception {
-    useConfiguration("--objccopt=--xyzzy");
-    scratch.file("objc/a.cc");
-    scratch.file(
-        "objc/BUILD",
-        "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
-        RULE_TYPE.target(scratch, "objc", "lib", "srcs", "['a.cc']"));
-
-    CommandAction compileActionA = compileAction("//objc:lib", "a.o");
-    assertThat(compileActionA.getArguments()).doesNotContain("--xyzzy");
-  }
-
-  @Test
-  public void testCppHeaderDoesNotContainsObjccopt() throws Exception {
-    MockObjcSupport.setupCcToolchainConfig(
-        mockToolsConfig, MockObjcSupport.darwinX86_64().withFeatures(CppRuleClasses.PARSE_HEADERS));
-    useConfiguration(
-        "--features=parse_headers", "--process_headers_in_dependencies", "--objccopt=--xyzzy");
-
-    ConfiguredTarget x =
-        scratchConfiguredTarget(
-            "foo",
-            "x",
-            "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
-            "cc_library(name = 'x', hdrs = ['x.h'])");
-
-    assertThat(getGeneratingCompileAction("_objs/x/x.h.processed", x).getArguments())
-        .doesNotContain("--xyzzy");
-  }
-
-  @Test
-  public void testObjcHeaderContainsObjccopt() throws Exception {
-    MockObjcSupport.setupCcToolchainConfig(
-        mockToolsConfig, MockObjcSupport.darwinX86_64().withFeatures(CppRuleClasses.PARSE_HEADERS));
-    useConfiguration(
-        "--features=parse_headers", "--process_headers_in_dependencies", "--objccopt=--xyzzy");
-
-    ConfiguredTarget x =
-        scratchConfiguredTarget(
-            "foo",
-            "x",
-            "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
-            "objc_library(name = 'x', hdrs = ['x.h'])");
-
-    assertThat(getGeneratingCompileAction("_objs/x/arc/x.h.processed", x).getArguments())
-        .contains("--xyzzy");
-  }
-
-  @Test
-  public void testCompilationModeDbg() throws Exception {
-    useConfiguration("--ios_multi_cpus=arm64", "--compilation_mode=dbg");
-    scratch.file("objc/a.m");
-    scratch.file(
-        "objc/BUILD",
-        "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
-        RULE_TYPE.target(scratch, "objc", "lib", "srcs", "['a.m']"));
-
-    CommandAction compileActionA = compileAction("//objc:lib", "a.o");
-
-    assertThat(compileActionA.getArguments()).contains("--DBG_ONLY_FLAG");
-    assertThat(compileActionA.getArguments()).doesNotContain("--FASTBUILD_ONLY_FLAG");
-    assertThat(compileActionA.getArguments()).doesNotContain("--OPT_ONLY_FLAG");
-  }
-
-  @Test
-  public void testCompilationModeFastbuild() throws Exception {
-    useConfiguration("--compilation_mode=fastbuild");
-    scratch.file("objc/a.m");
-    scratch.file(
-        "objc/BUILD",
-        "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
-        RULE_TYPE.target(scratch, "objc", "lib", "srcs", "['a.m']"));
-
-    CommandAction compileActionA = compileAction("//objc:lib", "a.o");
-
-    assertThat(compileActionA.getArguments()).doesNotContain("--DBG_ONLY_FLAG");
-    assertThat(compileActionA.getArguments()).contains("--FASTBUILD_ONLY_FLAG");
-    assertThat(compileActionA.getArguments()).doesNotContain("--OPT_ONLY_FLAG");
-  }
-
-  @Test
-  public void testCompilationModeOpt() throws Exception {
-    useConfiguration("--compilation_mode=opt");
-    scratch.file("objc/a.m");
-    scratch.file(
-        "objc/BUILD",
-        "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
-        RULE_TYPE.target(scratch, "objc", "lib", "srcs", "['a.m']"));
-
-    CommandAction compileActionA = compileAction("//objc:lib", "a.o");
-
-    assertThat(compileActionA.getArguments()).doesNotContain("--DBG_ONLY_FLAG");
-    assertThat(compileActionA.getArguments()).doesNotContain("--FASTBUILD_ONLY_FLAG");
-    assertThat(compileActionA.getArguments()).contains("--OPT_ONLY_FLAG");
-  }
-
-  @Test
-  public void testCreate_runfilesWithSourcesOnly() throws Exception {
-    ConfiguredTarget target =
-        createLibraryTargetWriter("//objc:One")
-            .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
-            .write();
-    RunfilesProvider provider = target.getProvider(RunfilesProvider.class);
-    assertThat(baseArtifactNames(provider.getDefaultRunfiles().getArtifacts())).isEmpty();
-    if (!analysisMock
-        .isThisBazel()) { // TODO(b/507033784): Re-enable in bazel after rules_cc release.
-      assertThat(baseArtifactNames(provider.getDataRunfiles().getArtifacts())).isEmpty();
+        val cc: ConfiguredTarget = getConfiguredTarget("//bin:cc")
+        val objcObject: Artifact =
+            ActionsTestUtil.getFirstArtifactEndingWith(
+                actionsTestUtil().artifactClosureOf(getFilesToBuild(cc)), "objc.o"
+            )
+        Subject.contains("ios_x86_64")
     }
-  }
 
-  @Test
-  public void testCreate_noErrorForEmptySourcesButHasDependency() throws Exception {
-    createLibraryTargetWriter("//baselib:baselib")
-        .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
-        .write();
-    createLibraryTargetWriter("//lib:lib")
-        .setAndCreateFiles("hdrs", "a.h")
-        .setList("deps", "//baselib:baselib")
-        .write();
+    @Test
+    @Throws(Exception::class)
+    fun testNoTransition() {
+        scratch.file(
+            "bin/BUILD",
+            """
+        load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+        load("@rules_cc//cc:objc_library.bzl", "objc_library")
+        objc_library(
+            name = "objc",
+            srcs = ["objc.m"],
+        )
 
-    CcLinkingContext ccLinkingContext =
-        CcInfo.get(getConfiguredTarget("//lib:lib")).getCcLinkingContext();
-    assertThat(ccLinkingContext.getStaticModeParamsForDynamicLibraryLibraries())
-        .containsExactlyElementsIn(archiveAction("//baselib:baselib").getOutputs());
-  }
+        cc_binary(
+            name = "cc",
+            srcs = ["cc.cc"],
+            deps = [":objc"],
+        )
+        
+        """.trimIndent()
+        )
 
-  @Test
-  public void testCreate_srcsContainingHeaders() throws Exception {
-    scratch.file("x/a.m", "dummy source file");
-    scratch.file("x/a.h", "dummy header file");
-    scratch.file(
-        "x/BUILD",
-        "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
-        "objc_library(name = 'Target', srcs = ['a.m', 'a.h'])");
-    assertThat(view.hasErrors(getConfiguredTarget("//x:Target"))).isFalse();
-  }
+        setBuildLanguageOptions("--incompatible_disable_objc_library_transition")
+        useConfiguration("--macos_cpus=arm64,x86_64", "--platforms=" + TestConstants.PLATFORM_LABEL)
 
-  @Test
-  public void testCreate_headerAndCompiledSourceWithSameName() throws Exception {
-    scratch.file(
-        "objc/BUILD",
-        "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
-        "objc_library(name = 'Target', srcs = ['a.m'], hdrs = ['a.h'])");
-    assertThat(view.hasErrors(getConfiguredTarget("//objc:Target"))).isFalse();
-  }
+        // fails to find appropriate toolchain for `objc_library` given the default platform with
+        // transition disabled
+        Assert.assertThrows<AssertionError?>(
+            AssertionError::class.java,
+            ThrowingRunnable { getConfiguredTarget("//bin:cc") })
+        assertContainsEvent("objc_library rule //bin:objc")
+    }
 
-  @Test
-  public void testCreate_errorForCcInNonArcSources() throws Exception {
-    scratch.file("x/cc.cc");
-    checkError(
-        "x",
-        "x",
-        "non_arc_srcs attribute of objc_library rule @@//x:x: source file '@@//x:cc.cc' is"
-            + " misplaced here",
-        "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
-        "objc_library(name = 'x', non_arc_srcs = ['cc.cc'])");
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testFilesToBuild() {
+        val target: ConfiguredTarget =
+            createLibraryTargetWriter("//objc:One")
+                .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
+                .write()
 
-  @Test
-  public void testFileInSrcsAndNonArcSources() throws Exception {
-    checkError(
-        "x",
-        "x",
-        String.format(CompilationSupport.FILE_IN_SRCS_AND_NON_ARC_SRCS_ERROR_FORMAT, "x/foo.m"),
-        "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
-        "objc_library(name = 'x', srcs = ['foo.m'], non_arc_srcs = ['foo.m'])");
-  }
+        val files: NestedSet<Artifact?>? = getFilesToBuild(target)
+        assertThat(Artifact.toRootRelativePaths(files)).containsExactly("objc/libOne.a")
+    }
 
-  @Test
-  public void testCreate_headerContainingDotMAndDotCFiles() throws Exception {
-    scratch.file("x/a.m", "dummy source file");
-    scratch.file("x/a.h", "dummy header file");
-    scratch.file("x/b.m", "dummy source file");
-    scratch.file("x/a.c", "dummy source file");
-    scratch.file(
-        "x/BUILD",
-        "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
-        "objc_library(name = 'Target', srcs = ['a.m'], hdrs = ['a.h', 'b.m', 'a.c'])");
-    assertThat(view.hasErrors(getConfiguredTarget("//x:Target"))).isFalse();
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testCompilesSources() {
+        createLibraryTargetWriter("//objc/lib1")
+            .setAndCreateFiles("srcs", "a.m")
+            .setAndCreateFiles("hdrs", "hdr.h")
+            .write()
 
-  @Test
-  public void testProvidesObjcHeadersWithDotMFiles() throws Exception {
-    ConfiguredTarget target =
+        createLibraryTargetWriter("//objc/lib2")
+            .setAndCreateFiles("srcs", "b.m")
+            .setAndCreateFiles("hdrs", "private.h")
+            .write()
+
+        createLibraryTargetWriter("//objc/lib3")
+            .setAndCreateFiles("srcs", "a.m")
+            .setAndCreateFiles("hdrs", "hdr.h")
+            .setList("deps", "//objc/lib1")
+            .setList("implementation_deps", "//objc/lib2")
+            .write()
+
+        createLibraryTargetWriter("//objc:x")
+            .setAndCreateFiles("srcs", "a.m", "private.h")
+            .setAndCreateFiles("hdrs", "hdr.h")
+            .setList("deps", "//objc/lib3:lib3")
+            .write()
+
+        val compileA: CppCompileAction = compileAction("//objc:x", "a.o") as CppCompileAction
+
+        assertThat(Artifact.toRootRelativePaths(compileA.getPossibleInputsForTesting()))
+            .containsAtLeast("objc/a.m", "objc/hdr.h", "objc/private.h")
+        assertThat(Artifact.toRootRelativePaths(compileA.getOutputs()))
+            .containsExactly("objc/_objs/x/arc/a.o", "objc/_objs/x/arc/a.d")
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testSerializedDiagnosticsFileFeature() {
+        useConfiguration("--features=serialized_diagnostics_file")
+
+        createLibraryTargetWriter("//objc/lib1")
+            .setAndCreateFiles("srcs", "a.m")
+            .setAndCreateFiles("hdrs", "hdr.h")
+            .write()
+
+        createLibraryTargetWriter("//objc/lib2")
+            .setAndCreateFiles("srcs", "a.m")
+            .setAndCreateFiles("hdrs", "hdr.h")
+            .setList("deps", "//objc/lib1")
+            .write()
+
+        createLibraryTargetWriter("//objc:x")
+            .setAndCreateFiles("srcs", "a.m", "private.h")
+            .setAndCreateFiles("hdrs", "hdr.h")
+            .setList("deps", "//objc/lib2:lib2")
+            .write()
+
+        val compileA: CppCompileAction = compileAction("//objc:x", "a.o") as CppCompileAction
+
+        assertThat(Artifact.toRootRelativePaths(compileA.getOutputs()))
+            .containsExactly("objc/_objs/x/arc/a.o", "objc/_objs/x/arc/a.d", "objc/_objs/x/arc/a.dia")
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testCompilesSourcesWithSameBaseName() {
+        createLibraryTargetWriter("//foo:lib")
+            .setAndCreateFiles("srcs", "a.m", "pkg1/a.m", "b.m")
+            .setAndCreateFiles("non_arc_srcs", "pkg2/a.m")
+            .write()
+
+        getConfiguredTarget("//foo:lib")
+
+        val a0: Artifact = getBinArtifact("_objs/lib/arc/0/a.o", getConfiguredTarget("//foo:lib"))
+        val a1: Artifact = getBinArtifact("_objs/lib/arc/1/a.o", getConfiguredTarget("//foo:lib"))
+        val a2: Artifact = getBinArtifact("_objs/lib/non_arc/a.o", getConfiguredTarget("//foo:lib"))
+        val b: Artifact = getBinArtifact("_objs/lib/arc/b.o", getConfiguredTarget("//foo:lib"))
+
+        assertThat(getGeneratingAction(a0)).isNotNull()
+        assertThat(getGeneratingAction(a1)).isNotNull()
+        assertThat(getGeneratingAction(a2)).isNotNull()
+        assertThat(getGeneratingAction(b)).isNotNull()
+
+        Subject.contains(getSourceArtifact("foo/a.m"))
+        Subject.contains(getSourceArtifact("foo/pkg1/a.m"))
+        Subject.contains(getSourceArtifact("foo/pkg2/a.m"))
+        Subject.contains(getSourceArtifact("foo/b.m"))
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testObjcPlusPlusCompile() {
+        MockObjcSupport.setupCcToolchainConfig(mockToolsConfig, MockObjcSupport.ios_arm64())
+        useConfiguration(
+            "--apple_platform_type=ios",
+            "--ios_multi_cpus=arm64",
+            "--platforms=" + MockObjcSupport.IOS_ARM64
+        )
+        createLibraryTargetWriter("//objc:lib").setList("srcs", "a.mm").write()
+        val compileAction: CommandAction = compileAction("//objc:lib", "a.o")
+        assertThat(compileAction.getArguments()).containsAtLeast("-stdlib=libc++", "-std=gnu++11")
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testObjcPlusPlusCompileDarwin() {
+        MockObjcSupport.setupCcToolchainConfig(mockToolsConfig, MockObjcSupport.darwinX86_64())
+        useConfiguration("--platforms=" + MockObjcSupport.DARWIN_X86_64)
+        createLibraryTargetWriter("//objc:lib").setList("srcs", "a.mm").write()
+        val compileAction: CommandAction = compileAction("//objc:lib", "a.o")
+        assertThat(compileAction.getArguments()).containsAtLeast("-stdlib=libc++", "-std=gnu++11")
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testObjcSourceContainsObjccopt() {
+        useConfiguration("--objccopt=--xyzzy")
+        scratch.file("objc/a.m")
+        scratch.file(
+            "objc/BUILD",
+            "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
+            RULE_TYPE.target(scratch, "objc", "lib", "srcs", "['a.m']")
+        )
+
+        val compileActionA: CommandAction = compileAction("//objc:lib", "a.o")
+        Subject.contains("--xyzzy")
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testObjcppSourceContainsObjccopt() {
+        useConfiguration("--objccopt=--xyzzy")
+        scratch.file("objc/a.mm")
+        scratch.file(
+            "objc/BUILD",
+            "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
+            RULE_TYPE.target(scratch, "objc", "lib", "srcs", "['a.mm']")
+        )
+
+        val compileActionA: CommandAction = compileAction("//objc:lib", "a.o")
+        Subject.contains("--xyzzy")
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testCSourceDoesNotContainObjccopt() {
+        useConfiguration("--objccopt=--xyzzy")
+        scratch.file("objc/a.c")
+        scratch.file(
+            "objc/BUILD",
+            "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
+            RULE_TYPE.target(scratch, "objc", "lib", "srcs", "['a.c']")
+        )
+
+        val compileActionA: CommandAction = compileAction("//objc:lib", "a.o")
+        assertThat(compileActionA.getArguments()).doesNotContain("--xyzzy")
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testCppSourceDoesNotContainObjccopt() {
+        useConfiguration("--objccopt=--xyzzy")
+        scratch.file("objc/a.cc")
+        scratch.file(
+            "objc/BUILD",
+            "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
+            RULE_TYPE.target(scratch, "objc", "lib", "srcs", "['a.cc']")
+        )
+
+        val compileActionA: CommandAction = compileAction("//objc:lib", "a.o")
+        assertThat(compileActionA.getArguments()).doesNotContain("--xyzzy")
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testCppHeaderDoesNotContainsObjccopt() {
+        MockObjcSupport.setupCcToolchainConfig(
+            mockToolsConfig, MockObjcSupport.darwinX86_64().withFeatures(CppRuleClasses.PARSE_HEADERS)
+        )
+        useConfiguration(
+            "--features=parse_headers", "--process_headers_in_dependencies", "--objccopt=--xyzzy"
+        )
+
+        val x: ConfiguredTarget =
+            scratchConfiguredTarget(
+                "foo",
+                "x",
+                "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
+                "cc_library(name = 'x', hdrs = ['x.h'])"
+            )
+
+        assertThat(getGeneratingCompileAction("_objs/x/x.h.processed", x).getArguments())
+            .doesNotContain("--xyzzy")
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testObjcHeaderContainsObjccopt() {
+        MockObjcSupport.setupCcToolchainConfig(
+            mockToolsConfig, MockObjcSupport.darwinX86_64().withFeatures(CppRuleClasses.PARSE_HEADERS)
+        )
+        useConfiguration(
+            "--features=parse_headers", "--process_headers_in_dependencies", "--objccopt=--xyzzy"
+        )
+
+        val x: ConfiguredTarget =
+            scratchConfiguredTarget(
+                "foo",
+                "x",
+                "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
+                "objc_library(name = 'x', hdrs = ['x.h'])"
+            )
+
+        Subject.contains("--xyzzy")
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testCompilationModeDbg() {
+        useConfiguration("--ios_multi_cpus=arm64", "--compilation_mode=dbg")
+        scratch.file("objc/a.m")
+        scratch.file(
+            "objc/BUILD",
+            "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
+            RULE_TYPE.target(scratch, "objc", "lib", "srcs", "['a.m']")
+        )
+
+        val compileActionA: CommandAction = compileAction("//objc:lib", "a.o")
+
+        Subject.contains("--DBG_ONLY_FLAG")
+        assertThat(compileActionA.getArguments()).doesNotContain("--FASTBUILD_ONLY_FLAG")
+        assertThat(compileActionA.getArguments()).doesNotContain("--OPT_ONLY_FLAG")
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testCompilationModeFastbuild() {
+        useConfiguration("--compilation_mode=fastbuild")
+        scratch.file("objc/a.m")
+        scratch.file(
+            "objc/BUILD",
+            "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
+            RULE_TYPE.target(scratch, "objc", "lib", "srcs", "['a.m']")
+        )
+
+        val compileActionA: CommandAction = compileAction("//objc:lib", "a.o")
+
+        assertThat(compileActionA.getArguments()).doesNotContain("--DBG_ONLY_FLAG")
+        Subject.contains("--FASTBUILD_ONLY_FLAG")
+        assertThat(compileActionA.getArguments()).doesNotContain("--OPT_ONLY_FLAG")
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testCompilationModeOpt() {
+        useConfiguration("--compilation_mode=opt")
+        scratch.file("objc/a.m")
+        scratch.file(
+            "objc/BUILD",
+            "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
+            RULE_TYPE.target(scratch, "objc", "lib", "srcs", "['a.m']")
+        )
+
+        val compileActionA: CommandAction = compileAction("//objc:lib", "a.o")
+
+        assertThat(compileActionA.getArguments()).doesNotContain("--DBG_ONLY_FLAG")
+        assertThat(compileActionA.getArguments()).doesNotContain("--FASTBUILD_ONLY_FLAG")
+        Subject.contains("--OPT_ONLY_FLAG")
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testCreate_runfilesWithSourcesOnly() {
+        val target: ConfiguredTarget =
+            createLibraryTargetWriter("//objc:One")
+                .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
+                .write()
+        val provider: RunfilesProvider = target.getProvider(RunfilesProvider::class.java)
+        assertThat(baseArtifactNames(provider.getDefaultRunfiles().getArtifacts())).isEmpty()
+        if (!analysisMock!!
+                .isThisBazel
+        ) { // TODO(b/507033784): Re-enable in bazel after rules_cc release.
+            assertThat(baseArtifactNames(provider.getDataRunfiles().getArtifacts())).isEmpty()
+        }
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testCreate_noErrorForEmptySourcesButHasDependency() {
+        createLibraryTargetWriter("//baselib:baselib")
+            .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
+            .write()
+        createLibraryTargetWriter("//lib:lib")
+            .setAndCreateFiles("hdrs", "a.h")
+            .setList("deps", "//baselib:baselib")
+            .write()
+
+        val ccLinkingContext: CcLinkingContext =
+            CcInfo.get(getConfiguredTarget("//lib:lib")).getCcLinkingContext()
+        assertThat(ccLinkingContext.getStaticModeParamsForDynamicLibraryLibraries())
+            .containsExactlyElementsIn(archiveAction("//baselib:baselib").getOutputs())
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testCreate_srcsContainingHeaders() {
+        scratch.file("x/a.m", "dummy source file")
+        scratch.file("x/a.h", "dummy header file")
+        scratch.file(
+            "x/BUILD",
+            "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
+            "objc_library(name = 'Target', srcs = ['a.m', 'a.h'])"
+        )
+        Truth.assertThat(view!!.hasErrors(getConfiguredTarget("//x:Target"))).isFalse()
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testCreate_headerAndCompiledSourceWithSameName() {
+        scratch.file(
+            "objc/BUILD",
+            "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
+            "objc_library(name = 'Target', srcs = ['a.m'], hdrs = ['a.h'])"
+        )
+        Truth.assertThat(view!!.hasErrors(getConfiguredTarget("//objc:Target"))).isFalse()
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testCreate_errorForCcInNonArcSources() {
+        scratch.file("x/cc.cc")
+        checkError(
+            "x",
+            "x",
+            "non_arc_srcs attribute of objc_library rule @@//x:x: source file '@@//x:cc.cc' is"
+                    + " misplaced here",
+            "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
+            "objc_library(name = 'x', non_arc_srcs = ['cc.cc'])"
+        )
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testFileInSrcsAndNonArcSources() {
+        checkError(
+            "x",
+            "x",
+            String.format(CompilationSupport.FILE_IN_SRCS_AND_NON_ARC_SRCS_ERROR_FORMAT, "x/foo.m"),
+            "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
+            "objc_library(name = 'x', srcs = ['foo.m'], non_arc_srcs = ['foo.m'])"
+        )
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testCreate_headerContainingDotMAndDotCFiles() {
+        scratch.file("x/a.m", "dummy source file")
+        scratch.file("x/a.h", "dummy header file")
+        scratch.file("x/b.m", "dummy source file")
+        scratch.file("x/a.c", "dummy source file")
+        scratch.file(
+            "x/BUILD",
+            "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
+            "objc_library(name = 'Target', srcs = ['a.m'], hdrs = ['a.h', 'b.m', 'a.c'])"
+        )
+        Truth.assertThat(view!!.hasErrors(getConfiguredTarget("//x:Target"))).isFalse()
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testProvidesObjcHeadersWithDotMFiles() {
+        val target: ConfiguredTarget =
+            createLibraryTargetWriter("//objc:lib")
+                .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
+                .setAndCreateFiles("hdrs", "a.h", "b.h", "f.m")
+                .write()
+        val depender: ConfiguredTarget =
+            createLibraryTargetWriter("//objc2:lib")
+                .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
+                .setAndCreateFiles("hdrs", "d.h", "e.m")
+                .setList("deps", "//objc:lib")
+                .write()
+        Truth.assertThat(ObjcRuleTestCase.Companion.getArifactPathsOfHeaders(target))
+            .containsExactly("objc/a.h", "objc/b.h", "objc/f.m", "objc/private.h")
+        Truth.assertThat(ObjcRuleTestCase.Companion.getArifactPathsOfHeaders(depender))
+            .containsExactly(
+                "objc/a.h",
+                "objc/b.h",
+                "objc/f.m",
+                "objc/private.h",
+                "objc2/d.h",
+                "objc2/e.m",
+                "objc2/private.h"
+            )
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testMultiPlatformLibrary() {
+        useConfiguration("--ios_multi_cpus=arm64,x86_64,arm64e,sim_arm64")
+
         createLibraryTargetWriter("//objc:lib")
             .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
-            .setAndCreateFiles("hdrs", "a.h", "b.h", "f.m")
-            .write();
-    ConfiguredTarget depender =
-        createLibraryTargetWriter("//objc2:lib")
-            .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
-            .setAndCreateFiles("hdrs", "d.h", "e.m")
-            .setList("deps", "//objc:lib")
-            .write();
-    assertThat(getArifactPathsOfHeaders(target))
-        .containsExactly("objc/a.h", "objc/b.h", "objc/f.m", "objc/private.h");
-    assertThat(getArifactPathsOfHeaders(depender))
-        .containsExactly(
-            "objc/a.h",
-            "objc/b.h",
-            "objc/f.m",
-            "objc/private.h",
-            "objc2/d.h",
-            "objc2/e.m",
-            "objc2/private.h");
-  }
+            .setAndCreateFiles("hdrs", "a.h")
+            .write()
 
-  @Test
-  public void testMultiPlatformLibrary() throws Exception {
-    useConfiguration("--ios_multi_cpus=arm64,x86_64,arm64e,sim_arm64");
+        Truth.assertThat(view!!.hasErrors(getConfiguredTarget("//objc:lib"))).isFalse()
+    }
 
-    createLibraryTargetWriter("//objc:lib")
-        .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
-        .setAndCreateFiles("hdrs", "a.h")
-        .write();
+    @Test
+    @Throws(Exception::class)
+    fun testCompilationActions_simulator() {
+        useConfiguration(
+            "--apple_platform_type=ios",
+            "--ios_multi_cpus=x86_64",
+            "--platforms=" + MockObjcSupport.IOS_X86_64
+        )
 
-    assertThat(view.hasErrors(getConfiguredTarget("//objc:lib"))).isFalse();
-  }
+        scratch.file("objc/a.m")
+        scratch.file("objc/non_arc.m")
+        scratch.file("objc/private.h")
+        scratch.file("objc/c.h")
+        scratch.file(
+            "objc/BUILD",
+            "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
+            RULE_TYPE.target(
+                scratch,
+                "objc",
+                "lib",
+                "srcs",
+                "['a.m', 'private.h']",
+                "hdrs",
+                "['c.h']",
+                "non_arc_srcs",
+                "['non_arc.m']"
+            )
+        )
 
-  @Test
-  public void testCompilationActions_simulator() throws Exception {
-    useConfiguration(
-        "--apple_platform_type=ios",
-        "--ios_multi_cpus=x86_64",
-        "--platforms=" + MockObjcSupport.IOS_X86_64);
+        val compileActionA: CommandAction = compileAction("//objc:lib", "a.o")
+        val compileActionNonArc: CommandAction = compileAction("//objc:lib", "non_arc.o")
 
-    scratch.file("objc/a.m");
-    scratch.file("objc/non_arc.m");
-    scratch.file("objc/private.h");
-    scratch.file("objc/c.h");
-    scratch.file(
-        "objc/BUILD",
-        "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
-        RULE_TYPE.target(
-            scratch,
-            "objc",
-            "lib",
-            "srcs",
-            "['a.m', 'private.h']",
-            "hdrs",
-            "['c.h']",
-            "non_arc_srcs",
-            "['non_arc.m']"));
+        assertRequiresDarwin(compileActionA)
+        Subject.contains("tools/osx/crosstool/iossim/" + WRAPPED_CLANG)
+        assertThat(compileActionA.getArguments())
+            .containsAtLeast("-isysroot", "__BAZEL_XCODE_SDKROOT__")
+            .inOrder()
+        assertThat(compileActionA.getArguments())
+            .containsAtLeastElementsIn(CompilationSupport.DEFAULT_COMPILER_FLAGS)
+        assertThat(compileActionA.getArguments())
+            .containsAtLeastElementsIn(CompilationSupport.SIMULATOR_COMPILE_FLAGS)
+        Subject.contains("-fobjc-arc")
+        assertThat(compileActionA.getArguments()).containsAtLeast("-c", "objc/a.m")
+        Subject.contains("-fno-objc-arc")
+        Subject.contains("-arch x86_64")
+    }
 
-    CommandAction compileActionA = compileAction("//objc:lib", "a.o");
-    CommandAction compileActionNonArc = compileAction("//objc:lib", "non_arc.o");
+    @Test
+    @Throws(Exception::class)
+    fun testCompilationActions_device() {
+        useConfiguration(
+            "--apple_platform_type=ios",
+            "--ios_multi_cpus=arm64",
+            "--platforms=" + MockObjcSupport.IOS_ARM64
+        )
 
-    assertRequiresDarwin(compileActionA);
-    assertThat(compileActionA.getArguments())
-        .contains("tools/osx/crosstool/iossim/" + WRAPPED_CLANG);
-    assertThat(compileActionA.getArguments())
-        .containsAtLeast("-isysroot", "__BAZEL_XCODE_SDKROOT__")
-        .inOrder();
-    assertThat(compileActionA.getArguments())
-        .containsAtLeastElementsIn(CompilationSupport.DEFAULT_COMPILER_FLAGS);
-    assertThat(compileActionA.getArguments())
-        .containsAtLeastElementsIn(CompilationSupport.SIMULATOR_COMPILE_FLAGS);
-    assertThat(compileActionA.getArguments()).contains("-fobjc-arc");
-    assertThat(compileActionA.getArguments()).containsAtLeast("-c", "objc/a.m");
-    assertThat(compileActionNonArc.getArguments()).contains("-fno-objc-arc");
-    assertThat(compileActionA.getArguments()).contains("-arch x86_64");
-  }
+        scratch.file("objc/a.m")
+        scratch.file("objc/non_arc.m")
+        scratch.file("objc/private.h")
+        scratch.file("objc/c.h")
+        scratch.file(
+            "objc/BUILD",
+            "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
+            RULE_TYPE.target(
+                scratch,
+                "objc",
+                "lib",
+                "srcs",
+                "['a.m', 'private.h']",
+                "hdrs",
+                "['c.h']",
+                "non_arc_srcs",
+                "['non_arc.m']"
+            )
+        )
 
-  @Test
-  public void testCompilationActions_device() throws Exception {
-    useConfiguration(
-        "--apple_platform_type=ios",
-        "--ios_multi_cpus=arm64",
-        "--platforms=" + MockObjcSupport.IOS_ARM64);
+        val compileActionA: CommandAction = compileAction("//objc:lib", "a.o")
+        val compileActionNonArc: CommandAction = compileAction("//objc:lib", "non_arc.o")
 
-    scratch.file("objc/a.m");
-    scratch.file("objc/non_arc.m");
-    scratch.file("objc/private.h");
-    scratch.file("objc/c.h");
-    scratch.file(
-        "objc/BUILD",
-        "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
-        RULE_TYPE.target(
-            scratch,
-            "objc",
-            "lib",
-            "srcs",
-            "['a.m', 'private.h']",
-            "hdrs",
-            "['c.h']",
-            "non_arc_srcs",
-            "['non_arc.m']"));
+        assertRequiresDarwin(compileActionA)
+        Subject.contains("tools/osx/crosstool/ios/" + WRAPPED_CLANG)
+        assertThat(compileActionA.getArguments())
+            .containsAtLeast("-isysroot", "__BAZEL_XCODE_SDKROOT__")
+            .inOrder()
+        assertThat(compileActionA.getArguments())
+            .containsAtLeastElementsIn(CompilationSupport.DEFAULT_COMPILER_FLAGS)
+        assertThat(compileActionA.getArguments())
+            .containsNoneIn(CompilationSupport.SIMULATOR_COMPILE_FLAGS)
 
-    CommandAction compileActionA = compileAction("//objc:lib", "a.o");
-    CommandAction compileActionNonArc = compileAction("//objc:lib", "non_arc.o");
+        Subject.contains("-fobjc-arc")
+        assertThat(compileActionA.getArguments()).containsAtLeast("-c", "objc/a.m")
 
-    assertRequiresDarwin(compileActionA);
-    assertThat(compileActionA.getArguments()).contains("tools/osx/crosstool/ios/" + WRAPPED_CLANG);
-    assertThat(compileActionA.getArguments())
-        .containsAtLeast("-isysroot", "__BAZEL_XCODE_SDKROOT__")
-        .inOrder();
-    assertThat(compileActionA.getArguments())
-        .containsAtLeastElementsIn(CompilationSupport.DEFAULT_COMPILER_FLAGS);
-    assertThat(compileActionA.getArguments())
-        .containsNoneIn(CompilationSupport.SIMULATOR_COMPILE_FLAGS);
+        Subject.contains("-fno-objc-arc")
+        Subject.contains("-arch arm64")
+    }
 
-    assertThat(compileActionA.getArguments()).contains("-fobjc-arc");
-    assertThat(compileActionA.getArguments()).containsAtLeast("-c", "objc/a.m");
+    @Test
+    @Throws(Exception::class)
+    fun testArchivesPrecompiledObjectFiles() {
+        scratch.file("objc/a.m")
+        scratch.file("objc/b.o")
+        scratch.file(
+            "objc/BUILD",
+            "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
+            RULE_TYPE.target(scratch, "objc", "x", "srcs", "['a.m', 'b.o']")
+        )
+        Subject.contains("objc/b.o")
+    }
 
-    assertThat(compileActionNonArc.getArguments()).contains("-fno-objc-arc");
-    assertThat(compileActionA.getArguments()).contains("-arch arm64");
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testCompileWithFrameworkImportsIncludesFlags() {
+        ObjcRuleTestCase.Companion.addAppleBinaryStarlarkRule(scratch)
+        addBinWithTransitiveDepOnFrameworkImport()
+        val compileAction: CommandAction = compileAction("//lib:lib", "a.o")
 
-  @Test
-  public void testArchivesPrecompiledObjectFiles() throws Exception {
-    scratch.file("objc/a.m");
-    scratch.file("objc/b.o");
-    scratch.file(
-        "objc/BUILD",
-        "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
-        RULE_TYPE.target(scratch, "objc", "x", "srcs", "['a.m', 'b.o']"));
-    assertThat(Artifact.toRootRelativePaths(archiveAction("//objc:x").getInputs()))
-        .contains("objc/b.o");
-  }
+        assertThat(compileAction.getArguments()).doesNotContain("-framework")
+        Truth.assertThat(Joiner.on("").join(compileAction.getArguments())).contains("-Ffx")
+    }
 
-  @Test
-  public void testCompileWithFrameworkImportsIncludesFlags() throws Exception {
-    addAppleBinaryStarlarkRule(scratch);
-    addBinWithTransitiveDepOnFrameworkImport();
-    CommandAction compileAction = compileAction("//lib:lib", "a.o");
+    @Test
+    @Throws(Exception::class)
+    fun testPrecompiledHeaders() {
+        scratch.file("objc/a.m")
+        scratch.file("objc/c.pch")
+        scratch.file(
+            "objc/BUILD",
+            "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
+            RULE_TYPE.target(
+                scratch, "objc", "x", "srcs", "['a.m']", "non_arc_srcs", "['b.m']", "pch", "'c.pch'"
+            )
+        )
+        val compileAction: CppCompileAction = compileAction("//objc:x", "a.o") as CppCompileAction
+        Truth.assertThat(Joiner.on(" ").join(compileAction.getArguments())).contains("-include objc/c.pch")
+        Subject.contains("objc/c.pch")
+    }
 
-    assertThat(compileAction.getArguments()).doesNotContain("-framework");
-    assertThat(Joiner.on("").join(compileAction.getArguments())).contains("-Ffx");
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testCompilationActionsWithCopts() {
+        useConfiguration("--apple_platform_type=ios", "--platforms=" + MockObjcSupport.IOS_ARM64)
 
-  @Test
-  public void testPrecompiledHeaders() throws Exception {
-    scratch.file("objc/a.m");
-    scratch.file("objc/c.pch");
-    scratch.file(
-        "objc/BUILD",
-        "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
-        RULE_TYPE.target(
-            scratch, "objc", "x", "srcs", "['a.m']", "non_arc_srcs", "['b.m']", "pch", "'c.pch'"));
-    CppCompileAction compileAction = (CppCompileAction) compileAction("//objc:x", "a.o");
-    assertThat(Joiner.on(" ").join(compileAction.getArguments())).contains("-include objc/c.pch");
-    assertThat(Artifact.toRootRelativePaths(compileAction.getPossibleInputsForTesting()))
-        .contains("objc/c.pch");
-  }
-
-  @Test
-  public void testCompilationActionsWithCopts() throws Exception {
-    useConfiguration("--apple_platform_type=ios", "--platforms=" + MockObjcSupport.IOS_ARM64);
-
-    scratch.file(
-        "objc/defs.bzl",
-        """
+        scratch.file(
+            "objc/defs.bzl",
+            """
         def _var_providing_rule_impl(ctx):
             return [
                 platform_common.TemplateVariableInfo({
-                    "FOO": "$(BAR)",
+                    "FOO": "${'$'}(BAR)",
                     "BAR": ctx.attr.var_value,
-                    "BAZ": "$(FOO)",
+                    "BAZ": "${'$'}(FOO)",
                 }),
             ]
 
@@ -665,11 +685,13 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
             implementation = _var_providing_rule_impl,
             attrs = {"var_value": attr.string()},
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "objc/BUILD",
-        """
+        scratch.file(
+            "objc/BUILD",
+            """
         load("@rules_cc//cc:objc_library.bzl", "objc_library")
         load("//objc:defs.bzl", "var_providing_rule")
 
@@ -689,65 +711,71 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
             copts = [
                 "-Ifoo",
                 "--monkeys=enabled",
-                "--gorillas=$(FOO),$(BAR),$(BAZ)",
+                "--gorillas=${'$'}(FOO),${'$'}(BAR),${'$'}(BAZ)",
             ],
             toolchains = [":set_foo_to_bar"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    CommandAction compileActionA = compileAction("//objc:lib", "a.o");
-    assertThat(compileActionA.getArguments())
-        .containsAtLeast("-Ifoo", "--monkeys=enabled", "--gorillas=bar,bar,bar");
-  }
+        val compileActionA: CommandAction = compileAction("//objc:lib", "a.o")
+        assertThat(compileActionA.getArguments())
+            .containsAtLeast("-Ifoo", "--monkeys=enabled", "--gorillas=bar,bar,bar")
+    }
 
-  @Test
-  public void testObjcCopts() throws Exception {
-    useConfiguration("--objccopt=-foo");
-    createLibraryTargetWriter("//lib:lib")
-        .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
-        .write();
-    List<String> args = compileAction("//lib:lib", "a.o").getArguments();
-    assertThat(args).contains("-foo");
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testObjcCopts() {
+        useConfiguration("--objccopt=-foo")
+        createLibraryTargetWriter("//lib:lib")
+            .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
+            .write()
+        val args: MutableList<String?>? = compileAction("//lib:lib", "a.o").getArguments()
+        Truth.assertThat(args).contains("-foo")
+    }
 
-  @Test
-  public void testObjcCopts_argumentOrdering() throws Exception {
-    useConfiguration("--objccopt=-foo");
-    createLibraryTargetWriter("//lib:lib")
-        .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
-        .setList("copts", "-bar")
-        .write();
-    List<String> args = compileAction("//lib:lib", "a.o").getArguments();
-    assertThat(args).containsAtLeast("-fobjc-arc", "-foo", "-bar").inOrder();
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testObjcCopts_argumentOrdering() {
+        useConfiguration("--objccopt=-foo")
+        createLibraryTargetWriter("//lib:lib")
+            .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
+            .setList("copts", "-bar")
+            .write()
+        val args: MutableList<String?>? = compileAction("//lib:lib", "a.o").getArguments()
+        Truth.assertThat(args).containsAtLeast("-fobjc-arc", "-foo", "-bar").inOrder()
+    }
 
-  @Test
-  public void testObjcCxxopts_argumentOrdering() throws Exception {
-    useConfiguration("--objccopt=-foo", "--cxxopt=-cxxfoo");
-    createLibraryTargetWriter("//lib:lib")
-        .setAndCreateFiles("srcs", "a.mm", "b.m", "private.h")
-        .setList("copts", "-bar")
-        .write();
-    List<String> aArgs = compileAction("//lib:lib", "a.o").getArguments();
-    assertThat(aArgs).containsAtLeast("-fobjc-arc", "-cxxfoo", "-foo", "-bar").inOrder();
-    List<String> bArgs = compileAction("//lib:lib", "b.o").getArguments();
-    assertThat(bArgs).containsAtLeast("-fobjc-arc", "-foo", "-bar").inOrder();
-    assertThat(bArgs).doesNotContain("-cxxfoo");
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testObjcCxxopts_argumentOrdering() {
+        useConfiguration("--objccopt=-foo", "--cxxopt=-cxxfoo")
+        createLibraryTargetWriter("//lib:lib")
+            .setAndCreateFiles("srcs", "a.mm", "b.m", "private.h")
+            .setList("copts", "-bar")
+            .write()
+        val aArgs: MutableList<String?>? = compileAction("//lib:lib", "a.o").getArguments()
+        Truth.assertThat(aArgs).containsAtLeast("-fobjc-arc", "-cxxfoo", "-foo", "-bar").inOrder()
+        val bArgs: MutableList<String?>? = compileAction("//lib:lib", "b.o").getArguments()
+        Truth.assertThat(bArgs).containsAtLeast("-fobjc-arc", "-foo", "-bar").inOrder()
+        Truth.assertThat(bArgs).doesNotContain("-cxxfoo")
+    }
 
-  @Test
-  public void testMultipleLanguagesCopts() throws Exception {
-    useConfiguration("--apple_platform_type=ios", "--platforms=" + MockObjcSupport.IOS_ARM64);
+    @Test
+    @Throws(Exception::class)
+    fun testMultipleLanguagesCopts() {
+        useConfiguration("--apple_platform_type=ios", "--platforms=" + MockObjcSupport.IOS_ARM64)
 
-    scratch.file(
-        "objc/defs.bzl",
-        """
+        scratch.file(
+            "objc/defs.bzl",
+            """
         def _var_providing_rule_impl(ctx):
             return [
                 platform_common.TemplateVariableInfo({
-                    "FOO": "$(BAR)",
+                    "FOO": "${'$'}(BAR)",
                     "BAR": ctx.attr.var_value,
-                    "BAZ": "$(FOO)",
+                    "BAZ": "${'$'}(FOO)",
                 }),
             ]
 
@@ -755,11 +783,13 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
             implementation = _var_providing_rule_impl,
             attrs = {"var_value": attr.string()},
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "objc/BUILD",
-        """
+        scratch.file(
+            "objc/BUILD",
+            """
         load("@rules_cc//cc:objc_library.bzl", "objc_library")
         load("//objc:defs.bzl", "var_providing_rule")
 
@@ -776,137 +806,152 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
                 "objc.m",
                 "objcpp.mm",
             ],
-            copts = ["-DFROM_SHARED=$(FOO),$(BAR),$(BAZ)"],
-            conlyopts = ["-DFROM_CONLYOPTS=$(FOO),$(BAR),$(BAZ)"],
-            cxxopts = ["-DFROM_CXXOPTS=$(FOO),$(BAR),$(BAZ)"],
+            copts = ["-DFROM_SHARED=${'$'}(FOO),${'$'}(BAR),${'$'}(BAZ)"],
+            conlyopts = ["-DFROM_CONLYOPTS=${'$'}(FOO),${'$'}(BAR),${'$'}(BAZ)"],
+            cxxopts = ["-DFROM_CXXOPTS=${'$'}(FOO),${'$'}(BAR),${'$'}(BAZ)"],
             toolchains = [":set_foo_to_bar"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    CommandAction cCompileAction = compileAction("//objc:lib", "c.o");
-    assertThat(cCompileAction.getArguments())
-        .containsAtLeast("-DFROM_SHARED=bar,bar,bar", "-DFROM_CONLYOPTS=bar,bar,bar")
-        .inOrder();
-    assertThat(cCompileAction.getArguments()).doesNotContain("-DFROM_CXXOPTS=bar,bar,bar");
+        val cCompileAction: CommandAction = compileAction("//objc:lib", "c.o")
+        assertThat(cCompileAction.getArguments())
+            .containsAtLeast("-DFROM_SHARED=bar,bar,bar", "-DFROM_CONLYOPTS=bar,bar,bar")
+            .inOrder()
+        assertThat(cCompileAction.getArguments()).doesNotContain("-DFROM_CXXOPTS=bar,bar,bar")
 
-    CommandAction objcCompileAction = compileAction("//objc:lib", "objc.o");
-    assertThat(objcCompileAction.getArguments()).contains("-DFROM_SHARED=bar,bar,bar");
-    assertThat(objcCompileAction.getArguments()).doesNotContain("-DFROM_CONLYOPTS=bar,bar,bar");
-    assertThat(objcCompileAction.getArguments()).doesNotContain("-DFROM_CXXOPTS=bar,bar,bar");
+        val objcCompileAction: CommandAction = compileAction("//objc:lib", "objc.o")
+        Subject.contains("-DFROM_SHARED=bar,bar,bar")
+        assertThat(objcCompileAction.getArguments()).doesNotContain("-DFROM_CONLYOPTS=bar,bar,bar")
+        assertThat(objcCompileAction.getArguments()).doesNotContain("-DFROM_CXXOPTS=bar,bar,bar")
 
-    CommandAction objcppCompileAction = compileAction("//objc:lib", "objcpp.o");
-    assertThat(objcppCompileAction.getArguments())
-        .containsAtLeast("-DFROM_SHARED=bar,bar,bar", "-DFROM_CXXOPTS=bar,bar,bar")
-        .inOrder();
-    assertThat(objcppCompileAction.getArguments()).doesNotContain("-DFROM_CONLYOPTS=bar,bar,bar");
+        val objcppCompileAction: CommandAction = compileAction("//objc:lib", "objcpp.o")
+        assertThat(objcppCompileAction.getArguments())
+            .containsAtLeast("-DFROM_SHARED=bar,bar,bar", "-DFROM_CXXOPTS=bar,bar,bar")
+            .inOrder()
+        assertThat(objcppCompileAction.getArguments()).doesNotContain("-DFROM_CONLYOPTS=bar,bar,bar")
 
-    CommandAction cppCompileAction = compileAction("//objc:lib", "cpp.o");
-    assertThat(cppCompileAction.getArguments())
-        .containsAtLeast("-DFROM_SHARED=bar,bar,bar", "-DFROM_CXXOPTS=bar,bar,bar")
-        .inOrder();
-    assertThat(cppCompileAction.getArguments()).doesNotContain("-DFROM_CONLYOPTS=bar,bar,bar");
-  }
-
-  @Test
-  public void testCompilationActionsWithCoptFmodules() throws Exception {
-    createLibraryTargetWriter("//objc:lib")
-        .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
-        .setAndCreateFiles("hdrs", "c.h")
-        .setList("copts", "-fmodules")
-        .write();
-    CommandAction compileActionA = compileAction("//objc:lib", "a.o");
-    assertThat(removeConfigFragment(compileActionA.getArguments()))
-        .containsAtLeast(
-            "-fmodules",
-            "-fmodules-cache-path="
-                + OUTPUTDIR
-                + "/"
-                + CompilationSupport.OBJC_MODULE_CACHE_DIR_NAME);
-  }
-
-  @Test
-  public void testArchiveAction_simulator() throws Exception {
-    useConfiguration(
-        "--apple_platform_type=ios",
-        "--ios_multi_cpus=x86_64",
-        "--platforms=" + MockObjcSupport.IOS_X86_64);
-    createLibraryTargetWriter("//objc:lib")
-        .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
-        .setAndCreateFiles("hdrs", "c.h")
-        .write();
-
-    CommandAction archiveAction = archiveAction("//objc:lib");
-    assertThat(archiveAction.getArguments())
-        .isEqualTo(
-            ImmutableList.of(
-                "tools/osx/crosstool/iossim/ar_wrapper",
-                "rcs",
-                Iterables.getOnlyElement(archiveAction.getOutputs()).getExecPathString(),
-                getBinArtifact("_objs/lib/arc/a.o", getConfiguredTarget("//objc:lib"))
-                    .getExecPathString(),
-                getBinArtifact("_objs/lib/arc/b.o", getConfiguredTarget("//objc:lib"))
-                    .getExecPathString()));
-    assertThat(baseArtifactNames(archiveAction.getInputs()))
-        .containsAtLeast("a.o", "b.o", "ar", "libempty.a", "libtool");
-    assertThat(baseArtifactNames(archiveAction.getOutputs())).containsExactly("liblib.a");
-    assertRequiresDarwin(archiveAction);
-  }
-
-  @Test
-  public void testArchiveAction_device() throws Exception {
-    useConfiguration(
-        "--apple_platform_type=ios",
-        "--ios_multi_cpus=arm64",
-        "--platforms=" + MockObjcSupport.IOS_ARM64);
-    createLibraryTargetWriter("//objc:lib")
-        .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
-        .setAndCreateFiles("hdrs", "c.h")
-        .write();
-    CommandAction archiveAction = archiveAction("//objc:lib");
-
-    assertThat(archiveAction.getArguments())
-        .isEqualTo(
-            ImmutableList.of(
-                "tools/osx/crosstool/ios/ar_wrapper",
-                "rcs",
-                Iterables.getOnlyElement(archiveAction.getOutputs()).getExecPathString(),
-                getBinArtifact("_objs/lib/arc/a.o", getConfiguredTarget("//objc:lib"))
-                    .getExecPathString(),
-                getBinArtifact("_objs/lib/arc/b.o", getConfiguredTarget("//objc:lib"))
-                    .getExecPathString()));
-    assertThat(baseArtifactNames(archiveAction.getInputs())).containsAtLeast("a.o", "b.o");
-    assertThat(baseArtifactNames(archiveAction.getOutputs())).containsExactly("liblib.a");
-    assertRequiresDarwin(archiveAction);
-  }
-
-  @Test
-  public void testIncludesDirsGetPassedToCompileAction() throws Exception {
-    createLibraryTargetWriter("//lib:lib")
-        .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
-        .setList("includes", "../third_party/foo", "opensource/bar")
-        .write();
-    CommandAction compileAction = compileAction("//lib:lib", "a.o");
-
-    for (String path : rootedIncludePaths("third_party/foo", "lib/opensource/bar")) {
-      assertThat(Joiner.on("").join(removeConfigFragment(compileAction.getArguments())))
-          .contains("-I" + path);
+        val cppCompileAction: CommandAction = compileAction("//objc:lib", "cpp.o")
+        assertThat(cppCompileAction.getArguments())
+            .containsAtLeast("-DFROM_SHARED=bar,bar,bar", "-DFROM_CXXOPTS=bar,bar,bar")
+            .inOrder()
+        assertThat(cppCompileAction.getArguments()).doesNotContain("-DFROM_CONLYOPTS=bar,bar,bar")
     }
-  }
 
-  @Test
-  public void testIncludesDirs_inExternalRepo_resolvesSiblingLayout() throws Exception {
-    if (!analysisMock.isThisBazel()) {
-      return;
+    @Test
+    @Throws(Exception::class)
+    fun testCompilationActionsWithCoptFmodules() {
+        createLibraryTargetWriter("//objc:lib")
+            .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
+            .setAndCreateFiles("hdrs", "c.h")
+            .setList("copts", "-fmodules")
+            .write()
+        val compileActionA: CommandAction = compileAction("//objc:lib", "a.o")
+        Truth.assertThat(removeConfigFragment(compileActionA.getArguments()))
+            .containsAtLeast(
+                "-fmodules",
+                ("-fmodules-cache-path="
+                        + ObjcRuleTestCase.Companion.OUTPUTDIR
+                        + "/"
+                        + CompilationSupport.OBJC_MODULE_CACHE_DIR_NAME)
+            )
     }
-    scratch.appendFile(
-        "MODULE.bazel",
-        "bazel_dep(name='lib_external')",
-        "local_path_override(module_name = 'lib_external', path = 'lib_external')");
-    scratch.file("lib_external/MODULE.bazel", "module(name='lib_external')");
-    analysisMock.ccSupport().setup(new MockToolsConfig(scratch.resolve("lib_external")));
-    scratch.file(
-        "lib_external/BUILD",
-        """
+
+    @Test
+    @Throws(Exception::class)
+    fun testArchiveAction_simulator() {
+        useConfiguration(
+            "--apple_platform_type=ios",
+            "--ios_multi_cpus=x86_64",
+            "--platforms=" + MockObjcSupport.IOS_X86_64
+        )
+        createLibraryTargetWriter("//objc:lib")
+            .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
+            .setAndCreateFiles("hdrs", "c.h")
+            .write()
+
+        val archiveAction: CommandAction = archiveAction("//objc:lib")
+        assertThat(archiveAction.getArguments())
+            .isEqualTo(
+                ImmutableList.of<E?>(
+                    "tools/osx/crosstool/iossim/ar_wrapper",
+                    "rcs",
+                    Iterables.getOnlyElement<T?>(archiveAction.getOutputs()).getExecPathString(),
+                    getBinArtifact("_objs/lib/arc/a.o", getConfiguredTarget("//objc:lib"))
+                        .getExecPathString(),
+                    getBinArtifact("_objs/lib/arc/b.o", getConfiguredTarget("//objc:lib"))
+                        .getExecPathString()
+                )
+            )
+        assertThat(baseArtifactNames(archiveAction.getInputs()))
+            .containsAtLeast("a.o", "b.o", "ar", "libempty.a", "libtool")
+        assertThat(baseArtifactNames(archiveAction.getOutputs())).containsExactly("liblib.a")
+        assertRequiresDarwin(archiveAction)
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testArchiveAction_device() {
+        useConfiguration(
+            "--apple_platform_type=ios",
+            "--ios_multi_cpus=arm64",
+            "--platforms=" + MockObjcSupport.IOS_ARM64
+        )
+        createLibraryTargetWriter("//objc:lib")
+            .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
+            .setAndCreateFiles("hdrs", "c.h")
+            .write()
+        val archiveAction: CommandAction = archiveAction("//objc:lib")
+
+        assertThat(archiveAction.getArguments())
+            .isEqualTo(
+                ImmutableList.of<E?>(
+                    "tools/osx/crosstool/ios/ar_wrapper",
+                    "rcs",
+                    Iterables.getOnlyElement<T?>(archiveAction.getOutputs()).getExecPathString(),
+                    getBinArtifact("_objs/lib/arc/a.o", getConfiguredTarget("//objc:lib"))
+                        .getExecPathString(),
+                    getBinArtifact("_objs/lib/arc/b.o", getConfiguredTarget("//objc:lib"))
+                        .getExecPathString()
+                )
+            )
+        assertThat(baseArtifactNames(archiveAction.getInputs())).containsAtLeast("a.o", "b.o")
+        assertThat(baseArtifactNames(archiveAction.getOutputs())).containsExactly("liblib.a")
+        assertRequiresDarwin(archiveAction)
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testIncludesDirsGetPassedToCompileAction() {
+        createLibraryTargetWriter("//lib:lib")
+            .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
+            .setList("includes", "../third_party/foo", "opensource/bar")
+            .write()
+        val compileAction: CommandAction = compileAction("//lib:lib", "a.o")
+
+        for (path in rootedIncludePaths("third_party/foo", "lib/opensource/bar")) {
+            Truth.assertThat(Joiner.on("").join(removeConfigFragment(compileAction.getArguments())))
+                .contains("-I" + path)
+        }
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testIncludesDirs_inExternalRepo_resolvesSiblingLayout() {
+        if (!analysisMock!!.isThisBazel) {
+            return
+        }
+        scratch.appendFile(
+            "MODULE.bazel",
+            "bazel_dep(name='lib_external')",
+            "local_path_override(module_name = 'lib_external', path = 'lib_external')"
+        )
+        scratch.file("lib_external/MODULE.bazel", "module(name='lib_external')")
+        analysisMock!!.ccSupport().setup(MockToolsConfig(scratch.resolve("lib_external")))
+        scratch.file(
+            "lib_external/BUILD",
+            """
         load("@rules_cc//cc:objc_library.bzl", "objc_library")
         objc_library(
             name = "lib",
@@ -916,37 +961,40 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
             ],
             includes = ["bar"],
         )
-        """);
-    scratch.file("lib_external/a.m");
-    scratch.file("lib_external/bar/b.h");
-    invalidatePackages();
+        
+        """.trimIndent()
+        )
+        scratch.file("lib_external/a.m")
+        scratch.file("lib_external/bar/b.h")
+        invalidatePackages()
 
-    setBuildLanguageOptions("--experimental_sibling_repository_layout");
+        setBuildLanguageOptions("--experimental_sibling_repository_layout")
 
-    CommandAction compileAction = compileAction("@@lib_external+//:lib", "a.o");
-    String actionArgs = Joiner.on("").join(removeConfigFragment(compileAction.getArguments()));
+        val compileAction: CommandAction = compileAction("@@lib_external+//:lib", "a.o")
+        val actionArgs: String = Joiner.on("").join(removeConfigFragment(compileAction.getArguments()))
 
-    assertThat(actionArgs).contains("-I../lib_external+/bar");
-  }
+        Truth.assertThat(actionArgs).contains("-I../lib_external+/bar")
+    }
 
-  @Test
-  public void testPropagatesDefinesToDependersTransitively() throws Exception {
-    useConfiguration("--apple_platform_type=ios", "--platforms=" + MockObjcSupport.IOS_X86_64);
-    createLibraryTargetWriter("//lib1:lib1")
-        .setAndCreateFiles("srcs", "a.m")
-        .setAndCreateFiles("non_arc_srcs", "b.m")
-        .setList("defines", "A=foo", "B", "MONKEYS=enabled")
-        .write();
-    createLibraryTargetWriter("//lib2:lib2")
-        .setAndCreateFiles("srcs", "a.m")
-        .setAndCreateFiles("non_arc_srcs", "b.m")
-        .setList("deps", "//lib1:lib1")
-        .setList("defines", "C=bar", "D")
-        .write();
-    addAppleBinaryStarlarkRule(scratch);
-    scratch.file(
-        "bin/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testPropagatesDefinesToDependersTransitively() {
+        useConfiguration("--apple_platform_type=ios", "--platforms=" + MockObjcSupport.IOS_X86_64)
+        createLibraryTargetWriter("//lib1:lib1")
+            .setAndCreateFiles("srcs", "a.m")
+            .setAndCreateFiles("non_arc_srcs", "b.m")
+            .setList("defines", "A=foo", "B", "MONKEYS=enabled")
+            .write()
+        createLibraryTargetWriter("//lib2:lib2")
+            .setAndCreateFiles("srcs", "a.m")
+            .setAndCreateFiles("non_arc_srcs", "b.m")
+            .setList("deps", "//lib1:lib1")
+            .setList("defines", "C=bar", "D")
+            .write()
+        ObjcRuleTestCase.Companion.addAppleBinaryStarlarkRule(scratch)
+        scratch.file(
+            "bin/BUILD",
+            """
         load("//test_starlark:apple_binary_starlark.bzl", "apple_binary_starlark")
 
         apple_binary_starlark(
@@ -954,217 +1002,240 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
             platform_type = "ios",
             deps = ["//lib2"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertThat(compileAction("//lib1:lib1", "a.o").getArguments())
-        .containsAtLeast("-DA=foo", "-DB", "-DMONKEYS=enabled")
-        .inOrder();
-    assertThat(compileAction("//lib1:lib1", "b.o").getArguments())
-        .containsAtLeast("-DA=foo", "-DB", "-DMONKEYS=enabled")
-        .inOrder();
-    assertThat(compileAction("//lib2:lib2", "a.o").getArguments())
-        .containsAtLeast("-DA=foo", "-DB", "-DMONKEYS=enabled", "-DC=bar", "-DD")
-        .inOrder();
-    assertThat(compileAction("//lib2:lib2", "b.o").getArguments())
-        .containsAtLeast("-DA=foo", "-DB", "-DMONKEYS=enabled", "-DC=bar", "-DD")
-        .inOrder();
-    // TODO: Add tests for //bin:bin once experimental_objc_binary is implemented
-  }
-
-  @Test
-  public void testDuplicateDefines() throws Exception {
-    createLibraryTargetWriter("//lib:lib")
-        .setAndCreateFiles("srcs", "a.m")
-        .setList("defines", "foo=bar", "foo=bar")
-        .write();
-    int timesDefinesAppear = 0;
-    for (String arg : compileAction("//lib:lib", "a.o").getArguments()) {
-      if (arg.equals("-Dfoo=bar")) {
-        timesDefinesAppear++;
-      }
+        assertThat(compileAction("//lib1:lib1", "a.o").getArguments())
+            .containsAtLeast("-DA=foo", "-DB", "-DMONKEYS=enabled")
+            .inOrder()
+        assertThat(compileAction("//lib1:lib1", "b.o").getArguments())
+            .containsAtLeast("-DA=foo", "-DB", "-DMONKEYS=enabled")
+            .inOrder()
+        assertThat(compileAction("//lib2:lib2", "a.o").getArguments())
+            .containsAtLeast("-DA=foo", "-DB", "-DMONKEYS=enabled", "-DC=bar", "-DD")
+            .inOrder()
+        assertThat(compileAction("//lib2:lib2", "b.o").getArguments())
+            .containsAtLeast("-DA=foo", "-DB", "-DMONKEYS=enabled", "-DC=bar", "-DD")
+            .inOrder()
+        // TODO: Add tests for //bin:bin once experimental_objc_binary is implemented
     }
-    assertWithMessage("Duplicate define \"foo=bar\" should occur only once in command line")
-        .that(timesDefinesAppear)
-        .isEqualTo(1);
-  }
 
-  @Test
-  public void checkDefinesFromCcLibraryDep() throws Exception {
-    checkDefinesFromCcLibraryDep(RULE_TYPE);
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testDuplicateDefines() {
+        createLibraryTargetWriter("//lib:lib")
+            .setAndCreateFiles("srcs", "a.m")
+            .setList("defines", "foo=bar", "foo=bar")
+            .write()
+        var timesDefinesAppear = 0
+        for (arg in compileAction("//lib:lib", "a.o").getArguments()) {
+            if (arg == "-Dfoo=bar") {
+                timesDefinesAppear++
+            }
+        }
+        Truth.assertWithMessage("Duplicate define \"foo=bar\" should occur only once in command line")
+            .that(timesDefinesAppear)
+            .isEqualTo(1)
+    }
 
-  @Test
-  public void testCppSourceCompilesWithCppFlags() throws Exception {
-    createLibraryTargetWriter("//objc:x")
-        .setAndCreateFiles("srcs", "a.mm", "b.cc", "c.mm", "d.cxx", "e.c", "f.m", "g.C")
-        .write();
-    assertThat(compileAction("//objc:x", "a.o").getArguments()).contains("-std=gnu++11");
-    assertThat(compileAction("//objc:x", "b.o").getArguments()).contains("-std=gnu++11");
-    assertThat(compileAction("//objc:x", "c.o").getArguments()).contains("-std=gnu++11");
-    assertThat(compileAction("//objc:x", "d.o").getArguments()).contains("-std=gnu++11");
-    assertThat(compileAction("//objc:x", "e.o").getArguments()).doesNotContain("-std=gnu++11");
-    assertThat(compileAction("//objc:x", "f.o").getArguments()).doesNotContain("-std=gnu++11");
-    assertThat(compileAction("//objc:x", "g.o").getArguments()).contains("-std=gnu++11");
-  }
+    @Test
+    @Throws(Exception::class)
+    fun checkDefinesFromCcLibraryDep() {
+        checkDefinesFromCcLibraryDep(RULE_TYPE)
+    }
 
-  @Test
-  public void testDoesNotUseCxxUnfilteredFlags() throws Exception {
-    createLibraryTargetWriter("//lib:lib").setList("srcs", "a.m").write();
-    // -pthread is an unfiltered_cxx_flag in the osx crosstool.
-    assertThat(compileAction("//lib:lib", "a.o").getArguments()).doesNotContain("-pthread");
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testCppSourceCompilesWithCppFlags() {
+        createLibraryTargetWriter("//objc:x")
+            .setAndCreateFiles("srcs", "a.mm", "b.cc", "c.mm", "d.cxx", "e.c", "f.m", "g.C")
+            .write()
+        Subject.contains("-std=gnu++11")
+        Subject.contains("-std=gnu++11")
+        Subject.contains("-std=gnu++11")
+        Subject.contains("-std=gnu++11")
+        assertThat(compileAction("//objc:x", "e.o").getArguments()).doesNotContain("-std=gnu++11")
+        assertThat(compileAction("//objc:x", "f.o").getArguments()).doesNotContain("-std=gnu++11")
+        Subject.contains("-std=gnu++11")
+    }
 
-  @Test
-  public void testDoesNotUseDotdPruning() throws Exception {
-    useConfiguration("--objc_use_dotd_pruning=false");
-    createLibraryTargetWriter("//lib:lib").setList("srcs", "a.m").write();
-    CppCompileAction compileAction = (CppCompileAction) compileAction("//lib:lib", "a.o");
-    assertThat(compileAction.getDotdFile()).isNull();
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testDoesNotUseCxxUnfilteredFlags() {
+        createLibraryTargetWriter("//lib:lib").setList("srcs", "a.m").write()
+        // -pthread is an unfiltered_cxx_flag in the osx crosstool.
+        assertThat(compileAction("//lib:lib", "a.o").getArguments()).doesNotContain("-pthread")
+    }
 
-  @Test
-  public void testProvidesObjcLibraryAndHeaders() throws Exception {
-    ConfiguredTarget target =
-        createLibraryTargetWriter("//objc:lib")
+    @Test
+    @Throws(Exception::class)
+    fun testDoesNotUseDotdPruning() {
+        useConfiguration("--objc_use_dotd_pruning=false")
+        createLibraryTargetWriter("//lib:lib").setList("srcs", "a.m").write()
+        val compileAction: CppCompileAction = compileAction("//lib:lib", "a.o") as CppCompileAction
+        assertThat(compileAction.getDotdFile()).isNull()
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testProvidesObjcLibraryAndHeaders() {
+        val target: ConfiguredTarget =
+            createLibraryTargetWriter("//objc:lib")
+                .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
+                .setAndCreateFiles("hdrs", "a.h", "b.h")
+                .write()
+        val impltarget: ConfiguredTarget =
+            createLibraryTargetWriter("//objc_impl:lib")
+                .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
+                .setAndCreateFiles("hdrs", "a.h", "b.h")
+                .write()
+        val depender: ConfiguredTarget =
+            createLibraryTargetWriter("//objc_depender:lib")
+                .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
+                .setAndCreateFiles("hdrs", "c.h", "d.h")
+                .setList("deps", "//objc:lib")
+                .setList("implementation_deps", "//objc_impl:lib")
+                .write()
+
+        Truth.assertThat(ObjcRuleTestCase.Companion.getArifactPathsOfLibraries(target)).containsExactly("objc/liblib.a")
+        Truth.assertThat(ObjcRuleTestCase.Companion.getArifactPathsOfLibraries(depender))
+            .containsExactly("objc/liblib.a", "objc_impl/liblib.a", "objc_depender/liblib.a")
+        Truth.assertThat(ObjcRuleTestCase.Companion.getArifactPathsOfHeaders(target))
+            .containsExactly("objc/a.h", "objc/b.h", "objc/private.h")
+        Truth.assertThat(ObjcRuleTestCase.Companion.getArifactPathsOfHeaders(impltarget))
+            .containsExactly("objc_impl/a.h", "objc_impl/b.h", "objc_impl/private.h")
+        Truth.assertThat(ObjcRuleTestCase.Companion.getArifactPathsOfHeaders(depender))
+            .containsExactly(
+                "objc/a.h",
+                "objc/b.h",
+                "objc/private.h",
+                "objc_depender/c.h",
+                "objc_depender/d.h",
+                "objc_depender/private.h"
+            )
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testCollectsWeakSdkFrameworksTransitively() {
+        createLibraryTargetWriter("//base_lib:lib")
             .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
-            .setAndCreateFiles("hdrs", "a.h", "b.h")
-            .write();
-    ConfiguredTarget impltarget =
-        createLibraryTargetWriter("//objc_impl:lib")
+            .setList("weak_sdk_frameworks", "foo")
+            .write()
+        createLibraryTargetWriter("//depender_lib:lib")
             .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
-            .setAndCreateFiles("hdrs", "a.h", "b.h")
-            .write();
-    ConfiguredTarget depender =
-        createLibraryTargetWriter("//objc_depender:lib")
+            .setList("weak_sdk_frameworks", "bar")
+            .setList("deps", "//base_lib:lib")
+            .write()
+
+        val baseLinkFlags = getCcInfoUserLinkFlagsFromTarget("//base_lib:lib")
+        Truth.assertThat(baseLinkFlags).containsExactly("-weak_framework", "foo").inOrder()
+        val dependerLinkFlags =
+            getCcInfoUserLinkFlagsFromTarget("//depender_lib:lib")
+        Truth.assertThat(dependerLinkFlags)
+            .containsExactly("-weak_framework", "bar", "-weak_framework", "foo")
+            .inOrder()
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testErrorIfDepDoesNotExist() {
+        checkErrorIfNotExist("deps", "[':nonexistent']")
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testArIsNotImplicitOutput() {
+        createLibraryTargetWriter("//lib:lib")
             .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
-            .setAndCreateFiles("hdrs", "c.h", "d.h")
-            .setList("deps", "//objc:lib")
-            .setList("implementation_deps", "//objc_impl:lib")
-            .write();
+            .write()
+        reporter.removeHandler(failFastHandler)
+        Assert.assertThrows<T?>(NoSuchTargetException::class.java, ThrowingRunnable { getTarget("//lib:liblib.a") })
+    }
 
-    assertThat(getArifactPathsOfLibraries(target)).containsExactly("objc/liblib.a");
-    assertThat(getArifactPathsOfLibraries(depender))
-        .containsExactly("objc/liblib.a", "objc_impl/liblib.a", "objc_depender/liblib.a");
-    assertThat(getArifactPathsOfHeaders(target))
-        .containsExactly("objc/a.h", "objc/b.h", "objc/private.h");
-    assertThat(getArifactPathsOfHeaders(impltarget))
-        .containsExactly("objc_impl/a.h", "objc_impl/b.h", "objc_impl/private.h");
-    assertThat(getArifactPathsOfHeaders(depender))
-        .containsExactly(
-            "objc/a.h",
-            "objc/b.h",
-            "objc/private.h",
-            "objc_depender/c.h",
-            "objc_depender/d.h",
-            "objc_depender/private.h");
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testErrorForAbsoluteIncludesPath() {
+        scratch.file("x/a.m")
+        checkError(
+            "x",
+            "x",
+            String.format(ABSOLUTE_INCLUDES_PATH_FORMAT, "/absolute/path"),
+            "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
+            "objc_library(",
+            "    name = 'x',",
+            "    srcs = ['a.m'],",
+            "    includes = ['/absolute/path'],",
+            ")"
+        )
+    }
 
-  @Test
-  public void testCollectsWeakSdkFrameworksTransitively() throws Exception {
-    createLibraryTargetWriter("//base_lib:lib")
-        .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
-        .setList("weak_sdk_frameworks", "foo")
-        .write();
-    createLibraryTargetWriter("//depender_lib:lib")
-        .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
-        .setList("weak_sdk_frameworks", "bar")
-        .setList("deps", "//base_lib:lib")
-        .write();
+    @Test
+    @Throws(Exception::class)
+    fun testDylibsProvided() {
+        createLibraryTargetWriter("//lib:lib")
+            .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
+            .setList("sdk_dylibs", "libdy1", "libdy2")
+            .write()
 
-    ImmutableList<String> baseLinkFlags = getCcInfoUserLinkFlagsFromTarget("//base_lib:lib");
-    assertThat(baseLinkFlags).containsExactly("-weak_framework", "foo").inOrder();
-    ImmutableList<String> dependerLinkFlags =
-        getCcInfoUserLinkFlagsFromTarget("//depender_lib:lib");
-    assertThat(dependerLinkFlags)
-        .containsExactly("-weak_framework", "bar", "-weak_framework", "foo")
-        .inOrder();
-  }
+        val ccLinkingContext: CcLinkingContext = ccInfoForTarget("//lib:lib").getCcLinkingContext()
+        assertThat(ccLinkingContext.getFlattenedUserLinkFlags()).containsExactly("-ldy1", "-ldy2")
+    }
 
-  @Test
-  public void testErrorIfDepDoesNotExist() throws Exception {
-    checkErrorIfNotExist("deps", "[':nonexistent']");
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testPopulatesCompilationArtifacts() {
+        checkPopulatesCompilationArtifacts(RULE_TYPE)
+    }
 
-  @Test
-  public void testArIsNotImplicitOutput() throws Exception {
-    createLibraryTargetWriter("//lib:lib")
-        .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
-        .write();
-    reporter.removeHandler(failFastHandler);
-    assertThrows(NoSuchTargetException.class, () -> getTarget("//lib:liblib.a"));
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testCompilationActionsForDebug() {
+        checkClangCoptsForCompilationMode(RULE_TYPE, CompilationMode.DBG)
+    }
 
-  @Test
-  public void testErrorForAbsoluteIncludesPath() throws Exception {
-    scratch.file("x/a.m");
-    checkError(
-        "x",
-        "x",
-        String.format(ABSOLUTE_INCLUDES_PATH_FORMAT, "/absolute/path"),
-        "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
-        "objc_library(",
-        "    name = 'x',",
-        "    srcs = ['a.m'],",
-        "    includes = ['/absolute/path'],",
-        ")");
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testClangCoptsForDebugModeWithoutHardcoding() {
+        useConfiguration(
+            "--apple_platform_type=ios",
+            "--platforms=" + MockObjcSupport.IOS_X86_64,
+            "--compilation_mode=dbg"
+        )
+        scratch.file("x/a.m")
+        RULE_TYPE.scratchTarget(scratch, "srcs", "['a.m']")
 
-  @Test
-  public void testDylibsProvided() throws Exception {
-    createLibraryTargetWriter("//lib:lib")
-        .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
-        .setList("sdk_dylibs", "libdy1", "libdy2")
-        .write();
+        assertThat(compileAction("//x:x", "a.o").getArguments())
+            .containsNoneOf("-D_GLIBCXX_DEBUG", "-DDEBUG=1")
+    }
 
-    CcLinkingContext ccLinkingContext = ccInfoForTarget("//lib:lib").getCcLinkingContext();
-    assertThat(ccLinkingContext.getFlattenedUserLinkFlags()).containsExactly("-ldy1", "-ldy2");
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testCompilationActionsForOptimized() {
+        checkClangCoptsForCompilationMode(RULE_TYPE, CompilationMode.OPT)
+    }
 
-  @Test
-  public void testPopulatesCompilationArtifacts() throws Exception {
-    checkPopulatesCompilationArtifacts(RULE_TYPE);
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testClangCoptsForOptimizedWithoutHardcoding() {
+        useConfiguration(
+            "--apple_platform_type=ios",
+            "--platforms=" + MockObjcSupport.IOS_X86_64,
+            "--compilation_mode=opt"
+        )
+        scratch.file("x/a.m")
+        RULE_TYPE.scratchTarget(scratch, "srcs", "['a.m']")
 
-  @Test
-  public void testCompilationActionsForDebug() throws Exception {
-    checkClangCoptsForCompilationMode(RULE_TYPE, CompilationMode.DBG);
-  }
+        assertThat(compileAction("//x:x", "a.o").getArguments()).doesNotContain("-DNDEBUG=1")
+    }
 
-  @Test
-  public void testClangCoptsForDebugModeWithoutHardcoding() throws Exception {
-    useConfiguration(
-        "--apple_platform_type=ios",
-        "--platforms=" + MockObjcSupport.IOS_X86_64,
-        "--compilation_mode=dbg");
-    scratch.file("x/a.m");
-    RULE_TYPE.scratchTarget(scratch, "srcs", "['a.m']");
-
-    assertThat(compileAction("//x:x", "a.o").getArguments())
-        .containsNoneOf("-D_GLIBCXX_DEBUG", "-DDEBUG=1");
-  }
-
-  @Test
-  public void testCompilationActionsForOptimized() throws Exception {
-    checkClangCoptsForCompilationMode(RULE_TYPE, CompilationMode.OPT);
-  }
-
-  @Test
-  public void testClangCoptsForOptimizedWithoutHardcoding() throws Exception {
-    useConfiguration(
-        "--apple_platform_type=ios",
-        "--platforms=" + MockObjcSupport.IOS_X86_64,
-        "--compilation_mode=opt");
-    scratch.file("x/a.m");
-    RULE_TYPE.scratchTarget(scratch, "srcs", "['a.m']");
-
-    assertThat(compileAction("//x:x", "a.o").getArguments()).doesNotContain("-DNDEBUG=1");
-  }
-
-  @Test
-  public void testUsesDefinesFromTransitiveCcDeps() throws Exception {
-    scratch.file(
-        "package/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testUsesDefinesFromTransitiveCcDeps() {
+        scratch.file(
+            "package/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         load("@rules_cc//cc:objc_library.bzl", "objc_library")
         cc_library(
@@ -1178,179 +1249,195 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
             srcs = ["b.m"],
             deps = [":cc_lib"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    CommandAction compileAction = compileAction("//package:objc_lib", "b.o");
-    assertThat(compileAction.getArguments()).contains("-DFOO");
-  }
-
-  @Test
-  public void testAllowVariousNonBlacklistedTypesInHeaders() throws Exception {
-    checkAllowVariousNonBlacklistedTypesInHeaders(RULE_TYPE);
-  }
-
-  @Test
-  public void testXcodeVersionEnv() throws Exception {
-    useConfiguration("--xcode_version=5.8");
-
-    createLibraryTargetWriter("//objc:lib")
-        .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
-        .setAndCreateFiles("hdrs", "c.h")
-        .write();
-    CommandAction action = compileAction("//objc:lib", "a.o");
-
-    assertXcodeVersionEnv(action, "5.8");
-  }
-
-  @Test
-  public void testIosSdkVersionCannotBeDefinedButEmpty() {
-    var e =
-        assertThrows(
-            InvalidConfigurationException.class, () -> useConfiguration("--ios_sdk_version="));
-    assertThat(e).hasMessageThat().contains("--ios_sdk_version");
-  }
-
-  private void checkErrorIfNotExist(String attribute, String value) throws Exception {
-    scratch.file("x/a.m");
-    checkError(
-        "x",
-        "x",
-        "in "
-            + attribute
-            + " attribute of objc_library rule //x:x: rule '//x:nonexistent' does not exist",
-        "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
-        "objc_library(",
-        "    name = 'x',",
-        "    srcs = ['a.m'],",
-        attribute + " = " + value,
-        ")");
-  }
-
-  @Test
-  public void testCompilesWithHdrs() throws Exception {
-    checkCompilesWithHdrs(ObjcLibraryTest.RULE_TYPE);
-  }
-
-  @Test
-  public void testCompilesAssemblyWithPreprocessing() throws Exception {
-    createLibraryTargetWriter("//objc:lib")
-        .setAndCreateFiles("srcs", "a.m", "b.S")
-        .setAndCreateFiles("hdrs", "c.h")
-        .write();
-
-    CommandAction compileAction = compileAction("//objc:lib", "b.o");
-
-    // Clang automatically preprocesses .S files, so the assembler-with-cpp flag is unnecessary.
-    // Regression test for b/22636858.
-    assertThat(compileAction.getArguments()).doesNotContain("-x");
-    assertThat(compileAction.getArguments()).doesNotContain("assembler-with-cpp");
-    assertThat(baseArtifactNames(compileAction.getOutputs())).containsExactly("b.o", "b.d");
-    assertThat(baseArtifactNames(compileAction.getPossibleInputsForTesting()))
-        .containsAtLeast("c.h", "b.S");
-  }
-
-  @Test
-  public void testReceivesTransitivelyPropagatedDefines() throws Exception {
-    checkReceivesTransitivelyPropagatedDefines(RULE_TYPE);
-  }
-
-  @Test
-  public void testSdkIncludesUsedInCompileAction() throws Exception {
-    checkSdkIncludesUsedInCompileAction(RULE_TYPE);
-  }
-
-  @Test
-  public void testCompilationActionsWithPch() throws Exception {
-    useConfiguration("--apple_platform_type=ios", "--platforms=" + MockObjcSupport.IOS_X86_64);
-    scratch.file("objc/foo.pch");
-    createLibraryTargetWriter("//objc:lib")
-        .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
-        .setAndCreateFiles("hdrs", "c.h")
-        .set("pch", "'some.pch'")
-        .write();
-
-    CommandAction compileActionA = compileAction("//objc:lib", "a.o");
-
-    assertThat(removeConfigFragment(compileActionA.getArguments()))
-        .containsAtLeastElementsIn(
-            new ImmutableList.Builder<String>()
-                .add("-fexceptions")
-                .add("-fasm-blocks")
-                .add("-fobjc-abi-version=2")
-                .add("-fobjc-legacy-dispatch")
-                .addAll(CompilationSupport.DEFAULT_COMPILER_FLAGS)
-                .add("-arch x86_64")
-                .add("-isysroot", "__BAZEL_XCODE_SDKROOT__")
-                .add("-iquote", ".")
-                .add("-iquote", OUTPUTDIR)
-                .add("-include", "objc/some.pch")
-                .add("-fobjc-arc")
-                .add("-c", "objc/a.m")
-                .addAll(outputArgs(compileActionA.getOutputs()))
-                .build());
-
-    assertThat(compileActionA.getPossibleInputsForTesting().toList())
-        .contains(getFileConfiguredTarget("//objc:some.pch").getArtifact());
-  }
-
-  // Converts output artifacts into expected command-line arguments.
-  private ImmutableList<String> outputArgs(Collection<Artifact> outputs) {
-    ImmutableList.Builder<String> result = new ImmutableList.Builder<>();
-    for (String outputConfig : Artifact.toExecPaths(outputs)) {
-      String output = removeConfigFragment(outputConfig);
-      if (output.endsWith(".o")) {
-        result.add("-o", output);
-      } else if (output.endsWith(".d")) {
-        result.add("-MD", "-MF", output);
-      } else {
-        throw new IllegalArgumentException(
-            "output " + output + " has unknown ending (not in (.d, .o)");
-      }
+        val compileAction: CommandAction = compileAction("//package:objc_lib", "b.o")
+        Subject.contains("-DFOO")
     }
-    return result.build();
-  }
 
-  @Test
-  public void testCollectsSdkFrameworksTransitively() throws Exception {
-    createLibraryTargetWriter("//base_lib:lib")
-        .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
-        .setList("sdk_frameworks", "foo")
-        .write();
-    createLibraryTargetWriter("//depender_lib:lib")
-        .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
-        .setList("sdk_frameworks", "bar")
-        .setList("deps", "//base_lib:lib")
-        .write();
+    @Test
+    @Throws(Exception::class)
+    fun testAllowVariousNonBlacklistedTypesInHeaders() {
+        checkAllowVariousNonBlacklistedTypesInHeaders(RULE_TYPE)
+    }
 
-    ImmutableList<String> baseLinkFlags = getCcInfoUserLinkFlagsFromTarget("//base_lib:lib");
-    assertThat(baseLinkFlags).containsExactly("-framework", "foo").inOrder();
-    ImmutableList<String> dependerLinkFlags =
-        getCcInfoUserLinkFlagsFromTarget("//depender_lib:lib");
-    assertThat(dependerLinkFlags)
-        .containsExactly("-framework", "bar", "-framework", "foo")
-        .inOrder();
+    @Test
+    @Throws(Exception::class)
+    fun testXcodeVersionEnv() {
+        useConfiguration("--xcode_version=5.8")
 
-    // Make sure that the archive action does not actually include the frameworks. This is needed
-    // for creating binaries but is ignored for libraries.
-    CommandAction archiveAction = archiveAction("//depender_lib:lib");
-    assertThat(archiveAction.getArguments())
-        .isEqualTo(
-            ImmutableList.of(
-                "tools/osx/crosstool/mac/ar_wrapper",
-                "rcs",
-                Iterables.getOnlyElement(archiveAction.getOutputs()).getExecPathString(),
-                getBinArtifact("_objs/lib/arc/a.o", getConfiguredTarget("//depender_lib:lib"))
-                    .getExecPathString(),
-                getBinArtifact("_objs/lib/arc/b.o", getConfiguredTarget("//depender_lib:lib"))
-                    .getExecPathString()));
-  }
+        createLibraryTargetWriter("//objc:lib")
+            .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
+            .setAndCreateFiles("hdrs", "c.h")
+            .write()
+        val action: CommandAction = compileAction("//objc:lib", "a.o")
 
-  @Test
-  public void testMultipleRulesCompilingOneSourceGenerateUniqueObjFiles() throws Exception {
-    scratch.file("lib/a.m");
-    scratch.file(
-        "lib/BUILD",
-        """
+        assertXcodeVersionEnv(action, "5.8")
+    }
+
+    @Test
+    fun testIosSdkVersionCannotBeDefinedButEmpty() {
+        val e: T? =
+            Assert.assertThrows<T?>(
+                InvalidConfigurationException::class.java, ThrowingRunnable { useConfiguration("--ios_sdk_version=") })
+        assertThat(e).hasMessageThat().contains("--ios_sdk_version")
+    }
+
+    @Throws(Exception::class)
+    private fun checkErrorIfNotExist(attribute: String?, value: String?) {
+        scratch.file("x/a.m")
+        checkError(
+            "x",
+            "x",
+            ("in "
+                    + attribute
+                    + " attribute of objc_library rule //x:x: rule '//x:nonexistent' does not exist"),
+            "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
+            "objc_library(",
+            "    name = 'x',",
+            "    srcs = ['a.m'],",
+            attribute + " = " + value,
+            ")"
+        )
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testCompilesWithHdrs() {
+        checkCompilesWithHdrs(RULE_TYPE)
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testCompilesAssemblyWithPreprocessing() {
+        createLibraryTargetWriter("//objc:lib")
+            .setAndCreateFiles("srcs", "a.m", "b.S")
+            .setAndCreateFiles("hdrs", "c.h")
+            .write()
+
+        val compileAction: CommandAction = compileAction("//objc:lib", "b.o")
+
+        // Clang automatically preprocesses .S files, so the assembler-with-cpp flag is unnecessary.
+        // Regression test for b/22636858.
+        assertThat(compileAction.getArguments()).doesNotContain("-x")
+        assertThat(compileAction.getArguments()).doesNotContain("assembler-with-cpp")
+        assertThat(baseArtifactNames(compileAction.getOutputs())).containsExactly("b.o", "b.d")
+        assertThat(baseArtifactNames(compileAction.getPossibleInputsForTesting()))
+            .containsAtLeast("c.h", "b.S")
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testReceivesTransitivelyPropagatedDefines() {
+        checkReceivesTransitivelyPropagatedDefines(RULE_TYPE)
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testSdkIncludesUsedInCompileAction() {
+        checkSdkIncludesUsedInCompileAction(RULE_TYPE)
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testCompilationActionsWithPch() {
+        useConfiguration("--apple_platform_type=ios", "--platforms=" + MockObjcSupport.IOS_X86_64)
+        scratch.file("objc/foo.pch")
+        createLibraryTargetWriter("//objc:lib")
+            .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
+            .setAndCreateFiles("hdrs", "c.h")
+            .set("pch", "'some.pch'")
+            .write()
+
+        val compileActionA: CommandAction = compileAction("//objc:lib", "a.o")
+
+        Truth.assertThat(removeConfigFragment(compileActionA.getArguments()))
+            .containsAtLeastElementsIn(
+                ImmutableList.Builder<String?>()
+                    .add("-fexceptions")
+                    .add("-fasm-blocks")
+                    .add("-fobjc-abi-version=2")
+                    .add("-fobjc-legacy-dispatch")
+                    .addAll(CompilationSupport.DEFAULT_COMPILER_FLAGS)
+                    .add("-arch x86_64")
+                    .add("-isysroot", "__BAZEL_XCODE_SDKROOT__")
+                    .add("-iquote", ".")
+                    .add("-iquote", ObjcRuleTestCase.Companion.OUTPUTDIR)
+                    .add("-include", "objc/some.pch")
+                    .add("-fobjc-arc")
+                    .add("-c", "objc/a.m")
+                    .addAll(outputArgs(compileActionA.getOutputs()))
+                    .build()
+            )
+
+        Subject.contains(getFileConfiguredTarget("//objc:some.pch").getArtifact())
+    }
+
+    // Converts output artifacts into expected command-line arguments.
+    private fun outputArgs(outputs: MutableCollection<Artifact?>?): ImmutableList<String?> {
+        val result = ImmutableList.Builder<String?>()
+        for (outputConfig in Artifact.toExecPaths(outputs)) {
+            val output: String = removeConfigFragment(outputConfig)
+            if (output.endsWith(".o")) {
+                result.add("-o", output)
+            } else if (output.endsWith(".d")) {
+                result.add("-MD", "-MF", output)
+            } else {
+                throw IllegalArgumentException(
+                    "output " + output + " has unknown ending (not in (.d, .o)"
+                )
+            }
+        }
+        return result.build()
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testCollectsSdkFrameworksTransitively() {
+        createLibraryTargetWriter("//base_lib:lib")
+            .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
+            .setList("sdk_frameworks", "foo")
+            .write()
+        createLibraryTargetWriter("//depender_lib:lib")
+            .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
+            .setList("sdk_frameworks", "bar")
+            .setList("deps", "//base_lib:lib")
+            .write()
+
+        val baseLinkFlags = getCcInfoUserLinkFlagsFromTarget("//base_lib:lib")
+        Truth.assertThat(baseLinkFlags).containsExactly("-framework", "foo").inOrder()
+        val dependerLinkFlags =
+            getCcInfoUserLinkFlagsFromTarget("//depender_lib:lib")
+        Truth.assertThat(dependerLinkFlags)
+            .containsExactly("-framework", "bar", "-framework", "foo")
+            .inOrder()
+
+        // Make sure that the archive action does not actually include the frameworks. This is needed
+        // for creating binaries but is ignored for libraries.
+        val archiveAction: CommandAction = archiveAction("//depender_lib:lib")
+        assertThat(archiveAction.getArguments())
+            .isEqualTo(
+                ImmutableList.of<E?>(
+                    "tools/osx/crosstool/mac/ar_wrapper",
+                    "rcs",
+                    Iterables.getOnlyElement<T?>(archiveAction.getOutputs()).getExecPathString(),
+                    getBinArtifact("_objs/lib/arc/a.o", getConfiguredTarget("//depender_lib:lib"))
+                        .getExecPathString(),
+                    getBinArtifact("_objs/lib/arc/b.o", getConfiguredTarget("//depender_lib:lib"))
+                        .getExecPathString()
+                )
+            )
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testMultipleRulesCompilingOneSourceGenerateUniqueObjFiles() {
+        scratch.file("lib/a.m")
+        scratch.file(
+            "lib/BUILD",
+            """
         load("@rules_cc//cc:objc_library.bzl", "objc_library")
         objc_library(
             name = "lib1",
@@ -1363,50 +1450,54 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
             srcs = ["a.m"],
             copts = ["-Ilib2flag"],
         )
-        """);
-    Artifact obj1 = Iterables.getOnlyElement(inputsEndingWith(archiveAction("//lib:lib1"), ".o"));
-    Artifact obj2 = Iterables.getOnlyElement(inputsEndingWith(archiveAction("//lib:lib2"), ".o"));
+        
+        """.trimIndent()
+        )
+        val obj1: Artifact? = Iterables.getOnlyElement<Artifact?>(inputsEndingWith(archiveAction("//lib:lib1"), ".o"))
+        val obj2: Artifact? = Iterables.getOnlyElement<Artifact?>(inputsEndingWith(archiveAction("//lib:lib2"), ".o"))
 
-    // The exec paths of each obj file should be based on the objc_library target.
-    assertThat(obj1.getExecPathString()).contains("lib1");
-    assertThat(obj1.getExecPathString()).doesNotContain("lib2");
-    assertThat(obj2.getExecPathString()).doesNotContain("lib1");
-    assertThat(obj2.getExecPathString()).contains("lib2");
+        // The exec paths of each obj file should be based on the objc_library target.
+        Subject.contains("lib1")
+        assertThat(obj1.getExecPathString()).doesNotContain("lib2")
+        assertThat(obj2.getExecPathString()).doesNotContain("lib1")
+        Subject.contains("lib2")
 
-    CommandAction compile1 = (CommandAction) getGeneratingAction(obj1);
-    CommandAction compile2 = (CommandAction) getGeneratingAction(obj2);
-    assertThat(compile1.getArguments()).contains("-Ilib1flag");
-    assertThat(compile2.getArguments()).contains("-Ilib2flag");
-  }
-
-  @Test
-  public void testIncludesDirsOfTransitiveDepsGetPassedToCompileAction() throws Exception {
-    createLibraryTargetWriter("//lib1:lib1")
-        .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
-        .setList("includes", "third_party/foo", "opensource/bar")
-        .write();
-
-    createLibraryTargetWriter("//lib2:lib2")
-        .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
-        .setList("includes", "more_includes")
-        .setList("deps", "//lib1:lib1")
-        .write();
-    CommandAction compileAction = compileAction("//lib2:lib2", "a.o");
-    // We remove spaces, since the crosstool rules do not use spaces in include paths
-    String compileActionArgs =
-        Joiner.on("").join(removeConfigFragment(compileAction.getArguments())).replace(" ", "");
-    List<String> expectedIncludePaths =
-        rootedIncludePaths("lib2/more_includes", "lib1/third_party/foo", "lib1/opensource/bar");
-    for (String expectedIncludePath : expectedIncludePaths) {
-      assertThat(compileActionArgs).contains("-I" + expectedIncludePath);
+        val compile1: CommandAction = getGeneratingAction(obj1) as CommandAction
+        val compile2: CommandAction = getGeneratingAction(obj2) as CommandAction
+        Subject.contains("-Ilib1flag")
+        Subject.contains("-Ilib2flag")
     }
-  }
 
-  @Test
-  public void testIncludesDirsOfTransitiveCcDepsGetPassedToCompileAction() throws Exception {
-    scratch.file(
-        "package/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testIncludesDirsOfTransitiveDepsGetPassedToCompileAction() {
+        createLibraryTargetWriter("//lib1:lib1")
+            .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
+            .setList("includes", "third_party/foo", "opensource/bar")
+            .write()
+
+        createLibraryTargetWriter("//lib2:lib2")
+            .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
+            .setList("includes", "more_includes")
+            .setList("deps", "//lib1:lib1")
+            .write()
+        val compileAction: CommandAction = compileAction("//lib2:lib2", "a.o")
+        // We remove spaces, since the crosstool rules do not use spaces in include paths
+        val compileActionArgs: String? =
+            Joiner.on("").join(removeConfigFragment(compileAction.getArguments())).replace(" ", "")
+        val expectedIncludePaths =
+            rootedIncludePaths("lib2/more_includes", "lib1/third_party/foo", "lib1/opensource/bar")
+        for (expectedIncludePath in expectedIncludePaths) {
+            Truth.assertThat(compileActionArgs).contains("-I" + expectedIncludePath)
+        }
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testIncludesDirsOfTransitiveCcDepsGetPassedToCompileAction() {
+        scratch.file(
+            "package/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         load("@rules_cc//cc:objc_library.bzl", "objc_library")
         cc_library(
@@ -1420,23 +1511,28 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
             srcs = ["b.m"],
             deps = [":cc_lib"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    CommandAction compileAction = compileAction("//package:objc_lib", "b.o");
-    assertContainsSublist(
-        removeConfigFragment(removeConfigFragment(compileAction.getArguments())),
-        ImmutableList.copyOf(
-            Iterables.concat(
-                Iterables.transform(
-                    rootedIncludePaths("package/foo/bar"),
-                    element -> ImmutableList.of("-I" + element)))));
-  }
+        val compileAction: CommandAction = compileAction("//package:objc_lib", "b.o")
+        assertContainsSublist(
+            removeConfigFragment(removeConfigFragment(compileAction.getArguments())),
+            ImmutableList.< E > copyOf < E ? > (
+                    Iterables.concat<T?>(
+                        Iterables.transform<F?, T?>(
+                            rootedIncludePaths("package/foo/bar"),
+                            Function { element: F? -> ImmutableList.of<E?>("-I" + element) })
+                    ))
+        )
+    }
 
-  @Test
-  public void testIncludesDirsOfTransitiveCcIncDepsGetPassedToCompileAction() throws Exception {
-    scratch.file(
-        "third_party/cc_lib/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testIncludesDirsOfTransitiveCcIncDepsGetPassedToCompileAction() {
+        scratch.file(
+            "third_party/cc_lib/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         licenses(["unencumbered"])
 
@@ -1454,78 +1550,89 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
             strip_include_prefix = "v1",
             deps = [":cc_lib_impl"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    scratch.file(
-        "package/BUILD",
-        """
+        scratch.file(
+            "package/BUILD",
+            """
         load("@rules_cc//cc:objc_library.bzl", "objc_library")
         objc_library(
             name = "objc_lib",
             srcs = ["b.m"],
             deps = ["//third_party/cc_lib"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    CommandAction compileAction = compileAction("//package:objc_lib", "b.o");
-    // We remove spaces, since the crosstool rules do not use spaces for include paths.
-    String compileActionArgs = Joiner.on("").join(compileAction.getArguments()).replace(" ", "");
-    assertThat(compileActionArgs)
-        .matches(".*-iquote.*/third_party/cc_lib/_virtual_includes/cc_lib.*");
-  }
+        val compileAction: CommandAction = compileAction("//package:objc_lib", "b.o")
+        // We remove spaces, since the crosstool rules do not use spaces for include paths.
+        val compileActionArgs: String? = Joiner.on("").join(compileAction.getArguments()).replace(" ", "")
+        Truth.assertThat(compileActionArgs)
+            .matches(".*-iquote.*/third_party/cc_lib/_virtual_includes/cc_lib.*")
+    }
 
-  @Test
-  public void testIncludesIquoteFlagForGenFilesRoot() throws Exception {
-    createLibraryTargetWriter("//lib:lib")
-        .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
-        .write();
-    CommandAction compileAction = compileAction("//lib:lib", "a.o");
-    assertContainsSublist(
-        removeConfigFragment(compileAction.getArguments()), ImmutableList.of("-iquote", OUTPUTDIR));
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testIncludesIquoteFlagForGenFilesRoot() {
+        createLibraryTargetWriter("//lib:lib")
+            .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
+            .write()
+        val compileAction: CommandAction = compileAction("//lib:lib", "a.o")
+        assertContainsSublist(
+            removeConfigFragment(compileAction.getArguments()),
+            ImmutableList.of<E?>("-iquote", ObjcRuleTestCase.Companion.OUTPUTDIR)
+        )
+    }
 
-  @Test
-  public void testCompilesAssemblyAsm() throws Exception {
-    createLibraryTargetWriter("//objc:lib")
-        .setAndCreateFiles("srcs", "a.m", "b.asm")
-        .setAndCreateFiles("hdrs", "c.h")
-        .write();
+    @Test
+    @Throws(Exception::class)
+    fun testCompilesAssemblyAsm() {
+        createLibraryTargetWriter("//objc:lib")
+            .setAndCreateFiles("srcs", "a.m", "b.asm")
+            .setAndCreateFiles("hdrs", "c.h")
+            .write()
 
-    CommandAction compileAction = compileAction("//objc:lib", "b.o");
+        val compileAction: CommandAction = compileAction("//objc:lib", "b.o")
 
-    assertThat(compileAction.getArguments()).doesNotContain("-x");
-    assertThat(compileAction.getArguments()).doesNotContain("assembler-with-cpp");
-    assertThat(baseArtifactNames(compileAction.getOutputs())).contains("b.o");
-    assertThat(baseArtifactNames(compileAction.getPossibleInputsForTesting()))
-        .containsAtLeast("c.h", "b.asm");
-  }
+        assertThat(compileAction.getArguments()).doesNotContain("-x")
+        assertThat(compileAction.getArguments()).doesNotContain("assembler-with-cpp")
+        Subject.contains("b.o")
+        assertThat(baseArtifactNames(compileAction.getPossibleInputsForTesting()))
+            .containsAtLeast("c.h", "b.asm")
+    }
 
-  @Test
-  public void testCompilesAssemblyS() throws Exception {
-    createLibraryTargetWriter("//objc:lib")
-        .setAndCreateFiles("srcs", "a.m", "b.s")
-        .setAndCreateFiles("hdrs", "c.h")
-        .write();
+    @Test
+    @Throws(Exception::class)
+    fun testCompilesAssemblyS() {
+        createLibraryTargetWriter("//objc:lib")
+            .setAndCreateFiles("srcs", "a.m", "b.s")
+            .setAndCreateFiles("hdrs", "c.h")
+            .write()
 
-    CommandAction compileAction = compileAction("//objc:lib", "b.o");
+        val compileAction: CommandAction = compileAction("//objc:lib", "b.o")
 
-    assertThat(compileAction.getArguments()).doesNotContain("-x");
-    assertThat(compileAction.getArguments()).doesNotContain("assembler-with-cpp");
-    assertThat(baseArtifactNames(compileAction.getOutputs())).contains("b.o");
-    assertThat(baseArtifactNames(compileAction.getPossibleInputsForTesting()))
-        .containsAtLeast("c.h", "b.s");
-  }
+        assertThat(compileAction.getArguments()).doesNotContain("-x")
+        assertThat(compileAction.getArguments()).doesNotContain("assembler-with-cpp")
+        Subject.contains("b.o")
+        assertThat(baseArtifactNames(compileAction.getPossibleInputsForTesting()))
+            .containsAtLeast("c.h", "b.s")
+    }
 
-  @Test
-  public void testProvidesHdrsAndIncludes() throws Exception {
-    checkProvidesHdrsAndIncludes(RULE_TYPE, Optional.of("x/private.h"));
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testProvidesHdrsAndIncludes() {
+        checkProvidesHdrsAndIncludes(RULE_TYPE, Optional.of<String?>("x/private.h"))
+    }
 
-  @Test
-  public void testPruningActionsSetLocalityBasedOnXcode() throws Exception {
-    scratch.file(
-        "xcode/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testPruningActionsSetLocalityBasedOnXcode() {
+        scratch.file(
+            "xcode/BUILD",
+            """
         load("@build_bazel_apple_support//xcode:available_xcodes.bzl", "available_xcodes")
         load("@build_bazel_apple_support//xcode:xcode_config.bzl", "xcode_config")
         load("@build_bazel_apple_support//xcode:xcode_version.bzl", "xcode_version")
@@ -1573,71 +1680,81 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
             local_versions = ":local",
             remote_versions = ":remote",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfigurationWithCustomXcode(
-        "--xcode_version=10.2.1",
-        "--xcode_version_config=//xcode:my_config",
-        "--objc_use_dotd_pruning");
-    createLibraryTargetWriter("//lib:lib").setList("srcs", "a.m").write();
-    CppCompileAction action = (CppCompileAction) compileAction("//lib:lib", "a.o");
-    assertHasRequirement(action, ExecutionRequirements.REQUIREMENTS_SET);
-    assertHasRequirement(action, ExecutionRequirements.NO_LOCAL);
-    assertNotHasRequirement(action, ExecutionRequirements.NO_REMOTE);
-  }
+        useConfigurationWithCustomXcode(
+            "--xcode_version=10.2.1",
+            "--xcode_version_config=//xcode:my_config",
+            "--objc_use_dotd_pruning"
+        )
+        createLibraryTargetWriter("//lib:lib").setList("srcs", "a.m").write()
+        val action: CppCompileAction = compileAction("//lib:lib", "a.o") as CppCompileAction
+        assertHasRequirement(action, ExecutionRequirements.REQUIREMENTS_SET)
+        assertHasRequirement(action, ExecutionRequirements.NO_LOCAL)
+        assertNotHasRequirement(action, ExecutionRequirements.NO_REMOTE)
+    }
 
-  @Test
-  public void testUsesDotdPruning() throws Exception {
-    useConfiguration("--objc_use_dotd_pruning");
-    createLibraryTargetWriter("//lib:lib").setList("srcs", "a.m").write();
-    CppCompileAction compileAction = (CppCompileAction) compileAction("//lib:lib", "a.o");
-    ActionExecutionException expected =
-        assertThrows(
-            ActionExecutionException.class,
-            () ->
-                compileAction.discoverInputsFromDotdFiles(
-                    new ActionExecutionContextBuilder().build(),
-                    null,
-                    null,
-                    null,
-                    false,
-                    PathMapper.NOOP));
-    assertThat(expected).hasMessageThat().contains("error while parsing .d file");
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testUsesDotdPruning() {
+        useConfiguration("--objc_use_dotd_pruning")
+        createLibraryTargetWriter("//lib:lib").setList("srcs", "a.m").write()
+        val compileAction: CppCompileAction = compileAction("//lib:lib", "a.o") as CppCompileAction
+        val expected: ActionExecutionException? =
+            Assert.assertThrows<T?>(
+                ActionExecutionException::class.java,
+                ThrowingRunnable {
+                    compileAction.discoverInputsFromDotdFiles(
+                        ActionExecutionContextBuilder().build(),
+                        null,
+                        null,
+                        null,
+                        false,
+                        PathMapper.NOOP
+                    )
+                })
+        assertThat(expected).hasMessageThat().contains("error while parsing .d file")
+    }
 
-  @Test
-  public void testAppleSdkDefaultPlatformEnv() throws Exception {
-    useConfiguration("--apple_platform_type=ios", "--platforms=" + MockObjcSupport.IOS_X86_64);
-    createLibraryTargetWriter("//objc:lib")
-        .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
-        .setAndCreateFiles("hdrs", "c.h")
-        .write();
-    CommandAction action = compileAction("//objc:lib", "a.o");
+    @Test
+    @Throws(Exception::class)
+    fun testAppleSdkDefaultPlatformEnv() {
+        useConfiguration("--apple_platform_type=ios", "--platforms=" + MockObjcSupport.IOS_X86_64)
+        createLibraryTargetWriter("//objc:lib")
+            .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
+            .setAndCreateFiles("hdrs", "c.h")
+            .write()
+        val action: CommandAction = compileAction("//objc:lib", "a.o")
 
-    assertAppleSdkPlatformEnv(action, "iPhoneSimulator");
-  }
+        assertAppleSdkPlatformEnv(action, "iPhoneSimulator")
+    }
 
-  @Test
-  public void testAppleSdkDevicePlatformEnv() throws Exception {
-    useConfiguration(
-        "--apple_platform_type=ios",
-        "--ios_multi_cpus=arm64",
-        "--platforms=" + MockObjcSupport.IOS_ARM64);
+    @Test
+    @Throws(Exception::class)
+    fun testAppleSdkDevicePlatformEnv() {
+        useConfiguration(
+            "--apple_platform_type=ios",
+            "--ios_multi_cpus=arm64",
+            "--platforms=" + MockObjcSupport.IOS_ARM64
+        )
 
-    createLibraryTargetWriter("//objc:lib")
-        .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
-        .setAndCreateFiles("hdrs", "c.h")
-        .write();
-    CommandAction action = compileAction("//objc:lib", "a.o");
+        createLibraryTargetWriter("//objc:lib")
+            .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
+            .setAndCreateFiles("hdrs", "c.h")
+            .write()
+        val action: CommandAction = compileAction("//objc:lib", "a.o")
 
-    assertAppleSdkPlatformEnv(action, "iPhoneOS");
-  }
+        assertAppleSdkPlatformEnv(action, "iPhoneOS")
+    }
 
-  @Test
-  public void testObjcImportDoesNotCrash() throws Exception {
-    scratch.file(
-        "x/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testObjcImportDoesNotCrash() {
+        scratch.file(
+            "x/BUILD",
+            """
         load("@rules_cc//cc:objc_library.bzl", "objc_library")
         load("@rules_cc//cc:objc_import.bzl", "objc_import")
         objc_library(
@@ -1650,142 +1767,159 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
             name = "import",
             archives = ["archive.a"],
         )
-        """);
-    assertThat(getConfiguredTarget("//x:objc")).isNotNull();
-  }
+        
+        """.trimIndent()
+        )
+        assertThat(getConfiguredTarget("//x:objc")).isNotNull()
+    }
 
-  @Test
-  public void testCompilationActionsWithIQuotesInCopts() throws Exception {
-    useConfiguration("--ios_multi_cpus=arm64");
-    createLibraryTargetWriter("//objc:lib")
-        .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
-        .setAndCreateFiles("hdrs", "c.h")
-        .setList("copts", "-iquote foo/bar", "-iquote bam/baz")
-        .write();
+    @Test
+    @Throws(Exception::class)
+    fun testCompilationActionsWithIQuotesInCopts() {
+        useConfiguration("--ios_multi_cpus=arm64")
+        createLibraryTargetWriter("//objc:lib")
+            .setAndCreateFiles("srcs", "a.m", "b.m", "private.h")
+            .setAndCreateFiles("hdrs", "c.h")
+            .setList("copts", "-iquote foo/bar", "-iquote bam/baz")
+            .write()
 
-    CommandAction compileActionA = compileAction("//objc:lib", "a.o");
-    String action = String.join(" ", compileActionA.getArguments());
-    assertThat(action).contains("-iquote foo/bar");
-    assertThat(action).contains("-iquote bam/baz");
-  }
+        val compileActionA: CommandAction = compileAction("//objc:lib", "a.o")
+        val action: String? = String.join(" ", compileActionA.getArguments())
+        Truth.assertThat(action).contains("-iquote foo/bar")
+        Truth.assertThat(action).contains("-iquote bam/baz")
+    }
 
-  @Test
-  public void testCollectCodeCoverageWithGCOVFlags() throws Exception {
-    useConfiguration("--collect_code_coverage");
-    createLibraryTargetWriter("//objc:x")
-        .setAndCreateFiles("srcs", "a.mm", "b.cc", "c.mm", "d.cxx", "e.c", "f.m", "g.C")
-        .write();
-    ImmutableList<String> copts = ImmutableList.of("-fprofile-arcs", "-ftest-coverage");
-    assertThat(compileAction("//objc:x", "a.o").getArguments()).containsAtLeastElementsIn(copts);
-    assertThat(compileAction("//objc:x", "b.o").getArguments()).containsAtLeastElementsIn(copts);
-    assertThat(compileAction("//objc:x", "c.o").getArguments()).containsAtLeastElementsIn(copts);
-    assertThat(compileAction("//objc:x", "d.o").getArguments()).containsAtLeastElementsIn(copts);
-    assertThat(compileAction("//objc:x", "e.o").getArguments()).containsAtLeastElementsIn(copts);
-    assertThat(compileAction("//objc:x", "f.o").getArguments()).containsAtLeastElementsIn(copts);
-    assertThat(compileAction("//objc:x", "g.o").getArguments()).containsAtLeastElementsIn(copts);
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testCollectCodeCoverageWithGCOVFlags() {
+        useConfiguration("--collect_code_coverage")
+        createLibraryTargetWriter("//objc:x")
+            .setAndCreateFiles("srcs", "a.mm", "b.cc", "c.mm", "d.cxx", "e.c", "f.m", "g.C")
+            .write()
+        val copts = ImmutableList.of<kotlin.String?>("-fprofile-arcs", "-ftest-coverage")
+        assertThat(compileAction("//objc:x", "a.o").getArguments()).containsAtLeastElementsIn(copts)
+        assertThat(compileAction("//objc:x", "b.o").getArguments()).containsAtLeastElementsIn(copts)
+        assertThat(compileAction("//objc:x", "c.o").getArguments()).containsAtLeastElementsIn(copts)
+        assertThat(compileAction("//objc:x", "d.o").getArguments()).containsAtLeastElementsIn(copts)
+        assertThat(compileAction("//objc:x", "e.o").getArguments()).containsAtLeastElementsIn(copts)
+        assertThat(compileAction("//objc:x", "f.o").getArguments()).containsAtLeastElementsIn(copts)
+        assertThat(compileAction("//objc:x", "g.o").getArguments()).containsAtLeastElementsIn(copts)
+    }
 
-  @Test
-  public void testCollectCodeCoverageWithLLVMCOVFlags() throws Exception {
-    useConfiguration("--collect_code_coverage", "--experimental_use_llvm_covmap");
-    createLibraryTargetWriter("//objc:x")
-        .setAndCreateFiles("srcs", "a.mm", "b.cc", "c.mm", "d.cxx", "e.c", "f.m", "g.C")
-        .write();
-    ImmutableList<String> copts =
-        ImmutableList.of("-fprofile-instr-generate", "-fcoverage-mapping");
-    assertThat(compileAction("//objc:x", "a.o").getArguments()).containsAtLeastElementsIn(copts);
-    assertThat(compileAction("//objc:x", "b.o").getArguments()).containsAtLeastElementsIn(copts);
-    assertThat(compileAction("//objc:x", "c.o").getArguments()).containsAtLeastElementsIn(copts);
-    assertThat(compileAction("//objc:x", "d.o").getArguments()).containsAtLeastElementsIn(copts);
-    assertThat(compileAction("//objc:x", "e.o").getArguments()).containsAtLeastElementsIn(copts);
-    assertThat(compileAction("//objc:x", "f.o").getArguments()).containsAtLeastElementsIn(copts);
-    assertThat(compileAction("//objc:x", "g.o").getArguments()).containsAtLeastElementsIn(copts);
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testCollectCodeCoverageWithLLVMCOVFlags() {
+        useConfiguration("--collect_code_coverage", "--experimental_use_llvm_covmap")
+        createLibraryTargetWriter("//objc:x")
+            .setAndCreateFiles("srcs", "a.mm", "b.cc", "c.mm", "d.cxx", "e.c", "f.m", "g.C")
+            .write()
+        val copts =
+            ImmutableList.of<kotlin.String?>("-fprofile-instr-generate", "-fcoverage-mapping")
+        assertThat(compileAction("//objc:x", "a.o").getArguments()).containsAtLeastElementsIn(copts)
+        assertThat(compileAction("//objc:x", "b.o").getArguments()).containsAtLeastElementsIn(copts)
+        assertThat(compileAction("//objc:x", "c.o").getArguments()).containsAtLeastElementsIn(copts)
+        assertThat(compileAction("//objc:x", "d.o").getArguments()).containsAtLeastElementsIn(copts)
+        assertThat(compileAction("//objc:x", "e.o").getArguments()).containsAtLeastElementsIn(copts)
+        assertThat(compileAction("//objc:x", "f.o").getArguments()).containsAtLeastElementsIn(copts)
+        assertThat(compileAction("//objc:x", "g.o").getArguments()).containsAtLeastElementsIn(copts)
+    }
 
-  @Test
-  public void testNoG0IfGeneratesDsym() throws Exception {
-    useConfiguration("--apple_generate_dsym", "-c", "opt");
-    createLibraryTargetWriter("//x:x").setList("srcs", "a.m").write();
-    CommandAction compileAction = compileAction("//x:x", "a.o");
-    assertThat(compileAction.getArguments()).doesNotContain("-g0");
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testNoG0IfGeneratesDsym() {
+        useConfiguration("--apple_generate_dsym", "-c", "opt")
+        createLibraryTargetWriter("//x:x").setList("srcs", "a.m").write()
+        val compileAction: CommandAction = compileAction("//x:x", "a.o")
+        assertThat(compileAction.getArguments()).doesNotContain("-g0")
+    }
 
-  @Test
-  public void testFilesToCompileOutputGroup() throws Exception {
-    checkFilesToCompileOutputGroup(RULE_TYPE);
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testFilesToCompileOutputGroup() {
+        checkFilesToCompileOutputGroup(RULE_TYPE)
+    }
 
-  @Test
-  public void testDefaultEnabledFeatureIsUsed() throws Exception {
-    // Although using --ios_multi_cpus=x86_64, it transitions to darwin_x86_64, so the actual
-    // cc_toolchain in use will be the darwin_x86_64 one.
-    MockObjcSupport.setupCcToolchainConfig(
-        mockToolsConfig, MockObjcSupport.darwinX86_64().withFeatures("default_feature"));
-    useConfiguration("--ios_multi_cpus=x86_64");
-    scratch.file(
-        "x/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testDefaultEnabledFeatureIsUsed() {
+        // Although using --ios_multi_cpus=x86_64, it transitions to darwin_x86_64, so the actual
+        // cc_toolchain in use will be the darwin_x86_64 one.
+        MockObjcSupport.setupCcToolchainConfig(
+            mockToolsConfig, MockObjcSupport.darwinX86_64().withFeatures("default_feature")
+        )
+        useConfiguration("--ios_multi_cpus=x86_64")
+        scratch.file(
+            "x/BUILD",
+            """
         load("@rules_cc//cc:objc_library.bzl", "objc_library")
         objc_library(
             name = "objc",
             srcs = ["source.m"],
         )
-        """);
-    CommandAction compileAction = compileAction("//x:objc", "source.o");
-    assertThat(compileAction.getArguments()).contains("-dummy");
-  }
+        
+        """.trimIndent()
+        )
+        val compileAction: CommandAction = compileAction("//x:objc", "source.o")
+        Subject.contains("-dummy")
+    }
 
-  @Test
-  public void testHeaderPassedToCcLib() throws Exception {
-    createLibraryTargetWriter("//objc:lib").setList("hdrs", "objc_hdr.h").write();
-    ScratchAttributeWriter.fromLabelString(
+    @Test
+    @Throws(Exception::class)
+    fun testHeaderPassedToCcLib() {
+        createLibraryTargetWriter("//objc:lib").setList("hdrs", "objc_hdr.h").write()
+        ScratchAttributeWriter.fromLabelString(
             this,
             "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
             "cc_library",
-            "//cc:lib")
-        .setList("srcs", "a.cc")
-        .setList("deps", "//objc:lib")
-        .write();
-    CommandAction compileAction = compileAction("//cc:lib", "a.o");
-    assertThat(Artifact.toRootRelativePaths(compileAction.getPossibleInputsForTesting()))
-        .contains("objc/objc_hdr.h");
-  }
+            "//cc:lib"
+        )
+            .setList("srcs", "a.cc")
+            .setList("deps", "//objc:lib")
+            .write()
+        val compileAction: CommandAction = compileAction("//cc:lib", "a.o")
+        Subject.contains("objc/objc_hdr.h")
+    }
 
-  @Test
-  public void testTextualHeaderPassedToCcLib() throws Exception {
-    ScratchAttributeWriter.fromLabelString(
+    @Test
+    @Throws(Exception::class)
+    fun testTextualHeaderPassedToCcLib() {
+        ScratchAttributeWriter.fromLabelString(
             this,
             "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
             "cc_library",
-            "//cc/txt_dep")
-        .setList("textual_hdrs", "hdr.h")
-        .write();
-    createLibraryTargetWriter("//objc:lib").setList("deps", "//cc/txt_dep").write();
-    ScratchAttributeWriter.fromLabelString(
+            "//cc/txt_dep"
+        )
+            .setList("textual_hdrs", "hdr.h")
+            .write()
+        createLibraryTargetWriter("//objc:lib").setList("deps", "//cc/txt_dep").write()
+        ScratchAttributeWriter.fromLabelString(
             this,
             "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
             "cc_library",
-            "//cc/lib")
-        .setList("srcs", "a.cc")
-        .setList("deps", "//objc:lib")
-        .write();
-    CommandAction compileAction = compileAction("//cc/lib", "a.o");
-    assertThat(Artifact.toRootRelativePaths(compileAction.getPossibleInputsForTesting()))
-        .contains("cc/txt_dep/hdr.h");
-  }
+            "//cc/lib"
+        )
+            .setList("srcs", "a.cc")
+            .setList("deps", "//objc:lib")
+            .write()
+        val compileAction: CommandAction = compileAction("//cc/lib", "a.o")
+        Subject.contains("cc/txt_dep/hdr.h")
+    }
 
-  /** Regression test for https://github.com/bazelbuild/bazel/issues/7721. */
-  @Test
-  public void testToolchainRuntimeLibrariesSolibDir() throws Exception {
-    MockObjcSupport.setupCcToolchainConfig(
-        mockToolsConfig,
-        MockObjcSupport.darwinX86_64()
-            .withFeatures(
-                CppRuleClasses.SUPPORTS_INTERFACE_SHARED_LIBRARIES,
-                CppRuleClasses.SUPPORTS_DYNAMIC_LINKER));
-    scratch.file(
-        "foo/BUILD",
-        """
+    /** Regression test for https://github.com/bazelbuild/bazel/issues/7721.  */
+    @Test
+    @Throws(Exception::class)
+    fun testToolchainRuntimeLibrariesSolibDir() {
+        MockObjcSupport.setupCcToolchainConfig(
+            mockToolsConfig,
+            MockObjcSupport.darwinX86_64()
+                .withFeatures(
+                    CppRuleClasses.SUPPORTS_INTERFACE_SHARED_LIBRARIES,
+                    CppRuleClasses.SUPPORTS_DYNAMIC_LINKER
+                )
+        )
+        scratch.file(
+            "foo/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         load("@rules_cc//cc:cc_test.bzl", "cc_test")
         load("@rules_cc//cc:objc_library.bzl", "objc_library")
@@ -1803,16 +1937,19 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
             name = "a",
             srcs = ["a.c"],
         )
-        """);
-    ConfiguredTarget configuredTarget = getConfiguredTarget("//foo:d");
-    assertThat(configuredTarget).isNotNull();
-  }
+        
+        """.trimIndent()
+        )
+        val configuredTarget: ConfiguredTarget = getConfiguredTarget("//foo:d")
+        assertThat(configuredTarget).isNotNull()
+    }
 
-  @Test
-  public void testDirectFields() throws Exception {
-    scratch.file(
-        "x/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testDirectFields() {
+        scratch.file(
+            "x/BUILD",
+            """
         load("@rules_cc//cc:objc_library.bzl", "objc_library")
         objc_library(
             name = "foo",
@@ -1834,217 +1971,251 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
             textual_hdrs = ["bar.inc"],
             deps = [":foo"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    StarlarkInfo dependerProvider = getObjcInfo(getConfiguredTarget("//x:bar"));
-    assertThat(baseArtifactNames(getDirectSources(dependerProvider)))
-        .containsExactly("bar.m", "bar_impl.h");
+        val dependerProvider: StarlarkInfo = ObjcRuleTestCase.Companion.getObjcInfo(getConfiguredTarget("//x:bar"))
+        assertThat(baseArtifactNames(ObjcRuleTestCase.Companion.getDirectSources(dependerProvider)))
+            .containsExactly("bar.m", "bar_impl.h")
 
-    ConfiguredTarget target = getConfiguredTarget("//x:bar");
-    CcCompilationContext ccCompilationContext = CcInfo.get(target).getCcCompilationContext();
-    assertThat(baseArtifactNames(ccCompilationContext.getDirectPublicHdrs()))
-        .containsExactly("bar.h");
-    assertThat(baseArtifactNames(ccCompilationContext.getDirectPrivateHdrs()))
-        .containsExactly("bar_impl.h");
-    assertThat(baseArtifactNames(ccCompilationContext.getTextualHdrs())).containsExactly("bar.inc");
+        val target: ConfiguredTarget = getConfiguredTarget("//x:bar")
+        val ccCompilationContext: CcCompilationContext = CcInfo.get(target).getCcCompilationContext()
+        assertThat(baseArtifactNames(ccCompilationContext.getDirectPublicHdrs()))
+            .containsExactly("bar.h")
+        assertThat(baseArtifactNames(ccCompilationContext.getDirectPrivateHdrs()))
+            .containsExactly("bar_impl.h")
+        assertThat(baseArtifactNames(ccCompilationContext.getTextualHdrs())).containsExactly("bar.inc")
 
-    // Verify that the CppModuleMap objects are not added twice when merging the ARC and non-ARC
-    // contexts.
-    assertThat(ccCompilationContext.getExportingModuleMaps()).hasSize(1);
-  }
+        // Verify that the CppModuleMap objects are not added twice when merging the ARC and non-ARC
+        // contexts.
+        assertThat(ccCompilationContext.getExportingModuleMaps()).hasSize(1)
+    }
 
-  @Test
-  public void testNameHasSlash() throws Exception {
-    scratch.file("x/foo.m");
-    checkError(
-        "x",
-        "foo/bar",
-        "this attribute has unsupported character '/'",
-        "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
-        "objc_library(name = 'foo/bar', srcs = ['foo.m'])");
-  }
-
-  @Test
-  public void testObjcLibraryLoadedThroughMacro() throws Exception {
-    setupTestObjcLibraryLoadedThroughMacro(/* loadMacro= */ true);
-    assertThat(getConfiguredTarget("//a:a")).isNotNull();
-    assertNoEvents();
-  }
-
-  private void setupTestObjcLibraryLoadedThroughMacro(boolean loadMacro) throws Exception {
-    scratch.file(
-        "a/BUILD",
-        getAnalysisMock().ccSupport().getMacroLoadStatement(loadMacro, "objc_library"),
-        "objc_library(name='a', srcs=['a.cc'])");
-  }
-
-  @Test
-  public void testGenerateDsymFlagPropagatesToObjcLibraryFeature() throws Exception {
-    useConfiguration("--apple_generate_dsym");
-    createLibraryTargetWriter("//objc/lib").setList("srcs", "a.m").write();
-    CommandAction compileAction = compileAction("//objc/lib", "a.o");
-    assertThat(compileAction.getArguments()).contains("-DDUMMY_GENERATE_DSYM_FILE");
-  }
-
-  @Test
-  public void testArtifactsToAlwaysBuild() throws Exception {
-    ConfiguredTarget x =
-        scratchConfiguredTarget(
-            "foo",
+    @Test
+    @Throws(Exception::class)
+    fun testNameHasSlash() {
+        scratch.file("x/foo.m")
+        checkError(
             "x",
+            "foo/bar",
+            "this attribute has unsupported character '/'",
             "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
-            "objc_library(name = 'x', srcs = ['x.m'], non_arc_srcs = ['x2.m'], deps = [':y'])",
-            "objc_library(name = 'y', srcs = ['y.m'], non_arc_srcs = ['y2.m'], )");
-    assertThat(
-            ActionsTestUtil.sortedBaseNamesOf(getOutputGroup(x, OutputGroupInfo.HIDDEN_TOP_LEVEL)))
-        .isEqualTo("x.o x2.o y.o y2.o");
-  }
+            "objc_library(name = 'foo/bar', srcs = ['foo.m'])"
+        )
+    }
 
-  @Test
-  public void testLangObjcFeature() throws Exception {
-    MockObjcSupport.setupCcToolchainConfig(
-        mockToolsConfig, MockObjcSupport.darwinX86_64().withFeatures(CppRuleClasses.PARSE_HEADERS));
-    useConfiguration("--features=parse_headers", "--process_headers_in_dependencies");
+    @Test
+    @Throws(Exception::class)
+    fun testObjcLibraryLoadedThroughMacro() {
+        setupTestObjcLibraryLoadedThroughMacro( /* loadMacro= */true)
+        assertThat(getConfiguredTarget("//a:a")).isNotNull()
+        assertNoEvents()
+    }
 
-    ConfiguredTarget x =
-        scratchConfiguredTarget(
-            "foo",
-            "x",
-            "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
-            "objc_library(name = 'x', hdrs = ['x.h'])");
+    @Throws(Exception::class)
+    private fun setupTestObjcLibraryLoadedThroughMacro(loadMacro: Boolean) {
+        scratch.file(
+            "a/BUILD",
+            getAnalysisMock().ccSupport().getMacroLoadStatement(loadMacro, "objc_library"),
+            "objc_library(name='a', srcs=['a.cc'])"
+        )
+    }
 
-    assertThat(getGeneratingCompileAction("_objs/x/arc/x.h.processed", x).getArguments())
-        .contains("-DDUMMY_LANG_OBJC");
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testGenerateDsymFlagPropagatesToObjcLibraryFeature() {
+        useConfiguration("--apple_generate_dsym")
+        createLibraryTargetWriter("//objc/lib").setList("srcs", "a.m").write()
+        val compileAction: CommandAction = compileAction("//objc/lib", "a.o")
+        Subject.contains("-DDUMMY_GENERATE_DSYM_FILE")
+    }
 
-  private CppCompileAction getGeneratingCompileAction(
-      String packageRelativePath, ConfiguredTarget owner) {
-    return (CppCompileAction) getGeneratingAction(getBinArtifact(packageRelativePath, owner));
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testArtifactsToAlwaysBuild() {
+        val x: ConfiguredTarget =
+            scratchConfiguredTarget(
+                "foo",
+                "x",
+                "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
+                "objc_library(name = 'x', srcs = ['x.m'], non_arc_srcs = ['x2.m'], deps = [':y'])",
+                "objc_library(name = 'y', srcs = ['y.m'], non_arc_srcs = ['y2.m'], )"
+            )
+        assertThat(
+            ActionsTestUtil.sortedBaseNamesOf(getOutputGroup(x, OutputGroupInfo.HIDDEN_TOP_LEVEL))
+        )
+            .isEqualTo("x.o x2.o y.o y2.o")
+    }
 
-  @Test
-  public void testProcessHeadersInArcOnly() throws Exception {
-    MockObjcSupport.setupCcToolchainConfig(
-        mockToolsConfig, MockObjcSupport.darwinX86_64().withFeatures(CppRuleClasses.PARSE_HEADERS));
-    useConfiguration("--features=parse_headers", "--process_headers_in_dependencies");
-    ConfiguredTarget x =
-        scratchConfiguredTarget(
-            "foo",
-            "x",
-            "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
-            "objc_library(name = 'x', hdrs = ['x.h'])");
-    CcCompilationContext ccCompilationContext = CcInfo.get(x).getCcCompilationContext();
-    assertThat(Artifact.toRootRelativePaths(ccCompilationContext.getHeaderTokens()))
-        .containsExactly("foo/_objs/x/arc/x.h.processed");
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testLangObjcFeature() {
+        MockObjcSupport.setupCcToolchainConfig(
+            mockToolsConfig, MockObjcSupport.darwinX86_64().withFeatures(CppRuleClasses.PARSE_HEADERS)
+        )
+        useConfiguration("--features=parse_headers", "--process_headers_in_dependencies")
 
-  @Test
-  public void testProcessHeadersInDependencies() throws Exception {
-    MockObjcSupport.setupCcToolchainConfig(
-        mockToolsConfig, MockObjcSupport.darwinX86_64().withFeatures(CppRuleClasses.PARSE_HEADERS));
-    useConfiguration("--features=parse_headers", "--process_headers_in_dependencies");
-    ConfiguredTarget x =
-        scratchConfiguredTarget(
-            "foo",
-            "x",
-            "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
-            "objc_library(name = 'x', deps = [':y'])",
-            "objc_library(name = 'y', hdrs = ['y.h'])");
-    CcCompilationContext ccCompilationContext = CcInfo.get(x).getCcCompilationContext();
-    assertThat(ActionsTestUtil.baseNamesOf(ccCompilationContext.getHeaderTokens()))
-        .isEqualTo("y.h.processed");
-    assertThat(ActionsTestUtil.baseNamesOf(getOutputGroup(x, OutputGroupInfo.HIDDEN_TOP_LEVEL)))
-        .isEqualTo("y.h.processed");
-  }
+        val x: ConfiguredTarget =
+            scratchConfiguredTarget(
+                "foo",
+                "x",
+                "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
+                "objc_library(name = 'x', hdrs = ['x.h'])"
+            )
 
-  @Test
-  public void testProcessHeadersInDependenciesOfCcBinary() throws Exception {
-    MockObjcSupport.setupCcToolchainConfig(
-        mockToolsConfig, MockObjcSupport.darwinX86_64().withFeatures(CppRuleClasses.PARSE_HEADERS));
-    useConfiguration("--features=parse_headers", "--process_headers_in_dependencies");
-    ConfiguredTarget x =
-        scratchConfiguredTarget(
-            "foo",
-            "x",
-            "load('@rules_cc//cc:cc_binary.bzl', 'cc_binary')",
-            "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
-            "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
-            "cc_binary(name = 'x', deps = [':y', ':z'])",
-            "cc_library(name = 'y', hdrs = ['y.h'])",
-            "objc_library(name = 'z', srcs = ['z.h'])");
-    String validation = ActionsTestUtil.baseNamesOf(getOutputGroup(x, OutputGroupInfo.VALIDATION));
-    assertThat(validation).contains("y.h.processed");
-    assertThat(validation).contains("z.h.processed");
-  }
+        Subject.contains("-DDUMMY_LANG_OBJC")
+    }
 
-  @Test
-  public void testSrcCompileActionMnemonic() throws Exception {
-    MockObjcSupport.setupCcToolchainConfig(
-        mockToolsConfig, MockObjcSupport.darwinX86_64().withFeatures(CppRuleClasses.PARSE_HEADERS));
-    useConfiguration("--features=parse_headers", "--process_headers_in_dependencies");
+    private fun getGeneratingCompileAction(
+        packageRelativePath: kotlin.String?, owner: ConfiguredTarget
+    ): CppCompileAction {
+        return getGeneratingAction(getBinArtifact(packageRelativePath, owner)) as CppCompileAction
+    }
 
-    ConfiguredTarget x =
-        scratchConfiguredTarget(
-            "foo",
-            "x",
-            "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
-            "objc_library(name = 'x', srcs = ['a.m'])");
+    @Test
+    @Throws(Exception::class)
+    fun testProcessHeadersInArcOnly() {
+        MockObjcSupport.setupCcToolchainConfig(
+            mockToolsConfig, MockObjcSupport.darwinX86_64().withFeatures(CppRuleClasses.PARSE_HEADERS)
+        )
+        useConfiguration("--features=parse_headers", "--process_headers_in_dependencies")
+        val x: ConfiguredTarget =
+            scratchConfiguredTarget(
+                "foo",
+                "x",
+                "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
+                "objc_library(name = 'x', hdrs = ['x.h'])"
+            )
+        val ccCompilationContext: CcCompilationContext = CcInfo.get(x).getCcCompilationContext()
+        assertThat(Artifact.toRootRelativePaths(ccCompilationContext.getHeaderTokens()))
+            .containsExactly("foo/_objs/x/arc/x.h.processed")
+    }
 
-    assertThat(getGeneratingCompileAction("_objs/x/arc/a.o", x).getMnemonic())
-        .isEqualTo("ObjcCompile");
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testProcessHeadersInDependencies() {
+        MockObjcSupport.setupCcToolchainConfig(
+            mockToolsConfig, MockObjcSupport.darwinX86_64().withFeatures(CppRuleClasses.PARSE_HEADERS)
+        )
+        useConfiguration("--features=parse_headers", "--process_headers_in_dependencies")
+        val x: ConfiguredTarget =
+            scratchConfiguredTarget(
+                "foo",
+                "x",
+                "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
+                "objc_library(name = 'x', deps = [':y'])",
+                "objc_library(name = 'y', hdrs = ['y.h'])"
+            )
+        val ccCompilationContext: CcCompilationContext = CcInfo.get(x).getCcCompilationContext()
+        assertThat(ActionsTestUtil.baseNamesOf(ccCompilationContext.getHeaderTokens()))
+            .isEqualTo("y.h.processed")
+        assertThat(ActionsTestUtil.baseNamesOf(getOutputGroup(x, OutputGroupInfo.HIDDEN_TOP_LEVEL)))
+            .isEqualTo("y.h.processed")
+    }
 
-  @Test
-  public void testHeaderCompileActionMnemonic() throws Exception {
-    MockObjcSupport.setupCcToolchainConfig(
-        mockToolsConfig, MockObjcSupport.darwinX86_64().withFeatures(CppRuleClasses.PARSE_HEADERS));
-    useConfiguration("--features=parse_headers", "--process_headers_in_dependencies");
+    @Test
+    @Throws(Exception::class)
+    fun testProcessHeadersInDependenciesOfCcBinary() {
+        MockObjcSupport.setupCcToolchainConfig(
+            mockToolsConfig, MockObjcSupport.darwinX86_64().withFeatures(CppRuleClasses.PARSE_HEADERS)
+        )
+        useConfiguration("--features=parse_headers", "--process_headers_in_dependencies")
+        val x: ConfiguredTarget =
+            scratchConfiguredTarget(
+                "foo",
+                "x",
+                "load('@rules_cc//cc:cc_binary.bzl', 'cc_binary')",
+                "load('@rules_cc//cc:cc_library.bzl', 'cc_library')",
+                "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
+                "cc_binary(name = 'x', deps = [':y', ':z'])",
+                "cc_library(name = 'y', hdrs = ['y.h'])",
+                "objc_library(name = 'z', srcs = ['z.h'])"
+            )
+        val validation: kotlin.String? = ActionsTestUtil.baseNamesOf(getOutputGroup(x, OutputGroupInfo.VALIDATION))
+        Truth.assertThat(validation).contains("y.h.processed")
+        Truth.assertThat(validation).contains("z.h.processed")
+    }
 
-    ConfiguredTarget x =
-        scratchConfiguredTarget(
-            "foo",
-            "x",
-            "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
-            "objc_library(name = 'x', srcs = ['y.h'], hdrs = ['z.h'])");
+    @Test
+    @Throws(Exception::class)
+    fun testSrcCompileActionMnemonic() {
+        MockObjcSupport.setupCcToolchainConfig(
+            mockToolsConfig, MockObjcSupport.darwinX86_64().withFeatures(CppRuleClasses.PARSE_HEADERS)
+        )
+        useConfiguration("--features=parse_headers", "--process_headers_in_dependencies")
 
-    assertThat(getGeneratingCompileAction("_objs/x/arc/y.h.processed", x).getMnemonic())
-        .isEqualTo("ObjcCompile");
-    assertThat(getGeneratingCompileAction("_objs/x/arc/z.h.processed", x).getMnemonic())
-        .isEqualTo("ObjcCompile");
-  }
+        val x: ConfiguredTarget =
+            scratchConfiguredTarget(
+                "foo",
+                "x",
+                "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
+                "objc_library(name = 'x', srcs = ['a.m'])"
+            )
 
-  @Test
-  public void testIncompatibleUseCppCompileHeaderMnemonic() throws Exception {
-    MockObjcSupport.setupCcToolchainConfig(
-        mockToolsConfig, MockObjcSupport.darwinX86_64().withFeatures(CppRuleClasses.PARSE_HEADERS));
-    useConfiguration(
-        "--incompatible_use_cpp_compile_header_mnemonic",
-        "--features=parse_headers",
-        "--process_headers_in_dependencies");
+        assertThat(getGeneratingCompileAction("_objs/x/arc/a.o", x).getMnemonic())
+            .isEqualTo("ObjcCompile")
+    }
 
-    ConfiguredTarget x =
-        scratchConfiguredTarget(
-            "foo",
-            "x",
-            "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
-            "objc_library(name = 'x', srcs = ['a.m', 'y.h'], hdrs = ['z.h'])");
+    @Test
+    @Throws(Exception::class)
+    fun testHeaderCompileActionMnemonic() {
+        MockObjcSupport.setupCcToolchainConfig(
+            mockToolsConfig, MockObjcSupport.darwinX86_64().withFeatures(CppRuleClasses.PARSE_HEADERS)
+        )
+        useConfiguration("--features=parse_headers", "--process_headers_in_dependencies")
 
-    assertThat(getGeneratingCompileAction("_objs/x/arc/a.o", x).getMnemonic())
-        .isEqualTo("ObjcCompile");
-    assertThat(getGeneratingCompileAction("_objs/x/arc/y.h.processed", x).getMnemonic())
-        .isEqualTo("ObjcCompileHeader");
-    assertThat(getGeneratingCompileAction("_objs/x/arc/z.h.processed", x).getMnemonic())
-        .isEqualTo("ObjcCompileHeader");
-  }
+        val x: ConfiguredTarget =
+            scratchConfiguredTarget(
+                "foo",
+                "x",
+                "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
+                "objc_library(name = 'x', srcs = ['y.h'], hdrs = ['z.h'])"
+            )
 
-  @Test
-  public void testAlwaysLinkDefaultFalse() throws Exception {
-    useConfiguration("--incompatible_objc_alwayslink_by_default=false");
-    addAppleBinaryStarlarkRule(scratch);
+        assertThat(getGeneratingCompileAction("_objs/x/arc/y.h.processed", x).getMnemonic())
+            .isEqualTo("ObjcCompile")
+        assertThat(getGeneratingCompileAction("_objs/x/arc/z.h.processed", x).getMnemonic())
+            .isEqualTo("ObjcCompile")
+    }
 
-    scratch.file(
-        "test/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testIncompatibleUseCppCompileHeaderMnemonic() {
+        MockObjcSupport.setupCcToolchainConfig(
+            mockToolsConfig, MockObjcSupport.darwinX86_64().withFeatures(CppRuleClasses.PARSE_HEADERS)
+        )
+        useConfiguration(
+            "--incompatible_use_cpp_compile_header_mnemonic",
+            "--features=parse_headers",
+            "--process_headers_in_dependencies"
+        )
+
+        val x: ConfiguredTarget =
+            scratchConfiguredTarget(
+                "foo",
+                "x",
+                "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
+                "objc_library(name = 'x', srcs = ['a.m', 'y.h'], hdrs = ['z.h'])"
+            )
+
+        assertThat(getGeneratingCompileAction("_objs/x/arc/a.o", x).getMnemonic())
+            .isEqualTo("ObjcCompile")
+        assertThat(getGeneratingCompileAction("_objs/x/arc/y.h.processed", x).getMnemonic())
+            .isEqualTo("ObjcCompileHeader")
+        assertThat(getGeneratingCompileAction("_objs/x/arc/z.h.processed", x).getMnemonic())
+            .isEqualTo("ObjcCompileHeader")
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testAlwaysLinkDefaultFalse() {
+        useConfiguration("--incompatible_objc_alwayslink_by_default=false")
+        ObjcRuleTestCase.Companion.addAppleBinaryStarlarkRule(scratch)
+
+        scratch.file(
+            "test/BUILD",
+            """
         load("@rules_cc//cc:objc_library.bzl", "objc_library")
         load("//test_starlark:apple_binary_starlark.bzl", "apple_binary_starlark")
 
@@ -2058,20 +2229,23 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
             name = "main_lib",
             srcs = ["b.m"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    CommandAction testLinkAction = linkAction("//test:objc_bin");
-    assertThat(Joiner.on(" ").join(testLinkAction.getArguments())).doesNotContain("-force_load");
-  }
+        val testLinkAction: CommandAction = linkAction("//test:objc_bin")
+        Truth.assertThat(Joiner.on(" ").join(testLinkAction.getArguments())).doesNotContain("-force_load")
+    }
 
-  @Test
-  public void testAlwaysLinkDefaultTrue() throws Exception {
-    useConfiguration("--incompatible_objc_alwayslink_by_default");
-    addAppleBinaryStarlarkRule(scratch);
+    @Test
+    @Throws(Exception::class)
+    fun testAlwaysLinkDefaultTrue() {
+        useConfiguration("--incompatible_objc_alwayslink_by_default")
+        ObjcRuleTestCase.Companion.addAppleBinaryStarlarkRule(scratch)
 
-    scratch.file(
-        "test/BUILD",
-        """
+        scratch.file(
+            "test/BUILD",
+            """
         load("@rules_cc//cc:objc_library.bzl", "objc_library")
         load("//test_starlark:apple_binary_starlark.bzl", "apple_binary_starlark")
 
@@ -2085,22 +2259,25 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
             name = "main_lib",
             srcs = ["b.m"],
         )
-        """);
-    scratch.file("test/b.m", "// dummy file");
+        
+        """.trimIndent()
+        )
+        scratch.file("test/b.m", "// dummy file")
 
-    CommandAction testLinkAction = linkAction("//test:objc_bin");
-    assertThat(Joiner.on(" ").join(testLinkAction.getArguments()))
-        .containsMatch("-force_load [^ ]+-out/[^ ]+/test/libmain_lib.lo");
-  }
+        val testLinkAction: CommandAction = linkAction("//test:objc_bin")
+        Truth.assertThat(Joiner.on(" ").join(testLinkAction.getArguments()))
+            .containsMatch("-force_load [^ ]+-out/[^ ]+/test/libmain_lib.lo")
+    }
 
-  @Test
-  public void testAlwaysLinkTrueDefaultFalse() throws Exception {
-    useConfiguration("--incompatible_objc_alwayslink_by_default=false");
-    addAppleBinaryStarlarkRule(scratch);
+    @Test
+    @Throws(Exception::class)
+    fun testAlwaysLinkTrueDefaultFalse() {
+        useConfiguration("--incompatible_objc_alwayslink_by_default=false")
+        ObjcRuleTestCase.Companion.addAppleBinaryStarlarkRule(scratch)
 
-    scratch.file(
-        "test/BUILD",
-        """
+        scratch.file(
+            "test/BUILD",
+            """
         load("@rules_cc//cc:objc_library.bzl", "objc_library")
         load("//test_starlark:apple_binary_starlark.bzl", "apple_binary_starlark")
 
@@ -2115,21 +2292,24 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
             srcs = ["b.m"],
             alwayslink = True,
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    CommandAction testLinkAction = linkAction("//test:objc_bin");
-    assertThat(Joiner.on(" ").join(testLinkAction.getArguments()))
-        .containsMatch("-force_load [^ ]+-out/[^ ]+/test/libmain_lib.lo");
-  }
+        val testLinkAction: CommandAction = linkAction("//test:objc_bin")
+        Truth.assertThat(Joiner.on(" ").join(testLinkAction.getArguments()))
+            .containsMatch("-force_load [^ ]+-out/[^ ]+/test/libmain_lib.lo")
+    }
 
-  @Test
-  public void testAlwaysLinkFalseDefaultTrue() throws Exception {
-    useConfiguration("--incompatible_objc_alwayslink_by_default");
-    addAppleBinaryStarlarkRule(scratch);
+    @Test
+    @Throws(Exception::class)
+    fun testAlwaysLinkFalseDefaultTrue() {
+        useConfiguration("--incompatible_objc_alwayslink_by_default")
+        ObjcRuleTestCase.Companion.addAppleBinaryStarlarkRule(scratch)
 
-    scratch.file(
-        "test/BUILD",
-        """
+        scratch.file(
+            "test/BUILD",
+            """
         load("@rules_cc//cc:objc_library.bzl", "objc_library")
         load("//test_starlark:apple_binary_starlark.bzl", "apple_binary_starlark")
 
@@ -2144,50 +2324,34 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
             srcs = ["b.m"],
             alwayslink = False,
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    CommandAction testLinkAction = linkAction("//test:objc_bin");
-    assertThat(Joiner.on(" ").join(testLinkAction.getArguments())).doesNotContain("-force_load");
-  }
-
-  @Test
-  public void testLinkActionMnemonic() throws Exception {
-    scratchConfiguredTarget(
-        "foo",
-        "x",
-        "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
-        "objc_library(name = 'x', srcs = ['a.m'])");
-
-    SpawnAction archiveAction = (SpawnAction) archiveAction("//foo:x");
-    assertThat(archiveAction.getMnemonic()).isEqualTo("CppArchive");
-  }
-
-  private static List<StarlarkInfo> getLinkstamps(StarlarkInfo linkerInput) {
-    try {
-      @SuppressWarnings("unchecked")
-      List<StarlarkInfo> linkstamps =
-          (List<StarlarkInfo>) linkerInput.getValue("linkstamps", List.class);
-      return linkstamps;
-    } catch (EvalException e) {
-      return ImmutableList.of();
+        val testLinkAction: CommandAction = linkAction("//test:objc_bin")
+        Truth.assertThat(Joiner.on(" ").join(testLinkAction.getArguments())).doesNotContain("-force_load")
     }
-  }
 
-  private static Artifact getLinkstampFile(StarlarkInfo linkstamp) {
-    try (Mutability mu = Mutability.create()) {
-      StarlarkFunction func = linkstamp.getValue("file", StarlarkFunction.class);
-      StarlarkThread thread = StarlarkThread.createTransient(mu, StarlarkSemantics.DEFAULT);
-      return (Artifact) Starlark.positionalOnlyCall(thread, func);
-    } catch (EvalException | InterruptedException e) {
-      throw new RuntimeException(e);
+    @Test
+    @Throws(Exception::class)
+    fun testLinkActionMnemonic() {
+        scratchConfiguredTarget(
+            "foo",
+            "x",
+            "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
+            "objc_library(name = 'x', srcs = ['a.m'])"
+        )
+
+        val archiveAction: SpawnAction = archiveAction("//foo:x") as SpawnAction
+        assertThat(archiveAction.getMnemonic()).isEqualTo("CppArchive")
     }
-  }
 
-  @Test
-  public void testPassesThroughLinkstamps() throws Exception {
-    scratch.file(
-        "x/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testPassesThroughLinkstamps() {
+        scratch.file(
+            "x/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         load("@rules_cc//cc:objc_library.bzl", "objc_library")
         objc_library(
@@ -2199,107 +2363,116 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
             name = "bar",
             linkstamp = "bar.cc",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    CcLinkingContext ccLinkingContext =
-        CcInfo.get(getConfiguredTarget("//x:foo")).getCcLinkingContext();
-    assertThat(
+        val ccLinkingContext: CcLinkingContext =
+            CcInfo.get(getConfiguredTarget("//x:foo")).getCcLinkingContext()
+        assertThat(
             ccLinkingContext.getLinkerInputs().toList().stream()
-                .flatMap(linkerInput -> getLinkstamps(linkerInput).stream())
-                .map(ObjcLibraryTest::getLinkstampFile)
-                .map(Artifact::getExecPathString))
-        .containsExactly("x/bar.cc");
-  }
-
-  @Test
-  public void testCompileLanguageApi() throws Exception {
-    String fragments = "    fragments = ['google_cpp', 'cpp'],";
-    if (AnalysisMock.get().isThisBazel()) {
-      fragments = "    fragments = ['cpp'],";
+                .flatMap({ linkerInput -> getLinkstamps(linkerInput)!!.stream() })
+                .map({ linkstamp: StarlarkInfo -> getLinkstampFile(linkstamp) })
+                .map(Artifact::getExecPathString)
+        )
+            .containsExactly("x/bar.cc")
     }
-    scratch.file("myinfo/myinfo.bzl", "MyInfo = provider()");
-    scratch.file("myinfo/BUILD");
-    scratch.overwriteFile("tools/build_defs/foo/BUILD");
-    scratch.file(
-        "tools/build_defs/foo/extension.bzl",
-        "load('//myinfo:myinfo.bzl', 'MyInfo')",
-        "load('@rules_cc//cc/common:cc_info.bzl', 'CcInfo')",
-        "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
-        "def _objc_starlark_library_impl(ctx):",
-        "    toolchain = ctx.attr._my_cc_toolchain[cc_common.CcToolchainInfo]",
-        "    features = ['objc-compile']",
-        "    features.extend(ctx.features)",
-        "    feature_configuration = cc_common.configure_features(",
-        "        ctx = ctx,",
-        "        cc_toolchain=toolchain,",
-        "        requested_features = features,",
-        "        unsupported_features = ctx.disabled_features)",
-        "    foo_dict = {'string_variable': 'foo',",
-        "            'string_sequence_variable' : ['foo'],",
-        "            'string_depset_variable': depset(['foo'])}",
-        "    (compilation_context, compilation_outputs) = cc_common.compile(",
-        "        actions=ctx.actions,",
-        "        feature_configuration=feature_configuration,",
-        "        cc_toolchain=toolchain,",
-        "        srcs=ctx.files.srcs,",
-        "        name=ctx.label.name + '_suffix',",
-        "        language='objc'",
-        "    )",
-        "    (linking_context,",
-        "     linking_outputs) = cc_common.create_linking_context_from_compilation_outputs(",
-        "        actions=ctx.actions,",
-        "        feature_configuration=feature_configuration,",
-        "        compilation_outputs=compilation_outputs,",
-        "        name = ctx.label.name,",
-        "        cc_toolchain=toolchain,",
-        "        language='c++'",
-        "    )",
-        "    files_to_build = []",
-        "    files_to_build.extend(compilation_outputs.pic_objects)",
-        "    files_to_build.extend(compilation_outputs.objects)",
-        "    library_to_link = None",
-        "    if len(ctx.files.srcs) > 0:",
-        "        library_to_link = linking_outputs.library_to_link",
-        "        if library_to_link.pic_static_library != None:",
-        "            files_to_build.append(library_to_link.pic_static_library)",
-        "        files_to_build.append(library_to_link.dynamic_library)",
-        "    return [MyInfo(libraries=[library_to_link]),",
-        "            DefaultInfo(files=depset(files_to_build)),",
-        "            CcInfo(compilation_context=compilation_context,",
-        "                   linking_context=linking_context)]",
-        "objc_starlark_library = rule(",
-        "    implementation = _objc_starlark_library_impl,",
-        "    attrs = {",
-        "      'srcs': attr.label_list(allow_files=True),",
-        "      '_my_cc_toolchain': attr.label(default =",
-        "          '//a:alias')",
-        "    },",
-        fragments,
-        ")");
-    scratch.file(
-        "foo/BUILD",
-        """
+
+    @Test
+    @Throws(Exception::class)
+    fun testCompileLanguageApi() {
+        var fragments = "    fragments = ['google_cpp', 'cpp'],"
+        if (AnalysisMock.get().isThisBazel()) {
+            fragments = "    fragments = ['cpp'],"
+        }
+        scratch.file("myinfo/myinfo.bzl", "MyInfo = provider()")
+        scratch.file("myinfo/BUILD")
+        scratch.overwriteFile("tools/build_defs/foo/BUILD")
+        scratch.file(
+            "tools/build_defs/foo/extension.bzl",
+            "load('//myinfo:myinfo.bzl', 'MyInfo')",
+            "load('@rules_cc//cc/common:cc_info.bzl', 'CcInfo')",
+            "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
+            "def _objc_starlark_library_impl(ctx):",
+            "    toolchain = ctx.attr._my_cc_toolchain[cc_common.CcToolchainInfo]",
+            "    features = ['objc-compile']",
+            "    features.extend(ctx.features)",
+            "    feature_configuration = cc_common.configure_features(",
+            "        ctx = ctx,",
+            "        cc_toolchain=toolchain,",
+            "        requested_features = features,",
+            "        unsupported_features = ctx.disabled_features)",
+            "    foo_dict = {'string_variable': 'foo',",
+            "            'string_sequence_variable' : ['foo'],",
+            "            'string_depset_variable': depset(['foo'])}",
+            "    (compilation_context, compilation_outputs) = cc_common.compile(",
+            "        actions=ctx.actions,",
+            "        feature_configuration=feature_configuration,",
+            "        cc_toolchain=toolchain,",
+            "        srcs=ctx.files.srcs,",
+            "        name=ctx.label.name + '_suffix',",
+            "        language='objc'",
+            "    )",
+            "    (linking_context,",
+            "     linking_outputs) = cc_common.create_linking_context_from_compilation_outputs(",
+            "        actions=ctx.actions,",
+            "        feature_configuration=feature_configuration,",
+            "        compilation_outputs=compilation_outputs,",
+            "        name = ctx.label.name,",
+            "        cc_toolchain=toolchain,",
+            "        language='c++'",
+            "    )",
+            "    files_to_build = []",
+            "    files_to_build.extend(compilation_outputs.pic_objects)",
+            "    files_to_build.extend(compilation_outputs.objects)",
+            "    library_to_link = None",
+            "    if len(ctx.files.srcs) > 0:",
+            "        library_to_link = linking_outputs.library_to_link",
+            "        if library_to_link.pic_static_library != None:",
+            "            files_to_build.append(library_to_link.pic_static_library)",
+            "        files_to_build.append(library_to_link.dynamic_library)",
+            "    return [MyInfo(libraries=[library_to_link]),",
+            "            DefaultInfo(files=depset(files_to_build)),",
+            "            CcInfo(compilation_context=compilation_context,",
+            "                   linking_context=linking_context)]",
+            "objc_starlark_library = rule(",
+            "    implementation = _objc_starlark_library_impl,",
+            "    attrs = {",
+            "      'srcs': attr.label_list(allow_files=True),",
+            "      '_my_cc_toolchain': attr.label(default =",
+            "          '//a:alias')",
+            "    },",
+            fragments,
+            ")"
+        )
+        scratch.file(
+            "foo/BUILD",
+            """
         load("//tools/build_defs/foo:extension.bzl", "objc_starlark_library")
 
         objc_starlark_library(
             name = "starlark_lib",
             srcs = ["starlark_lib.m"],
         )
-        """);
-    scratch.file(
-        "a/BUILD",
-        "load('@rules_cc//cc/toolchains:cc_toolchain_alias.bzl',"
-            + " 'cc_toolchain_alias')",
-        "cc_toolchain_alias(name='alias')");
-    getConfiguredTarget("//foo:starlark_lib");
-    assertNoEvents();
-  }
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "a/BUILD",
+            "load('@rules_cc//cc/toolchains:cc_toolchain_alias.bzl',"
+                    + " 'cc_toolchain_alias')",
+            "cc_toolchain_alias(name='alias')"
+        )
+        getConfiguredTarget("//foo:starlark_lib")
+        assertNoEvents()
+    }
 
-  @Test
-  public void testCcTestUsesStaticLibraries() throws Exception {
-    scratch.file(
-        "x/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testCcTestUsesStaticLibraries() {
+        scratch.file(
+            "x/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         load("@rules_cc//cc:cc_test.bzl", "cc_test")
         load("@rules_cc//cc:objc_library.bzl", "objc_library")
@@ -2320,23 +2493,29 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
                 "bar.so",
             ],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertThat(
+        Truth.assertThat(
             artifactsToStrings(
                 getGeneratingAction(
-                        getConfiguredTarget("//x:test")
-                            .getProvider(FilesToRunProvider.class)
-                            .getExecutable())
-                    .getInputs()))
-        .contains("src x/bar.a");
-  }
+                    getConfiguredTarget("//x:test")
+                        .getProvider(FilesToRunProvider::class.java)
+                        .getExecutable()
+                )
+                    .getInputs()
+            )
+        )
+            .contains("src x/bar.a")
+    }
 
-  @Test
-  public void testPassesDependenciesStaticLibrariesInCcInfo() throws Exception {
-    scratch.file(
-        "x/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testPassesDependenciesStaticLibrariesInCcInfo() {
+        scratch.file(
+            "x/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         load("@rules_cc//cc:objc_library.bzl", "objc_library")
         objc_library(
@@ -2355,45 +2534,53 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
             srcs = ["bar.cc"],
             deps = [":foo"],
         )
-        """);
-    useConfiguration("--platforms=" + MockObjcSupport.DARWIN_X86_64);
+        
+        """.trimIndent()
+        )
+        useConfiguration("--platforms=" + MockObjcSupport.DARWIN_X86_64)
 
-    CcInfo ccInfo = CcInfo.get(getConfiguredTarget("//x:bar"));
+        val ccInfo: CcInfo = CcInfo.get(getConfiguredTarget("//x:bar"))
 
-    assertThat(
+        Truth.assertThat(
             artifactsToStrings(
                 ccInfo.getCcLinkingContext().getLinkerInputs().toList().stream()
                     .map(LinkerInput::getLibraries)
-                    .flatMap(List::stream)
+                    .flatMap({ obj: MutableList<*>? -> obj!!.stream() })
                     .map(LibraryToLink::getStaticLibrary)
-                    .collect(toImmutableList())))
-        .contains("bin x/libbaz.a");
-  }
-
-  @Test
-  public void testGrepIncludesPassed() throws Exception {
-    if (analysisMock.isThisBazel()) {
-      return;
+                    .collect(ImmutableList.toImmutableList<E?>())
+            )
+        )
+            .contains("bin x/libbaz.a")
     }
-    scratch.file(
-        "x/BUILD",
-        """
+
+    @Test
+    @Throws(Exception::class)
+    fun testGrepIncludesPassed() {
+        if (analysisMock!!.isThisBazel) {
+            return
+        }
+        scratch.file(
+            "x/BUILD",
+            """
         load("@rules_cc//cc:objc_library.bzl", "objc_library")
         objc_library(
             name = "foo",
             srcs = ["foo.mm"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    CppCompileAction compileA = (CppCompileAction) compileAction("//x:foo", "foo.o");
-    assertThat(compileA.getGrepIncludes()).isNotNull();
-  }
+        val compileA: CppCompileAction = compileAction("//x:foo", "foo.o") as CppCompileAction
+        assertThat(compileA.getGrepIncludes()).isNotNull()
+    }
 
-  @Test
-  public void correctToolFilesUsed() throws Exception {
-    scratch.file(
-        "a/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun correctToolFilesUsed() {
+        scratch.file(
+            "a/BUILD",
+            """
         load("@rules_cc//cc:objc_library.bzl", "objc_library")
         load("@rules_cc//cc/toolchains:cc_toolchain_alias.bzl", "cc_toolchain_alias")
         cc_toolchain_alias(name = "a")
@@ -2412,50 +2599,53 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
             name = "preprocessed-asm",
             srcs = ["a.S"],
         )
-        """);
-    useConfiguration("--incompatible_use_specific_tool_files");
+        
+        """.trimIndent()
+        )
+        useConfiguration("--incompatible_use_specific_tool_files")
 
-    ConfiguredTarget target = getConfiguredTarget("//a:a");
-    CcToolchainProvider toolchainProvider = CcToolchainProvider.getFromTarget(target);
+        val target: ConfiguredTarget = getConfiguredTarget("//a:a")
+        val toolchainProvider: CcToolchainProvider = CcToolchainProvider.getFromTarget(target)
 
-    RuleConfiguredTarget libTarget = (RuleConfiguredTarget) getConfiguredTarget("//a:l");
-    ActionAnalysisMetadata archiveAction =
-        libTarget.getActions().stream()
-            .filter((a) -> a.getMnemonic().equals("CppArchive"))
-            .collect(onlyElement());
-    assertThat(archiveAction.getInputs().toList())
-        .containsAtLeastElementsIn(toolchainProvider.getArFiles().toList());
+        val libTarget: RuleConfiguredTarget = getConfiguredTarget("//a:l") as RuleConfiguredTarget
+        val archiveAction: ActionAnalysisMetadata =
+            libTarget.getActions().stream()
+                .filter({ a -> a.getMnemonic().equals("CppArchive") })
+                .collect(MoreCollectors.onlyElement<T?>())
+        assertThat(archiveAction.getInputs().toList())
+            .containsAtLeastElementsIn(toolchainProvider.getArFiles().toList())
 
-    ActionAnalysisMetadata objcCompileAction =
-        libTarget.getActions().stream()
-            .filter((a) -> a.getMnemonic().equals("ObjcCompile"))
-            .collect(onlyElement());
-    assertThat(objcCompileAction.getInputs().toList())
-        .containsAtLeastElementsIn(toolchainProvider.getCompilerFiles().toList());
+        val objcCompileAction: ActionAnalysisMetadata =
+            libTarget.getActions().stream()
+                .filter({ a -> a.getMnemonic().equals("ObjcCompile") })
+                .collect(MoreCollectors.onlyElement<T?>())
+        assertThat(objcCompileAction.getInputs().toList())
+            .containsAtLeastElementsIn(toolchainProvider.getCompilerFiles().toList())
 
-    ActionAnalysisMetadata asmAction =
-        ((RuleConfiguredTarget) getConfiguredTarget("//a:asm"))
-            .getActions().stream()
-                .filter((a) -> a.getMnemonic().equals("CppCompile"))
-                .collect(onlyElement());
-    assertThat(asmAction.getInputs().toList())
-        .containsAtLeastElementsIn(toolchainProvider.getAsFiles().toList());
+        val asmAction: ActionAnalysisMetadata =
+            (getConfiguredTarget("//a:asm") as RuleConfiguredTarget)
+                .getActions().stream()
+                .filter({ a -> a.getMnemonic().equals("CppCompile") })
+                .collect(MoreCollectors.onlyElement<T?>())
+        assertThat(asmAction.getInputs().toList())
+            .containsAtLeastElementsIn(toolchainProvider.getAsFiles().toList())
 
-    ActionAnalysisMetadata preprocessedAsmAction =
-        ((RuleConfiguredTarget) getConfiguredTarget("//a:preprocessed-asm"))
-            .getActions().stream()
-                .filter((a) -> a.getMnemonic().equals("CppCompile"))
-                .collect(onlyElement());
-    assertThat(preprocessedAsmAction.getInputs().toList())
-        .containsAtLeastElementsIn(toolchainProvider.getCompilerFiles().toList());
-  }
+        val preprocessedAsmAction: ActionAnalysisMetadata =
+            (getConfiguredTarget("//a:preprocessed-asm") as RuleConfiguredTarget)
+                .getActions().stream()
+                .filter({ a -> a.getMnemonic().equals("CppCompile") })
+                .collect(MoreCollectors.onlyElement<T?>())
+        assertThat(preprocessedAsmAction.getInputs().toList())
+            .containsAtLeastElementsIn(toolchainProvider.getCompilerFiles().toList())
+    }
 
-  /** b/197608223 */
-  @Test
-  public void testCompilationPrerequisitesHasHeaders() throws Exception {
-    scratch.file(
-        "bin/BUILD",
-        """
+    /** b/197608223  */
+    @Test
+    @Throws(Exception::class)
+    fun testCompilationPrerequisitesHasHeaders() {
+        scratch.file(
+            "bin/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         load("@rules_cc//cc:objc_library.bzl", "objc_library")
         objc_library(
@@ -2469,74 +2659,89 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
             srcs = ["cc.cc"],
             hdrs = ["cc.h"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration(
-        "--apple_platform_type=ios",
-        "--ios_multi_cpus=x86_64",
-        "--platforms=" + MockObjcSupport.IOS_X86_64);
+        useConfiguration(
+            "--apple_platform_type=ios",
+            "--ios_multi_cpus=x86_64",
+            "--platforms=" + MockObjcSupport.IOS_X86_64
+        )
 
-    ConfiguredTarget cc = getConfiguredTarget("//bin:objc");
+        val cc: ConfiguredTarget = getConfiguredTarget("//bin:objc")
 
-    assertThat(
+        Truth.assertThat(
             artifactsToStrings(
                 cc.get(OutputGroupInfo.STARLARK_CONSTRUCTOR)
-                    .getOutputGroup(OutputGroupInfo.COMPILATION_PREREQUISITES)))
-        .contains("src bin/cc.h");
-  }
+                    .getOutputGroup(OutputGroupInfo.COMPILATION_PREREQUISITES)
+            )
+        )
+            .contains("src bin/cc.h")
+    }
 
-  @Test
-  public void testCoptsLocationIsExpanded() throws Exception {
-    scratch.file(
-        "bin/BUILD",
-        "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
-        "objc_library(",
-        "    name = 'lib',",
-        "    copts = ['$(rootpath lib1.m) $(location lib2.m) $(location data.data) $(execpath"
-            + " header.h)'],",
-        "    srcs = ['lib1.m'],",
-        "    non_arc_srcs = ['lib2.m'],",
-        "    data = ['data.data', 'lib2.m'],",
-        "    hdrs = ['header.h'],",
-        ")");
+    @Test
+    @Throws(Exception::class)
+    fun testCoptsLocationIsExpanded() {
+        scratch.file(
+            "bin/BUILD",
+            "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
+            "objc_library(",
+            "    name = 'lib',",
+            "    copts = ['$(rootpath lib1.m) $(location lib2.m) $(location data.data) $(execpath"
+                    + " header.h)'],",
+            "    srcs = ['lib1.m'],",
+            "    non_arc_srcs = ['lib2.m'],",
+            "    data = ['data.data', 'lib2.m'],",
+            "    hdrs = ['header.h'],",
+            ")"
+        )
 
-    useConfiguration(
-        "--apple_platform_type=ios",
-        "--ios_multi_cpus=x86_64",
-        "--platforms=" + MockObjcSupport.IOS_X86_64);
+        useConfiguration(
+            "--apple_platform_type=ios",
+            "--ios_multi_cpus=x86_64",
+            "--platforms=" + MockObjcSupport.IOS_X86_64
+        )
 
-    CppCompileAction compileA = (CppCompileAction) compileAction("//bin:lib", "lib1.o");
-    assertThat(compileA.compileCommandLine.getCopts(PathMapper.NOOP))
-        .containsAtLeast("bin/lib1.m", "bin/lib2.m", "bin/data.data", "bin/header.h");
-  }
+        val compileA: CppCompileAction = compileAction("//bin:lib", "lib1.o") as CppCompileAction
+        assertThat(compileA.compileCommandLine.getCopts(PathMapper.NOOP))
+            .containsAtLeast("bin/lib1.m", "bin/lib2.m", "bin/data.data", "bin/header.h")
+    }
 
-  @Test
-  public void testCoptsLocationWhenNotExpanded_throwsAssertionError() throws Exception {
-    scratch.file(
-        "bin/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testCoptsLocationWhenNotExpanded_throwsAssertionError() {
+        scratch.file(
+            "bin/BUILD",
+            """
         load("@rules_cc//cc:objc_library.bzl", "objc_library")
         objc_library(
             name = "lib",
             srcs = ["lib1.m"],
             hdrs = ["header.h"],
-            copts = ["$(execpath lib2.m)"],
+            copts = ["${'$'}(execpath lib2.m)"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration(
-        "--apple_platform_type=ios",
-        "--ios_multi_cpus=x86_64",
-        "--platforms=" + MockObjcSupport.IOS_X86_64);
+        useConfiguration(
+            "--apple_platform_type=ios",
+            "--ios_multi_cpus=x86_64",
+            "--platforms=" + MockObjcSupport.IOS_X86_64
+        )
 
-    assertThrows(AssertionError.class, () -> compileAction("//bin:lib", "lib1.o"));
-  }
+        Assert.assertThrows<AssertionError?>(
+            AssertionError::class.java,
+            ThrowingRunnable { compileAction("//bin:lib", "lib1.o") })
+    }
 
-  @Test
-  public void testEnableCoveragePropagatesSupportFiles() throws Exception {
-    scratch.file(
-        "a/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testEnableCoveragePropagatesSupportFiles() {
+        scratch.file(
+            "a/BUILD",
+            """
         load("@rules_cc//cc:objc_library.bzl", "objc_library")
         load("@rules_cc//cc/toolchains:cc_toolchain_alias.bzl", "cc_toolchain_alias")
         cc_toolchain_alias(name = "toolchain")
@@ -2544,24 +2749,27 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
         objc_library(
             name = "lib",
         )
-        """);
-    useConfiguration("--collect_code_coverage", "--instrumentation_filter=//a[:/]");
+        
+        """.trimIndent()
+        )
+        useConfiguration("--collect_code_coverage", "--instrumentation_filter=//a[:/]")
 
-    CcToolchainProvider ccToolchainProvider =
-        CcToolchainProvider.getFromTarget(getConfiguredTarget("//a:toolchain"));
-    InstrumentedFilesInfo instrumentedFilesInfo =
-        getConfiguredTarget("//a:lib").get(InstrumentedFilesInfo.provider);
+        val ccToolchainProvider: CcToolchainProvider =
+            CcToolchainProvider.getFromTarget(getConfiguredTarget("//a:toolchain"))
+        val instrumentedFilesInfo: InstrumentedFilesInfo =
+            getConfiguredTarget("//a:lib").get(InstrumentedFilesInfo.provider)
 
-    assertThat(instrumentedFilesInfo.getCoverageSupportFiles().toList()).isNotEmpty();
-    assertThat(instrumentedFilesInfo.getCoverageSupportFiles().toList())
-        .containsExactlyElementsIn(ccToolchainProvider.getCoverageFiles().toList());
-  }
+        assertThat(instrumentedFilesInfo.getCoverageSupportFiles().toList()).isNotEmpty()
+        assertThat(instrumentedFilesInfo.getCoverageSupportFiles().toList())
+            .containsExactlyElementsIn(ccToolchainProvider.getCoverageFiles().toList())
+    }
 
-  @Test
-  public void testDisableCoverageDoesNotPropagateSupportFiles() throws Exception {
-    scratch.file(
-        "a/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testDisableCoverageDoesNotPropagateSupportFiles() {
+        scratch.file(
+            "a/BUILD",
+            """
         load("@rules_cc//cc:objc_library.bzl", "objc_library")
         load("@rules_cc//cc/toolchains:cc_toolchain_alias.bzl", "cc_toolchain_alias")
         cc_toolchain_alias(name = "toolchain")
@@ -2569,19 +2777,22 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
         objc_library(
             name = "lib",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    InstrumentedFilesInfo instrumentedFilesInfo =
-        getConfiguredTarget("//a:lib").get(InstrumentedFilesInfo.provider);
+        val instrumentedFilesInfo: InstrumentedFilesInfo =
+            getConfiguredTarget("//a:lib").get(InstrumentedFilesInfo.provider)
 
-    assertThat(instrumentedFilesInfo.getCoverageSupportFiles().toList()).isEmpty();
-  }
+        assertThat(instrumentedFilesInfo.getCoverageSupportFiles().toList()).isEmpty()
+    }
 
-  @Test
-  public void testCoverageMetadataFiles() throws Exception {
-    scratch.file(
-        "a/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testCoverageMetadataFiles() {
+        scratch.file(
+            "a/BUILD",
+            """
         load("@rules_cc//cc:objc_library.bzl", "objc_library")
         load("@rules_cc//cc/toolchains:cc_toolchain_alias.bzl", "cc_toolchain_alias")
         cc_toolchain_alias(name = "toolchain")
@@ -2596,33 +2807,37 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
             srcs = ["bar.m"],
             deps = [":foo"],
         )
-        """);
-    useConfiguration("--collect_code_coverage", "--instrumentation_filter=//a[:/]");
+        
+        """.trimIndent()
+        )
+        useConfiguration("--collect_code_coverage", "--instrumentation_filter=//a[:/]")
 
-    InstrumentedFilesInfo instrumentedFilesInfo =
-        getConfiguredTarget("//a:bar").get(InstrumentedFilesInfo.provider);
+        val instrumentedFilesInfo: InstrumentedFilesInfo =
+            getConfiguredTarget("//a:bar").get(InstrumentedFilesInfo.provider)
 
-    assertThat(
-            Artifact.toRootRelativePaths(instrumentedFilesInfo.getInstrumentationMetadataFiles()))
-        .containsExactly("a/_objs/foo/arc/foo.gcno", "a/_objs/bar/arc/bar.gcno");
-  }
+        assertThat(
+            Artifact.toRootRelativePaths(instrumentedFilesInfo.getInstrumentationMetadataFiles())
+        )
+            .containsExactly("a/_objs/foo/arc/foo.gcno", "a/_objs/bar/arc/bar.gcno")
+    }
 
-  private ImmutableList<String> getCcInfoUserLinkFlagsFromTarget(String target)
-      throws LabelSyntaxException, RuleErrorException {
-    return CcInfo.get(getConfiguredTarget(target))
-        .getCcLinkingContext()
-        .getLinkerInputs()
-        .toList()
-        .stream()
-        .flatMap(linkerInput -> LinkerInput.getUserLinkFlags(linkerInput).stream())
-        .collect(toImmutableList());
-  }
+    @Throws(LabelSyntaxException::class, RuleErrorException::class)
+    private fun getCcInfoUserLinkFlagsFromTarget(target: kotlin.String?): ImmutableList<kotlin.String?> {
+        return CcInfo.get(getConfiguredTarget(target))
+            .getCcLinkingContext()
+            .getLinkerInputs()
+            .toList()
+            .stream()
+            .flatMap({ linkerInput -> LinkerInput.getUserLinkFlags(linkerInput).stream() })
+            .collect(ImmutableList.toImmutableList<E?>())
+    }
 
-  @Test
-  public void testSdkUserLinkFlagsFromSdkFieldsAndLinkoptsArePropagatedOnCcInfo() throws Exception {
-    scratch.file(
-        "x/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testSdkUserLinkFlagsFromSdkFieldsAndLinkoptsArePropagatedOnCcInfo() {
+        scratch.file(
+            "x/BUILD",
+            """
         load("@rules_cc//cc:objc_library.bzl", "objc_library")
         objc_library(
             name = "foo",
@@ -2656,75 +2871,86 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
             sdk_dylibs = ["libc++"],
             weak_sdk_frameworks = ["WeakFramework"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    ImmutableList<String> userLinkFlags = getCcInfoUserLinkFlagsFromTarget("//x:foo");
-    assertThat(userLinkFlags).isNotEmpty();
-    assertThat(userLinkFlags).containsAtLeast("-framework", "AVFoundation").inOrder();
-    assertThat(userLinkFlags).containsAtLeast("-framework", "CoreData").inOrder();
-    assertThat(userLinkFlags).containsAtLeast("-framework", "Foundation").inOrder();
-    assertThat(userLinkFlags).containsAtLeast("-framework", "UIKit").inOrder();
-    assertThat(userLinkFlags).containsAtLeast("-lz", "-lc++", "-lxml2", "-lsqlite3");
-    assertThat(userLinkFlags).containsAtLeast("-framework", "Framework").inOrder();
-    assertThat(userLinkFlags).containsAtLeast("-weak_framework", "WeakFramework").inOrder();
-    assertThat(userLinkFlags)
-        .containsAtLeast("-weak_framework", "WeakFrameworkFromLinkOpt")
-        .inOrder();
-  }
+        val userLinkFlags = getCcInfoUserLinkFlagsFromTarget("//x:foo")
+        Truth.assertThat(userLinkFlags).isNotEmpty()
+        Truth.assertThat(userLinkFlags).containsAtLeast("-framework", "AVFoundation").inOrder()
+        Truth.assertThat(userLinkFlags).containsAtLeast("-framework", "CoreData").inOrder()
+        Truth.assertThat(userLinkFlags).containsAtLeast("-framework", "Foundation").inOrder()
+        Truth.assertThat(userLinkFlags).containsAtLeast("-framework", "UIKit").inOrder()
+        Truth.assertThat(userLinkFlags).containsAtLeast("-lz", "-lc++", "-lxml2", "-lsqlite3")
+        Truth.assertThat(userLinkFlags).containsAtLeast("-framework", "Framework").inOrder()
+        Truth.assertThat(userLinkFlags).containsAtLeast("-weak_framework", "WeakFramework").inOrder()
+        Truth.assertThat(userLinkFlags)
+            .containsAtLeast("-weak_framework", "WeakFrameworkFromLinkOpt")
+            .inOrder()
+    }
 
-  @Test
-  public void testTreeArtifactSrcs() throws Exception {
-    doTestTreeAtrifactInAttributes("srcs");
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testTreeArtifactSrcs() {
+        doTestTreeAtrifactInAttributes("srcs")
+    }
 
-  @Test
-  public void testTreeArtifactNonArcSrcs() throws Exception {
-    doTestTreeAtrifactInAttributes("non_arc_srcs");
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testTreeArtifactNonArcSrcs() {
+        doTestTreeAtrifactInAttributes("non_arc_srcs")
+    }
 
-  @Test
-  public void testTreeArtifactHdrs() throws Exception {
-    doTestTreeAtrifactInAttributes("hdrs");
-  }
+    @Test
+    @Throws(Exception::class)
+    fun testTreeArtifactHdrs() {
+        doTestTreeAtrifactInAttributes("hdrs")
+    }
 
-  private void doTestTreeAtrifactInAttributes(String attrName) throws Exception {
-    reporter.removeHandler(failFastHandler);
-    scratch.file(
-        "bar/create_tree_artifact.bzl",
-        """
+    @Throws(Exception::class)
+    private fun doTestTreeAtrifactInAttributes(attrName: kotlin.String?) {
+        reporter.removeHandler(failFastHandler)
+        scratch.file(
+            "bar/create_tree_artifact.bzl",
+            """
         def _impl(ctx):
             tree = ctx.actions.declare_directory("dir")
             ctx.actions.run_shell(
                 outputs = [tree],
                 inputs = [],
                 arguments = [tree.path],
-                command = "mkdir $1",
+                command = "mkdir ${'$'}1",
             )
             return [DefaultInfo(files = depset([tree]))]
 
         create_tree_artifact = rule(implementation = _impl)
-        """);
-    scratch.file(
-        "bar/BUILD",
-        "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
-        "load(':create_tree_artifact.bzl', 'create_tree_artifact')",
-        "create_tree_artifact(name = 'tree_artifact')",
-        "objc_library(",
-        "    name = 'lib',",
-        "    " + attrName + " = [':tree_artifact'],",
-        ")");
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "bar/BUILD",
+            "load('@rules_cc//cc:objc_library.bzl', 'objc_library')",
+            "load(':create_tree_artifact.bzl', 'create_tree_artifact')",
+            "create_tree_artifact(name = 'tree_artifact')",
+            "objc_library(",
+            "    name = 'lib',",
+            "    " + attrName + " = [':tree_artifact'],",
+            ")"
+        )
 
-    getConfiguredTarget("//bar:lib");
+        getConfiguredTarget("//bar:lib")
 
-    assertNoEvents();
-  }
+        assertNoEvents()
+    }
 
-  @Test
-  public void testObjcTransitionWithTopLevelApplePlatforms(
-      @TestParameter boolean usePlatformsInAppleCrosstoolTransition) throws Exception {
-    scratch.file(
-        "bin/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testObjcTransitionWithTopLevelApplePlatforms(
+        @TestParameter usePlatformsInAppleCrosstoolTransition: Boolean
+    ) {
+        scratch.file(
+            "bin/BUILD",
+            """
         load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
         load("@rules_cc//cc:objc_library.bzl", "objc_library")
         objc_library(
@@ -2737,43 +2963,51 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
             srcs = ["cc.cc"],
             deps = [":objc"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    setBuildLanguageOptions("--noincompatible_disable_objc_library_transition");
-    ImmutableList.Builder<String> args = ImmutableList.builder();
-    args.add(
-        "--apple_platform_type=ios",
-        "--platforms=" + MockObjcSupport.IOS_ARM64,
-        "--experimental_platform_in_output_dir",
-        "--use_platforms_in_apple_crosstool_transition=" + usePlatformsInAppleCrosstoolTransition);
-    if (!usePlatformsInAppleCrosstoolTransition) {
-      args.add("--cpu=ios_arm64");
+        setBuildLanguageOptions("--noincompatible_disable_objc_library_transition")
+        val args = ImmutableList.builder<kotlin.String?>()
+        args.add(
+            "--apple_platform_type=ios",
+            "--platforms=" + MockObjcSupport.IOS_ARM64,
+            "--experimental_platform_in_output_dir",
+            "--use_platforms_in_apple_crosstool_transition=" + usePlatformsInAppleCrosstoolTransition
+        )
+        if (!usePlatformsInAppleCrosstoolTransition) {
+            args.add("--cpu=ios_arm64")
+        }
+        useConfiguration(*args.build().toTypedArray<kotlin.String?>())
+
+        val cc: ConfiguredTarget = getConfiguredTarget("//bin:cc")
+        val objcObject: Artifact =
+            ActionsTestUtil.getFirstArtifactEndingWith(
+                actionsTestUtil().artifactClosureOf(getFilesToBuild(cc)), "objc.o"
+            )
+        Subject.contains("ios_arm64")
     }
-    useConfiguration(args.build().toArray(new String[0]));
 
-    ConfiguredTarget cc = getConfiguredTarget("//bin:cc");
-    Artifact objcObject =
-        ActionsTestUtil.getFirstArtifactEndingWith(
-            actionsTestUtil().artifactClosureOf(getFilesToBuild(cc)), "objc.o");
-    assertThat(objcObject.getExecPathString()).contains("ios_arm64");
-  }
-
-  @Test
-  public void testObjcTransitionInExecConfig(
-      @TestParameter boolean usePlatformsInAppleCrosstoolTransition) throws Exception {
-    scratch.file(
-        "bin/defs.bzl",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testObjcTransitionInExecConfig(
+        @TestParameter usePlatformsInAppleCrosstoolTransition: Boolean
+    ) {
+        scratch.file(
+            "bin/defs.bzl",
+            """
         def _impl(ctx):
           return [DefaultInfo(files = ctx.attr.dep[DefaultInfo].files)]
         my_rule = rule(
             implementation = _impl,
             attrs = {"dep": attr.label(cfg = 'exec')}
         )
-        """);
-    scratch.file(
-        "bin/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "bin/BUILD",
+            """
         load("@rules_cc//cc:objc_library.bzl", "objc_library")
         load(":defs.bzl", "my_rule")
 
@@ -2786,27 +3020,60 @@ public class ObjcLibraryTest extends ObjcRuleTestCase {
             name = "t1",
             dep = ":objc",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    setBuildLanguageOptions("--noincompatible_disable_objc_library_transition");
-    ImmutableList.Builder<String> args = ImmutableList.builder();
-    args.add(
-        "--apple_platform_type=ios",
-        "--platforms=" + MockObjcSupport.IOS_ARM64,
-        "--experimental_platform_in_output_dir",
-        "--use_platforms_in_apple_crosstool_transition=" + usePlatformsInAppleCrosstoolTransition,
-        "--host_platform=" + MockObjcSupport.DARWIN_ARM64);
-    if (!usePlatformsInAppleCrosstoolTransition) {
-      args.add("--host_cpu=darwin_arm64");
+        setBuildLanguageOptions("--noincompatible_disable_objc_library_transition")
+        val args = ImmutableList.builder<kotlin.String?>()
+        args.add(
+            "--apple_platform_type=ios",
+            "--platforms=" + MockObjcSupport.IOS_ARM64,
+            "--experimental_platform_in_output_dir",
+            "--use_platforms_in_apple_crosstool_transition=" + usePlatformsInAppleCrosstoolTransition,
+            "--host_platform=" + MockObjcSupport.DARWIN_ARM64
+        )
+        if (!usePlatformsInAppleCrosstoolTransition) {
+            args.add("--host_cpu=darwin_arm64")
+        }
+        useConfiguration(*args.build().toTypedArray<kotlin.String?>())
+
+        val t1: ConfiguredTarget = getConfiguredTarget("//bin:t1")
+        val objcObject: Artifact =
+            ActionsTestUtil.getFirstArtifactEndingWith(
+                actionsTestUtil().artifactClosureOf(getFilesToBuild(t1)), "objc.o"
+            )
+        val execPath: kotlin.String? = objcObject.getExecPathString()
+        Truth.assertThat(execPath).contains("darwin_arm64")
+        Truth.assertThat(execPath).doesNotContain("-ST-")
     }
-    useConfiguration(args.build().toArray(new String[0]));
 
-    ConfiguredTarget t1 = getConfiguredTarget("//bin:t1");
-    Artifact objcObject =
-        ActionsTestUtil.getFirstArtifactEndingWith(
-            actionsTestUtil().artifactClosureOf(getFilesToBuild(t1)), "objc.o");
-    String execPath = objcObject.getExecPathString();
-    assertThat(execPath).contains("darwin_arm64");
-    assertThat(execPath).doesNotContain("-ST-");
-  }
+    companion object {
+        private val RULE_TYPE: RuleType = OnlyNeedsSourcesRuleType("objc_library")
+        private const val WRAPPED_CLANG = "wrapped_clang"
+
+        private fun getLinkstamps(linkerInput: StarlarkInfo): MutableList<StarlarkInfo?>? {
+            try {
+                val linkstamps: MutableList<StarlarkInfo?>? =
+                    linkerInput.getValue("linkstamps", MutableList::class.java) as MutableList<StarlarkInfo?>?
+                return linkstamps
+            } catch (e: EvalException) {
+                return ImmutableList.of<StarlarkInfo?>()
+            }
+        }
+
+        private fun getLinkstampFile(linkstamp: StarlarkInfo): Artifact? {
+            try {
+                Mutability.create().use { mu ->
+                    val func: StarlarkFunction? = linkstamp.getValue("file", StarlarkFunction::class.java)
+                    val thread: StarlarkThread? = StarlarkThread.createTransient(mu, StarlarkSemantics.DEFAULT)
+                    return Starlark.positionalOnlyCall(thread, func) as Artifact?
+                }
+            } catch (e: EvalException) {
+                throw RuntimeException(e)
+            } catch (e: InterruptedException) {
+                throw RuntimeException(e)
+            }
+        }
+    }
 }

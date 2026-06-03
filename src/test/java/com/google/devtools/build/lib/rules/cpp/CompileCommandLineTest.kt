@@ -11,78 +11,67 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.rules.cpp;
-
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.actions.PathMapper;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.packages.util.ResourceLoader;
-import com.google.devtools.build.lib.rules.cpp.CcCommon.CoptsFilter;
-import com.google.devtools.build.lib.rules.cpp.CcToolchainFeatures.FeatureConfiguration;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import java.io.IOException;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+package com.google.devtools.build.lib.rules.cpp
 
 /**
- * Tests for {@link com.google.devtools.build.lib.rules.cpp.CompileCommandLine}, for example testing
+ * Tests for [com.google.devtools.build.lib.rules.cpp.CompileCommandLine], for example testing
  * the ordering of individual command line flags, or that command line is emitted differently
  * subject to the presence of certain build variables. Also used to test migration logic (removing
  * hardcoded flags and expressing them using feature configuration.
  */
-@RunWith(JUnit4.class)
-public class CompileCommandLineTest extends BuildViewTestCase {
+@RunWith(JUnit4::class)
+class CompileCommandLineTest : BuildViewTestCase() {
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun initializeRuleContext() {
+        scratch.file("foo/BUILD", "cc_library(name = 'foo')")
+    }
 
-  @Before
-  public void initializeRuleContext() throws Exception {
-    scratch.file("foo/BUILD", "cc_library(name = 'foo')");
-  }
+    @Throws(IOException::class)
+    private fun loadCcToolchainConfigLib() {
+        scratch.appendFile("tools/cpp/BUILD", "")
+        scratch.overwriteFile(
+            "tools/cpp/cc_toolchain_config_lib.bzl",
+            com.google.devtools.build.lib.packages.util.ResourceLoader.readFromResources(
+                TestConstants.RULES_CC_REPOSITORY_EXECROOT + "cc/cc_toolchain_config_lib.bzl"
+            )
+        )
+    }
 
-  private void loadCcToolchainConfigLib() throws IOException {
-    scratch.appendFile("tools/cpp/BUILD", "");
-    scratch.overwriteFile(
-        "tools/cpp/cc_toolchain_config_lib.bzl",
-        ResourceLoader.readFromResources(
-            TestConstants.RULES_CC_REPOSITORY_EXECROOT + "cc/cc_toolchain_config_lib.bzl"));
-  }
-
-  private CcToolchainFeatures getCcToolchainFeatures(String... starlark) throws Exception {
-    loadCcToolchainConfigLib();
-    scratch.overwriteFile(
-        "mock_crosstool/crosstool.bzl",
-        "load(",
-        "    '//tools/cpp:cc_toolchain_config_lib.bzl',",
-        "    'action_config',",
-        "    'feature',",
-        "    'flag_group',",
-        "    'flag_set',",
-        "    'tool',",
-        ")",
-        "load('@rules_cc//cc/toolchains:cc_toolchain_config_info.bzl',"
-            + " 'CcToolchainConfigInfo')",
-        "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
-        "def _impl(ctx):",
-        "    return cc_common.create_cc_toolchain_config_info(",
-        "        ctx = ctx,",
-        String.join("\n", starlark) + ",",
-        "        toolchain_identifier = 'toolchain',",
-        "        host_system_name = 'host',",
-        "        target_system_name = 'target',",
-        "        target_cpu = 'cpu',",
-        "        target_libc = 'libc',",
-        "        compiler = 'compiler',",
-        "    )",
-        "cc_toolchain_config_rule = rule(implementation = _impl, provides ="
-            + " [CcToolchainConfigInfo])");
-    scratch.overwriteFile("bazel_internal/test_rules/cc/BUILD");
-    scratch.overwriteFile(
-        "bazel_internal/test_rules/cc/ctf_rule.bzl",
-        """
+    @Throws(java.lang.Exception::class)
+    private fun getCcToolchainFeatures(vararg starlark: String?): CcToolchainFeatures? {
+        loadCcToolchainConfigLib()
+        scratch.overwriteFile(
+            "mock_crosstool/crosstool.bzl",
+            "load(",
+            "    '//tools/cpp:cc_toolchain_config_lib.bzl',",
+            "    'action_config',",
+            "    'feature',",
+            "    'flag_group',",
+            "    'flag_set',",
+            "    'tool',",
+            ")",
+            "load('@rules_cc//cc/toolchains:cc_toolchain_config_info.bzl',"
+                    + " 'CcToolchainConfigInfo')",
+            "load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')",
+            "def _impl(ctx):",
+            "    return cc_common.create_cc_toolchain_config_info(",
+            "        ctx = ctx,",
+            java.lang.String.join("\n", *starlark) + ",",
+            "        toolchain_identifier = 'toolchain',",
+            "        host_system_name = 'host',",
+            "        target_system_name = 'target',",
+            "        target_cpu = 'cpu',",
+            "        target_libc = 'libc',",
+            "        compiler = 'compiler',",
+            "    )",
+            "cc_toolchain_config_rule = rule(implementation = _impl, provides ="
+                    + " [CcToolchainConfigInfo])"
+        )
+        scratch.overwriteFile("bazel_internal/test_rules/cc/BUILD")
+        scratch.overwriteFile(
+            "bazel_internal/test_rules/cc/ctf_rule.bzl",
+            """
         load('@rules_cc//cc/toolchains:cc_toolchain_config_info.bzl', 'CcToolchainConfigInfo')
         load('@rules_cc//cc/common:cc_common.bzl', 'cc_common')
         MyInfo = provider()
@@ -92,63 +81,70 @@ public class CompileCommandLineTest extends BuildViewTestCase {
                     tools_directory = "",
                   ))]
         cc_toolchain_features = rule(_impl, attrs = {"config":attr.label()})
-        """);
-    scratch.overwriteFile(
-        "mock_crosstool/BUILD",
-        "load(':crosstool.bzl', 'cc_toolchain_config_rule')",
-        "load('//bazel_internal/test_rules/cc:ctf_rule.bzl', 'cc_toolchain_features')",
-        "cc_toolchain_features(name = 'f', config = ':r')",
-        "cc_toolchain_config_rule(name = 'r')");
+        
+        """.trimIndent()
+        )
+        scratch.overwriteFile(
+            "mock_crosstool/BUILD",
+            "load(':crosstool.bzl', 'cc_toolchain_config_rule')",
+            "load('//bazel_internal/test_rules/cc:ctf_rule.bzl', 'cc_toolchain_features')",
+            "cc_toolchain_features(name = 'f', config = ':r')",
+            "cc_toolchain_config_rule(name = 'r')"
+        )
 
-    ConfiguredTarget target = getConfiguredTarget("//mock_crosstool:f");
-    assertThat(target).isNotNull();
-    return (CcToolchainFeatures) getStarlarkProvider(target, "MyInfo").getValue("f");
-  }
+        val target: ConfiguredTarget = getConfiguredTarget("//mock_crosstool:f")
+        assertThat(target).isNotNull()
+        return getStarlarkProvider(target, "MyInfo").getValue("f") as CcToolchainFeatures?
+    }
 
-  private FeatureConfiguration getMockFeatureConfigurationFromStarlark(String... starlark)
-      throws Exception {
-    return getCcToolchainFeatures(starlark)
-        .getFeatureConfiguration(
-            ImmutableSet.of(
-                CppActionNames.ASSEMBLE,
+    @Throws(java.lang.Exception::class)
+    private fun getMockFeatureConfigurationFromStarlark(vararg starlark: String?): FeatureConfiguration {
+        return getCcToolchainFeatures(*starlark)
+            .getFeatureConfiguration(
+                com.google.common.collect.ImmutableSet.< E > of < E ? > (
+                        CppActionNames.ASSEMBLE,
                 CppActionNames.PREPROCESS_ASSEMBLE,
                 CppActionNames.C_COMPILE,
                 CppActionNames.CPP_COMPILE,
                 CppActionNames.CPP_HEADER_PARSING,
                 CppActionNames.CPP_MODULE_CODEGEN,
-                CppActionNames.CPP_MODULE_COMPILE));
-  }
+                CppActionNames.CPP_MODULE_COMPILE
+            ))
+    }
 
-  @Test
-  public void testFeatureConfigurationCommandLineIsUsed() throws Exception {
-    CompileCommandLine compileCommandLine =
-        makeCompileCommandLineBuilder()
-            .setFeatureConfiguration(
-                getMockFeatureConfigurationFromStarlark(
-                    "action_configs = [",
-                    "    action_config(",
-                    "        action_name = 'c++-compile',",
-                    "        implies = ['some_foo_feature'],",
-                    "        tools = [tool(path = 'foo/bar/DUMMY_COMPILER')],",
-                    "    ),",
-                    "],",
-                    "features = [",
-                    "    feature(",
-                    "        name = 'some_foo_feature',",
-                    "        flag_sets = [",
-                    "            flag_set(",
-                    "                actions = ['c++-compile'],",
-                    "                flag_groups = [flag_group(flags = ['-some_foo_flag'])],",
-                    "            ),",
-                    "        ],",
-                    "    ),",
-                    "]"))
-            .build();
-    assertThat(compileCommandLine.getArguments(/* overwrittenVariables= */ null, PathMapper.NOOP))
-        .contains("-some_foo_flag");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFeatureConfigurationCommandLineIsUsed() {
+        val compileCommandLine: CompileCommandLine =
+            makeCompileCommandLineBuilder()
+                .setFeatureConfiguration(
+                    getMockFeatureConfigurationFromStarlark(
+                        "action_configs = [",
+                        "    action_config(",
+                        "        action_name = 'c++-compile',",
+                        "        implies = ['some_foo_feature'],",
+                        "        tools = [tool(path = 'foo/bar/DUMMY_COMPILER')],",
+                        "    ),",
+                        "],",
+                        "features = [",
+                        "    feature(",
+                        "        name = 'some_foo_feature',",
+                        "        flag_sets = [",
+                        "            flag_set(",
+                        "                actions = ['c++-compile'],",
+                        "                flag_groups = [flag_group(flags = ['-some_foo_flag'])],",
+                        "            ),",
+                        "        ],",
+                        "    ),",
+                        "]"
+                    )
+                )
+                .build()
+        com.google.common.truth.Subject.contains("-some_foo_flag")
+    }
 
-  private CompileCommandLine.Builder makeCompileCommandLineBuilder() throws Exception {
-    return CompileCommandLine.builder(CoptsFilter.alwaysPasses(), "c++-compile");
-  }
+    @Throws(java.lang.Exception::class)
+    private fun makeCompileCommandLineBuilder(): CompileCommandLine.Builder {
+        return CompileCommandLine.builder(CoptsFilter.alwaysPasses(), "c++-compile")
+    }
 }

@@ -11,15 +11,16 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages.util;
+package com.google.devtools.build.lib.packages.util
 
-import java.io.IOException;
+import java.io.IOException
 
-/** Creates mock BUILD files required for the genrule rule. */
-public final class MockGenruleSupport {
-  /** Sets up mocking support for genrules. */
-  public static void setup(MockToolsConfig config) throws IOException {
-    config.create("embedded_tools/tools/genrule/BUILD", "exports_files(['genrule-setup.sh'])");
-    config.create("embedded_tools/tools/genrule/genrule-setup.sh");
-  }
+/** Creates mock BUILD files required for the genrule rule.  */
+object MockGenruleSupport {
+    /** Sets up mocking support for genrules.  */
+    @Throws(IOException::class)
+    fun setup(config: MockToolsConfig) {
+        config.create("embedded_tools/tools/genrule/BUILD", "exports_files(['genrule-setup.sh'])")
+        config.create("embedded_tools/tools/genrule/genrule-setup.sh")
+    }
 }

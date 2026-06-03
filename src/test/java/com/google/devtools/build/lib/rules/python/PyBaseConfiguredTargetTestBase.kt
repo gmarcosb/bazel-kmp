@@ -11,71 +11,67 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.python
 
-package com.google.devtools.build.lib.rules.python;
+import com.google.devtools.build.lib.analysis.ConfiguredTarget
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.rules.python.PythonTestUtils.getPyLoad;
+/** Tests that are common to `py_binary`, `py_test`, and `py_library`.  */
+abstract class PyBaseConfiguredTargetTestBase protected constructor(private val ruleName: String?) :
+    BuildViewTestCase() {
+    protected val bzlLoad: String?
 
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import org.junit.Before;
-import org.junit.Test;
+    init {
+        bzlLoad = PythonTestUtils.getPyLoad(ruleName)
+    }
 
-/** Tests that are common to {@code py_binary}, {@code py_test}, and {@code py_library}. */
-public abstract class PyBaseConfiguredTargetTestBase extends BuildViewTestCase {
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun setUpPython() {
+        analysisMock.pySupport().setup(mockToolsConfig)
+    }
 
-  private final String ruleName;
-  protected final String bzlLoad;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun goodSrcsVersionValue() {
+        scratch.file(
+            "pkg/BUILD",
+            bzlLoad,
+            ruleName + "(",
+            "    name = 'foo',",
+            "    srcs_version = 'PY3',",
+            "    srcs = ['foo.py'])"
+        )
+        getConfiguredTarget("//pkg:foo")
+        assertNoEvents()
+    }
 
-  protected PyBaseConfiguredTargetTestBase(String ruleName) {
-    this.ruleName = ruleName;
-    bzlLoad = getPyLoad(ruleName);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun producesProvider() {
+        scratch.file(
+            "pkg/BUILD",  //
+            bzlLoad,
+            ruleName + "(",
+            "    name = 'foo',",
+            "    srcs = ['foo.py'])"
+        )
+        val target: ConfiguredTarget = getConfiguredTarget("//pkg:foo")
+        Truth.assertThat(PyInfo.Companion.fromTarget(target)).isNotNull()
+    }
 
-  @Before
-  public final void setUpPython() throws Exception {
-    analysisMock.pySupport().setup(mockToolsConfig);
-  }
-
-  @Test
-  public void goodSrcsVersionValue() throws Exception {
-    scratch.file(
-        "pkg/BUILD",
-        bzlLoad,
-        ruleName + "(",
-        "    name = 'foo',",
-        "    srcs_version = 'PY3',",
-        "    srcs = ['foo.py'])");
-    getConfiguredTarget("//pkg:foo");
-    assertNoEvents();
-  }
-
-  @Test
-  public void producesProvider() throws Exception {
-    scratch.file(
-        "pkg/BUILD", //
-        bzlLoad,
-        ruleName + "(",
-        "    name = 'foo',",
-        "    srcs = ['foo.py'])");
-    ConfiguredTarget target = getConfiguredTarget("//pkg:foo");
-    assertThat(PyInfo.fromTarget(target)).isNotNull();
-  }
-
-  @Test
-  public void dataSetsUsesSharedLibrary() throws Exception {
-    scratch.file(
-        "pkg/BUILD",
-        bzlLoad,
-        ruleName + "(",
-        "    name = 'foo',",
-        "    srcs = ['foo.py'],",
-        "    data = ['lib.so']",
-        ")");
-    ConfiguredTarget target = getConfiguredTarget("//pkg:foo");
-    assertThat(PyInfo.fromTarget(target).getUsesSharedLibraries()).isTrue();
-  }
-
-
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun dataSetsUsesSharedLibrary() {
+        scratch.file(
+            "pkg/BUILD",
+            bzlLoad,
+            ruleName + "(",
+            "    name = 'foo',",
+            "    srcs = ['foo.py'],",
+            "    data = ['lib.so']",
+            ")"
+        )
+        val target: ConfiguredTarget = getConfiguredTarget("//pkg:foo")
+        Truth.assertThat(PyInfo.Companion.fromTarget(target).getUsesSharedLibraries()).isTrue()
+    }
 }

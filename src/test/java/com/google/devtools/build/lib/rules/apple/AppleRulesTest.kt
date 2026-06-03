@@ -11,50 +11,36 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.apple
 
-package com.google.devtools.build.lib.rules.apple;
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.Iterables
+import com.google.devtools.build.lib.skyframe.BzlLoadValue.keyForBuild
+import net.starlark.java.eval.Sequence
+import org.junit.Test
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.skyframe.BzlLoadValue.keyForBuild;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.actions.AbstractAction;
-import com.google.devtools.build.lib.actions.ActionAnalysisMetadata;
-import com.google.devtools.build.lib.analysis.AnalysisResult;
-import com.google.devtools.build.lib.analysis.ConfiguredAspect;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.analysis.util.AnalysisTestCase;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.StarlarkProvider;
-import com.google.devtools.build.lib.packages.StructImpl;
-import com.google.devtools.build.lib.packages.util.MockObjcSupport;
-import net.starlark.java.eval.Sequence;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for the action properties on rule configured targets of Apple related rules. */
-@RunWith(JUnit4.class)
-public class AppleRulesTest extends AnalysisTestCase {
-
-  @Before
-  public void setup() throws Exception {
-    MockObjcSupport.setup(mockToolsConfig);
-    scratch.file(
-        "test/aspect.bzl",
-        """
+/** Tests for the action properties on rule configured targets of Apple related rules.  */
+@RunWith(JUnit4::class)
+class AppleRulesTest : AnalysisTestCase() {
+    @Before
+    @Throws(Exception::class)
+    fun setup() {
+        MockObjcSupport.setup(mockToolsConfig)
+        scratch.file(
+            "test/aspect.bzl",
+            """
         foo = provider()
 
         def _impl(target, ctx):
             return [foo(actions = target.actions)]
 
         MyAspect = aspect(implementation = _impl)
-        """);
-    scratch.file(
-        "xcode/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "xcode/BUILD",
+            """
         load("@build_bazel_apple_support//xcode:available_xcodes.bzl", "available_xcodes")
         load("@build_bazel_apple_support//xcode:xcode_config.bzl", "xcode_config")
         load("@build_bazel_apple_support//xcode:xcode_version.bzl", "xcode_version")
@@ -108,10 +94,12 @@ public class AppleRulesTest extends AnalysisTestCase {
             local_versions = ":xcodes_b",
             remote_versions = ":xcodes_b",
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "test/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_library(
             name = "xxx",
@@ -120,50 +108,53 @@ public class AppleRulesTest extends AnalysisTestCase {
             defines = ["DEP1"],
             includes = ["dep1/baz"],
         )
-        """);
-  }
-
-  @Test
-  public void executionRequirementsSetCcLibrary() throws Exception {
-    ImmutableList<String> flags =
-        ImmutableList.<String>builder()
-            .addAll(MockObjcSupport.requiredObjcCrosstoolFlagsNoXcodeConfig())
-            .add("--xcode_version_config=//xcode:local")
-            .build();
-    useConfiguration(flags.toArray(new String[1]));
-    AnalysisResult analysisResult =
-        update(ImmutableList.of("test/aspect.bzl%MyAspect"), "//test:xxx");
-
-    ConfiguredAspect configuredAspect =
-        Iterables.getOnlyElement(analysisResult.getAspectsMap().values());
-
-    StarlarkProvider.Key fooKey =
-        new StarlarkProvider.Key(keyForBuild(Label.parseCanonical("//test:aspect.bzl")), "foo");
-
-    StructImpl fooProvider = (StructImpl) configuredAspect.get(fooKey);
-    assertThat(fooProvider.getValue("actions")).isNotNull();
-    @SuppressWarnings("unchecked")
-    Sequence<ActionAnalysisMetadata> actions =
-        (Sequence<ActionAnalysisMetadata>) fooProvider.getValue("actions");
-    assertThat(actions).isNotEmpty();
-
-    for (ActionAnalysisMetadata action : actions) {
-      assertThat(action).isInstanceOf(AbstractAction.class);
-      if (action.getExecutionInfo().containsKey("requires-darwin")) {
-        assertThat(action.getExecutionInfo()).containsKey("supports-xcode-requirements-set");
-        assertThat(action.getExecutionInfo()).containsKey("no-remote");
-      }
+        
+        """.trimIndent()
+        )
     }
-  }
 
-  @Test
-  public void dottedVersionOptionIsReadableFromStarlarkTransition() throws Exception {
-    // Test that DottedVersion.Option is readable from a Starlark transition, since it is a distinct
-    // type from DottedVersion (see the documentation comment on DottedVersion.Option for the
-    // rationale).
-    scratch.overwriteFile(
-        "tools/allowlists/function_transition_allowlist/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun executionRequirementsSetCcLibrary() {
+        val flags: ImmutableList<String?> =
+            ImmutableList.builder<String?>()
+                .addAll(MockObjcSupport.requiredObjcCrosstoolFlagsNoXcodeConfig())
+                .add("--xcode_version_config=//xcode:local")
+                .build()
+        useConfiguration(*flags.toArray<String?>(arrayOfNulls<String>(1)))
+        val analysisResult: AnalysisResult =
+            update(ImmutableList.of<String?>("test/aspect.bzl%MyAspect"), "//test:xxx")
+
+        val configuredAspect: ConfiguredAspect? =
+            Iterables.getOnlyElement<T?>(analysisResult.getAspectsMap().values())
+
+        val fooKey: StarlarkProvider.Key =
+            Key(keyForBuild(Label.parseCanonical("//test:aspect.bzl")), "foo")
+
+        val fooProvider: StructImpl = configuredAspect.get(fooKey) as StructImpl
+        assertThat(fooProvider.getValue("actions")).isNotNull()
+        val actions: Sequence<ActionAnalysisMetadata>? =
+            fooProvider.getValue("actions") as Sequence<ActionAnalysisMetadata>?
+        Truth.assertThat(actions).isNotEmpty()
+
+        for (action in actions!!) {
+            assertThat(action).isInstanceOf(AbstractAction::class.java)
+            if (action.getExecutionInfo().containsKey("requires-darwin")) {
+                assertThat(action.getExecutionInfo()).containsKey("supports-xcode-requirements-set")
+                assertThat(action.getExecutionInfo()).containsKey("no-remote")
+            }
+        }
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun dottedVersionOptionIsReadableFromStarlarkTransition() {
+        // Test that DottedVersion.Option is readable from a Starlark transition, since it is a distinct
+        // type from DottedVersion (see the documentation comment on DottedVersion.Option for the
+        // rationale).
+        scratch.overwriteFile(
+            "tools/allowlists/function_transition_allowlist/BUILD",
+            """
         package_group(
             name = "function_transition_allowlist",
             packages = ["//..."],
@@ -174,10 +165,12 @@ public class AppleRulesTest extends AnalysisTestCase {
             srcs = glob(["**"]),
             visibility = ["//tools/allowlists:__pkg__"],
         )
-        """);
-    scratch.file(
-        "transition/transition.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "transition/transition.bzl",
+            """
         def _silly_transition_impl(settings, attr):
             version = str(settings["//command_line_option:ios_minimum_os"])
             next = version if version.endswith(".1") else version + ".1"
@@ -196,23 +189,27 @@ public class AppleRulesTest extends AnalysisTestCase {
             cfg = silly_transition,
             implementation = _my_rule_impl,
         )
-        """);
-    scratch.file(
-        "transition/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "transition/BUILD",
+            """
         load("//transition:transition.bzl", "my_rule")
 
         my_rule(name = "xxx")
-        """);
+        
+        """.trimIndent()
+        )
 
-    useConfiguration("--ios_minimum_os=10.0");
-    AnalysisResult result = update("//transition:xxx");
-    BuildConfigurationValue configuration =
-        Iterables.getOnlyElement(result.getTopLevelTargetsWithConfigs()).getConfiguration();
-    AppleCommandLineOptions appleOptions =
-        configuration.getOptions().get(AppleCommandLineOptions.class);
-    assertThat(appleOptions.iosMinimumOs).isNotNull();
-    DottedVersion version = DottedVersion.maybeUnwrap(appleOptions.iosMinimumOs);
-    assertThat(version.toString()).isEqualTo("10.0.1");
-  }
+        useConfiguration("--ios_minimum_os=10.0")
+        val result: AnalysisResult = update("//transition:xxx")
+        val configuration: BuildConfigurationValue =
+            Iterables.getOnlyElement<T?>(result.getTopLevelTargetsWithConfigs()).getConfiguration()
+        val appleOptions: AppleCommandLineOptions =
+            configuration.getOptions().get(AppleCommandLineOptions::class.java)
+        assertThat(appleOptions.iosMinimumOs).isNotNull()
+        val version: DottedVersion = DottedVersion.maybeUnwrap(appleOptions.iosMinimumOs)!!
+        Truth.assertThat(version.toString()).isEqualTo("10.0.1")
+    }
 }

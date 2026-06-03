@@ -11,101 +11,82 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote;
+package com.google.devtools.build.lib.remote
 
-import static java.nio.charset.StandardCharsets.UTF_8;
+import build.bazel.remote.execution.v2.Digest
 
-import build.bazel.remote.execution.v2.Digest;
-import com.google.devtools.build.lib.remote.common.RemoteActionExecutionContext;
-import com.google.devtools.build.lib.remote.common.RemoteCacheClient;
-import com.google.devtools.build.lib.remote.util.DigestUtil;
-import com.google.devtools.build.lib.remote.util.InMemoryCacheClient;
-import com.google.devtools.build.lib.remote.util.Utils;
-import com.google.protobuf.ByteString;
-import com.google.protobuf.Message;
-import java.io.IOException;
-import java.util.Map;
-import javax.annotation.Nullable;
+internal class InMemoryCombinedCache : RemoteExecutionCache {
+    constructor(casEntries: MutableMap<Digest?, ByteArray?>, digestUtil: DigestUtil?) : super(
+        InMemoryCacheClient(casEntries),  /* diskCacheClient= */
+        null,  /* symlinkTemplate= */
+        null,
+        digestUtil,  /* chunkingEnabled= */
+        false
+    )
 
-class InMemoryCombinedCache extends RemoteExecutionCache {
-
-  InMemoryCombinedCache(Map<Digest, byte[]> casEntries, DigestUtil digestUtil) {
-    super(
-        new InMemoryCacheClient(casEntries),
-        /* diskCacheClient= */ null,
-        /* symlinkTemplate= */ null,
-        digestUtil,
-        /* chunkingEnabled= */ false);
-  }
-
-  InMemoryCombinedCache(
-      Map<Digest, byte[]> casEntries, DigestUtil digestUtil, @Nullable String symlinkTemplate) {
-    super(
-        new InMemoryCacheClient(casEntries),
-        /* diskCacheClient= */ null,
+    constructor(casEntries: MutableMap<Digest?, ByteArray?>, digestUtil: DigestUtil?, symlinkTemplate: String?) : super(
+        InMemoryCacheClient(casEntries),  /* diskCacheClient= */
+        null,
         symlinkTemplate,
-        digestUtil,
-        /* chunkingEnabled= */ false);
-  }
+        digestUtil,  /* chunkingEnabled= */
+        false
+    )
 
-  InMemoryCombinedCache(DigestUtil digestUtil) {
-    super(
-        new InMemoryCacheClient(),
-        /* diskCacheClient= */ null,
-        /* symlinkTemplate= */ null,
-        digestUtil,
-        /* chunkingEnabled= */ false);
-  }
+    constructor(digestUtil: DigestUtil?) : super(
+        InMemoryCacheClient(),  /* diskCacheClient= */
+        null,  /* symlinkTemplate= */
+        null,
+        digestUtil,  /* chunkingEnabled= */
+        false
+    )
 
-  InMemoryCombinedCache(RemoteCacheClient remoteCacheClient, DigestUtil digestUtil) {
-    super(
-        remoteCacheClient,
-        /* diskCacheClient= */ null,
-        /* symlinkTemplate= */ null,
-        digestUtil,
-        /* chunkingEnabled= */ false);
-  }
+    constructor(remoteCacheClient: RemoteCacheClient?, digestUtil: DigestUtil?) : super(
+        remoteCacheClient,  /* diskCacheClient= */
+        null,  /* symlinkTemplate= */
+        null,
+        digestUtil,  /* chunkingEnabled= */
+        false
+    )
 
-  Digest addContents(RemoteActionExecutionContext context, String txt)
-      throws IOException, InterruptedException {
-    return addContents(context, txt.getBytes(UTF_8));
-  }
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    fun addContents(context: RemoteActionExecutionContext?, txt: String): Digest? {
+        return addContents(context, txt.toByteArray(java.nio.charset.StandardCharsets.UTF_8))
+    }
 
-  Digest addContents(RemoteActionExecutionContext context, byte[] bytes)
-      throws IOException, InterruptedException {
-    Digest digest = digestUtil.compute(bytes);
-    Utils.getFromFuture(
-        remoteCacheClient.uploadBlob(
-            context, digest, ByteString.copyFrom(bytes), /* force= */ false));
-    return digest;
-  }
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    fun addContents(context: RemoteActionExecutionContext?, bytes: ByteArray): Digest? {
+        val digest: Digest? = digestUtil.compute(bytes)
+        Utils.getFromFuture(
+            remoteCacheClient.uploadBlob(
+                context, digest, ByteString.copyFrom(bytes),  /* force= */false
+            )
+        )
+        return digest
+    }
 
-  Digest addContents(RemoteActionExecutionContext context, Message m)
-      throws IOException, InterruptedException {
-    return addContents(context, m.toByteArray());
-  }
+    @Throws(IOException::class, java.lang.InterruptedException::class)
+    fun addContents(context: RemoteActionExecutionContext?, m: Message): Digest? {
+        return addContents(context, m.toByteArray())
+    }
 
-  Digest addException(String txt, Exception e) {
-    Digest digest = digestUtil.compute(txt.getBytes(UTF_8));
-    ((InMemoryCacheClient) remoteCacheClient).addDownloadFailure(digest, e);
-    return digest;
-  }
+    fun addException(txt: String, e: java.lang.Exception?): Digest? {
+        val digest: Digest? = digestUtil.compute(txt.toByteArray(java.nio.charset.StandardCharsets.UTF_8))
+        (remoteCacheClient as InMemoryCacheClient).addDownloadFailure(digest, e)
+        return digest
+    }
 
-  Digest addException(Message m, Exception e) {
-    Digest digest = digestUtil.compute(m);
-    ((InMemoryCacheClient) remoteCacheClient).addDownloadFailure(digest, e);
-    return digest;
-  }
+    fun addException(m: Message?, e: java.lang.Exception?): Digest? {
+        val digest: Digest? = digestUtil.compute(m)
+        (remoteCacheClient as InMemoryCacheClient).addDownloadFailure(digest, e)
+        return digest
+    }
 
-  int getNumSuccessfulDownloads() {
-    return ((InMemoryCacheClient) remoteCacheClient).getNumSuccessfulDownloads();
-  }
+    val numSuccessfulDownloads: Int
+        get() = (remoteCacheClient as InMemoryCacheClient).getNumSuccessfulDownloads()
 
-  int getNumFailedDownloads() {
-    return ((InMemoryCacheClient) remoteCacheClient).getNumFailedDownloads();
-  }
+    val numFailedDownloads: Int
+        get() = (remoteCacheClient as InMemoryCacheClient).getNumFailedDownloads()
 
-  Map<Digest, Integer> getNumFindMissingDigests() {
-    return ((InMemoryCacheClient) remoteCacheClient).getNumFindMissingDigests();
-  }
+    val numFindMissingDigests: MutableMap<Digest, Int?>?
+        get() = (remoteCacheClient as InMemoryCacheClient).getNumFindMissingDigests()
 }

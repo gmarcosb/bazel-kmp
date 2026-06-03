@@ -11,200 +11,273 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.runtime.CommandLinePathFactory.CommandLinePathFactoryException
 
-import com.google.common.base.Joiner;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.runtime.CommandLinePathFactory.CommandLinePathFactoryException;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.OutputStream;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [CommandLinePathFactory].  */
+@RunWith(JUnit4::class)
+class CommandLinePathFactoryTest {
+    private var filesystem: FileSystem? = null
 
-/** Tests for {@link CommandLinePathFactory}. */
-@RunWith(JUnit4.class)
-public class CommandLinePathFactoryTest {
-  private static final Joiner PATH_JOINER = Joiner.on(File.pathSeparator);
-
-  private FileSystem filesystem = null;
-
-  @Before
-  public void prepareFilesystem() throws Exception {
-    filesystem = new InMemoryFileSystem(DigestHashFunction.SHA256);
-  }
-
-  private void createExecutable(String path) throws Exception {
-    Preconditions.checkNotNull(path);
-
-    createExecutable(filesystem.getPath(path));
-  }
-
-  private void createExecutable(Path path) throws Exception {
-    Preconditions.checkNotNull(path);
-
-    path.getParentDirectory().createDirectoryAndParents();
-    try (OutputStream stream = path.getOutputStream()) {
-      // Just create an empty file, nothing to do.
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun prepareFilesystem() {
+        filesystem = InMemoryFileSystem(DigestHashFunction.SHA256)
     }
-    path.setExecutable(true);
-  }
 
-  @Test
-  public void emptyPathIsRejected() {
-    CommandLinePathFactory factory = new CommandLinePathFactory(filesystem, ImmutableMap.of());
+    @Throws(java.lang.Exception::class)
+    private fun createExecutable(path: String?) {
+        com.google.common.base.Preconditions.checkNotNull<String?>(path)
 
-    assertThrows(IllegalArgumentException.class, () -> factory.create(ImmutableMap.of(), ""));
-  }
+        createExecutable(filesystem.getPath(path))
+    }
 
-  @Test
-  public void createFromAbsolutePath() throws Exception {
-    CommandLinePathFactory factory = new CommandLinePathFactory(filesystem, ImmutableMap.of());
+    @Throws(java.lang.Exception::class)
+    private fun createExecutable(path: Path?) {
+        com.google.common.base.Preconditions.checkNotNull<Any?>(path)
 
-    assertThat(factory.create(ImmutableMap.of(), "/absolute/path/1"))
-        .isEqualTo(filesystem.getPath("/absolute/path/1"));
-    assertThat(factory.create(ImmutableMap.of(), "/absolute/path/2"))
-        .isEqualTo(filesystem.getPath("/absolute/path/2"));
-  }
+        path.getParentDirectory().createDirectoryAndParents()
+        path.getOutputStream().use { stream -> }
+        path.setExecutable(true)
+    }
 
-  @Test
-  public void createWithNamedRoot() throws Exception {
-    CommandLinePathFactory factory =
-        new CommandLinePathFactory(
-            filesystem,
-            ImmutableMap.of(
-                "workspace", filesystem.getPath("/path/to/workspace"),
-                "output_base", filesystem.getPath("/path/to/output/base")));
+    @org.junit.Test
+    fun emptyPathIsRejected() {
+        val factory: CommandLinePathFactory =
+            CommandLinePathFactory(filesystem, com.google.common.collect.ImmutableMap.of<K?, V?>())
 
-    assertThat(factory.create(ImmutableMap.of(), "/absolute/path/1"))
-        .isEqualTo(filesystem.getPath("/absolute/path/1"));
-    assertThat(factory.create(ImmutableMap.of(), "/absolute/path/2"))
-        .isEqualTo(filesystem.getPath("/absolute/path/2"));
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable {
+                factory.create(
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(),
+                    ""
+                )
+            })
+    }
 
-    assertThat(factory.create(ImmutableMap.of(), "%workspace%/foo"))
-        .isEqualTo(filesystem.getPath("/path/to/workspace/foo"));
-    assertThat(factory.create(ImmutableMap.of(), "%workspace%/foo/bar"))
-        .isEqualTo(filesystem.getPath("/path/to/workspace/foo/bar"));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun createFromAbsolutePath() {
+        val factory: CommandLinePathFactory =
+            CommandLinePathFactory(filesystem, com.google.common.collect.ImmutableMap.of<K?, V?>())
 
-    assertThat(factory.create(ImmutableMap.of(), "%output_base%/foo"))
-        .isEqualTo(filesystem.getPath("/path/to/output/base/foo"));
-    assertThat(factory.create(ImmutableMap.of(), "%output_base%/foo/bar"))
-        .isEqualTo(filesystem.getPath("/path/to/output/base/foo/bar"));
+        assertThat(factory.create(com.google.common.collect.ImmutableMap.of<K?, V?>(), "/absolute/path/1"))
+            .isEqualTo(filesystem.getPath("/absolute/path/1"))
+        assertThat(factory.create(com.google.common.collect.ImmutableMap.of<K?, V?>(), "/absolute/path/2"))
+            .isEqualTo(filesystem.getPath("/absolute/path/2"))
+    }
 
-    assertThat(factory.create(ImmutableMap.of(), "%workspace%//foo//bar"))
-        .isEqualTo(filesystem.getPath("/path/to/workspace/foo/bar"));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun createWithNamedRoot() {
+        val factory: CommandLinePathFactory =
+            CommandLinePathFactory(
+                filesystem,
+                com.google.common.collect.ImmutableMap.of<K?, V?>(
+                    "workspace", filesystem.getPath("/path/to/workspace"),
+                    "output_base", filesystem.getPath("/path/to/output/base")
+                )
+            )
 
-  @Test
-  public void pathLeakingOutsideOfRoot() {
-    CommandLinePathFactory factory =
-        new CommandLinePathFactory(
-            filesystem, ImmutableMap.of("a", filesystem.getPath("/path/to/a")));
+        assertThat(factory.create(com.google.common.collect.ImmutableMap.of<K?, V?>(), "/absolute/path/1"))
+            .isEqualTo(filesystem.getPath("/absolute/path/1"))
+        assertThat(factory.create(com.google.common.collect.ImmutableMap.of<K?, V?>(), "/absolute/path/2"))
+            .isEqualTo(filesystem.getPath("/absolute/path/2"))
 
-    assertThrows(
-        CommandLinePathFactoryException.class,
-        () -> factory.create(ImmutableMap.of(), "%a%/../foo"));
-    assertThrows(
-        CommandLinePathFactoryException.class,
-        () -> factory.create(ImmutableMap.of(), "%a%/b/../.."));
-  }
+        assertThat(factory.create(com.google.common.collect.ImmutableMap.of<K?, V?>(), "%workspace%/foo"))
+            .isEqualTo(filesystem.getPath("/path/to/workspace/foo"))
+        assertThat(factory.create(com.google.common.collect.ImmutableMap.of<K?, V?>(), "%workspace%/foo/bar"))
+            .isEqualTo(filesystem.getPath("/path/to/workspace/foo/bar"))
 
-  @Test
-  public void unknownRoot() {
-    CommandLinePathFactory factory =
-        new CommandLinePathFactory(
-            filesystem, ImmutableMap.of("a", filesystem.getPath("/path/to/a")));
+        assertThat(factory.create(com.google.common.collect.ImmutableMap.of<K?, V?>(), "%output_base%/foo"))
+            .isEqualTo(filesystem.getPath("/path/to/output/base/foo"))
+        assertThat(factory.create(com.google.common.collect.ImmutableMap.of<K?, V?>(), "%output_base%/foo/bar"))
+            .isEqualTo(filesystem.getPath("/path/to/output/base/foo/bar"))
 
-    assertThrows(
-        CommandLinePathFactoryException.class,
-        () -> factory.create(ImmutableMap.of(), "%workspace%/foo"));
-    assertThrows(
-        CommandLinePathFactoryException.class,
-        () -> factory.create(ImmutableMap.of(), "%output_base%/foo"));
-  }
+        assertThat(factory.create(com.google.common.collect.ImmutableMap.of<K?, V?>(), "%workspace%//foo//bar"))
+            .isEqualTo(filesystem.getPath("/path/to/workspace/foo/bar"))
+    }
 
-  @Test
-  public void relativePathWithMultipleSegments() {
-    CommandLinePathFactory factory = new CommandLinePathFactory(filesystem, ImmutableMap.of());
+    @org.junit.Test
+    fun pathLeakingOutsideOfRoot() {
+        val factory: CommandLinePathFactory =
+            CommandLinePathFactory(
+                filesystem, com.google.common.collect.ImmutableMap.of<K?, V?>("a", filesystem.getPath("/path/to/a"))
+            )
 
-    assertThrows(
-        CommandLinePathFactoryException.class, () -> factory.create(ImmutableMap.of(), "a/b"));
-    assertThrows(
-        CommandLinePathFactoryException.class, () -> factory.create(ImmutableMap.of(), "a/b/c/d"));
-  }
+        org.junit.Assert.assertThrows<T?>(
+            CommandLinePathFactoryException::class.java,
+            org.junit.function.ThrowingRunnable {
+                factory.create(
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(),
+                    "%a%/../foo"
+                )
+            })
+        org.junit.Assert.assertThrows<T?>(
+            CommandLinePathFactoryException::class.java,
+            org.junit.function.ThrowingRunnable {
+                factory.create(
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(),
+                    "%a%/b/../.."
+                )
+            })
+    }
 
-  @Test
-  public void pathLookup() throws Exception {
-    CommandLinePathFactory factory = new CommandLinePathFactory(filesystem, ImmutableMap.of());
+    @org.junit.Test
+    fun unknownRoot() {
+        val factory: CommandLinePathFactory =
+            CommandLinePathFactory(
+                filesystem, com.google.common.collect.ImmutableMap.of<K?, V?>("a", filesystem.getPath("/path/to/a"))
+            )
 
-    createExecutable("/bin/true");
-    createExecutable("/bin/false");
-    createExecutable("/usr/bin/foo-bar.exe");
-    createExecutable("/usr/local/bin/baz");
-    createExecutable("/home/yannic/bin/abc");
-    createExecutable("/home/yannic/bin/true");
+        org.junit.Assert.assertThrows<T?>(
+            CommandLinePathFactoryException::class.java,
+            org.junit.function.ThrowingRunnable {
+                factory.create(
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(),
+                    "%workspace%/foo"
+                )
+            })
+        org.junit.Assert.assertThrows<T?>(
+            CommandLinePathFactoryException::class.java,
+            org.junit.function.ThrowingRunnable {
+                factory.create(
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(),
+                    "%output_base%/foo"
+                )
+            })
+    }
 
-    var path =
-        ImmutableMap.of(
-            "PATH", PATH_JOINER.join("/bin", "/usr/bin", "/usr/local/bin", "/home/yannic/bin"));
-    assertThat(factory.create(path, "true")).isEqualTo(filesystem.getPath("/bin/true"));
-    assertThat(factory.create(path, "false")).isEqualTo(filesystem.getPath("/bin/false"));
-    assertThat(factory.create(path, "foo-bar.exe"))
-        .isEqualTo(filesystem.getPath("/usr/bin/foo-bar.exe"));
-    assertThat(factory.create(path, "baz")).isEqualTo(filesystem.getPath("/usr/local/bin/baz"));
-    assertThat(factory.create(path, "abc")).isEqualTo(filesystem.getPath("/home/yannic/bin/abc"));
+    @org.junit.Test
+    fun relativePathWithMultipleSegments() {
+        val factory: CommandLinePathFactory =
+            CommandLinePathFactory(filesystem, com.google.common.collect.ImmutableMap.of<K?, V?>())
 
-    // `.exe` is required.
-    assertThrows(FileNotFoundException.class, () -> factory.create(path, "foo-bar"));
-  }
+        org.junit.Assert.assertThrows<T?>(
+            CommandLinePathFactoryException::class.java,
+            org.junit.function.ThrowingRunnable {
+                factory.create(
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(),
+                    "a/b"
+                )
+            })
+        org.junit.Assert.assertThrows<T?>(
+            CommandLinePathFactoryException::class.java,
+            org.junit.function.ThrowingRunnable {
+                factory.create(
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(),
+                    "a/b/c/d"
+                )
+            })
+    }
 
-  @Test
-  public void pathLookupWithUndefinedPath() {
-    CommandLinePathFactory factory = new CommandLinePathFactory(filesystem, ImmutableMap.of());
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun pathLookup() {
+        val factory: CommandLinePathFactory =
+            CommandLinePathFactory(filesystem, com.google.common.collect.ImmutableMap.of<K?, V?>())
 
-    assertThrows(FileNotFoundException.class, () -> factory.create(ImmutableMap.of(), "a"));
-    assertThrows(FileNotFoundException.class, () -> factory.create(ImmutableMap.of(), "foo"));
-  }
+        createExecutable("/bin/true")
+        createExecutable("/bin/false")
+        createExecutable("/usr/bin/foo-bar.exe")
+        createExecutable("/usr/local/bin/baz")
+        createExecutable("/home/yannic/bin/abc")
+        createExecutable("/home/yannic/bin/true")
 
-  @Test
-  public void pathLookupWithNonExistingDirectoryOnPath() {
-    CommandLinePathFactory factory = new CommandLinePathFactory(filesystem, ImmutableMap.of());
+        val path: com.google.common.collect.ImmutableMap<String?, String?> =
+            com.google.common.collect.ImmutableMap.of<String?, String?>(
+                "PATH", PATH_JOINER.join("/bin", "/usr/bin", "/usr/local/bin", "/home/yannic/bin")
+            )
+        assertThat(factory.create(path, "true")).isEqualTo(filesystem.getPath("/bin/true"))
+        assertThat(factory.create(path, "false")).isEqualTo(filesystem.getPath("/bin/false"))
+        assertThat(factory.create(path, "foo-bar.exe"))
+            .isEqualTo(filesystem.getPath("/usr/bin/foo-bar.exe"))
+        assertThat(factory.create(path, "baz")).isEqualTo(filesystem.getPath("/usr/local/bin/baz"))
+        assertThat(factory.create(path, "abc")).isEqualTo(filesystem.getPath("/home/yannic/bin/abc"))
 
-    assertThrows(
-        FileNotFoundException.class,
-        () -> factory.create(ImmutableMap.of("PATH", "/does/not/exist"), "a"));
-  }
+        // `.exe` is required.
+        org.junit.Assert.assertThrows<FileNotFoundException?>(
+            FileNotFoundException::class.java,
+            org.junit.function.ThrowingRunnable { factory.create(path, "foo-bar") })
+    }
 
-  @Test
-  public void pathLookupWithExistingAndNonExistingDirectoryOnPath() throws Exception {
-    CommandLinePathFactory factory = new CommandLinePathFactory(filesystem, ImmutableMap.of());
+    @org.junit.Test
+    fun pathLookupWithUndefinedPath() {
+        val factory: CommandLinePathFactory =
+            CommandLinePathFactory(filesystem, com.google.common.collect.ImmutableMap.of<K?, V?>())
 
-    createExecutable("/bin/foo");
-    createExecutable("/usr/bin/bar");
-    assertThrows(
-        FileNotFoundException.class,
-        () ->
-            factory.create(
-                ImmutableMap.of("PATH", PATH_JOINER.join("/bin", "/does/not/exist", "/usr/bin")),
-                "a"));
-  }
+        org.junit.Assert.assertThrows<FileNotFoundException?>(
+            FileNotFoundException::class.java,
+            org.junit.function.ThrowingRunnable {
+                factory.create(
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(),
+                    "a"
+                )
+            })
+        org.junit.Assert.assertThrows<FileNotFoundException?>(
+            FileNotFoundException::class.java,
+            org.junit.function.ThrowingRunnable {
+                factory.create(
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(),
+                    "foo"
+                )
+            })
+    }
 
-  @Test
-  public void pathLookupWithInvalidPath() throws Exception {
-    CommandLinePathFactory factory = new CommandLinePathFactory(filesystem, ImmutableMap.of());
+    @org.junit.Test
+    fun pathLookupWithNonExistingDirectoryOnPath() {
+        val factory: CommandLinePathFactory =
+            CommandLinePathFactory(filesystem, com.google.common.collect.ImmutableMap.of<K?, V?>())
 
-    createExecutable("/bin/true");
-    var path = ImmutableMap.of("PATH", PATH_JOINER.join("", ".", "/bin"));
-    assertThat(factory.create(path, "true")).isEqualTo(filesystem.getPath("/bin/true"));
-  }
+        org.junit.Assert.assertThrows<FileNotFoundException?>(
+            FileNotFoundException::class.java,
+            org.junit.function.ThrowingRunnable {
+                factory.create(
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(
+                        "PATH",
+                        "/does/not/exist"
+                    ), "a"
+                )
+            })
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun pathLookupWithExistingAndNonExistingDirectoryOnPath() {
+        val factory: CommandLinePathFactory =
+            CommandLinePathFactory(filesystem, com.google.common.collect.ImmutableMap.of<K?, V?>())
+
+        createExecutable("/bin/foo")
+        createExecutable("/usr/bin/bar")
+        org.junit.Assert.assertThrows<FileNotFoundException?>(
+            FileNotFoundException::class.java,
+            org.junit.function.ThrowingRunnable {
+                factory.create(
+                    com.google.common.collect.ImmutableMap.of<K?, V?>(
+                        "PATH",
+                        PATH_JOINER.join("/bin", "/does/not/exist", "/usr/bin")
+                    ),
+                    "a"
+                )
+            })
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun pathLookupWithInvalidPath() {
+        val factory: CommandLinePathFactory =
+            CommandLinePathFactory(filesystem, com.google.common.collect.ImmutableMap.of<K?, V?>())
+
+        createExecutable("/bin/true")
+        val path: com.google.common.collect.ImmutableMap<String?, String?> =
+            com.google.common.collect.ImmutableMap.of<String?, String?>("PATH", PATH_JOINER.join("", ".", "/bin"))
+        assertThat(factory.create(path, "true")).isEqualTo(filesystem.getPath("/bin/true"))
+    }
+
+    companion object {
+        private val PATH_JOINER: com.google.common.base.Joiner =
+            com.google.common.base.Joiner.on(java.io.File.pathSeparator)
+    }
 }

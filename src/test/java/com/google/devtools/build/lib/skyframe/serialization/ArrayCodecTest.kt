@@ -11,96 +11,96 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+/** Tests for [ArrayCodec].  */
+@RunWith(JUnit4::class)
+class ArrayCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun objectArray() {
+        val instance = arrayOfNulls<Any>(2)
+        instance[0] = "hi"
+        val inner = arrayOfNulls<Any>(2)
+        inner[0] = "inner1"
+        inner[1] = null
+        instance[1] = inner
+        SerializationTester(arrayOfNulls<Any>(0), instance)
+            .setVerificationFunction({ original: Array<Any?>, deserialized: Array<Any?> ->
+                verifyDeserialized(
+                    original,
+                    deserialized
+                )
+            })
+            .runTests()
+    }
 
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import com.google.protobuf.CodedInputStream;
-import com.google.protobuf.CodedOutputStream;
-import java.math.BigInteger;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun typedArray() {
+        SerializationTester(
+            arrayOf<BigInteger?>(),
+            arrayOf<BigInteger?>(BigInteger.ZERO),
+            arrayOf<BigInteger?>(BigInteger.ZERO, BigInteger.ONE, BigInteger.TWO)
+        )
+            .addCodec(ArrayCodec.forComponentType(BigInteger::class.java))
+            .runTests()
+    }
 
-/** Tests for {@link ArrayCodec}. */
-@RunWith(JUnit4.class)
-public final class ArrayCodecTest {
+    @org.junit.Test
+    fun stackOverflowTransformedIntoSerializationException() {
+        class Foo
 
-  @Test
-  public void objectArray() throws Exception {
-    Object[] instance = new Object[2];
-    instance[0] = "hi";
-    Object[] inner = new Object[2];
-    inner[0] = "inner1";
-    inner[1] = null;
-    instance[1] = inner;
-    new SerializationTester(new Object[0], instance)
-        .setVerificationFunction(ArrayCodecTest::verifyDeserialized)
-        .runTests();
-  }
+        val foo = Foo()
 
-  @Test
-  public void typedArray() throws Exception {
-    new SerializationTester(
-            new BigInteger[] {},
-            new BigInteger[] {BigInteger.ZERO},
-            new BigInteger[] {BigInteger.ZERO, BigInteger.ONE, BigInteger.TWO})
-        .addCodec(ArrayCodec.forComponentType(BigInteger.class))
-        .runTests();
-  }
+        class FooCodec : ObjectCodec<Foo?> {
+            val encodedClass: java.lang.Class<out Foo?>
+                get() = Foo::class.java
 
-  @Test
-  public void stackOverflowTransformedIntoSerializationException() {
-    class Foo {}
+            public override fun serialize(context: SerializationContext?, obj: Foo?, codedOut: CodedOutputStream?) {
+                if (obj === foo) {
+                    throw java.lang.StackOverflowError()
+                }
+            }
 
-    Foo foo = new Foo();
-
-    class FooCodec implements ObjectCodec<Foo> {
-      @Override
-      public Class<? extends Foo> getEncodedClass() {
-        return Foo.class;
-      }
-
-      @Override
-      public void serialize(SerializationContext context, Foo obj, CodedOutputStream codedOut) {
-        if (obj == foo) {
-          throw new StackOverflowError();
+            public override fun deserialize(context: DeserializationContext?, codedIn: CodedInputStream?): Foo? {
+                throw java.lang.UnsupportedOperationException()
+            }
         }
-      }
 
-      @Override
-      public Foo deserialize(DeserializationContext context, CodedInputStream codedIn) {
-        throw new UnsupportedOperationException();
-      }
+        val codecs: ObjectCodecs =
+            ObjectCodecs(ObjectCodecRegistry.newBuilder().add(FooCodec()).build())
+        // Serialize an array containing a special object of a special class for which the code always
+        // will throw a StackOverflowError. This way we exercise the catch block in ArrayCodec without
+        // having to cause a real StackOverflowError to organically occur.
+        //
+        // We used to take that approach of trying to get a real StackOverflowError to occur, by
+        // serializing an array-of-array-of-... nested thousands of times. But this approach was
+        // brittle: On different machines/architectures that have a lot of stack memory, the JVM
+        // wouldn't organically throw a StackOverflowError, and when we increased the nesting depth that
+        // caused segfaults on machines/architectures with less stack memory.
+        val array = arrayOf<Any?>(foo)
+        org.junit.Assert.assertThrows<T?>(
+            SerializationException::class.java,
+            org.junit.function.ThrowingRunnable { codecs.serialize(array) })
     }
 
-    ObjectCodecs codecs =
-        new ObjectCodecs(ObjectCodecRegistry.newBuilder().add(new FooCodec()).build());
-    // Serialize an array containing a special object of a special class for which the code always
-    // will throw a StackOverflowError. This way we exercise the catch block in ArrayCodec without
-    // having to cause a real StackOverflowError to organically occur.
-    //
-    // We used to take that approach of trying to get a real StackOverflowError to occur, by
-    // serializing an array-of-array-of-... nested thousands of times. But this approach was
-    // brittle: On different machines/architectures that have a lot of stack memory, the JVM
-    // wouldn't organically throw a StackOverflowError, and when we increased the nesting depth that
-    // caused segfaults on machines/architectures with less stack memory.
-    Object[] array = {foo};
-    assertThrows(SerializationException.class, () -> codecs.serialize(array));
-  }
-
-  private static void verifyDeserialized(Object[] original, Object[] deserialized) {
-    assertThat(deserialized).hasLength(original.length);
-    for (int i = 0; i < deserialized.length; i++) {
-      if (original[i] instanceof Object[]) {
-        assertThat(deserialized[i]).isInstanceOf(Object[].class);
-        verifyDeserialized((Object[]) original[i], (Object[]) deserialized[i]);
-      } else {
-        assertThat(deserialized[i]).isEqualTo(original[i]);
-      }
+    companion object {
+        private fun verifyDeserialized(original: Array<Any?>, deserialized: Array<Any?>) {
+            Truth.assertThat<Any?>(deserialized).hasLength(original.size)
+            for (i in deserialized.indices) {
+                if (original[i] is Array<Any>) {
+                    Truth.assertThat(deserialized[i]).isInstanceOf(Array<Any>::class.java)
+                    Companion.verifyDeserialized(
+                        (original[i] as kotlin.Array<kotlin.Any?>?)!!,
+                        (deserialized[i] as kotlin.Array<kotlin.Any?>?)!!
+                    )
+                } else {
+                    Truth.assertThat(deserialized[i]).isEqualTo(original[i])
+                }
+            }
+        }
     }
-  }
 }

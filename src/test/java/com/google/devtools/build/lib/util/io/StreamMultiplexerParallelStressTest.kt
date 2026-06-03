@@ -11,115 +11,106 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util.io;
+package com.google.devtools.build.lib.util.io
 
-import com.google.common.io.ByteStreams;
-import java.io.OutputStream;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Random;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.common.io.ByteStreams
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.io.OutputStream
+import java.util.*
+import java.util.concurrent.Callable
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
 
 /**
- * Exercise {@link StreamMultiplexer} in a parallel setting and ensure there's
+ * Exercise [StreamMultiplexer] in a parallel setting and ensure there's
  * no corruption.
  */
-@RunWith(JUnit4.class)
-public class StreamMultiplexerParallelStressTest {
+@RunWith(JUnit4::class)
+class StreamMultiplexerParallelStressTest {
+    /**
+     * Characters that could likely cause corruption (they're used as control
+     * characters).
+     */
+    var toughCharsToTry: CharArray = charArrayOf('\n', '@', '1', '2', '\u0000', '0')
 
-  /**
-   * Characters that could likely cause corruption (they're used as control
-   * characters).
-   */
-  char[] toughCharsToTry = {'\n', '@', '1', '2', '\0', '0'};
+    /**
+     * We use a demultiplexer as a simple checker only - that is, we don't care what the demultiplexer
+     * writes, but we are taking advantage of its built in error checking.
+     */
+    var devNull: OutputStream = ByteStreams.nullOutputStream()
 
-  /**
-   * We use a demultiplexer as a simple checker only - that is, we don't care what the demultiplexer
-   * writes, but we are taking advantage of its built in error checking.
-   */
-  OutputStream devNull = ByteStreams.nullOutputStream();
+    var demux: StreamDemultiplexer = StreamDemultiplexer(1.toByte(), devNull, devNull, devNull)
 
-  StreamDemultiplexer demux = new StreamDemultiplexer((byte) 1, devNull, devNull, devNull);
+    /**
+     * The multiplexer under test.
+     */
+    var mux: StreamMultiplexer = StreamMultiplexer(demux)
 
-  /**
-   * The multiplexer under test.
-   */
-  StreamMultiplexer mux = new StreamMultiplexer(demux);
+    /**
+     * Streams is the out / err / control output streams of the multiplexer which
+     * we will write to in parallel.
+     */
+    var streams: Array<OutputStream> =
+        arrayOf<OutputStream>(mux.createStdout(), mux.createStderr(), mux.createControl())
 
-  /**
-   * Streams is the out / err / control output streams of the multiplexer which
-   * we will write to in parallel.
-   */
-  OutputStream[] streams = {
-      mux.createStdout(), mux.createStderr(), mux.createControl()};
+    /**
+     * We will create a bunch of threads that write random data to the streams of
+     * the mux.
+     */
+    internal inner class RandomDataPump(threadId: Int) : Callable<Any?> {
+        private val random: Random
 
-  /**
-   * We will create a bunch of threads that write random data to the streams of
-   * the mux.
-   */
-  class RandomDataPump implements Callable<Object> {
-
-    private Random random;
-
-    public RandomDataPump(int threadId) {
-      random = new Random(threadId * 0xdeadbeefL);
-    }
-
-    @Override
-    public Object call() throws Exception {
-      Thread.yield();
-      OutputStream out = streams[random.nextInt(2)];
-      for (int i = 0; i < 10000; i++) {
-          switch (random.nextInt(5)) {
-          case 0:
-            out.write(random.nextInt());
-            break;
-          case 1:
-            int index = random.nextInt(toughCharsToTry.length);
-            out.write(toughCharsToTry[index]);
-            break;
-          case 2:
-            byte[] buffer = new byte[random.nextInt(312)];
-            random.nextBytes(buffer);
-            out.write(buffer);
-            break;
-          case 3:
-            out.flush();
-            break;
-          case 4:
-            out = streams[random.nextInt(3)];
-            break;
-          default: // fall out
+        init {
+            random = Random(threadId * 0xdeadbeefL)
         }
-      }
-      return null;
+
+        @Throws(Exception::class)
+        override fun call(): Any? {
+            Thread.yield()
+            var out = streams[random.nextInt(2)]
+            for (i in 0..9999) {
+                when (random.nextInt(5)) {
+                    0 -> out.write(random.nextInt())
+                    1 -> {
+                        val index = random.nextInt(toughCharsToTry.size)
+                        out.write(toughCharsToTry[index].code)
+                    }
+
+                    2 -> {
+                        val buffer = ByteArray(random.nextInt(312))
+                        random.nextBytes(buffer)
+                        out.write(buffer)
+                    }
+
+                    3 -> out.flush()
+                    4 -> out = streams[random.nextInt(3)]
+                    else -> {}
+                }
+            }
+            return null
+        }
     }
-  }
 
-  @Test
-  public void testSingleThreadedStress() throws Exception {
-    new RandomDataPump(1).call();
-  }
-
-  @Test
-  public void testMultiThreadedStress()
-      throws InterruptedException, ExecutionException {
-    ExecutorService service = Executors.newFixedThreadPool(50);
-
-    List<Future<?>> futures = new ArrayList<>();
-    for (int threadId = 0; threadId < 50; threadId++) {
-      futures.add(service.submit(new RandomDataPump(threadId)));
+    @Test
+    @Throws(Exception::class)
+    fun testSingleThreadedStress() {
+        RandomDataPump(1).call()
     }
-    for (Future<?> future : futures) {
-      future.get();
-    }
-  }
 
+    @Test
+    @Throws(InterruptedException::class, ExecutionException::class)
+    fun testMultiThreadedStress() {
+        val service = Executors.newFixedThreadPool(50)
+
+        val futures: MutableList<Future<*>> = ArrayList<Future<*>>()
+        for (threadId in 0..49) {
+            futures.add(service.submit<Any?>(RandomDataPump(threadId)))
+        }
+        for (future in futures) {
+            future.get()
+        }
+    }
 }

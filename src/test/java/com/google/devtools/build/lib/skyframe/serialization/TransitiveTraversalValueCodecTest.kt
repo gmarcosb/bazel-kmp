@@ -11,49 +11,46 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe.serialization;
+package com.google.devtools.build.lib.skyframe.serialization
 
-import static org.mockito.Mockito.when;
+import com.google.devtools.build.lib.analysis.TransitiveInfoProvider
 
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.analysis.TransitiveInfoProvider;
-import com.google.devtools.build.lib.packages.AdvertisedProviderSet;
-import com.google.devtools.build.lib.packages.RuleClassProvider;
-import com.google.devtools.build.lib.packages.StarlarkProviderIdentifier;
-import com.google.devtools.build.lib.skyframe.TransitiveTraversalValue;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-import org.mockito.Mockito;
+/** Basic tests for codec for [TransitiveTraversalValue].  */
+@RunWith(JUnit4::class)
+class TransitiveTraversalValueCodecTest {
+    private class PseudoProvider : TransitiveInfoProvider
 
-/** Basic tests for codec for {@link TransitiveTraversalValue}. */
-@RunWith(JUnit4.class)
-public class TransitiveTraversalValueCodecTest {
+    private class PseudoProvider1 : TransitiveInfoProvider
 
-  private static final class PseudoProvider implements TransitiveInfoProvider {}
-
-  private static final class PseudoProvider1 implements TransitiveInfoProvider {}
-
-  @Test
-  public void testCodec() throws Exception {
-    RuleClassProvider ruleClassProvider = Mockito.mock(RuleClassProvider.class);
-    when(ruleClassProvider.getRuleClassMap()).thenReturn(ImmutableMap.of());
-    new SerializationTester(
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCodec() {
+        val ruleClassProvider: RuleClassProvider = Mockito.mock<RuleClassProvider>(RuleClassProvider::class.java)
+        Mockito.`when`<T?>(ruleClassProvider.getRuleClassMap())
+            .thenReturn(com.google.common.collect.ImmutableMap.of<K?, V?>())
+        SerializationTester(
             TransitiveTraversalValue.create(
-                AdvertisedProviderSet.EMPTY, "foo_kind", /*errorMessage=*/ null),
+                AdvertisedProviderSet.EMPTY, "foo_kind",  /*errorMessage=*/null
+            ),
             TransitiveTraversalValue.create(
-                AdvertisedProviderSet.EMPTY, "foo_kind", /*errorMessage=*/ null),
+                AdvertisedProviderSet.EMPTY, "foo_kind",  /*errorMessage=*/null
+            ),
             TransitiveTraversalValue.create(
-                AdvertisedProviderSet.EMPTY, "foo_kind", /*errorMessage=*/ ""),
+                AdvertisedProviderSet.EMPTY, "foo_kind",  /*errorMessage=*/""
+            ),
             TransitiveTraversalValue.create(
                 AdvertisedProviderSet.create(
-                    ImmutableSet.<Class<?>>of(PseudoProvider.class, PseudoProvider1.class),
-                    ImmutableSet.<StarlarkProviderIdentifier>of()),
-                "foo_kind",
-                /*errorMessage=*/ "baz"))
-        .addDependency(RuleClassProvider.class, ruleClassProvider)
-        .runTests();
-  }
+                    com.google.common.collect.ImmutableSet.of<java.lang.Class<*>?>(
+                        PseudoProvider::class.java,
+                        PseudoProvider1::class.java
+                    ),
+                    com.google.common.collect.ImmutableSet.of<StarlarkProviderIdentifier?>()
+                ),
+                "foo_kind",  /*errorMessage=*/
+                "baz"
+            )
+        )
+            .addDependency(RuleClassProvider::class.java, ruleClassProvider)
+            .runTests()
+    }
 }

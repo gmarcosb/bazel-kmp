@@ -11,102 +11,107 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util.io;
+package com.google.devtools.build.lib.util.io
 
-import static com.google.common.truth.Truth.assertThat;
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.io.IOException
 
-import java.io.IOException;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests [PositionAwareAnsiTerminalWriter].  */
+@RunWith(JUnit4::class)
+class PositionAwareAnsiTerminalWriterTest {
+    @Test
+    @Throws(IOException::class)
+    fun positionSimple() {
+        val sample = "lorem ipsum..."
+        val loggingTerminalWriter: LoggingTerminalWriter = LoggingTerminalWriter()
+        val terminalWriter: PositionAwareAnsiTerminalWriter =
+            PositionAwareAnsiTerminalWriter(loggingTerminalWriter)
 
-/** Tests {@link PositionAwareAnsiTerminalWriter}. */
-@RunWith(JUnit4.class)
-public class PositionAwareAnsiTerminalWriterTest {
-  static final String NL = LoggingTerminalWriter.NEWLINE;
-  static final String OK = LoggingTerminalWriter.OK;
-  static final String FAIL = LoggingTerminalWriter.FAIL;
-  static final String NORMAL = LoggingTerminalWriter.NORMAL;
+        terminalWriter.append(sample)
 
-  @Test
-  public void positionSimple() throws IOException {
-    final String sample = "lorem ipsum...";
-    LoggingTerminalWriter loggingTerminalWriter = new LoggingTerminalWriter();
-    PositionAwareAnsiTerminalWriter terminalWriter =
-        new PositionAwareAnsiTerminalWriter(loggingTerminalWriter);
+        assertThat(terminalWriter.getPosition()).isEqualTo(sample.length)
+        assertThat(loggingTerminalWriter.getTranscript()).isEqualTo(sample)
+    }
 
-    terminalWriter.append(sample);
+    @Test
+    @Throws(IOException::class)
+    fun positionTwoLines() {
+        val firstLine = "lorem ipsum..."
+        val secondLine = "foo bar baz"
 
-    assertThat(terminalWriter.getPosition()).isEqualTo(sample.length());
-    assertThat(loggingTerminalWriter.getTranscript()).isEqualTo(sample);
-  }
+        val loggingTerminalWriter: LoggingTerminalWriter = LoggingTerminalWriter()
+        val terminalWriter: PositionAwareAnsiTerminalWriter =
+            PositionAwareAnsiTerminalWriter(loggingTerminalWriter)
 
-  @Test
-  public void positionTwoLines() throws IOException {
-    final String firstLine = "lorem ipsum...";
-    final String secondLine = "foo bar baz";
+        terminalWriter.append(firstLine)
+        assertThat(terminalWriter.getPosition()).isEqualTo(firstLine.length)
+        terminalWriter.newline()
+        assertThat(terminalWriter.getPosition()).isEqualTo(0)
+        terminalWriter.append(secondLine)
+        assertThat(terminalWriter.getPosition()).isEqualTo(secondLine.length)
+        terminalWriter.newline()
+        assertThat(terminalWriter.getPosition()).isEqualTo(0)
+        assertThat(loggingTerminalWriter.getTranscript()).isEqualTo(firstLine + NL + secondLine + NL)
+    }
 
-    LoggingTerminalWriter loggingTerminalWriter = new LoggingTerminalWriter();
-    PositionAwareAnsiTerminalWriter terminalWriter =
-        new PositionAwareAnsiTerminalWriter(loggingTerminalWriter);
+    @Test
+    @Throws(IOException::class)
+    fun positionNewlineTranslated() {
+        val firstLine = "lorem ipsum..."
+        val secondLine = "foo bar baz"
 
-    terminalWriter.append(firstLine);
-    assertThat(terminalWriter.getPosition()).isEqualTo(firstLine.length());
-    terminalWriter.newline();
-    assertThat(terminalWriter.getPosition()).isEqualTo(0);
-    terminalWriter.append(secondLine);
-    assertThat(terminalWriter.getPosition()).isEqualTo(secondLine.length());
-    terminalWriter.newline();
-    assertThat(terminalWriter.getPosition()).isEqualTo(0);
-    assertThat(loggingTerminalWriter.getTranscript()).isEqualTo(firstLine + NL + secondLine + NL);
-  }
+        val loggingTerminalWriter: LoggingTerminalWriter = LoggingTerminalWriter()
+        val terminalWriter: PositionAwareAnsiTerminalWriter =
+            PositionAwareAnsiTerminalWriter(loggingTerminalWriter)
 
-  @Test
-  public void positionNewlineTranslated() throws IOException {
-    final String firstLine = "lorem ipsum...";
-    final String secondLine = "foo bar baz";
+        terminalWriter.append(firstLine + "\n" + secondLine)
+        assertThat(terminalWriter.getPosition()).isEqualTo(secondLine.length)
+        terminalWriter.append("\n")
+        assertThat(terminalWriter.getPosition()).isEqualTo(0)
+        assertThat(loggingTerminalWriter.getTranscript()).isEqualTo(firstLine + NL + secondLine + NL)
+    }
 
-    LoggingTerminalWriter loggingTerminalWriter = new LoggingTerminalWriter();
-    PositionAwareAnsiTerminalWriter terminalWriter =
-        new PositionAwareAnsiTerminalWriter(loggingTerminalWriter);
+    @Test
+    @Throws(IOException::class)
+    fun passThrough() {
+        val loggingTerminalWriter: LoggingTerminalWriter = LoggingTerminalWriter()
+        val terminalWriter: PositionAwareAnsiTerminalWriter =
+            PositionAwareAnsiTerminalWriter(loggingTerminalWriter)
 
-    terminalWriter.append(firstLine + "\n" + secondLine);
-    assertThat(terminalWriter.getPosition()).isEqualTo(secondLine.length());
-    terminalWriter.append("\n");
-    assertThat(terminalWriter.getPosition()).isEqualTo(0);
-    assertThat(loggingTerminalWriter.getTranscript()).isEqualTo(firstLine + NL + secondLine + NL);
-  }
+        terminalWriter
+            .append("abc")
+            .okStatus()
+            .append("ok")
+            .failStatus()
+            .append("fail")
+            .normal()
+            .append("normal")
+        assertThat(loggingTerminalWriter.getTranscript())
+            .isEqualTo("abc" + OK + "ok" + FAIL + "fail" + NORMAL + "normal")
+    }
 
-  @Test
-  public void passThrough() throws IOException {
-    LoggingTerminalWriter loggingTerminalWriter = new LoggingTerminalWriter();
-    PositionAwareAnsiTerminalWriter terminalWriter =
-        new PositionAwareAnsiTerminalWriter(loggingTerminalWriter);
+    @Test
+    @Throws(IOException::class)
+    fun highlightNospace() {
+        val sample = "lorem ipsum..."
 
-    terminalWriter
-        .append("abc")
-        .okStatus()
-        .append("ok")
-        .failStatus()
-        .append("fail")
-        .normal()
-        .append("normal");
-    assertThat(loggingTerminalWriter.getTranscript())
-        .isEqualTo("abc" + OK + "ok" + FAIL + "fail" + NORMAL + "normal");
-  }
+        val loggingTerminalWriter: LoggingTerminalWriter = LoggingTerminalWriter()
+        val terminalWriter: PositionAwareAnsiTerminalWriter =
+            PositionAwareAnsiTerminalWriter(loggingTerminalWriter)
 
-  @Test
-  public void highlightNospace() throws IOException {
-    final String sample = "lorem ipsum...";
+        terminalWriter.failStatus()
+        assertThat(terminalWriter.getPosition()).isEqualTo(0)
+        terminalWriter.append(sample)
+        assertThat(terminalWriter.getPosition()).isEqualTo(sample.length)
+        assertThat(loggingTerminalWriter.getTranscript()).isEqualTo(FAIL + sample)
+    }
 
-    LoggingTerminalWriter loggingTerminalWriter = new LoggingTerminalWriter();
-    PositionAwareAnsiTerminalWriter terminalWriter =
-        new PositionAwareAnsiTerminalWriter(loggingTerminalWriter);
-
-    terminalWriter.failStatus();
-    assertThat(terminalWriter.getPosition()).isEqualTo(0);
-    terminalWriter.append(sample);
-    assertThat(terminalWriter.getPosition()).isEqualTo(sample.length());
-    assertThat(loggingTerminalWriter.getTranscript()).isEqualTo(FAIL + sample);
-  }
+    companion object {
+        val NL: String? = LoggingTerminalWriter.NEWLINE
+        val OK: String? = LoggingTerminalWriter.OK
+        val FAIL: String? = LoggingTerminalWriter.FAIL
+        val NORMAL: String? = LoggingTerminalWriter.NORMAL
+    }
 }

@@ -11,57 +11,60 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester
 
-import static com.google.common.truth.Truth.assertThat;
+/** Tests for [MultimapCodec].  */
+@RunWith(JUnit4::class)
+class MultimapCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMultimap() {
+        val linkedHashMultimap: com.google.common.collect.LinkedHashMultimap<String?, String?> =
+            com.google.common.collect.LinkedHashMultimap.create<String?, String?>()
+        linkedHashMultimap.put("A", "//foo:B")
+        SerializationTester(
+            com.google.common.collect.ImmutableMultimap.of<K?, V?>(),
+            com.google.common.collect.ImmutableMultimap.of<K?, V?>("A", "//foo:A"),
+            com.google.common.collect.ImmutableMultimap.builder<Any?, Any?>().putAll("B", "//foo:B1", "//foo:B2")
+                .build(),
+            linkedHashMultimap
+        )
+            .runTests()
+    }
 
-import com.google.common.collect.ImmutableListMultimap;
-import com.google.common.collect.ImmutableMultimap;
-import com.google.common.collect.ImmutableSetMultimap;
-import com.google.common.collect.LinkedHashMultimap;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester.VerificationFunction;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link MultimapCodec}. */
-@RunWith(JUnit4.class)
-public class MultimapCodecTest {
-  @Test
-  public void testMultimap() throws Exception {
-    LinkedHashMultimap<String, String> linkedHashMultimap = LinkedHashMultimap.create();
-    linkedHashMultimap.put("A", "//foo:B");
-    new SerializationTester(
-            ImmutableMultimap.of(),
-            ImmutableMultimap.of("A", "//foo:A"),
-            ImmutableMultimap.builder().putAll("B", "//foo:B1", "//foo:B2").build(),
-            linkedHashMultimap)
-        .runTests();
-  }
-
-  @Test
-  public void testImmutableListMultimap() throws Exception {
-    new SerializationTester(
-            ImmutableListMultimap.builder().putAll("A", "a", "b", "c", "d", "e").build())
-        .setVerificationFunction(
-            (VerificationFunction<ImmutableListMultimap<String, String>>)
-                (deserialized, subject) ->
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testImmutableListMultimap() {
+        SerializationTester(
+            com.google.common.collect.ImmutableListMultimap.builder<Any?, Any?>().putAll("A", "a", "b", "c", "d", "e")
+                .build()
+        )
+            .setVerificationFunction(
+                VerificationFunction { deserialized, subject ->
                     assertThat(deserialized.get("A"))
                         .containsExactly("a", "b", "c", "d", "e")
-                        .inOrder())
-        .runTests();
-  }
+                        .inOrder()
+                } as VerificationFunction<com.google.common.collect.ImmutableListMultimap<String?, String?>?>)
+            .runTests()
+    }
 
-  @Test
-  public void testImmutableSetMultimap() throws Exception {
-    new SerializationTester(
-            ImmutableSetMultimap.builder().putAll("A", "a", "b").putAll("A", "b", "c").build())
-        .setVerificationFunction(
-            (VerificationFunction<ImmutableSetMultimap<String, String>>)
-                (deserialized, subject) ->
-                    assertThat(deserialized.get("A")).containsExactly("a", "b", "c"))
-        .runTests();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testImmutableSetMultimap() {
+        SerializationTester(
+            com.google.common.collect.ImmutableSetMultimap.builder<Any?, Any?>().putAll("A", "a", "b")
+                .putAll("A", "b", "c").build()
+        )
+            .setVerificationFunction(
+                VerificationFunction { deserialized, subject ->
+                    assertThat(deserialized.get("A")).containsExactly(
+                        "a",
+                        "b",
+                        "c"
+                    )
+                } as VerificationFunction<com.google.common.collect.ImmutableSetMultimap<String?, String?>?>)
+            .runTests()
+    }
 }

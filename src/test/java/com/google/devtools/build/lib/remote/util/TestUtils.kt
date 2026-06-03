@@ -11,210 +11,181 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.util;
+package com.google.devtools.build.lib.remote.util
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.fail;
+import com.google.bytestream.ByteStreamGrpc.ByteStreamImplBase
 
-import com.google.bytestream.ByteStreamGrpc.ByteStreamImplBase;
-import com.google.bytestream.ByteStreamProto.WriteRequest;
-import com.google.bytestream.ByteStreamProto.WriteResponse;
-import com.google.common.util.concurrent.ListenableFuture;
-import com.google.common.util.concurrent.ListenableScheduledFuture;
-import com.google.common.util.concurrent.ListeningScheduledExecutorService;
-import com.google.devtools.build.lib.remote.RemoteRetrier;
-import com.google.devtools.build.lib.remote.Retrier;
-import com.google.devtools.build.lib.remote.Retrier.Backoff;
-import com.google.devtools.build.lib.remote.Retrier.ResultClassifier;
-import com.google.devtools.build.lib.remote.Retrier.ResultClassifier.Result;
-import com.google.protobuf.ByteString;
-import io.grpc.Status;
-import io.grpc.Status.Code;
-import io.grpc.stub.StreamObserver;
-import java.util.Collection;
-import java.util.List;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-import java.util.function.Supplier;
-
-/** Test utilities */
-public class TestUtils {
-
-  public static RemoteRetrier newRemoteRetrier(
-      Supplier<Backoff> backoff,
-      ResultClassifier resultClassifier,
-      ListeningScheduledExecutorService retryScheduler) {
-    ZeroDelayListeningScheduledExecutorService zeroDelayRetryScheduler =
-        new ZeroDelayListeningScheduledExecutorService(retryScheduler);
-    return new RemoteRetrier(
-        backoff,
-        (e) ->
-            Status.fromThrowable(e).getCode() == Code.CANCELLED
-                ? Result.SUCCESS
-                : resultClassifier.test(e),
-        zeroDelayRetryScheduler,
-        Retrier.ALLOW_ALL_CALLS,
-        (millis) -> {
-          /* don't wait in tests */
-        });
-  }
-
-  /**
-   * Wraps around a {@link ListeningScheduledExecutorService} and schedules all tasks with zero
-   * delay.
-   */
-  private static class ZeroDelayListeningScheduledExecutorService
-      implements ListeningScheduledExecutorService {
-
-    private final ListeningScheduledExecutorService delegate;
-
-    ZeroDelayListeningScheduledExecutorService(ListeningScheduledExecutorService delegate) {
-      this.delegate = delegate;
+/** Test utilities  */
+object TestUtils {
+    fun newRemoteRetrier(
+        backoff: java.util.function.Supplier<Backoff?>?,
+        resultClassifier: ResultClassifier,
+        retryScheduler: com.google.common.util.concurrent.ListeningScheduledExecutorService
+    ): RemoteRetrier {
+        val zeroDelayRetryScheduler =
+            ZeroDelayListeningScheduledExecutorService(retryScheduler)
+        return RemoteRetrier(
+            backoff,
+            { e ->
+                if (io.grpc.Status.fromThrowable(e).getCode() == io.grpc.Status.Code.CANCELLED)
+                    Result.SUCCESS
+                else
+                    resultClassifier.test(e)
+            },
+            zeroDelayRetryScheduler,
+            Retrier.ALLOW_ALL_CALLS,
+            { millis -> })
     }
 
-    @Override
-    public ListenableScheduledFuture<?> schedule(Runnable runnable, long l, TimeUnit timeUnit) {
-      return delegate.schedule(runnable, 0, timeUnit);
-    }
+    fun newNoErrorByteStreamService(blob: ByteArray): ByteStreamImplBase {
+        return object : ByteStreamImplBase() {
+            public override fun write(streamObserver: StreamObserver<WriteResponse?>): StreamObserver<WriteRequest?> {
+                return object : StreamObserver<WriteRequest?> {
+                    var receivedData: ByteArray = ByteArray(blob.size)
+                    var nextOffset: Long = 0
 
-    @Override
-    public <V> ListenableScheduledFuture<V> schedule(
-        Callable<V> callable, long l, TimeUnit timeUnit) {
-      return delegate.schedule(callable, 0, timeUnit);
-    }
+                    override fun onNext(writeRequest: WriteRequest) {
+                        if (nextOffset == 0L) {
+                            assertThat(writeRequest.getResourceName()).isNotEmpty()
+                            assertThat(writeRequest.getResourceName()).endsWith(java.lang.String.valueOf(blob.size))
+                        } else {
+                            assertThat(writeRequest.getResourceName()).isEmpty()
+                        }
 
-    @Override
-    public ListenableScheduledFuture<?> scheduleAtFixedRate(
-        Runnable runnable, long l, long l1, TimeUnit timeUnit) {
-      return delegate.scheduleAtFixedRate(runnable, 0, 0, timeUnit);
-    }
+                        assertThat(writeRequest.getWriteOffset()).isEqualTo(nextOffset)
 
-    @Override
-    public ListenableScheduledFuture<?> scheduleWithFixedDelay(
-        Runnable runnable, long l, long l1, TimeUnit timeUnit) {
-      return delegate.scheduleWithFixedDelay(runnable, 0, 0, timeUnit);
-    }
+                        val data: ByteString = writeRequest.getData()
 
-    @Override
-    public void shutdown() {
-      delegate.shutdown();
-    }
+                        java.lang.System.arraycopy(data.toByteArray(), 0, receivedData, nextOffset.toInt(), data.size())
 
-    @Override
-    public List<Runnable> shutdownNow() {
-      return delegate.shutdownNow();
-    }
+                        nextOffset += data.size().toLong()
+                        val lastWrite = blob.size.toLong() == nextOffset
+                        assertThat(writeRequest.getFinishWrite()).isEqualTo(lastWrite)
+                    }
 
-    @Override
-    public boolean isShutdown() {
-      return delegate.isShutdown();
-    }
+                    override fun onError(throwable: Throwable?) {
+                        org.junit.Assert.fail("onError should never be called.")
+                    }
 
-    @Override
-    public boolean isTerminated() {
-      return delegate.isTerminated();
-    }
+                    override fun onCompleted() {
+                        Truth.assertThat(nextOffset).isEqualTo(blob.size)
+                        Truth.assertThat(receivedData).isEqualTo(blob)
 
-    @Override
-    public boolean awaitTermination(long timeout, TimeUnit unit) throws InterruptedException {
-      return delegate.awaitTermination(timeout, unit);
-    }
-
-    @Override
-    public <T> ListenableFuture<T> submit(Callable<T> callable) {
-      return delegate.submit(callable);
-    }
-
-    @Override
-    public ListenableFuture<?> submit(Runnable runnable) {
-      return delegate.submit(runnable);
-    }
-
-    @Override
-    public <T> ListenableFuture<T> submit(Runnable runnable, T t) {
-      return delegate.submit(runnable, t);
-    }
-
-    @Override
-    public <T> List<Future<T>> invokeAll(Collection<? extends Callable<T>> tasks)
-        throws InterruptedException {
-      return delegate.invokeAll(tasks);
-    }
-
-    @Override
-    public <T> List<Future<T>> invokeAll(
-        Collection<? extends Callable<T>> tasks, long timeout, TimeUnit unit)
-        throws InterruptedException {
-      return delegate.invokeAll(tasks, timeout, unit);
-    }
-
-    @Override
-    public <T> T invokeAny(Collection<? extends Callable<T>> tasks)
-        throws InterruptedException, ExecutionException {
-      return delegate.invokeAny(tasks);
-    }
-
-    @Override
-    public <T> T invokeAny(Collection<? extends Callable<T>> tasks, long timeout, TimeUnit unit)
-        throws InterruptedException, ExecutionException, TimeoutException {
-      return delegate.invokeAny(tasks, timeout, unit);
-    }
-
-    @Override
-    public void execute(Runnable command) {
-      delegate.execute(command);
-    }
-  }
-
-  public static final ByteStreamImplBase newNoErrorByteStreamService(byte[] blob) {
-    return new ByteStreamImplBase() {
-      @Override
-      public StreamObserver<WriteRequest> write(StreamObserver<WriteResponse> streamObserver) {
-        return new StreamObserver<WriteRequest>() {
-
-          byte[] receivedData = new byte[blob.length];
-          long nextOffset = 0;
-
-          @Override
-          public void onNext(WriteRequest writeRequest) {
-            if (nextOffset == 0) {
-              assertThat(writeRequest.getResourceName()).isNotEmpty();
-              assertThat(writeRequest.getResourceName()).endsWith(String.valueOf(blob.length));
-            } else {
-              assertThat(writeRequest.getResourceName()).isEmpty();
+                        val response: WriteResponse? =
+                            WriteResponse.newBuilder().setCommittedSize(nextOffset).build()
+                        streamObserver.onNext(response)
+                        streamObserver.onCompleted()
+                    }
+                }
             }
+        }
+    }
 
-            assertThat(writeRequest.getWriteOffset()).isEqualTo(nextOffset);
+    /**
+     * Wraps around a [ListeningScheduledExecutorService] and schedules all tasks with zero
+     * delay.
+     */
+    private class ZeroDelayListeningScheduledExecutorService
+        (delegate: com.google.common.util.concurrent.ListeningScheduledExecutorService) :
+        com.google.common.util.concurrent.ListeningScheduledExecutorService {
+        private val delegate: com.google.common.util.concurrent.ListeningScheduledExecutorService
 
-            ByteString data = writeRequest.getData();
+        init {
+            this.delegate = delegate
+        }
 
-            System.arraycopy(data.toByteArray(), 0, receivedData, (int) nextOffset, data.size());
+        override fun schedule(
+            runnable: java.lang.Runnable,
+            l: Long,
+            timeUnit: TimeUnit
+        ): com.google.common.util.concurrent.ListenableScheduledFuture<*> {
+            return delegate.schedule(runnable, 0, timeUnit)
+        }
 
-            nextOffset += data.size();
-            boolean lastWrite = blob.length == nextOffset;
-            assertThat(writeRequest.getFinishWrite()).isEqualTo(lastWrite);
-          }
+        override fun <V> schedule(
+            callable: java.util.concurrent.Callable<V?>, l: Long, timeUnit: TimeUnit
+        ): com.google.common.util.concurrent.ListenableScheduledFuture<V?> {
+            return delegate.schedule<V?>(callable, 0, timeUnit)
+        }
 
-          @Override
-          public void onError(Throwable throwable) {
-            fail("onError should never be called.");
-          }
+        override fun scheduleAtFixedRate(
+            runnable: java.lang.Runnable, l: Long, l1: Long, timeUnit: TimeUnit
+        ): com.google.common.util.concurrent.ListenableScheduledFuture<*> {
+            return delegate.scheduleAtFixedRate(runnable, 0, 0, timeUnit)
+        }
 
-          @Override
-          public void onCompleted() {
-            assertThat(nextOffset).isEqualTo(blob.length);
-            assertThat(receivedData).isEqualTo(blob);
+        override fun scheduleWithFixedDelay(
+            runnable: java.lang.Runnable, l: Long, l1: Long, timeUnit: TimeUnit
+        ): com.google.common.util.concurrent.ListenableScheduledFuture<*> {
+            return delegate.scheduleWithFixedDelay(runnable, 0, 0, timeUnit)
+        }
 
-            WriteResponse response =
-                WriteResponse.newBuilder().setCommittedSize(nextOffset).build();
-            streamObserver.onNext(response);
-            streamObserver.onCompleted();
-          }
-        };
-      }
-    };
-  }
+        override fun shutdown() {
+            delegate.shutdown()
+        }
+
+        override fun shutdownNow(): MutableList<java.lang.Runnable?>? {
+            return delegate.shutdownNow()
+        }
+
+        val isShutdown: Boolean
+            get() = delegate.isShutdown()
+
+        val isTerminated: Boolean
+            get() = delegate.isTerminated()
+
+        @Throws(java.lang.InterruptedException::class)
+        override fun awaitTermination(timeout: Long, unit: TimeUnit?): Boolean {
+            return delegate.awaitTermination(timeout, unit)
+        }
+
+        override fun <T> submit(callable: java.util.concurrent.Callable<T?>): com.google.common.util.concurrent.ListenableFuture<T?> {
+            return delegate.submit<T?>(callable)
+        }
+
+        override fun submit(runnable: java.lang.Runnable): com.google.common.util.concurrent.ListenableFuture<*> {
+            return delegate.submit(runnable)
+        }
+
+        override fun <T> submit(
+            runnable: java.lang.Runnable,
+            t: T?
+        ): com.google.common.util.concurrent.ListenableFuture<T?> {
+            return delegate.submit<T?>(runnable, t)
+        }
+
+        @Throws(java.lang.InterruptedException::class)
+        override fun <T> invokeAll(tasks: MutableCollection<out java.util.concurrent.Callable<T?>?>): MutableList<java.util.concurrent.Future<T?>?> {
+            return delegate.invokeAll<T?>(tasks)
+        }
+
+        @Throws(java.lang.InterruptedException::class)
+        override fun <T> invokeAll(
+            tasks: MutableCollection<out java.util.concurrent.Callable<T?>?>, timeout: Long, unit: TimeUnit
+        ): MutableList<java.util.concurrent.Future<T?>?> {
+            return delegate.invokeAll<T?>(tasks, timeout, unit)
+        }
+
+        @Throws(java.lang.InterruptedException::class, ExecutionException::class)
+        override fun <T> invokeAny(tasks: MutableCollection<out java.util.concurrent.Callable<T?>?>?): T? {
+            return delegate.invokeAny<T?>(tasks)
+        }
+
+        @Throws(
+            java.lang.InterruptedException::class,
+            ExecutionException::class,
+            java.util.concurrent.TimeoutException::class
+        )
+        override fun <T> invokeAny(
+            tasks: MutableCollection<out java.util.concurrent.Callable<T?>?>?,
+            timeout: Long,
+            unit: TimeUnit?
+        ): T? {
+            return delegate.invokeAny<T?>(tasks, timeout, unit)
+        }
+
+        override fun execute(command: java.lang.Runnable?) {
+            delegate.execute(command)
+        }
+    }
 }

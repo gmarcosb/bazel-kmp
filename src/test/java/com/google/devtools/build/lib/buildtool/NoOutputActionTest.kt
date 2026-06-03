@@ -11,30 +11,23 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.buildtool;
+package com.google.devtools.build.lib.buildtool
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-
-import com.google.devtools.build.lib.actions.BuildFailedException;
-import com.google.devtools.build.lib.buildtool.util.BuildIntegrationTestCase;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.actions.BuildFailedException
 
 /**
  * Regression test for bug #649512: an action that doesn't generate the
  * outputs it's supposed to should cause an error to be reported, but not a
  * crash.
  */
-@RunWith(JUnit4.class)
-public class NoOutputActionTest extends BuildIntegrationTestCase {
-
-  @Test
-  public void testNoOutput() throws Exception {
-    write(
-        "nooutput/BUILD",
-        """
+@RunWith(JUnit4::class)
+class NoOutputActionTest : BuildIntegrationTestCase() {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNoOutput() {
+        write(
+            "nooutput/BUILD",
+            """
         genrule(
             name = "nooutput",
             outs = [
@@ -43,17 +36,21 @@ public class NoOutputActionTest extends BuildIntegrationTestCase {
             ],
             cmd = "",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    BuildFailedException e =
-        assertThrows(BuildFailedException.class, () -> buildTarget("//nooutput"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains(
-            "nooutput/BUILD:1:8 Executing genrule //nooutput:nooutput failed: not all outputs were"
-                + " created or valid");
-    events.assertContainsError("declared output 'nooutput/out1' was not created by genrule");
-    events.assertContainsError("declared output 'nooutput/out2' was not created by genrule");
-  }
-
+        val e: BuildFailedException? =
+            org.junit.Assert.assertThrows<T?>(
+                BuildFailedException::class.java,
+                org.junit.function.ThrowingRunnable { buildTarget("//nooutput") })
+        assertThat(e)
+            .hasMessageThat()
+            .contains(
+                "nooutput/BUILD:1:8 Executing genrule //nooutput:nooutput failed: not all outputs were"
+                        + " created or valid"
+            )
+        events.assertContainsError("declared output 'nooutput/out1' was not created by genrule")
+        events.assertContainsError("declared output 'nooutput/out2' was not created by genrule")
+    }
 }

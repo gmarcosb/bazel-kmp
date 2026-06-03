@@ -11,101 +11,110 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages;
+package com.google.devtools.build.lib.packages
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
-
-import com.google.devtools.build.lib.vfs.PathFragment;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.vfs.PathFragment
 
 /**
- * Unit tests for {@link RelativePackageNameResolver}.
+ * Unit tests for [RelativePackageNameResolver].
  */
-@RunWith(JUnit4.class)
-public class RelativePackageNameResolverTest {
-  private RelativePackageNameResolver resolver;
+@RunWith(JUnit4::class)
+class RelativePackageNameResolverTest {
+    private var resolver: RelativePackageNameResolver? = null
 
-  @Test
-  public void testRelativePackagesBelowOneLevelWork() throws Exception {
-    createResolver("foo", true);
-    assertResolvesTo("bar", "foo/bar");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRelativePackagesBelowOneLevelWork() {
+        createResolver("foo", true)
+        assertResolvesTo("bar", "foo/bar")
 
-    createResolver("foo/bar", true);
-    assertResolvesTo("pear", "foo/bar/pear");
-  }
+        createResolver("foo/bar", true)
+        assertResolvesTo("pear", "foo/bar/pear")
+    }
 
-  @Test
-  public void testRelativePackagesBelowTwoLevelsWork() throws Exception {
-    createResolver("foo/bar", true);
-    assertResolvesTo("pear", "foo/bar/pear");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRelativePackagesBelowTwoLevelsWork() {
+        createResolver("foo/bar", true)
+        assertResolvesTo("pear", "foo/bar/pear")
+    }
 
-  @Test
-  public void testRelativePackagesAboveOneLevelWork() throws Exception {
-    createResolver("foo", true);
-    assertResolvesTo("../bar", "bar");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRelativePackagesAboveOneLevelWork() {
+        createResolver("foo", true)
+        assertResolvesTo("../bar", "bar")
+    }
 
-  @Test
-  public void testRelativePackagesAboveTwoLevelsWork() throws Exception {
-    createResolver("foo/bar", true);
-    assertResolvesTo("../../apple", "apple");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRelativePackagesAboveTwoLevelsWork() {
+        createResolver("foo/bar", true)
+        assertResolvesTo("../../apple", "apple")
+    }
 
-  @Test
-  public void testSimpleAbsolutePackagesWork() throws Exception {
-    createResolver("foo", true);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSimpleAbsolutePackagesWork() {
+        createResolver("foo", true)
 
-    assertResolvesTo("//foo", "foo");
-    assertResolvesTo("//foo/bar", "foo/bar");
-  }
+        assertResolvesTo("//foo", "foo")
+        assertResolvesTo("//foo/bar", "foo/bar")
+    }
 
-  @Test
-  public void testBuildNotRemoved() throws Exception {
-    createResolver("foo", false);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBuildNotRemoved() {
+        createResolver("foo", false)
 
-    assertResolvesTo("bar/BUILD", "foo/bar/BUILD");
-  }
+        assertResolvesTo("bar/BUILD", "foo/bar/BUILD")
+    }
 
-  @Test
-  public void testBuildRemoved() throws Exception {
-    createResolver("foo", true);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBuildRemoved() {
+        createResolver("foo", true)
 
-    assertResolvesTo("bar/BUILD", "foo/bar");
-  }
+        assertResolvesTo("bar/BUILD", "foo/bar")
+    }
 
-  @Test
-  public void testEmptyOffset() throws Exception {
-    createResolver("", true);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testEmptyOffset() {
+        createResolver("", true)
 
-    assertResolvesTo("bar", "bar");
-    assertResolvesTo("bar/qux", "bar/qux");
-  }
+        assertResolvesTo("bar", "bar")
+        assertResolvesTo("bar/qux", "bar/qux")
+    }
 
-  @Test
-  public void testTooFarUpwardsOneLevelThrows() throws Exception {
-    createResolver("foo", true);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTooFarUpwardsOneLevelThrows() {
+        createResolver("foo", true)
 
-    assertThrows(InvalidPackageNameException.class, () -> resolver.resolve("../../bar"));
-  }
+        org.junit.Assert.assertThrows<T?>(
+            InvalidPackageNameException::class.java,
+            org.junit.function.ThrowingRunnable { resolver.resolve("../../bar") })
+    }
 
-  @Test
-  public void testTooFarUpwardsTwoLevelsThrows() throws Exception {
-    createResolver("foo/bar", true);
-    assertResolvesTo("../../orange", "orange");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTooFarUpwardsTwoLevelsThrows() {
+        createResolver("foo/bar", true)
+        assertResolvesTo("../../orange", "orange")
 
-    assertThrows(InvalidPackageNameException.class, () -> resolver.resolve("../../../orange"));
-  }
+        org.junit.Assert.assertThrows<T?>(
+            InvalidPackageNameException::class.java,
+            org.junit.function.ThrowingRunnable { resolver.resolve("../../../orange") })
+    }
 
-  private void createResolver(String offset, boolean discardBuild) {
-    resolver = new RelativePackageNameResolver(PathFragment.create(offset), discardBuild);
-  }
+    private fun createResolver(offset: String?, discardBuild: Boolean) {
+        resolver = RelativePackageNameResolver(PathFragment.create(offset), discardBuild)
+    }
 
-  private void assertResolvesTo(String relative, String expectedAbsolute) throws Exception {
-    String result = resolver.resolve(relative);
-    assertThat(result).isEqualTo(expectedAbsolute);
-  }
+    @Throws(java.lang.Exception::class)
+    private fun assertResolvesTo(relative: String?, expectedAbsolute: String?) {
+        val result: String? = resolver.resolve(relative)
+        Truth.assertThat(result).isEqualTo(expectedAbsolute)
+    }
 }

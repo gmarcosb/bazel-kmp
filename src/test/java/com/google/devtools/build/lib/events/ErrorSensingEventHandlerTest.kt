@@ -11,71 +11,92 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.events;
+package com.google.devtools.build.lib.events
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.events.ErrorSensingEventHandler
+import com.google.devtools.build.lib.events.ExtendedEventHandler
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import org.mockito.Mockito
 
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests [ErrorSensingEventHandler].  */
+@RunWith(JUnit4::class)
+class ErrorSensingEventHandlerTest {
+    @org.junit.Test
+    fun delegation() {
+        val delegate: ExtendedEventHandler? = Mockito.mock<ExtendedEventHandler?>(ExtendedEventHandler::class.java)
+        val subject: ErrorSensingEventHandler<java.lang.Void?> =
+            ErrorSensingEventHandler.withoutPropertyValueTracking(delegate)
+        val event: com.google.devtools.build.lib.events.Event? = com.google.devtools.build.lib.events.Event.of(
+            com.google.devtools.build.lib.events.EventKind.INFO,
+            "message"
+        )
 
-/** Tests {@link ErrorSensingEventHandler}. */
-@RunWith(JUnit4.class)
-public class ErrorSensingEventHandlerTest {
+        subject.handle(event)
 
-  @Test
-  public void delegation() {
-    ExtendedEventHandler delegate = mock(ExtendedEventHandler.class);
-    ErrorSensingEventHandler<Void> subject =
-        ErrorSensingEventHandler.withoutPropertyValueTracking(delegate);
-    Event event = Event.of(EventKind.INFO, "message");
+        Mockito.verify<ExtendedEventHandler?>(delegate).handle(event)
+    }
 
-    subject.handle(event);
+    @org.junit.Test
+    fun rememberError() {
+        val delegate: ExtendedEventHandler? = Mockito.mock<ExtendedEventHandler?>(ExtendedEventHandler::class.java)
+        val subject: ErrorSensingEventHandler<java.lang.Void?> =
+            ErrorSensingEventHandler.withoutPropertyValueTracking(delegate)
 
-    verify(delegate).handle(event);
-  }
+        subject.handle(
+            com.google.devtools.build.lib.events.Event.of(
+                com.google.devtools.build.lib.events.EventKind.INFO,
+                "message"
+            )
+        )
 
-  @Test
-  public void rememberError() {
-    ExtendedEventHandler delegate = mock(ExtendedEventHandler.class);
-    ErrorSensingEventHandler<Void> subject =
-        ErrorSensingEventHandler.withoutPropertyValueTracking(delegate);
+        Truth.assertThat(subject.hasErrors()).isFalse()
 
-    subject.handle(Event.of(EventKind.INFO, "message"));
+        subject.handle(
+            com.google.devtools.build.lib.events.Event.of(
+                com.google.devtools.build.lib.events.EventKind.ERROR,
+                "anError"
+            )
+        )
 
-    assertThat(subject.hasErrors()).isFalse();
+        Truth.assertThat(subject.hasErrors()).isTrue()
+    }
 
-    subject.handle(Event.of(EventKind.ERROR, "anError"));
+    @org.junit.Test
+    fun rememberErrorProperty() {
+        val delegate: ExtendedEventHandler? = Mockito.mock<ExtendedEventHandler?>(ExtendedEventHandler::class.java)
 
-    assertThat(subject.hasErrors()).isTrue();
-  }
+        val withoutTracking: ErrorSensingEventHandler<java.lang.Void?> =
+            ErrorSensingEventHandler.withoutPropertyValueTracking(delegate)
+        val withTracking: ErrorSensingEventHandler<String?> =
+            ErrorSensingEventHandler<String?>(delegate, String::class.java)
 
-  @Test
-  public void rememberErrorProperty() {
-    ExtendedEventHandler delegate = mock(ExtendedEventHandler.class);
+        val nonerrorEvent: com.google.devtools.build.lib.events.Event? =
+            com.google.devtools.build.lib.events.Event.info("nonerror").withProperty<String?>(
+                String::class.java, "propertyValue"
+            )
+        withoutTracking.handle(nonerrorEvent)
+        withTracking.handle(nonerrorEvent)
 
-    ErrorSensingEventHandler<Void> withoutTracking =
-        ErrorSensingEventHandler.withoutPropertyValueTracking(delegate);
-    ErrorSensingEventHandler<String> withTracking =
-        new ErrorSensingEventHandler<>(delegate, String.class);
+        Truth.assertThat(withoutTracking.getErrorProperty()).isNull()
+        Truth.assertThat(withTracking.getErrorProperty()).isNull()
 
-    Event nonerrorEvent = Event.info("nonerror").withProperty(String.class, "propertyValue");
-    withoutTracking.handle(nonerrorEvent);
-    withTracking.handle(nonerrorEvent);
+        val errorEvent: com.google.devtools.build.lib.events.Event? =
+            com.google.devtools.build.lib.events.Event.error("anError").withProperty<String?>(
+                String::class.java, "propertyValue"
+            )
+        withoutTracking.handle(errorEvent)
+        withTracking.handle(errorEvent)
 
-    assertThat(withoutTracking.getErrorProperty()).isNull();
-    assertThat(withTracking.getErrorProperty()).isNull();
+        Truth.assertThat(withoutTracking.getErrorProperty()).isNull()
+        Truth.assertThat(withTracking.getErrorProperty()).isEqualTo("propertyValue")
 
-    Event errorEvent = Event.error("anError").withProperty(String.class, "propertyValue");
-    withoutTracking.handle(errorEvent);
-    withTracking.handle(errorEvent);
-
-    assertThat(withoutTracking.getErrorProperty()).isNull();
-    assertThat(withTracking.getErrorProperty()).isEqualTo("propertyValue");
-
-    withTracking.handle(Event.error("anotherError").withProperty(String.class, "ignoredValue"));
-    assertThat(withTracking.getErrorProperty()).isEqualTo("propertyValue");
-  }
+        withTracking.handle(
+            com.google.devtools.build.lib.events.Event.error("anotherError").withProperty<String?>(
+                String::class.java, "ignoredValue"
+            )
+        )
+        Truth.assertThat(withTracking.getErrorProperty()).isEqualTo("propertyValue")
+    }
 }

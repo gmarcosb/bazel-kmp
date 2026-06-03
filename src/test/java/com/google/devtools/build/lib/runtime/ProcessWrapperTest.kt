@@ -11,110 +11,110 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime
 
-package com.google.devtools.build.lib.runtime;
+import com.google.devtools.build.lib.actions.ActionInputHelper
 
-import static com.google.common.truth.Truth.assertThat;
+/** Unit tests for [ProcessWrapper].  */
+@RunWith(JUnit4::class)
+class ProcessWrapperTest {
+    @org.junit.Test
+    fun testProcessWrapperCommandLineBuilder_buildsWithoutOptionalArguments() {
+        val commandArguments: com.google.common.collect.ImmutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>("echo", "hello, world")
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.actions.ActionInputHelper;
-import com.google.devtools.build.lib.actions.ExecutionRequirements;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import java.time.Duration;
-import java.util.List;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+        val expectedCommandLine: com.google.common.collect.ImmutableList<String?> =
+            com.google.common.collect.ImmutableList.builder<String?>().add("/some/path").addAll(commandArguments)
+                .build()
 
-/** Unit tests for {@link ProcessWrapper}. */
-@RunWith(JUnit4.class)
-public final class ProcessWrapperTest {
+        val processWrapper: ProcessWrapper =
+            ProcessWrapper(
+                PathFragment.create("/some/path"),
+                ActionInputHelper.fromPath("/some/path"),  /* killDelay= */
+                null,  /* gracefulSigterm= */
+                false
+            )
+        val commandLine: MutableList<String?>? = processWrapper.commandLineBuilder(commandArguments).build()
 
-  @Test
-  public void testProcessWrapperCommandLineBuilder_buildsWithoutOptionalArguments() {
-    ImmutableList<String> commandArguments = ImmutableList.of("echo", "hello, world");
+        Truth.assertThat(commandLine).containsExactlyElementsIn(expectedCommandLine).inOrder()
+    }
 
-    ImmutableList<String> expectedCommandLine =
-        ImmutableList.<String>builder().add("/some/path").addAll(commandArguments).build();
+    @org.junit.Test
+    fun testProcessWrapperCommandLineBuilder_buildsWithOptionalArguments() {
+        val commandArguments: com.google.common.collect.ImmutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>("echo", "hello, world")
 
-    ProcessWrapper processWrapper =
-        new ProcessWrapper(
-            PathFragment.create("/some/path"),
-            ActionInputHelper.fromPath("/some/path"),
-            /* killDelay= */ null,
-            /* gracefulSigterm= */ false);
-    List<String> commandLine = processWrapper.commandLineBuilder(commandArguments).build();
+        val timeout: java.time.Duration = java.time.Duration.ofSeconds(10)
+        val killDelay: java.time.Duration = java.time.Duration.ofSeconds(2)
+        val overrideProcessWrapperPath: PathFragment = PathFragment.create("/override/process-wrapper")
+        val stdoutPath: PathFragment? = PathFragment.create("/stdout.txt")
+        val stderrPath: PathFragment? = PathFragment.create("/stderr.txt")
+        val statisticsPath: PathFragment? = PathFragment.create("/stats.out")
 
-    assertThat(commandLine).containsExactlyElementsIn(expectedCommandLine).inOrder();
-  }
+        val expectedCommandLine: com.google.common.collect.ImmutableList<String?> =
+            com.google.common.collect.ImmutableList.builder<String?>()
+                .add(overrideProcessWrapperPath.getPathString())
+                .add("--timeout=" + timeout.toSeconds())
+                .add("--kill_delay=" + killDelay.toSeconds())
+                .add("--stdout=" + stdoutPath)
+                .add("--stderr=" + stderrPath)
+                .add("--stats=" + statisticsPath)
+                .add("--graceful_sigterm")
+                .addAll(commandArguments)
+                .build()
 
-  @Test
-  public void testProcessWrapperCommandLineBuilder_buildsWithOptionalArguments() {
-    ImmutableList<String> commandArguments = ImmutableList.of("echo", "hello, world");
+        val processWrapper: ProcessWrapper =
+            ProcessWrapper(
+                PathFragment.create("/path/process-wrapper"),
+                ActionInputHelper.fromPath("/path/process-wrapper"),
+                killDelay,  /* gracefulSigterm= */
+                true
+            )
 
-    Duration timeout = Duration.ofSeconds(10);
-    Duration killDelay = Duration.ofSeconds(2);
-    PathFragment overrideProcessWrapperPath = PathFragment.create("/override/process-wrapper");
-    PathFragment stdoutPath = PathFragment.create("/stdout.txt");
-    PathFragment stderrPath = PathFragment.create("/stderr.txt");
-    PathFragment statisticsPath = PathFragment.create("/stats.out");
+        val commandLine: MutableList<String?>? =
+            processWrapper
+                .commandLineBuilder(commandArguments)
+                .overrideProcessWrapperPath(overrideProcessWrapperPath)
+                .setTimeout(timeout)
+                .setStdoutPath(stdoutPath)
+                .setStderrPath(stderrPath)
+                .setStatisticsPath(statisticsPath)
+                .build()
 
-    ImmutableList<String> expectedCommandLine =
-        ImmutableList.<String>builder()
-            .add(overrideProcessWrapperPath.getPathString())
-            .add("--timeout=" + timeout.toSeconds())
-            .add("--kill_delay=" + killDelay.toSeconds())
-            .add("--stdout=" + stdoutPath)
-            .add("--stderr=" + stderrPath)
-            .add("--stats=" + statisticsPath)
-            .add("--graceful_sigterm")
-            .addAll(commandArguments)
-            .build();
+        Truth.assertThat(commandLine).containsExactlyElementsIn(expectedCommandLine).inOrder()
+    }
 
-    ProcessWrapper processWrapper =
-        new ProcessWrapper(
-            PathFragment.create("/path/process-wrapper"),
-            ActionInputHelper.fromPath("/path/process-wrapper"),
-            killDelay,
-            /* gracefulSigterm= */ true);
+    @org.junit.Test
+    fun testProcessWrapperCommandLineBuilder_withExecutionInfo() {
+        val commandArguments: com.google.common.collect.ImmutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>("echo", "hello, world")
 
-    List<String> commandLine =
-        processWrapper
-            .commandLineBuilder(commandArguments)
-            .overrideProcessWrapperPath(overrideProcessWrapperPath)
-            .setTimeout(timeout)
-            .setStdoutPath(stdoutPath)
-            .setStderrPath(stderrPath)
-            .setStatisticsPath(statisticsPath)
-            .build();
+        val processWrapper: ProcessWrapper =
+            ProcessWrapper(
+                PathFragment.create("/some/path"),
+                ActionInputHelper.fromPath("/some/path"),  /* killDelay= */
+                null,  /* gracefulSigterm= */
+                false
+            )
+        val builder: ProcessWrapper.CommandLineBuilder = processWrapper.commandLineBuilder(commandArguments)
 
-    assertThat(commandLine).containsExactlyElementsIn(expectedCommandLine).inOrder();
-  }
+        val expectedWithoutExecutionInfo: com.google.common.collect.ImmutableList<String?> =
+            com.google.common.collect.ImmutableList.builder<String?>().add("/some/path").addAll(commandArguments)
+                .build()
+        assertThat(builder.build()).containsExactlyElementsIn(expectedWithoutExecutionInfo).inOrder()
 
-  @Test
-  public void testProcessWrapperCommandLineBuilder_withExecutionInfo() {
-    ImmutableList<String> commandArguments = ImmutableList.of("echo", "hello, world");
-
-    ProcessWrapper processWrapper =
-        new ProcessWrapper(
-            PathFragment.create("/some/path"),
-            ActionInputHelper.fromPath("/some/path"),
-            /* killDelay= */ null,
-            /* gracefulSigterm= */ false);
-    ProcessWrapper.CommandLineBuilder builder = processWrapper.commandLineBuilder(commandArguments);
-
-    ImmutableList<String> expectedWithoutExecutionInfo =
-        ImmutableList.<String>builder().add("/some/path").addAll(commandArguments).build();
-    assertThat(builder.build()).containsExactlyElementsIn(expectedWithoutExecutionInfo).inOrder();
-
-    ImmutableList<String> expectedWithExecutionInfo =
-        ImmutableList.<String>builder()
-            .add("/some/path")
-            .add("--graceful_sigterm")
-            .addAll(commandArguments)
-            .build();
-    builder.addExecutionInfo(ImmutableMap.of(ExecutionRequirements.GRACEFUL_TERMINATION, "1"));
-    assertThat(builder.build()).containsExactlyElementsIn(expectedWithExecutionInfo).inOrder();
-  }
+        val expectedWithExecutionInfo: com.google.common.collect.ImmutableList<String?> =
+            com.google.common.collect.ImmutableList.builder<String?>()
+                .add("/some/path")
+                .add("--graceful_sigterm")
+                .addAll(commandArguments)
+                .build()
+        builder.addExecutionInfo(
+            com.google.common.collect.ImmutableMap.of<K?, V?>(
+                ExecutionRequirements.GRACEFUL_TERMINATION,
+                "1"
+            )
+        )
+        assertThat(builder.build()).containsExactlyElementsIn(expectedWithExecutionInfo).inOrder()
+    }
 }

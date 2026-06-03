@@ -11,50 +11,28 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.buildtool;
+package com.google.devtools.build.lib.buildtool
 
-import static com.google.common.truth.Truth.assertThat;
-import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.actions.Artifact
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
-import com.google.common.io.ByteStreams;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.actions.BuildFailedException;
-import com.google.devtools.build.lib.analysis.ViewCreationFailedException;
-import com.google.devtools.build.lib.analysis.util.AnalysisMock;
-import com.google.devtools.build.lib.buildtool.util.BuildIntegrationTestCase;
-import com.google.devtools.build.lib.skyframe.TransitiveTargetKey;
-import com.google.protobuf.ByteString;
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import java.io.ByteArrayOutputStream;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.regex.Pattern;
-import java.util.zip.GZIPInputStream;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+/** Integration tests for the 'genquery' rule.  */
+@RunWith(TestParameterInjector::class)
+class GenQueryIntegrationTest : BuildIntegrationTestCase() {
+    @TestParameter
+    private val keepGoing = false
 
-/** Integration tests for the 'genquery' rule. */
-@RunWith(TestParameterInjector.class)
-public class GenQueryIntegrationTest extends BuildIntegrationTestCase {
+    @Throws(java.lang.Exception::class)
+    override fun setupOptions() {
+        super.setupOptions()
+        runtimeWrapper.addOptions(if (keepGoing) "--keep_going" else "--nokeep_going")
+    }
 
-  @TestParameter private boolean keepGoing;
-
-  @Override
-  protected void setupOptions() throws Exception {
-    super.setupOptions();
-    runtimeWrapper.addOptions(keepGoing ? "--keep_going" : "--nokeep_going");
-  }
-
-  @Test
-  public void testDoesNotFailHorribly() throws Exception {
-    write(
-        "fruits/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDoesNotFailHorribly() {
+        write(
+            "fruits/BUILD",
+            """
         load('//test_defs:foo_library.bzl', 'foo_library')
         foo_library(
             name = "melon",
@@ -68,15 +46,18 @@ public class GenQueryIntegrationTest extends BuildIntegrationTestCase {
             expression = "deps(//fruits:melon)",
             scope = [":melon"],
         )
-        """);
-    assertQueryResult("//fruits:q", "//fruits:melon", "//fruits:papaya");
-  }
+        
+        """.trimIndent()
+        )
+        assertQueryResult("//fruits:q", "//fruits:melon", "//fruits:papaya")
+    }
 
-  @Test
-  public void testDeterministic() throws Exception {
-    write(
-        "fruits/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDeterministic() {
+        write(
+            "fruits/BUILD",
+            """
         load('//test_defs:foo_library.bzl', 'foo_library')
         foo_library(
             name = "melon",
@@ -108,27 +89,32 @@ public class GenQueryIntegrationTest extends BuildIntegrationTestCase {
             expression = "deps(//fruits:melon)",
             scope = [":melon"],
         )
-        """);
-    String firstResult = getQueryResult("//fruits:q");
-    for (int i = 0; i < 10; i++) {
-      createFilesAndMocks(); // Do a clean.
-      assertThat(getQueryResult("//fruits:q")).isEqualTo(firstResult);
+        
+        """.trimIndent()
+        )
+        val firstResult = getQueryResult("//fruits:q")
+        for (i in 0..9) {
+            createFilesAndMocks() // Do a clean.
+            Truth.assertThat(getQueryResult("//fruits:q")).isEqualTo(firstResult)
+        }
     }
-  }
 
-  @Test
-  public void testDuplicateName() throws Exception {
-    write(
-        "one/BUILD",
-        "load('//test_defs:foo_library.bzl', 'foo_library')",
-        "foo_library(name='foo')");
-    write(
-        "two/BUILD",
-        "load('//test_defs:foo_library.bzl', 'foo_library')",
-        "foo_library(name='foo')");
-    write(
-        "query/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDuplicateName() {
+        write(
+            "one/BUILD",
+            "load('//test_defs:foo_library.bzl', 'foo_library')",
+            "foo_library(name='foo')"
+        )
+        write(
+            "two/BUILD",
+            "load('//test_defs:foo_library.bzl', 'foo_library')",
+            "foo_library(name='foo')"
+        )
+        write(
+            "query/BUILD",
+            """
         load('//test_defs:foo_library.bzl', 'foo_library')
         foo_library(
             name = "common",
@@ -143,15 +129,19 @@ public class GenQueryIntegrationTest extends BuildIntegrationTestCase {
             expression = "deps(//query:common)",
             scope = ["//query:common"],
         )
-        """);
-    assertThat(getQueryResult("//query:q").split("\n")).hasLength(3);
-  }
+        
+        """.trimIndent()
+        )
+        Truth.assertThat<String?>(getQueryResult("//query:q").split("\n".toRegex()).dropLastWhile { it.isEmpty() }
+            .toTypedArray()).hasLength(3)
+    }
 
-  @Test
-  public void testFailsIfGoesOutOfScope() throws Exception {
-    write(
-        "vegetables/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFailsIfGoesOutOfScope() {
+        write(
+            "vegetables/BUILD",
+            """
         load('//test_defs:foo_library.bzl', 'foo_library')
         foo_library(
             name = "tomato",
@@ -165,19 +155,24 @@ public class GenQueryIntegrationTest extends BuildIntegrationTestCase {
             expression = "deps(//vegetables:tomato)",
             scope = [":cabbage"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertThrows(expectedExceptionClass(), () -> buildTarget("//vegetables:q"));
+        org.junit.Assert.assertThrows(
+            expectedExceptionClass(),
+            org.junit.function.ThrowingRunnable { buildTarget("//vegetables:q") })
 
-    assertContainsEvent("is not within the scope of the query");
-  }
+        assertContainsEvent("is not within the scope of the query")
+    }
 
-  // Regression test for http://b/29964062.
-  @Test
-  public void testFailsIfGoesOutOfScopeViaSelect() throws Exception {
-    write(
-        "q/BUILD",
-        """
+    // Regression test for http://b/29964062.
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFailsIfGoesOutOfScopeViaSelect() {
+        write(
+            "q/BUILD",
+            """
         genquery(
             name = "q",
             expression = "deps(//q:f)",
@@ -196,27 +191,35 @@ public class GenQueryIntegrationTest extends BuildIntegrationTestCase {
                 "//conditions:default": ["//dne"],
             }),
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    addOptions("--define=D=1");
-    assertThrows(expectedExceptionClass(), () -> buildTarget("//q"));
+        addOptions("--define=D=1")
+        org.junit.Assert.assertThrows(
+            expectedExceptionClass(),
+            org.junit.function.ThrowingRunnable { buildTarget("//q") })
 
-    events.assertContainsError(
-        "in genquery rule //q:q: errors were encountered while computing transitive closure of the"
-            + " scope");
-    events.assertContainsError(
-        Pattern.compile(
-            "no such package 'dne': BUILD file not found in any of the following directories. Add a"
-                + " BUILD file to a directory to mark it as a package.\n"
-                + " - dne"));
-  }
+        events.assertContainsError(
+            "in genquery rule //q:q: errors were encountered while computing transitive closure of the"
+                    + " scope"
+        )
+        events.assertContainsError(
+            java.util.regex.Pattern.compile(
+                ("no such package 'dne': BUILD file not found in any of the following directories. Add a"
+                        + " BUILD file to a directory to mark it as a package.\n"
+                        + " - dne")
+            )
+        )
+    }
 
-  // Regression test for http://b/34132681
-  @Test
-  public void testFailsIfBrokenDependencyViaSelect() throws Exception {
-    write(
-        "q/BUILD",
-        """
+    // Regression test for http://b/34132681
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFailsIfBrokenDependencyViaSelect() {
+        write(
+            "q/BUILD",
+            """
         genquery(
             name = "q",
             expression = "deps(//q:f)",
@@ -235,24 +238,30 @@ public class GenQueryIntegrationTest extends BuildIntegrationTestCase {
                 "//conditions:default": ["//d"],
             }),
         )
-        """);
-    // d exists but has nonexistent "deps"
-    write("d/BUILD", "filegroup(name = 'd', deps = [])");
+        
+        """.trimIndent()
+        )
+        // d exists but has nonexistent "deps"
+        write("d/BUILD", "filegroup(name = 'd', deps = [])")
 
-    addOptions("--define=D=1");
-    assertThrows(expectedExceptionClass(), () -> buildTarget("//q"));
+        addOptions("--define=D=1")
+        org.junit.Assert.assertThrows(
+            expectedExceptionClass(),
+            org.junit.function.ThrowingRunnable { buildTarget("//q") })
 
-    events.assertContainsError(
-        "in genquery rule //q:q: errors were encountered while computing transitive closure of the"
-            + " scope");
-    events.assertContainsError("Target '//d:d' contains an error and its package is in error");
-  }
+        events.assertContainsError(
+            "in genquery rule //q:q: errors were encountered while computing transitive closure of the"
+                    + " scope"
+        )
+        events.assertContainsError("Target '//d:d' contains an error and its package is in error")
+    }
 
-  @Test
-  public void testResultsAlphabetized() throws Exception {
-    write(
-        "fruits/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testResultsAlphabetized() {
+        write(
+            "fruits/BUILD",
+            """
         load('//test_defs:foo_library.bzl', 'foo_library')
         foo_library(
             name = "melon",
@@ -280,33 +289,39 @@ public class GenQueryIntegrationTest extends BuildIntegrationTestCase {
             expression = "deps(//fruits:melon)",
             scope = [":melon"],
         )
-        """);
-    write(
-        "z/BUILD", "load('//test_defs:foo_library.bzl', 'foo_library')", "foo_library(name = 'a')");
-    write(
-        "a/BUILD", "load('//test_defs:foo_library.bzl', 'foo_library')", "foo_library(name = 'z')");
-    write(
-        "c/BUILD",
-        "load('//test_defs:foo_library.bzl', 'foo_library')",
-        "foo_library(name = 'c', deps = ['//z:a'])");
-    assertQueryResult(
-        "//fruits:q",
-        // Results are ordered in lexicographical order (uses graphless genquery by default).
-        "//a:z",
-        "//c:c",
-        "//fruits:1",
-        "//fruits:a",
-        "//fruits:c",
-        "//fruits:melon",
-        "//fruits:z",
-        "//z:a");
-  }
+        
+        """.trimIndent()
+        )
+        write(
+            "z/BUILD", "load('//test_defs:foo_library.bzl', 'foo_library')", "foo_library(name = 'a')"
+        )
+        write(
+            "a/BUILD", "load('//test_defs:foo_library.bzl', 'foo_library')", "foo_library(name = 'z')"
+        )
+        write(
+            "c/BUILD",
+            "load('//test_defs:foo_library.bzl', 'foo_library')",
+            "foo_library(name = 'c', deps = ['//z:a'])"
+        )
+        assertQueryResult(
+            "//fruits:q",  // Results are ordered in lexicographical order (uses graphless genquery by default).
+            "//a:z",
+            "//c:c",
+            "//fruits:1",
+            "//fruits:a",
+            "//fruits:c",
+            "//fruits:melon",
+            "//fruits:z",
+            "//z:a"
+        )
+    }
 
-  @Test
-  public void testQueryReexecutedIfDepsChange() throws Exception {
-    write(
-        "food/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testQueryReexecutedIfDepsChange() {
+        write(
+            "food/BUILD",
+            """
         load('//test_defs:foo_library.bzl', 'foo_library')
         foo_library(
             name = "fruit_salad",
@@ -318,11 +333,13 @@ public class GenQueryIntegrationTest extends BuildIntegrationTestCase {
             expression = "deps(//food:fruit_salad)",
             scope = [":fruit_salad"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    write(
-        "fruits/BUILD",
-        """
+        write(
+            "fruits/BUILD",
+            """
         load('//test_defs:foo_library.bzl', 'foo_library')
         foo_library(
             name = "tropical",
@@ -330,13 +347,15 @@ public class GenQueryIntegrationTest extends BuildIntegrationTestCase {
         )
 
         foo_library(name = "papaya")
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertQueryResult("//food:q", "//food:fruit_salad", "//fruits:papaya", "//fruits:tropical");
+        assertQueryResult("//food:q", "//food:fruit_salad", "//fruits:papaya", "//fruits:tropical")
 
-    write(
-        "fruits/BUILD",
-        """
+        write(
+            "fruits/BUILD",
+            """
         load('//test_defs:foo_library.bzl', 'foo_library')
         foo_library(
             name = "tropical",
@@ -349,21 +368,25 @@ public class GenQueryIntegrationTest extends BuildIntegrationTestCase {
         foo_library(name = "papaya")
 
         foo_library(name = "coconut")
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertQueryResult(
-        "//food:q",
-        "//food:fruit_salad",
-        "//fruits:coconut",
-        "//fruits:papaya",
-        "//fruits:tropical");
-  }
+        assertQueryResult(
+            "//food:q",
+            "//food:fruit_salad",
+            "//fruits:coconut",
+            "//fruits:papaya",
+            "//fruits:tropical"
+        )
+    }
 
-  @Test
-  public void testGenQueryEncountersAnotherGenQuery() throws Exception {
-    write(
-        "spices/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGenQueryEncountersAnotherGenQuery() {
+        write(
+            "spices/BUILD",
+            """
         load('//test_defs:foo_library.bzl', 'foo_library')
         foo_library(
             name = "cinnamon",
@@ -377,11 +400,13 @@ public class GenQueryIntegrationTest extends BuildIntegrationTestCase {
             expression = "deps(//spices:cinnamon)",
             scope = [":cinnamon"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    write(
-        "fruits/BUILD",
-        """
+        write(
+            "fruits/BUILD",
+            """
         load('//test_defs:foo_library.bzl', 'foo_library')
         foo_library(
             name = "pear",
@@ -398,53 +423,69 @@ public class GenQueryIntegrationTest extends BuildIntegrationTestCase {
                 "//spices:q",
             ],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertQueryResult(
-        "//fruits:q",
-        "//fruits:pear",
-        "//fruits:plum",
-        "//spices:cinnamon",
-        "//spices:nutmeg",
-        "//spices:q");
-  }
+        assertQueryResult(
+            "//fruits:q",
+            "//fruits:pear",
+            "//fruits:plum",
+            "//spices:cinnamon",
+            "//spices:nutmeg",
+            "//spices:q"
+        )
+    }
 
-  /**
-   * Regression test for b/14227750: genquery referring to non-existent target crashes on skyframe.
-   */
-  @Test
-  public void testHandlesMissingTargetGracefully() throws Exception {
-    write(
-        "a/BUILD",
-        "genquery(name='query', scope=['//b:target'], expression='deps(//b:nosuchtarget)')");
-    write(
-        "b/BUILD",
-        "load('//test_defs:foo_library.bzl', 'foo_library')",
-        "foo_library(name = 'target')");
-    assertThrows(expectedExceptionClass(), () -> buildTarget("//a:query"));
-    events.assertContainsError(
-        "in genquery rule //a:query: query failed: no such target '//b:nosuchtarget'");
-  }
+    /**
+     * Regression test for b/14227750: genquery referring to non-existent target crashes on skyframe.
+     */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testHandlesMissingTargetGracefully() {
+        write(
+            "a/BUILD",
+            "genquery(name='query', scope=['//b:target'], expression='deps(//b:nosuchtarget)')"
+        )
+        write(
+            "b/BUILD",
+            "load('//test_defs:foo_library.bzl', 'foo_library')",
+            "foo_library(name = 'target')"
+        )
+        org.junit.Assert.assertThrows(
+            expectedExceptionClass(),
+            org.junit.function.ThrowingRunnable { buildTarget("//a:query") })
+        events.assertContainsError(
+            "in genquery rule //a:query: query failed: no such target '//b:nosuchtarget'"
+        )
+    }
 
-  @Test
-  public void testReportsMissingScopeTarget() throws Exception {
-    write("a/BUILD", "genquery(name='query', scope=['//b:target'], expression='set()')");
-    write("b/BUILD");
-    assertThrows(expectedExceptionClass(), () -> buildTarget("//a:query"));
-    events.assertContainsError(
-        "in genquery rule //a:query: errors were encountered while computing transitive closure of"
-            + " the scope");
-    events.assertContainsError(
-        Pattern.compile(
-            "no such target '//b:target': target 'target' not declared in package 'b' defined by"
-                + " .*/b/BUILD"));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testReportsMissingScopeTarget() {
+        write("a/BUILD", "genquery(name='query', scope=['//b:target'], expression='set()')")
+        write("b/BUILD")
+        org.junit.Assert.assertThrows(
+            expectedExceptionClass(),
+            org.junit.function.ThrowingRunnable { buildTarget("//a:query") })
+        events.assertContainsError(
+            "in genquery rule //a:query: errors were encountered while computing transitive closure of"
+                    + " the scope"
+        )
+        events.assertContainsError(
+            java.util.regex.Pattern.compile(
+                "no such target '//b:target': target 'target' not declared in package 'b' defined by"
+                        + " .*/b/BUILD"
+            )
+        )
+    }
 
-  @Test
-  public void testReportsMissingTransitiveScopeTarget() throws Exception {
-    write(
-        "a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testReportsMissingTransitiveScopeTarget() {
+        write(
+            "a/BUILD",
+            """
         load('//test_defs:foo_library.bzl', 'foo_library')
         genquery(
             name = "query",
@@ -456,37 +497,51 @@ public class GenQueryIntegrationTest extends BuildIntegrationTestCase {
             name = "missingdep",
             deps = ["//b:target"],
         )
-        """);
-    write("b/BUILD");
-    assertThrows(expectedExceptionClass(), () -> buildTarget("//a:query"));
-    events.assertContainsError(
-        "in genquery rule //a:query: errors were encountered while computing transitive closure of"
-            + " the scope");
-    events.assertContainsError(
-        Pattern.compile(
-            "no such target '//b:target': target 'target' not declared in package 'b' defined by"
-                + " .*/b/BUILD"));
-  }
+        
+        """.trimIndent()
+        )
+        write("b/BUILD")
+        org.junit.Assert.assertThrows(
+            expectedExceptionClass(),
+            org.junit.function.ThrowingRunnable { buildTarget("//a:query") })
+        events.assertContainsError(
+            "in genquery rule //a:query: errors were encountered while computing transitive closure of"
+                    + " the scope"
+        )
+        events.assertContainsError(
+            java.util.regex.Pattern.compile(
+                "no such target '//b:target': target 'target' not declared in package 'b' defined by"
+                        + " .*/b/BUILD"
+            )
+        )
+    }
 
-  @Test
-  public void testReportsMissingScopePackage() throws Exception {
-    write("a/BUILD", "genquery(name='query', scope=['//b:target'], expression='set()')");
-    assertThrows(expectedExceptionClass(), () -> buildTarget("//a:query"));
-    events.assertContainsError(
-        "in genquery rule //a:query: errors were encountered while computing transitive closure of"
-            + " the scope");
-    events.assertContainsError(
-        Pattern.compile(
-            "no such package 'b': BUILD file not found in any of the following directories. Add a"
-                + " BUILD file to a directory to mark it as a package.\n"
-                + " - b"));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testReportsMissingScopePackage() {
+        write("a/BUILD", "genquery(name='query', scope=['//b:target'], expression='set()')")
+        org.junit.Assert.assertThrows(
+            expectedExceptionClass(),
+            org.junit.function.ThrowingRunnable { buildTarget("//a:query") })
+        events.assertContainsError(
+            "in genquery rule //a:query: errors were encountered while computing transitive closure of"
+                    + " the scope"
+        )
+        events.assertContainsError(
+            java.util.regex.Pattern.compile(
+                ("no such package 'b': BUILD file not found in any of the following directories. Add a"
+                        + " BUILD file to a directory to mark it as a package.\n"
+                        + " - b")
+            )
+        )
+    }
 
-  @Test
-  public void testReportsMissingTransitiveScopePackage() throws Exception {
-    write(
-        "a/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testReportsMissingTransitiveScopePackage() {
+        write(
+            "a/BUILD",
+            """
         load('//test_defs:foo_library.bzl', 'foo_library')
         genquery(
             name = "query",
@@ -498,49 +553,60 @@ public class GenQueryIntegrationTest extends BuildIntegrationTestCase {
             name = "missingdep",
             deps = ["//b:target"],
         )
-        """);
-    assertThrows(expectedExceptionClass(), () -> buildTarget("//a:query"));
-    events.assertContainsError(
-        "in genquery rule //a:query: errors were encountered while computing transitive closure"
-            + " of the scope");
-    events.assertContainsError(
-        Pattern.compile(
-            "no such package 'b': BUILD file not found in any of the following"
-                + " directories. Add a BUILD file to a directory to mark it as a package.\n"
-                + " - b"));
-  }
-
-  @Test
-  public void testMultiplePatternsInQuery() throws Exception {
-    String buildFile = "load('//test_defs:foo_library.bzl', 'foo_library')\n";
-    String genQuery =
-        "genquery(name = 'q', scope = [':top'], expression = 'deps(//spices:top) ' + \n";
-    String topTarget = "foo_library(name = 'top', deps = [\n";
-    for (int i = 0; i < 20; i++) {
-      String targetName = (i % 2 == 0 ? "in" : "out") + i;
-      buildFile += "foo_library(name = '" + targetName + "')\n";
-      if (i % 2 != 0) {
-        genQuery += "' - //spices:" + targetName + " ' + \n";
-      }
-      topTarget += "    ':" + targetName + "',\n";
+        
+        """.trimIndent()
+        )
+        org.junit.Assert.assertThrows(
+            expectedExceptionClass(),
+            org.junit.function.ThrowingRunnable { buildTarget("//a:query") })
+        events.assertContainsError(
+            "in genquery rule //a:query: errors were encountered while computing transitive closure"
+                    + " of the scope"
+        )
+        events.assertContainsError(
+            java.util.regex.Pattern.compile(
+                ("no such package 'b': BUILD file not found in any of the following"
+                        + " directories. Add a BUILD file to a directory to mark it as a package.\n"
+                        + " - b")
+            )
+        )
     }
-    topTarget += "]\n)\n";
-    genQuery += "'')";
-    write("spices/BUILD", buildFile, topTarget, genQuery);
-    List<String> expected = new ArrayList<>(11);
-    for (int i = 0; i < 20; i += 2) {
-      expected.add(i / 2, "//spices:in" + i);
-    }
-    expected.add(0, "//spices:top");
-    Collections.sort(expected);
-    assertQueryResult("//spices:q", expected.toArray(new String[0]));
-  }
 
-  @Test
-  public void testGraphOutput_factored() throws Exception {
-    write(
-        "fruits/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMultiplePatternsInQuery() {
+        var buildFile = "load('//test_defs:foo_library.bzl', 'foo_library')\n"
+        var genQuery =
+            "genquery(name = 'q', scope = [':top'], expression = 'deps(//spices:top) ' + \n"
+        var topTarget = "foo_library(name = 'top', deps = [\n"
+        for (i in 0..19) {
+            val targetName = (if (i % 2 == 0) "in" else "out") + i
+            buildFile += "foo_library(name = '" + targetName + "')\n"
+            if (i % 2 != 0) {
+                genQuery += "' - //spices:" + targetName + " ' + \n"
+            }
+            topTarget += "    ':" + targetName + "',\n"
+        }
+        topTarget += "]\n)\n"
+        genQuery += "'')"
+        write("spices/BUILD", buildFile, topTarget, genQuery)
+        val expected: MutableList<String?> = java.util.ArrayList<String?>(11)
+        var i = 0
+        while (i < 20) {
+            expected.add(i / 2, "//spices:in" + i)
+            i += 2
+        }
+        expected.add(0, "//spices:top")
+        Collections.sort<String?>(expected)
+        assertQueryResult("//spices:q", *expected.toTypedArray<String?>())
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGraphOutput_factored() {
+        write(
+            "fruits/BUILD",
+            """
         load('//test_defs:foo_library.bzl', 'foo_library')
         foo_library(
             name = "melon",
@@ -563,19 +629,23 @@ public class GenQueryIntegrationTest extends BuildIntegrationTestCase {
             opts = ["--output=graph"],
             scope = [":melon"],
         )
-        """);
-    assertPartialQueryResult(
-        "//fruits:q",
-        "  \"//fruits:melon\"",
-        "  \"//fruits:melon\" -> \"//fruits:coconut\\n//fruits:mango\\n//fruits:papaya\"",
-        "  \"//fruits:coconut\\n//fruits:mango\\n//fruits:papaya\"");
-  }
+        
+        """.trimIndent()
+        )
+        assertPartialQueryResult(
+            "//fruits:q",
+            "  \"//fruits:melon\"",
+            "  \"//fruits:melon\" -> \"//fruits:coconut\\n//fruits:mango\\n//fruits:papaya\"",
+            "  \"//fruits:coconut\\n//fruits:mango\\n//fruits:papaya\""
+        )
+    }
 
-  @Test
-  public void testGraphOutput_unfactored() throws Exception {
-    write(
-        "fruits/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGraphOutput_unfactored() {
+        write(
+            "fruits/BUILD",
+            """
         load('//test_defs:foo_library.bzl', 'foo_library')
         foo_library(
             name = "melon",
@@ -601,24 +671,28 @@ public class GenQueryIntegrationTest extends BuildIntegrationTestCase {
             ],
             scope = [":melon"],
         )
-        """);
-    assertPartialQueryResult(
-        "//fruits:q",
-        "  \"//fruits:melon\"",
-        "  \"//fruits:melon\" -> \"//fruits:coconut\"",
-        "  \"//fruits:melon\" -> \"//fruits:mango\"",
-        "  \"//fruits:melon\" -> \"//fruits:papaya\"",
-        "  \"//fruits:papaya\"",
-        "  \"//fruits:mango\"",
-        "  \"//fruits:coconut\"");
-  }
+        
+        """.trimIndent()
+        )
+        assertPartialQueryResult(
+            "//fruits:q",
+            "  \"//fruits:melon\"",
+            "  \"//fruits:melon\" -> \"//fruits:coconut\"",
+            "  \"//fruits:melon\" -> \"//fruits:mango\"",
+            "  \"//fruits:melon\" -> \"//fruits:papaya\"",
+            "  \"//fruits:papaya\"",
+            "  \"//fruits:mango\"",
+            "  \"//fruits:coconut\""
+        )
+    }
 
-  @Test
-  public void testDoesntAllowLocationOutputWithLoadfiles() throws Exception {
-    write("foo/bzl.bzl", "x = 2");
-    write(
-        "foo/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDoesntAllowLocationOutputWithLoadfiles() {
+        write("foo/bzl.bzl", "x = 2")
+        write(
+            "foo/BUILD",
+            """
         load("//foo:bzl.bzl", "x")
 
         filegroup(name = "foo")
@@ -635,20 +709,26 @@ public class GenQueryIntegrationTest extends BuildIntegrationTestCase {
             opts = ["--output=location"],
             scope = ["//foo"],
         )
-        """);
-    assertQueryResult("//foo:gen-loadfiles", "//foo:bzl.bzl");
-    assertThrows(expectedExceptionClass(), () -> buildTarget("//foo:gen-loadfiles-location"));
-    events.assertContainsError(
-        "in genquery rule //foo:gen-loadfiles-location: query failed: Query expressions "
-            + "involving 'buildfiles' or 'loadfiles' cannot be used with --output=location");
-  }
+        
+        """.trimIndent()
+        )
+        assertQueryResult("//foo:gen-loadfiles", "//foo:bzl.bzl")
+        org.junit.Assert.assertThrows(
+            expectedExceptionClass(),
+            org.junit.function.ThrowingRunnable { buildTarget("//foo:gen-loadfiles-location") })
+        events.assertContainsError(
+            "in genquery rule //foo:gen-loadfiles-location: query failed: Query expressions "
+                    + "involving 'buildfiles' or 'loadfiles' cannot be used with --output=location"
+        )
+    }
 
-  @Test
-  public void testDoesntAllowLocationOutputWithBuildfiles() throws Exception {
-    write("foo/bzl.bzl", "x = 2");
-    write(
-        "foo/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDoesntAllowLocationOutputWithBuildfiles() {
+        write("foo/bzl.bzl", "x = 2")
+        write(
+            "foo/BUILD",
+            """
         load("//foo:bzl.bzl", "x")
 
         filegroup(name = "foo")
@@ -665,18 +745,24 @@ public class GenQueryIntegrationTest extends BuildIntegrationTestCase {
             opts = ["--output=location"],
             scope = ["//foo"],
         )
-        """);
-    assertQueryResult("//foo:gen-buildfiles", "//foo:BUILD", "//foo:bzl.bzl");
-    assertThrows(expectedExceptionClass(), () -> buildTarget("//foo:gen-buildfiles-location"));
-    events.assertContainsError(
-        "in genquery rule //foo:gen-buildfiles-location: query failed: Query expressions "
-            + "involving 'buildfiles' or 'loadfiles' cannot be used with --output=location");
-  }
+        
+        """.trimIndent()
+        )
+        assertQueryResult("//foo:gen-buildfiles", "//foo:BUILD", "//foo:bzl.bzl")
+        org.junit.Assert.assertThrows(
+            expectedExceptionClass(),
+            org.junit.function.ThrowingRunnable { buildTarget("//foo:gen-buildfiles-location") })
+        events.assertContainsError(
+            "in genquery rule //foo:gen-buildfiles-location: query failed: Query expressions "
+                    + "involving 'buildfiles' or 'loadfiles' cannot be used with --output=location"
+        )
+    }
 
-  /** Regression test for b/127644784. */
-  @Test
-  public void somepathOutputDeterministic() throws Exception {
-    /*
+    /** Regression test for b/127644784.  */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun somepathOutputDeterministic() {
+        /*
      * This graph structure routinely reproduces the bug within 10 iterations:
      *
      *   ----------top------------
@@ -687,9 +773,9 @@ public class GenQueryIntegrationTest extends BuildIntegrationTestCase {
      *       |           |       |
      *       -----bottom----------
      */
-    write(
-        "query/BUILD",
-        """
+        write(
+            "query/BUILD",
+            """
         genquery(
             name = "query",
             expression = "somepath(//top, //bottom)",
@@ -698,48 +784,57 @@ public class GenQueryIntegrationTest extends BuildIntegrationTestCase {
                 "//bottom",
             ],
         )
-        """);
-    write(
-        "top/BUILD",
-        "load('//test_defs:foo_library.bzl', 'foo_library')",
-        "foo_library(name = 'top', deps = ['//mid1', '//mid2', '//mid3', '//mid4'])");
-    write(
-        "mid1/BUILD",
-        "load('//test_defs:foo_library.bzl', 'foo_library')",
-        "foo_library(name = 'mid1', deps = ['//lower'])");
-    write(
-        "mid2/BUILD",
-        "load('//test_defs:foo_library.bzl', 'foo_library')",
-        "foo_library(name = 'mid2', deps = ['//lower'])");
-    write(
-        "mid3/BUILD",
-        "load('//test_defs:foo_library.bzl', 'foo_library')",
-        "foo_library(name = 'mid3', deps = ['//bottom'])");
-    write(
-        "mid4/BUILD",
-        "load('//test_defs:foo_library.bzl', 'foo_library')",
-        "foo_library(name = 'mid4', deps = ['//bottom'])");
-    write(
-        "lower/BUILD",
-        "load('//test_defs:foo_library.bzl', 'foo_library')",
-        "foo_library(name = 'lower', deps = ['//bottom'])");
-    write(
-        "bottom/BUILD",
-        "load('//test_defs:foo_library.bzl', 'foo_library')",
-        "foo_library(name = 'bottom')");
+        
+        """.trimIndent()
+        )
+        write(
+            "top/BUILD",
+            "load('//test_defs:foo_library.bzl', 'foo_library')",
+            "foo_library(name = 'top', deps = ['//mid1', '//mid2', '//mid3', '//mid4'])"
+        )
+        write(
+            "mid1/BUILD",
+            "load('//test_defs:foo_library.bzl', 'foo_library')",
+            "foo_library(name = 'mid1', deps = ['//lower'])"
+        )
+        write(
+            "mid2/BUILD",
+            "load('//test_defs:foo_library.bzl', 'foo_library')",
+            "foo_library(name = 'mid2', deps = ['//lower'])"
+        )
+        write(
+            "mid3/BUILD",
+            "load('//test_defs:foo_library.bzl', 'foo_library')",
+            "foo_library(name = 'mid3', deps = ['//bottom'])"
+        )
+        write(
+            "mid4/BUILD",
+            "load('//test_defs:foo_library.bzl', 'foo_library')",
+            "foo_library(name = 'mid4', deps = ['//bottom'])"
+        )
+        write(
+            "lower/BUILD",
+            "load('//test_defs:foo_library.bzl', 'foo_library')",
+            "foo_library(name = 'lower', deps = ['//bottom'])"
+        )
+        write(
+            "bottom/BUILD",
+            "load('//test_defs:foo_library.bzl', 'foo_library')",
+            "foo_library(name = 'bottom')"
+        )
 
-    String firstResult = getQueryResult("//query");
-    for (int i = 0; i < 10; i++) {
-      createFilesAndMocks(); // Do a clean.
-      assertThat(getQueryResult("//query")).isEqualTo(firstResult);
+        val firstResult = getQueryResult("//query")
+        for (i in 0..9) {
+            createFilesAndMocks() // Do a clean.
+            Truth.assertThat(getQueryResult("//query")).isEqualTo(firstResult)
+        }
     }
-  }
 
-  private void runNodepDepsTest(String optsStringValue, boolean expectVisibilityDep)
-      throws Exception {
-    write(
-        "foo/BUILD",
-        """
+    @Throws(java.lang.Exception::class)
+    private fun runNodepDepsTest(optsStringValue: String?, expectVisibilityDep: Boolean) {
+        write(
+            "foo/BUILD",
+            """
         load('//test_defs:foo_library.bzl', 'foo_library')
         foo_library(
             name = "t1",
@@ -753,49 +848,60 @@ public class GenQueryIntegrationTest extends BuildIntegrationTestCase {
         foo_library(name = "t2")
 
         package_group(name = "pg")
-        """);
-    write(
-        "query/BUILD",
-        "genquery(",
-        "  name = 'gen',",
-        "  expression = 'deps(//foo:t1)',",
-        "  scope = ['//foo:t1'],",
-        "  opts = " + optsStringValue,
-        ")");
+        
+        """.trimIndent()
+        )
+        write(
+            "query/BUILD",
+            "genquery(",
+            "  name = 'gen',",
+            "  expression = 'deps(//foo:t1)',",
+            "  scope = ['//foo:t1'],",
+            "  opts = " + optsStringValue,
+            ")"
+        )
 
-    List<String> queryResultStrings =
-        ImmutableList.copyOf(getQueryResult("//query:gen").split("\n"));
-    if (expectVisibilityDep) {
-      assertThat(queryResultStrings).contains("//foo:pg");
-    } else {
-      assertThat(queryResultStrings).doesNotContain("//foo:pg");
+        val queryResultStrings: MutableList<String?> =
+            com.google.common.collect.ImmutableList.copyOf<String?>(
+                getQueryResult("//query:gen").split("\n".toRegex()).dropLastWhile { it.isEmpty() }.toTypedArray()
+            )
+        if (expectVisibilityDep) {
+            Truth.assertThat(queryResultStrings).contains("//foo:pg")
+        } else {
+            Truth.assertThat(queryResultStrings).doesNotContain("//foo:pg")
+        }
     }
-  }
 
-  @Test
-  public void testNodepDeps_defaultIsFalse() throws Exception {
-    runNodepDepsTest(/* optsStringValue= */ "[]", /* expectVisibilityDep= */ false);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNodepDeps_defaultIsFalse() {
+        runNodepDepsTest( /* optsStringValue= */"[]",  /* expectVisibilityDep= */false)
+    }
 
-  @Test
-  public void testNodepDeps_false() throws Exception {
-    runNodepDepsTest(
-        /* optsStringValue= */ "['--nodep_deps=false']", /* expectVisibilityDep= */ false);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNodepDeps_false() {
+        runNodepDepsTest( /* optsStringValue= */
+            "['--nodep_deps=false']",  /* expectVisibilityDep= */false
+        )
+    }
 
-  @Test
-  public void testNodepDeps_true() throws Exception {
-    runNodepDepsTest(
-        /* optsStringValue= */ "['--nodep_deps=true']", /* expectVisibilityDep= */ true);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNodepDeps_true() {
+        runNodepDepsTest( /* optsStringValue= */
+            "['--nodep_deps=true']",  /* expectVisibilityDep= */true
+        )
+    }
 
-  @Test
-  public void testLoadingPhaseCycle() throws Exception {
-    // This test uses a target in a self-cycle to demonstrate that a genquery rule having a cycle in
-    // its scope does not cause it to fail.
-    write(
-        "cycle/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLoadingPhaseCycle() {
+        // This test uses a target in a self-cycle to demonstrate that a genquery rule having a cycle in
+        // its scope does not cause it to fail.
+        write(
+            "cycle/BUILD",
+            """
         load('//test_defs:foo_library.bzl', 'foo_library')
         genquery(
             name = "gen",
@@ -807,38 +913,43 @@ public class GenQueryIntegrationTest extends BuildIntegrationTestCase {
             name = "cycle",
             deps = [":cycle"],
         )
-        """);
-    assertQueryResult("//cycle:gen", "//cycle:cycle");
-  }
+        
+        """.trimIndent()
+        )
+        assertQueryResult("//cycle:gen", "//cycle:cycle")
+    }
 
-  private void writeAspectDefinition(String aspectPackage, String extraDep) throws Exception {
-    write(aspectPackage + "/BUILD");
-    write(
-        aspectPackage + "/aspect.bzl",
-        "def _aspect_impl(target, ctx):",
-        "   return []",
-        "def _rule_impl(ctx):",
-        "   return []",
-        "MyAspect = aspect(",
-        "   implementation=_aspect_impl,",
-        "   attr_aspects=['deps'],",
-        "   attrs = {'_extra_deps': attr.label(default = Label('" + extraDep + "'))})",
-        "aspect_rule = rule(",
-        "   implementation=_rule_impl,",
-        "   attrs = { 'attr' : ",
-        "             attr.label_list(mandatory=True, allow_files=True, aspects = [MyAspect]),",
-        "             'param' : attr.string(),",
-        "           },",
-        ")");
-  }
+    @Throws(java.lang.Exception::class)
+    private fun writeAspectDefinition(aspectPackage: String?, extraDep: String?) {
+        write(aspectPackage + "/BUILD")
+        write(
+            aspectPackage + "/aspect.bzl",
+            "def _aspect_impl(target, ctx):",
+            "   return []",
+            "def _rule_impl(ctx):",
+            "   return []",
+            "MyAspect = aspect(",
+            "   implementation=_aspect_impl,",
+            "   attr_aspects=['deps'],",
+            "   attrs = {'_extra_deps': attr.label(default = Label('" + extraDep + "'))})",
+            "aspect_rule = rule(",
+            "   implementation=_rule_impl,",
+            "   attrs = { 'attr' : ",
+            "             attr.label_list(mandatory=True, allow_files=True, aspects = [MyAspect]),",
+            "             'param' : attr.string(),",
+            "           },",
+            ")"
+        )
+    }
 
-  @Test
-  public void testAspectDepChain() throws Exception {
-    writeAspectDefinition("aspect1", "//middle");
-    writeAspectDefinition("aspect2", "//end");
-    write(
-        "start/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAspectDepChain() {
+        writeAspectDefinition("aspect1", "//middle")
+        writeAspectDefinition("aspect2", "//end")
+        write(
+            "start/BUILD",
+            """
         load("//aspect1:aspect.bzl", "aspect_rule")
         load('//test_defs:foo_library.bzl', 'foo_library')
 
@@ -854,10 +965,12 @@ public class GenQueryIntegrationTest extends BuildIntegrationTestCase {
         )
 
         foo_library(name = "startdep")
-        """);
-    write(
-        "middle/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        write(
+            "middle/BUILD",
+            """
         load("//aspect2:aspect.bzl", "aspect_rule")
         load('//test_defs:foo_library.bzl', 'foo_library')
 
@@ -867,10 +980,12 @@ public class GenQueryIntegrationTest extends BuildIntegrationTestCase {
         )
 
         foo_library(name = "middledep")
-        """);
-    write(
-        "end/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        write(
+            "end/BUILD",
+            """
         load('//test_defs:foo_library.bzl', 'foo_library')
         foo_library(
             name = "end",
@@ -878,22 +993,26 @@ public class GenQueryIntegrationTest extends BuildIntegrationTestCase {
         )
 
         foo_library(name = "enddep")
-        """);
-    assertQueryResult(
-        "//start:gen",
-        "//end:end",
-        "//end:enddep",
-        "//middle:middle",
-        "//middle:middledep",
-        "//start:start",
-        "//start:startdep");
-  }
+        
+        """.trimIndent()
+        )
+        assertQueryResult(
+            "//start:gen",
+            "//end:end",
+            "//end:enddep",
+            "//middle:middle",
+            "//middle:middledep",
+            "//start:start",
+            "//start:startdep"
+        )
+    }
 
-  @Test
-  public void testGenQueryOutputCompressed() throws Exception {
-    write(
-        "fruits/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGenQueryOutputCompressed() {
+        write(
+            "fruits/BUILD",
+            """
         load('//test_defs:foo_library.bzl', 'foo_library')
         foo_library(
             name = "melon",
@@ -908,25 +1027,29 @@ public class GenQueryIntegrationTest extends BuildIntegrationTestCase {
             expression = "deps(//fruits:melon)",
             scope = [":melon"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    buildTarget("//fruits:q");
-    Artifact output = Iterables.getOnlyElement(getArtifacts("//fruits:q"));
-    ByteString compressedContent = readContentAsByteArray(output);
+        buildTarget("//fruits:q")
+        val output: Artifact? =
+            com.google.common.collect.Iterables.getOnlyElement<Artifact?>(getArtifacts("//fruits:q"))
+        val compressedContent: ByteString = readContentAsByteArray(output)
 
-    ByteArrayOutputStream decompressedOut = new ByteArrayOutputStream();
-    try (GZIPInputStream gzipIn = new GZIPInputStream(compressedContent.newInput())) {
-      ByteStreams.copy(gzipIn, decompressedOut);
+        val decompressedOut: java.io.ByteArrayOutputStream = java.io.ByteArrayOutputStream()
+        GZIPInputStream(compressedContent.newInput()).use { gzipIn ->
+            com.google.common.io.ByteStreams.copy(gzipIn, decompressedOut)
+        }
+        Truth.assertThat(decompressedOut.toString(java.nio.charset.StandardCharsets.UTF_8))
+            .isEqualTo("//fruits:melon\n//fruits:papaya\n")
     }
 
-    assertThat(decompressedOut.toString(UTF_8)).isEqualTo("//fruits:melon\n//fruits:papaya\n");
-  }
-
-  @Test
-  public void testConsistentLabels() throws Exception {
-    write(
-        "fruits/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testConsistentLabels() {
+        write(
+            "fruits/BUILD",
+            """
         load('//test_defs:foo_library.bzl', 'foo_library')
         foo_library(
             name = "melon",
@@ -941,32 +1064,39 @@ public class GenQueryIntegrationTest extends BuildIntegrationTestCase {
             scope = [":melon"],
             opts = ["--consistent_labels"],
         )
-        """);
-    assertQueryResult("//fruits:q", "@@//fruits:melon", "@@//fruits:papaya");
-  }
-
-  @Test
-  public void testGenQueryInExternalRepo() throws Exception {
-    if (!AnalysisMock.get().isThisBazel()) {
-      return;
+        
+        """.trimIndent()
+        )
+        assertQueryResult("//fruits:q", "@@//fruits:melon", "@@//fruits:papaya")
     }
-    write(
-        "MODULE.bazel",
-        """
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGenQueryInExternalRepo() {
+        if (!AnalysisMock.get().isThisBazel()) {
+            return
+        }
+        write(
+            "MODULE.bazel",
+            """
         bazel_dep(name = "other_module")
         local_path_override(
             module_name = "other_module",
             path = "other_module",
         )
-        """);
-    write(
-        "other_module/MODULE.bazel",
-        """
+        
+        """.trimIndent()
+        )
+        write(
+            "other_module/MODULE.bazel",
+            """
         module(name = 'other_module')
-        """);
-    write(
-        "other_module/fruits/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        write(
+            "other_module/fruits/BUILD",
+            """
         load('@@//test_defs:foo_library.bzl', 'foo_library')
         foo_library(
             name = "melon",
@@ -980,37 +1110,45 @@ public class GenQueryIntegrationTest extends BuildIntegrationTestCase {
             expression = "deps(//fruits:melon)",
             scope = [":melon"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertQueryResult(
-        "@@other_module+//fruits:q",
-        "@@other_module+//fruits:melon",
-        "@@other_module+//fruits:papaya");
-  }
+        assertQueryResult(
+            "@@other_module+//fruits:q",
+            "@@other_module+//fruits:melon",
+            "@@other_module+//fruits:papaya"
+        )
+    }
 
-  private void assertQueryResult(String queryTarget, String... expected) throws Exception {
-    assertThat(getQueryResult(queryTarget).split("\n"))
-        .asList()
-        .containsExactlyElementsIn(ImmutableList.copyOf(expected))
-        .inOrder();
-  }
+    @Throws(java.lang.Exception::class)
+    private fun assertQueryResult(queryTarget: String?, vararg expected: String?) {
+        Truth.assertThat<String?>(getQueryResult(queryTarget).split("\n".toRegex()).dropLastWhile { it.isEmpty() }
+            .toTypedArray())
+            .asList()
+            .containsExactlyElementsIn(com.google.common.collect.ImmutableList.copyOf<String?>(expected))
+            .inOrder()
+    }
 
-  private void assertPartialQueryResult(String queryTarget, String... expected) throws Exception {
-    assertThat(getQueryResult(queryTarget).split("\n"))
-        .asList()
-        .containsAtLeastElementsIn(ImmutableList.copyOf(expected))
-        .inOrder();
-  }
+    @Throws(java.lang.Exception::class)
+    private fun assertPartialQueryResult(queryTarget: String?, vararg expected: String?) {
+        Truth.assertThat<String?>(getQueryResult(queryTarget).split("\n".toRegex()).dropLastWhile { it.isEmpty() }
+            .toTypedArray())
+            .asList()
+            .containsAtLeastElementsIn(com.google.common.collect.ImmutableList.copyOf<String?>(expected))
+            .inOrder()
+    }
 
-  private String getQueryResult(String queryTarget) throws Exception {
-    buildTarget(queryTarget);
-    Artifact output = Iterables.getOnlyElement(getArtifacts(queryTarget));
-    assertThat(getAllKeysInGraph().stream().anyMatch(key -> key instanceof TransitiveTargetKey))
-        .isFalse();
-    return readContentAsLatin1String(output);
-  }
+    @Throws(java.lang.Exception::class)
+    private fun getQueryResult(queryTarget: String?): String? {
+        buildTarget(queryTarget)
+        val output: Artifact? = com.google.common.collect.Iterables.getOnlyElement<Artifact?>(getArtifacts(queryTarget))
+        Truth.assertThat(getAllKeysInGraph().stream().anyMatch { key: SkyKey? -> key is TransitiveTargetKey })
+            .isFalse()
+        return readContentAsLatin1String(output)
+    }
 
-  private Class<? extends Throwable> expectedExceptionClass() {
-    return keepGoing ? BuildFailedException.class : ViewCreationFailedException.class;
-  }
+    private fun expectedExceptionClass(): java.lang.Class<out Throwable?> {
+        return if (keepGoing) BuildFailedException::class.java else ViewCreationFailedException::class.java
+    }
 }

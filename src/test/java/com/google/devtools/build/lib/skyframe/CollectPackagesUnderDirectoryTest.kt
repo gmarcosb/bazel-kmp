@@ -11,49 +11,36 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.bazel.bzlmod.ModuleFileFunction;
-import com.google.devtools.build.lib.packages.BuildFileName;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import java.util.List;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.bazel.bzlmod.ModuleFileFunction
 
-/** Test for {@link CollectPackagesUnderDirectoryFunction}. */
-@RunWith(JUnit4.class)
-public final class CollectPackagesUnderDirectoryTest
-    extends AbstractCollectPackagesUnderDirectoryTest {
+/** Test for [CollectPackagesUnderDirectoryFunction].  */
+@RunWith(JUnit4::class)
+class CollectPackagesUnderDirectoryTest
 
-  @Override
-  protected String getWorkspacePathString() {
-    return "/workspace";
-  }
+    : AbstractCollectPackagesUnderDirectoryTest() {
+    protected val workspacePathString: String
+        get() = "/workspace"
 
-  @Override
-  protected List<BuildFileName> getBuildFileNamesByPriority() {
-    return BazelSkyframeExecutorConstants.BUILD_FILES_BY_PRIORITY;
-  }
+    protected val buildFileNamesByPriority: MutableList<BuildFileName>
+        get() = BazelSkyframeExecutorConstants.BUILD_FILES_BY_PRIORITY
 
-  @Override
-  protected ImmutableMap<SkyFunctionName, SkyFunction> getExtraSkyFunctions() {
-    return ImmutableMap.of(
-        SkyFunctions.MODULE_FILE,
-        new ModuleFileFunction(
-            ruleClassProvider.getBazelStarlarkEnvironment(),
-            directories.getWorkspace(),
-            ImmutableMap.of()));
-  }
+    protected val extraSkyFunctions: com.google.common.collect.ImmutableMap<SkyFunctionName?, SkyFunction?>
+        get() = com.google.common.collect.ImmutableMap.of<SkyFunctionName?, SkyFunction?>(
+            SkyFunctions.MODULE_FILE,
+            ModuleFileFunction(
+                ruleClassProvider.getBazelStarlarkEnvironment(),
+                directories.getWorkspace(),
+                com.google.common.collect.ImmutableMap.of<K?, V?>()
+            )
+        )
 
-  @Override
-  protected SkyframeExecutorFactory makeSkyframeExecutorFactory() {
-    return new SequencedSkyframeExecutorFactory();
-  }
+    protected override fun makeSkyframeExecutorFactory(): SkyframeExecutorFactory {
+        return SequencedSkyframeExecutorFactory()
+    }
 
-  @Override
-  protected boolean useVirtualSourceRoot() {
-    return false;
-  }
+    protected override fun useVirtualSourceRoot(): Boolean {
+        return false
+    }
 }

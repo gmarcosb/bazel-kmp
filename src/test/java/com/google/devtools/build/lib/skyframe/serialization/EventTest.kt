@@ -11,58 +11,66 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
-
-import static com.google.common.truth.Truth.assertThat;
-import static java.nio.charset.StandardCharsets.UTF_8;
-
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.events.Event;
-import com.google.devtools.build.lib.events.EventKind;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.cmdline.Label
 
 /**
- * Tests for {@link Event} serialization.
- *
- * <p>At the time of this test class's writing there is no custom EventCodec. However, event
+ * Tests for [Event] serialization.
+ * 
+ * 
+ * At the time of this test class's writing there is no custom EventCodec. However, event
  * property value insertion order should not affect events' serialized representation, and this
  * tests for that.
  */
-@RunWith(JUnit4.class)
-public class EventTest {
-  @Test
-  public void smoke() throws Exception {
-    Event propertylessEvent = Event.of(EventKind.INFO, "myMessage");
-    Event byteArrayEvent = Event.of(EventKind.INFO, "myMessage".getBytes(UTF_8));
-    Event labelEvent =
-        Event.of(
-            EventKind.WARNING,
-            "myOtherMessage",
-            Label.class,
-            Label.create("myPackage", "myTarget"));
-    Event labelStringEvent = labelEvent.withProperty(String.class, "myTag");
+@RunWith(JUnit4::class)
+class EventTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun smoke() {
+        val propertylessEvent: com.google.devtools.build.lib.events.Event? =
+            com.google.devtools.build.lib.events.Event.of(
+                com.google.devtools.build.lib.events.EventKind.INFO,
+                "myMessage"
+            )
+        val byteArrayEvent: com.google.devtools.build.lib.events.Event? = com.google.devtools.build.lib.events.Event.of(
+            com.google.devtools.build.lib.events.EventKind.INFO,
+            "myMessage".getBytes(java.nio.charset.StandardCharsets.UTF_8)
+        )
+        val labelEvent: com.google.devtools.build.lib.events.Event =
+            com.google.devtools.build.lib.events.Event.of(
+                com.google.devtools.build.lib.events.EventKind.WARNING,
+                "myOtherMessage",
+                Label::class.java,
+                Label.create("myPackage", "myTarget")
+            )
+        val labelStringEvent: com.google.devtools.build.lib.events.Event? =
+            labelEvent.withProperty<String?>(String::class.java, "myTag")
 
-    new SerializationTester(propertylessEvent, byteArrayEvent, labelEvent, labelStringEvent)
-        .runTests();
-  }
+        SerializationTester(propertylessEvent, byteArrayEvent, labelEvent, labelStringEvent)
+            .runTests()
+    }
 
-  @Test
-  public void serializationIsPropertyOrderAgnostic() throws Exception {
-    Event labelStringEvent =
-        Event.of(EventKind.WARNING, "myMessage")
-            .withProperty(Label.class, Label.create("myPackage", "myTarget"))
-            .withProperty(String.class, "myTag");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun serializationIsPropertyOrderAgnostic() {
+        val labelStringEvent: com.google.devtools.build.lib.events.Event? =
+            com.google.devtools.build.lib.events.Event.of(
+                com.google.devtools.build.lib.events.EventKind.WARNING,
+                "myMessage"
+            )
+                .withProperty<T?>(Label::class.java, Label.create("myPackage", "myTarget"))
+                .withProperty<String?>(String::class.java, "myTag")
 
-    Event stringLabelEvent =
-        Event.of(EventKind.WARNING, "myMessage")
-            .withProperty(String.class, "myTag")
-            .withProperty(Label.class, Label.create("myPackage", "myTarget"));
+        val stringLabelEvent: com.google.devtools.build.lib.events.Event? =
+            com.google.devtools.build.lib.events.Event.of(
+                com.google.devtools.build.lib.events.EventKind.WARNING,
+                "myMessage"
+            )
+                .withProperty<String?>(String::class.java, "myTag")
+                .withProperty<T?>(Label::class.java, Label.create("myPackage", "myTarget"))
 
-    ObjectCodecs codecs = new ObjectCodecs(AutoRegistry.get());
-    assertThat(codecs.serialize(labelStringEvent)).isEqualTo(codecs.serialize(stringLabelEvent));
-  }
+        val codecs: ObjectCodecs = ObjectCodecs(AutoRegistry.get())
+        assertThat(codecs.serialize(labelStringEvent)).isEqualTo(codecs.serialize(stringLabelEvent))
+    }
 }

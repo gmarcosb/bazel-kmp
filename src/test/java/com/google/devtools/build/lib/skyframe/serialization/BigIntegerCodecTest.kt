@@ -11,32 +11,28 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.skyframe.serialization
 
-package com.google.devtools.build.lib.skyframe.serialization;
+import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester
 
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import java.math.BigInteger;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [BigIntegerCodec].  */
+@RunWith(JUnit4::class)
+class BigIntegerCodecTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun smoke() {
+        val bigBigInt: BigInteger =
+            BigInteger("9999999999999999999999999999999999999999999999999999999999999")
 
-/** Tests for {@link BigIntegerCodec}. */
-@RunWith(JUnit4.class)
-public class BigIntegerCodecTest {
-
-  @Test
-  public void smoke() throws Exception {
-    BigInteger bigBigInt =
-        new BigInteger("9999999999999999999999999999999999999999999999999999999999999");
-
-    new SerializationTester(
+        SerializationTester(
             BigInteger.ZERO,
             BigInteger.ONE,
             BigInteger.valueOf(-1),
-            BigInteger.valueOf(Long.MAX_VALUE),
-            BigInteger.valueOf(Long.MIN_VALUE),
+            BigInteger.valueOf(java.lang.Long.MAX_VALUE),
+            BigInteger.valueOf(java.lang.Long.MIN_VALUE),
             bigBigInt,
-            bigBigInt.pow(10_000))
-        .runTests();
-  }
+            bigBigInt.pow(10000)
+        )
+            .runTests()
+    }
 }

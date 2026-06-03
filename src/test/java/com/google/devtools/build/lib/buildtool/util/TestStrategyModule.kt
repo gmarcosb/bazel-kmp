@@ -11,20 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.buildtool.util
 
-package com.google.devtools.build.lib.buildtool.util;
+import com.google.devtools.build.lib.runtime.BlazeModule
 
-import com.google.devtools.build.lib.runtime.BlazeModule;
-import com.google.devtools.build.lib.testutil.TestConstants;
-
-/** Get the rule class module for tests. */
-public class TestStrategyModule {
-  public static BlazeModule getModule() {
-    try {
-      Class<?> moduleClass = Class.forName(TestConstants.TEST_STRATEGY_MODULE);
-      return (BlazeModule) moduleClass.getConstructor().newInstance();
-    } catch (Exception e) {
-      throw new IllegalStateException(e);
-    }
-  }
+/** Get the rule class module for tests.  */
+object TestStrategyModule {
+    val module: BlazeModule?
+        get() {
+            try {
+                val moduleClass = Class.forName(TestConstants.TEST_STRATEGY_MODULE)
+                return moduleClass.getConstructor().newInstance() as BlazeModule?
+            } catch (e: Exception) {
+                throw IllegalStateException(e)
+            }
+        }
 }

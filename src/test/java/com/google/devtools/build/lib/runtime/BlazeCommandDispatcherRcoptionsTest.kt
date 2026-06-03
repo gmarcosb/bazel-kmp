@@ -11,301 +11,306 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.runtime;
+package com.google.devtools.build.lib.runtime
 
-import static com.google.common.truth.Truth.assertWithMessage;
-import static com.google.devtools.build.lib.bazel.BazelServices.BAZEL_SERVICES;
+import com.google.devtools.build.lib.bazel.BazelServices.BAZEL_SERVICES
 
-import com.google.common.collect.Collections2;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Lists;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
-import com.google.devtools.build.lib.analysis.ServerDirectories;
-import com.google.devtools.build.lib.analysis.config.CoreOptions;
-import com.google.devtools.build.lib.analysis.config.FragmentOptions;
-import com.google.devtools.build.lib.testutil.Scratch;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import com.google.devtools.build.lib.util.io.RecordingOutErr;
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
-import com.google.devtools.common.options.OptionsParser;
-import com.google.devtools.common.options.OptionsParsingResult;
-import java.util.List;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests the handling of rc-options in [BlazeCommandDispatcher].  */
+@RunWith(JUnit4::class)
+class BlazeCommandDispatcherRcoptionsTest {
+    /** Example options to be used by the tests.  */
+    @OptionsClass
+    abstract class FooOptions : OptionsBase() {
+        @get:com.google.devtools.common.options.Option(
+            name = "numoption",
+            documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "0"
+        )
+        abstract val numOption: Int
 
-/** Tests the handling of rc-options in {@link BlazeCommandDispatcher}. */
-@RunWith(JUnit4.class)
-public class BlazeCommandDispatcherRcoptionsTest {
-
-  /** Example options to be used by the tests. */
-  @OptionsClass
-  public abstract static class FooOptions extends OptionsBase {
-    @Option(
-        name = "numoption",
-        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "0")
-    public abstract int getNumOption();
-
-    @Option(
-        name = "stringoption",
-        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "[unspecified]")
-    public abstract String getStringOption();
-  }
-
-  @Command(
-      name = "reportnum",
-      options = {FooOptions.class},
-      shortDescription = "",
-      help = "")
-  private static class ReportNumCommand implements BlazeCommand {
-
-    @Override
-    public BlazeCommandResult exec(CommandEnvironment env, OptionsParsingResult options) {
-      FooOptions fooOptions = options.getOptions(FooOptions.class);
-      env.getReporter().getOutErr().printOut(String.valueOf(fooOptions.getNumOption()));
-      return BlazeCommandResult.success();
+        @get:com.google.devtools.common.options.Option(
+            name = "stringoption",
+            documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "[unspecified]"
+        )
+        abstract val stringOption: String?
     }
-  }
 
-  @Command(
-      name = "reportall",
-      options = {FooOptions.class},
-      shortDescription = "",
-      help = "")
-  private static class ReportAllCommand implements BlazeCommand {
-
-    @Override
-    public BlazeCommandResult exec(CommandEnvironment env, OptionsParsingResult options) {
-      FooOptions fooOptions = options.getOptions(FooOptions.class);
-      env.getReporter()
-          .getOutErr()
-          .printOut(fooOptions.getNumOption() + " " + fooOptions.getStringOption());
-      return BlazeCommandResult.success();
+    @Command(
+        name = "reportnum",
+        options = [com.google.devtools.build.lib.runtime.BlazeCommandDispatcherRcoptionsTest.FooOptions::class],
+        shortDescription = "",
+        help = ""
+    )
+    private class ReportNumCommand : BlazeCommand {
+        public override fun exec(env: CommandEnvironment, options: OptionsParsingResult): BlazeCommandResult {
+            val fooOptions: FooOptions? =
+                options.getOptions<FooOptions?>(com.google.devtools.build.lib.runtime.BlazeCommandDispatcherRcoptionsTest.FooOptions::class.java)
+            env.getReporter().getOutErr().printOut(fooOptions!!.numOption.toString())
+            return BlazeCommandResult.success()
+        }
     }
-  }
 
-  @Command(
-      name = "reportallinherited",
-      options = {FooOptions.class},
-      shortDescription = "",
-      help = "",
-      inheritsOptionsFrom = ReportAllCommand.class)
-  private static class ReportAllInheritedCommand extends ReportAllCommand {}
-
-  private final Scratch scratch = new Scratch();
-  private final RecordingOutErr outErr = new RecordingOutErr();
-  private final ReportNumCommand reportNum = new ReportNumCommand();
-  private final ReportAllCommand reportAll = new ReportAllCommand();
-  private final ReportAllCommand reportAllInherited = new ReportAllInheritedCommand();
-  private BlazeRuntime runtime;
-
-  @Before
-  public final void initializeRuntime() throws Exception {
-    String productName = TestConstants.PRODUCT_NAME;
-    OptionsParsingResult startupOptionsProvider =
-        OptionsParser.builder().optionsClasses(BlazeServerStartupOptions.class).build();
-    for (var service : BAZEL_SERVICES) {
-      service.globalInit(startupOptionsProvider, BAZEL_SERVICES);
+    @Command(
+        name = "reportall",
+        options = [com.google.devtools.build.lib.runtime.BlazeCommandDispatcherRcoptionsTest.FooOptions::class],
+        shortDescription = "",
+        help = ""
+    )
+    private open class ReportAllCommand : BlazeCommand {
+        public override fun exec(env: CommandEnvironment, options: OptionsParsingResult): BlazeCommandResult {
+            val fooOptions: FooOptions? =
+                options.getOptions<FooOptions?>(com.google.devtools.build.lib.runtime.BlazeCommandDispatcherRcoptionsTest.FooOptions::class.java)
+            env.getReporter()
+                .getOutErr()
+                .printOut(fooOptions!!.numOption.toString() + " " + fooOptions.stringOption)
+            return BlazeCommandResult.success()
+        }
     }
-    ServerDirectories serverDirectories =
-        new ServerDirectories(
-            scratch.dir("install_base"),
-            scratch.dir("output_base"),
-            scratch.dir("user_output_root"));
-    this.runtime =
-        new BlazeRuntime.Builder()
-            .setFileSystem(scratch.getFileSystem())
-            .setProductName(productName)
-            .setServerDirectories(serverDirectories)
-            .setStartupOptionsProvider(startupOptionsProvider)
-            .addBlazeModule(
-                new BlazeModule() {
-                  @Override
-                  public void initializeRuleClasses(ConfiguredRuleClassProvider.Builder builder) {
-                    // We must add these options so that the defaults package can be created.
-                    builder.addConfigurationOptions(CoreOptions.class);
-                    // The defaults package asserts that it is not empty, so we provide options.
-                    builder.addConfigurationOptions(MockFragmentOptions.class);
-                    // The tools repository is needed for createGlobals
-                    builder.setToolsRepository(TestConstants.TOOLS_REPOSITORY);
-                  }
-                })
-            .build();
 
-    BlazeDirectories directories =
-        new BlazeDirectories(serverDirectories, scratch.dir("pkg"), productName);
-    this.runtime.initWorkspace(directories, /* binTools= */ null);
-  }
+    @Command(
+        name = "reportallinherited",
+        options = [com.google.devtools.build.lib.runtime.BlazeCommandDispatcherRcoptionsTest.FooOptions::class],
+        shortDescription = "",
+        help = "",
+        inheritsOptionsFrom = ReportAllCommand::class
+    )
+    private class ReportAllInheritedCommand : ReportAllCommand()
 
-  @Test
-  public void testCommonUsed() throws Exception {
-    List<String> blazercOpts =
-        ImmutableList.of(
-            "--rc_source=/home/jrluser/.blazerc", "--default_override=0:common=--numoption=99");
+    private val scratch: Scratch = Scratch()
+    private val outErr: RecordingOutErr = RecordingOutErr()
+    private val reportNum = ReportNumCommand()
+    private val reportAll = ReportAllCommand()
+    private val reportAllInherited: ReportAllCommand = ReportAllInheritedCommand()
+    private var runtime: BlazeRuntime? = null
 
-    runtime.overrideCommands(ImmutableList.of(reportNum));
-    BlazeCommandDispatcher dispatch = new BlazeCommandDispatcher(runtime);
-    List<String> cmdLine = Lists.newArrayList("reportnum");
-    cmdLine.addAll(blazercOpts);
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun initializeRuntime() {
+        val productName: String = TestConstants.PRODUCT_NAME
+        val startupOptionsProvider: OptionsParsingResult? =
+            OptionsParser.builder().optionsClasses(BlazeServerStartupOptions::class.java).build()
+        for (service in BAZEL_SERVICES) {
+            service.globalInit(startupOptionsProvider, BAZEL_SERVICES)
+        }
+        val serverDirectories: ServerDirectories =
+            ServerDirectories(
+                scratch.dir("install_base"),
+                scratch.dir("output_base"),
+                scratch.dir("user_output_root")
+            )
+        this.runtime =
+            Builder()
+                .setFileSystem(scratch.getFileSystem())
+                .setProductName(productName)
+                .setServerDirectories(serverDirectories)
+                .setStartupOptionsProvider(startupOptionsProvider)
+                .addBlazeModule(
+                    object : BlazeModule() {
+                        public override fun initializeRuleClasses(builder: ConfiguredRuleClassProvider.Builder) {
+                            // We must add these options so that the defaults package can be created.
+                            builder.addConfigurationOptions(CoreOptions::class.java)
+                            // The defaults package asserts that it is not empty, so we provide options.
+                            builder.addConfigurationOptions(MockFragmentOptions::class.java)
+                            // The tools repository is needed for createGlobals
+                            builder.setToolsRepository(TestConstants.TOOLS_REPOSITORY)
+                        }
+                    })
+                .build()
 
-    dispatch.exec(cmdLine, "test", outErr);
-    String out = outErr.outAsLatin1();
-    assertWithMessage("Common options should be used").that(out).isEqualTo("99");
-  }
-
-  @Test
-  public void testSpecificOptionsWin() throws Exception {
-    List<String> blazercOpts =
-        ImmutableList.of(
-            "--rc_source=/home/jrluser/.blazerc",
-            "--default_override=0:reportnum=--numoption=42",
-            "--default_override=0:common=--numoption=99");
-
-    runtime.overrideCommands(ImmutableList.of(reportNum));
-    BlazeCommandDispatcher dispatch = new BlazeCommandDispatcher(runtime);
-    List<String> cmdLine = Lists.newArrayList("reportnum");
-    cmdLine.addAll(blazercOpts);
-
-    dispatch.exec(cmdLine, "test", outErr);
-    String out = outErr.outAsLatin1();
-    assertWithMessage("Specific options should dominate common options").that(out).isEqualTo("42");
-  }
-
-  @Test
-  public void testSpecificOptionsWinOtherOrder() throws Exception {
-    List<String> blazercOpts =
-        ImmutableList.of(
-            "--rc_source=/home/jrluser/.blazerc",
-            "--default_override=0:common=--numoption=99",
-            "--default_override=0:reportnum=--numoption=42");
-
-    runtime.overrideCommands(ImmutableList.of(reportNum));
-    BlazeCommandDispatcher dispatch = new BlazeCommandDispatcher(runtime);
-    List<String> cmdLine = Lists.newArrayList("reportnum");
-    cmdLine.addAll(blazercOpts);
-
-    dispatch.exec(cmdLine, "test", outErr);
-    String out = outErr.outAsLatin1();
-    assertWithMessage("Specific options should dominate common options").that(out).isEqualTo("42");
-  }
-
-  @Test
-  public void testOptionsCombined() throws Exception {
-    List<String> blazercOpts =
-        ImmutableList.of(
-            "--rc_source=/etc/bazelrc",
-            "--default_override=0:common=--stringoption=foo",
-            "--rc_source=/home/jrluser/.blazerc",
-            "--default_override=1:common=--numoption=99");
-
-    runtime.overrideCommands(ImmutableList.of(reportNum, reportAll));
-    BlazeCommandDispatcher dispatch = new BlazeCommandDispatcher(runtime);
-    List<String> cmdLine = Lists.newArrayList("reportall");
-    cmdLine.addAll(blazercOpts);
-
-    dispatch.exec(cmdLine, "test", outErr);
-    String out = outErr.outAsLatin1();
-    assertWithMessage("Options should get accumulated over different rc files")
-        .that(out)
-        .isEqualTo("99 foo");
-  }
-
-  @Test
-  public void testOptionsCombinedWithOverride() throws Exception {
-    List<String> blazercOpts =
-        ImmutableList.of(
-            "--rc_source=/etc/bazelrc",
-            "--default_override=0:common=--stringoption=foo",
-            "--default_override=0:common=--numoption=42",
-            "--rc_source=/home/jrluser/.blazerc",
-            "--default_override=1:common=--numoption=99");
-
-    runtime.overrideCommands(ImmutableList.of(reportNum, reportAll));
-    BlazeCommandDispatcher dispatch = new BlazeCommandDispatcher(runtime);
-    List<String> cmdLine = Lists.newArrayList("reportall");
-    cmdLine.addAll(blazercOpts);
-
-    dispatch.exec(cmdLine, "test", outErr);
-    String out = outErr.outAsLatin1();
-    assertWithMessage("The more specific rc-file should override").that(out).isEqualTo("99 foo");
-  }
-
-  @Test
-  public void testOptionsCombinedWithOverrideOtherName() throws Exception {
-    List<String> blazercOpts =
-        ImmutableList.of(
-            "--rc_source=/home/jrluser/.blazerc",
-            "--default_override=0:common=--stringoption=foo",
-            "--default_override=0:common=--numoption=42",
-            "--rc_source=/etc/bazelrc",
-            "--default_override=1:common=--numoption=99");
-
-    runtime.overrideCommands(ImmutableList.of(reportNum, reportAll));
-    BlazeCommandDispatcher dispatch = new BlazeCommandDispatcher(runtime);
-    List<String> cmdLine = Lists.newArrayList("reportall");
-    cmdLine.addAll(blazercOpts);
-
-    dispatch.exec(cmdLine, "test", outErr);
-    String out = outErr.outAsLatin1();
-    assertWithMessage("The more specific rc-file should override irrespective of name")
-        .that(out)
-        .isEqualTo("99 foo");
-  }
-
-  @Test
-  public void testInheritedOptionsWithSpecificOverride() throws Exception {
-    ImmutableList<ImmutableList<String>> blazercOpts =
-        ImmutableList.of(
-            ImmutableList.of(
-                "--rc_source=/doesnt/matter/0/bazelrc",
-                "--default_override=0:common=--stringoption=common",
-                "--default_override=0:common=--numoption=42"),
-            ImmutableList.of(
-                "--rc_source=/doesnt/matter/1/bazelrc",
-                "--default_override=0:reportall=--stringoption=reportall"),
-            ImmutableList.of(
-                "--rc_source=/doesnt/matter/2/bazelrc",
-                "--default_override=0:reportallinherited=--stringoption=reportallinherited"));
-
-    runtime.overrideCommands(ImmutableList.of(reportNum, reportAll, reportAllInherited));
-    for (List<ImmutableList<String>> e : Collections2.permutations(blazercOpts)) {
-      outErr.reset();
-      BlazeCommandDispatcher dispatch = new BlazeCommandDispatcher(runtime);
-      List<String> cmdLine = Lists.newArrayList("reportallinherited");
-      List<String> orderedOpts = ImmutableList.copyOf(Iterables.concat(e));
-      cmdLine.addAll(orderedOpts);
-
-      dispatch.exec(cmdLine, "test", outErr);
-      String out = outErr.outAsLatin1();
-      assertWithMessage(
-              "The more specific option should override, irrespective of source file or order. %s",
-              orderedOpts)
-          .that(out)
-          .isEqualTo("42 reportallinherited");
+        val directories: BlazeDirectories =
+            BlazeDirectories(serverDirectories, scratch.dir("pkg"), productName)
+        this.runtime.initWorkspace(directories,  /* binTools= */null)
     }
-  }
 
-  /** Options class for testing, so that defaults package has some content. */
-  @OptionsClass
-  public abstract static class MockFragmentOptions extends FragmentOptions {
-    public MockFragmentOptions() {}
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCommonUsed() {
+        val blazercOpts: MutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>(
+                "--rc_source=/home/jrluser/.blazerc", "--default_override=0:common=--numoption=99"
+            )
 
-    @Option(
-        name = "fake_opt",
-        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-        effectTags = {OptionEffectTag.NO_OP},
-        defaultValue = "false")
-    public abstract boolean getFakeOpt();
-  }
+        runtime.overrideCommands(com.google.common.collect.ImmutableList.of<E?>(reportNum))
+        val dispatch: BlazeCommandDispatcher = BlazeCommandDispatcher(runtime)
+        val cmdLine: MutableList<String?> = com.google.common.collect.Lists.newArrayList<String?>("reportnum")
+        cmdLine.addAll(blazercOpts)
+
+        dispatch.exec(cmdLine, "test", outErr)
+        val out: String? = outErr.outAsLatin1()
+        Truth.assertWithMessage("Common options should be used").that(out).isEqualTo("99")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSpecificOptionsWin() {
+        val blazercOpts: MutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>(
+                "--rc_source=/home/jrluser/.blazerc",
+                "--default_override=0:reportnum=--numoption=42",
+                "--default_override=0:common=--numoption=99"
+            )
+
+        runtime.overrideCommands(com.google.common.collect.ImmutableList.of<E?>(reportNum))
+        val dispatch: BlazeCommandDispatcher = BlazeCommandDispatcher(runtime)
+        val cmdLine: MutableList<String?> = com.google.common.collect.Lists.newArrayList<String?>("reportnum")
+        cmdLine.addAll(blazercOpts)
+
+        dispatch.exec(cmdLine, "test", outErr)
+        val out: String? = outErr.outAsLatin1()
+        Truth.assertWithMessage("Specific options should dominate common options").that(out).isEqualTo("42")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSpecificOptionsWinOtherOrder() {
+        val blazercOpts: MutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>(
+                "--rc_source=/home/jrluser/.blazerc",
+                "--default_override=0:common=--numoption=99",
+                "--default_override=0:reportnum=--numoption=42"
+            )
+
+        runtime.overrideCommands(com.google.common.collect.ImmutableList.of<E?>(reportNum))
+        val dispatch: BlazeCommandDispatcher = BlazeCommandDispatcher(runtime)
+        val cmdLine: MutableList<String?> = com.google.common.collect.Lists.newArrayList<String?>("reportnum")
+        cmdLine.addAll(blazercOpts)
+
+        dispatch.exec(cmdLine, "test", outErr)
+        val out: String? = outErr.outAsLatin1()
+        Truth.assertWithMessage("Specific options should dominate common options").that(out).isEqualTo("42")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testOptionsCombined() {
+        val blazercOpts: MutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>(
+                "--rc_source=/etc/bazelrc",
+                "--default_override=0:common=--stringoption=foo",
+                "--rc_source=/home/jrluser/.blazerc",
+                "--default_override=1:common=--numoption=99"
+            )
+
+        runtime.overrideCommands(com.google.common.collect.ImmutableList.of<E?>(reportNum, reportAll))
+        val dispatch: BlazeCommandDispatcher = BlazeCommandDispatcher(runtime)
+        val cmdLine: MutableList<String?> = com.google.common.collect.Lists.newArrayList<String?>("reportall")
+        cmdLine.addAll(blazercOpts)
+
+        dispatch.exec(cmdLine, "test", outErr)
+        val out: String? = outErr.outAsLatin1()
+        Truth.assertWithMessage("Options should get accumulated over different rc files")
+            .that(out)
+            .isEqualTo("99 foo")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testOptionsCombinedWithOverride() {
+        val blazercOpts: MutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>(
+                "--rc_source=/etc/bazelrc",
+                "--default_override=0:common=--stringoption=foo",
+                "--default_override=0:common=--numoption=42",
+                "--rc_source=/home/jrluser/.blazerc",
+                "--default_override=1:common=--numoption=99"
+            )
+
+        runtime.overrideCommands(com.google.common.collect.ImmutableList.of<E?>(reportNum, reportAll))
+        val dispatch: BlazeCommandDispatcher = BlazeCommandDispatcher(runtime)
+        val cmdLine: MutableList<String?> = com.google.common.collect.Lists.newArrayList<String?>("reportall")
+        cmdLine.addAll(blazercOpts)
+
+        dispatch.exec(cmdLine, "test", outErr)
+        val out: String? = outErr.outAsLatin1()
+        Truth.assertWithMessage("The more specific rc-file should override").that(out).isEqualTo("99 foo")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testOptionsCombinedWithOverrideOtherName() {
+        val blazercOpts: MutableList<String?> =
+            com.google.common.collect.ImmutableList.of<String?>(
+                "--rc_source=/home/jrluser/.blazerc",
+                "--default_override=0:common=--stringoption=foo",
+                "--default_override=0:common=--numoption=42",
+                "--rc_source=/etc/bazelrc",
+                "--default_override=1:common=--numoption=99"
+            )
+
+        runtime.overrideCommands(com.google.common.collect.ImmutableList.of<E?>(reportNum, reportAll))
+        val dispatch: BlazeCommandDispatcher = BlazeCommandDispatcher(runtime)
+        val cmdLine: MutableList<String?> = com.google.common.collect.Lists.newArrayList<String?>("reportall")
+        cmdLine.addAll(blazercOpts)
+
+        dispatch.exec(cmdLine, "test", outErr)
+        val out: String? = outErr.outAsLatin1()
+        Truth.assertWithMessage("The more specific rc-file should override irrespective of name")
+            .that(out)
+            .isEqualTo("99 foo")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testInheritedOptionsWithSpecificOverride() {
+        val blazercOpts: com.google.common.collect.ImmutableList<com.google.common.collect.ImmutableList<String?>?> =
+            com.google.common.collect.ImmutableList.of<com.google.common.collect.ImmutableList<String?>?>(
+                com.google.common.collect.ImmutableList.of<String?>(
+                    "--rc_source=/doesnt/matter/0/bazelrc",
+                    "--default_override=0:common=--stringoption=common",
+                    "--default_override=0:common=--numoption=42"
+                ),
+                com.google.common.collect.ImmutableList.of<String?>(
+                    "--rc_source=/doesnt/matter/1/bazelrc",
+                    "--default_override=0:reportall=--stringoption=reportall"
+                ),
+                com.google.common.collect.ImmutableList.of<String?>(
+                    "--rc_source=/doesnt/matter/2/bazelrc",
+                    "--default_override=0:reportallinherited=--stringoption=reportallinherited"
+                )
+            )
+
+        runtime.overrideCommands(
+            com.google.common.collect.ImmutableList.of<E?>(
+                reportNum,
+                reportAll,
+                reportAllInherited
+            )
+        )
+        for (e in com.google.common.collect.Collections2.permutations<com.google.common.collect.ImmutableList<String?>?>(
+            blazercOpts
+        )) {
+            outErr.reset()
+            val dispatch: BlazeCommandDispatcher = BlazeCommandDispatcher(runtime)
+            val cmdLine: MutableList<String?> =
+                com.google.common.collect.Lists.newArrayList<String?>("reportallinherited")
+            val orderedOpts: MutableList<String?> = com.google.common.collect.ImmutableList.copyOf<String?>(
+                com.google.common.collect.Iterables.concat<String?>(e)
+            )
+            cmdLine.addAll(orderedOpts)
+
+            dispatch.exec(cmdLine, "test", outErr)
+            val out: String? = outErr.outAsLatin1()
+            Truth.assertWithMessage(
+                "The more specific option should override, irrespective of source file or order. %s",
+                orderedOpts
+            )
+                .that(out)
+                .isEqualTo("42 reportallinherited")
+        }
+    }
+
+    /** Options class for testing, so that defaults package has some content.  */
+    @OptionsClass
+    abstract class MockFragmentOptions : FragmentOptions() {
+        @get:com.google.devtools.common.options.Option(
+            name = "fake_opt",
+            documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+            effectTags = [OptionEffectTag.NO_OP],
+            defaultValue = "false"
+        )
+        abstract val fakeOpt: Boolean
+    }
 }

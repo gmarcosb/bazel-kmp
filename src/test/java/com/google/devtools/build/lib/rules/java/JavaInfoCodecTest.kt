@@ -11,45 +11,27 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.java
 
-package com.google.devtools.build.lib.rules.java;
+import com.google.devtools.build.lib.skyframe.serialization.AutoRegistry
 
-import static com.google.common.truth.Truth.assertThat;
+@RunWith(JUnit4::class)
+class JavaInfoCodecTest : BuildViewTestCase() {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun emptyJavaInfo_canBeSerializedAndDeserialized() {
+        SerializationTester(JavaInfo.Companion.EMPTY_JAVA_INFO_FOR_TESTING)
+            .makeMemoizingAndAllowFutureBlocking( /* allowFutureBlocking= */true)
+            .setVerificationFunction({ `in`, out -> assertThat(`in`).isEqualTo(out) })
+            .runTests()
+    }
 
-import com.google.common.collect.ImmutableClassToInstanceMap;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.skyframe.serialization.AutoRegistry;
-import com.google.devtools.build.lib.skyframe.serialization.FingerprintValueService;
-import com.google.devtools.build.lib.skyframe.serialization.ObjectCodecRegistry;
-import com.google.devtools.build.lib.skyframe.serialization.ObjectCodecs;
-import com.google.devtools.build.lib.skyframe.serialization.SerializationException;
-import com.google.devtools.build.lib.skyframe.serialization.SkyframeDependencyException;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.Dumper;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.RoundTripping;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.RoundTripping.MissingResultException;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationDepsUtils;
-import com.google.devtools.build.lib.skyframe.serialization.testutils.SerializationTester;
-import net.starlark.java.eval.SymbolGenerator;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-@RunWith(JUnit4.class)
-public class JavaInfoCodecTest extends BuildViewTestCase {
-
-  @Test
-  public void emptyJavaInfo_canBeSerializedAndDeserialized() throws Exception {
-    new SerializationTester(JavaInfo.EMPTY_JAVA_INFO_FOR_TESTING)
-        .makeMemoizingAndAllowFutureBlocking(/* allowFutureBlocking= */ true)
-        .setVerificationFunction((in, out) -> assertThat(in).isEqualTo(out))
-        .runTests();
-  }
-
-  @Test
-  public void javaInfo_canBeSerializedAndDeserialized() throws Exception {
-    scratch.file(
-        "java/com/google/test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun javaInfo_canBeSerializedAndDeserialized() {
+        scratch.file(
+            "java/com/google/test/BUILD",
+            """
         load("@rules_java//java:defs.bzl", "java_library")
         java_library(
             name = "a",
@@ -70,49 +52,53 @@ public class JavaInfoCodecTest extends BuildViewTestCase {
             name = "d",
             srcs = ["d.java"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    JavaInfo inInfo = JavaInfo.getJavaInfo(getConfiguredTarget("//java/com/google/test:a"));
-    JavaInfo outInfo = (JavaInfo) roundTripWithSkyframe(inInfo);
+        val inInfo: JavaInfo = JavaInfo.Companion.getJavaInfo(getConfiguredTarget("//java/com/google/test:a"))
+        val outInfo: JavaInfo = roundTripWithSkyframe(inInfo) as JavaInfo
 
-    assertThat(inInfo.getDirectRuntimeJars()).isNotEmpty();
-    assertThat(inInfo.getDirectRuntimeJars()).isEqualTo(outInfo.getDirectRuntimeJars());
+        Truth.assertThat(inInfo.getDirectRuntimeJars()).isNotEmpty()
+        Truth.assertThat(inInfo.getDirectRuntimeJars()).isEqualTo(outInfo.getDirectRuntimeJars())
 
-    JavaCompilationArgsProvider inProvider = inInfo.getProvider(JavaCompilationArgsProvider.class);
-    JavaCompilationArgsProvider outProvider =
-        outInfo.getProvider(JavaCompilationArgsProvider.class);
-    assertThat(inProvider.runtimeJars().toList()).hasSize(4);
-    assertThat(Dumper.dumpStructureWithEquivalenceReduction(inProvider.runtimeJars()))
-        .isEqualTo(Dumper.dumpStructureWithEquivalenceReduction(outProvider.runtimeJars()));
-  }
-
-  private Object roundTripWithSkyframe(Object subject)
-      throws SerializationException, SkyframeDependencyException, MissingResultException {
-    return RoundTripping.roundTripWithSkyframe(
-        createObjectCodecs(
-            ImmutableClassToInstanceMap.builder()
-                .putAll(getCommonSerializationDependencies())
-                .putAll(SerializationDepsUtils.SERIALIZATION_DEPS_FOR_TEST)
-                .build()),
-        FingerprintValueService.createForTesting(),
-        // Uses memoized skyframe values for resultProvider
-        k -> {
-          try {
-            return skyframeExecutor.getEvaluator().getExistingValue(k);
-          } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-          }
-        },
-        subject);
-  }
-
-  private ObjectCodecs createObjectCodecs(ImmutableClassToInstanceMap<Object> dependencies) {
-    ObjectCodecRegistry registry = AutoRegistry.get();
-    ObjectCodecRegistry.Builder registryBuilder = registry.getBuilder();
-    for (Object val : dependencies.values()) {
-      registryBuilder.addReferenceConstant(val);
+        val inProvider: JavaCompilationArgsProvider? =
+            inInfo.getProvider<JavaCompilationArgsProvider?>(JavaCompilationArgsProvider::class.java)
+        val outProvider: JavaCompilationArgsProvider? =
+            outInfo.getProvider<JavaCompilationArgsProvider?>(JavaCompilationArgsProvider::class.java)
+        assertThat(inProvider.runtimeJars.toList()).hasSize(4)
+        assertThat(Dumper.dumpStructureWithEquivalenceReduction(inProvider.runtimeJars))
+            .isEqualTo(Dumper.dumpStructureWithEquivalenceReduction(outProvider.runtimeJars))
     }
-    registryBuilder.addReferenceConstant(SymbolGenerator.CONSTANT_SYMBOL);
-    return new ObjectCodecs(registryBuilder.build(), dependencies);
-  }
+
+    @Throws(SerializationException::class, SkyframeDependencyException::class, MissingResultException::class)
+    private fun roundTripWithSkyframe(subject: Any?): Any {
+        return RoundTripping.roundTripWithSkyframe(
+            createObjectCodecs(
+                com.google.common.collect.ImmutableClassToInstanceMap.builder<Any?>()
+                    .putAll<T?>(getCommonSerializationDependencies())
+                    .putAll<Any?>(SerializationDepsUtils.SERIALIZATION_DEPS_FOR_TEST)
+                    .build()
+            ),
+            FingerprintValueService.createForTesting(),  // Uses memoized skyframe values for resultProvider
+            { k ->
+                try {
+                    return@roundTripWithSkyframe skyframeExecutor.getEvaluator().getExistingValue(k)
+                } catch (e: java.lang.InterruptedException) {
+                    throw java.lang.RuntimeException(e)
+                }
+            },
+            subject
+        )
+    }
+
+    private fun createObjectCodecs(dependencies: com.google.common.collect.ImmutableClassToInstanceMap<Any?>): ObjectCodecs {
+        val registry: ObjectCodecRegistry = AutoRegistry.get()
+        val registryBuilder: ObjectCodecRegistry.Builder = registry.getBuilder()
+        for (`val` in dependencies.values) {
+            registryBuilder.addReferenceConstant(`val`)
+        }
+        registryBuilder.addReferenceConstant(SymbolGenerator.CONSTANT_SYMBOL)
+        return ObjectCodecs(registryBuilder.build(), dependencies)
+    }
 }

@@ -11,54 +11,41 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.chunking;
+package com.google.devtools.build.lib.remote.chunking
 
-import com.google.devtools.build.lib.remote.util.DigestUtil;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import com.google.devtools.build.lib.vfs.bazel.BazelHashFunctions;
-import java.io.ByteArrayInputStream;
-import java.security.SecureRandom;
-import java.util.concurrent.TimeUnit;
-import org.openjdk.jmh.annotations.Benchmark;
-import org.openjdk.jmh.annotations.BenchmarkMode;
-import org.openjdk.jmh.annotations.Fork;
-import org.openjdk.jmh.annotations.Level;
-import org.openjdk.jmh.annotations.Measurement;
-import org.openjdk.jmh.annotations.Mode;
-import org.openjdk.jmh.annotations.Param;
-import org.openjdk.jmh.annotations.Scope;
-import org.openjdk.jmh.annotations.Setup;
-import org.openjdk.jmh.annotations.State;
-import org.openjdk.jmh.annotations.Warmup;
+import com.google.devtools.build.lib.remote.util.DigestUtil
 
-@BenchmarkMode(Mode.Throughput)
-@State(Scope.Benchmark)
+@BenchmarkMode(org.openjdk.jmh.annotations.Mode.Throughput)
+@org.openjdk.jmh.annotations.State(org.openjdk.jmh.annotations.Scope.Benchmark)
 @Warmup(iterations = 3, time = 5, timeUnit = TimeUnit.SECONDS)
-@Measurement(iterations = 3, time = 5, timeUnit = TimeUnit.SECONDS)
+@org.openjdk.jmh.annotations.Measurement(iterations = 3, time = 5, timeUnit = TimeUnit.SECONDS)
 @Fork(3)
-public class FastCdcBenchmark {
-  private static final int AVG_CHUNK_SIZE = 512 * 1024;
+class FastCdcBenchmark {
+    @org.openjdk.jmh.annotations.Param("1048576", "8388608", "67108864")
+    var size: Int = 0
 
-  @Param({"1048576", "8388608", "67108864"})
-  public int size;
+    private var data: ByteArray
+    private var chunker: FastCdcChunker? = null
 
-  private byte[] data;
-  private FastCdcChunker chunker;
+    @Setup(org.openjdk.jmh.annotations.Level.Iteration)
+    fun setup() {
+        BazelHashFunctions.ensureRegistered()
+        data = ByteArray(size)
+        java.security.SecureRandom().nextBytes(data)
 
-  @Setup(Level.Iteration)
-  public void setup() {
-    BazelHashFunctions.ensureRegistered();
-    data = new byte[size];
-    new SecureRandom().nextBytes(data);
+        val digestUtil: DigestUtil = DigestUtil(SyscallCache.NO_CACHE, BazelHashFunctions.BLAKE3)
+        val minSize = AVG_CHUNK_SIZE / 4
+        val maxSize = AVG_CHUNK_SIZE * 4
+        chunker = FastCdcChunker(minSize, AVG_CHUNK_SIZE, maxSize, 2, 0, digestUtil)
+    }
 
-    DigestUtil digestUtil = new DigestUtil(SyscallCache.NO_CACHE, BazelHashFunctions.BLAKE3);
-    int minSize = AVG_CHUNK_SIZE / 4;
-    int maxSize = AVG_CHUNK_SIZE * 4;
-    chunker = new FastCdcChunker(minSize, AVG_CHUNK_SIZE, maxSize, 2, 0, digestUtil);
-  }
+    @org.openjdk.jmh.annotations.Benchmark
+    @Throws(java.lang.Exception::class)
+    fun chunkToDigests(): Any {
+        return chunker.chunkToDigests(ByteArrayInputStream(data))
+    }
 
-  @Benchmark
-  public Object chunkToDigests() throws Exception {
-    return chunker.chunkToDigests(new ByteArrayInputStream(data));
-  }
+    companion object {
+        private val AVG_CHUNK_SIZE = 512 * 1024
+    }
 }

@@ -11,289 +11,289 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util;
+package com.google.devtools.build.lib.util
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.util.FileType.HasFileType
 
-import com.google.common.base.Joiner;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Lists;
-import com.google.devtools.build.lib.util.FileType.HasFileType;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import java.util.List;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Test for [FileType] and [FileTypeSet].  */
+@RunWith(JUnit4::class)
+class FileTypeTest {
+    private class HasFileTypeImpl(private val path: String?) : HasFileType {
+        public override fun filePathForFileTypeMatcher(): String? {
+            return path
+        }
 
-/** Test for {@link FileType} and {@link FileTypeSet}. */
-@RunWith(JUnit4.class)
-public class FileTypeTest {
-  private static final FileType CFG = FileType.of(".cfg");
-  private static final FileType HTML = FileType.of(".html");
-  private static final FileType TEXT = FileType.of(".txt");
-  private static final FileType CPP_SOURCE = FileType.of(".cc", ".cpp", ".cxx", ".C");
-  private static final FileType JAVA_SOURCE = FileType.of(".java");
-  private static final FileType PYTHON_SOURCE = FileType.of(".py");
-
-  private static final class HasFileTypeImpl implements HasFileType {
-    private final String path;
-
-    private HasFileTypeImpl(String path) {
-      this.path = path;
+        override fun toString(): String {
+            return path!!
+        }
     }
 
-    @Override
-    public String filePathForFileTypeMatcher() {
-      return path;
+    @org.junit.Test
+    fun simpleDotMatch() {
+        assertThat(TEXT.matches("readme.txt")).isTrue()
     }
 
-    @Override
-    public String toString() {
-      return path;
+    @org.junit.Test
+    fun doubleDotMatches() {
+        assertThat(TEXT.matches("read.me.txt")).isTrue()
     }
-  }
 
-  private static void assertTrueOnWindows(boolean condition) {
-    if (OS.getCurrent() == OS.WINDOWS) {
-      assertThat(condition).isTrue();
-    } else {
-      assertThat(condition).isFalse();
+    @org.junit.Test
+    fun noExtensionMatches() {
+        assertThat(FileType.NO_EXTENSION.matches("hello")).isTrue()
+        assertThat(FileType.NO_EXTENSION.matches("/path/to/hello")).isTrue()
     }
-  }
 
-  @Test
-  public void simpleDotMatch() {
-    assertThat(TEXT.matches("readme.txt")).isTrue();
-  }
-
-  @Test
-  public void doubleDotMatches() {
-    assertThat(TEXT.matches("read.me.txt")).isTrue();
-  }
-
-  @Test
-  public void noExtensionMatches() {
-    assertThat(FileType.NO_EXTENSION.matches("hello")).isTrue();
-    assertThat(FileType.NO_EXTENSION.matches("/path/to/hello")).isTrue();
-  }
-
-  @Test
-  public void picksLastExtension() {
-    assertThat(TEXT.matches("server.cfg.txt")).isTrue();
-  }
-
-  @Test
-  public void onlyExtensionStillMatches() {
-    assertThat(TEXT.matches(".txt")).isTrue();
-    assertTrueOnWindows(TEXT.matches(".TXT"));
-  }
-
-  @Test
-  public void handlesPathObjects() {
-    Path readme = new InMemoryFileSystem(DigestHashFunction.SHA256).getPath("/readme.txt");
-    Path readmeUppercase = new InMemoryFileSystem(DigestHashFunction.SHA256).getPath("/readme.TXT");
-
-    assertThat(TEXT.matches(readme)).isTrue();
-    assertTrueOnWindows(TEXT.matches(readmeUppercase));
-  }
-
-  @Test
-  public void handlesPathFragmentObjects() {
-    PathFragment readme = PathFragment.create("some/where/readme.txt");
-    PathFragment readmeUppercase = PathFragment.create("some/where/readme.TXT");
-
-    assertThat(TEXT.matches(readme)).isTrue();
-    assertTrueOnWindows(TEXT.matches(readmeUppercase));
-  }
-
-  @Test
-  public void fileTypeSetContains() {
-    FileTypeSet allowedTypes = FileTypeSet.of(TEXT, HTML);
-
-    assertThat(allowedTypes.matches("readme.txt")).isTrue();
-    assertThat(allowedTypes.matches("style.css")).isFalse();
-    assertTrueOnWindows(allowedTypes.matches("readme.TXT"));
-  }
-
-  private List<HasFileType> getArtifacts() {
-    return Lists.newArrayList(
-        new HasFileTypeImpl("Foo.java"),
-        new HasFileTypeImpl("bar.cc"),
-        new HasFileTypeImpl("baz.py"),
-        new HasFileTypeImpl("Foobar.CC"));
-  }
-
-  private String filterAll(FileType... fileTypes) {
-    return Joiner.on(" ").join(FileType.filter(getArtifacts(), fileTypes));
-  }
-
-  @Test
-  public void justJava() {
-    assertThat(filterAll(JAVA_SOURCE)).isEqualTo("Foo.java");
-  }
-
-  @Test
-  public void javaAndCpp() {
-    if (OS.getCurrent() == OS.WINDOWS) {
-      assertThat(filterAll(JAVA_SOURCE, CPP_SOURCE)).isEqualTo("Foo.java bar.cc Foobar.CC");
-    } else {
-      assertThat(filterAll(JAVA_SOURCE, CPP_SOURCE)).isEqualTo("Foo.java bar.cc");
+    @org.junit.Test
+    fun picksLastExtension() {
+        assertThat(TEXT.matches("server.cfg.txt")).isTrue()
     }
-  }
 
-  @Test
-  public void allThree() {
-    if (OS.getCurrent() == OS.WINDOWS) {
-      assertThat(filterAll(JAVA_SOURCE, CPP_SOURCE, PYTHON_SOURCE))
-          .isEqualTo("Foo.java bar.cc baz.py Foobar.CC");
-    } else {
-      assertThat(filterAll(JAVA_SOURCE, CPP_SOURCE, PYTHON_SOURCE))
-          .isEqualTo("Foo.java bar.cc baz.py");
+    @org.junit.Test
+    fun onlyExtensionStillMatches() {
+        assertThat(TEXT.matches(".txt")).isTrue()
+        assertTrueOnWindows(TEXT.matches(".TXT"))
     }
-  }
 
-  private HasFileType filename(final String name) {
-    return () -> name;
-  }
+    @org.junit.Test
+    fun handlesPathObjects() {
+        val readme: Path? = InMemoryFileSystem(DigestHashFunction.SHA256).getPath("/readme.txt")
+        val readmeUppercase: Path? = InMemoryFileSystem(DigestHashFunction.SHA256).getPath("/readme.TXT")
 
-  @Test
-  public void checkingSingleWithTypePredicate() throws Exception {
-    HasFileType item = filename("config.txt");
-    HasFileType itemUppercase = filename("config.TXT");
-
-    assertThat(FileType.contains(item, TEXT)).isTrue();
-    assertThat(FileType.contains(item, CFG)).isFalse();
-    assertTrueOnWindows(FileType.contains(itemUppercase, TEXT));
-  }
-
-  @Test
-  public void checkingListWithTypePredicate() throws Exception {
-    ImmutableList<HasFileType> unfiltered =
-        ImmutableList.of(filename("config.txt"), filename("index.HTML"), filename("README.txt"));
-
-    assertThat(FileType.contains(unfiltered, TEXT)).isTrue();
-    assertThat(FileType.contains(unfiltered, CFG)).isFalse();
-    assertTrueOnWindows(FileType.contains(unfiltered, HTML));
-  }
-
-  @Test
-  public void filteringWithTypePredicate() throws Exception {
-    ImmutableList<HasFileType> unfiltered =
-        ImmutableList.of(
-            filename("config.txt"),
-            filename("index.html"),
-            filename("README.txt"),
-            filename("archive.zip"),
-            filename("INFO.TXT"));
-
-    if (OS.getCurrent() == OS.WINDOWS) {
-      assertThat(FileType.filter(unfiltered, TEXT))
-          .containsExactly(unfiltered.get(0), unfiltered.get(2), unfiltered.get(4))
-          .inOrder();
-    } else {
-      assertThat(FileType.filter(unfiltered, TEXT))
-          .containsExactly(unfiltered.get(0), unfiltered.get(2))
-          .inOrder();
+        assertThat(TEXT.matches(readme)).isTrue()
+        assertTrueOnWindows(TEXT.matches(readmeUppercase))
     }
-  }
 
-  @Test
-  public void filteringWithMatcherPredicate() throws Exception {
-    ImmutableList<HasFileType> unfiltered =
-        ImmutableList.of(
-            filename("config.txt"),
-            filename("index.html"),
-            filename("README.txt"),
-            filename("archive.zip"),
-            filename("INFO.TXT"));
+    @org.junit.Test
+    fun handlesPathFragmentObjects() {
+        val readme: PathFragment? = PathFragment.create("some/where/readme.txt")
+        val readmeUppercase: PathFragment? = PathFragment.create("some/where/readme.TXT")
 
-    if (OS.getCurrent() == OS.WINDOWS) {
-      assertThat(FileType.filter(unfiltered, TEXT::matches))
-          .containsExactly(unfiltered.get(0), unfiltered.get(2), unfiltered.get(4))
-          .inOrder();
-    } else {
-      assertThat(FileType.filter(unfiltered, TEXT::matches))
-          .containsExactly(unfiltered.get(0), unfiltered.get(2))
-          .inOrder();
+        assertThat(TEXT.matches(readme)).isTrue()
+        assertTrueOnWindows(TEXT.matches(readmeUppercase))
     }
-  }
 
-  @Test
-  public void filteringWithAlwaysFalse() throws Exception {
-    ImmutableList<HasFileType> unfiltered =
-        ImmutableList.of(
-            filename("config.txt"),
-            filename("index.html"),
-            filename("binary"),
-            filename("archive.zip"),
-            filename("INFO.TXT"));
+    @org.junit.Test
+    fun fileTypeSetContains() {
+        val allowedTypes: FileTypeSet = FileTypeSet.of(TEXT, HTML)
 
-    assertThat(FileType.filter(unfiltered, FileTypeSet.NO_FILE)).isEmpty();
-  }
-
-  @Test
-  public void filteringWithAlwaysTrue() throws Exception {
-    ImmutableList<HasFileType> unfiltered =
-        ImmutableList.of(
-            filename("config.txt"),
-            filename("index.html"),
-            filename("binary"),
-            filename("archive.zip"),
-            filename("INFO.TXT"));
-
-    assertThat(FileType.filter(unfiltered, FileTypeSet.ANY_FILE))
-        .containsExactly(
-            unfiltered.get(0),
-            unfiltered.get(1),
-            unfiltered.get(2),
-            unfiltered.get(3),
-            unfiltered.get(4))
-        .inOrder();
-  }
-
-  @Test
-  public void exclusionWithTypePredicate() throws Exception {
-    ImmutableList<HasFileType> unfiltered =
-        ImmutableList.of(
-            filename("config.txt"),
-            filename("index.html"),
-            filename("README.txt"),
-            filename("server.cfg"),
-            filename("INFO.TXT"));
-
-    if (OS.getCurrent() == OS.WINDOWS) {
-      assertThat(FileType.except(unfiltered, TEXT))
-          .containsExactly(unfiltered.get(1), unfiltered.get(3))
-          .inOrder();
-    } else {
-      assertThat(FileType.except(unfiltered, TEXT))
-          .containsExactly(unfiltered.get(1), unfiltered.get(3), unfiltered.get(4))
-          .inOrder();
+        assertThat(allowedTypes.matches("readme.txt")).isTrue()
+        assertThat(allowedTypes.matches("style.css")).isFalse()
+        assertTrueOnWindows(allowedTypes.matches("readme.TXT"))
     }
-  }
 
-  @Test
-  public void listFiltering() throws Exception {
-    ImmutableList<HasFileType> unfiltered =
-        ImmutableList.of(
-            filename("config.txt"),
-            filename("index.html"),
-            filename("README.txt"),
-            filename("server.cfg"),
-            filename("CLIENT.CFG"));
-    FileTypeSet filter = FileTypeSet.of(HTML, CFG);
+    private val artifacts: MutableList<HasFileType>
+        get() = com.google.common.collect.Lists.newArrayList<E?>(
+            HasFileTypeImpl("Foo.java"),
+            HasFileTypeImpl("bar.cc"),
+            HasFileTypeImpl("baz.py"),
+            HasFileTypeImpl("Foobar.CC")
+        )
 
-    if (OS.getCurrent() == OS.WINDOWS) {
-      assertThat(FileType.filterList(unfiltered, filter))
-          .containsExactly(unfiltered.get(1), unfiltered.get(3), unfiltered.get(4))
-          .inOrder();
-    } else {
-      assertThat(FileType.filterList(unfiltered, filter))
-          .containsExactly(unfiltered.get(1), unfiltered.get(3))
-          .inOrder();
+    private fun filterAll(vararg fileTypes: FileType?): String {
+        return com.google.common.base.Joiner.on(" ").join(FileType.filter(this.artifacts, fileTypes))
     }
-  }
+
+    @org.junit.Test
+    fun justJava() {
+        Truth.assertThat(filterAll(JAVA_SOURCE)).isEqualTo("Foo.java")
+    }
+
+    @org.junit.Test
+    fun javaAndCpp() {
+        if (com.google.devtools.build.lib.util.OS.getCurrent() == com.google.devtools.build.lib.util.OS.WINDOWS) {
+            Truth.assertThat(filterAll(JAVA_SOURCE, CPP_SOURCE)).isEqualTo("Foo.java bar.cc Foobar.CC")
+        } else {
+            Truth.assertThat(filterAll(JAVA_SOURCE, CPP_SOURCE)).isEqualTo("Foo.java bar.cc")
+        }
+    }
+
+    @org.junit.Test
+    fun allThree() {
+        if (com.google.devtools.build.lib.util.OS.getCurrent() == com.google.devtools.build.lib.util.OS.WINDOWS) {
+            Truth.assertThat(filterAll(JAVA_SOURCE, CPP_SOURCE, PYTHON_SOURCE))
+                .isEqualTo("Foo.java bar.cc baz.py Foobar.CC")
+        } else {
+            Truth.assertThat(filterAll(JAVA_SOURCE, CPP_SOURCE, PYTHON_SOURCE))
+                .isEqualTo("Foo.java bar.cc baz.py")
+        }
+    }
+
+    private fun filename(name: String?): HasFileType {
+        return HasFileType { name }
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun checkingSingleWithTypePredicate() {
+        val item: HasFileType = filename("config.txt")
+        val itemUppercase: HasFileType = filename("config.TXT")
+
+        assertThat(FileType.contains(item, TEXT)).isTrue()
+        assertThat(FileType.contains(item, CFG)).isFalse()
+        assertTrueOnWindows(FileType.contains(itemUppercase, TEXT))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun checkingListWithTypePredicate() {
+        val unfiltered: com.google.common.collect.ImmutableList<HasFileType?> =
+            com.google.common.collect.ImmutableList.of<HasFileType?>(
+                filename("config.txt"),
+                filename("index.HTML"),
+                filename("README.txt")
+            )
+
+        assertThat(FileType.contains(unfiltered, TEXT)).isTrue()
+        assertThat(FileType.contains(unfiltered, CFG)).isFalse()
+        assertTrueOnWindows(FileType.contains(unfiltered, HTML))
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun filteringWithTypePredicate() {
+        val unfiltered: com.google.common.collect.ImmutableList<HasFileType?> =
+            com.google.common.collect.ImmutableList.of<HasFileType?>(
+                filename("config.txt"),
+                filename("index.html"),
+                filename("README.txt"),
+                filename("archive.zip"),
+                filename("INFO.TXT")
+            )
+
+        if (com.google.devtools.build.lib.util.OS.getCurrent() == com.google.devtools.build.lib.util.OS.WINDOWS) {
+            assertThat(FileType.filter(unfiltered, TEXT))
+                .containsExactly(unfiltered.get(0), unfiltered.get(2), unfiltered.get(4))
+                .inOrder()
+        } else {
+            assertThat(FileType.filter(unfiltered, TEXT))
+                .containsExactly(unfiltered.get(0), unfiltered.get(2))
+                .inOrder()
+        }
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun filteringWithMatcherPredicate() {
+        val unfiltered: com.google.common.collect.ImmutableList<HasFileType?> =
+            com.google.common.collect.ImmutableList.of<HasFileType?>(
+                filename("config.txt"),
+                filename("index.html"),
+                filename("README.txt"),
+                filename("archive.zip"),
+                filename("INFO.TXT")
+            )
+
+        if (com.google.devtools.build.lib.util.OS.getCurrent() == com.google.devtools.build.lib.util.OS.WINDOWS) {
+            assertThat(FileType.filter(unfiltered, TEXT::matches))
+                .containsExactly(unfiltered.get(0), unfiltered.get(2), unfiltered.get(4))
+                .inOrder()
+        } else {
+            assertThat(FileType.filter(unfiltered, TEXT::matches))
+                .containsExactly(unfiltered.get(0), unfiltered.get(2))
+                .inOrder()
+        }
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun filteringWithAlwaysFalse() {
+        val unfiltered: com.google.common.collect.ImmutableList<HasFileType?> =
+            com.google.common.collect.ImmutableList.of<HasFileType?>(
+                filename("config.txt"),
+                filename("index.html"),
+                filename("binary"),
+                filename("archive.zip"),
+                filename("INFO.TXT")
+            )
+
+        assertThat(FileType.filter(unfiltered, FileTypeSet.NO_FILE)).isEmpty()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun filteringWithAlwaysTrue() {
+        val unfiltered: com.google.common.collect.ImmutableList<HasFileType?> =
+            com.google.common.collect.ImmutableList.of<HasFileType?>(
+                filename("config.txt"),
+                filename("index.html"),
+                filename("binary"),
+                filename("archive.zip"),
+                filename("INFO.TXT")
+            )
+
+        assertThat(FileType.filter(unfiltered, FileTypeSet.ANY_FILE))
+            .containsExactly(
+                unfiltered.get(0),
+                unfiltered.get(1),
+                unfiltered.get(2),
+                unfiltered.get(3),
+                unfiltered.get(4)
+            )
+            .inOrder()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun exclusionWithTypePredicate() {
+        val unfiltered: com.google.common.collect.ImmutableList<HasFileType?> =
+            com.google.common.collect.ImmutableList.of<HasFileType?>(
+                filename("config.txt"),
+                filename("index.html"),
+                filename("README.txt"),
+                filename("server.cfg"),
+                filename("INFO.TXT")
+            )
+
+        if (com.google.devtools.build.lib.util.OS.getCurrent() == com.google.devtools.build.lib.util.OS.WINDOWS) {
+            assertThat(FileType.except(unfiltered, TEXT))
+                .containsExactly(unfiltered.get(1), unfiltered.get(3))
+                .inOrder()
+        } else {
+            assertThat(FileType.except(unfiltered, TEXT))
+                .containsExactly(unfiltered.get(1), unfiltered.get(3), unfiltered.get(4))
+                .inOrder()
+        }
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun listFiltering() {
+        val unfiltered: com.google.common.collect.ImmutableList<HasFileType?> =
+            com.google.common.collect.ImmutableList.of<HasFileType?>(
+                filename("config.txt"),
+                filename("index.html"),
+                filename("README.txt"),
+                filename("server.cfg"),
+                filename("CLIENT.CFG")
+            )
+        val filter: FileTypeSet? = FileTypeSet.of(HTML, CFG)
+
+        if (com.google.devtools.build.lib.util.OS.getCurrent() == com.google.devtools.build.lib.util.OS.WINDOWS) {
+            assertThat(FileType.filterList(unfiltered, filter))
+                .containsExactly(unfiltered.get(1), unfiltered.get(3), unfiltered.get(4))
+                .inOrder()
+        } else {
+            assertThat(FileType.filterList(unfiltered, filter))
+                .containsExactly(unfiltered.get(1), unfiltered.get(3))
+                .inOrder()
+        }
+    }
+
+    companion object {
+        private val CFG: FileType? = FileType.of(".cfg")
+        private val HTML: FileType? = FileType.of(".html")
+        private val TEXT: FileType = FileType.of(".txt")
+        private val CPP_SOURCE: FileType? = FileType.of(".cc", ".cpp", ".cxx", ".C")
+        private val JAVA_SOURCE: FileType? = FileType.of(".java")
+        private val PYTHON_SOURCE: FileType? = FileType.of(".py")
+
+        private fun assertTrueOnWindows(condition: Boolean) {
+            if (com.google.devtools.build.lib.util.OS.getCurrent() == com.google.devtools.build.lib.util.OS.WINDOWS) {
+                Truth.assertThat(condition).isTrue()
+            } else {
+                Truth.assertThat(condition).isFalse()
+            }
+        }
+    }
 }

@@ -11,225 +11,235 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.concurrent;
+package com.google.devtools.build.lib.concurrent
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+import com.google.common.truth.Truth
+import org.junit.Assert
+import org.junit.Test
+import org.junit.function.ThrowingRunnable
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link WorkStealingThreadPoolExecutor}. */
-@RunWith(JUnit4.class)
-public class WorkStealingThreadPoolExecutorTest {
-  private static final int PARALLELISM = 100;
-
-  @Test
-  public void execute_allTasksAreExecuted_numTasksLessThanNumWorkers() throws Exception {
-    AtomicBoolean interrupted = new AtomicBoolean(false);
-    AtomicInteger sum = new AtomicInteger(0);
-    int numTasks = PARALLELISM / 2;
-    try (var executor =
-        new WorkStealingThreadPoolExecutor(PARALLELISM, Thread.ofPlatform().factory())) {
-      CountDownLatch countDown = new CountDownLatch(numTasks);
-      for (int i = 0; i < numTasks; i++) {
-        executor.execute(
-            () -> {
-              sum.incrementAndGet();
-              try {
-                Thread.sleep(1);
-              } catch (InterruptedException e) {
-                interrupted.set(true);
-              }
-              countDown.countDown();
-            });
-      }
-      countDown.await();
-    }
-    assertThat(interrupted.get()).isFalse();
-    assertThat(sum.get()).isEqualTo(numTasks);
-  }
-
-  @Test
-  public void execute_allTasksAreExecuted_numTasksMoreThanNumWorkers() throws Exception {
-    AtomicBoolean interrupted = new AtomicBoolean(false);
-    AtomicInteger sum = new AtomicInteger(0);
-    int numTasks = PARALLELISM * 5;
-    try (var executor =
-        new WorkStealingThreadPoolExecutor(PARALLELISM, Thread.ofPlatform().factory())) {
-      CountDownLatch countDown = new CountDownLatch(numTasks);
-      for (int i = 0; i < numTasks; i++) {
-        executor.execute(
-            () -> {
-              sum.incrementAndGet();
-              try {
-                Thread.sleep(1);
-              } catch (InterruptedException e) {
-                interrupted.set(true);
-              }
-              countDown.countDown();
-            });
-      }
-      countDown.await();
-    }
-    assertThat(interrupted.get()).isFalse();
-    assertThat(sum.get()).isEqualTo(numTasks);
-  }
-
-  @Test
-  public void execute_reachParallelism() throws Exception {
-    AtomicBoolean interrupted = new AtomicBoolean(false);
-    AtomicInteger sum = new AtomicInteger(0);
-    int numBatches = 5;
-    try (var executor =
-        new WorkStealingThreadPoolExecutor(PARALLELISM, Thread.ofPlatform().factory())) {
-      for (int i = 0; i < numBatches; ++i) {
-        CountDownLatch startedCountDown = new CountDownLatch(PARALLELISM);
-        CountDownLatch continueCountDown = new CountDownLatch(1);
-        for (int j = 0; j < PARALLELISM; j++) {
-          executor.execute(
-              () -> {
-                startedCountDown.countDown();
-                sum.incrementAndGet();
-
-                // Clear the interruption bit
-                var unused = Thread.interrupted();
-                try {
-                  Thread.sleep(1);
-                  continueCountDown.await();
-                } catch (InterruptedException e) {
-                  interrupted.set(true);
-                }
-
-                // Set the interruption bit to test that pool can continue scheduling tasks even if
-                // the task left the interruption bit set.
-                Thread.currentThread().interrupt();
-              });
-        }
-        startedCountDown.await();
-        continueCountDown.countDown();
-      }
-    }
-    assertThat(interrupted.get()).isFalse();
-    assertThat(sum.get()).isEqualTo(numBatches * PARALLELISM);
-  }
-
-  @Test
-  public void execute_taskThrowsRuntimeException_reachParallelism() throws Exception {
-    AtomicBoolean interrupted = new AtomicBoolean(false);
-    int numBatches = 5;
-    CountDownLatch uncaughtExceptionHandlerCountDown = new CountDownLatch(numBatches * PARALLELISM);
-    AtomicReference<Throwable> errorFromUncaughtExceptionHandler = new AtomicReference<>();
-    try (var executor =
-        new WorkStealingThreadPoolExecutor(PARALLELISM, Thread.ofPlatform().factory())) {
-      for (int i = 0; i < numBatches; i++) {
-        CountDownLatch startedCountDown = new CountDownLatch(PARALLELISM);
-        CountDownLatch continueCountDown = new CountDownLatch(1);
-        for (int j = 0; j < PARALLELISM; j++) {
-          executor.execute(
-              () -> {
-                var thread = Thread.currentThread();
-                thread.setUncaughtExceptionHandler(
-                    (t, e) -> {
-                      try {
-                        assertThat(t).isEqualTo(thread);
-                        assertThat(e).isInstanceOf(IllegalStateException.class);
-                        assertThat(e).hasMessageThat().isEqualTo("test");
-                      } catch (Throwable error) {
-                        errorFromUncaughtExceptionHandler.set(error);
-                      } finally {
-                        uncaughtExceptionHandlerCountDown.countDown();
-                      }
-                    });
-                startedCountDown.countDown();
-
-                try {
-                  continueCountDown.await();
-                } catch (InterruptedException e) {
-                  interrupted.set(true);
-                }
-
-                throw new IllegalStateException("test");
-              });
-        }
-        startedCountDown.await();
-        continueCountDown.countDown();
-      }
-    }
-    uncaughtExceptionHandlerCountDown.await();
-    assertThat(interrupted.get()).isFalse();
-    assertThat(errorFromUncaughtExceptionHandler.get()).isNull();
-  }
-
-  @Test
-  public void shutdown_remainingTasksExecuted() throws Exception {
-    int numTasks = PARALLELISM * 5;
-    AtomicBoolean interrupted = new AtomicBoolean(false);
-    AtomicInteger numExecuted = new AtomicInteger(0);
-    var executor = new WorkStealingThreadPoolExecutor(PARALLELISM, Thread.ofPlatform().factory());
-    CountDownLatch shutdownCalled = new CountDownLatch(1);
-    for (int i = 0; i < numTasks; i++) {
-      executor.execute(
-          () -> {
-            try {
-              shutdownCalled.await();
-              numExecuted.incrementAndGet();
-            } catch (InterruptedException e) {
-              interrupted.set(true);
+/** Tests for [WorkStealingThreadPoolExecutor].  */
+@RunWith(JUnit4::class)
+class WorkStealingThreadPoolExecutorTest {
+    @Test
+    @Throws(Exception::class)
+    fun execute_allTasksAreExecuted_numTasksLessThanNumWorkers() {
+        val interrupted = AtomicBoolean(false)
+        val sum = AtomicInteger(0)
+        val numTasks: Int = PARALLELISM / 2
+        WorkStealingThreadPoolExecutor(PARALLELISM, Thread.ofPlatform().factory()).use { executor ->
+            val countDown = CountDownLatch(numTasks)
+            for (i in 0..<numTasks) {
+                executor.execute(
+                    {
+                        sum.incrementAndGet()
+                        try {
+                            Thread.sleep(1)
+                        } catch (e: InterruptedException) {
+                            interrupted.set(true)
+                        }
+                        countDown.countDown()
+                    })
             }
-          });
+            countDown.await()
+        }
+        Truth.assertThat(interrupted.get()).isFalse()
+        Truth.assertThat(sum.get()).isEqualTo(numTasks)
     }
 
-    executor.shutdown();
-    shutdownCalled.countDown();
-
-    assertThat(executor.isShutdown()).isTrue();
-    assertThrows(RejectedExecutionException.class, () -> executor.execute(() -> {}));
-
-    boolean terminated = executor.awaitTermination(1L, TimeUnit.DAYS);
-    assertThat(terminated).isTrue();
-    assertThat(executor.isTerminated()).isTrue();
-    assertThat(interrupted.get()).isFalse();
-    assertThat(numExecuted.get()).isEqualTo(numTasks);
-  }
-
-  @Test
-  public void shutdownNow_interruptTasks() throws Exception {
-    int numTasks = PARALLELISM * 5;
-    AtomicInteger numExecuted = new AtomicInteger(0);
-    var executor = new WorkStealingThreadPoolExecutor(PARALLELISM, Thread.ofPlatform().factory());
-    CountDownLatch neverAwake = new CountDownLatch(1);
-    CountDownLatch startedCountDown = new CountDownLatch(PARALLELISM);
-    for (int i = 0; i < numTasks; i++) {
-      executor.execute(
-          () -> {
-            try {
-              startedCountDown.countDown();
-              neverAwake.await();
-              numExecuted.incrementAndGet();
-            } catch (InterruptedException e) {
-              // Intentionally ignored
+    @Test
+    @Throws(Exception::class)
+    fun execute_allTasksAreExecuted_numTasksMoreThanNumWorkers() {
+        val interrupted = AtomicBoolean(false)
+        val sum = AtomicInteger(0)
+        val numTasks: Int = PARALLELISM * 5
+        WorkStealingThreadPoolExecutor(PARALLELISM, Thread.ofPlatform().factory()).use { executor ->
+            val countDown = CountDownLatch(numTasks)
+            for (i in 0..<numTasks) {
+                executor.execute(
+                    {
+                        sum.incrementAndGet()
+                        try {
+                            Thread.sleep(1)
+                        } catch (e: InterruptedException) {
+                            interrupted.set(true)
+                        }
+                        countDown.countDown()
+                    })
             }
-          });
+            countDown.await()
+        }
+        Truth.assertThat(interrupted.get()).isFalse()
+        Truth.assertThat(sum.get()).isEqualTo(numTasks)
     }
 
-    startedCountDown.await();
-    var remainingTasks = executor.shutdownNow();
-    assertThat(remainingTasks).hasSize(numTasks - PARALLELISM);
+    @Test
+    @Throws(Exception::class)
+    fun execute_reachParallelism() {
+        val interrupted = AtomicBoolean(false)
+        val sum = AtomicInteger(0)
+        val numBatches = 5
+        WorkStealingThreadPoolExecutor(PARALLELISM, Thread.ofPlatform().factory()).use { executor ->
+            for (i in 0..<numBatches) {
+                val startedCountDown = CountDownLatch(PARALLELISM)
+                val continueCountDown = CountDownLatch(1)
+                for (j in 0..<PARALLELISM) {
+                    executor.execute(
+                        {
+                            startedCountDown.countDown()
+                            sum.incrementAndGet()
 
-    assertThat(executor.isShutdown()).isTrue();
-    assertThrows(RejectedExecutionException.class, () -> executor.execute(() -> {}));
+                            // Clear the interruption bit
+                            val unused = Thread.interrupted()
+                            try {
+                                Thread.sleep(1)
+                                continueCountDown.await()
+                            } catch (e: InterruptedException) {
+                                interrupted.set(true)
+                            }
 
-    boolean terminated = executor.awaitTermination(1L, TimeUnit.DAYS);
-    assertThat(terminated).isTrue();
-    assertThat(executor.isTerminated()).isTrue();
-    assertThat(numExecuted.get()).isEqualTo(0);
-  }
+                            // Set the interruption bit to test that pool can continue scheduling tasks even if
+                            // the task left the interruption bit set.
+                            Thread.currentThread().interrupt()
+                        })
+                }
+                startedCountDown.await()
+                continueCountDown.countDown()
+            }
+        }
+        Truth.assertThat(interrupted.get()).isFalse()
+        Truth.assertThat(sum.get()).isEqualTo(numBatches * PARALLELISM)
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun execute_taskThrowsRuntimeException_reachParallelism() {
+        val interrupted = AtomicBoolean(false)
+        val numBatches = 5
+        val uncaughtExceptionHandlerCountDown = CountDownLatch(numBatches * PARALLELISM)
+        val errorFromUncaughtExceptionHandler = AtomicReference<Throwable?>()
+        WorkStealingThreadPoolExecutor(PARALLELISM, Thread.ofPlatform().factory()).use { executor ->
+            for (i in 0..<numBatches) {
+                val startedCountDown = CountDownLatch(PARALLELISM)
+                val continueCountDown = CountDownLatch(1)
+                for (j in 0..<PARALLELISM) {
+                    executor.execute(
+                        {
+                            val thread = Thread.currentThread()
+                            thread.setUncaughtExceptionHandler(
+                                Thread.UncaughtExceptionHandler { t: Thread?, e: Throwable? ->
+                                    try {
+                                        Truth.assertThat(t).isEqualTo(thread)
+                                        Truth.assertThat(e).isInstanceOf(IllegalStateException::class.java)
+                                        Truth.assertThat(e).hasMessageThat().isEqualTo("test")
+                                    } catch (error: Throwable) {
+                                        errorFromUncaughtExceptionHandler.set(error)
+                                    } finally {
+                                        uncaughtExceptionHandlerCountDown.countDown()
+                                    }
+                                })
+                            startedCountDown.countDown()
+
+                            try {
+                                continueCountDown.await()
+                            } catch (e: InterruptedException) {
+                                interrupted.set(true)
+                            }
+                            throw IllegalStateException("test")
+                        })
+                }
+                startedCountDown.await()
+                continueCountDown.countDown()
+            }
+        }
+        uncaughtExceptionHandlerCountDown.await()
+        Truth.assertThat(interrupted.get()).isFalse()
+        Truth.assertThat(errorFromUncaughtExceptionHandler.get()).isNull()
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun shutdown_remainingTasksExecuted() {
+        val numTasks: Int = PARALLELISM * 5
+        val interrupted = AtomicBoolean(false)
+        val numExecuted = AtomicInteger(0)
+        val executor: WorkStealingThreadPoolExecutor =
+            WorkStealingThreadPoolExecutor(PARALLELISM, Thread.ofPlatform().factory())
+        val shutdownCalled = CountDownLatch(1)
+        for (i in 0..<numTasks) {
+            executor.execute(
+                {
+                    try {
+                        shutdownCalled.await()
+                        numExecuted.incrementAndGet()
+                    } catch (e: InterruptedException) {
+                        interrupted.set(true)
+                    }
+                })
+        }
+
+        executor.shutdown()
+        shutdownCalled.countDown()
+
+        assertThat(executor.isShutdown()).isTrue()
+        Assert.assertThrows<RejectedExecutionException?>(
+            RejectedExecutionException::class.java,
+            ThrowingRunnable { executor.execute({}) })
+
+        val terminated: Boolean = executor.awaitTermination(1L, TimeUnit.DAYS)
+        Truth.assertThat(terminated).isTrue()
+        assertThat(executor.isTerminated()).isTrue()
+        Truth.assertThat(interrupted.get()).isFalse()
+        Truth.assertThat(numExecuted.get()).isEqualTo(numTasks)
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun shutdownNow_interruptTasks() {
+        val numTasks: Int = PARALLELISM * 5
+        val numExecuted = AtomicInteger(0)
+        val executor: WorkStealingThreadPoolExecutor =
+            WorkStealingThreadPoolExecutor(PARALLELISM, Thread.ofPlatform().factory())
+        val neverAwake = CountDownLatch(1)
+        val startedCountDown = CountDownLatch(PARALLELISM)
+        for (i in 0..<numTasks) {
+            executor.execute(
+                {
+                    try {
+                        startedCountDown.countDown()
+                        neverAwake.await()
+                        numExecuted.incrementAndGet()
+                    } catch (e: InterruptedException) {
+                        // Intentionally ignored
+                    }
+                })
+        }
+
+        startedCountDown.await()
+        val remainingTasks: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+            executor.shutdownNow()
+        assertThat(remainingTasks).hasSize(numTasks - PARALLELISM)
+
+        assertThat(executor.isShutdown()).isTrue()
+        Assert.assertThrows<RejectedExecutionException?>(
+            RejectedExecutionException::class.java,
+            ThrowingRunnable { executor.execute({}) })
+
+        val terminated: Boolean = executor.awaitTermination(1L, TimeUnit.DAYS)
+        Truth.assertThat(terminated).isTrue()
+        assertThat(executor.isTerminated()).isTrue()
+        Truth.assertThat(numExecuted.get()).isEqualTo(0)
+    }
+
+    companion object {
+        private const val PARALLELISM = 100
+    }
 }

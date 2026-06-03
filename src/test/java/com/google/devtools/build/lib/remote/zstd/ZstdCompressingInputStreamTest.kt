@@ -11,44 +11,36 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote.zstd;
+package com.google.devtools.build.lib.remote.zstd
 
-import static com.google.common.truth.Truth.assertThat;
+import com.github.luben.zstd.Zstd
 
-import com.github.luben.zstd.Zstd;
-import com.google.common.io.ByteStreams;
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.util.Random;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [ZstdCompressingInputStream].  */
+@RunWith(JUnit4::class)
+class ZstdCompressingInputStreamTest {
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun compressionWorks() {
+        val rand: Random = Random()
+        val data = ByteArray(50)
+        rand.nextBytes(data)
 
-/** Tests for {@link ZstdCompressingInputStream}. */
-@RunWith(JUnit4.class)
-public class ZstdCompressingInputStreamTest {
-  @Test
-  public void compressionWorks() throws IOException {
-    Random rand = new Random();
-    byte[] data = new byte[50];
-    rand.nextBytes(data);
-
-    ByteArrayInputStream bais = new ByteArrayInputStream(data);
-    try (ZstdCompressingInputStream zdis = new ZstdCompressingInputStream(bais)) {
-      assertThat(Zstd.decompress(ByteStreams.toByteArray(zdis), data.length)).isEqualTo(data);
+        val bais: ByteArrayInputStream = ByteArrayInputStream(data)
+        ZstdCompressingInputStream(bais).use { zdis ->
+            assertThat(Zstd.decompress(com.google.common.io.ByteStreams.toByteArray(zdis), data.size)).isEqualTo(data)
+        }
     }
-  }
 
-  @Test
-  public void streamCanBeCompressedWithMinimumBufferSize() throws IOException {
-    Random rand = new Random();
-    byte[] data = new byte[50];
-    rand.nextBytes(data);
+    @org.junit.Test
+    @Throws(IOException::class)
+    fun streamCanBeCompressedWithMinimumBufferSize() {
+        val rand: Random = Random()
+        val data = ByteArray(50)
+        rand.nextBytes(data)
 
-    ByteArrayInputStream bais = new ByteArrayInputStream(data);
-    try (ZstdCompressingInputStream zdis =
-        new ZstdCompressingInputStream(bais, ZstdCompressingInputStream.MIN_BUFFER_SIZE)) {
-      assertThat(Zstd.decompress(ByteStreams.toByteArray(zdis), data.length)).isEqualTo(data);
+        val bais: ByteArrayInputStream = ByteArrayInputStream(data)
+        ZstdCompressingInputStream(bais, ZstdCompressingInputStream.MIN_BUFFER_SIZE).use { zdis ->
+            assertThat(Zstd.decompress(com.google.common.io.ByteStreams.toByteArray(zdis), data.size)).isEqualTo(data)
+        }
     }
-  }
 }

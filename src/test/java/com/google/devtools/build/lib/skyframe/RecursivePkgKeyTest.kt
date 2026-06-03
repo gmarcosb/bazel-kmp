@@ -11,76 +11,82 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static org.junit.Assert.assertThrows;
+import com.google.devtools.build.lib.cmdline.IgnoredSubdirectories
 
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.cmdline.IgnoredSubdirectories;
-import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.lib.vfs.RootedPath;
-import com.google.devtools.build.skyframe.SkyKey;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [RecursivePkgKey].  */
+@RunWith(JUnit4::class)
+class RecursivePkgKeyTest : BuildViewTestCase() {
+    private fun buildRecursivePkgKey(
+        repository: RepositoryName?,
+        rootRelativePath: PathFragment?,
+        excludedPaths: com.google.common.collect.ImmutableSet<PathFragment?>?
+    ): SkyKey {
+        val rootedPath: RootedPath? = RootedPath.toRootedPath(Root.fromPath(rootDirectory), rootRelativePath)
+        return RecursivePkgValue.key(repository, rootedPath, IgnoredSubdirectories.of(excludedPaths))
+    }
 
-/** Tests for {@link RecursivePkgKey}. */
-@RunWith(JUnit4.class)
-public class RecursivePkgKeyTest extends BuildViewTestCase {
+    private fun invalidHelper(
+        rootRelativePath: PathFragment?, excludedPaths: com.google.common.collect.ImmutableSet<PathFragment?>?
+    ) {
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable {
+                buildRecursivePkgKey(
+                    RepositoryName.MAIN,
+                    rootRelativePath,
+                    excludedPaths
+                )
+            })
+    }
 
-  private SkyKey buildRecursivePkgKey(
-      RepositoryName repository,
-      PathFragment rootRelativePath,
-      ImmutableSet<PathFragment> excludedPaths) {
-    RootedPath rootedPath = RootedPath.toRootedPath(Root.fromPath(rootDirectory), rootRelativePath);
-    return RecursivePkgValue.key(repository, rootedPath, IgnoredSubdirectories.of(excludedPaths));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testValidRecursivePkgKeys() {
+        buildRecursivePkgKey(
+            RepositoryName.MAIN,
+            PathFragment.create(""),
+            com.google.common.collect.ImmutableSet.of<PathFragment?>()
+        )
+        buildRecursivePkgKey(
+            RepositoryName.MAIN,
+            PathFragment.create(""),
+            com.google.common.collect.ImmutableSet.of<E?>(PathFragment.create("a"))
+        )
 
-  private void invalidHelper(
-      PathFragment rootRelativePath, ImmutableSet<PathFragment> excludedPaths) {
-    assertThrows(
-        IllegalArgumentException.class,
-        () -> buildRecursivePkgKey(RepositoryName.MAIN, rootRelativePath, excludedPaths));
-  }
+        buildRecursivePkgKey(
+            RepositoryName.MAIN,
+            PathFragment.create("a"),
+            com.google.common.collect.ImmutableSet.of<PathFragment?>()
+        )
+        buildRecursivePkgKey(
+            RepositoryName.MAIN,
+            PathFragment.create("a"),
+            com.google.common.collect.ImmutableSet.of<E?>(PathFragment.create("a/b"))
+        )
 
-  @Test
-  public void testValidRecursivePkgKeys() throws Exception {
-    buildRecursivePkgKey(
-        RepositoryName.MAIN,
-        PathFragment.create(""),
-        ImmutableSet.<PathFragment>of());
-    buildRecursivePkgKey(
-        RepositoryName.MAIN,
-        PathFragment.create(""),
-        ImmutableSet.of(PathFragment.create("a")));
+        buildRecursivePkgKey(
+            RepositoryName.MAIN,
+            PathFragment.create("a/b"),
+            com.google.common.collect.ImmutableSet.of<PathFragment?>()
+        )
+        buildRecursivePkgKey(
+            RepositoryName.MAIN,
+            PathFragment.create("a/b"),
+            com.google.common.collect.ImmutableSet.of<E?>(PathFragment.create("a/b/c"))
+        )
+    }
 
-    buildRecursivePkgKey(
-        RepositoryName.MAIN,
-        PathFragment.create("a"),
-        ImmutableSet.<PathFragment>of());
-    buildRecursivePkgKey(
-        RepositoryName.MAIN,
-        PathFragment.create("a"),
-        ImmutableSet.of(PathFragment.create("a/b")));
-
-    buildRecursivePkgKey(
-        RepositoryName.MAIN,
-        PathFragment.create("a/b"),
-        ImmutableSet.<PathFragment>of());
-    buildRecursivePkgKey(
-        RepositoryName.MAIN,
-        PathFragment.create("a/b"),
-        ImmutableSet.of(PathFragment.create("a/b/c")));
-  }
-
-  @Test
-  public void testInvalidRecursivePkgKeys() throws Exception {
-    invalidHelper(PathFragment.create(""), ImmutableSet.of(PathFragment.create("")));
-    invalidHelper(PathFragment.create("a"), ImmutableSet.of(PathFragment.create("a")));
-    invalidHelper(PathFragment.create("a"), ImmutableSet.of(PathFragment.create("b")));
-    invalidHelper(PathFragment.create("a/b"), ImmutableSet.of(PathFragment.create("a")));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testInvalidRecursivePkgKeys() {
+        invalidHelper(PathFragment.create(""), com.google.common.collect.ImmutableSet.of<E?>(PathFragment.create("")))
+        invalidHelper(PathFragment.create("a"), com.google.common.collect.ImmutableSet.of<E?>(PathFragment.create("a")))
+        invalidHelper(PathFragment.create("a"), com.google.common.collect.ImmutableSet.of<E?>(PathFragment.create("b")))
+        invalidHelper(
+            PathFragment.create("a/b"),
+            com.google.common.collect.ImmutableSet.of<E?>(PathFragment.create("a"))
+        )
+    }
 }

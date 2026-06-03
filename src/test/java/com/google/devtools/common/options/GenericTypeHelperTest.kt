@@ -11,96 +11,113 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.common.options
 
-package com.google.devtools.common.options;
-
-import static com.google.common.truth.Truth.assertThat;
-
-import com.google.common.reflect.TypeToken;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.common.truth.Truth
+import com.google.devtools.common.options.GenericTypeHelper
+import net.starlark.java.syntax.TypeTable.getType
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
 /**
- * Tests {@link GenericTypeHelper}.
+ * Tests [GenericTypeHelper].
  */
-@RunWith(JUnit4.class)
-public class GenericTypeHelperTest {
-
-  private static interface DoSomething<T> {
-    T doIt();
-  }
-
-  private static class StringSomething implements DoSomething<String> {
-    @Override
-    public String doIt() {
-      return null;
+@RunWith(JUnit4::class)
+class GenericTypeHelperTest {
+    private interface DoSomething<T> {
+        fun doIt(): T?
     }
-  }
 
-  private static class EnumSomething<T> implements DoSomething<T> {
-    @Override
-    public T doIt() {
-      return null;
+    private class StringSomething : DoSomething<String?> {
+        override fun doIt(): String? {
+            return null
+        }
     }
-  }
 
-  private static class AlphabetSomething extends EnumSomething<String> {
-  }
+    private open class EnumSomething<T> : DoSomething<T?> {
+        override fun doIt(): T? {
+            return null
+        }
+    }
 
-  private static class AlphabetTwoSomething extends AlphabetSomething {
-  }
+    private open class AlphabetSomething : EnumSomething<String?>()
 
-  private static void assertDoIt(Class<?> expected,
-      Class<? extends DoSomething<?>> implementingClass) throws Exception {
-    assertThat(
-            GenericTypeHelper.getActualReturnType(
-                implementingClass, implementingClass.getMethod("doIt")))
-        .isEqualTo(expected);
-  }
+    private class AlphabetTwoSomething : AlphabetSomething()
 
-  @Test
-  public void getConverterType() throws Exception {
-    assertDoIt(String.class, StringSomething.class);
-  }
+    @get:Throws(java.lang.Exception::class)
+    @get:org.junit.Test
+    val converterType: Unit
+        get() {
+            assertDoIt(String::class.java, StringSomething::class.java)
+        }
 
-  @Test
-  public void getConverterTypeForGenericExtension() throws Exception {
-    assertDoIt(String.class, AlphabetSomething.class);
-  }
+    @get:Throws(java.lang.Exception::class)
+    @get:org.junit.Test
+    val converterTypeForGenericExtension: Unit
+        get() {
+            assertDoIt(String::class.java, AlphabetSomething::class.java)
+        }
 
-  @Test
-  public void getConverterTypeForGenericExtensionSecondGrade() throws Exception {
-    assertDoIt(String.class, AlphabetTwoSomething.class);
-  }
+    @get:Throws(java.lang.Exception::class)
+    @get:org.junit.Test
+    val converterTypeForGenericExtensionSecondGrade: Unit
+        get() {
+            assertDoIt(String::class.java, AlphabetTwoSomething::class.java)
+        }
 
-  @Test
-  public void getConverterTypeForParameterizedType() throws Exception {
-    TypeToken<EnumSomething<String>> enSthTypeToken = new TypeToken<>() {};
-    EnumSomething<String> instance = new EnumSomething<>();
-    assertThat(
-            GenericTypeHelper.getActualReturnType(
-                enSthTypeToken.getType(), instance.getClass().getMethod("doIt")))
-        .isEqualTo(String.class);
-  }
+    @get:Throws(java.lang.Exception::class)
+    @get:org.junit.Test
+    val converterTypeForParameterizedType: Unit
+        get() {
+            val enSthTypeToken: com.google.common.reflect.TypeToken<EnumSomething<String?>?> =
+                object : com.google.common.reflect.TypeToken<EnumSomething<String?>?>() {}
+            val instance = EnumSomething<String?>()
+            Truth.assertThat(
+                GenericTypeHelper.getActualReturnType(
+                    enSthTypeToken.getType(), instance.javaClass.getMethod("doIt")
+                )
+            )
+                .isEqualTo(String::class.java)
+        }
 
-  @Test
-  public void assignableFromPrimitive() {
-    assertThat(GenericTypeHelper.isAssignableFrom(Integer.TYPE, Integer.class)).isTrue();
-    assertThat(GenericTypeHelper.isAssignableFrom(Integer.TYPE, Long.TYPE)).isFalse();
-    assertThat(GenericTypeHelper.isAssignableFrom(Integer.TYPE, Integer.TYPE)).isFalse();
-  }
+    @org.junit.Test
+    fun assignableFromPrimitive() {
+        Truth.assertThat(GenericTypeHelper.isAssignableFrom(java.lang.Integer.TYPE, Int::class.java)).isTrue()
+        Truth.assertThat(GenericTypeHelper.isAssignableFrom(java.lang.Integer.TYPE, java.lang.Long.TYPE)).isFalse()
+        Truth.assertThat(GenericTypeHelper.isAssignableFrom(java.lang.Integer.TYPE, java.lang.Integer.TYPE)).isFalse()
+    }
 
-  @Test
-  public void assignableFromSuper() {
-    assertThat(GenericTypeHelper.isAssignableFrom(DoSomething.class, EnumSomething.class)).isTrue();
-    assertThat(GenericTypeHelper.isAssignableFrom(EnumSomething.class, AlphabetSomething.class))
-        .isTrue();
-  }
+    @org.junit.Test
+    fun assignableFromSuper() {
+        Truth.assertThat(GenericTypeHelper.isAssignableFrom(DoSomething::class.java, EnumSomething::class.java))
+            .isTrue()
+        Truth.assertThat(GenericTypeHelper.isAssignableFrom(EnumSomething::class.java, AlphabetSomething::class.java))
+            .isTrue()
+    }
 
-  @Test
-  public void assignableFromSuperSecondGrade() {
-    assertThat(GenericTypeHelper.isAssignableFrom(EnumSomething.class, AlphabetTwoSomething.class))
-        .isTrue();
-  }
+    @org.junit.Test
+    fun assignableFromSuperSecondGrade() {
+        Truth.assertThat(
+            GenericTypeHelper.isAssignableFrom(
+                EnumSomething::class.java,
+                AlphabetTwoSomething::class.java
+            )
+        )
+            .isTrue()
+    }
+
+    companion object {
+        @Throws(java.lang.Exception::class)
+        private fun assertDoIt(
+            expected: java.lang.Class<*>?,
+            implementingClass: java.lang.Class<out DoSomething<*>?>
+        ) {
+            Truth.assertThat(
+                GenericTypeHelper.getActualReturnType(
+                    implementingClass, implementingClass.getMethod("doIt")
+                )
+            )
+                .isEqualTo(expected)
+        }
+    }
 }

@@ -11,771 +11,775 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.truth.Truth.assertThat;
-import static java.util.Objects.requireNonNull;
-import static org.junit.Assert.assertThrows;
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.spy;
+import com.google.devtools.build.lib.actions.Artifact.ArchivedTreeArtifact
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Maps;
-import com.google.devtools.build.lib.actions.Artifact.ArchivedTreeArtifact;
-import com.google.devtools.build.lib.actions.Artifact.SpecialArtifact;
-import com.google.devtools.build.lib.actions.Artifact.SpecialArtifactType;
-import com.google.devtools.build.lib.actions.Artifact.TreeFileArtifact;
-import com.google.devtools.build.lib.actions.ArtifactRoot;
-import com.google.devtools.build.lib.actions.ArtifactRoot.RootType;
-import com.google.devtools.build.lib.actions.FileArtifactValue;
-import com.google.devtools.build.lib.actions.util.ActionsTestUtil;
-import com.google.devtools.build.lib.skyframe.TreeArtifactValue.ArchivedRepresentation;
-import com.google.devtools.build.lib.testutil.Scratch;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.Dirent;
-import com.google.devtools.build.lib.vfs.FileStatus;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import com.google.testing.junit.testparameterinjector.TestParameter;
-import com.google.testing.junit.testparameterinjector.TestParameterInjector;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import javax.annotation.Nullable;
-import org.junit.Test;
-import org.junit.runner.RunWith;
+/** Tests for [TreeArtifactValue].  */
+@RunWith(TestParameterInjector::class)
+class TreeArtifactValueTest {
+    private val scratch: Scratch = Scratch()
+    private val root: ArtifactRoot? = ArtifactRoot.asDerivedRoot(
+        scratch.resolve("root"), RootType.OUTPUT, PathFragment.create("bin")
+    )
 
-/** Tests for {@link TreeArtifactValue}. */
-@RunWith(TestParameterInjector.class)
-public final class TreeArtifactValueTest {
+    internal class VisitTreeArgs(parentRelativePath: PathFragment?, type: Dirent.Type?, val traversedSymlink: Boolean) {
+        val parentRelativePath: PathFragment?
+        val type: Dirent.Type?
 
-  private final Scratch scratch = new Scratch();
-  private final ArtifactRoot root =
-      ArtifactRoot.asDerivedRoot(
-          scratch.resolve("root"), RootType.OUTPUT, PathFragment.create("bin"));
+        init {
+            this.type = type
+            this.parentRelativePath = parentRelativePath
+            java.util.Objects.requireNonNull<Any?>(parentRelativePath, "parentRelativePath")
+            java.util.Objects.requireNonNull<Any?>(type, "type")
+        }
 
-  record VisitTreeArgs(
-      PathFragment parentRelativePath, Dirent.Type type, boolean traversedSymlink) {
-    VisitTreeArgs {
-      requireNonNull(parentRelativePath, "parentRelativePath");
-      requireNonNull(type, "type");
+        companion object {
+            fun of(
+                parentRelativePath: PathFragment?, type: Dirent.Type?, traversedSymlink: Boolean
+            ): VisitTreeArgs {
+                return VisitTreeArgs(parentRelativePath, type, traversedSymlink)
+            }
+        }
     }
 
-    static VisitTreeArgs of(
-        PathFragment parentRelativePath, Dirent.Type type, boolean traversedSymlink) {
-      return new VisitTreeArgs(parentRelativePath, type, traversedSymlink);
+    @org.junit.Test
+    fun createsCorrectValue() {
+        val parent: SpecialArtifact = createTreeArtifact("bin/tree")
+        val child1: TreeFileArtifact = TreeFileArtifact.createTreeOutput(parent, "child1")
+        val child2: TreeFileArtifact = TreeFileArtifact.createTreeOutput(parent, "child2")
+        val metadata1: FileArtifactValue = metadataWithId(1)
+        val metadata2: FileArtifactValue = metadataWithId(2)
+
+        val tree: TreeArtifactValue =
+            TreeArtifactValue.newBuilder(parent)
+                .putChild(child1, metadata1)
+                .putChild(child2, metadata2)
+                .build()
+
+        assertThat(tree.getChildren()).containsExactly(child1, child2)
+        assertThat(tree.getChildValues()).containsExactly(child1, metadata1, child2, metadata2)
+        assertThat(tree.getChildPaths())
+            .containsExactly(child1.getParentRelativePath(), child2.getParentRelativePath())
+        assertThat(tree.getDigest()).isNotNull()
+        assertThat(tree.getMetadata().getDigest()).isEqualTo(tree.getDigest())
     }
-  }
 
-  @Test
-  public void createsCorrectValue() {
-    SpecialArtifact parent = createTreeArtifact("bin/tree");
-    TreeFileArtifact child1 = TreeFileArtifact.createTreeOutput(parent, "child1");
-    TreeFileArtifact child2 = TreeFileArtifact.createTreeOutput(parent, "child2");
-    FileArtifactValue metadata1 = metadataWithId(1);
-    FileArtifactValue metadata2 = metadataWithId(2);
+    @org.junit.Test
+    fun createsCorrectValueWithArchivedRepresentation() {
+        val parent: SpecialArtifact = createTreeArtifact("bin/tree")
+        val child1: TreeFileArtifact = TreeFileArtifact.createTreeOutput(parent, "child1")
+        val child2: TreeFileArtifact = TreeFileArtifact.createTreeOutput(parent, "child2")
+        val archivedTreeArtifact: ArchivedTreeArtifact = createArchivedTreeArtifact(parent)
+        val child1Metadata: FileArtifactValue = metadataWithId(1)
+        val child2Metadata: FileArtifactValue = metadataWithId(2)
+        val archivedArtifactMetadata: FileArtifactValue = metadataWithId(3)
 
-    TreeArtifactValue tree =
-        TreeArtifactValue.newBuilder(parent)
-            .putChild(child1, metadata1)
-            .putChild(child2, metadata2)
-            .build();
+        val tree: TreeArtifactValue =
+            TreeArtifactValue.newBuilder(parent)
+                .putChild(child1, child1Metadata)
+                .putChild(child2, child2Metadata)
+                .setArchivedRepresentation(archivedTreeArtifact, archivedArtifactMetadata)
+                .build()
 
-    assertThat(tree.getChildren()).containsExactly(child1, child2);
-    assertThat(tree.getChildValues()).containsExactly(child1, metadata1, child2, metadata2);
-    assertThat(tree.getChildPaths())
-        .containsExactly(child1.getParentRelativePath(), child2.getParentRelativePath());
-    assertThat(tree.getDigest()).isNotNull();
-    assertThat(tree.getMetadata().getDigest()).isEqualTo(tree.getDigest());
-  }
+        assertThat(tree.getChildren()).containsExactly(child1, child2)
+        assertThat(tree.getChildValues())
+            .containsExactly(child1, child1Metadata, child2, child2Metadata)
+        assertThat(tree.getChildPaths())
+            .containsExactly(child1.getParentRelativePath(), child2.getParentRelativePath())
+        assertThat(tree.getDigest()).isNotNull()
+        assertThat(tree.getMetadata().getDigest()).isEqualTo(tree.getDigest())
+        assertThat(tree.getArchivedRepresentation())
+            .hasValue(ArchivedRepresentation.create(archivedTreeArtifact, archivedArtifactMetadata))
+    }
 
-  @Test
-  public void createsCorrectValueWithArchivedRepresentation() {
-    SpecialArtifact parent = createTreeArtifact("bin/tree");
-    TreeFileArtifact child1 = TreeFileArtifact.createTreeOutput(parent, "child1");
-    TreeFileArtifact child2 = TreeFileArtifact.createTreeOutput(parent, "child2");
-    ArchivedTreeArtifact archivedTreeArtifact = createArchivedTreeArtifact(parent);
-    FileArtifactValue child1Metadata = metadataWithId(1);
-    FileArtifactValue child2Metadata = metadataWithId(2);
-    FileArtifactValue archivedArtifactMetadata = metadataWithId(3);
+    @org.junit.Test
+    fun createsCorrectValueWithResolvedPath() {
+        val targetPath: PathFragment? = PathFragment.create("/some/target/path")
+        val parent: SpecialArtifact = createTreeArtifact("bin/tree")
 
-    TreeArtifactValue tree =
-        TreeArtifactValue.newBuilder(parent)
-            .putChild(child1, child1Metadata)
-            .putChild(child2, child2Metadata)
-            .setArchivedRepresentation(archivedTreeArtifact, archivedArtifactMetadata)
-            .build();
+        val tree: TreeArtifactValue =
+            TreeArtifactValue.newBuilder(parent).setResolvedPath(targetPath).build()
 
-    assertThat(tree.getChildren()).containsExactly(child1, child2);
-    assertThat(tree.getChildValues())
-        .containsExactly(child1, child1Metadata, child2, child2Metadata);
-    assertThat(tree.getChildPaths())
-        .containsExactly(child1.getParentRelativePath(), child2.getParentRelativePath());
-    assertThat(tree.getDigest()).isNotNull();
-    assertThat(tree.getMetadata().getDigest()).isEqualTo(tree.getDigest());
-    assertThat(tree.getArchivedRepresentation())
-        .hasValue(ArchivedRepresentation.create(archivedTreeArtifact, archivedArtifactMetadata));
-  }
+        assertThat(tree.getResolvedPath()).hasValue(targetPath)
+        assertThat(tree.getMetadata().getResolvedPath()).isEqualTo(targetPath)
+    }
 
-  @Test
-  public void createsCorrectValueWithResolvedPath() {
-    PathFragment targetPath = PathFragment.create("/some/target/path");
-    SpecialArtifact parent = createTreeArtifact("bin/tree");
+    @org.junit.Test
+    fun empty() {
+        val emptyTree: TreeArtifactValue = TreeArtifactValue.empty()
 
-    TreeArtifactValue tree =
-        TreeArtifactValue.newBuilder(parent).setResolvedPath(targetPath).build();
+        assertThat(emptyTree.getChildren()).isEmpty()
+        assertThat(emptyTree.getChildValues()).isEmpty()
+        assertThat(emptyTree.getChildPaths()).isEmpty()
+        assertThat(emptyTree.getDigest()).isNotNull()
+        assertThat(emptyTree.getMetadata().getDigest()).isEqualTo(emptyTree.getDigest())
+    }
 
-    assertThat(tree.getResolvedPath()).hasValue(targetPath);
-    assertThat(tree.getMetadata().getResolvedPath()).isEqualTo(targetPath);
-  }
+    @org.junit.Test
+    fun createsCanonicalEmptyInstance() {
+        val parent: SpecialArtifact = createTreeArtifact("bin/tree")
 
-  @Test
-  public void empty() {
-    TreeArtifactValue emptyTree = TreeArtifactValue.empty();
+        val emptyTreeFromBuilder: TreeArtifactValue? = TreeArtifactValue.newBuilder(parent).build()
 
-    assertThat(emptyTree.getChildren()).isEmpty();
-    assertThat(emptyTree.getChildValues()).isEmpty();
-    assertThat(emptyTree.getChildPaths()).isEmpty();
-    assertThat(emptyTree.getDigest()).isNotNull();
-    assertThat(emptyTree.getMetadata().getDigest()).isEqualTo(emptyTree.getDigest());
-  }
+        assertThat(emptyTreeFromBuilder).isSameInstanceAs(TreeArtifactValue.empty())
+    }
 
-  @Test
-  public void createsCanonicalEmptyInstance() {
-    SpecialArtifact parent = createTreeArtifact("bin/tree");
+    @org.junit.Test
+    fun createsCorrectEmptyValueWithArchivedRepresentation() {
+        val parent: SpecialArtifact = createTreeArtifact("bin/tree")
+        val archivedTreeArtifact: ArchivedTreeArtifact = createArchivedTreeArtifact(parent)
+        val archivedArtifactMetadata: FileArtifactValue = metadataWithId(1)
 
-    TreeArtifactValue emptyTreeFromBuilder = TreeArtifactValue.newBuilder(parent).build();
+        val tree: TreeArtifactValue =
+            TreeArtifactValue.newBuilder(parent)
+                .setArchivedRepresentation(archivedTreeArtifact, archivedArtifactMetadata)
+                .build()
 
-    assertThat(emptyTreeFromBuilder).isSameInstanceAs(TreeArtifactValue.empty());
-  }
+        assertThat(tree.getChildren()).isEmpty()
+        assertThat(tree.getChildValues()).isEmpty()
+        assertThat(tree.getChildPaths()).isEmpty()
+        assertThat(tree.getDigest()).isNotNull()
+        assertThat(tree.getMetadata().getDigest()).isEqualTo(tree.getDigest())
+        assertThat(tree.getArchivedRepresentation())
+            .hasValue(ArchivedRepresentation.create(archivedTreeArtifact, archivedArtifactMetadata))
+    }
 
-  @Test
-  public void createsCorrectEmptyValueWithArchivedRepresentation() {
-    SpecialArtifact parent = createTreeArtifact("bin/tree");
-    ArchivedTreeArtifact archivedTreeArtifact = createArchivedTreeArtifact(parent);
-    FileArtifactValue archivedArtifactMetadata = metadataWithId(1);
+    @org.junit.Test
+    fun cannotCreateBuilderForNonTreeArtifact() {
+        val notTreeArtifact: SpecialArtifact? =
+            SpecialArtifact.create(
+                root,
+                PathFragment.create("bin/not_tree"),
+                ActionsTestUtil.NULL_ARTIFACT_OWNER,
+                SpecialArtifactType.FILESET
+            )
 
-    TreeArtifactValue tree =
-        TreeArtifactValue.newBuilder(parent)
-            .setArchivedRepresentation(archivedTreeArtifact, archivedArtifactMetadata)
-            .build();
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable { TreeArtifactValue.newBuilder(notTreeArtifact) })
+    }
 
-    assertThat(tree.getChildren()).isEmpty();
-    assertThat(tree.getChildValues()).isEmpty();
-    assertThat(tree.getChildPaths()).isEmpty();
-    assertThat(tree.getDigest()).isNotNull();
-    assertThat(tree.getMetadata().getDigest()).isEqualTo(tree.getDigest());
-    assertThat(tree.getArchivedRepresentation())
-        .hasValue(ArchivedRepresentation.create(archivedTreeArtifact, archivedArtifactMetadata));
-  }
+    @org.junit.Test
+    fun cannotMixParentsWithinSingleBuilder() {
+        val parent: SpecialArtifact = createTreeArtifact("bin/tree")
+        val childOfAnotherParent: TreeFileArtifact? =
+            TreeFileArtifact.createTreeOutput(createTreeArtifact("bin/other_tree"), "child")
 
-  @Test
-  public void cannotCreateBuilderForNonTreeArtifact() {
-    SpecialArtifact notTreeArtifact =
-        SpecialArtifact.create(
-            root,
-            PathFragment.create("bin/not_tree"),
-            ActionsTestUtil.NULL_ARTIFACT_OWNER,
-            SpecialArtifactType.FILESET);
+        val builderForParent: TreeArtifactValue.Builder = TreeArtifactValue.newBuilder(parent)
 
-    assertThrows(
-        IllegalArgumentException.class, () -> TreeArtifactValue.newBuilder(notTreeArtifact));
-  }
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable { builderForParent.putChild(childOfAnotherParent, metadataWithId(1)) })
+    }
 
-  @Test
-  public void cannotMixParentsWithinSingleBuilder() {
-    SpecialArtifact parent = createTreeArtifact("bin/tree");
-    TreeFileArtifact childOfAnotherParent =
-        TreeFileArtifact.createTreeOutput(createTreeArtifact("bin/other_tree"), "child");
+    @org.junit.Test
+    fun cannotAddArchivedRepresentationWithWrongParent() {
+        val parent: SpecialArtifact = createTreeArtifact("bin/tree")
+        val archivedDifferentTreeArtifact: ArchivedTreeArtifact =
+            createArchivedTreeArtifact(createTreeArtifact("bin/other_tree"))
+        val builderForParent: TreeArtifactValue.Builder = TreeArtifactValue.newBuilder(parent)
+        val metadata: FileArtifactValue = metadataWithId(1)
 
-    TreeArtifactValue.Builder builderForParent = TreeArtifactValue.newBuilder(parent);
+        org.junit.Assert.assertThrows<java.lang.IllegalArgumentException?>(
+            java.lang.IllegalArgumentException::class.java,
+            org.junit.function.ThrowingRunnable {
+                builderForParent.setArchivedRepresentation(
+                    archivedDifferentTreeArtifact,
+                    metadata
+                )
+            })
+    }
 
-    assertThrows(
-        IllegalArgumentException.class,
-        () -> builderForParent.putChild(childOfAnotherParent, metadataWithId(1)));
-  }
+    @org.junit.Test
+    fun orderIndependence() {
+        val parent: SpecialArtifact = createTreeArtifact("bin/tree")
+        val child1: TreeFileArtifact? = TreeFileArtifact.createTreeOutput(parent, "child1")
+        val child2: TreeFileArtifact? = TreeFileArtifact.createTreeOutput(parent, "child2")
+        val metadata1: FileArtifactValue = metadataWithId(1)
+        val metadata2: FileArtifactValue = metadataWithId(2)
 
-  @Test
-  public void cannotAddArchivedRepresentationWithWrongParent() {
-    SpecialArtifact parent = createTreeArtifact("bin/tree");
-    ArchivedTreeArtifact archivedDifferentTreeArtifact =
-        createArchivedTreeArtifact(createTreeArtifact("bin/other_tree"));
-    TreeArtifactValue.Builder builderForParent = TreeArtifactValue.newBuilder(parent);
-    FileArtifactValue metadata = metadataWithId(1);
+        val tree1: TreeArtifactValue? =
+            TreeArtifactValue.newBuilder(parent)
+                .putChild(child1, metadata1)
+                .putChild(child2, metadata2)
+                .build()
+        val tree2: TreeArtifactValue? =
+            TreeArtifactValue.newBuilder(parent)
+                .putChild(child2, metadata2)
+                .putChild(child1, metadata1)
+                .build()
 
-    assertThrows(
-        IllegalArgumentException.class,
-        () -> builderForParent.setArchivedRepresentation(archivedDifferentTreeArtifact, metadata));
-  }
+        assertThat(tree1).isEqualTo(tree2)
+    }
 
-  @Test
-  public void orderIndependence() {
-    SpecialArtifact parent = createTreeArtifact("bin/tree");
-    TreeFileArtifact child1 = TreeFileArtifact.createTreeOutput(parent, "child1");
-    TreeFileArtifact child2 = TreeFileArtifact.createTreeOutput(parent, "child2");
-    FileArtifactValue metadata1 = metadataWithId(1);
-    FileArtifactValue metadata2 = metadataWithId(2);
+    @org.junit.Test
+    fun nullDigests_equal() {
+        val parent: SpecialArtifact = createTreeArtifact("bin/tree")
+        val child: TreeFileArtifact? = TreeFileArtifact.createTreeOutput(parent, "child")
+        val metadataNoDigest: FileArtifactValue = metadataWithIdNoDigest(1)
 
-    TreeArtifactValue tree1 =
-        TreeArtifactValue.newBuilder(parent)
-            .putChild(child1, metadata1)
-            .putChild(child2, metadata2)
-            .build();
-    TreeArtifactValue tree2 =
-        TreeArtifactValue.newBuilder(parent)
-            .putChild(child2, metadata2)
-            .putChild(child1, metadata1)
-            .build();
+        val tree1: TreeArtifactValue =
+            TreeArtifactValue.newBuilder(parent).putChild(child, metadataNoDigest).build()
+        val tree2: TreeArtifactValue =
+            TreeArtifactValue.newBuilder(parent).putChild(child, metadataNoDigest).build()
 
-    assertThat(tree1).isEqualTo(tree2);
-  }
+        assertThat(metadataNoDigest.getDigest()).isNull()
+        assertThat(tree1.getDigest()).isNotNull()
+        assertThat(tree2.getDigest()).isNotNull()
+        assertThat(tree1).isEqualTo(tree2)
+    }
 
-  @Test
-  public void nullDigests_equal() {
-    SpecialArtifact parent = createTreeArtifact("bin/tree");
-    TreeFileArtifact child = TreeFileArtifact.createTreeOutput(parent, "child");
-    FileArtifactValue metadataNoDigest = metadataWithIdNoDigest(1);
+    @org.junit.Test
+    fun nullDigestsForArchivedRepresentation_equal() {
+        val parent: SpecialArtifact = createTreeArtifact("bin/tree")
+        val archivedTreeArtifact: ArchivedTreeArtifact = createArchivedTreeArtifact(parent)
+        val metadataNoDigest: FileArtifactValue = metadataWithIdNoDigest(1)
 
-    TreeArtifactValue tree1 =
-        TreeArtifactValue.newBuilder(parent).putChild(child, metadataNoDigest).build();
-    TreeArtifactValue tree2 =
-        TreeArtifactValue.newBuilder(parent).putChild(child, metadataNoDigest).build();
+        val tree1: TreeArtifactValue =
+            TreeArtifactValue.newBuilder(parent)
+                .setArchivedRepresentation(archivedTreeArtifact, metadataNoDigest)
+                .build()
+        val tree2: TreeArtifactValue =
+            TreeArtifactValue.newBuilder(parent)
+                .setArchivedRepresentation(archivedTreeArtifact, metadataNoDigest)
+                .build()
 
-    assertThat(metadataNoDigest.getDigest()).isNull();
-    assertThat(tree1.getDigest()).isNotNull();
-    assertThat(tree2.getDigest()).isNotNull();
-    assertThat(tree1).isEqualTo(tree2);
-  }
+        assertThat(metadataNoDigest.getDigest()).isNull()
+        assertThat(tree1.getDigest()).isNotNull()
+        assertThat(tree2.getDigest()).isNotNull()
+        assertThat(tree1).isEqualTo(tree2)
+    }
 
-  @Test
-  public void nullDigestsForArchivedRepresentation_equal() {
-    SpecialArtifact parent = createTreeArtifact("bin/tree");
-    ArchivedTreeArtifact archivedTreeArtifact = createArchivedTreeArtifact(parent);
-    FileArtifactValue metadataNoDigest = metadataWithIdNoDigest(1);
+    @org.junit.Test
+    fun nullDigests_notEqual() {
+        val parent: SpecialArtifact = createTreeArtifact("bin/tree")
+        val child: TreeFileArtifact? = TreeFileArtifact.createTreeOutput(parent, "child")
+        val metadataNoDigest1: FileArtifactValue = metadataWithIdNoDigest(1)
+        val metadataNoDigest2: FileArtifactValue = metadataWithIdNoDigest(2)
 
-    TreeArtifactValue tree1 =
-        TreeArtifactValue.newBuilder(parent)
-            .setArchivedRepresentation(archivedTreeArtifact, metadataNoDigest)
-            .build();
-    TreeArtifactValue tree2 =
-        TreeArtifactValue.newBuilder(parent)
-            .setArchivedRepresentation(archivedTreeArtifact, metadataNoDigest)
-            .build();
+        val tree1: TreeArtifactValue =
+            TreeArtifactValue.newBuilder(parent).putChild(child, metadataNoDigest1).build()
+        val tree2: TreeArtifactValue =
+            TreeArtifactValue.newBuilder(parent).putChild(child, metadataNoDigest2).build()
 
-    assertThat(metadataNoDigest.getDigest()).isNull();
-    assertThat(tree1.getDigest()).isNotNull();
-    assertThat(tree2.getDigest()).isNotNull();
-    assertThat(tree1).isEqualTo(tree2);
-  }
+        assertThat(metadataNoDigest1.getDigest()).isNull()
+        assertThat(metadataNoDigest2.getDigest()).isNull()
+        assertThat(tree1.getDigest()).isNotNull()
+        assertThat(tree2.getDigest()).isNotNull()
+        assertThat(tree1.getDigest()).isNotEqualTo(tree2.getDigest())
+    }
 
-  @Test
-  public void nullDigests_notEqual() {
-    SpecialArtifact parent = createTreeArtifact("bin/tree");
-    TreeFileArtifact child = TreeFileArtifact.createTreeOutput(parent, "child");
-    FileArtifactValue metadataNoDigest1 = metadataWithIdNoDigest(1);
-    FileArtifactValue metadataNoDigest2 = metadataWithIdNoDigest(2);
+    @org.junit.Test
+    fun nullDigestsForArchivedRepresentation_notEqual() {
+        val parent: SpecialArtifact = createTreeArtifact("bin/tree")
+        val archivedTreeArtifact: ArchivedTreeArtifact = createArchivedTreeArtifact(parent)
+        val metadataNoDigest1: FileArtifactValue = metadataWithIdNoDigest(1)
+        val metadataNoDigest2: FileArtifactValue = metadataWithIdNoDigest(2)
 
-    TreeArtifactValue tree1 =
-        TreeArtifactValue.newBuilder(parent).putChild(child, metadataNoDigest1).build();
-    TreeArtifactValue tree2 =
-        TreeArtifactValue.newBuilder(parent).putChild(child, metadataNoDigest2).build();
+        val tree1: TreeArtifactValue =
+            TreeArtifactValue.newBuilder(parent)
+                .setArchivedRepresentation(archivedTreeArtifact, metadataNoDigest1)
+                .build()
+        val tree2: TreeArtifactValue =
+            TreeArtifactValue.newBuilder(parent)
+                .setArchivedRepresentation(archivedTreeArtifact, metadataNoDigest2)
+                .build()
 
-    assertThat(metadataNoDigest1.getDigest()).isNull();
-    assertThat(metadataNoDigest2.getDigest()).isNull();
-    assertThat(tree1.getDigest()).isNotNull();
-    assertThat(tree2.getDigest()).isNotNull();
-    assertThat(tree1.getDigest()).isNotEqualTo(tree2.getDigest());
-  }
+        assertThat(metadataNoDigest1.getDigest()).isNull()
+        assertThat(metadataNoDigest2.getDigest()).isNull()
+        assertThat(tree1.getDigest()).isNotNull()
+        assertThat(tree2.getDigest()).isNotNull()
+        assertThat(tree1.getDigest()).isNotEqualTo(tree2.getDigest())
+    }
 
-  @Test
-  public void nullDigestsForArchivedRepresentation_notEqual() {
-    SpecialArtifact parent = createTreeArtifact("bin/tree");
-    ArchivedTreeArtifact archivedTreeArtifact = createArchivedTreeArtifact(parent);
-    FileArtifactValue metadataNoDigest1 = metadataWithIdNoDigest(1);
-    FileArtifactValue metadataNoDigest2 = metadataWithIdNoDigest(2);
+    @org.junit.Test
+    fun findChildEntryByExecPath_returnsCorrectEntry() {
+        val tree: SpecialArtifact = createTreeArtifact("bin/tree")
+        val file1: TreeFileArtifact? = TreeFileArtifact.createTreeOutput(tree, "file1")
+        val file1Metadata: FileArtifactValue = metadataWithIdNoDigest(1)
+        val treeArtifactValue: TreeArtifactValue =
+            TreeArtifactValue.newBuilder(tree)
+                .putChild(file1, file1Metadata)
+                .putChild(TreeFileArtifact.createTreeOutput(tree, "file2"), metadataWithIdNoDigest(2))
+                .build()
 
-    TreeArtifactValue tree1 =
-        TreeArtifactValue.newBuilder(parent)
-            .setArchivedRepresentation(archivedTreeArtifact, metadataNoDigest1)
-            .build();
-    TreeArtifactValue tree2 =
-        TreeArtifactValue.newBuilder(parent)
-            .setArchivedRepresentation(archivedTreeArtifact, metadataNoDigest2)
-            .build();
+        assertThat(treeArtifactValue.findChildEntryByExecPath(PathFragment.create("bin/tree/file1")))
+            .isEqualTo(com.google.common.collect.Maps.immutableEntry<Any?, Any?>(file1, file1Metadata))
+    }
 
-    assertThat(metadataNoDigest1.getDigest()).isNull();
-    assertThat(metadataNoDigest2.getDigest()).isNull();
-    assertThat(tree1.getDigest()).isNotNull();
-    assertThat(tree2.getDigest()).isNotNull();
-    assertThat(tree1.getDigest()).isNotEqualTo(tree2.getDigest());
-  }
+    @org.junit.Test
+    fun findChildEntryByExecPath_nonExistentChild_returnsNull(
+        @TestParameter("bin/nonexistent", "a_before_nonexistent", "z_after_nonexistent") nonexistentPath: String?
+    ) {
+        val tree: SpecialArtifact = createTreeArtifact("bin/tree")
+        val treeArtifactValue: TreeArtifactValue =
+            TreeArtifactValue.newBuilder(tree)
+                .putChild(TreeFileArtifact.createTreeOutput(tree, "file"), metadataWithIdNoDigest(1))
+                .build()
 
-  @Test
-  public void findChildEntryByExecPath_returnsCorrectEntry() {
-    SpecialArtifact tree = createTreeArtifact("bin/tree");
-    TreeFileArtifact file1 = TreeFileArtifact.createTreeOutput(tree, "file1");
-    FileArtifactValue file1Metadata = metadataWithIdNoDigest(1);
-    TreeArtifactValue treeArtifactValue =
-        TreeArtifactValue.newBuilder(tree)
-            .putChild(file1, file1Metadata)
-            .putChild(TreeFileArtifact.createTreeOutput(tree, "file2"), metadataWithIdNoDigest(2))
-            .build();
+        assertThat(treeArtifactValue.findChildEntryByExecPath(PathFragment.create(nonexistentPath)))
+            .isNull()
+    }
 
-    assertThat(treeArtifactValue.findChildEntryByExecPath(PathFragment.create("bin/tree/file1")))
-        .isEqualTo(Maps.immutableEntry(file1, file1Metadata));
-  }
+    @org.junit.Test
+    fun findChildEntryByExecPath_emptyTreeArtifactValue_returnsNull() {
+        val treeArtifactValue: TreeArtifactValue = TreeArtifactValue.empty()
+        assertThat(treeArtifactValue.findChildEntryByExecPath(PathFragment.create("file"))).isNull()
+    }
 
-  @Test
-  public void findChildEntryByExecPath_nonExistentChild_returnsNull(
-      @TestParameter({"bin/nonexistent", "a_before_nonexistent", "z_after_nonexistent"})
-          String nonexistentPath) {
-    SpecialArtifact tree = createTreeArtifact("bin/tree");
-    TreeArtifactValue treeArtifactValue =
-        TreeArtifactValue.newBuilder(tree)
-            .putChild(TreeFileArtifact.createTreeOutput(tree, "file"), metadataWithIdNoDigest(1))
-            .build();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun visitTree_visitsEachChild() {
+        val treeDir: Path = scratch.dir("tree")
+        scratch.file("tree/file1")
+        scratch.file("tree/a/file2")
+        scratch.file("tree/a/b/file3")
+        scratch.resolve("tree/file_link").createSymbolicLink(PathFragment.create("file1"))
+        scratch.resolve("tree/a/dir_link").createSymbolicLink(PathFragment.create("b"))
+        val children: MutableList<VisitTreeArgs?> = java.util.ArrayList<VisitTreeArgs?>()
 
-    assertThat(treeArtifactValue.findChildEntryByExecPath(PathFragment.create(nonexistentPath)))
-        .isNull();
-  }
+        TreeArtifactValue.visitTree(
+            treeDir,
+            { child, type, traversedSymlink ->
+                synchronized(children) {
+                    children.add(VisitTreeArgs.Companion.of(child, type, traversedSymlink))
+                }
+            })
 
-  @Test
-  public void findChildEntryByExecPath_emptyTreeArtifactValue_returnsNull() {
-    TreeArtifactValue treeArtifactValue = TreeArtifactValue.empty();
-    assertThat(treeArtifactValue.findChildEntryByExecPath(PathFragment.create("file"))).isNull();
-  }
+        Truth.assertThat(children)
+            .containsExactly(
+                VisitTreeArgs.Companion.of(PathFragment.create(""), Dirent.Type.DIRECTORY, false),
+                VisitTreeArgs.Companion.of(PathFragment.create("a"), Dirent.Type.DIRECTORY, false),
+                VisitTreeArgs.Companion.of(PathFragment.create("a/b"), Dirent.Type.DIRECTORY, false),
+                VisitTreeArgs.Companion.of(PathFragment.create("file1"), Dirent.Type.FILE, false),
+                VisitTreeArgs.Companion.of(PathFragment.create("a/file2"), Dirent.Type.FILE, false),
+                VisitTreeArgs.Companion.of(PathFragment.create("a/b/file3"), Dirent.Type.FILE, false),
+                VisitTreeArgs.Companion.of(PathFragment.create("file_link"), Dirent.Type.FILE, true),
+                VisitTreeArgs.Companion.of(PathFragment.create("a/dir_link"), Dirent.Type.DIRECTORY, true),
+                VisitTreeArgs.Companion.of(PathFragment.create("a/dir_link/file3"), Dirent.Type.FILE, true)
+            )
+    }
 
-  @Test
-  public void visitTree_visitsEachChild() throws Exception {
-    Path treeDir = scratch.dir("tree");
-    scratch.file("tree/file1");
-    scratch.file("tree/a/file2");
-    scratch.file("tree/a/b/file3");
-    scratch.resolve("tree/file_link").createSymbolicLink(PathFragment.create("file1"));
-    scratch.resolve("tree/a/dir_link").createSymbolicLink(PathFragment.create("b"));
-    List<VisitTreeArgs> children = new ArrayList<>();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun visitTree_throwsOnDanglingSymlink() {
+        val treeDir: Path = scratch.dir("tree")
+        scratch.resolve("tree/symlink").createSymbolicLink(PathFragment.create("/does_not_exist"))
 
-    TreeArtifactValue.visitTree(
-        treeDir,
-        (child, type, traversedSymlink) -> {
-          synchronized (children) {
-            children.add(VisitTreeArgs.of(child, type, traversedSymlink));
-          }
-        });
+        val e: java.lang.Exception? =
+            org.junit.Assert.assertThrows<IOException?>(
+                IOException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    TreeArtifactValue.visitTree(
+                        treeDir,
+                        { child, type, traversedSymlink -> })
+                })
+        Truth.assertThat(e).hasMessageThat().contains("child symlink is a dangling symbolic link")
+    }
 
-    assertThat(children)
-        .containsExactly(
-            VisitTreeArgs.of(PathFragment.create(""), Dirent.Type.DIRECTORY, false),
-            VisitTreeArgs.of(PathFragment.create("a"), Dirent.Type.DIRECTORY, false),
-            VisitTreeArgs.of(PathFragment.create("a/b"), Dirent.Type.DIRECTORY, false),
-            VisitTreeArgs.of(PathFragment.create("file1"), Dirent.Type.FILE, false),
-            VisitTreeArgs.of(PathFragment.create("a/file2"), Dirent.Type.FILE, false),
-            VisitTreeArgs.of(PathFragment.create("a/b/file3"), Dirent.Type.FILE, false),
-            VisitTreeArgs.of(PathFragment.create("file_link"), Dirent.Type.FILE, true),
-            VisitTreeArgs.of(PathFragment.create("a/dir_link"), Dirent.Type.DIRECTORY, true),
-            VisitTreeArgs.of(PathFragment.create("a/dir_link/file3"), Dirent.Type.FILE, true));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun visitTree_throwsOnSymlinkLoop() {
+        val treeDir: Path = scratch.dir("tree")
+        scratch.resolve("tree/symlink").createSymbolicLink(scratch.resolve(treeDir.asFragment()))
 
-  @Test
-  public void visitTree_throwsOnDanglingSymlink() throws Exception {
-    Path treeDir = scratch.dir("tree");
-    scratch.resolve("tree/symlink").createSymbolicLink(PathFragment.create("/does_not_exist"));
+        val e: java.lang.Exception? =
+            org.junit.Assert.assertThrows<IOException?>(
+                IOException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    TreeArtifactValue.visitTree(
+                        treeDir,
+                        { child, type, traversedSymlink -> })
+                })
+        Truth.assertThat(e).hasMessageThat().contains("tree/symlink")
+        Truth.assertThat(e).hasMessageThat().contains("Too many levels of symbolic links")
+    }
 
-    Exception e =
-        assertThrows(
-            IOException.class,
-            () -> TreeArtifactValue.visitTree(treeDir, (child, type, traversedSymlink) -> {}));
-    assertThat(e).hasMessageThat().contains("child symlink is a dangling symbolic link");
-  }
-
-  @Test
-  public void visitTree_throwsOnSymlinkLoop() throws Exception {
-    Path treeDir = scratch.dir("tree");
-    scratch.resolve("tree/symlink").createSymbolicLink(scratch.resolve(treeDir.asFragment()));
-
-    Exception e =
-        assertThrows(
-            IOException.class,
-            () -> TreeArtifactValue.visitTree(treeDir, (child, type, traversedSymlink) -> {}));
-    assertThat(e).hasMessageThat().contains("tree/symlink");
-    assertThat(e).hasMessageThat().contains("Too many levels of symbolic links");
-  }
-
-  @Test
-  public void visitTree_throwsOnUnknownDirentType() {
-    FileSystem fs =
-        new InMemoryFileSystem(DigestHashFunction.SHA256) {
-          @Override
-          public Collection<Dirent> readdir(PathFragment path, boolean followSymlinks)
-              throws IOException {
-            if (path.equals(PathFragment.create("/tree"))) {
-              return ImmutableList.of(new Dirent("unknown", Dirent.Type.UNKNOWN));
+    @org.junit.Test
+    fun visitTree_throwsOnUnknownDirentType() {
+        val fs: FileSystem =
+            object : InMemoryFileSystem(DigestHashFunction.SHA256) {
+                @Throws(IOException::class)
+                public override fun readdir(path: PathFragment, followSymlinks: Boolean): MutableCollection<Dirent?>? {
+                    if (path.equals(PathFragment.create("/tree"))) {
+                        return com.google.common.collect.ImmutableList.of<Dirent?>(
+                            Dirent(
+                                "unknown",
+                                Dirent.Type.UNKNOWN
+                            )
+                        )
+                    }
+                    return super.readdir(path, followSymlinks)
+                }
             }
-            return super.readdir(path, followSymlinks);
-          }
-        };
-    Path treeDir = fs.getPath("/tree");
+        val treeDir: Path? = fs.getPath("/tree")
 
-    Exception e =
-        assertThrows(
-            IOException.class,
-            () -> TreeArtifactValue.visitTree(treeDir, (child, type, traversedSymlink) -> {}));
-    assertThat(e).hasMessageThat().contains("child unknown has an unsupported type");
-  }
+        val e: java.lang.Exception? =
+            org.junit.Assert.assertThrows<IOException?>(
+                IOException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    TreeArtifactValue.visitTree(
+                        treeDir,
+                        { child, type, traversedSymlink -> })
+                })
+        Truth.assertThat(e).hasMessageThat().contains("child unknown has an unsupported type")
+    }
 
-  @Test
-  public void visitTree_throwsOnSymlinkToSpecialFile() throws Exception {
-    FileSystem fs =
-        new InMemoryFileSystem(DigestHashFunction.SHA256) {
-          @Override
-          @Nullable
-          public FileStatus statIfFound(PathFragment path, boolean followSymlinks)
-              throws IOException {
-            if (path.equals(PathFragment.create("/tree/sym"))) {
-              return new FileStatus() {
-                @Override
-                public boolean isFile() {
-                  return true;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun visitTree_throwsOnSymlinkToSpecialFile() {
+        val fs: FileSystem =
+            object : InMemoryFileSystem(DigestHashFunction.SHA256) {
+                @Throws(IOException::class)
+                public override fun statIfFound(path: PathFragment, followSymlinks: Boolean): FileStatus? {
+                    if (path.equals(PathFragment.create("/tree/sym"))) {
+                        return object : FileStatus() {
+                            val isFile: Boolean
+                                get() = true
+
+                            val isDirectory: Boolean
+                                get() = false
+
+                            val isSymbolicLink: Boolean
+                                get() = false
+
+                            val isSpecialFile: Boolean
+                                get() = true
+
+                            val lastChangeTime: Long
+                                get() = 0
+
+                            val lastModifiedTime: Long
+                                get() = 0
+
+                            val nodeId: Long
+                                get() = 0
+
+                            val size: Long
+                                get() = 0
+                        }
+                    }
+                    return super.statIfFound(path, followSymlinks)
                 }
-
-                @Override
-                public boolean isDirectory() {
-                  return false;
-                }
-
-                @Override
-                public boolean isSymbolicLink() {
-                  return false;
-                }
-
-                @Override
-                public boolean isSpecialFile() {
-                  return true;
-                }
-
-                @Override
-                public long getLastChangeTime() {
-                  return 0;
-                }
-
-                @Override
-                public long getLastModifiedTime() {
-                  return 0;
-                }
-
-                @Override
-                public long getNodeId() {
-                  return 0;
-                }
-
-                @Override
-                public long getSize() {
-                  return 0;
-                }
-              };
             }
-            return super.statIfFound(path, followSymlinks);
-          }
-        };
-    Path treeDir = fs.getPath("/tree");
-    treeDir.createDirectory();
-    treeDir.getChild("sym").createSymbolicLink(PathFragment.create("/special"));
+        val treeDir: Path = fs.getPath("/tree")
+        treeDir.createDirectory()
+        treeDir.getChild("sym").createSymbolicLink(PathFragment.create("/special"))
 
-    Exception e =
-        assertThrows(
-            IOException.class,
-            () -> TreeArtifactValue.visitTree(treeDir, (child, type, traversedSymlink) -> {}));
-    assertThat(e).hasMessageThat().contains("child sym has an unsupported type");
-  }
+        val e: java.lang.Exception? =
+            org.junit.Assert.assertThrows<IOException?>(
+                IOException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    TreeArtifactValue.visitTree(
+                        treeDir,
+                        { child, type, traversedSymlink -> })
+                })
+        Truth.assertThat(e).hasMessageThat().contains("child sym has an unsupported type")
+    }
 
-  @Test
-  public void visitTree_propagatesIoExceptionFromVisitor() throws Exception {
-    Path treeDir = scratch.dir("tree");
-    IOException e = new IOException("From visitor");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun visitTree_propagatesIoExceptionFromVisitor() {
+        val treeDir: Path = scratch.dir("tree")
+        val e: IOException = IOException("From visitor")
 
-    IOException thrown =
-        assertThrows(
-            IOException.class,
-            () ->
-                TreeArtifactValue.visitTree(
-                    treeDir,
-                    (child, type, traversedSymlink) -> {
-                      throw e;
-                    }));
-    assertThat(thrown).isSameInstanceAs(e);
-  }
+        val thrown: IOException? =
+            org.junit.Assert.assertThrows<IOException?>(
+                IOException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    TreeArtifactValue.visitTree(
+                        treeDir,
+                        { child, type, traversedSymlink ->
+                            throw e
+                        })
+                })
+        Truth.assertThat(thrown).isSameInstanceAs(e)
+    }
 
-  @Test
-  public void visitTree_permitsUpLevelSymlinkInsideTree() throws Exception {
-    Path treeDir = scratch.dir("tree");
-    scratch.file("tree/file");
-    scratch.dir("tree/a");
-    scratch.resolve("tree/a/up_link").createSymbolicLink(PathFragment.create("../file"));
-    List<VisitTreeArgs> children = new ArrayList<>();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun visitTree_permitsUpLevelSymlinkInsideTree() {
+        val treeDir: Path = scratch.dir("tree")
+        scratch.file("tree/file")
+        scratch.dir("tree/a")
+        scratch.resolve("tree/a/up_link").createSymbolicLink(PathFragment.create("../file"))
+        val children: MutableList<VisitTreeArgs?> = java.util.ArrayList<VisitTreeArgs?>()
 
-    TreeArtifactValue.visitTree(
-        treeDir,
-        (child, type, traversedSymlink) -> {
-          synchronized (children) {
-            children.add(VisitTreeArgs.of(child, type, traversedSymlink));
-          }
-        });
+        TreeArtifactValue.visitTree(
+            treeDir,
+            { child, type, traversedSymlink ->
+                synchronized(children) {
+                    children.add(VisitTreeArgs.Companion.of(child, type, traversedSymlink))
+                }
+            })
 
-    assertThat(children)
-        .containsExactly(
-            VisitTreeArgs.of(PathFragment.create(""), Dirent.Type.DIRECTORY, false),
-            VisitTreeArgs.of(PathFragment.create("file"), Dirent.Type.FILE, false),
-            VisitTreeArgs.of(PathFragment.create("a"), Dirent.Type.DIRECTORY, false),
-            VisitTreeArgs.of(PathFragment.create("a/up_link"), Dirent.Type.FILE, true));
-  }
+        Truth.assertThat(children)
+            .containsExactly(
+                VisitTreeArgs.Companion.of(PathFragment.create(""), Dirent.Type.DIRECTORY, false),
+                VisitTreeArgs.Companion.of(PathFragment.create("file"), Dirent.Type.FILE, false),
+                VisitTreeArgs.Companion.of(PathFragment.create("a"), Dirent.Type.DIRECTORY, false),
+                VisitTreeArgs.Companion.of(PathFragment.create("a/up_link"), Dirent.Type.FILE, true)
+            )
+    }
 
-  @Test
-  public void visitTree_permitsUpLevelSymlinkOutsideTree() throws Exception {
-    Path treeDir = scratch.dir("tree");
-    scratch.file("tree/file");
-    scratch.dir("tree/a");
-    scratch.file("other_tree/file");
-    scratch
-        .resolve("tree/a/uplink")
-        .createSymbolicLink(PathFragment.create("../../other_tree/file"));
-    List<VisitTreeArgs> children = new ArrayList<>();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun visitTree_permitsUpLevelSymlinkOutsideTree() {
+        val treeDir: Path = scratch.dir("tree")
+        scratch.file("tree/file")
+        scratch.dir("tree/a")
+        scratch.file("other_tree/file")
+        scratch
+            .resolve("tree/a/uplink")
+            .createSymbolicLink(PathFragment.create("../../other_tree/file"))
+        val children: MutableList<VisitTreeArgs?> = java.util.ArrayList<VisitTreeArgs?>()
 
-    TreeArtifactValue.visitTree(
-        treeDir,
-        (child, type, traversedSymlink) -> {
-          synchronized (children) {
-            children.add(VisitTreeArgs.of(child, type, traversedSymlink));
-          }
-        });
+        TreeArtifactValue.visitTree(
+            treeDir,
+            { child, type, traversedSymlink ->
+                synchronized(children) {
+                    children.add(VisitTreeArgs.Companion.of(child, type, traversedSymlink))
+                }
+            })
 
-    assertThat(children)
-        .containsExactly(
-            VisitTreeArgs.of(PathFragment.create(""), Dirent.Type.DIRECTORY, false),
-            VisitTreeArgs.of(PathFragment.create("file"), Dirent.Type.FILE, false),
-            VisitTreeArgs.of(PathFragment.create("a"), Dirent.Type.DIRECTORY, false),
-            VisitTreeArgs.of(PathFragment.create("a/uplink"), Dirent.Type.FILE, true));
-  }
+        Truth.assertThat(children)
+            .containsExactly(
+                VisitTreeArgs.Companion.of(PathFragment.create(""), Dirent.Type.DIRECTORY, false),
+                VisitTreeArgs.Companion.of(PathFragment.create("file"), Dirent.Type.FILE, false),
+                VisitTreeArgs.Companion.of(PathFragment.create("a"), Dirent.Type.DIRECTORY, false),
+                VisitTreeArgs.Companion.of(PathFragment.create("a/uplink"), Dirent.Type.FILE, true)
+            )
+    }
 
-  @Test
-  public void visitTree_permitsAbsoluteSymlink() throws Exception {
-    Path treeDir = scratch.dir("tree");
-    Path targetFile = scratch.file("target_file");
-    Path targetDir = scratch.dir("target_dir");
-    scratch.resolve("tree/absolute_file_link").createSymbolicLink(targetFile.asFragment());
-    scratch.resolve("tree/absolute_dir_link").createSymbolicLink(targetDir.asFragment());
-    List<VisitTreeArgs> children = new ArrayList<>();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun visitTree_permitsAbsoluteSymlink() {
+        val treeDir: Path = scratch.dir("tree")
+        val targetFile: Path = scratch.file("target_file")
+        val targetDir: Path = scratch.dir("target_dir")
+        scratch.resolve("tree/absolute_file_link").createSymbolicLink(targetFile.asFragment())
+        scratch.resolve("tree/absolute_dir_link").createSymbolicLink(targetDir.asFragment())
+        val children: MutableList<VisitTreeArgs?> = java.util.ArrayList<VisitTreeArgs?>()
 
-    TreeArtifactValue.visitTree(
-        treeDir,
-        (child, type, traversedSymlink) -> {
-          synchronized (children) {
-            children.add(VisitTreeArgs.of(child, type, traversedSymlink));
-          }
-        });
+        TreeArtifactValue.visitTree(
+            treeDir,
+            { child, type, traversedSymlink ->
+                synchronized(children) {
+                    children.add(VisitTreeArgs.Companion.of(child, type, traversedSymlink))
+                }
+            })
 
-    assertThat(children)
-        .containsExactly(
-            VisitTreeArgs.of(PathFragment.create(""), Dirent.Type.DIRECTORY, false),
-            VisitTreeArgs.of(PathFragment.create("absolute_file_link"), Dirent.Type.FILE, true),
-            VisitTreeArgs.of(
-                PathFragment.create("absolute_dir_link"), Dirent.Type.DIRECTORY, true));
-  }
+        Truth.assertThat(children)
+            .containsExactly(
+                VisitTreeArgs.Companion.of(PathFragment.create(""), Dirent.Type.DIRECTORY, false),
+                VisitTreeArgs.Companion.of(PathFragment.create("absolute_file_link"), Dirent.Type.FILE, true),
+                VisitTreeArgs.Companion.of(
+                    PathFragment.create("absolute_dir_link"), Dirent.Type.DIRECTORY, true
+                )
+            )
+    }
 
-  @Test
-  public void visitTree_permitsUplevelSymlinkTraversingOutsideThenBackInsideTree()
-      throws Exception {
-    Path treeDir = scratch.dir("tree");
-    scratch.file("tree/file");
-    scratch.resolve("tree/link").createSymbolicLink(PathFragment.create("../tree/file"));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun visitTree_permitsUplevelSymlinkTraversingOutsideThenBackInsideTree() {
+        val treeDir: Path = scratch.dir("tree")
+        scratch.file("tree/file")
+        scratch.resolve("tree/link").createSymbolicLink(PathFragment.create("../tree/file"))
 
-    List<VisitTreeArgs> children = new ArrayList<>();
+        val children: MutableList<VisitTreeArgs?> = java.util.ArrayList<VisitTreeArgs?>()
 
-    TreeArtifactValue.visitTree(
-        treeDir,
-        (child, type, traversedSymlink) -> {
-          synchronized (children) {
-            children.add(VisitTreeArgs.of(child, type, traversedSymlink));
-          }
-        });
+        TreeArtifactValue.visitTree(
+            treeDir,
+            { child, type, traversedSymlink ->
+                synchronized(children) {
+                    children.add(VisitTreeArgs.Companion.of(child, type, traversedSymlink))
+                }
+            })
 
-    assertThat(children)
-        .containsExactly(
-            VisitTreeArgs.of(PathFragment.create(""), Dirent.Type.DIRECTORY, false),
-            VisitTreeArgs.of(PathFragment.create("file"), Dirent.Type.FILE, false),
-            VisitTreeArgs.of(PathFragment.create("link"), Dirent.Type.FILE, true));
-  }
+        Truth.assertThat(children)
+            .containsExactly(
+                VisitTreeArgs.Companion.of(PathFragment.create(""), Dirent.Type.DIRECTORY, false),
+                VisitTreeArgs.Companion.of(PathFragment.create("file"), Dirent.Type.FILE, false),
+                VisitTreeArgs.Companion.of(PathFragment.create("link"), Dirent.Type.FILE, true)
+            )
+    }
 
-  @Test
-  public void multiBuilder_empty_injectsNothing() {
-    Map<SpecialArtifact, TreeArtifactValue> results = new HashMap<>();
+    @org.junit.Test
+    fun multiBuilder_empty_injectsNothing() {
+        val results: MutableMap<SpecialArtifact?, TreeArtifactValue?> = HashMap<SpecialArtifact?, TreeArtifactValue?>()
 
-    TreeArtifactValue.newMultiBuilder().forEach(results::put);
+        TreeArtifactValue.newMultiBuilder().forEach({ key: K?, value: V? -> results.put(key, value) })
 
-    assertThat(results).isEmpty();
-  }
+        Truth.assertThat(results).isEmpty()
+    }
 
-  @Test
-  public void multiBuilder_injectsEmptyTreeArtifact() {
-    TreeArtifactValue.MultiBuilder treeArtifacts = TreeArtifactValue.newMultiBuilder();
-    SpecialArtifact parent = createTreeArtifact("bin/tree");
-    Map<SpecialArtifact, TreeArtifactValue> results = new HashMap<>();
+    @org.junit.Test
+    fun multiBuilder_injectsEmptyTreeArtifact() {
+        val treeArtifacts: TreeArtifactValue.MultiBuilder = TreeArtifactValue.newMultiBuilder()
+        val parent: SpecialArtifact = createTreeArtifact("bin/tree")
+        val results: MutableMap<SpecialArtifact?, TreeArtifactValue?> = HashMap<SpecialArtifact?, TreeArtifactValue?>()
 
-    treeArtifacts.addTree(parent).forEach(results::put);
+        treeArtifacts.addTree(parent).forEach({ key: K?, value: V? -> results.put(key, value) })
 
-    assertThat(results).containsExactly(parent, TreeArtifactValue.empty());
-  }
+        Truth.assertThat(results).containsExactly(parent, TreeArtifactValue.empty())
+    }
 
-  @Test
-  public void multiBuilder_injectsSingleTreeArtifact() {
-    TreeArtifactValue.MultiBuilder treeArtifacts = TreeArtifactValue.newMultiBuilder();
-    SpecialArtifact parent = createTreeArtifact("bin/tree");
-    TreeFileArtifact child1 = TreeFileArtifact.createTreeOutput(parent, "child1");
-    TreeFileArtifact child2 = TreeFileArtifact.createTreeOutput(parent, "child2");
-    Map<SpecialArtifact, TreeArtifactValue> results = new HashMap<>();
+    @org.junit.Test
+    fun multiBuilder_injectsSingleTreeArtifact() {
+        val treeArtifacts: TreeArtifactValue.MultiBuilder = TreeArtifactValue.newMultiBuilder()
+        val parent: SpecialArtifact = createTreeArtifact("bin/tree")
+        val child1: TreeFileArtifact? = TreeFileArtifact.createTreeOutput(parent, "child1")
+        val child2: TreeFileArtifact? = TreeFileArtifact.createTreeOutput(parent, "child2")
+        val results: MutableMap<SpecialArtifact?, TreeArtifactValue?> = HashMap<SpecialArtifact?, TreeArtifactValue?>()
 
-    treeArtifacts
-        .putChild(child1, metadataWithId(1))
-        .putChild(child2, metadataWithId(2))
-        .forEach(results::put);
+        treeArtifacts
+            .putChild(child1, metadataWithId(1))
+            .putChild(child2, metadataWithId(2))
+            .forEach({ key: K?, value: V? -> results.put(key, value) })
 
-    assertThat(results)
-        .containsExactly(
-            parent,
-            TreeArtifactValue.newBuilder(parent)
-                .putChild(child1, metadataWithId(1))
-                .putChild(child2, metadataWithId(2))
-                .build());
-  }
+        Truth.assertThat(results)
+            .containsExactly(
+                parent,
+                TreeArtifactValue.newBuilder(parent)
+                    .putChild(child1, metadataWithId(1))
+                    .putChild(child2, metadataWithId(2))
+                    .build()
+            )
+    }
 
-  @Test
-  public void multiBuilder_injectsMultipleTreeArtifacts() {
-    TreeArtifactValue.MultiBuilder treeArtifacts = TreeArtifactValue.newMultiBuilder();
-    SpecialArtifact parent1 = createTreeArtifact("bin/tree1");
-    TreeFileArtifact parent1Child1 = TreeFileArtifact.createTreeOutput(parent1, "child1");
-    TreeFileArtifact parent1Child2 = TreeFileArtifact.createTreeOutput(parent1, "child2");
-    SpecialArtifact parent2 = createTreeArtifact("bin/tree2");
-    TreeFileArtifact parent2Child = TreeFileArtifact.createTreeOutput(parent2, "child");
-    Map<SpecialArtifact, TreeArtifactValue> results = new HashMap<>();
+    @org.junit.Test
+    fun multiBuilder_injectsMultipleTreeArtifacts() {
+        val treeArtifacts: TreeArtifactValue.MultiBuilder = TreeArtifactValue.newMultiBuilder()
+        val parent1: SpecialArtifact = createTreeArtifact("bin/tree1")
+        val parent1Child1: TreeFileArtifact? = TreeFileArtifact.createTreeOutput(parent1, "child1")
+        val parent1Child2: TreeFileArtifact? = TreeFileArtifact.createTreeOutput(parent1, "child2")
+        val parent2: SpecialArtifact = createTreeArtifact("bin/tree2")
+        val parent2Child: TreeFileArtifact? = TreeFileArtifact.createTreeOutput(parent2, "child")
+        val results: MutableMap<SpecialArtifact?, TreeArtifactValue?> = HashMap<SpecialArtifact?, TreeArtifactValue?>()
 
-    treeArtifacts
-        .putChild(parent1Child1, metadataWithId(1))
-        .putChild(parent2Child, metadataWithId(3))
-        .putChild(parent1Child2, metadataWithId(2))
-        .forEach(results::put);
+        treeArtifacts
+            .putChild(parent1Child1, metadataWithId(1))
+            .putChild(parent2Child, metadataWithId(3))
+            .putChild(parent1Child2, metadataWithId(2))
+            .forEach({ key: K?, value: V? -> results.put(key, value) })
 
-    assertThat(results)
-        .containsExactly(
-            parent1,
-            TreeArtifactValue.newBuilder(parent1)
-                .putChild(parent1Child1, metadataWithId(1))
-                .putChild(parent1Child2, metadataWithId(2))
-                .build(),
-            parent2,
-            TreeArtifactValue.newBuilder(parent2)
-                .putChild(parent2Child, metadataWithId(3))
-                .build());
-  }
+        Truth.assertThat(results)
+            .containsExactly(
+                parent1,
+                TreeArtifactValue.newBuilder(parent1)
+                    .putChild(parent1Child1, metadataWithId(1))
+                    .putChild(parent1Child2, metadataWithId(2))
+                    .build(),
+                parent2,
+                TreeArtifactValue.newBuilder(parent2)
+                    .putChild(parent2Child, metadataWithId(3))
+                    .build()
+            )
+    }
 
-  @Test
-  public void multiBuilder_injectsTreeArtifactWithArchivedRepresentation() {
-    TreeArtifactValue.MultiBuilder builder = TreeArtifactValue.newMultiBuilder();
-    SpecialArtifact parent = createTreeArtifact("bin/tree");
-    TreeFileArtifact child = TreeFileArtifact.createTreeOutput(parent, "child");
-    FileArtifactValue childMetadata = metadataWithId(1);
-    ArchivedTreeArtifact archivedTreeArtifact = createArchivedTreeArtifact(parent);
-    FileArtifactValue archivedTreeArtifactMetadata = metadataWithId(2);
-    Map<SpecialArtifact, TreeArtifactValue> results = new HashMap<>();
+    @org.junit.Test
+    fun multiBuilder_injectsTreeArtifactWithArchivedRepresentation() {
+        val builder: TreeArtifactValue.MultiBuilder = TreeArtifactValue.newMultiBuilder()
+        val parent: SpecialArtifact = createTreeArtifact("bin/tree")
+        val child: TreeFileArtifact? = TreeFileArtifact.createTreeOutput(parent, "child")
+        val childMetadata: FileArtifactValue = metadataWithId(1)
+        val archivedTreeArtifact: ArchivedTreeArtifact = createArchivedTreeArtifact(parent)
+        val archivedTreeArtifactMetadata: FileArtifactValue = metadataWithId(2)
+        val results: MutableMap<SpecialArtifact?, TreeArtifactValue?> = HashMap<SpecialArtifact?, TreeArtifactValue?>()
 
-    builder
-        .putChild(child, childMetadata)
-        .setArchivedRepresentation(archivedTreeArtifact, archivedTreeArtifactMetadata)
-        .forEach(results::put);
+        builder
+            .putChild(child, childMetadata)
+            .setArchivedRepresentation(archivedTreeArtifact, archivedTreeArtifactMetadata)
+            .forEach({ key: K?, value: V? -> results.put(key, value) })
 
-    assertThat(results)
-        .containsExactly(
-            parent,
-            TreeArtifactValue.newBuilder(parent)
-                .putChild(child, childMetadata)
-                .setArchivedRepresentation(archivedTreeArtifact, archivedTreeArtifactMetadata)
-                .build());
-  }
+        Truth.assertThat(results)
+            .containsExactly(
+                parent,
+                TreeArtifactValue.newBuilder(parent)
+                    .putChild(child, childMetadata)
+                    .setArchivedRepresentation(archivedTreeArtifact, archivedTreeArtifactMetadata)
+                    .build()
+            )
+    }
 
-  @Test
-  public void multiBuilder_injectsEmptyTreeArtifactWithArchivedRepresentation() {
-    TreeArtifactValue.MultiBuilder builder = TreeArtifactValue.newMultiBuilder();
-    SpecialArtifact parent = createTreeArtifact("bin/tree");
-    ArchivedTreeArtifact archivedTreeArtifact = createArchivedTreeArtifact(parent);
-    FileArtifactValue metadata = metadataWithId(1);
-    Map<SpecialArtifact, TreeArtifactValue> results = new HashMap<>();
+    @org.junit.Test
+    fun multiBuilder_injectsEmptyTreeArtifactWithArchivedRepresentation() {
+        val builder: TreeArtifactValue.MultiBuilder = TreeArtifactValue.newMultiBuilder()
+        val parent: SpecialArtifact = createTreeArtifact("bin/tree")
+        val archivedTreeArtifact: ArchivedTreeArtifact = createArchivedTreeArtifact(parent)
+        val metadata: FileArtifactValue = metadataWithId(1)
+        val results: MutableMap<SpecialArtifact?, TreeArtifactValue?> = HashMap<SpecialArtifact?, TreeArtifactValue?>()
 
-    builder.setArchivedRepresentation(archivedTreeArtifact, metadata).forEach(results::put);
+        builder.setArchivedRepresentation(archivedTreeArtifact, metadata)
+            .forEach({ key: K?, value: V? -> results.put(key, value) })
 
-    assertThat(results)
-        .containsExactly(
-            parent,
-            TreeArtifactValue.newBuilder(parent)
-                .setArchivedRepresentation(archivedTreeArtifact, metadata)
-                .build());
-  }
+        Truth.assertThat(results)
+            .containsExactly(
+                parent,
+                TreeArtifactValue.newBuilder(parent)
+                    .setArchivedRepresentation(archivedTreeArtifact, metadata)
+                    .build()
+            )
+    }
 
-  @Test
-  public void multiBuilder_injectsTreeArtifactsWithAndWithoutArchivedRepresentation() {
-    TreeArtifactValue.MultiBuilder builder = TreeArtifactValue.newMultiBuilder();
-    SpecialArtifact parent1 = createTreeArtifact("bin/tree1");
-    ArchivedTreeArtifact archivedArtifact1 = createArchivedTreeArtifact(parent1);
-    FileArtifactValue archivedArtifact1Metadata = metadataWithId(1);
-    TreeFileArtifact parent1Child = TreeFileArtifact.createTreeOutput(parent1, "child");
-    FileArtifactValue parent1ChildMetadata = metadataWithId(2);
-    SpecialArtifact parent2 = createTreeArtifact("bin/tree2");
-    TreeFileArtifact parent2Child = TreeFileArtifact.createTreeOutput(parent2, "child");
-    FileArtifactValue parent2ChildMetadata = metadataWithId(3);
-    Map<SpecialArtifact, TreeArtifactValue> results = new HashMap<>();
+    @org.junit.Test
+    fun multiBuilder_injectsTreeArtifactsWithAndWithoutArchivedRepresentation() {
+        val builder: TreeArtifactValue.MultiBuilder = TreeArtifactValue.newMultiBuilder()
+        val parent1: SpecialArtifact = createTreeArtifact("bin/tree1")
+        val archivedArtifact1: ArchivedTreeArtifact = createArchivedTreeArtifact(parent1)
+        val archivedArtifact1Metadata: FileArtifactValue = metadataWithId(1)
+        val parent1Child: TreeFileArtifact? = TreeFileArtifact.createTreeOutput(parent1, "child")
+        val parent1ChildMetadata: FileArtifactValue = metadataWithId(2)
+        val parent2: SpecialArtifact = createTreeArtifact("bin/tree2")
+        val parent2Child: TreeFileArtifact? = TreeFileArtifact.createTreeOutput(parent2, "child")
+        val parent2ChildMetadata: FileArtifactValue = metadataWithId(3)
+        val results: MutableMap<SpecialArtifact?, TreeArtifactValue?> = HashMap<SpecialArtifact?, TreeArtifactValue?>()
 
-    builder
-        .setArchivedRepresentation(archivedArtifact1, archivedArtifact1Metadata)
-        .putChild(parent1Child, parent1ChildMetadata)
-        .putChild(parent2Child, parent2ChildMetadata)
-        .forEach(results::put);
+        builder
+            .setArchivedRepresentation(archivedArtifact1, archivedArtifact1Metadata)
+            .putChild(parent1Child, parent1ChildMetadata)
+            .putChild(parent2Child, parent2ChildMetadata)
+            .forEach({ key: K?, value: V? -> results.put(key, value) })
 
-    assertThat(results)
-        .containsExactly(
-            parent1,
-            TreeArtifactValue.newBuilder(parent1)
-                .putChild(parent1Child, parent1ChildMetadata)
-                .setArchivedRepresentation(archivedArtifact1, metadataWithId(1))
-                .build(),
-            parent2,
-            TreeArtifactValue.newBuilder(parent2)
-                .putChild(parent2Child, parent2ChildMetadata)
-                .build());
-  }
+        Truth.assertThat(results)
+            .containsExactly(
+                parent1,
+                TreeArtifactValue.newBuilder(parent1)
+                    .putChild(parent1Child, parent1ChildMetadata)
+                    .setArchivedRepresentation(archivedArtifact1, metadataWithId(1))
+                    .build(),
+                parent2,
+                TreeArtifactValue.newBuilder(parent2)
+                    .putChild(parent2Child, parent2ChildMetadata)
+                    .build()
+            )
+    }
 
-  private static ArchivedTreeArtifact createArchivedTreeArtifact(SpecialArtifact specialArtifact) {
-    return ArchivedTreeArtifact.createForTree(specialArtifact);
-  }
+    private fun createTreeArtifact(execPath: String?): SpecialArtifact {
+        return createTreeArtifact(execPath, root)
+    }
 
-  private SpecialArtifact createTreeArtifact(String execPath) {
-    return createTreeArtifact(execPath, root);
-  }
+    companion object {
+        private fun createArchivedTreeArtifact(specialArtifact: SpecialArtifact?): ArchivedTreeArtifact {
+            return ArchivedTreeArtifact.createForTree(specialArtifact)
+        }
 
-  private static SpecialArtifact createTreeArtifact(String execPath, ArtifactRoot root) {
-    return ActionsTestUtil.createTreeArtifactWithGeneratingAction(
-        root, PathFragment.create(execPath));
-  }
+        private fun createTreeArtifact(execPath: String?, root: ArtifactRoot?): SpecialArtifact {
+            return ActionsTestUtil.createTreeArtifactWithGeneratingAction(
+                root, PathFragment.create(execPath)
+            )
+        }
 
-  private static FileArtifactValue metadataWithId(int id) {
-    return FileArtifactValue.createForRemoteFile(new byte[] {(byte) id}, id, id);
-  }
+        private fun metadataWithId(id: Int): FileArtifactValue {
+            return FileArtifactValue.createForRemoteFile(byteArrayOf(id.toByte()), id, id)
+        }
 
-  private static FileArtifactValue metadataWithIdNoDigest(int id) {
-    FileArtifactValue value = spy(FileArtifactValue.class);
-    doReturn(null).when(value).getDigest();
-    doReturn((long) id).when(value).getModifiedTime();
-    return value;
-  }
+        private fun metadataWithIdNoDigest(id: Int): FileArtifactValue {
+            val value: FileArtifactValue = Mockito.spy<FileArtifactValue>(FileArtifactValue::class.java)
+            Mockito.doReturn(null).`when`<Any?>(value).getDigest()
+            Mockito.doReturn(id.toLong()).`when`<Any?>(value).getModifiedTime()
+            return value
+        }
+    }
 }

@@ -11,47 +11,26 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.java
 
-package com.google.devtools.build.lib.rules.java;
+import com.google.devtools.build.lib.analysis.ConfiguredTarget
 
-import static com.google.common.truth.Truth.assertThat;
+/** Tests if JavaInfo identical to one returned by Java rules can be constructed.  */
+@RunWith(JUnit4::class)
+class JavaInfoRoundtripTest : BuildViewTestCase() {
+    /** A rule to convert JavaInfo to a structure having only string values.  */
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun javaInfoToDict() {
+        mockToolsConfig.create("tools/build_defs/inspect/BUILD")
+        mockToolsConfig.copyTool(
+            TestConstants.BAZEL_REPO_SCRATCH + "tools/build_defs/inspect/struct_to_dict.bzl",
+            "tools/build_defs/inspect/struct_to_dict.bzl"
+        )
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.packages.StarlarkInfo;
-import com.google.devtools.build.lib.packages.StructProvider;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import com.google.devtools.build.lib.vfs.ModifiedFileSet;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Root;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.function.Predicate;
-import net.starlark.java.eval.Dict;
-import net.starlark.java.eval.EvalException;
-import net.starlark.java.eval.Starlark;
-import net.starlark.java.eval.StarlarkList;
-import net.starlark.java.eval.Structure;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests if JavaInfo identical to one returned by Java rules can be constructed. */
-@RunWith(JUnit4.class)
-public class JavaInfoRoundtripTest extends BuildViewTestCase {
-  /** A rule to convert JavaInfo to a structure having only string values. */
-  @Before
-  public void javaInfoToDict() throws Exception {
-    mockToolsConfig.create("tools/build_defs/inspect/BUILD");
-    mockToolsConfig.copyTool(
-        TestConstants.BAZEL_REPO_SCRATCH + "tools/build_defs/inspect/struct_to_dict.bzl",
-        "tools/build_defs/inspect/struct_to_dict.bzl");
-
-    scratch.file(
-        "javainfo/javainfo_to_dict.bzl",
-        """
+        scratch.file(
+            "javainfo/javainfo_to_dict.bzl",
+            """
         load("@rules_java//java/common:java_info.bzl", "JavaInfo")
         load("//tools/build_defs/inspect:struct_to_dict.bzl", "struct_to_dict")
         Info = provider()
@@ -59,18 +38,21 @@ public class JavaInfoRoundtripTest extends BuildViewTestCase {
             return Info(result = struct_to_dict(ctx.attr.dep[JavaInfo], 10))
 
         javainfo_to_dict = rule(_impl, attrs = {"dep": attr.label()})
-        """);
-  }
-
-  /** A simple rule that calls JavaInfo constructor using identical attribute as java_library. */
-  @Before
-  public void constructJavaInfo() throws Exception {
-    if (!getAnalysisMock().isThisBazel()) {
-      setBuildLanguageOptions("--experimental_google_legacy_api");
+        
+        """.trimIndent()
+        )
     }
-    scratch.file(
-        "foo/construct_javainfo.bzl",
-        """
+
+    /** A simple rule that calls JavaInfo constructor using identical attribute as java_library.  */
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun constructJavaInfo() {
+        if (!getAnalysisMock().isThisBazel) {
+            setBuildLanguageOptions("--experimental_google_legacy_api")
+        }
+        scratch.file(
+            "foo/construct_javainfo.bzl",
+            """
         load("@rules_java//java:defs.bzl", "JavaInfo")
         def _impl(ctx):
             OUTS = {
@@ -117,164 +99,149 @@ public class JavaInfoRoundtripTest extends BuildViewTestCase {
             },
             fragments = ["java"],
         )
-        """);
-  }
-
-  /** For a given target providing JavaInfo returns a Starlark Dict with String values */
-  private Dict<Object, Object> getDictFromJavaInfo(String packageName, String javaInfoTarget)
-      throws Exception {
-    // Because we're overwriting files to have identical names, we need to invalidate them.
-    skyframeExecutor.invalidateFilesUnderPathForTesting(
-        reporter,
-        new ModifiedFileSet.Builder().modify(PathFragment.create(packageName + "/BUILD")).build(),
-        Root.fromPath(rootDirectory));
-
-    scratch.deleteFile("javainfo/BUILD");
-    ConfiguredTarget dictTarget =
-        scratchConfiguredTarget(
-            "javainfo",
-            "javainfo",
-            "load(':javainfo_to_dict.bzl', 'javainfo_to_dict')",
-            "javainfo_to_dict(",
-            "  name = 'javainfo',",
-            "  dep = '//" + packageName + ':' + javaInfoTarget + "',",
-            ")");
-    StarlarkInfo dictInfo = getStarlarkProvider(dictTarget, "Info");
-    @SuppressWarnings("unchecked") // deserialization
-    Dict<Object, Object> javaInfo = (Dict<Object, Object>) dictInfo.getValue("result");
-    return deepStripAttributes(javaInfo, attr -> attr.startsWith("_"));
-  }
-
-  @SuppressWarnings("unchecked")
-  private static <T> T deepStripAttributes(T obj, Predicate<String> shouldRemove)
-      throws EvalException {
-    if (obj == null) {
-      return null;
-    } else if (obj instanceof StarlarkList) {
-      ImmutableList.Builder<Object> builder = ImmutableList.builder();
-      for (Object item : (StarlarkList<Object>) obj) {
-        builder.add(deepStripAttributes(item, shouldRemove));
-      }
-      return (T) StarlarkList.immutableCopyOf(builder.build());
-    } else if (obj instanceof Structure structure) {
-      for (String fieldName : structure.getFieldNames()) {
-        Dict.Builder<String, Object> builder = Dict.builder();
-        if (!shouldRemove.test(fieldName)) {
-          builder.put(
-              fieldName, deepStripAttributes(((Structure) obj).getValue(fieldName), shouldRemove));
-        }
-        return (T) StructProvider.STRUCT.create(builder.buildImmutable(), "");
-      }
-    } else if (obj instanceof Dict) {
-      Dict.Builder<Object, Object> builder = Dict.builder();
-      for (Entry<Object, Object> e :
-          Dict.cast(obj, Object.class, Object.class, "dict").entrySet()) {
-        if (!(e.getKey() instanceof String && shouldRemove.test((String) e.getKey()))) {
-          builder.put(e.getKey(), deepStripAttributes(e.getValue(), shouldRemove));
-        }
-      }
-      return (T) builder.buildImmutable();
+        
+        """.trimIndent()
+        )
     }
-    return obj;
-  }
 
-  private Dict<Object, Object> removeCompilationInfo(Dict<Object, Object> javaInfo) {
-    return Dict.builder().putAll(javaInfo).put("compilation_info", Starlark.NONE).buildImmutable();
-  }
+    /** For a given target providing JavaInfo returns a Starlark Dict with String values  */
+    @Throws(java.lang.Exception::class)
+    private fun getDictFromJavaInfo(packageName: String?, javaInfoTarget: String?): Dict<Any?, Any?> {
+        // Because we're overwriting files to have identical names, we need to invalidate them.
+        skyframeExecutor.invalidateFilesUnderPathForTesting(
+            reporter,
+            Builder().modify(PathFragment.create(packageName + "/BUILD")).build(),
+            Root.fromPath(rootDirectory)
+        )
 
-  private Dict<Object, Object> removeAnnotationClasses(Dict<Object, Object> javaInfo) {
-    @SuppressWarnings("unchecked") // safe by specification
-    Dict<Object, Object> annotationProcessing =
-        (Dict<Object, Object>) javaInfo.get("annotation_processing");
+        scratch.deleteFile("javainfo/BUILD")
+        val dictTarget: ConfiguredTarget =
+            scratchConfiguredTarget(
+                "javainfo",
+                "javainfo",
+                "load(':javainfo_to_dict.bzl', 'javainfo_to_dict')",
+                "javainfo_to_dict(",
+                "  name = 'javainfo',",
+                "  dep = '//" + packageName + ':' + javaInfoTarget + "',",
+                ")"
+            )
+        val dictInfo: StarlarkInfo = getStarlarkProvider(dictTarget, "Info")
+        val javaInfo:  // deserialization
+                Dict<Any?, Any?>? = dictInfo.getValue("result") as Dict<Any?, Any?>?
+        return
+        Companion.deepStripAttributes<Dict<Any?, Any?>?>(
+            javaInfo,
+            java.util.function.Predicate { attr: String? -> attr.startsWith("_") })
+    }
 
-    annotationProcessing =
-        Dict.builder()
-            .putAll(annotationProcessing)
-            .put("enabled", false)
-            .put("processor_classnames", StarlarkList.immutableOf())
-            .put("processor_classpath", StarlarkList.immutableOf())
-            .buildImmutable();
-    return Dict.builder()
-        .putAll(javaInfo)
-        .put("annotation_processing", annotationProcessing)
-        .buildImmutable();
-  }
+    private fun removeCompilationInfo(javaInfo: Dict<Any?, Any?>?): Dict<Any?, Any?> {
+        return Dict.builder<Any?, Any?>().putAll(javaInfo).put("compilation_info", Starlark.NONE).buildImmutable()
+    }
 
-  @Test
-  public void dictFromJavaInfo_nonEmpty() throws Exception {
-    scratch.overwriteFile(
-        "foo/BUILD",
-        "load('@rules_java//java:defs.bzl', 'java_library')",
-        "java_library(name = 'java_lib', srcs = ['A.java'])");
+    private fun removeAnnotationClasses(javaInfo: Dict<Any?, Any?>): Dict<Any?, Any?> {
+        var annotationProcessing:  // safe by specification
+                Dict<Any?, Any?>? =
+            javaInfo.get("annotation_processing") as Dict<Any?, Any?>?
 
-    Dict<Object, Object> javaInfo = getDictFromJavaInfo("foo", "java_lib");
+        annotationProcessing =
+            Dict.builder<Any?, Any?>()
+                .putAll(annotationProcessing)
+                .put("enabled", false)
+                .put("processor_classnames", StarlarkList.immutableOf<Any?>())
+                .put("processor_classpath", StarlarkList.immutableOf<Any?>())
+                .buildImmutable()
+        return Dict.builder<Any?, Any?>()
+            .putAll(javaInfo)
+            .put("annotation_processing", annotationProcessing)
+            .buildImmutable()
+    }
 
-    assertThat((Map<?, ?>) javaInfo).isNotEmpty();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun dictFromJavaInfo_nonEmpty() {
+        scratch.overwriteFile(
+            "foo/BUILD",
+            "load('@rules_java//java:defs.bzl', 'java_library')",
+            "java_library(name = 'java_lib', srcs = ['A.java'])"
+        )
 
-  @Test
-  public void dictFromJavaInfo_detectsDifference() throws Exception {
+        val javaInfo: Dict<Any?, Any?> = getDictFromJavaInfo("foo", "java_lib")
 
-    scratch.overwriteFile(
-        "foo/BUILD",
-        "load('@rules_java//java:defs.bzl', 'java_library')",
-        "java_library(name = 'java_lib', srcs = ['A.java'])");
-    Dict<Object, Object> javaInfoA = getDictFromJavaInfo("foo", "java_lib");
+        Truth.assertThat(javaInfo as MutableMap<*, *>?).isNotEmpty()
+    }
 
-    scratch.overwriteFile(
-        "foo/BUILD",
-        "load('@rules_java//java:defs.bzl', 'java_library')",
-        "java_library(name = 'java_lib2', srcs = ['A.java'])");
-    Dict<Object, Object> javaInfoB = getDictFromJavaInfo("foo", "java_lib2");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun dictFromJavaInfo_detectsDifference() {
+        scratch.overwriteFile(
+            "foo/BUILD",
+            "load('@rules_java//java:defs.bzl', 'java_library')",
+            "java_library(name = 'java_lib', srcs = ['A.java'])"
+        )
+        val javaInfoA: Dict<Any?, Any?> = getDictFromJavaInfo("foo", "java_lib")
 
-    assertThat((Map<?, ?>) javaInfoA).isNotEqualTo(javaInfoB);
-  }
+        scratch.overwriteFile(
+            "foo/BUILD",
+            "load('@rules_java//java:defs.bzl', 'java_library')",
+            "java_library(name = 'java_lib2', srcs = ['A.java'])"
+        )
+        val javaInfoB: Dict<Any?, Any?> = getDictFromJavaInfo("foo", "java_lib2")
 
-  @Test
-  public void roundtripJavainfo_srcs() throws Exception {
+        Truth.assertThat(javaInfoA as MutableMap<*, *>?).isNotEqualTo(javaInfoB)
+    }
 
-    scratch.overwriteFile(
-        "foo/BUILD",
-        "load('@rules_java//java:defs.bzl', 'java_library')",
-        "java_library(name = 'java_lib', srcs = ['A.java'])");
-    Dict<Object, Object> javaInfoA = getDictFromJavaInfo("foo", "java_lib");
-    scratch.overwriteFile(
-        "foo/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun roundtripJavainfo_srcs() {
+        scratch.overwriteFile(
+            "foo/BUILD",
+            "load('@rules_java//java:defs.bzl', 'java_library')",
+            "java_library(name = 'java_lib', srcs = ['A.java'])"
+        )
+        var javaInfoA: Dict<Any?, Any?> = getDictFromJavaInfo("foo", "java_lib")
+        scratch.overwriteFile(
+            "foo/BUILD",
+            """
         load("//foo:construct_javainfo.bzl", "construct_javainfo")
 
         construct_javainfo(
             name = "java_lib",
             srcs = ["A.java"],
         )
-        """);
-    Dict<Object, Object> javaInfoB = getDictFromJavaInfo("foo", "java_lib");
+        
+        """.trimIndent()
+        )
+        val javaInfoB: Dict<Any?, Any?> = getDictFromJavaInfo("foo", "java_lib")
 
-    javaInfoA = removeCompilationInfo(javaInfoA);
-    assertThat((Map<?, ?>) javaInfoB).isEqualTo(javaInfoA);
-  }
+        javaInfoA = removeCompilationInfo(javaInfoA)
+        Truth.assertThat(javaInfoB as MutableMap<*, *>?).isEqualTo(javaInfoA)
+    }
 
-  @Test
-  public void roundtripJavaInfo_deps() throws Exception {
-    scratch.file(
-        "bar/BUILD",
-        "load('@rules_java//java:defs.bzl', 'java_library')",
-        "java_library(name = 'javalib', srcs = ['A.java'])");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun roundtripJavaInfo_deps() {
+        scratch.file(
+            "bar/BUILD",
+            "load('@rules_java//java:defs.bzl', 'java_library')",
+            "java_library(name = 'javalib', srcs = ['A.java'])"
+        )
 
-    scratch.overwriteFile(
-        "foo/BUILD",
-        """
+        scratch.overwriteFile(
+            "foo/BUILD",
+            """
         load("@rules_java//java:defs.bzl", "java_library")
         java_library(
             name = "java_lib",
             srcs = ["A.java"],
             deps = ["//bar:javalib"],
         )
-        """);
-    Dict<Object, Object> javaInfoA = getDictFromJavaInfo("foo", "java_lib");
-    scratch.overwriteFile(
-        "foo/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        var javaInfoA: Dict<Any?, Any?> = getDictFromJavaInfo("foo", "java_lib")
+        scratch.overwriteFile(
+            "foo/BUILD",
+            """
         load("//foo:construct_javainfo.bzl", "construct_javainfo")
 
         construct_javainfo(
@@ -282,34 +249,40 @@ public class JavaInfoRoundtripTest extends BuildViewTestCase {
             srcs = ["A.java"],
             deps = ["//bar:javalib"],
         )
-        """);
-    Dict<Object, Object> javaInfoB = getDictFromJavaInfo("foo", "java_lib");
+        
+        """.trimIndent()
+        )
+        val javaInfoB: Dict<Any?, Any?> = getDictFromJavaInfo("foo", "java_lib")
 
-    javaInfoA = removeCompilationInfo(javaInfoA);
-    assertThat((Map<?, ?>) javaInfoB).isEqualTo(javaInfoA);
-  }
+        javaInfoA = removeCompilationInfo(javaInfoA)
+        Truth.assertThat(javaInfoB as MutableMap<*, *>?).isEqualTo(javaInfoA)
+    }
 
-  @Test
-  public void roundtipJavaInfo_runtimeDeps() throws Exception {
-    scratch.file(
-        "bar/BUILD",
-        "load('@rules_java//java:defs.bzl', 'java_library')",
-        "java_library(name = 'deplib', srcs = ['A.java'])");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun roundtipJavaInfo_runtimeDeps() {
+        scratch.file(
+            "bar/BUILD",
+            "load('@rules_java//java:defs.bzl', 'java_library')",
+            "java_library(name = 'deplib', srcs = ['A.java'])"
+        )
 
-    scratch.overwriteFile(
-        "foo/BUILD",
-        """
+        scratch.overwriteFile(
+            "foo/BUILD",
+            """
         load("@rules_java//java:defs.bzl", "java_library")
         java_library(
             name = "java_lib",
             srcs = ["A.java"],
             runtime_deps = ["//bar:deplib"],
         )
-        """);
-    Dict<Object, Object> javaInfoA = getDictFromJavaInfo("foo", "java_lib");
-    scratch.overwriteFile(
-        "foo/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        var javaInfoA: Dict<Any?, Any?> = getDictFromJavaInfo("foo", "java_lib")
+        scratch.overwriteFile(
+            "foo/BUILD",
+            """
         load("//foo:construct_javainfo.bzl", "construct_javainfo")
 
         construct_javainfo(
@@ -317,34 +290,40 @@ public class JavaInfoRoundtripTest extends BuildViewTestCase {
             srcs = ["A.java"],
             runtime_deps = ["//bar:deplib"],
         )
-        """);
-    Dict<Object, Object> javaInfoB = getDictFromJavaInfo("foo", "java_lib");
+        
+        """.trimIndent()
+        )
+        val javaInfoB: Dict<Any?, Any?> = getDictFromJavaInfo("foo", "java_lib")
 
-    javaInfoA = removeCompilationInfo(javaInfoA);
-    assertThat((Map<?, ?>) javaInfoB).isEqualTo(javaInfoA);
-  }
+        javaInfoA = removeCompilationInfo(javaInfoA)
+        Truth.assertThat(javaInfoB as MutableMap<*, *>?).isEqualTo(javaInfoA)
+    }
 
-  @Test
-  public void roundtipJavaInfo_exports() throws Exception {
-    scratch.file(
-        "bar/BUILD",
-        "load('@rules_java//java:defs.bzl', 'java_library')",
-        "java_library(name = 'exportlib', srcs = ['A.java'])");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun roundtipJavaInfo_exports() {
+        scratch.file(
+            "bar/BUILD",
+            "load('@rules_java//java:defs.bzl', 'java_library')",
+            "java_library(name = 'exportlib', srcs = ['A.java'])"
+        )
 
-    scratch.overwriteFile(
-        "foo/BUILD",
-        """
+        scratch.overwriteFile(
+            "foo/BUILD",
+            """
         load("@rules_java//java:defs.bzl", "java_library")
         java_library(
             name = "java_lib",
             srcs = ["A.java"],
             exports = ["//bar:exportlib"],
         )
-        """);
-    Dict<Object, Object> javaInfoA = getDictFromJavaInfo("foo", "java_lib");
-    scratch.overwriteFile(
-        "foo/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        var javaInfoA: Dict<Any?, Any?> = getDictFromJavaInfo("foo", "java_lib")
+        scratch.overwriteFile(
+            "foo/BUILD",
+            """
         load("//foo:construct_javainfo.bzl", "construct_javainfo")
 
         construct_javainfo(
@@ -352,34 +331,40 @@ public class JavaInfoRoundtripTest extends BuildViewTestCase {
             srcs = ["A.java"],
             exports = ["//bar:exportlib"],
         )
-        """);
-    Dict<Object, Object> javaInfoB = getDictFromJavaInfo("foo", "java_lib");
+        
+        """.trimIndent()
+        )
+        val javaInfoB: Dict<Any?, Any?> = getDictFromJavaInfo("foo", "java_lib")
 
-    javaInfoA = removeCompilationInfo(javaInfoA);
-    assertThat((Map<?, ?>) javaInfoB).isEqualTo(javaInfoA);
-  }
+        javaInfoA = removeCompilationInfo(javaInfoA)
+        Truth.assertThat(javaInfoB as MutableMap<*, *>?).isEqualTo(javaInfoA)
+    }
 
-  @Test
-  public void roundtipJavaInfo_plugin() throws Exception {
-    scratch.file(
-        "bar/BUILD",
-        "load('@rules_java//java:defs.bzl', 'java_plugin')",
-        "java_plugin(name = 'plugin', srcs = ['A.java'], processor_class = 'bar.Main')");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun roundtipJavaInfo_plugin() {
+        scratch.file(
+            "bar/BUILD",
+            "load('@rules_java//java:defs.bzl', 'java_plugin')",
+            "java_plugin(name = 'plugin', srcs = ['A.java'], processor_class = 'bar.Main')"
+        )
 
-    scratch.overwriteFile(
-        "foo/BUILD",
-        """
+        scratch.overwriteFile(
+            "foo/BUILD",
+            """
         load("@rules_java//java:defs.bzl", "java_library")
         java_library(
             name = "java_lib",
             srcs = ["A.java"],
             plugins = ["//bar:plugin"],
         )
-        """);
-    Dict<Object, Object> javaInfoA = getDictFromJavaInfo("foo", "java_lib");
-    scratch.overwriteFile(
-        "foo/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        var javaInfoA: Dict<Any?, Any?> = getDictFromJavaInfo("foo", "java_lib")
+        scratch.overwriteFile(
+            "foo/BUILD",
+            """
         load("//foo:construct_javainfo.bzl", "construct_javainfo")
 
         construct_javainfo(
@@ -387,11 +372,49 @@ public class JavaInfoRoundtripTest extends BuildViewTestCase {
             srcs = ["A.java"],
             plugins = True,
         )
-        """);
-    Dict<Object, Object> javaInfoB = getDictFromJavaInfo("foo", "java_lib");
+        
+        """.trimIndent()
+        )
+        val javaInfoB: Dict<Any?, Any?> = getDictFromJavaInfo("foo", "java_lib")
 
-    javaInfoA = removeCompilationInfo(javaInfoA);
-    javaInfoA = removeAnnotationClasses(javaInfoA);
-    assertThat((Map<?, ?>) javaInfoB).isEqualTo(javaInfoA);
-  }
+        javaInfoA = removeCompilationInfo(javaInfoA)
+        javaInfoA = removeAnnotationClasses(javaInfoA)
+        Truth.assertThat(javaInfoB as MutableMap<*, *>?).isEqualTo(javaInfoA)
+    }
+
+    companion object {
+        @Throws(net.starlark.java.eval.EvalException::class)
+        private fun <T> deepStripAttributes(obj: T?, shouldRemove: java.util.function.Predicate<String?>): T? {
+            if (obj == null) {
+                return null
+            } else if (obj is StarlarkList) {
+                val builder: com.google.common.collect.ImmutableList.Builder<Any?> =
+                    com.google.common.collect.ImmutableList.builder<Any?>()
+                for (item in obj as StarlarkList<Any?>) {
+                    builder.add(Companion.deepStripAttributes<Any?>(item, shouldRemove))
+                }
+                return StarlarkList.immutableCopyOf<Any?>(builder.build()) as T?
+            } else if (obj is Structure) {
+                for (fieldName in obj.getFieldNames()) {
+                    val builder: net.starlark.java.eval.Dict.Builder<String?, Any?> = Dict.builder<String?, Any?>()
+                    if (!shouldRemove.test(fieldName)) {
+                        builder.put(
+                            fieldName,
+                            Companion.deepStripAttributes<Any?>((obj as Structure).getValue(fieldName), shouldRemove)
+                        )
+                    }
+                    return StructProvider.STRUCT.create(builder.buildImmutable(), "") as T?
+                }
+            } else if (obj is Dict) {
+                val builder: net.starlark.java.eval.Dict.Builder<Any?, Any?> = Dict.builder<Any?, Any?>()
+                for (e in Dict.cast<Any?, Any?>(obj, Any::class.java, Any::class.java, "dict").entries) {
+                    if (!(e.key is String && shouldRemove.test(e.key as String?))) {
+                        builder.put(e.key, Companion.deepStripAttributes<Any?>(e.value, shouldRemove))
+                    }
+                }
+                return builder.buildImmutable() as T?
+            }
+            return obj
+        }
+    }
 }

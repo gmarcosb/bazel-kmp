@@ -11,196 +11,166 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.testutil;
+package com.google.devtools.build.lib.query2.testutil
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.packages.Attribute.attr;
-import static com.google.devtools.build.lib.packages.BuildType.LABEL;
-import static com.google.devtools.build.lib.testutil.TestConstants.PLATFORM_LABEL;
-import static org.junit.Assert.assertThrows;
+import com.google.common.collect.ImmutableMap
+import com.google.common.collect.ImmutableSet
+import com.google.devtools.build.lib.analysis.util.DummyTestFragment
+import com.google.devtools.build.lib.events.EventHandler
+import com.google.devtools.build.lib.packages.Attribute.attr
+import com.google.devtools.build.lib.query2.engine.QueryEnvironment
+import com.google.devtools.build.lib.query2.engine.QueryException
+import com.google.devtools.build.lib.query2.engine.QueryParser
+import com.google.devtools.build.lib.testutil.TestUtils
+import org.junit.Assert
+import org.junit.Test
+import org.junit.function.ThrowingRunnable
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.config.BuildOptionsView;
-import com.google.devtools.build.lib.analysis.config.FragmentOptions;
-import com.google.devtools.build.lib.analysis.config.ToolchainTypeRequirement;
-import com.google.devtools.build.lib.analysis.config.transitions.ConfigurationTransition;
-import com.google.devtools.build.lib.analysis.config.transitions.PatchTransition;
-import com.google.devtools.build.lib.analysis.config.transitions.SplitTransition;
-import com.google.devtools.build.lib.analysis.config.transitions.TransitionFactory;
-import com.google.devtools.build.lib.analysis.util.DummyTestFragment.DummyTestOptions;
-import com.google.devtools.build.lib.analysis.util.MockRule;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.TargetParsingException;
-import com.google.devtools.build.lib.events.EventHandler;
-import com.google.devtools.build.lib.packages.Attribute;
-import com.google.devtools.build.lib.packages.AttributeMap;
-import com.google.devtools.build.lib.packages.AttributeTransitionData;
-import com.google.devtools.build.lib.packages.RuleTransitionData;
-import com.google.devtools.build.lib.packages.Type;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.QueryFunction;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.Setting;
-import com.google.devtools.build.lib.query2.engine.QueryException;
-import com.google.devtools.build.lib.query2.engine.QueryExpression;
-import com.google.devtools.build.lib.query2.engine.QueryParser;
-import com.google.devtools.build.lib.server.FailureDetails;
-import com.google.devtools.build.lib.server.FailureDetails.ConfigurableQuery.Code;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import com.google.devtools.build.lib.testutil.TestUtils;
-import com.google.devtools.build.lib.util.FileTypeSet;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Set;
-import org.junit.Before;
-import org.junit.Test;
-
-/** Tests for {@link PostAnalysisQueryEnvironment}. */
-public abstract class PostAnalysisQueryTest<T> extends AbstractQueryTest<T> {
-
-  // Also filter out platform dependencies.
-  @Override
-  protected String getDependencyCorrection() {
-    return " - deps(" + PLATFORM_LABEL + ")";
-  }
-
-  static final String DEFAULT_UNIVERSE = "DEFAULT_UNIVERSE";
-
-  @Before
-  public final void disableOrderedResults() {
-    helper.setOrderedResults(false);
-  }
-
-  @Before
-  public final void setMockToolsConfig() {
-    this.mockToolsConfig = getHelper().getMockToolsConfig();
-  }
-
-  /**
-   * In production, cquery constructs the universe by parsing targets from the query expression and
-   * building them at the top level. If this is not viable (e.g. component functions) or not desired
-   * (e.g. somepath(//foo-built-in-target, //bar-built-in-host), the user must specify the
-   * --universe_scope flag. Enforce the same behavior in this test by initializing universe scope to
-   * an invalid target expression.
-   */
-  @Override
-  protected String getDefaultUniverseScope() {
-    return DEFAULT_UNIVERSE;
-  }
-
-  protected PostAnalysisQueryHelper<T> getHelper() {
-    return (PostAnalysisQueryHelper<T>) helper;
-  }
-
-  /**
-   * At the end of each eval, reset the universe scope to the default if the test doesn't use a
-   * single universe scope.
-   */
-  @Override
-  protected Set<T> eval(String query) throws Exception {
-    maybeParseUniverseScope(query);
-    Set<T> queryResult = super.eval(query);
-    if (!getHelper().isWholeTestUniverse()) {
-      helper.setUniverseScope(getDefaultUniverseScope());
+/** Tests for [PostAnalysisQueryEnvironment].  */
+abstract class PostAnalysisQueryTest<T> : AbstractQueryTest<T?>() {
+    // Also filter out platform dependencies.
+    override fun getDependencyCorrection(): String {
+        return " - deps(" + TestConstants.PLATFORM_LABEL + ")"
     }
-    return queryResult;
-  }
 
-  @Override
-  protected EvalThrowsResult evalThrows(String query, boolean unconditionallyThrows)
-      throws Exception {
-    maybeParseUniverseScope(query);
-    EvalThrowsResult queryResult = super.evalThrows(query, unconditionallyThrows);
-    if (!getHelper().isWholeTestUniverse()) {
-      helper.setUniverseScope(getDefaultUniverseScope());
+    @Before
+    fun disableOrderedResults() {
+        helper!!.setOrderedResults(false)
     }
-    return queryResult;
-  }
 
-  // Parse the universe if the universe has not been set manually through the helper.
-  private void maybeParseUniverseScope(String query) throws Exception {
-    if (!getHelper()
-        .getUniverseScopeAsStringList()
-        .equals(Collections.singletonList(getDefaultUniverseScope()))) {
-      return;
+    @Before
+    fun setMockToolsConfig() {
+        this.mockToolsConfig = this.helper!!.getMockToolsConfig()
     }
-    QueryExpression expression = QueryParser.parse(query, getDefaultFunctions());
-    Set<String> targetPatternSet = new LinkedHashSet<>();
-    expression.collectTargetPatterns(targetPatternSet);
-    if (!targetPatternSet.isEmpty()) {
-      StringBuilder universeScope = new StringBuilder();
-      for (String target : targetPatternSet) {
-        universeScope.append(target).append(",");
-      }
-      helper.setUniverseScope(universeScope.toString());
+
+    /**
+     * In production, cquery constructs the universe by parsing targets from the query expression and
+     * building them at the top level. If this is not viable (e.g. component functions) or not desired
+     * (e.g. somepath(//foo-built-in-target, //bar-built-in-host), the user must specify the
+     * --universe_scope flag. Enforce the same behavior in this test by initializing universe scope to
+     * an invalid target expression.
+     */
+    override fun getDefaultUniverseScope(): String {
+        return DEFAULT_UNIVERSE
     }
-  }
 
-  protected abstract HashMap<String, QueryFunction> getDefaultFunctions();
+    protected val helper: PostAnalysisQueryHelper<T?>?
+        get() = field
 
-  protected abstract BuildConfigurationValue getConfiguration(T target);
+    /**
+     * At the end of each eval, reset the universe scope to the default if the test doesn't use a
+     * single universe scope.
+     */
+    @Throws(Exception::class)
+    override fun eval(query: String?): MutableSet<T?>? {
+        maybeParseUniverseScope(query)
+        val queryResult = super.eval(query)
+        if (!this.helper!!.isWholeTestUniverse()) {
+            helper!!.setUniverseScope(getDefaultUniverseScope())
+        }
+        return queryResult
+    }
 
-  @Override
-  protected boolean testConfigurableAttributes() {
-    // ConfiguredTargetQuery knows the actual configuration, so it doesn't falsely overapproximate.
-    return false;
-  }
+    @Throws(Exception::class)
+    override fun evalThrows(query: String?, unconditionallyThrows: Boolean): EvalThrowsResult {
+        maybeParseUniverseScope(query)
+        val queryResult = super.evalThrows(query, unconditionallyThrows)
+        if (!this.helper!!.isWholeTestUniverse()) {
+            helper!!.setUniverseScope(getDefaultUniverseScope())
+        }
+        return queryResult
+    }
 
-  @Override
-  @Test
-  public void testTargetLiteralWithMissingTargets() {
-    getHelper().turnOffFailFast();
-    TargetParsingException e =
-        assertThrows(TargetParsingException.class, super::testTargetLiteralWithMissingTargets);
-    assertThat(e)
-        .hasMessageThat()
-        .matches(
-            TestUtils.createMissingTargetAssertionString(
-                /* target= */ "b",
-                /* packageStr= */ "a",
-                helper.getRootDirectory().getPathString(),
-                ""));
-    assertThat(e.getDetailedExitCode().getFailureDetail().getPackageLoading().getCode())
-        .isEqualTo(FailureDetails.PackageLoading.Code.TARGET_MISSING);
-  }
+    // Parse the universe if the universe has not been set manually through the helper.
+    @Throws(Exception::class)
+    private fun maybeParseUniverseScope(query: String?) {
+        if (this.helper!!
+                .getUniverseScopeAsStringList()
+            != mutableListOf<String?>(getDefaultUniverseScope())
+        ) {
+            return
+        }
+        val expression: QueryExpression = QueryParser.parse(
+            query,
+            this.defaultFunctions
+        )
+        val targetPatternSet: MutableSet<String?> = LinkedHashSet<String?>()
+        expression.collectTargetPatterns(targetPatternSet)
+        if (!targetPatternSet.isEmpty()) {
+            val universeScope = StringBuilder()
+            for (target in targetPatternSet) {
+                universeScope.append(target).append(",")
+            }
+            helper!!.setUniverseScope(universeScope.toString())
+        }
+    }
 
-  @Override
-  @Test
-  public void testBadTargetLiterals() throws Exception {
-    getHelper().turnOffFailFast();
-    TargetParsingException e =
-        assertThrows(TargetParsingException.class, super::testBadTargetLiterals);
-    checkResultofBadTargetLiterals(e.getMessage(), e.getDetailedExitCode().getFailureDetail());
-  }
+    protected abstract val defaultFunctions: HashMap<String?, QueryFunction?>?
 
-  @SuppressWarnings("TruthIncompatibleType")
-  @Override
-  @Test
-  public void testNoImplicitDeps() throws Exception {
-    MockRule ruleWithImplicitDeps =
-        () ->
-            MockRule.define(
-                "implicit_deps_rule",
-                attr("explicit", LABEL).allowedFileTypes(FileTypeSet.ANY_FILE),
-                attr("explicit_with_default", LABEL)
-                    .value(Label.parseCanonicalUnchecked("//test:explicit_with_default"))
-                    .allowedFileTypes(FileTypeSet.ANY_FILE),
-                attr("$implicit", LABEL).value(Label.parseCanonicalUnchecked("//test:implicit")),
-                attr(":latebound", LABEL)
-                    .value(
-                        Attribute.LateBoundDefault.fromConstantForTesting(
-                            Label.parseCanonicalUnchecked("//test:latebound"))));
-    helper.useRuleClassProvider(setRuleClassProviders(ruleWithImplicitDeps).build());
+    protected abstract fun getConfiguration(target: T?): BuildConfigurationValue?
 
-    writeFile(
-        "test/BUILD",
-        """
+    override fun testConfigurableAttributes(): Boolean {
+        // ConfiguredTargetQuery knows the actual configuration, so it doesn't falsely overapproximate.
+        return false
+    }
+
+    @Test
+    override fun testTargetLiteralWithMissingTargets() {
+        this.helper!!.turnOffFailFast()
+        val e: TargetParsingException =
+            Assert.assertThrows<T?>(
+                TargetParsingException::class.java,
+                ThrowingRunnable { super.testTargetLiteralWithMissingTargets() })
+        assertThat(e)
+            .hasMessageThat()
+            .matches(
+                TestUtils.createMissingTargetAssertionString( /* target= */
+                    "b",  /* packageStr= */
+                    "a",
+                    helper!!.getRootDirectory().getPathString(),
+                    ""
+                )
+            )
+        assertThat(e.getDetailedExitCode().getFailureDetail().getPackageLoading().getCode())
+            .isEqualTo(FailureDetails.PackageLoading.Code.TARGET_MISSING)
+    }
+
+    @Test
+    @Throws(Exception::class)
+    override fun testBadTargetLiterals() {
+        this.helper!!.turnOffFailFast()
+        val e: TargetParsingException =
+            Assert.assertThrows<T?>(
+                TargetParsingException::class.java,
+                ThrowingRunnable { super.testBadTargetLiterals() })
+        checkResultofBadTargetLiterals(e.getMessage(), e.getDetailedExitCode().getFailureDetail())
+    }
+
+    @Test
+    @Throws(Exception::class)
+    override fun testNoImplicitDeps() {
+        val ruleWithImplicitDeps: MockRule =
+            MockRule {
+                MockRule.define(
+                    "implicit_deps_rule",
+                    attr("explicit", LABEL).allowedFileTypes(FileTypeSet.ANY_FILE),
+                    attr("explicit_with_default", LABEL)
+                        .value(Label.parseCanonicalUnchecked("//test:explicit_with_default"))
+                        .allowedFileTypes(FileTypeSet.ANY_FILE),
+                    attr("\$implicit", LABEL).value(Label.parseCanonicalUnchecked("//test:implicit")),
+                    attr(":latebound", LABEL)
+                        .value(
+                            Attribute.LateBoundDefault.fromConstantForTesting(
+                                Label.parseCanonicalUnchecked("//test:latebound")
+                            )
+                        )
+                )
+            }
+        helper!!.useRuleClassProvider(setRuleClassProviders(ruleWithImplicitDeps).build())
+
+        writeFile(
+            "test/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         implicit_deps_rule(
             name = "my_rule",
@@ -215,28 +185,32 @@ public abstract class PostAnalysisQueryTest<T> extends AbstractQueryTest<T> {
         cc_library(name = "implicit")
 
         cc_library(name = "latebound")
-        """);
+        
+        """.trimIndent()
+        )
 
-    final String implicits = "//test:implicit + //test:latebound";
-    final String explicits = "//test:my_rule + //test:explicit + //test:explicit_with_default";
+        val implicits = "//test:implicit + //test:latebound"
+        val explicits = "//test:my_rule + //test:explicit + //test:explicit_with_default"
 
-    // Check for implicit dependencies (late bound attributes, implicit attributes, platforms)
-    assertThat(evalToListOfStrings("deps(//test:my_rule)"))
-        .containsAtLeastElementsIn(
-            unique(evalToListOfStrings(explicits + " + " + implicits + " + " + PLATFORM_LABEL)));
+        // Check for implicit dependencies (late bound attributes, implicit attributes, platforms)
+        Truth.assertThat(evalToListOfStrings("deps(//test:my_rule)"))
+            .containsAtLeastElementsIn(
+                unique(evalToListOfStrings(explicits + " + " + implicits + " + " + TestConstants.PLATFORM_LABEL))
+            )
 
-    helper.setQuerySettings(Setting.NO_IMPLICIT_DEPS);
-    assertThat(evalToListOfStrings("deps(//test:my_rule)"))
-        .containsAtLeastElementsIn(evalToListOfStrings(explicits));
-    assertThat(evalToListOfStrings("deps(//test:my_rule)"))
-        .containsNoneIn(evalToListOfStrings(implicits));
-  }
+        helper!!.setQuerySettings(QueryEnvironment.Setting.NO_IMPLICIT_DEPS)
+        Truth.assertThat(evalToListOfStrings("deps(//test:my_rule)"))
+            .containsAtLeastElementsIn(evalToListOfStrings(explicits))
+        Truth.assertThat(evalToListOfStrings("deps(//test:my_rule)"))
+            .containsNoneIn(evalToListOfStrings(implicits))
+    }
 
-  @Test
-  public void testNoImplicitDepsOnOutputFile() throws Exception {
-    writeFile(
-        "test/BUILD",
-"""
+    @Test
+    @Throws(Exception::class)
+    fun testNoImplicitDepsOnOutputFile() {
+        writeFile(
+            "test/BUILD",
+            """
 load(":defs.bzl", "my_dep", "my_rule")
 my_rule(
     name = "buildme",
@@ -245,11 +219,13 @@ my_rule(
 )
 my_dep(name = "explicit_dep")
 my_dep(name = "implicit_dep")
-""");
 
-    writeFile(
-        "test/defs.bzl",
-"""
+""".trimIndent()
+        )
+
+        writeFile(
+            "test/defs.bzl",
+            """
 my_dep = rule(
     implementation = lambda ctx: [],
     attrs = {},
@@ -266,19 +242,22 @@ my_rule = rule(
         "_implicit_deps": attr.label_list(default = ["//test:implicit_dep"]),
     },
 )
-""");
 
-    helper.setQuerySettings(Setting.NO_IMPLICIT_DEPS);
-    assertThat(evalToListOfStrings("deps(//test:foo.out)"))
-        .containsAtLeast("//test:foo.out", "//test:buildme", "//test:explicit_dep");
-    assertThat(evalToListOfStrings("deps(//test:foo.out)")).doesNotContain("//test:implicit_dep");
-  }
+""".trimIndent()
+        )
 
-  @Test
-  public void testImplicitDepsOnOutputFile() throws Exception {
-    writeFile(
-        "test/BUILD",
-"""
+        helper!!.setQuerySettings(QueryEnvironment.Setting.NO_IMPLICIT_DEPS)
+        Truth.assertThat(evalToListOfStrings("deps(//test:foo.out)"))
+            .containsAtLeast("//test:foo.out", "//test:buildme", "//test:explicit_dep")
+        Truth.assertThat(evalToListOfStrings("deps(//test:foo.out)")).doesNotContain("//test:implicit_dep")
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testImplicitDepsOnOutputFile() {
+        writeFile(
+            "test/BUILD",
+            """
 load(":defs.bzl", "my_dep", "my_rule")
 my_rule(
     name = "buildme",
@@ -287,11 +266,13 @@ my_rule(
 )
 my_dep(name = "explicit_dep")
 my_dep(name = "implicit_dep")
-""");
 
-    writeFile(
-        "test/defs.bzl",
-"""
+""".trimIndent()
+        )
+
+        writeFile(
+            "test/defs.bzl",
+            """
 my_dep = rule(
     implementation = lambda ctx: [],
     attrs = {},
@@ -308,29 +289,37 @@ my_rule = rule(
         "_implicit_deps": attr.label_list(default = ["//test:implicit_dep"]),
     },
 )
-""");
 
-    helper.setQuerySettings();
-    assertThat(evalToListOfStrings("deps(//test:foo.out)"))
-        .containsAtLeast(
-            "//test:foo.out", "//test:buildme", "//test:explicit_dep", "//test:implicit_dep");
-  }
+""".trimIndent()
+        )
 
-  @Test
-  public void testNoImplicitDeps_toolchains() throws Exception {
-    MockRule ruleWithImplicitDeps =
-        () ->
-            MockRule.define(
-                "implicit_toolchain_deps_rule",
-                (builder, env) ->
-                    builder.addToolchainTypes(
-                        ToolchainTypeRequirement.create(
-                            Label.parseCanonicalUnchecked("//test:toolchain_type"))));
-    helper.useRuleClassProvider(setRuleClassProviders(ruleWithImplicitDeps).build());
+        helper!!.setQuerySettings()
+        Truth.assertThat(evalToListOfStrings("deps(//test:foo.out)"))
+            .containsAtLeast(
+                "//test:foo.out", "//test:buildme", "//test:explicit_dep", "//test:implicit_dep"
+            )
+    }
 
-    writeFile(
-        "test/toolchain.bzl",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testNoImplicitDeps_toolchains() {
+        val ruleWithImplicitDeps: MockRule =
+            MockRule {
+                MockRule.define(
+                    "implicit_toolchain_deps_rule",
+                    { builder, env ->
+                        builder.addToolchainTypes(
+                            ToolchainTypeRequirement.create(
+                                Label.parseCanonicalUnchecked("//test:toolchain_type")
+                            )
+                        )
+                    })
+            }
+        helper!!.useRuleClassProvider(setRuleClassProviders(ruleWithImplicitDeps).build())
+
+        writeFile(
+            "test/toolchain.bzl",
+            """
         def _impl(ctx):
             toolchain = platform_common.ToolchainInfo()
             return [toolchain]
@@ -338,10 +327,12 @@ my_rule = rule(
         test_toolchain = rule(
             implementation = _impl,
         )
-        """);
-    writeFile(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        writeFile(
+            "test/BUILD",
+            """
         load(":toolchain.bzl", "test_toolchain")
 
         implicit_toolchain_deps_rule(
@@ -357,37 +348,43 @@ my_rule = rule(
         )
 
         test_toolchain(name = "toolchain_impl")
-        """);
-    ((PostAnalysisQueryHelper<T>) helper).useConfiguration("--extra_toolchains=//test:toolchain");
+        
+        """.trimIndent()
+        )
+        (helper as PostAnalysisQueryHelper<T?>).useConfiguration("--extra_toolchains=//test:toolchain")
 
-    String implicits = "//test:toolchain_impl";
-    String explicits = "//test:my_rule";
+        val implicits = "//test:toolchain_impl"
+        val explicits = "//test:my_rule"
 
-    // Check for implicit toolchain dependencies
-    assertThat(evalToListOfStrings("deps(//test:my_rule)"))
-        .containsAtLeastElementsIn(
-            unique(evalToListOfStrings(explicits + "+" + implicits + "+" + PLATFORM_LABEL)));
+        // Check for implicit toolchain dependencies
+        Truth.assertThat(evalToListOfStrings("deps(//test:my_rule)"))
+            .containsAtLeastElementsIn(
+                unique(evalToListOfStrings(explicits + "+" + implicits + "+" + TestConstants.PLATFORM_LABEL))
+            )
 
-    helper.setQuerySettings(Setting.NO_IMPLICIT_DEPS);
-    ImmutableList<String> filteredDeps = evalToListOfStrings("deps(//test:my_rule)");
-    assertThat(filteredDeps).contains(explicits);
-    assertThat(filteredDeps).doesNotContain(implicits);
-  }
+        helper!!.setQuerySettings(QueryEnvironment.Setting.NO_IMPLICIT_DEPS)
+        val filteredDeps = evalToListOfStrings("deps(//test:my_rule)")
+        Truth.assertThat(filteredDeps).contains(explicits)
+        Truth.assertThat(filteredDeps).doesNotContain(implicits)
+    }
 
-  private void writeSimpleToolchain() throws Exception {
-    writeFile(
-        "test/toolchain_def.bzl",
-        """
+    @Throws(Exception::class)
+    private fun writeSimpleToolchain() {
+        writeFile(
+            "test/toolchain_def.bzl",
+            """
         def _impl(ctx):
             return [platform_common.ToolchainInfo()]
 
         test_toolchain = rule(
             implementation = _impl,
         )
-        """);
-    writeFile(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        writeFile(
+            "test/BUILD",
+            """
         load("//test:toolchain_def.bzl", "test_toolchain")
 
         toolchain_type(name = "toolchain_type")
@@ -399,15 +396,18 @@ my_rule = rule(
         )
 
         test_toolchain(name = "toolchain_impl")
-        """);
-  }
+        
+        """.trimIndent()
+        )
+    }
 
-  @Test
-  public void testNoImplicitDeps_starlark_toolchains() throws Exception {
-    writeSimpleToolchain();
-    writeFile(
-        "test/rule/rule.bzl",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testNoImplicitDeps_starlark_toolchains() {
+        writeSimpleToolchain()
+        writeFile(
+            "test/rule/rule.bzl",
+            """
         def _impl(ctx):
             return []
 
@@ -415,36 +415,41 @@ my_rule = rule(
             implementation = _impl,
             toolchains = ["//test:toolchain_type"],
         )
-        """);
-    writeFile(
-        "test/rule/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        writeFile(
+            "test/rule/BUILD",
+            """
         load(":rule.bzl", "implicit_toolchain_deps_rule")
 
         implicit_toolchain_deps_rule(
             name = "my_rule",
         )
-        """);
-    ((PostAnalysisQueryHelper<T>) helper).useConfiguration("--extra_toolchains=//test:toolchain");
+        
+        """.trimIndent()
+        )
+        (helper as PostAnalysisQueryHelper<T?>).useConfiguration("--extra_toolchains=//test:toolchain")
 
-    String implicits = "//test:toolchain_impl";
-    String explicits = "//test/rule:my_rule";
+        val implicits = "//test:toolchain_impl"
+        val explicits = "//test/rule:my_rule"
 
-    // Check for implicit toolchain dependencies
-    assertThat(evalToListOfStrings("deps(//test/rule:my_rule)"))
-        .containsAtLeast(explicits, implicits);
+        // Check for implicit toolchain dependencies
+        Truth.assertThat(evalToListOfStrings("deps(//test/rule:my_rule)"))
+            .containsAtLeast(explicits, implicits)
 
-    helper.setQuerySettings(Setting.NO_IMPLICIT_DEPS);
-    ImmutableList<String> filteredDeps = evalToListOfStrings("deps(//test/rule:my_rule)");
-    assertThat(filteredDeps).contains(explicits);
-    assertThat(filteredDeps).doesNotContain(implicits);
-  }
+        helper!!.setQuerySettings(QueryEnvironment.Setting.NO_IMPLICIT_DEPS)
+        val filteredDeps = evalToListOfStrings("deps(//test/rule:my_rule)")
+        Truth.assertThat(filteredDeps).contains(explicits)
+        Truth.assertThat(filteredDeps).doesNotContain(implicits)
+    }
 
-  @Test
-  public void testNoImplicitDeps_cc_toolchains() throws Exception {
-    writeFile(
-        "test/toolchain/toolchain_config.bzl",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testNoImplicitDeps_cc_toolchains() {
+        writeFile(
+            "test/toolchain/toolchain_config.bzl",
+            """
         load("@rules_cc//cc/toolchains:cc_toolchain_config_info.bzl", "CcToolchainConfigInfo")
         load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
         def _impl(ctx):
@@ -465,91 +470,103 @@ my_rule = rule(
             attrs = {},
             provides = [CcToolchainConfigInfo],
         )
-        """);
-    writeFile(
-        "test/toolchain/BUILD",
-        "load('@rules_cc//cc/toolchains:cc_toolchain.bzl', 'cc_toolchain')",
-        "load(':toolchain_config.bzl', 'cc_toolchain_config')",
-        "cc_toolchain_config(name = 'some-cc-toolchain-config')",
-        "filegroup(name = 'nothing', srcs = [])",
-        "cc_toolchain(",
-        "    name = 'some_cc_toolchain_impl',",
-        "    all_files = ':nothing',",
-        "    as_files = ':nothing',",
-        "    compiler_files = ':nothing',",
-        "    dwp_files = ':nothing',",
-        "    linker_files = ':nothing',",
-        "    objcopy_files = ':nothing',",
-        "    strip_files = ':nothing',",
-        "    toolchain_config = ':some-cc-toolchain-config',",
-        ")",
-        "toolchain(",
-        "    name = 'some_cc_toolchain',",
-        "    toolchain = ':some_cc_toolchain_impl',",
-        "    toolchain_type = '" + TestConstants.TOOLS_REPOSITORY + "//tools/cpp:toolchain_type',",
-        ")");
-    writeFile(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        writeFile(
+            "test/toolchain/BUILD",
+            "load('@rules_cc//cc/toolchains:cc_toolchain.bzl', 'cc_toolchain')",
+            "load(':toolchain_config.bzl', 'cc_toolchain_config')",
+            "cc_toolchain_config(name = 'some-cc-toolchain-config')",
+            "filegroup(name = 'nothing', srcs = [])",
+            "cc_toolchain(",
+            "    name = 'some_cc_toolchain_impl',",
+            "    all_files = ':nothing',",
+            "    as_files = ':nothing',",
+            "    compiler_files = ':nothing',",
+            "    dwp_files = ':nothing',",
+            "    linker_files = ':nothing',",
+            "    objcopy_files = ':nothing',",
+            "    strip_files = ':nothing',",
+            "    toolchain_config = ':some-cc-toolchain-config',",
+            ")",
+            "toolchain(",
+            "    name = 'some_cc_toolchain',",
+            "    toolchain = ':some_cc_toolchain_impl',",
+            "    toolchain_type = '" + TestConstants.TOOLS_REPOSITORY + "//tools/cpp:toolchain_type',",
+            ")"
+        )
+        writeFile(
+            "test/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_library(
             name = "my_rule",
             srcs = ["whatever.cpp"],
         )
-        """);
-    ((PostAnalysisQueryHelper<T>) helper)
-        .useConfiguration("--extra_toolchains=//test/toolchain:some_cc_toolchain");
+        
+        """.trimIndent()
+        )
+        (helper as PostAnalysisQueryHelper<T?>)
+            .useConfiguration("--extra_toolchains=//test/toolchain:some_cc_toolchain")
 
-    String implicits = "//test/toolchain:some_cc_toolchain_impl";
-    String explicits = "//test:my_rule";
+        val implicits = "//test/toolchain:some_cc_toolchain_impl"
+        val explicits = "//test:my_rule"
 
-    // Check for implicit toolchain dependencies
-    assertThat(evalToListOfStrings("deps(//test:my_rule)"))
-        .containsAtLeastElementsIn(
-            unique(evalToListOfStrings(explicits + "+" + implicits + "+" + PLATFORM_LABEL)));
+        // Check for implicit toolchain dependencies
+        Truth.assertThat(evalToListOfStrings("deps(//test:my_rule)"))
+            .containsAtLeastElementsIn(
+                unique(evalToListOfStrings(explicits + "+" + implicits + "+" + TestConstants.PLATFORM_LABEL))
+            )
 
-    helper.setQuerySettings(Setting.NO_IMPLICIT_DEPS);
-    ImmutableList<String> filteredDeps = evalToListOfStrings("deps(//test:my_rule)");
-    assertThat(filteredDeps).contains(explicits);
-    assertThat(filteredDeps).doesNotContain(implicits);
-  }
+        helper!!.setQuerySettings(QueryEnvironment.Setting.NO_IMPLICIT_DEPS)
+        val filteredDeps = evalToListOfStrings("deps(//test:my_rule)")
+        Truth.assertThat(filteredDeps).contains(explicits)
+        Truth.assertThat(filteredDeps).doesNotContain(implicits)
+    }
 
-  // Regression test for b/148550864
-  @Test
-  public void testNoImplicitDeps_platformDeps() throws Exception {
-    MockRule simpleRule = () -> MockRule.define("simple_rule");
-    helper.useRuleClassProvider(setRuleClassProviders(simpleRule).build());
+    // Regression test for b/148550864
+    @Test
+    @Throws(Exception::class)
+    fun testNoImplicitDeps_platformDeps() {
+        val simpleRule: MockRule = MockRule { MockRule.define("simple_rule") }
+        helper!!.useRuleClassProvider(setRuleClassProviders(simpleRule).build())
 
-    writeFile(
-        "test/BUILD",
-        """
+        writeFile(
+            "test/BUILD",
+            """
         simple_rule(name = "my_rule")
 
         platform(name = "host_platform")
 
         platform(name = "execution_platform")
-        """);
+        
+        """.trimIndent()
+        )
 
-    ((PostAnalysisQueryHelper<T>) helper)
-        .useConfiguration(
-            "--host_platform=//test:host_platform",
-            "--extra_execution_platforms=//test:execution_platform");
+        (helper as PostAnalysisQueryHelper<T?>)
+            .useConfiguration(
+                "--host_platform=//test:host_platform",
+                "--extra_execution_platforms=//test:execution_platform"
+            )
 
-    // Check for platform dependencies
-    assertThat(evalToListOfStrings("deps(//test:my_rule)"))
-        .containsAtLeastElementsIn(
-            unique(evalToListOfStrings("//test:execution_platform + //test:host_platform")));
-    helper.setQuerySettings(Setting.NO_IMPLICIT_DEPS);
-    assertThat(evalToListOfStrings("deps(//test:my_rule)")).containsExactly("//test:my_rule");
-  }
+        // Check for platform dependencies
+        Truth.assertThat(evalToListOfStrings("deps(//test:my_rule)"))
+            .containsAtLeastElementsIn(
+                unique(evalToListOfStrings("//test:execution_platform + //test:host_platform"))
+            )
+        helper!!.setQuerySettings(QueryEnvironment.Setting.NO_IMPLICIT_DEPS)
+        Truth.assertThat(evalToListOfStrings("deps(//test:my_rule)")).containsExactly("//test:my_rule")
+    }
 
-  //  Regression test for b/275502129.
-  @Test
-  public void testNoImplicitDepsFromAutoExecGroups_autoExecGroupsEnabled() throws Exception {
-    writeSimpleToolchain();
-    writeFile(
-        "test/aeg/defs.bzl",
-        """
+    //  Regression test for b/275502129.
+    @Test
+    @Throws(Exception::class)
+    fun testNoImplicitDepsFromAutoExecGroups_autoExecGroupsEnabled() {
+        writeSimpleToolchain()
+        writeFile(
+            "test/aeg/defs.bzl",
+            """
         def _impl(ctx):
             return []
 
@@ -557,37 +574,42 @@ my_rule = rule(
             implementation = _impl,
             toolchains = ["//test:toolchain_type"],
         )
-        """);
-    writeFile(
-        "test/aeg/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        writeFile(
+            "test/aeg/BUILD",
+            """
         load("//test/aeg:defs.bzl", "custom_rule")
 
         custom_rule(name = "custom_rule_name")
-        """);
-    ((PostAnalysisQueryHelper<T>) helper)
-        .useConfiguration("--incompatible_auto_exec_groups", "--extra_toolchains=//test:all");
+        
+        """.trimIndent()
+        )
+        (helper as PostAnalysisQueryHelper<T?>)
+            .useConfiguration("--incompatible_auto_exec_groups", "--extra_toolchains=//test:all")
 
-    String implicits = "//test:toolchain_impl";
-    String explicits = "//test/aeg:custom_rule_name";
+        val implicits = "//test:toolchain_impl"
+        val explicits = "//test/aeg:custom_rule_name"
 
-    // Check for implicit toolchain dependencies
-    assertThat(evalToListOfStrings("deps(//test/aeg:custom_rule_name)"))
-        .containsAtLeast(explicits, implicits);
+        // Check for implicit toolchain dependencies
+        Truth.assertThat(evalToListOfStrings("deps(//test/aeg:custom_rule_name)"))
+            .containsAtLeast(explicits, implicits)
 
-    helper.setQuerySettings(Setting.NO_IMPLICIT_DEPS);
-    ImmutableList<String> filteredDeps = evalToListOfStrings("deps(//test/aeg:custom_rule_name)");
-    assertThat(filteredDeps).contains(explicits);
-    assertThat(filteredDeps).doesNotContain(implicits);
-  }
+        helper!!.setQuerySettings(QueryEnvironment.Setting.NO_IMPLICIT_DEPS)
+        val filteredDeps = evalToListOfStrings("deps(//test/aeg:custom_rule_name)")
+        Truth.assertThat(filteredDeps).contains(explicits)
+        Truth.assertThat(filteredDeps).doesNotContain(implicits)
+    }
 
-  //  Regression test for b/275502129.
-  @Test
-  public void testNoImplicitDepsFromCustomExecGroups_autoExecGroupsEnabled() throws Exception {
-    writeSimpleToolchain();
-    writeFile(
-        "test/aeg/defs.bzl",
-        """
+    //  Regression test for b/275502129.
+    @Test
+    @Throws(Exception::class)
+    fun testNoImplicitDepsFromCustomExecGroups_autoExecGroupsEnabled() {
+        writeSimpleToolchain()
+        writeFile(
+            "test/aeg/defs.bzl",
+            """
         def _impl(ctx):
             return []
 
@@ -599,284 +621,250 @@ my_rule = rule(
                 ),
             },
         )
-        """);
-    writeFile(
-        "test/aeg/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        writeFile(
+            "test/aeg/BUILD",
+            """
         load("//test/aeg:defs.bzl", "custom_rule")
 
         custom_rule(name = "custom_rule_name")
-        """);
-    ((PostAnalysisQueryHelper<T>) helper)
-        .useConfiguration("--incompatible_auto_exec_groups", "--extra_toolchains=//test:all");
+        
+        """.trimIndent()
+        )
+        (helper as PostAnalysisQueryHelper<T?>)
+            .useConfiguration("--incompatible_auto_exec_groups", "--extra_toolchains=//test:all")
 
-    String implicits = "//test:toolchain_impl";
-    String explicits = "//test/aeg:custom_rule_name";
+        val implicits = "//test:toolchain_impl"
+        val explicits = "//test/aeg:custom_rule_name"
 
-    // Check for implicit toolchain dependencies
-    assertThat(evalToListOfStrings("deps(//test/aeg:custom_rule_name)"))
-        .containsAtLeast(explicits, implicits);
+        // Check for implicit toolchain dependencies
+        Truth.assertThat(evalToListOfStrings("deps(//test/aeg:custom_rule_name)"))
+            .containsAtLeast(explicits, implicits)
 
-    helper.setQuerySettings(Setting.NO_IMPLICIT_DEPS);
-    ImmutableList<String> filteredDeps = evalToListOfStrings("deps(//test/aeg:custom_rule_name)");
-    assertThat(filteredDeps).contains(explicits);
-    assertThat(filteredDeps).doesNotContain(implicits);
-  }
+        helper!!.setQuerySettings(QueryEnvironment.Setting.NO_IMPLICIT_DEPS)
+        val filteredDeps = evalToListOfStrings("deps(//test/aeg:custom_rule_name)")
+        Truth.assertThat(filteredDeps).contains(explicits)
+        Truth.assertThat(filteredDeps).doesNotContain(implicits)
+    }
 
-  @Override
-  @Test
-  public void testNoImplicitDeps_computedDefault() throws Exception {
-    MockRule computedDefaultRule =
-        () ->
-            MockRule.define(
-                "computed_default_rule",
-                attr("conspiracy", Type.STRING).value("space jam was a documentary"),
-                attr("dep", LABEL)
-                    .allowedFileTypes(FileTypeSet.ANY_FILE)
-                    .value(
-                        new Attribute.ComputedDefault("conspiracy") {
-                          @Override
-                          public Object getDefault(AttributeMap rule) {
-                            return rule.get("conspiracy", Type.STRING)
-                                    .equals("space jam was a documentary")
-                                ? Label.parseCanonicalUnchecked("//test:foo")
-                                : null;
-                          }
-                        }));
+    @Test
+    @Throws(Exception::class)
+    override fun testNoImplicitDeps_computedDefault() {
+        val computedDefaultRule: MockRule =
+            MockRule {
+                MockRule.define(
+                    "computed_default_rule",
+                    attr("conspiracy", Type.STRING).value("space jam was a documentary"),
+                    attr("dep", LABEL)
+                        .allowedFileTypes(FileTypeSet.ANY_FILE)
+                        .value(
+                            object : ComputedDefault("conspiracy") {
+                                public override fun getDefault(rule: AttributeMap): Any? {
+                                    return@MockRule if (rule.get("conspiracy", Type.STRING)
+                                            .equals("space jam was a documentary")
+                                    )
+                                        Label.parseCanonicalUnchecked("//test:foo")
+                                    else
+                                        null
+                                }
+                            })
+                )
+            }
 
-    helper.useRuleClassProvider(setRuleClassProviders(computedDefaultRule).build());
+        helper!!.useRuleClassProvider(setRuleClassProviders(computedDefaultRule).build())
 
-    writeFile(
-        "test/BUILD",
-        """
+        writeFile(
+            "test/BUILD",
+            """
         load("@rules_cc//cc:cc_library.bzl", "cc_library")
         cc_library(name = "foo")
 
         computed_default_rule(name = "my_rule")
-        """);
+        
+        """.trimIndent()
+        )
 
-    String target = "//test:my_rule";
+        val target = "//test:my_rule"
 
-    assertThat(evalToListOfStrings("deps(" + target + ")")).contains("//test:foo");
-    helper.setQuerySettings(Setting.NO_IMPLICIT_DEPS);
-    assertThat(eval("deps(" + target + ")")).isEqualTo(eval(target));
-  }
-
-  @Override
-  @Test
-  public void testLet() throws Exception {
-    getHelper().setWholeTestUniverseScope("//a,//b,//c,//d");
-    super.testLet();
-  }
-
-  @Override
-  @Test
-  public void testSet() throws Exception {
-    getHelper().setWholeTestUniverseScope("//a:*,//b:*,//c:*,//d:*");
-    super.testSet();
-  }
-
-  /** Attribute transition factory on --foo */
-  protected static class FooPatchAttrTransitionFactory
-      implements TransitionFactory<AttributeTransitionData> {
-    String toOption;
-    String name;
-
-    public FooPatchAttrTransitionFactory(String toOption, String name) {
-      this.toOption = toOption;
-      this.name = name;
+        Truth.assertThat(evalToListOfStrings("deps(" + target + ")")).contains("//test:foo")
+        helper!!.setQuerySettings(QueryEnvironment.Setting.NO_IMPLICIT_DEPS)
+        Truth.assertThat(eval("deps(" + target + ")")).isEqualTo(eval(target))
     }
 
-    public FooPatchAttrTransitionFactory(String toOption) {
-      this(toOption, "FooPatchAttrTransitionFactory");
+    @Test
+    @Throws(Exception::class)
+    override fun testLet() {
+        this.helper!!.setWholeTestUniverseScope("//a,//b,//c,//d")
+        super.testLet()
     }
 
-    @Override
-    public ConfigurationTransition create(AttributeTransitionData unused) {
-      return new FooPatchTransition(this.toOption, this.name);
+    @Test
+    @Throws(Exception::class)
+    override fun testSet() {
+        this.helper!!.setWholeTestUniverseScope("//a:*,//b:*,//c:*,//d:*")
+        super.testSet()
     }
 
-    @Override
-    public TransitionType transitionType() {
-      return TransitionType.ATTRIBUTE;
-    }
-  }
-
-  /** Rule transition factory on --foo */
-  protected static class FooPatchRuleTransitionFactory
-      implements TransitionFactory<RuleTransitionData> {
-    String toOption;
-    String name;
-
-    public FooPatchRuleTransitionFactory(String toOption, String name) {
-      this.toOption = toOption;
-      this.name = name;
-    }
-
-    public FooPatchRuleTransitionFactory(String toOption) {
-      this(toOption, "FooPatchRuleTransitionFactory");
-    }
-
-    @Override
-    public ConfigurationTransition create(RuleTransitionData unused) {
-      return new FooPatchTransition(this.toOption, this.name);
-    }
-
-    @Override
-    public TransitionType transitionType() {
-      return TransitionType.RULE;
-    }
-  }
-
-  /** PatchTransition on --foo */
-  protected static class FooPatchTransition implements PatchTransition {
-    String toOption;
-    String name;
-
-    public FooPatchTransition(String toOption, String name) {
-      this.toOption = toOption;
-      this.name = name;
-    }
-
-    @Override
-    public String getName() {
-      return this.name;
-    }
-
-    @Override
-    public ImmutableSet<Class<? extends FragmentOptions>> requiresOptionFragments() {
-      return ImmutableSet.of(DummyTestOptions.class);
-    }
-
-    @Override
-    public BuildOptions patch(BuildOptionsView options, EventHandler eventHandler) {
-      BuildOptionsView result = options.clone();
-      result.get(DummyTestOptions.class).setFoo(toOption);
-      return result.underlying();
-    }
-  }
-
-  /** Split transition factory on --foo */
-  protected static class FooSplitTransitionFactory
-      implements TransitionFactory<AttributeTransitionData> {
-    String toOption1;
-    String toOption2;
-
-    public FooSplitTransitionFactory(String toOption1, String toOptions2) {
-      this.toOption1 = toOption1;
-      this.toOption2 = toOptions2;
-    }
-
-    @Override
-    public ConfigurationTransition create(AttributeTransitionData data) {
-      return new SplitTransition() {
-        @Override
-        public String getName() {
-          return "FooSplitTransitionFactory";
+    /** Attribute transition factory on --foo  */
+    protected class FooPatchAttrTransitionFactory
+    @kotlin.jvm.JvmOverloads constructor(var toOption: String?, var name: String? = "FooPatchAttrTransitionFactory") :
+        TransitionFactory<AttributeTransitionData?> {
+        public override fun create(unused: AttributeTransitionData?): ConfigurationTransition? {
+            return FooPatchTransition(this.toOption, this.name)
         }
 
-        @Override
-        public ImmutableSet<Class<? extends FragmentOptions>> requiresOptionFragments() {
-          return ImmutableSet.of(DummyTestOptions.class);
+        public override fun transitionType(): TransitionType {
+            return TransitionType.ATTRIBUTE
+        }
+    }
+
+    /** Rule transition factory on --foo  */
+    protected class FooPatchRuleTransitionFactory
+    @kotlin.jvm.JvmOverloads constructor(var toOption: String?, var name: String? = "FooPatchRuleTransitionFactory") :
+        TransitionFactory<RuleTransitionData?> {
+        public override fun create(unused: RuleTransitionData?): ConfigurationTransition? {
+            return FooPatchTransition(this.toOption, this.name)
         }
 
-        @Override
-        public ImmutableMap<String, BuildOptions> split(
-            BuildOptionsView options, EventHandler eventHandler) {
-          BuildOptionsView result1 = options.clone();
-          BuildOptionsView result2 = options.clone();
-          result1.get(DummyTestOptions.class).setFoo(toOption1);
-          result2.get(DummyTestOptions.class).setFoo(toOption2);
-          return ImmutableMap.of("result1", result1.underlying(), "result2", result2.underlying());
+        public override fun transitionType(): TransitionType {
+            return TransitionType.RULE
         }
-      };
     }
 
-    @Override
-    public TransitionType transitionType() {
-      return TransitionType.ATTRIBUTE;
+    /** PatchTransition on --foo  */
+    protected class FooPatchTransition(var toOption: String?, var name: String?) : PatchTransition {
+        public override fun requiresOptionFragments(): ImmutableSet<Class<out FragmentOptions?>?> {
+            return ImmutableSet.of<E?>(DummyTestFragment.DummyTestOptions::class.java)
+        }
+
+        public override fun patch(options: BuildOptionsView, eventHandler: EventHandler?): BuildOptions {
+            val result: BuildOptionsView = options.clone()
+            result.get(DummyTestFragment.DummyTestOptions::class.java).setFoo(toOption)
+            return result.underlying()
+        }
     }
 
-    @Override
-    public boolean isSplit() {
-      return true;
+    /** Split transition factory on --foo  */
+    protected class FooSplitTransitionFactory
+        (var toOption1: String?, var toOption2: String?) : TransitionFactory<AttributeTransitionData?> {
+        public override fun create(data: AttributeTransitionData?): ConfigurationTransition? {
+            return object : SplitTransition() {
+                val name: String
+                    get() = "FooSplitTransitionFactory"
+
+                public override fun requiresOptionFragments(): ImmutableSet<Class<out FragmentOptions?>?> {
+                    return ImmutableSet.of<E?>(DummyTestFragment.DummyTestOptions::class.java)
+                }
+
+                public override fun split(
+                    options: BuildOptionsView, eventHandler: EventHandler?
+                ): ImmutableMap<String?, BuildOptions?> {
+                    val result1: BuildOptionsView = options.clone()
+                    val result2: BuildOptionsView = options.clone()
+                    result1.get(DummyTestFragment.DummyTestOptions::class.java).setFoo(toOption1)
+                    result2.get(DummyTestFragment.DummyTestOptions::class.java).setFoo(toOption2)
+                    return ImmutableMap.of<K?, V?>("result1", result1.underlying(), "result2", result2.underlying())
+                }
+            }
+        }
+
+        public override fun transitionType(): TransitionType {
+            return TransitionType.ATTRIBUTE
+        }
+
+        val isSplit: Boolean
+            get() = true
     }
-  }
 
-  @Test
-  public void testMultipleTopLevelConfigurations() throws Exception {
-    MockRule transitionedRule =
-        () ->
-            MockRule.define(
-                "transitioned_rule",
-                (builder, env) ->
-                    builder.cfg(new FooPatchRuleTransitionFactory("SET BY PATCH")).build());
+    @Test
+    @Throws(Exception::class)
+    fun testMultipleTopLevelConfigurations() {
+        val transitionedRule: MockRule =
+            MockRule {
+                MockRule.define(
+                    "transitioned_rule",
+                    { builder, env -> builder.cfg(FooPatchRuleTransitionFactory("SET BY PATCH")).build() })
+            }
 
-    MockRule untransitionedRule = () -> MockRule.define("untransitioned_rule");
+        val untransitionedRule: MockRule = MockRule { MockRule.define("untransitioned_rule") }
 
-    helper.useRuleClassProvider(
-        setRuleClassProviders(transitionedRule, untransitionedRule).build());
+        helper!!.useRuleClassProvider(
+            setRuleClassProviders(transitionedRule, untransitionedRule).build()
+        )
 
-    writeFile(
-        "test/BUILD",
-        """
+        writeFile(
+            "test/BUILD",
+            """
         transitioned_rule(name = "transitioned_rule")
 
         untransitioned_rule(name = "untransitioned_rule")
-        """);
+        
+        """.trimIndent()
+        )
 
-    Set<T> result = eval("//test:transitioned_rule+//test:untransitioned_rule");
+        val result = eval("//test:transitioned_rule+//test:untransitioned_rule")
 
-    assertThat(result).hasSize(2);
+        Truth.assertThat(result).hasSize(2)
 
-    Iterator<T> resultIterator = result.iterator();
-    assertThat(getConfiguration(resultIterator.next()))
-        .isNotEqualTo(getConfiguration(resultIterator.next()));
-  }
+        val resultIterator = result!!.iterator()
+        assertThat(getConfiguration(resultIterator.next()))
+            .isNotEqualTo(getConfiguration(resultIterator.next()))
+    }
 
-  @Test
-  public abstract void testMultipleTopLevelConfigurations_nullConfigs() throws Exception;
+    @Test
+    @Throws(Exception::class)
+    abstract fun testMultipleTopLevelConfigurations_nullConfigs()
 
-  @Test
-  public void testMultipleTopLevelConfigurations_multipleConfigsPrefersTopLevel() throws Exception {
-    MockRule ruleWithTransitionAndDep =
-        () ->
-            MockRule.define(
-                "rule_with_transition_and_dep",
-                (builder, env) ->
-                    builder
-                        .cfg(new FooPatchRuleTransitionFactory("SET BY PATCH"))
-                        .addAttribute(
-                            attr("dep", LABEL).allowedFileTypes(FileTypeSet.ANY_FILE).build())
-                        .build());
+    @Test
+    @Throws(Exception::class)
+    fun testMultipleTopLevelConfigurations_multipleConfigsPrefersTopLevel() {
+        val ruleWithTransitionAndDep: MockRule =
+            MockRule {
+                MockRule.define(
+                    "rule_with_transition_and_dep",
+                    { builder, env ->
+                        builder
+                            .cfg(FooPatchRuleTransitionFactory("SET BY PATCH"))
+                            .addAttribute(
+                                attr("dep", LABEL).allowedFileTypes(FileTypeSet.ANY_FILE).build()
+                            )
+                            .build()
+                    })
+            }
 
-    MockRule simpleRule = () -> MockRule.define("simple_rule");
+        val simpleRule: MockRule = MockRule { MockRule.define("simple_rule") }
 
-    helper.useRuleClassProvider(
-        setRuleClassProviders(ruleWithTransitionAndDep, simpleRule).build());
+        helper!!.useRuleClassProvider(
+            setRuleClassProviders(ruleWithTransitionAndDep, simpleRule).build()
+        )
 
-    writeFile(
-        "test/BUILD",
-        """
+        writeFile(
+            "test/BUILD",
+            """
         rule_with_transition_and_dep(
             name = "top-level",
             dep = ":dep",
         )
 
         simple_rule(name = "dep")
-        """);
+        
+        """.trimIndent()
+        )
 
-    helper.setUniverseScope("//test:*");
+        helper!!.setUniverseScope("//test:*")
 
-    // `//test:dep` has two configurations.
-    assertThat(eval("//test:dep")).hasSize(2);
-  }
+        // `//test:dep` has two configurations.
+        Truth.assertThat(eval("//test:dep")).hasSize(2)
+    }
 
-  @Test
-  public void testNonIdempotentRuleTransition() throws Exception {
-    writeFile(
-        "test/defs.bzl",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testNonIdempotentRuleTransition() {
+        writeFile(
+            "test/defs.bzl",
+            """
         StringSettingInfo = provider(fields = ["value"])
 
         def _string_impl(ctx):
@@ -911,10 +899,12 @@ my_rule = rule(
                 "_string_setting": attr.label(default = "//test:string_setting"),
             },
          )
-        """);
-    writeFile(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        writeFile(
+            "test/BUILD",
+            """
         load(":defs.bzl", "custom_rule", "string_setting")
 
         string_setting(
@@ -923,17 +913,20 @@ my_rule = rule(
         )
 
         custom_rule(name = "custom_rule_name")
-        """);
+        
+        """.trimIndent()
+        )
 
-    ImmutableList<String> output = evalToListOfStrings("//test:custom_rule_name");
-    assertThat(output).hasSize(1);
-  }
+        val output = evalToListOfStrings("//test:custom_rule_name")
+        Truth.assertThat(output).hasSize(1)
+    }
 
-  @Test
-  public void testNonIdempotentRuleTransition_transitionedConfigIsAlsoToplevel() throws Exception {
-    writeFile(
-        "test/defs.bzl",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun testNonIdempotentRuleTransition_transitionedConfigIsAlsoToplevel() {
+        writeFile(
+            "test/defs.bzl",
+            """
         StringSettingInfo = provider(fields = ["value"])
 
         def _string_impl(ctx):
@@ -980,10 +973,12 @@ my_rule = rule(
                 ),
             },
         )
-        """);
-    writeFile(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        writeFile(
+            "test/BUILD",
+            """
         load(":defs.bzl", "custom_rule", "string_setting", "wrapper")
 
         string_setting(
@@ -997,347 +992,316 @@ my_rule = rule(
             name = "wrapper_name",
             dep = ":custom_rule_name",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    ImmutableList<String> output =
-        evalToListOfStrings("//test:all intersect //test:custom_rule_name");
-    assertThat(output).hasSize(1);
-  }
+        val output =
+            evalToListOfStrings("//test:all intersect //test:custom_rule_name")
+        Truth.assertThat(output).hasSize(1)
+    }
 
-  @Test
-  public void inconsistentSkyQueryIncremental() throws Exception {
-    getHelper().setSyscallCache(TestUtils.makeDisappearingFileCache("bar/BUILD"));
-    getHelper().turnOffFailFast();
-    writeFile("foo/BUILD");
-    writeFile("bar/BUILD");
-    getHelper().setUniverseScope("//bar/...");
-    TargetParsingException targetParsingException =
-        assertThrows(TargetParsingException.class, () -> eval("set()"));
-    assertThat(
+    @Test
+    @Throws(Exception::class)
+    fun inconsistentSkyQueryIncremental() {
+        this.helper!!.setSyscallCache(TestUtils.makeDisappearingFileCache("bar/BUILD"))
+        this.helper!!.turnOffFailFast()
+        writeFile("foo/BUILD")
+        writeFile("bar/BUILD")
+        this.helper!!.setUniverseScope("//bar/...")
+        val targetParsingException: TargetParsingException =
+            Assert.assertThrows<T?>(TargetParsingException::class.java, ThrowingRunnable { eval("set()") })
+        assertThat(
             targetParsingException
                 .getDetailedExitCode()
                 .getFailureDetail()
                 .getPackageLoading()
-                .getCode())
-        .isEqualTo(FailureDetails.PackageLoading.Code.TRANSIENT_INCONSISTENT_FILESYSTEM_ERROR);
-    getHelper().setUniverseScope("//foo/...");
-    QueryException queryException = assertThrows(QueryException.class, () -> eval("bar"));
-    assertThat(queryException.getFailureDetail().getTargetPatterns().getCode())
-        .isEqualTo(FailureDetails.TargetPatterns.Code.CANNOT_DETERMINE_TARGET_FROM_FILENAME);
-  }
-
-  @Test
-  public void labelPointsToMultipleConfiguredTargets() throws Exception {}
-
-  private void writeSimpleTarget() throws Exception {
-    MockRule simpleRule =
-        () ->
-            MockRule.define(
-                "simple_rule", attr("dep", LABEL).allowedFileTypes(FileTypeSet.ANY_FILE));
-    helper.useRuleClassProvider(setRuleClassProviders(simpleRule).build());
-
-    writeFile("test/BUILD", "simple_rule(name = 'target')");
-  }
-
-  @Test
-  public void aliasMinus() throws Exception {
-    MockRule simpleRule =
-        () ->
-            MockRule.define(
-                "simple_rule", attr("dep", LABEL).allowedFileTypes(FileTypeSet.ANY_FILE));
-    helper.useRuleClassProvider(setRuleClassProviders(simpleRule).build());
-
-    writeFile(
-        "p/BUILD",
-        "simple_rule(name = 'dep')",
-        "alias(name = 'alias', actual = 'dep')",
-        "simple_rule(name = 'user', dep = ':alias')");
-    assertThat(evalToString("deps(//p:alias) - deps(//p:dep)")).isEqualTo("//p:alias");
-    // The following assertion fails if the expression `//p:alias` doesn't represent two configured
-    // targets -- one configured without TestOptions (trimmed) and the other configured with one
-    // (untrimmed). The untrimmed configured target is from the top-level expression, whereas the
-    // trimmed one is from `//p:user`'s dependency.
-    assertThat(evalToString("deps(//p:user) - deps(//p:alias)")).isEqualTo("//p:user");
-  }
-
-  @Test
-  public void testVisibleFunctionDoesNotWork() throws Exception {
-    writeSimpleTarget();
-    EvalThrowsResult result = evalThrows("visible(//test:target, //test:*)", true);
-    assertThat(result.getMessage()).isEqualTo("visible() is not supported on configured targets");
-    assertConfigurableQueryCode(result.getFailureDetail(), Code.VISIBLE_FUNCTION_NOT_SUPPORTED);
-  }
-
-  @Test
-  public void testSiblingsFunctionDoesNotWork() throws Exception {
-    writeSimpleTarget();
-    EvalThrowsResult result = evalThrows("siblings(//test:target)", true);
-    assertThat(result.getMessage()).isEqualTo("siblings() not supported for post analysis queries");
-    assertConfigurableQueryCode(result.getFailureDetail(), Code.SIBLINGS_FUNCTION_NOT_SUPPORTED);
-  }
-
-  @Test
-  public void testBuildfilesFunctionDoesNotWork() throws Exception {
-    writeSimpleTarget();
-    EvalThrowsResult result = evalThrows("buildfiles(//test:target)", true);
-    assertThat(result.getMessage())
-        .isEqualTo("buildfiles() doesn't make sense for the configured target graph");
-    assertConfigurableQueryCode(result.getFailureDetail(), Code.BUILDFILES_FUNCTION_NOT_SUPPORTED);
-  }
-
-  @Override
-  @Test
-  public void testGenqueryScope() throws Exception {
-    runGenqueryScopeTest(true);
-  }
-
-  // LabelListAttr not currently supported.
-  @Override
-  public void testLabelsOperator() {}
-
-  // Wants to get the query environment without evaluation -- not worth it.
-  @Override
-  @Test
-  public void testEqualityOfOrderedThreadSafeImmutableSet() {}
-
-  // The actual crosstool-related targets depended on are not the nominal crosstool label the test
-  // expects.
-
-  // "Extended rules" don't play nicely with actual analysis.
-  @Override
-  public void testNoDepsOnAspectAttributeWhenAspectMissing() {}
-
-  @Override
-  public void testNoDepsOnAspectAttributeWithNoImpicitDeps() {}
-
-  @Override
-  public void testHaveDepsOnAspectsAttributes() {}
-
-  // Can't handle loading-phase errors.
-  @Override
-  public void testStrictTestSuiteWithFile() {}
-
-  @Override
-  public void testTestsOperatorReportsMissingTargets() {}
+                .getCode()
+        )
+            .isEqualTo(FailureDetails.PackageLoading.Code.TRANSIENT_INCONSISTENT_FILESYSTEM_ERROR)
+        this.helper!!.setUniverseScope("//foo/...")
+        val queryException =
+            Assert.assertThrows<QueryException>(QueryException::class.java, ThrowingRunnable { eval("bar") })
+        assertThat(queryException.getFailureDetail().getTargetPatterns().getCode())
+            .isEqualTo(FailureDetails.TargetPatterns.Code.CANNOT_DETERMINE_TARGET_FROM_FILENAME)
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun labelPointsToMultipleConfiguredTargets() {
+    }
+
+    @Throws(Exception::class)
+    private fun writeSimpleTarget() {
+        val simpleRule: MockRule =
+            MockRule {
+                MockRule.define(
+                    "simple_rule", attr("dep", LABEL).allowedFileTypes(FileTypeSet.ANY_FILE)
+                )
+            }
+        helper!!.useRuleClassProvider(setRuleClassProviders(simpleRule).build())
+
+        writeFile("test/BUILD", "simple_rule(name = 'target')")
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun aliasMinus() {
+        val simpleRule: MockRule =
+            MockRule {
+                MockRule.define(
+                    "simple_rule", attr("dep", LABEL).allowedFileTypes(FileTypeSet.ANY_FILE)
+                )
+            }
+        helper!!.useRuleClassProvider(setRuleClassProviders(simpleRule).build())
+
+        writeFile(
+            "p/BUILD",
+            "simple_rule(name = 'dep')",
+            "alias(name = 'alias', actual = 'dep')",
+            "simple_rule(name = 'user', dep = ':alias')"
+        )
+        Truth.assertThat(evalToString("deps(//p:alias) - deps(//p:dep)")).isEqualTo("//p:alias")
+        // The following assertion fails if the expression `//p:alias` doesn't represent two configured
+        // targets -- one configured without TestOptions (trimmed) and the other configured with one
+        // (untrimmed). The untrimmed configured target is from the top-level expression, whereas the
+        // trimmed one is from `//p:user`'s dependency.
+        Truth.assertThat(evalToString("deps(//p:user) - deps(//p:alias)")).isEqualTo("//p:user")
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testVisibleFunctionDoesNotWork() {
+        writeSimpleTarget()
+        val result = evalThrows("visible(//test:target, //test:*)", true)
+        Truth.assertThat(result.getMessage()).isEqualTo("visible() is not supported on configured targets")
+        assertConfigurableQueryCode(result.getFailureDetail(), Code.VISIBLE_FUNCTION_NOT_SUPPORTED)
+    }
 
-  @Override
-  public void testCycleInStarlark() {}
+    @Test
+    @Throws(Exception::class)
+    fun testSiblingsFunctionDoesNotWork() {
+        writeSimpleTarget()
+        val result = evalThrows("siblings(//test:target)", true)
+        Truth.assertThat(result.getMessage()).isEqualTo("siblings() not supported for post analysis queries")
+        assertConfigurableQueryCode(result.getFailureDetail(), Code.SIBLINGS_FUNCTION_NOT_SUPPORTED)
+    }
 
-  @Override
-  public void testCycleInStarlarkParentDir() {}
+    @Test
+    @Throws(Exception::class)
+    fun testBuildfilesFunctionDoesNotWork() {
+        writeSimpleTarget()
+        val result = evalThrows("buildfiles(//test:target)", true)
+        Truth.assertThat(result.getMessage())
+            .isEqualTo("buildfiles() doesn't make sense for the configured target graph")
+        assertConfigurableQueryCode(result.getFailureDetail(), Code.BUILDFILES_FUNCTION_NOT_SUPPORTED)
+    }
 
-  @Override
-  public void testCycleInSubpackage() {}
+    @Test
+    @Throws(Exception::class)
+    override fun testGenqueryScope() {
+        runGenqueryScopeTest(true)
+    }
 
-  @Override
-  public void testRegression1309697() {}
+    // LabelListAttr not currently supported.
+    override fun testLabelsOperator() {}
 
-  @Override
-  public void badRuleInDeps() {}
+    // Wants to get the query environment without evaluation -- not worth it.
+    @Test
+    override fun testEqualityOfOrderedThreadSafeImmutableSet() {
+    }
 
-  @Override
-  public void boundedRdepsWithError() {}
+    // The actual crosstool-related targets depended on are not the nominal crosstool label the test
+    // expects.
+    // "Extended rules" don't play nicely with actual analysis.
+    override fun testNoDepsOnAspectAttributeWhenAspectMissing() {}
 
-  // Can't handle cycles.
-  @Override
-  public void testDotDotDotWithCycle() {}
+    override fun testNoDepsOnAspectAttributeWithNoImpicitDeps() {}
 
-  @Override
-  public void testDotDotDotWithUnrelatedCycle() {}
+    override fun testHaveDepsOnAspectsAttributes() {}
 
-  // ...
-  @Override
-  public void testQueryTimeLoadingTargetsBelowNonPackageDirectory() {}
+    // Can't handle loading-phase errors.
+    override fun testStrictTestSuiteWithFile() {}
 
-  @Override
-  public void testQueryTimeLoadingOfTargetsBelowPackageHappyPath() {}
+    override fun testTestsOperatorReportsMissingTargets() {}
 
-  @Override
-  public void testQueryTimeLoadingTargetsBelowMissingPackage() {}
+    override fun testCycleInStarlark() {}
 
-  // These tests clear the universe, getting rid of mock tools that are needed for analysis. Disable
-  // at least for now. Other than testSlashSlashDotDotDot, they're only testing visibility anyway.
+    override fun testCycleInStarlarkParentDir() {}
 
-  @Override
-  public void testSlashSlashDotDotDot() {}
+    override fun testCycleInSubpackage() {}
 
-  @Override
-  public void testVisible_default_private() {}
+    override fun testRegression1309697() {}
 
-  @Override
-  public void testVisible_default_public() {}
+    override fun badRuleInDeps() {}
 
-  @Override
-  public void testPackageGroupAllBeneath() {}
+    override fun boundedRdepsWithError() {}
 
-  @Override
-  public void testVisible_java_javatests() {}
+    // Can't handle cycles.
+    override fun testDotDotDotWithCycle() {}
 
-  @Override
-  public void testVisible_java_javatests_different_package() {}
+    override fun testDotDotDotWithUnrelatedCycle() {}
 
-  @Override
-  public void testVisible_javatests_java() {}
+    // ...
+    override fun testQueryTimeLoadingTargetsBelowNonPackageDirectory() {}
 
-  @Override
-  public void testVisible_package_group() {}
+    override fun testQueryTimeLoadingOfTargetsBelowPackageHappyPath() {}
 
-  @Override
-  public void testVisible_package_group_include() {}
+    override fun testQueryTimeLoadingTargetsBelowMissingPackage() {}
 
-  @Override
-  public void testVisible_package_group_invisible() {}
+    // These tests clear the universe, getting rid of mock tools that are needed for analysis. Disable
+    // at least for now. Other than testSlashSlashDotDotDot, they're only testing visibility anyway.
+    override fun testSlashSlashDotDotDot() {}
 
-  @Override
-  public void testVisible_private_same_package() {}
+    override fun testVisible_default_private() {}
 
-  @Override
-  public void testVisible_simple_different_subpackages() {}
+    override fun testVisible_default_public() {}
 
-  @Override
-  public void testVisible_simple_package() {}
+    override fun testPackageGroupAllBeneath() {}
 
-  @Override
-  public void testVisible_simple_private() {}
+    override fun testVisible_java_javatests() {}
 
-  @Override
-  public void testVisible_simple_public() {}
+    override fun testVisible_java_javatests_different_package() {}
 
-  @Override
-  public void testVisible_simple_subpackages() {}
+    override fun testVisible_javatests_java() {}
 
-  // test_suite rules aren't supported, since they're not configured targets.
+    override fun testVisible_package_group() {}
 
-  @Override
-  public void testTestsOperatorFiltersByNegativeTag() {}
+    override fun testVisible_package_group_include() {}
 
-  @Override
-  public void testTestsOperatorCrossesPackages() {}
+    override fun testVisible_package_group_invisible() {}
 
-  @Override
-  public void testTestsOperatorHandlesCyclesGracefully() {}
+    override fun testVisible_private_same_package() {}
 
-  @Override
-  public void testTestSuiteInTestsAttributeAndViceVersa() {}
+    override fun testVisible_simple_different_subpackages() {}
 
-  @Override
-  public void testAmbiguousAllResolvesToTestSuiteNamedAll() {}
+    override fun testVisible_simple_package() {}
 
-  @Override
-  public void testTestSuiteWithFile() {}
+    override fun testVisible_simple_private() {}
 
-  @Override
-  public void testTestsOperatorFiltersByTagSizeAndEnv() {}
+    override fun testVisible_simple_public() {}
 
-  @Override
-  public void testTestsOperatorExpandsTestsAndExcludesNonTests() {}
+    override fun testVisible_simple_subpackages() {}
 
-  // buildfiles() operator.
-  @Override
-  public void testBuildFiles() {}
+    // test_suite rules aren't supported, since they're not configured targets.
+    override fun testTestsOperatorFiltersByNegativeTag() {}
 
-  @Override
-  public void testBuildFilesDoesNotReturnVisibilityOfBUILD() {}
+    override fun testTestsOperatorCrossesPackages() {}
 
-  @Override
-  public void testBuildFilesDoesNotReturnVisibilityOfRule() {}
+    override fun testTestsOperatorHandlesCyclesGracefully() {}
 
-  @Override
-  public void testBuildfilesOfBuildfiles() {}
+    override fun testTestSuiteInTestsAttributeAndViceVersa() {}
 
-  @Override
-  public void testBuildfilesWithDuplicates() {}
+    override fun testAmbiguousAllResolvesToTestSuiteNamedAll() {}
 
-  @Override
-  public void bzlPackageBadDueToBrokenLoad() {}
+    override fun testTestSuiteWithFile() {}
 
-  @Override
-  public void bzlPackageBadDueToBrokenSyntax() {}
+    override fun testTestsOperatorFiltersByTagSizeAndEnv() {}
 
-  @Override
-  public void testBuildfilesContainingScl() {}
+    override fun testTestsOperatorExpandsTestsAndExcludesNonTests() {}
 
-  @Override
-  public void buildfilesBazel() {}
+    // buildfiles() operator.
+    override fun testBuildFiles() {}
 
-  @Override
-  public void testTargetsFromBuildfilesAndRealTargets() {}
+    override fun testBuildFilesDoesNotReturnVisibilityOfBUILD() {}
 
-  // siblings() operator.
+    override fun testBuildFilesDoesNotReturnVisibilityOfRule() {}
 
-  @Override
-  public void testSiblings_duplicatePackages() {}
+    override fun testBuildfilesOfBuildfiles() {}
 
-  @Override
-  public void testSiblings_samePackageRdeps() {}
+    override fun testBuildfilesWithDuplicates() {}
 
-  @Override
-  public void testSiblings_matchesTargetNamedAll() {}
+    override fun bzlPackageBadDueToBrokenLoad() {}
 
-  @Override
-  public void testSiblings_simple() {}
+    override fun bzlPackageBadDueToBrokenSyntax() {}
 
-  @Override
-  public void testSiblings_withBuildfiles() {}
+    override fun testBuildfilesContainingScl() {}
 
-  // same_pkg_direct_rdeps() operator.
+    override fun buildfilesBazel() {}
 
-  @Override
-  public void testSamePackageRdeps_simple() throws Exception {}
+    override fun testTargetsFromBuildfilesAndRealTargets() {}
 
-  @Override
-  public void testSamePackageRdeps_duplicate() throws Exception {}
+    // siblings() operator.
+    override fun testSiblings_duplicatePackages() {}
 
-  @Override
-  public void testSamePackageRdeps_two() throws Exception {}
+    override fun testSiblings_samePackageRdeps() {}
 
-  @Override
-  public void testSamePackageRdeps_twoPackages() throws Exception {}
+    override fun testSiblings_matchesTargetNamedAll() {}
 
-  @Override
-  public void testSamePackageRdeps_crissCross() throws Exception {}
+    override fun testSiblings_simple() {}
 
-  // We eagerly load all packages, so can't test that we don't load one.
-  @Override
-  @Test
-  public void testWildcardsDontLoadUnnecessaryPackages() {}
+    override fun testSiblings_withBuildfiles() {}
 
-  @Override
-  @Test
-  public void boundedDepsWithError() {}
+    // same_pkg_direct_rdeps() operator.
+    @Throws(Exception::class)
+    override fun testSamePackageRdeps_simple() {
+    }
 
-  // Query needs a graph.
-  @Override
-  @Test
-  public void testGraphOrderOfWildcards() {}
+    @Throws(Exception::class)
+    override fun testSamePackageRdeps_duplicate() {
+    }
 
-  // Visibility is checked in the analysis phase, so the post-analysis query done in this unit test
-  // would never occur because the visibility error would occur first.
-  @Override
-  @Test
-  public void testVisibleWithNonPackageGroupVisibility() throws Exception {}
+    @Throws(Exception::class)
+    override fun testSamePackageRdeps_two() {
+    }
 
-  // Visibility is checked in the analysis phase, so the post-analysis query done in this unit test
-  // would never occur because the visibility error would occur first.
-  @Override
-  @Test
-  public void testVisibleWithPackageGroupWithNonPackageGroupIncludes() throws Exception {}
+    @Throws(Exception::class)
+    override fun testSamePackageRdeps_twoPackages() {
+    }
 
-  // We don't support --nodep_deps=false.
-  @Override
-  @Test
-  public void testNodepDeps_false() throws Exception {}
+    @Throws(Exception::class)
+    override fun testSamePackageRdeps_crissCross() {
+    }
 
-  // package_group instances have a null configuration and are filtered out by --host_deps=false.
-  @Override
-  @Test
-  public void testDefaultVisibilityReturnedInDeps_nonEmptyDependencyFilter() throws Exception {}
+    // We eagerly load all packages, so can't test that we don't load one.
+    @Test
+    override fun testWildcardsDontLoadUnnecessaryPackages() {
+    }
 
-  protected static void assertConfigurableQueryCode(FailureDetail failureDetail, Code code) {
-    assertThat(failureDetail.getConfigurableQuery().getCode()).isEqualTo(code);
-  }
+    @Test
+    override fun boundedDepsWithError() {
+    }
 
-  protected static List<String> unique(List<String> list) {
-    return list.stream().distinct().toList();
-  }
+    // Query needs a graph.
+    @Test
+    override fun testGraphOrderOfWildcards() {
+    }
+
+    // Visibility is checked in the analysis phase, so the post-analysis query done in this unit test
+    // would never occur because the visibility error would occur first.
+    @Test
+    @Throws(Exception::class)
+    override fun testVisibleWithNonPackageGroupVisibility() {
+    }
+
+    // Visibility is checked in the analysis phase, so the post-analysis query done in this unit test
+    // would never occur because the visibility error would occur first.
+    @Test
+    @Throws(Exception::class)
+    override fun testVisibleWithPackageGroupWithNonPackageGroupIncludes() {
+    }
+
+    // We don't support --nodep_deps=false.
+    @Test
+    @Throws(Exception::class)
+    override fun testNodepDeps_false() {
+    }
+
+    // package_group instances have a null configuration and are filtered out by --host_deps=false.
+    @Test
+    @Throws(Exception::class)
+    override fun testDefaultVisibilityReturnedInDeps_nonEmptyDependencyFilter() {
+    }
+
+    companion object {
+        const val DEFAULT_UNIVERSE: String = "DEFAULT_UNIVERSE"
+
+        protected fun assertConfigurableQueryCode(failureDetail: FailureDetail, code: Code?) {
+            assertThat(failureDetail.getConfigurableQuery().getCode()).isEqualTo(code)
+        }
+
+        protected fun unique(list: MutableList<String?>): MutableList<String?> {
+            return list.stream().distinct().toList()
+        }
+    }
 }

@@ -11,26 +11,26 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.common.options.processor.optiontestsources;
+package com.google.devtools.common.options.processor.optiontestsources
 
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionMetadataTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
+import OptionFilters.OptionEffectTag
+import OptionFilters.OptionMetadataTag
+import com.google.devtools.common.options.OptionDocumentationCategory
+import com.google.devtools.common.options.OptionEffectTag
+import com.google.devtools.common.options.OptionMetadataTag
+import com.google.devtools.common.options.OptionsBase
+import com.google.devtools.common.options.OptionsClass
 
-/** This example options class should fail to compile. */
+/** This example options class should fail to compile.  */
 @OptionsClass
-public abstract class DeprecatedAttributeWithoutMetadataTag extends OptionsBase {
-  @Deprecated
-  @Option(
-      name = "bad_option",
-      defaultValue = "true",
-      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
-      effectTags = {OptionEffectTag.AFFECTS_OUTPUTS},
-      metadataTags = {OptionMetadataTag.INTERNAL})
-  public abstract boolean getBadOption();
-
-  public abstract void setBadOption(boolean value);
+abstract class DeprecatedAttributeWithoutMetadataTag : OptionsBase() {
+    @get:com.google.devtools.common.options.Option(
+        name = "bad_option",
+        defaultValue = "true",
+        documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+        effectTags = [OptionEffectTag.AFFECTS_OUTPUTS],
+        metadataTags = [OptionMetadataTag.INTERNAL]
+    )
+    @get:Deprecated("")
+    abstract var badOption: Boolean
 }

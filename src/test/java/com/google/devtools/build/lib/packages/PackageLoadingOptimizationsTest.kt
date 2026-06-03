@@ -11,28 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.packages;
+package com.google.devtools.build.lib.packages
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.cmdline.Label
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.events.NullEventHandler;
-import com.google.devtools.build.lib.packages.util.PackageLoadingTestCase;
-import java.util.Collection;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for ensuring that optimizations we have during package loading actually occur. */
-@RunWith(JUnit4.class)
-public class PackageLoadingOptimizationsTest extends PackageLoadingTestCase {
-  @Test
-  public void attributeListValuesAreDedupedIntraPackage() throws Exception {
-    scratch.file(
-        "foo/BUILD",
-        """
+/** Tests for ensuring that optimizations we have during package loading actually occur.  */
+@RunWith(JUnit4::class)
+class PackageLoadingOptimizationsTest : PackageLoadingTestCase() {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun attributeListValuesAreDedupedIntraPackage() {
+        scratch.file(
+            "foo/BUILD",
+            """
         load('//test_defs:foo_library.bzl', 'foo_library')
         L = ["//other:t" + str(i) for i in range(10)]
 
@@ -40,131 +31,152 @@ public class PackageLoadingOptimizationsTest extends PackageLoadingTestCase {
             name = "t" + str(i),
             deps = L,
         ) for i in range(10)]
-        """);
+        
+        """.trimIndent()
+        )
 
-    Package fooPkg =
-        getPackageManager()
-            .getPackage(NullEventHandler.INSTANCE, PackageIdentifier.createInMainRepo("foo"));
+        val fooPkg: java.lang.Package =
+            getPackageManager()
+                .getPackage(NullEventHandler.INSTANCE, PackageIdentifier.createInMainRepo("foo"))
 
-    ImmutableList.Builder<ImmutableList<Label>> allListsBuilder = ImmutableList.builder();
-    for (Rule ruleInstance : fooPkg.getTargets(Rule.class)) {
-      assertThat(ruleInstance.getTargetKind()).isEqualTo("foo_library rule");
-      @SuppressWarnings("unchecked")
-      ImmutableList<Label> depsList = (ImmutableList<Label>) ruleInstance.getAttr("deps");
-      allListsBuilder.add(depsList);
+        val allListsBuilder: com.google.common.collect.ImmutableList.Builder<com.google.common.collect.ImmutableList<Label?>?> =
+            com.google.common.collect.ImmutableList.builder<com.google.common.collect.ImmutableList<Label?>?>()
+        for (ruleInstance in fooPkg.getTargets(Rule::class.java)) {
+            assertThat(ruleInstance.getTargetKind()).isEqualTo("foo_library rule")
+            val depsList: com.google.common.collect.ImmutableList<Label?> =
+                ruleInstance.getAttr("deps") as com.google.common.collect.ImmutableList<Label?>
+            allListsBuilder.add(depsList)
+        }
+        val allLists: com.google.common.collect.ImmutableList<com.google.common.collect.ImmutableList<Label?>> =
+            allListsBuilder.build()
+        Truth.assertThat(allLists).hasSize(10)
+        val firstList: com.google.common.collect.ImmutableList<Label?> = allLists.get(0)
+        for (i in 1..<allLists.size) {
+            Truth.assertThat(allLists.get(i)).isSameInstanceAs(firstList)
+        }
     }
-    ImmutableList<ImmutableList<Label>> allLists = allListsBuilder.build();
-    assertThat(allLists).hasSize(10);
-    ImmutableList<Label> firstList = allLists.get(0);
-    for (int i = 1; i < allLists.size(); i++) {
-      assertThat(allLists.get(i)).isSameInstanceAs(firstList);
-    }
-  }
 
-  @Test
-  public void testRuntimeListValueIsDedupedAcrossRuleClasses() throws Exception {
-    scratch.file(
-        "foo/foo.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRuntimeListValueIsDedupedAcrossRuleClasses() {
+        scratch.file(
+            "foo/foo.bzl",
+            """
         def _foo_test_impl(ctx):
             return
         foo_test = rule(implementation = _foo_test_impl, test = True)
-        """);
-    scratch.file(
-        "foo/bar.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "foo/bar.bzl",
+            """
         def _bar_test_impl(ctx):
             return
         bar_test = rule(implementation = _bar_test_impl, test = True)
-        """);
-    scratch.file(
-        "foo/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "foo/BUILD",
+            """
         load(":foo.bzl", "foo_test")
         load(":bar.bzl", "bar_test")
 
         [foo_test(name = str(i) + "_foo_test") for i in range(5)]
         [bar_test(name = str(i) + "_test") for i in range(5)]
-        """);
+        
+        """.trimIndent()
+        )
 
-    Package fooPkg =
-        getPackageManager()
-            .getPackage(NullEventHandler.INSTANCE, PackageIdentifier.createInMainRepo("foo"));
+        val fooPkg: java.lang.Package =
+            getPackageManager()
+                .getPackage(NullEventHandler.INSTANCE, PackageIdentifier.createInMainRepo("foo"))
 
-    ImmutableList.Builder<ImmutableList<Label>> allListsBuilder = ImmutableList.builder();
-    for (Rule ruleInstance : fooPkg.getTargets(Rule.class)) {
-      assertThat(ruleInstance.getTargetKind()).endsWith("_test rule");
-      @SuppressWarnings("unchecked")
-      ImmutableList<Label> testRuntimeList =
-          (ImmutableList<Label>) ruleInstance.getAttr("$test_runtime");
-      allListsBuilder.add(testRuntimeList);
+        val allListsBuilder: com.google.common.collect.ImmutableList.Builder<com.google.common.collect.ImmutableList<Label?>?> =
+            com.google.common.collect.ImmutableList.builder<com.google.common.collect.ImmutableList<Label?>?>()
+        for (ruleInstance in fooPkg.getTargets(Rule::class.java)) {
+            assertThat(ruleInstance.getTargetKind()).endsWith("_test rule")
+            val testRuntimeList: com.google.common.collect.ImmutableList<Label?> =
+                ruleInstance.getAttr("\$test_runtime") as com.google.common.collect.ImmutableList<Label?>
+            allListsBuilder.add(testRuntimeList)
+        }
+        val allLists: com.google.common.collect.ImmutableList<com.google.common.collect.ImmutableList<Label?>> =
+            allListsBuilder.build()
+        Truth.assertThat(allLists).hasSize(10)
+        val firstList: com.google.common.collect.ImmutableList<Label?> = allLists.get(0)
+        for (i in 1..<allLists.size) {
+            Truth.assertThat(allLists.get(i)).isSameInstanceAs(firstList)
+        }
     }
-    ImmutableList<ImmutableList<Label>> allLists = allListsBuilder.build();
-    assertThat(allLists).hasSize(10);
-    ImmutableList<Label> firstList = allLists.get(0);
-    for (int i = 1; i < allLists.size(); i++) {
-      assertThat(allLists.get(i)).isSameInstanceAs(firstList);
-    }
-  }
 
-  @Test
-  public void starlarkProviderIdentifierIsDedupedAcrossRuleClasses() throws Exception {
-    scratch.file("foo/provider.bzl", "foo_provider = provider()");
-    scratch.file(
-        "foo/foo.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun starlarkProviderIdentifierIsDedupedAcrossRuleClasses() {
+        scratch.file("foo/provider.bzl", "foo_provider = provider()")
+        scratch.file(
+            "foo/foo.bzl",
+            """
         load(":provider.bzl", "foo_provider")
 
         def _foo_impl(ctx):
             return
 
         foo_rule = rule(implementation = _foo_impl, provides = [foo_provider])
-        """);
-    scratch.file(
-        "foo/foobar.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "foo/foobar.bzl",
+            """
         load(":provider.bzl", "foo_provider")
 
         def _foobar_impl(ctx):
             return
 
         foobar_rule = rule(implementation = _foobar_impl, provides = [foo_provider])
-        """);
-    scratch.file(
-        "foo/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        scratch.file(
+            "foo/BUILD",
+            """
         load(":foo.bzl", "foo_rule")
         load(":foobar.bzl", "foobar_rule")
 
         foo_rule(name = "foo_rule_instance")
 
         foobar_rule(name = "foobar_rule_instance")
-        """);
+        
+        """.trimIndent()
+        )
 
-    Package fooPkg =
-        getPackageManager()
-            .getPackage(NullEventHandler.INSTANCE, PackageIdentifier.createInMainRepo("foo"));
+        val fooPkg: java.lang.Package =
+            getPackageManager()
+                .getPackage(NullEventHandler.INSTANCE, PackageIdentifier.createInMainRepo("foo"))
 
-    ImmutableList.Builder<ImmutableList<StarlarkProviderIdentifier>> allListsBuilder =
-        ImmutableList.builder();
-    for (Rule ruleInstance : fooPkg.getTargets(Rule.class)) {
-      RuleClass ruleClass = ruleInstance.getRuleClassObject();
-      allListsBuilder.add(ruleClass.getAdvertisedProviders().getStarlarkProviders().asList());
+        val allListsBuilder: com.google.common.collect.ImmutableList.Builder<com.google.common.collect.ImmutableList<StarlarkProviderIdentifier?>?> =
+            com.google.common.collect.ImmutableList.builder<com.google.common.collect.ImmutableList<StarlarkProviderIdentifier?>?>()
+        for (ruleInstance in fooPkg.getTargets(Rule::class.java)) {
+            val ruleClass: RuleClass = ruleInstance.getRuleClassObject()
+            allListsBuilder.add(ruleClass.getAdvertisedProviders().getStarlarkProviders().asList())
+        }
+        val allLists: com.google.common.collect.ImmutableList<com.google.common.collect.ImmutableList<StarlarkProviderIdentifier?>> =
+            allListsBuilder.build()
+        Truth.assertThat(allLists).hasSize(2)
+        val firstList: com.google.common.collect.ImmutableList<StarlarkProviderIdentifier?> = allLists.get(0)
+        for (i in 1..<allLists.size) {
+            assertThat(allLists.get(i).get(0)).isSameInstanceAs(firstList.get(0))
+        }
     }
-    ImmutableList<ImmutableList<StarlarkProviderIdentifier>> allLists = allListsBuilder.build();
-    assertThat(allLists).hasSize(2);
-    ImmutableList<StarlarkProviderIdentifier> firstList = allLists.get(0);
-    for (int i = 1; i < allLists.size(); i++) {
-      assertThat(allLists.get(i).get(0)).isSameInstanceAs(firstList.get(0));
-    }
-  }
 
-  @Test
-  public void testSuiteImplicitTestsAttributeValueIsSortedByTargetName() throws Exception {
-    // When we have a BUILD file that instantiates some test targets
-    scratch.file(
-        "foo/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSuiteImplicitTestsAttributeValueIsSortedByTargetName() {
+        // When we have a BUILD file that instantiates some test targets
+        scratch.file(
+            "foo/BUILD",
+            """
         load('//test_defs:foo_test.bzl', 'foo_test')
         # (in an order that is not target-name-order),
         foo_test(
@@ -184,24 +196,26 @@ public class PackageLoadingOptimizationsTest extends PackageLoadingTestCase {
 
         # And also a `test_suite` target, without setting the `test_suite.tests` attribute,
         test_suite(name = "suite")
-        """);
+        
+        """.trimIndent()
+        )
 
-    // Then when we load the package,
-    PackageIdentifier fooPkgId = PackageIdentifier.createInMainRepo("foo");
-    Package fooPkg = getPackageManager().getPackage(NullEventHandler.INSTANCE, fooPkgId);
+        // Then when we load the package,
+        val fooPkgId: PackageIdentifier? = PackageIdentifier.createInMainRepo("foo")
+        val fooPkg: java.lang.Package = getPackageManager().getPackage(NullEventHandler.INSTANCE, fooPkgId)
 
-    // And we get the Rule instance for the `test_suite` target,
-    Rule testSuiteRuleInstance = (Rule) fooPkg.getTarget("suite");
-    assertThat(testSuiteRuleInstance.getTargetKind()).isEqualTo("test_suite rule");
-    @SuppressWarnings("unchecked")
-    Collection<Label> implicitTestsAttributeValue =
-        (Collection<Label>) testSuiteRuleInstance.getAttr("$implicit_tests");
-    // The $implicit_tests attribute's value is ordered by target-name.
-    assertThat(implicitTestsAttributeValue)
-        .containsExactly(
-            Label.create(fooPkgId, "aTest"),
-            Label.create(fooPkgId, "bTest"),
-            Label.create(fooPkgId, "cTest"))
-        .inOrder();
-  }
+        // And we get the Rule instance for the `test_suite` target,
+        val testSuiteRuleInstance: Rule = fooPkg.getTarget("suite") as Rule
+        assertThat(testSuiteRuleInstance.getTargetKind()).isEqualTo("test_suite rule")
+        val implicitTestsAttributeValue: MutableCollection<Label>? =
+            testSuiteRuleInstance.getAttr("\$implicit_tests") as MutableCollection<Label>?
+        // The $implicit_tests attribute's value is ordered by target-name.
+        Truth.assertThat(implicitTestsAttributeValue)
+            .containsExactly(
+                Label.create(fooPkgId, "aTest"),
+                Label.create(fooPkgId, "bTest"),
+                Label.create(fooPkgId, "cTest")
+            )
+            .inOrder()
+    }
 }

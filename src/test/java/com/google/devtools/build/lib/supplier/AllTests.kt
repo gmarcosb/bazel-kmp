@@ -11,14 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.supplier;
+package com.google.devtools.build.lib.supplier
 
-import com.google.devtools.build.lib.testutil.ClasspathSuite;
-import org.junit.runner.RunWith;
+import com.google.devtools.build.lib.testutil.ClasspathSuite
+import org.junit.runner.RunWith
 
 /**
- * Automatically collect the tests annotated with {@code @RunWith} in this package and all
+ * Automatically collect the tests annotated with `@RunWith` in this package and all
  * subpackages.
  */
-@RunWith(ClasspathSuite.class)
-public final class AllTests {}
+@RunWith(ClasspathSuite::class)
+class AllTests 

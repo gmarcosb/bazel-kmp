@@ -11,102 +11,109 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util.io;
+package com.google.devtools.build.lib.util.io
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.buildtool.util.BuildIntegrationTestCase.write
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.io.ByteArrayOutputStream
+import java.io.IOException
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests for {@link RecordOutputStream}. */
-@RunWith(JUnit4.class)
-public final class RecordOutputStreamTest {
-  @Test
-  public void empty() throws IOException {
-    ByteArrayOutputStream baos = new ByteArrayOutputStream();
-    try (RecordOutputStream recordOut = new RecordOutputStream(baos)) {}
-    assertThat(baos.toByteArray()).isEmpty();
-  }
-
-  @Test
-  public void write_singleRecord() throws IOException {
-    ByteArrayOutputStream baos = new ByteArrayOutputStream();
-    try (RecordOutputStream recordOut = new RecordOutputStream(baos)) {
-      recordOut.write(new byte[] {0x12, 0x34, 0x56});
-      recordOut.finishRecord();
+/** Tests for [RecordOutputStream].  */
+@RunWith(JUnit4::class)
+class RecordOutputStreamTest {
+    @Test
+    @Throws(IOException::class)
+    fun empty() {
+        val baos = ByteArrayOutputStream()
+        RecordOutputStream(baos).use { recordOut -> }
+        Truth.assertThat(baos.toByteArray()).isEmpty()
     }
-    assertThat(baos.toByteArray()).isEqualTo(new byte[] {0x12, 0x34, 0x56});
-  }
 
-  @Test
-  public void write_multipleRecords() throws IOException {
-    ByteArrayOutputStream baos = new ByteArrayOutputStream();
-    try (RecordOutputStream recordOut = new RecordOutputStream(baos)) {
-      recordOut.write(new byte[] {0x12, 0x34, 0x56});
-      recordOut.finishRecord();
-      recordOut.write(new byte[] {0x21, 0x43, 0x65});
-      recordOut.finishRecord();
+    @Test
+    @Throws(IOException::class)
+    fun write_singleRecord() {
+        val baos = ByteArrayOutputStream()
+        RecordOutputStream(baos).use { recordOut ->
+            recordOut.write(byteArrayOf(0x12, 0x34, 0x56))
+            recordOut.finishRecord()
+        }
+        Truth.assertThat(baos.toByteArray()).isEqualTo(byteArrayOf(0x12, 0x34, 0x56))
     }
-    assertThat(baos.toByteArray()).isEqualTo(new byte[] {0x12, 0x34, 0x56, 0x21, 0x43, 0x65});
-  }
 
-  @Test
-  public void write_largeRecord_singleWrite() throws IOException {
-    byte[] record = new byte[65536];
-    for (int i = 0; i < record.length; i++) {
-      record[i] = (byte) i;
+    @Test
+    @Throws(IOException::class)
+    fun write_multipleRecords() {
+        val baos = ByteArrayOutputStream()
+        RecordOutputStream(baos).use { recordOut ->
+            recordOut.write(byteArrayOf(0x12, 0x34, 0x56))
+            recordOut.finishRecord()
+            recordOut.write(byteArrayOf(0x21, 0x43, 0x65))
+            recordOut.finishRecord()
+        }
+        Truth.assertThat(baos.toByteArray()).isEqualTo(byteArrayOf(0x12, 0x34, 0x56, 0x21, 0x43, 0x65))
     }
-    ByteArrayOutputStream baos = new ByteArrayOutputStream();
-    try (RecordOutputStream recordOut = new RecordOutputStream(baos)) {
-      recordOut.write(record);
-      recordOut.finishRecord();
-    }
-    assertThat(baos.toByteArray()).isEqualTo(record);
-  }
 
-  @Test
-  public void write_largeRecord_multipleWrites() throws IOException {
-    byte[] record = new byte[65536];
-    for (int i = 0; i < record.length; i++) {
-      record[i] = (byte) i;
+    @Test
+    @Throws(IOException::class)
+    fun write_largeRecord_singleWrite() {
+        val record = ByteArray(65536)
+        for (i in record.indices) {
+            record[i] = i.toByte()
+        }
+        val baos = ByteArrayOutputStream()
+        RecordOutputStream(baos).use { recordOut ->
+            recordOut.write(record)
+            recordOut.finishRecord()
+        }
+        Truth.assertThat(baos.toByteArray()).isEqualTo(record)
     }
-    ByteArrayOutputStream baos = new ByteArrayOutputStream();
-    try (RecordOutputStream recordOut = new RecordOutputStream(baos)) {
-      for (int i = 0; i < record.length; i++) {
-        recordOut.write(record[i]);
-      }
-      recordOut.finishRecord();
-    }
-    assertThat(baos.toByteArray()).isEqualTo(record);
-  }
 
-  @Test
-  public void flush_onlyCompleteRecords() throws IOException {
-    ByteArrayOutputStream baos = new ByteArrayOutputStream();
-    try (RecordOutputStream recordOut = new RecordOutputStream(baos)) {
-      recordOut.write(new byte[] {0x12, 0x34});
-      recordOut.finishRecord();
-      recordOut.write(new byte[] {0x56, 0x78});
-      recordOut.flush();
-      assertThat(baos.toByteArray()).isEqualTo(new byte[] {0x12, 0x34});
-      recordOut.write(new byte[] {0x21, 0x43});
-      recordOut.finishRecord();
-      recordOut.flush();
-      assertThat(baos.toByteArray()).isEqualTo(new byte[] {0x12, 0x34, 0x56, 0x78, 0x21, 0x43});
+    @Test
+    @Throws(IOException::class)
+    fun write_largeRecord_multipleWrites() {
+        val record = ByteArray(65536)
+        for (i in record.indices) {
+            record[i] = i.toByte()
+        }
+        val baos = ByteArrayOutputStream()
+        RecordOutputStream(baos).use { recordOut ->
+            for (i in record.indices) {
+                recordOut.write(record[i])
+            }
+            recordOut.finishRecord()
+        }
+        Truth.assertThat(baos.toByteArray()).isEqualTo(record)
     }
-  }
 
-  @Test
-  public void close_onlyCompleteRecords() throws IOException {
-    ByteArrayOutputStream baos = new ByteArrayOutputStream();
-    try (RecordOutputStream recordOut = new RecordOutputStream(baos)) {
-      recordOut.write(new byte[] {0x21, 0x34});
-      recordOut.finishRecord();
-      recordOut.write(new byte[] {0x56, 0x78});
+    @Test
+    @Throws(IOException::class)
+    fun flush_onlyCompleteRecords() {
+        val baos = ByteArrayOutputStream()
+        RecordOutputStream(baos).use { recordOut ->
+            recordOut.write(byteArrayOf(0x12, 0x34))
+            recordOut.finishRecord()
+            recordOut.write(byteArrayOf(0x56, 0x78))
+            recordOut.flush()
+            Truth.assertThat(baos.toByteArray()).isEqualTo(byteArrayOf(0x12, 0x34))
+            recordOut.write(byteArrayOf(0x21, 0x43))
+            recordOut.finishRecord()
+            recordOut.flush()
+            Truth.assertThat(baos.toByteArray()).isEqualTo(byteArrayOf(0x12, 0x34, 0x56, 0x78, 0x21, 0x43))
+        }
     }
-    assertThat(baos.toByteArray()).isEqualTo(new byte[] {0x21, 0x34});
-  }
+
+    @Test
+    @Throws(IOException::class)
+    fun close_onlyCompleteRecords() {
+        val baos = ByteArrayOutputStream()
+        RecordOutputStream(baos).use { recordOut ->
+            recordOut.write(byteArrayOf(0x21, 0x34))
+            recordOut.finishRecord()
+            recordOut.write(byteArrayOf(0x56, 0x78))
+        }
+        Truth.assertThat(baos.toByteArray()).isEqualTo(byteArrayOf(0x21, 0x34))
+    }
 }

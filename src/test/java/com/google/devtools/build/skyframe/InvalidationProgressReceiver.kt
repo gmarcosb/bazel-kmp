@@ -11,36 +11,31 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.skyframe
 
-package com.google.devtools.build.skyframe;
-
-import com.google.devtools.build.skyframe.NodeEntry.DirtyType;
-import com.google.errorprone.annotations.ForOverride;
+import com.google.devtools.build.skyframe.NodeEntry.DirtyType
 
 /**
- * Test utility that funnels both {@link #dirtied} and {@link #deleted} to a single {@link
- * #invalidated} method.
+ * Test utility that funnels both [.dirtied] and [.deleted] to a single [ ][.invalidated] method.
  */
-public abstract class InvalidationProgressReceiver implements EvaluationProgressReceiver {
+abstract class InvalidationProgressReceiver : EvaluationProgressReceiver {
+    public override fun dirtied(skyKey: SkyKey?, dirtyType: DirtyType?) {
+        invalidated(skyKey, InvalidationState.DIRTY)
+    }
 
-  @Override
-  public final void dirtied(SkyKey skyKey, DirtyType dirtyType) {
-    invalidated(skyKey, InvalidationState.DIRTY);
-  }
+    public override fun deleted(skyKey: SkyKey?) {
+        invalidated(skyKey, InvalidationState.DELETED)
+    }
 
-  @Override
-  public final void deleted(SkyKey skyKey) {
-    invalidated(skyKey, InvalidationState.DELETED);
-  }
+    /** New state of the value entry after invalidation.  */
+    enum class InvalidationState {
+        /** The value is dirty, although it might get re-validated again.  */
+        DIRTY,
 
-  /** New state of the value entry after invalidation. */
-  public enum InvalidationState {
-    /** The value is dirty, although it might get re-validated again. */
-    DIRTY,
-    /** The value is dirty and got deleted, cannot get re-validated again. */
-    DELETED,
-  }
+        /** The value is dirty and got deleted, cannot get re-validated again.  */
+        DELETED,
+    }
 
-  @ForOverride
-  protected abstract void invalidated(SkyKey skyKey, InvalidationState state);
+    @com.google.errorprone.annotations.ForOverride
+    protected abstract fun invalidated(skyKey: SkyKey?, state: InvalidationState?)
 }

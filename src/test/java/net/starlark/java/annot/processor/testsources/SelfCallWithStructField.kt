@@ -11,19 +11,16 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.annot.processor.testsources
 
-package net.starlark.java.annot.processor.testsources;
-
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.StarlarkValue;
+import net.starlark.java.eval.StarlarkValue
 
 /**
  * Test case for a class with a StarlarkMethod method which has selfCall=true and structField=true.
  */
-public class SelfCallWithStructField implements StarlarkValue {
-
-  @StarlarkMethod(name = "selfCallMethod", selfCall = true, structField = true, documented = false)
-  public Integer selfCallMethod() {
-    return 0;
-  }
+class SelfCallWithStructField : StarlarkValue {
+    @StarlarkMethod(name = "selfCallMethod", selfCall = true, structField = true, documented = false)
+    fun selfCallMethod(): Int {
+        return 0
+    }
 }

@@ -11,111 +11,103 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.shell;
+package com.google.devtools.build.lib.shell
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.util.OS;
-import com.google.devtools.build.runfiles.Runfiles;
-import java.io.File;
-import java.io.FileWriter;
-import java.io.PrintWriter;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Random;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.util.OS
 
-/** Tests {@link Command} execution under load. */
-@RunWith(JUnit4.class)
-public class LoadTest {
-  static {
-    WindowsSubprocessFactory.maybeInstallWindowsSubprocessFactory();
-  }
+/** Tests [Command] execution under load.  */
+@RunWith(JUnit4::class)
+class LoadTest {
+    private var tempFile: java.io.File? = null
 
-  private File tempFile;
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun createTempFile() {
+        // enable all log statements to ensure there are no problems with
+        // logging code
+        java.util.logging.Logger.getLogger("com.google.devtools.build.lib.shell.Command")
+            .setLevel(java.util.logging.Level.FINEST)
 
-  @Before
-  public final void createTempFile() throws Exception {
-    // enable all log statements to ensure there are no problems with
-    // logging code
-    Logger.getLogger("com.google.devtools.build.lib.shell.Command").setLevel(Level.FINEST);
-
-    // create a temp file
-    tempFile = File.createTempFile("LoadTest", "txt");
-    if (tempFile.exists()) {
-      tempFile.delete();
-    }
-    tempFile.deleteOnExit();
-
-    // write some random numbers to the file
-    try (final PrintWriter out = new PrintWriter(new FileWriter(tempFile))) {
-      final Random r = new Random();
-      for (int i = 0; i < 100; i++) {
-        out.println(String.valueOf(r.nextDouble()));
-      }
-    }
-  }
-
-  @After
-  public final void deleteTempFile() throws Exception {
-    tempFile.delete();
-  }
-
-  @Test
-  public void testLoad() throws Throwable {
-    Runfiles runfiles = Runfiles.create();
-    String catBin =
-        "io_bazel/src/test/java/com/google/devtools/build/lib/shell/cat_file";
-    if (OS.getCurrent() == OS.WINDOWS) {
-      catBin += ".exe";
-    }
-    catBin = runfiles.rlocation(catBin);
-
-    final Command command =
-        new Command(ImmutableList.of(catBin, tempFile.getAbsolutePath()), System.getenv());
-    Thread[] threads = new Thread[10];
-    List<Throwable> exceptions = Collections.synchronizedList(new ArrayList<Throwable>());
-    for (int i = 0; i < threads.length; i++) {
-      threads[i] = new Thread(new LoadThread(command, exceptions));
-    }
-    for (int i = 0; i < threads.length; i++) {
-      threads[i].start();
-    }
-    for (int i = 0; i < threads.length; i++) {
-      threads[i].join();
-    }
-    if (!exceptions.isEmpty()) {
-      for (Throwable t : exceptions) {
-        t.printStackTrace();
-      }
-      throw exceptions.get(0);
-    }
-  }
-
-  private static final class LoadThread implements Runnable {
-    private final Command command;
-    private final List<Throwable> exception;
-
-    private LoadThread(Command command, List<Throwable> exception) {
-      this.command = command;
-      this.exception = exception;
-    }
-
-    @Override
-    public void run() {
-      try {
-        for (int i = 0; i < 20; i++) {
-          command.execute();
+        // create a temp file
+        tempFile = java.io.File.createTempFile("LoadTest", "txt")
+        if (tempFile.exists()) {
+            tempFile.delete()
         }
-      } catch (Throwable t) {
-        exception.add(t);
-      }
+        tempFile.deleteOnExit()
+
+        PrintWriter(FileWriter(tempFile)).use { out ->
+            val r: Random = Random()
+            for (i in 0..99) {
+                out.println(r.nextDouble().toString())
+            }
+        }
     }
-  }
+
+    @org.junit.After
+    @Throws(java.lang.Exception::class)
+    fun deleteTempFile() {
+        tempFile.delete()
+    }
+
+    @org.junit.Test
+    @Throws(Throwable::class)
+    fun testLoad() {
+        val runfiles: Runfiles = Runfiles.create()
+        var catBin: String? =
+            "io_bazel/src/test/java/com/google/devtools/build/lib/shell/cat_file"
+        if (OS.getCurrent() === OS.WINDOWS) {
+            catBin += ".exe"
+        }
+        catBin = runfiles.rlocation(catBin)
+
+        val command: Command =
+            Command(
+                com.google.common.collect.ImmutableList.of<E?>(catBin, tempFile.getAbsolutePath()),
+                java.lang.System.getenv()
+            )
+        val threads: Array<java.lang.Thread?> = arrayOfNulls<java.lang.Thread>(10)
+        val exceptions: MutableList<Throwable> =
+            Collections.synchronizedList<Throwable?>(java.util.ArrayList<Throwable?>())
+        for (i in threads.indices) {
+            threads[i] = java.lang.Thread(LoadThread(command, exceptions))
+        }
+        for (i in threads.indices) {
+            threads[i].start()
+        }
+        for (i in threads.indices) {
+            threads[i].join()
+        }
+        if (!exceptions.isEmpty()) {
+            for (t in exceptions) {
+                t.printStackTrace()
+            }
+            throw exceptions.get(0)
+        }
+    }
+
+    private class LoadThread(command: Command, exception: MutableList<Throwable>) : java.lang.Runnable {
+        private val command: Command
+        private val exception: MutableList<Throwable>
+
+        init {
+            this.command = command
+            this.exception = exception
+        }
+
+        override fun run() {
+            try {
+                for (i in 0..19) {
+                    command.execute()
+                }
+            } catch (t: Throwable) {
+                exception.add(t)
+            }
+        }
+    }
+
+    companion object {
+        init {
+            WindowsSubprocessFactory.maybeInstallWindowsSubprocessFactory()
+        }
+    }
 }

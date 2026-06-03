@@ -11,29 +11,22 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.rules.java;
+package com.google.devtools.build.lib.rules.java
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.analysis.config.BuildOptions
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.util.AnalysisTestUtil;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests [JavaOptions].  */
+@RunWith(JUnit4::class)
+class JavaOptionsTest : BuildViewTestCase() {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun hostJavacOptions() {
+        val options: BuildOptions = targetConfig.getOptions().clone()
+        options.get(JavaOptions::class.java).setJavacOpts(com.google.common.collect.ImmutableList.of<E?>("-XDtarget"))
+        options.get(JavaOptions::class.java).setHostJavacOpts(com.google.common.collect.ImmutableList.of<E?>("-XDhost"))
 
-/** Tests {@link JavaOptions}. */
-@RunWith(JUnit4.class)
-public class JavaOptionsTest extends BuildViewTestCase {
-  @Test
-  public void hostJavacOptions() throws Exception {
-    BuildOptions options = targetConfig.getOptions().clone();
-    options.get(JavaOptions.class).setJavacOpts(ImmutableList.of("-XDtarget"));
-    options.get(JavaOptions.class).setHostJavacOpts(ImmutableList.of("-XDhost"));
-
-    BuildOptions execOptions = AnalysisTestUtil.execOptions(options, skyframeExecutor, reporter);
-    assertThat(execOptions.get(JavaOptions.class).getJavacOpts()).contains("-XDhost");
-    assertThat(execOptions.get(JavaOptions.class).getHostJavacOpts()).contains("-XDhost");
-  }
+        val execOptions: BuildOptions = AnalysisTestUtil.execOptions(options, skyframeExecutor, reporter)
+        com.google.common.truth.Subject.contains("-XDhost")
+        com.google.common.truth.Subject.contains("-XDhost")
+    }
 }

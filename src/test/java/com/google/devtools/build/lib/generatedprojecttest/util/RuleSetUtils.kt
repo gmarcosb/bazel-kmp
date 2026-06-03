@@ -11,126 +11,115 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.generatedprojecttest.util
 
-package com.google.devtools.build.lib.generatedprojecttest.util;
-
-import com.google.common.base.Predicate;
-import com.google.common.base.Predicates;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Iterators;
-import com.google.common.collect.Lists;
-import com.google.devtools.build.lib.packages.Attribute;
-import com.google.devtools.build.lib.packages.BuildType;
-import com.google.devtools.build.lib.packages.RuleClass;
-import com.google.devtools.build.lib.packages.RuleClass.Builder.RuleClassType;
-import com.google.devtools.build.lib.packages.Type;
-import com.google.devtools.build.lib.util.Pair;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Iterator;
-import java.util.List;
+import com.google.common.base.Predicate
+import com.google.common.base.Predicates
+import com.google.common.collect.*
+import com.google.devtools.build.lib.packages.Attribute
+import kotlin.collections.ArrayList
+import kotlin.collections.MutableCollection
+import kotlin.collections.MutableIterator
+import kotlin.collections.MutableList
 
 /**
  * Utility class for providing static predicates for rules, to help filter the rules.
  */
-public class RuleSetUtils {
-
-  /**
-   * Predicate for checking if a rule is hidden.
-   */
-  public static final Predicate<String> HIDDEN_RULE = new Predicate<String>() {
-    @Override
-    public boolean apply(final String input) {
-      try {
-        RuleClassType.INVISIBLE.checkName(input);
-        return true;
-      } catch (IllegalArgumentException e) {
-        return input.equals("testing_dummy_rule")
-            || input.equals("testing_rule_for_mandatory_providers");
-      }
-    }
-  };
-
-  /** Predicate for checking if a rule has any mandatory attributes, aside from name. */
-  public static final Predicate<RuleClass> MANDATORY_ATTRIBUTES =
-      new Predicate<RuleClass>() {
-        @Override
-        public boolean apply(final RuleClass input) {
-          List<Attribute> li = new ArrayList<>(input.getAttributeProvider().getAttributes());
-          return Iterables.any(li, RuleSetUtils::mandatoryExcludingName);
+object RuleSetUtils {
+    /**
+     * Predicate for checking if a rule is hidden.
+     */
+    val HIDDEN_RULE: Predicate<String?> = object : Predicate<String?> {
+        override fun apply(input: String): Boolean {
+            try {
+                RuleClassType.INVISIBLE.checkName(input)
+                return true
+            } catch (e: IllegalArgumentException) {
+                return input == "testing_dummy_rule"
+                        || input == "testing_rule_for_mandatory_providers"
+            }
         }
-      };
+    }
 
-  /**
-   * Predicate for checking that the rule can have a deps attribute, and does not have any other
-   * mandatory attributes besides deps and name.
-   */
-  public static final Predicate<RuleClass> DEPS_ONLY_ALLOWED =
-      new Predicate<RuleClass>() {
-        @Override
-        public boolean apply(final RuleClass input) {
-          List<Attribute> li = new ArrayList<>(input.getAttributeProvider().getAttributes());
-          // TODO(bazel-team): after the API migration we shouldn't check srcs separately
-          boolean emptySrcsAllowed =
-              !input.getAttributeProvider().hasAttr("srcs", BuildType.LABEL_LIST)
-                  || !input.getAttributeProvider().getAttributeByName("srcs").isNonEmpty();
-          if (!(emptySrcsAllowed && Iterables.any(li, DEPS))) {
-            return false;
-          }
-
-          Iterator<Attribute> it = li.iterator();
-          boolean mandatoryAttributesBesidesDeps =
-              Iterables.any(
-                  Lists.newArrayList(Iterators.filter(it, RuleSetUtils::mandatoryExcludingName)),
-                  Predicates.not(DEPS));
-          return !mandatoryAttributesBesidesDeps;
+    /** Predicate for checking if a rule has any mandatory attributes, aside from name.  */
+    val MANDATORY_ATTRIBUTES: Predicate<RuleClass?> = object : Predicate<RuleClass?> {
+        override fun apply(input: RuleClass): Boolean {
+            val li: MutableList<Attribute?> = ArrayList<Any?>(input.getAttributeProvider().getAttributes())
+            return Iterables.any<Attribute?>(li, Predicate { obj: Attribute? -> RuleSetUtils.mandatoryExcludingName() })
         }
-      };
-
-  /**
-   * Predicate for checking if a RuleClass has certain attributes
-   */
-  public static class HasAttributes implements Predicate<RuleClass> {
-
-    private final List<Pair<String, Type<?>>> attributes;
-
-    public HasAttributes(Collection<Pair<String, Type<?>>> attributes) {
-      this.attributes = ImmutableList.copyOf(attributes);
     }
 
-    @Override
-    public boolean apply(final RuleClass ruleClass) {
-      return attributes.stream()
-          .anyMatch(pair -> ruleClass.getAttributeProvider().hasAttr(pair.first, pair.second));
+    /**
+     * Predicate for checking that the rule can have a deps attribute, and does not have any other
+     * mandatory attributes besides deps and name.
+     */
+    val DEPS_ONLY_ALLOWED: Predicate<RuleClass?> = object : Predicate<RuleClass?> {
+        override fun apply(input: RuleClass): Boolean {
+            val li: MutableList<Attribute?> = ArrayList<Any?>(input.getAttributeProvider().getAttributes())
+            // TODO(bazel-team): after the API migration we shouldn't check srcs separately
+            val emptySrcsAllowed =
+                !input.getAttributeProvider().hasAttr("srcs", BuildType.LABEL_LIST)
+                        || !input.getAttributeProvider().getAttributeByName("srcs").isNonEmpty()
+            if (!(emptySrcsAllowed && Iterables.any<Attribute?>(li, DEPS))) {
+                return false
+            }
+
+            val it: MutableIterator<Attribute?> = li.iterator()
+            val mandatoryAttributesBesidesDeps =
+                Iterables.any<Attribute?>(
+                    Lists.newArrayList<Attribute?>(
+                        Iterators.filter<Attribute?>(
+                            it,
+                            Predicate { obj: Attribute? -> RuleSetUtils.mandatoryExcludingName() })
+                    ),
+                    Predicates.not<Attribute?>(DEPS)
+                )
+            return !mandatoryAttributesBesidesDeps
+        }
     }
-  }
 
-  public static Predicate<RuleClass> hasAnyAttributes(
-      Collection<Pair<String, Type<?>>> attributes) {
-    return new HasAttributes(attributes);
-  }
-
-  /** Predicate for checking if an attribute (other than name) is mandatory. */
-  private static boolean mandatoryExcludingName(Attribute input) {
-    return input.isMandatory() && !input.name.equals("name");
-  }
-
-  /**
-   * Predicate for checking if an attribute is the "deps" attribute.
-   */
-  private static final Predicate<Attribute> DEPS = new Predicate<Attribute>() {
-    @Override
-    public boolean apply(final Attribute input) {
-      return input.name.equals("deps");
+    fun hasAnyAttributes(
+        attributes: MutableCollection<Pair<String?, Type<*>?>?>
+    ): Predicate<RuleClass?> {
+        return HasAttributes(attributes)
     }
-  };
 
-  /**
-   * Predicate for checking if a rule class is not in excluded.
-   */
-  public static Predicate<String> notContainsAnyOf(final ImmutableSet<String> excluded) {
-    return Predicates.not(Predicates.in(excluded));
-  }
+    /** Predicate for checking if an attribute (other than name) is mandatory.  */
+    private fun mandatoryExcludingName(input: Attribute): Boolean {
+        return input.isMandatory() && !input.name.equals("name")
+    }
+
+    /**
+     * Predicate for checking if an attribute is the "deps" attribute.
+     */
+    private val DEPS: Predicate<Attribute?> = object : Predicate<Attribute?> {
+        override fun apply(input: Attribute): Boolean {
+            return input.name.equals("deps")
+        }
+    }
+
+    /**
+     * Predicate for checking if a rule class is not in excluded.
+     */
+    fun notContainsAnyOf(excluded: ImmutableSet<String?>): Predicate<String?> {
+        return Predicates.not<String?>(Predicates.`in`<String?>(excluded))
+    }
+
+    /**
+     * Predicate for checking if a RuleClass has certain attributes
+     */
+    class HasAttributes(attributes: MutableCollection<Pair<String?, Type<*>?>?>) : Predicate<RuleClass?> {
+        private val attributes: MutableList<Pair<String?, Type<*>?>?>
+
+        init {
+            this.attributes = ImmutableList.copyOf<Pair<String?, Type<*>?>?>(attributes)
+        }
+
+        override fun apply(ruleClass: RuleClass): Boolean {
+            return attributes.stream()
+                .anyMatch { pair: Pair<kotlin.String?, Type<*>?>? ->
+                    ruleClass.getAttributeProvider().hasAttr(pair.first, pair.second)
+                }
+        }
+    }
 }

@@ -11,196 +11,172 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.testutil;
+package com.google.devtools.build.lib.testutil
 
-import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.base.Preconditions.checkState;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.LinkedListMultimap;
-import com.google.common.collect.ListMultimap;
-import com.google.common.collect.Multimaps;
-import com.google.devtools.build.lib.actions.ActionContext.ActionContextRegistry;
-import com.google.devtools.build.lib.actions.ActionExecutionContext;
-import com.google.devtools.build.lib.actions.ExecException;
-import com.google.devtools.build.lib.actions.SandboxedSpawnStrategy;
-import com.google.devtools.build.lib.actions.Spawn;
-import com.google.devtools.build.lib.actions.SpawnResult;
-import com.google.devtools.build.lib.actions.SpawnStrategy;
-import com.google.devtools.build.lib.server.FailureDetails.FailureDetail;
-import com.google.devtools.build.lib.util.CrashFailureDetails;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import javax.annotation.Nullable;
+import com.google.devtools.build.lib.actions.ActionContext.ActionContextRegistry
 
 /**
- * Test utility that allows for controlling the behavior of spawns by using {@link SpawnShim}.
- *
- * <p>To install in integration tests, use {@link ControllableActionStrategyModule}.
+ * Test utility that allows for controlling the behavior of spawns by using [SpawnShim].
+ * 
+ * 
+ * To install in integration tests, use [ControllableActionStrategyModule].
  */
-public final class SpawnController {
-
-  /** The means of controlling {@link SpawnStrategy#exec} calls. */
-  public interface SpawnShim {
-    ExecResult getExecResult(Spawn spawn, ActionExecutionContext context)
-        throws IOException, InterruptedException;
-  }
-
-  /**
-   * Represents the desired behavior of a {@link SpawnStrategy#exec} call. Instances represent one
-   * of the following:
-   *
-   * <ul>
-   *   <li>A {@link SpawnResult}, created with {@link #of}.
-   *   <li>An {@link ExecException}, created with {@link #ofException}.
-   *   <li>A delegate to the underlying {@link SpawnStrategy}, created with {@link #delegate}.
-   * </ul>
-   */
-  public static final class ExecResult {
-    private static final ExecResult DELEGATE =
-        new ExecResult(/*execException=*/ null, /*spawnResult=*/ null);
-
-    @Nullable private final ExecException execException;
-    @Nullable private final SpawnResult spawnResult;
-
-    private ExecResult(@Nullable ExecException execException, @Nullable SpawnResult spawnResult) {
-      this.execException = execException;
-      this.spawnResult = spawnResult;
+class SpawnController {
+    /** The means of controlling [SpawnStrategy.exec] calls.  */
+    interface SpawnShim {
+        @Throws(IOException::class, java.lang.InterruptedException::class)
+        fun getExecResult(spawn: Spawn?, context: ActionExecutionContext?): ExecResult
     }
 
-    /** Override the action by returning the provided {@link SpawnResult}. */
-    public static ExecResult of(SpawnResult spawnResult) {
-      return new ExecResult(/*execException=*/ null, checkNotNull(spawnResult));
-    }
+    /**
+     * Represents the desired behavior of a [SpawnStrategy.exec] call. Instances represent one
+     * of the following:
+     * 
+     * 
+     *  * A [SpawnResult], created with [.of].
+     *  * An [ExecException], created with [.ofException].
+     *  * A delegate to the underlying [SpawnStrategy], created with [.delegate].
+     * 
+     */
+    class ExecResult private constructor(execException: ExecException?, spawnResult: SpawnResult?) {
+        private val execException: ExecException?
+        private val spawnResult: SpawnResult?
 
-    /** Override the action by throwing the provided {@link ExecException}. */
-    public static ExecResult ofException(ExecException execException) {
-      return new ExecResult(checkNotNull(execException), /*spawnResult=*/ null);
-    }
-
-    /** Do not override the action. Allow the underlying {@link SpawnStrategy} to handle it. */
-    public static ExecResult delegate() {
-      return DELEGATE;
-    }
-  }
-
-  private final List<String> executedSpawnDescriptions =
-      Collections.synchronizedList(new ArrayList<>());
-
-  private final ListMultimap<String, SpawnShim> spawnShims =
-      Multimaps.synchronizedListMultimap(LinkedListMultimap.create());
-
-  /**
-   * Returns a list of all executed spawn descriptions seen by strategies created via {@link #wrap}
-   * (in order) since the last call to {@link #clearExecutedSpawnDescriptions}.
-   */
-  public ImmutableList<String> getExecutedSpawnDescriptions() {
-    return ImmutableList.copyOf(executedSpawnDescriptions);
-  }
-
-  /** Clears the list of executed spawn descriptions. */
-  public void clearExecutedSpawnDescriptions() {
-    executedSpawnDescriptions.clear();
-  }
-
-  /**
-   * Injects custom spawn behavior for {@linkplain #wrap controllable strategies}.
-   *
-   * <p>The given {@link SpawnShim} is enqueued for a single execution of a spawn with the given
-   * description. When a matching spawn is seen, an associated {@link SpawnShim} is dequeued and
-   * used in a FIFO manner. If there are no matching shims enqueued, the delegate strategy is used.
-   */
-  public void addSpawnShim(String spawnDescription, SpawnShim spawnShim) {
-    spawnShims.put(spawnDescription, spawnShim);
-  }
-
-  /**
-   * Creates a new {@link SpawnStrategy} that picks up custom behavior added via {@link
-   * #addSpawnShim} and delegates to the given {@code delegate} if necessary.
-   */
-  SpawnStrategy wrap(SpawnStrategy delegate) {
-    return new ControllableSpawnStrategy(delegate);
-  }
-
-  /**
-   * Checks that all spawn shims added via {@link #addSpawnShim} have been consumed, throwing an
-   * {@link IllegalStateException} if any remain.
-   *
-   * <p>This can be used to verify that shims were configured correctly.
-   */
-  public void verifyAllShimsConsumed() {
-    checkState(spawnShims.isEmpty(), "Remaining spawn shims: %s", spawnShims);
-  }
-
-  private final class ControllableSpawnStrategy implements SandboxedSpawnStrategy {
-    private final SpawnStrategy delegate;
-
-    ControllableSpawnStrategy(SpawnStrategy delegate) {
-      this.delegate = checkNotNull(delegate);
-    }
-
-    @Override
-    public ImmutableList<SpawnResult> exec(
-        Spawn spawn,
-        ActionExecutionContext actionExecutionContext,
-        @Nullable SandboxedSpawnStrategy.StopConcurrentSpawns stopConcurrentSpawns)
-        throws ExecException, InterruptedException {
-      return exec(spawn, actionExecutionContext);
-    }
-
-    @Override
-    public ImmutableList<SpawnResult> exec(
-        Spawn spawn, ActionExecutionContext actionExecutionContext)
-        throws ExecException, InterruptedException {
-      String description = spawn.getResourceOwner().describe();
-      executedSpawnDescriptions.add(description);
-
-      List<SpawnShim> events = spawnShims.get(description);
-      if (!events.isEmpty()) {
-        ExecResult execResult;
-        try {
-          execResult = events.remove(0).getExecResult(spawn, actionExecutionContext);
-        } catch (IOException e) {
-          throw new SpawnShimException(e, description);
+        init {
+            this.execException = execException
+            this.spawnResult = spawnResult
         }
-        if (execResult.execException != null) {
-          throw execResult.execException;
+
+        companion object {
+            private val DELEGATE = ExecResult( /*execException=*/null,  /*spawnResult=*/null)
+
+            /** Override the action by returning the provided [SpawnResult].  */
+            fun of(spawnResult: SpawnResult?): ExecResult {
+                return ExecResult( /*execException=*/null,
+                    com.google.common.base.Preconditions.checkNotNull<SpawnResult?>(spawnResult)
+                )
+            }
+
+            /** Override the action by throwing the provided [ExecException].  */
+            fun ofException(execException: ExecException?): ExecResult {
+                return ExecResult(
+                    com.google.common.base.Preconditions.checkNotNull<ExecException?>(execException),  /*spawnResult=*/
+                    null
+                )
+            }
+
+            /** Do not override the action. Allow the underlying [SpawnStrategy] to handle it.  */
+            fun delegate(): ExecResult {
+                return DELEGATE
+            }
         }
-        if (execResult.spawnResult != null) {
-          return ImmutableList.of(execResult.spawnResult);
+    }
+
+    private val executedSpawnDescriptions: MutableList<String?> =
+        Collections.synchronizedList<String?>(java.util.ArrayList<String?>())
+
+    private val spawnShims: com.google.common.collect.ListMultimap<String?, SpawnShim?> =
+        com.google.common.collect.Multimaps.synchronizedListMultimap<String?, SpawnShim?>(com.google.common.collect.LinkedListMultimap.create<String?, SpawnShim?>())
+
+    /**
+     * Returns a list of all executed spawn descriptions seen by strategies created via [.wrap]
+     * (in order) since the last call to [.clearExecutedSpawnDescriptions].
+     */
+    fun getExecutedSpawnDescriptions(): com.google.common.collect.ImmutableList<String?> {
+        return com.google.common.collect.ImmutableList.copyOf<String?>(executedSpawnDescriptions)
+    }
+
+    /** Clears the list of executed spawn descriptions.  */
+    fun clearExecutedSpawnDescriptions() {
+        executedSpawnDescriptions.clear()
+    }
+
+    /**
+     * Injects custom spawn behavior for [controllable strategies][.wrap].
+     * 
+     * 
+     * The given [SpawnShim] is enqueued for a single execution of a spawn with the given
+     * description. When a matching spawn is seen, an associated [SpawnShim] is dequeued and
+     * used in a FIFO manner. If there are no matching shims enqueued, the delegate strategy is used.
+     */
+    fun addSpawnShim(spawnDescription: String?, spawnShim: SpawnShim?) {
+        spawnShims.put(spawnDescription, spawnShim)
+    }
+
+    /**
+     * Creates a new [SpawnStrategy] that picks up custom behavior added via [ ][.addSpawnShim] and delegates to the given `delegate` if necessary.
+     */
+    fun wrap(delegate: SpawnStrategy?): SpawnStrategy {
+        return ControllableSpawnStrategy(delegate)
+    }
+
+    /**
+     * Checks that all spawn shims added via [.addSpawnShim] have been consumed, throwing an
+     * [IllegalStateException] if any remain.
+     * 
+     * 
+     * This can be used to verify that shims were configured correctly.
+     */
+    fun verifyAllShimsConsumed() {
+        com.google.common.base.Preconditions.checkState(spawnShims.isEmpty(), "Remaining spawn shims: %s", spawnShims)
+    }
+
+    private inner class ControllableSpawnStrategy(delegate: SpawnStrategy?) : SandboxedSpawnStrategy {
+        private val delegate: SpawnStrategy
+
+        init {
+            this.delegate = com.google.common.base.Preconditions.checkNotNull<SpawnStrategy>(delegate)
         }
-      }
 
-      return delegate.exec(spawn, actionExecutionContext);
+        @Throws(ExecException::class, java.lang.InterruptedException::class)
+        public override fun exec(
+            spawn: Spawn,
+            actionExecutionContext: ActionExecutionContext?,
+            stopConcurrentSpawns: SandboxedSpawnStrategy.StopConcurrentSpawns?
+        ): com.google.common.collect.ImmutableList<SpawnResult?>? {
+            return exec(spawn, actionExecutionContext)
+        }
+
+        @Throws(ExecException::class, java.lang.InterruptedException::class)
+        public override fun exec(
+            spawn: Spawn, actionExecutionContext: ActionExecutionContext?
+        ): com.google.common.collect.ImmutableList<SpawnResult?>? {
+            val description: String = spawn.getResourceOwner().describe()
+            executedSpawnDescriptions.add(description)
+
+            val events: MutableList<SpawnShim?> = spawnShims.get(description)
+            if (!events.isEmpty()) {
+                val execResult: ExecResult
+                try {
+                    execResult = events.removeAt(0)!!.getExecResult(spawn, actionExecutionContext)
+                } catch (e: IOException) {
+                    throw SpawnShimException(e, description)
+                }
+                if (execResult.execException != null) {
+                    throw execResult.execException
+                }
+                if (execResult.spawnResult != null) {
+                    return com.google.common.collect.ImmutableList.of<SpawnResult?>(execResult.spawnResult)
+                }
+            }
+
+            return delegate.exec(spawn, actionExecutionContext)
+        }
+
+        public override fun canExec(spawn: Spawn?, actionContextRegistry: ActionContextRegistry?): Boolean {
+            return delegate.canExec(spawn, actionContextRegistry)
+        }
     }
 
-    @Override
-    public boolean canExec(Spawn spawn, ActionContextRegistry actionContextRegistry) {
-      return delegate.canExec(spawn, actionContextRegistry);
-    }
-  }
+    private class SpawnShimException(e: IOException?, private val description: String) : ExecException(e) {
+        protected val messageForActionExecutionException: String
+            get() = ("In a test shim, failed to determine ExecException for action: "
+                    + description
+                    + ": "
+                    + getCause().getMessage())
 
-  private static final class SpawnShimException extends ExecException {
-    private final String description;
-
-    SpawnShimException(IOException e, String description) {
-      super(e);
-      this.description = description;
+        protected override fun getFailureDetail(message: String?): FailureDetail {
+            return CrashFailureDetails.forThrowable(this)
+        }
     }
-
-    @Override
-    protected String getMessageForActionExecutionException() {
-      return "In a test shim, failed to determine ExecException for action: "
-          + description
-          + ": "
-          + getCause().getMessage();
-    }
-
-    @Override
-    protected FailureDetail getFailureDetail(String message) {
-      return CrashFailureDetails.forThrowable(this);
-    }
-  }
 }

@@ -11,182 +11,154 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.buildeventservice;
+package com.google.devtools.build.lib.buildeventservice
 
-import static com.google.common.base.Preconditions.checkState;
-
-import com.google.devtools.build.lib.buildeventservice.client.BuildEventServiceClient;
-import com.google.devtools.build.lib.buildeventservice.client.BuildEventServiceGrpcClient;
-import com.google.devtools.build.lib.remote.util.FreePortFinder;
-import com.google.devtools.build.lib.util.Pair;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.v1.PublishBuildEventGrpc.PublishBuildEventImplBase;
-import com.google.devtools.build.v1.PublishBuildToolEventStreamRequest;
-import com.google.devtools.build.v1.PublishBuildToolEventStreamResponse;
-import com.google.devtools.build.v1.PublishLifecycleEventRequest;
-import com.google.protobuf.Empty;
-import io.grpc.ManagedChannelBuilder;
-import io.grpc.Server;
-import io.grpc.ServerBuilder;
-import io.grpc.Status;
-import io.grpc.stub.StreamObserver;
-import java.io.IOException;
-import java.util.Collection;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.buildeventservice.client.BuildEventServiceClient
 
 /**
- * Tests for Bazel's {@link BuildEventServiceTransport} with a {@link BuildEventServiceGrpcClient}
+ * Tests for Bazel's [BuildEventServiceTransport] with a [BuildEventServiceGrpcClient]
  * transport.
  */
-@RunWith(JUnit4.class)
-public class BuildEventServiceTransportGrpcTest extends AbstractBuildEventServiceTransportTest {
+@RunWith(JUnit4::class)
+class BuildEventServiceTransportGrpcTest : AbstractBuildEventServiceTransportTest() {
+    // This field is `public` to allow subclasses to override #createBesServer().
+    var server: BuildEventRecorderGrpc? = null
 
-  // This field is `public` to allow subclasses to override #createBesServer().
-  public BuildEventRecorderGrpc server;
-
-  @Override
-  protected AbstractBuildEventRecorder createBesServer() {
-    server = new BuildEventRecorderGrpc();
-    return server;
-  }
-
-  @Override
-  protected BuildEventServiceClient createBesClient() {
-    checkState(server != null && server.getPort() > 0, "gRPC BES server not started.");
-    return createBesClient(server.getPort());
-  }
-
-  @Override
-  protected BuildEventServiceClient createBesClient(int serverPort) {
-    return new BuildEventServiceGrpcClient(
-        ManagedChannelBuilder.forTarget("localhost:" + serverPort).usePlaintext().build(),
-        /* callCredentials= */ null,
-        /* interceptor= */ null);
-  }
-
-  @Override
-  protected DigestHashFunction makeVfsHashFunction() {
-    return DigestHashFunction.SHA256;
-  }
-
-  /**
-   * A GRPC-protocol {@link AbstractBuildEventRecorder} that may be subclassed for alternative
-   * testing scenarios.
-   */
-  public static class BuildEventRecorderGrpc extends AbstractBuildEventRecorder {
-
-    protected Server server;
-
-    private volatile boolean publishBuildToolEventStreamAccepted = false;
-
-    @Override
-    protected void startRpcServer(int port) {
-      try {
-        server =
-            ServerBuilder.forPort(port)
-                .addService(new BuildEventRecorderGrpc.BuildEventService())
-                .build()
-                .start();
-      } catch (IOException e) {
-        throw new RuntimeException(e);
-      }
+    override fun createBesServer(): AbstractBuildEventRecorder {
+        server = BuildEventRecorderGrpc()
+        return server
     }
 
-    @Override
-    protected void stopRpcServer() {
-      try {
-        if (server != null) {
-          server.shutdownNow();
-          server.awaitTermination();
-          server = null;
-        }
-      } catch (InterruptedException e) {
-        throw new RuntimeException(e);
-      }
+    override fun createBesClient(): BuildEventServiceClient? {
+        com.google.common.base.Preconditions.checkState(
+            server != null && server!!.port > 0,
+            "gRPC BES server not started."
+        )
+        return createBesClient(server!!.port)
     }
 
-    @Override
-    protected int getPort() {
-      return server == null ? -1 : server.getPort();
+    override fun createBesClient(serverPort: Int): BuildEventServiceClient? {
+        return BuildEventServiceGrpcClient(
+            ManagedChannelBuilder.forTarget("localhost:" + serverPort).usePlaintext().build(),  /* callCredentials= */
+            null,  /* interceptor= */
+            null
+        )
     }
 
-    @Override
-    protected int pickNewPort() {
-      try {
-        return FreePortFinder.pickUnusedRandomPort();
-      } catch (IOException | InterruptedException e) {
-        throw new RuntimeException(e);
-      }
+    override fun makeVfsHashFunction(): DigestHashFunction {
+        return DigestHashFunction.SHA256
     }
 
-    /** Faked {@code PublishBuildEvent} service, for testing. */
-    private class BuildEventService extends PublishBuildEventImplBase {
+    /**
+     * A GRPC-protocol [AbstractBuildEventRecorder] that may be subclassed for alternative
+     * testing scenarios.
+     */
+    class BuildEventRecorderGrpc : AbstractBuildEventRecorder() {
+        protected var server: io.grpc.Server? = null
 
-      @Override
-      public void publishLifecycleEvent(
-          PublishLifecycleEventRequest request, StreamObserver<Empty> streamObserver) {
-        synchronized (BuildEventRecorderGrpc.this) {
-          lifecycleEvents.put(request.getBuildEvent().getStreamId(), request);
-          Status status = computeLifecycleResponse(request);
-          if (status.isOk()) {
-            streamObserver.onNext(Empty.getDefaultInstance());
-            streamObserver.onCompleted();
-          } else {
-            streamObserver.onError(status.asException());
-          }
-        }
-      }
+        @kotlin.concurrent.Volatile
+        private var publishBuildToolEventStreamAccepted = false
 
-      @Override
-      public StreamObserver<PublishBuildToolEventStreamRequest> publishBuildToolEventStream(
-          final StreamObserver<PublishBuildToolEventStreamResponse> stream) {
-        publishBuildToolEventStreamAccepted = true;
-        return new StreamObserver<PublishBuildToolEventStreamRequest>() {
-          @Override
-          public void onNext(PublishBuildToolEventStreamRequest request) {
-            synchronized (BuildEventRecorderGrpc.this) {
-              streamEvents.put(request.getOrderedBuildEvent().getStreamId(), request);
-              if (sendOutOfOrderAcknowledgments) {
-                stream.onNext(
-                    PublishBuildToolEventStreamResponse.newBuilder()
-                        .setStreamId(request.getOrderedBuildEvent().getStreamId())
-                        .setSequenceNumber(request.getOrderedBuildEvent().getSequenceNumber() + 1)
-                        .build());
-                return;
-              }
-              Pair<Status, Collection<PublishBuildToolEventStreamResponse>> response =
-                  computeStreamResponse(request);
-              Status status = response.first;
-              if (status == null || status.isOk()) {
-                successfulStreamEvents.put(request.getOrderedBuildEvent().getStreamId(), request);
-                for (PublishBuildToolEventStreamResponse messages : response.second) {
-                  stream.onNext(messages);
-                }
-                if (status != null && status.isOk()) {
-                  stream.onCompleted();
-                }
-              } else {
-                stream.onError(status.asException());
-              }
+        override fun startRpcServer(port: Int) {
+            try {
+                server =
+                    ServerBuilder.forPort(port)
+                        .addService(BuildEventService())
+                        .build()
+                        .start()
+            } catch (e: IOException) {
+                throw java.lang.RuntimeException(e)
             }
-          }
+        }
 
-          @Override
-          public void onError(Throwable t) {
-            eventStreamError = Status.fromThrowable(t);
-            t.printStackTrace();
-          }
+        protected override fun stopRpcServer() {
+            try {
+                if (server != null) {
+                    server.shutdownNow()
+                    server.awaitTermination()
+                    server = null
+                }
+            } catch (e: java.lang.InterruptedException) {
+                throw java.lang.RuntimeException(e)
+            }
+        }
 
-          @Override
-          public void onCompleted() {}
-        };
-      }
+        val port: Int
+            get() = if (server == null) -1 else server.getPort()
+
+        override fun pickNewPort(): Int {
+            try {
+                return FreePortFinder.pickUnusedRandomPort()
+            } catch (e: IOException) {
+                throw java.lang.RuntimeException(e)
+            } catch (e: java.lang.InterruptedException) {
+                throw java.lang.RuntimeException(e)
+            }
+        }
+
+        /** Faked `PublishBuildEvent` service, for testing.  */
+        private inner class BuildEventService : PublishBuildEventImplBase() {
+            public override fun publishLifecycleEvent(
+                request: PublishLifecycleEventRequest, streamObserver: StreamObserver<Empty?>
+            ) {
+                synchronized(this@BuildEventRecorderGrpc) {
+                    lifecycleEvents.put(request.getBuildEvent().getStreamId(), request)
+                    val status: io.grpc.Status = computeLifecycleResponse(request)
+                    if (status.isOk()) {
+                        streamObserver.onNext(Empty.getDefaultInstance())
+                        streamObserver.onCompleted()
+                    } else {
+                        streamObserver.onError(status.asException())
+                    }
+                }
+            }
+
+            public override fun publishBuildToolEventStream(
+                stream: StreamObserver<PublishBuildToolEventStreamResponse?>
+            ): StreamObserver<PublishBuildToolEventStreamRequest?> {
+                publishBuildToolEventStreamAccepted = true
+                return object : StreamObserver<PublishBuildToolEventStreamRequest?> {
+                    override fun onNext(request: PublishBuildToolEventStreamRequest) {
+                        synchronized(this@BuildEventRecorderGrpc) {
+                            streamEvents.put(request.getOrderedBuildEvent().getStreamId(), request)
+                            if (sendOutOfOrderAcknowledgments) {
+                                stream.onNext(
+                                    PublishBuildToolEventStreamResponse.newBuilder()
+                                        .setStreamId(request.getOrderedBuildEvent().getStreamId())
+                                        .setSequenceNumber(request.getOrderedBuildEvent().getSequenceNumber() + 1)
+                                        .build()
+                                )
+                                return
+                            }
+                            val response: Pair<io.grpc.Status?, MutableCollection<PublishBuildToolEventStreamResponse?>?> =
+                                computeStreamResponse(request)
+                            val status: io.grpc.Status? = response.first
+                            if (status == null || status.isOk()) {
+                                successfulStreamEvents.put(request.getOrderedBuildEvent().getStreamId(), request)
+                                for (messages in response.second) {
+                                    stream.onNext(messages)
+                                }
+                                if (status != null && status.isOk()) {
+                                    stream.onCompleted()
+                                }
+                            } else {
+                                stream.onError(status.asException())
+                            }
+                        }
+                    }
+
+                    override fun onError(t: Throwable) {
+                        eventStreamError = io.grpc.Status.fromThrowable(t)
+                        t.printStackTrace()
+                    }
+
+                    override fun onCompleted() {}
+                }
+            }
+        }
+
+        protected override fun publishBuildToolEventStreamAccepted(): Boolean {
+            return publishBuildToolEventStreamAccepted
+        }
     }
-
-    @Override
-    protected boolean publishBuildToolEventStreamAccepted() {
-      return publishBuildToolEventStreamAccepted;
-    }
-  }
 }

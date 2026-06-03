@@ -11,19 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.testutil
 
-package com.google.devtools.build.lib.testutil;
+import com.google.devtools.build.lib.packages.BuilderFactoryForTesting
 
-import com.google.devtools.build.lib.packages.BuilderFactoryForTesting;
-
-/** Holds the {@link BuilderFactoryForTesting} to be used by tests. */
-public class TestPackageFactoryBuilderFactory {
-
-  private TestPackageFactoryBuilderFactory() {}
-
-  /** Returns the instance to be used by tests. */
-  public static final BuilderFactoryForTesting getInstance() {
-    return PackageFactoryBuilderFactoryForBazelUnitTests.INSTANCE;
-  }
-
+/** Holds the [BuilderFactoryForTesting] to be used by tests.  */
+object TestPackageFactoryBuilderFactory {
+    val instance: BuilderFactoryForTesting
+        /** Returns the instance to be used by tests.  */
+        get() = PackageFactoryBuilderFactoryForBazelUnitTests.INSTANCE
 }

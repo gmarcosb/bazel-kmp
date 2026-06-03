@@ -11,276 +11,260 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.devtools.build.lib.analysis.BlazeDirectories
 
-import com.google.common.base.Suppliers;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.testing.EqualsTester;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.analysis.ServerDirectories;
-import com.google.devtools.build.lib.analysis.util.AnalysisMock;
-import com.google.devtools.build.lib.bazel.repository.RepoDefinitionFunction;
-import com.google.devtools.build.lib.bazel.repository.RepoDefinitionValue;
-import com.google.devtools.build.lib.bazel.repository.RepositoryFetchFunction;
-import com.google.devtools.build.lib.bazel.repository.cache.LocalRepoContentsCache;
-import com.google.devtools.build.lib.clock.BlazeClock;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.events.NullEventHandler;
-import com.google.devtools.build.lib.io.FileSymlinkCycleUniquenessFunction;
-import com.google.devtools.build.lib.pkgcache.PathPackageLocator;
-import com.google.devtools.build.lib.rules.repository.RepositoryDirectoryValue;
-import com.google.devtools.build.lib.skyframe.ContainingPackageLookupValue.ContainingPackage;
-import com.google.devtools.build.lib.skyframe.ContainingPackageLookupValue.NoContainingPackage;
-import com.google.devtools.build.lib.skyframe.ExternalFilesHelper.ExternalFileAction;
-import com.google.devtools.build.lib.skyframe.PackageLookupFunction.CrossRepositoryLabelViolationStrategy;
-import com.google.devtools.build.lib.skyframe.PackageLookupValue.ErrorReason;
-import com.google.devtools.build.lib.testutil.FoundationTestCase;
-import com.google.devtools.build.lib.util.io.TimestampGranularityMonitor;
-import com.google.devtools.build.lib.vfs.FileStateKey;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.Root;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import com.google.devtools.build.skyframe.EvaluationContext;
-import com.google.devtools.build.skyframe.InMemoryMemoizingEvaluator;
-import com.google.devtools.build.skyframe.MemoizingEvaluator;
-import com.google.devtools.build.skyframe.RecordingDifferencer;
-import com.google.devtools.build.skyframe.SequencedRecordingDifferencer;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyFunctionName;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyValue;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
-import java.util.concurrent.atomic.AtomicReference;
-import net.starlark.java.eval.StarlarkSemantics;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [ContainingPackageLookupFunction].  */
+@RunWith(JUnit4::class)
+class ContainingPackageLookupFunctionTest : FoundationTestCase() {
+    private var deletedPackages: AtomicReference<com.google.common.collect.ImmutableSet<PackageIdentifier?>?>? = null
+    private var evaluator: MemoizingEvaluator? = null
 
-/** Tests for {@link ContainingPackageLookupFunction}. */
-@RunWith(JUnit4.class)
-public class ContainingPackageLookupFunctionTest extends FoundationTestCase {
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun setUp() {
+        val analysisMock: AnalysisMock = AnalysisMock.get()
 
-  private AtomicReference<ImmutableSet<PackageIdentifier>> deletedPackages;
-  private MemoizingEvaluator evaluator;
+        val pkgLocator: AtomicReference<PathPackageLocator?> =
+            AtomicReference<PathPackageLocator?>(
+                PathPackageLocator(
+                    outputBase,
+                    com.google.common.collect.ImmutableList.of<E?>(Root.fromPath(rootDirectory)),
+                    BazelSkyframeExecutorConstants.BUILD_FILES_BY_PRIORITY
+                )
+            )
+        deletedPackages =
+            AtomicReference<com.google.common.collect.ImmutableSet<PackageIdentifier?>?>(com.google.common.collect.ImmutableSet.of<PackageIdentifier?>())
+        val directories: BlazeDirectories =
+            BlazeDirectories(
+                ServerDirectories(rootDirectory, outputBase, outputBase),
+                rootDirectory,
+                analysisMock.productName
+            )
+        val externalFilesHelper: ExternalFilesHelper? =
+            ExternalFilesHelper.createForTesting(
+                pkgLocator,
+                ExternalFileAction.DEPEND_ON_EXTERNAL_PKG_FOR_EXTERNAL_REPO_PATHS,
+                directories
+            )
 
-  @Before
-  public final void setUp() throws Exception {
-    AnalysisMock analysisMock = AnalysisMock.get();
+        val skyFunctions: MutableMap<SkyFunctionName?, SkyFunction?> = HashMap<SkyFunctionName?, SkyFunction?>()
+        skyFunctions.put(SkyFunctions.CONTAINING_PACKAGE_LOOKUP, ContainingPackageLookupFunction())
 
-    AtomicReference<PathPackageLocator> pkgLocator =
-        new AtomicReference<>(
-            new PathPackageLocator(
-                outputBase,
-                ImmutableList.of(Root.fromPath(rootDirectory)),
-                BazelSkyframeExecutorConstants.BUILD_FILES_BY_PRIORITY));
-    deletedPackages = new AtomicReference<>(ImmutableSet.of());
-    BlazeDirectories directories =
-        new BlazeDirectories(
-            new ServerDirectories(rootDirectory, outputBase, outputBase),
-            rootDirectory,
-            analysisMock.getProductName());
-    ExternalFilesHelper externalFilesHelper =
-        ExternalFilesHelper.createForTesting(
-            pkgLocator,
-            ExternalFileAction.DEPEND_ON_EXTERNAL_PKG_FOR_EXTERNAL_REPO_PATHS,
-            directories);
+        skyFunctions.put(
+            SkyFunctions.PACKAGE_LOOKUP,
+            PackageLookupFunction(
+                deletedPackages,
+                CrossRepositoryLabelViolationStrategy.ERROR,
+                BazelSkyframeExecutorConstants.BUILD_FILES_BY_PRIORITY
+            )
+        )
+        skyFunctions.put(SkyFunctions.PACKAGE, PackageFunction.newBuilder().build())
+        skyFunctions.put(SkyFunctions.IGNORED_SUBDIRECTORIES, IgnoredSubdirectoriesFunction.NOOP)
+        skyFunctions.put(
+            FileStateKey.FILE_STATE,
+            FileStateFunction(
+                com.google.common.base.Suppliers.ofInstance<T?>(TimestampGranularityMonitor(com.google.devtools.build.lib.clock.BlazeClock.instance())),
+                SyscallCache.NO_CACHE,
+                externalFilesHelper
+            )
+        )
+        skyFunctions.put(SkyFunctions.FILE, FileFunction(pkgLocator, directories))
+        skyFunctions.put(SkyFunctions.DIRECTORY_LISTING, DirectoryListingFunction())
+        skyFunctions.put(
+            SkyFunctions.DIRECTORY_LISTING_STATE,
+            DirectoryListingStateFunction(externalFilesHelper, SyscallCache.NO_CACHE)
+        )
+        skyFunctions.put(SkyFunctions.LOCAL_REPOSITORY_LOOKUP, LocalRepositoryLookupFunction())
+        skyFunctions.put(
+            FileSymlinkCycleUniquenessFunction.NAME, FileSymlinkCycleUniquenessFunction()
+        )
+        skyFunctions.put(
+            SkyFunctions.REPOSITORY_DIRECTORY,
+            RepositoryFetchFunction(
+                com.google.common.collect.ImmutableMap::of,
+                com.google.common.collect.ImmutableMap::of,
+                directories,
+                LocalRepoContentsCache()
+            )
+        )
+        skyFunctions.put(
+            SkyFunctions.REPOSITORY_MAPPING,
+            object : SkyFunction() {
+                public override fun compute(skyKey: SkyKey?, env: Environment?): SkyValue {
+                    return RepositoryMappingValue.VALUE_FOR_EMPTY_ROOT_MODULE
+                }
+            })
+        skyFunctions.put(
+            RepoDefinitionValue.REPO_DEFINITION,
+            object : SkyFunction() {
+                public override fun compute(skyKey: SkyKey?, env: Environment?): SkyValue {
+                    return RepoDefinitionValue.NOT_FOUND
+                }
+            })
 
-    Map<SkyFunctionName, SkyFunction> skyFunctions = new HashMap<>();
-    skyFunctions.put(SkyFunctions.CONTAINING_PACKAGE_LOOKUP, new ContainingPackageLookupFunction());
+        val differencer: RecordingDifferencer = SequencedRecordingDifferencer()
+        evaluator = InMemoryMemoizingEvaluator(skyFunctions, differencer)
+        PrecomputedValue.BUILD_ID.set(differencer, UUID.randomUUID())
+        PrecomputedValue.PATH_PACKAGE_LOCATOR.set(differencer, pkgLocator.get())
+        PrecomputedValue.STARLARK_SEMANTICS.set(differencer, StarlarkSemantics.DEFAULT)
+        RepoDefinitionFunction.REPOSITORY_OVERRIDES.set(
+            differencer,
+            com.google.common.collect.ImmutableMap.of<K?, V?>()
+        )
+        RepositoryDirectoryValue.FETCH_DISABLED.set(differencer, false)
+        RepositoryDirectoryValue.FORCE_FETCH.set(
+            differencer, RepositoryDirectoryValue.FORCE_FETCH_DISABLED
+        )
+        RepositoryDirectoryValue.VENDOR_DIRECTORY.set(differencer, java.util.Optional.empty<T?>())
+    }
 
-    skyFunctions.put(
-        SkyFunctions.PACKAGE_LOOKUP,
-        new PackageLookupFunction(
-            deletedPackages,
-            CrossRepositoryLabelViolationStrategy.ERROR,
-            BazelSkyframeExecutorConstants.BUILD_FILES_BY_PRIORITY));
-    skyFunctions.put(SkyFunctions.PACKAGE, PackageFunction.newBuilder().build());
-    skyFunctions.put(SkyFunctions.IGNORED_SUBDIRECTORIES, IgnoredSubdirectoriesFunction.NOOP);
-    skyFunctions.put(
-        FileStateKey.FILE_STATE,
-        new FileStateFunction(
-            Suppliers.ofInstance(new TimestampGranularityMonitor(BlazeClock.instance())),
-            SyscallCache.NO_CACHE,
-            externalFilesHelper));
-    skyFunctions.put(SkyFunctions.FILE, new FileFunction(pkgLocator, directories));
-    skyFunctions.put(SkyFunctions.DIRECTORY_LISTING, new DirectoryListingFunction());
-    skyFunctions.put(
-        SkyFunctions.DIRECTORY_LISTING_STATE,
-        new DirectoryListingStateFunction(externalFilesHelper, SyscallCache.NO_CACHE));
-    skyFunctions.put(SkyFunctions.LOCAL_REPOSITORY_LOOKUP, new LocalRepositoryLookupFunction());
-    skyFunctions.put(
-        FileSymlinkCycleUniquenessFunction.NAME, new FileSymlinkCycleUniquenessFunction());
-    skyFunctions.put(
-        SkyFunctions.REPOSITORY_DIRECTORY,
-        new RepositoryFetchFunction(
-            ImmutableMap::of, ImmutableMap::of, directories, new LocalRepoContentsCache()));
-    skyFunctions.put(
-        SkyFunctions.REPOSITORY_MAPPING,
-        new SkyFunction() {
-          @Override
-          public SkyValue compute(SkyKey skyKey, Environment env) {
-            return RepositoryMappingValue.VALUE_FOR_EMPTY_ROOT_MODULE;
-          }
-        });
-    skyFunctions.put(
-        RepoDefinitionValue.REPO_DEFINITION,
-        new SkyFunction() {
-          @Override
-          public SkyValue compute(SkyKey skyKey, Environment env) {
-            return RepoDefinitionValue.NOT_FOUND;
-          }
-        });
+    @Throws(java.lang.InterruptedException::class)
+    private fun lookupContainingPackage(packageName: String?): ContainingPackageLookupValue {
+        return lookupContainingPackage(PackageIdentifier.createInMainRepo(packageName))
+    }
 
-    RecordingDifferencer differencer = new SequencedRecordingDifferencer();
-    evaluator = new InMemoryMemoizingEvaluator(skyFunctions, differencer);
-    PrecomputedValue.BUILD_ID.set(differencer, UUID.randomUUID());
-    PrecomputedValue.PATH_PACKAGE_LOCATOR.set(differencer, pkgLocator.get());
-    PrecomputedValue.STARLARK_SEMANTICS.set(differencer, StarlarkSemantics.DEFAULT);
-    RepoDefinitionFunction.REPOSITORY_OVERRIDES.set(differencer, ImmutableMap.of());
-    RepositoryDirectoryValue.FETCH_DISABLED.set(differencer, false);
-    RepositoryDirectoryValue.FORCE_FETCH.set(
-        differencer, RepositoryDirectoryValue.FORCE_FETCH_DISABLED);
-    RepositoryDirectoryValue.VENDOR_DIRECTORY.set(differencer, Optional.empty());
-  }
+    @Throws(java.lang.InterruptedException::class)
+    private fun lookupContainingPackage(packageIdentifier: PackageIdentifier?): ContainingPackageLookupValue {
+        val key: SkyKey = ContainingPackageLookupValue.key(packageIdentifier)
+        val evaluationContext: EvaluationContext? =
+            EvaluationContext.newBuilder()
+                .setKeepGoing(false)
+                .setParallelism(SkyframeExecutor.DEFAULT_THREAD_COUNT)
+                .setEventHandler(NullEventHandler.INSTANCE)
+                .build()
+        return evaluator
+            .< ContainingPackageLookupValue > evaluate < ContainingPackageLookupValue ? > (com.google.common.collect.ImmutableList.of<E?>(
+            key
+        ), evaluationContext)
+        .get(key)
+    }
 
-  private ContainingPackageLookupValue lookupContainingPackage(String packageName)
-      throws InterruptedException {
-    return lookupContainingPackage(PackageIdentifier.createInMainRepo(packageName));
-  }
+    @Throws(java.lang.InterruptedException::class)
+    private fun lookupPackage(packageIdentifier: PackageIdentifier?): PackageLookupValue {
+        val key: SkyKey = PackageLookupValue.key(packageIdentifier)
+        val evaluationContext: EvaluationContext? =
+            EvaluationContext.newBuilder()
+                .setKeepGoing(false)
+                .setParallelism(SkyframeExecutor.DEFAULT_THREAD_COUNT)
+                .setEventHandler(NullEventHandler.INSTANCE)
+                .build()
+        return evaluator
+            .< PackageLookupValue > evaluate < PackageLookupValue ? > (com.google.common.collect.ImmutableList.of<E?>(
+            key
+        ), evaluationContext)
+        .get(key)
+    }
 
-  private ContainingPackageLookupValue lookupContainingPackage(PackageIdentifier packageIdentifier)
-      throws InterruptedException {
-    SkyKey key = ContainingPackageLookupValue.key(packageIdentifier);
-    EvaluationContext evaluationContext =
-        EvaluationContext.newBuilder()
-            .setKeepGoing(false)
-            .setParallelism(SkyframeExecutor.DEFAULT_THREAD_COUNT)
-            .setEventHandler(NullEventHandler.INSTANCE)
-            .build();
-    return evaluator
-        .<ContainingPackageLookupValue>evaluate(ImmutableList.of(key), evaluationContext)
-        .get(key);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNoContainingPackage() {
+        val value: ContainingPackageLookupValue = lookupContainingPackage("a/b")
+        assertThat(value.hasContainingPackage()).isFalse()
+    }
 
-  private PackageLookupValue lookupPackage(PackageIdentifier packageIdentifier)
-      throws InterruptedException {
-    SkyKey key = PackageLookupValue.key(packageIdentifier);
-    EvaluationContext evaluationContext =
-        EvaluationContext.newBuilder()
-            .setKeepGoing(false)
-            .setParallelism(SkyframeExecutor.DEFAULT_THREAD_COUNT)
-            .setEventHandler(NullEventHandler.INSTANCE)
-            .build();
-    return evaluator
-        .<PackageLookupValue>evaluate(ImmutableList.of(key), evaluationContext)
-        .get(key);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testContainingPackageIsParent() {
+        scratch.file("a/BUILD")
+        val value: ContainingPackageLookupValue = lookupContainingPackage("a/b")
+        assertThat(value.hasContainingPackage()).isTrue()
+        assertThat(value.containingPackageName).isEqualTo(PackageIdentifier.createInMainRepo("a"))
+        assertThat(value.containingPackageRoot).isEqualTo(Root.fromPath(rootDirectory))
+    }
 
-  @Test
-  public void testNoContainingPackage() throws Exception {
-    ContainingPackageLookupValue value = lookupContainingPackage("a/b");
-    assertThat(value.hasContainingPackage()).isFalse();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testContainingPackageIsSelf() {
+        scratch.file("a/b/BUILD")
+        val value: ContainingPackageLookupValue = lookupContainingPackage("a/b")
+        assertThat(value.hasContainingPackage()).isTrue()
+        assertThat(value.containingPackageName)
+            .isEqualTo(PackageIdentifier.createInMainRepo("a/b"))
+        assertThat(value.containingPackageRoot).isEqualTo(Root.fromPath(rootDirectory))
+    }
 
-  @Test
-  public void testContainingPackageIsParent() throws Exception {
-    scratch.file("a/BUILD");
-    ContainingPackageLookupValue value = lookupContainingPackage("a/b");
-    assertThat(value.hasContainingPackage()).isTrue();
-    assertThat(value.containingPackageName).isEqualTo(PackageIdentifier.createInMainRepo("a"));
-    assertThat(value.containingPackageRoot).isEqualTo(Root.fromPath(rootDirectory));
-  }
+    @org.junit.Test
+    fun testEqualsAndHashCodeContract() {
+        val valueA1: ContainingPackageLookupValue? = ContainingPackageLookupValue.NONE
+        val valueA2: ContainingPackageLookupValue? = ContainingPackageLookupValue.NONE
+        val valueB1: ContainingPackageLookupValue? =
+            ContainingPackageLookupValue.withContainingPackage(
+                PackageIdentifier.createInMainRepo("b"), Root.fromPath(rootDirectory)
+            )
+        val valueB2: ContainingPackageLookupValue? =
+            ContainingPackageLookupValue.withContainingPackage(
+                PackageIdentifier.createInMainRepo("b"), Root.fromPath(rootDirectory)
+            )
+        val cFrag: PackageIdentifier? = PackageIdentifier.createInMainRepo("c")
+        val valueC1: ContainingPackageLookupValue? =
+            ContainingPackageLookupValue.withContainingPackage(cFrag, Root.fromPath(rootDirectory))
+        val valueC2: ContainingPackageLookupValue? =
+            ContainingPackageLookupValue.withContainingPackage(cFrag, Root.fromPath(rootDirectory))
+        val valueCOther: ContainingPackageLookupValue? =
+            ContainingPackageLookupValue.withContainingPackage(
+                cFrag, Root.fromPath(rootDirectory.getRelative("other_root"))
+            )
+        EqualsTester()
+            .addEqualityGroup(valueA1, valueA2)
+            .addEqualityGroup(valueB1, valueB2)
+            .addEqualityGroup(valueC1, valueC2)
+            .addEqualityGroup(valueCOther)
+            .testEquals()
+    }
 
-  @Test
-  public void testContainingPackageIsSelf() throws Exception {
-    scratch.file("a/b/BUILD");
-    ContainingPackageLookupValue value = lookupContainingPackage("a/b");
-    assertThat(value.hasContainingPackage()).isTrue();
-    assertThat(value.containingPackageName)
-        .isEqualTo(PackageIdentifier.createInMainRepo("a/b"));
-    assertThat(value.containingPackageRoot).isEqualTo(Root.fromPath(rootDirectory));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNonExistentExternalRepositoryErrorReason() {
+        val identifier: PackageIdentifier? =
+            PackageIdentifier.create("some_repo", PathFragment.create(":atarget"))
+        val value: ContainingPackageLookupValue = lookupContainingPackage(identifier)
+        assertThat(value.hasContainingPackage()).isFalse()
+        assertThat(value.getClass()).isEqualTo(NoContainingPackage::class.java)
+        assertThat(value.getReasonForNoContainingPackage())
+            .isEqualTo(
+                "The repository '@@some_repo' could not be resolved: Repository '@@some_repo' is not"
+                        + " defined"
+            )
+    }
 
-  @Test
-  public void testEqualsAndHashCodeContract() {
-    ContainingPackageLookupValue valueA1 = ContainingPackageLookupValue.NONE;
-    ContainingPackageLookupValue valueA2 = ContainingPackageLookupValue.NONE;
-    ContainingPackageLookupValue valueB1 =
-        ContainingPackageLookupValue.withContainingPackage(
-            PackageIdentifier.createInMainRepo("b"), Root.fromPath(rootDirectory));
-    ContainingPackageLookupValue valueB2 =
-        ContainingPackageLookupValue.withContainingPackage(
-            PackageIdentifier.createInMainRepo("b"), Root.fromPath(rootDirectory));
-    PackageIdentifier cFrag = PackageIdentifier.createInMainRepo("c");
-    ContainingPackageLookupValue valueC1 =
-        ContainingPackageLookupValue.withContainingPackage(cFrag, Root.fromPath(rootDirectory));
-    ContainingPackageLookupValue valueC2 =
-        ContainingPackageLookupValue.withContainingPackage(cFrag, Root.fromPath(rootDirectory));
-    ContainingPackageLookupValue valueCOther =
-        ContainingPackageLookupValue.withContainingPackage(
-            cFrag, Root.fromPath(rootDirectory.getRelative("other_root")));
-    new EqualsTester()
-        .addEqualityGroup(valueA1, valueA2)
-        .addEqualityGroup(valueB1, valueB2)
-        .addEqualityGroup(valueC1, valueC2)
-        .addEqualityGroup(valueCOther)
-        .testEquals();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testInvalidPackageLabelErrorReason() {
+        val value: ContainingPackageLookupValue = lookupContainingPackage("invalidpackagename:42/BUILD")
+        assertThat(value.hasContainingPackage()).isFalse()
+        assertThat(value.getClass()).isEqualTo(NoContainingPackage::class.java)
+        // As for invalid package name we continue to climb up the parent packages,
+        // we will find the top-level package with the path "" - empty string.
+        assertThat(value.getReasonForNoContainingPackage()).isNull()
+    }
 
-  @Test
-  public void testNonExistentExternalRepositoryErrorReason() throws Exception {
-    PackageIdentifier identifier =
-        PackageIdentifier.create("some_repo", PathFragment.create(":atarget"));
-    ContainingPackageLookupValue value = lookupContainingPackage(identifier);
-    assertThat(value.hasContainingPackage()).isFalse();
-    assertThat(value.getClass()).isEqualTo(NoContainingPackage.class);
-    assertThat(value.getReasonForNoContainingPackage())
-        .isEqualTo(
-            "The repository '@@some_repo' could not be resolved: Repository '@@some_repo' is not"
-                + " defined");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDeletedPackageErrorReason() {
+        val identifier: PackageIdentifier = PackageIdentifier.createInMainRepo("deletedpackage")
+        deletedPackages.set(com.google.common.collect.ImmutableSet.of<PackageIdentifier?>(identifier))
+        scratch.file("BUILD")
 
-  @Test
-  public void testInvalidPackageLabelErrorReason() throws Exception {
-    ContainingPackageLookupValue value = lookupContainingPackage("invalidpackagename:42/BUILD");
-    assertThat(value.hasContainingPackage()).isFalse();
-    assertThat(value.getClass()).isEqualTo(NoContainingPackage.class);
-    // As for invalid package name we continue to climb up the parent packages,
-    // we will find the top-level package with the path "" - empty string.
-    assertThat(value.getReasonForNoContainingPackage()).isNull();
-  }
+        val packageLookupValue: PackageLookupValue = lookupPackage(identifier)
+        assertThat(packageLookupValue.packageExists()).isFalse()
+        assertThat(packageLookupValue.errorReason).isEqualTo(ErrorReason.DELETED_PACKAGE)
+        assertThat(packageLookupValue.errorMsg)
+            .isEqualTo("Package is considered deleted due to --deleted_packages")
 
-  @Test
-  public void testDeletedPackageErrorReason() throws Exception {
-    PackageIdentifier identifier = PackageIdentifier.createInMainRepo("deletedpackage");
-    deletedPackages.set(ImmutableSet.of(identifier));
-    scratch.file("BUILD");
+        val value: ContainingPackageLookupValue = lookupContainingPackage(identifier)
+        assertThat(value.hasContainingPackage()).isTrue()
+        assertThat(value.containingPackageName.toString()).isEmpty()
+        assertThat(value.getClass()).isEqualTo(ContainingPackage::class.java)
+    }
 
-    PackageLookupValue packageLookupValue = lookupPackage(identifier);
-    assertThat(packageLookupValue.packageExists()).isFalse();
-    assertThat(packageLookupValue.errorReason).isEqualTo(ErrorReason.DELETED_PACKAGE);
-    assertThat(packageLookupValue.errorMsg)
-        .isEqualTo("Package is considered deleted due to --deleted_packages");
-
-    ContainingPackageLookupValue value = lookupContainingPackage(identifier);
-    assertThat(value.hasContainingPackage()).isTrue();
-    assertThat(value.containingPackageName.toString()).isEmpty();
-    assertThat(value.getClass()).isEqualTo(ContainingPackage.class);
-  }
-
-  @Test
-  public void testNoBuildFileErrorReason() throws Exception {
-    ContainingPackageLookupValue value = lookupContainingPackage("abc");
-    assertThat(value.hasContainingPackage()).isFalse();
-    assertThat(value.getClass()).isEqualTo(NoContainingPackage.class);
-    assertThat(value.getReasonForNoContainingPackage()).isNull();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNoBuildFileErrorReason() {
+        val value: ContainingPackageLookupValue = lookupContainingPackage("abc")
+        assertThat(value.hasContainingPackage()).isFalse()
+        assertThat(value.getClass()).isEqualTo(NoContainingPackage::class.java)
+        assertThat(value.getReasonForNoContainingPackage()).isNull()
+    }
 }

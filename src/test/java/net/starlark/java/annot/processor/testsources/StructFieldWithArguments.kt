@@ -11,24 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package net.starlark.java.annot.processor.testsources
 
-package net.starlark.java.annot.processor.testsources;
+import net.starlark.java.eval.StarlarkValue
 
-import net.starlark.java.annot.Param;
-import net.starlark.java.annot.StarlarkMethod;
-import net.starlark.java.eval.StarlarkValue;
-
-/** Test case which verifies a struct field method cannot have arguments. */
-public class StructFieldWithArguments implements StarlarkValue {
-
-  @StarlarkMethod(
-      name = "struct_field_method",
-      parameters = {
-        @Param(name = "foo", named = true),
-      },
-      structField = true,
-      doc = "A private method")
-  public String structFieldMethod(String foo) {
-    return "puppy";
-  }
+/** Test case which verifies a struct field method cannot have arguments.  */
+class StructFieldWithArguments : StarlarkValue {
+    @StarlarkMethod(
+        name = "struct_field_method",
+        parameters = [net.starlark.java.annot.Param(name = "foo", named = true)],
+        structField = true,
+        doc = "A private method"
+    )
+    fun structFieldMethod(foo: String?): String {
+        return "puppy"
+    }
 }

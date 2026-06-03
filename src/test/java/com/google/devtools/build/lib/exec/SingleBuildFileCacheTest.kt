@@ -11,123 +11,108 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.exec
 
-package com.google.devtools.build.lib.exec;
+import com.google.devtools.build.lib.actions.ActionInput
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+/** Tests SingleBuildFileCache.  */
+@RunWith(JUnit4::class)
+class SingleBuildFileCacheTest {
+    private var fs: FileSystem? = null
+    private var calls: MutableMap<String?, Int?>? = null
+    private var digestOverrides: MutableMap<String?, ByteArray?>? = null
 
-import com.google.devtools.build.lib.actions.ActionInput;
-import com.google.devtools.build.lib.actions.ActionInputHelper;
-import com.google.devtools.build.lib.actions.DigestOfDirectoryException;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.FileSystemUtils;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.SyscallCache;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.Map;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    private var underTest: SingleBuildFileCache? = null
 
-/** Tests SingleBuildFileCache. */
-@RunWith(JUnit4.class)
-public class SingleBuildFileCacheTest {
-  private FileSystem fs;
-  private Map<String, Integer> calls;
-  private Map<String, byte[]> digestOverrides;
+    @Before
+    @Throws(java.lang.Exception::class)
+    fun setUp() {
+        calls = HashMap<String?, Int?>()
+        digestOverrides = HashMap<String?, ByteArray?>()
+        fs =
+            object : InMemoryFileSystem(DigestHashFunction.SHA256) {
+                @Throws(IOException::class)
+                public override fun getInputStream(path: PathFragment): java.io.InputStream? {
+                    var c: Int = (if (calls.containsKey(path.toString())) calls.get(path.toString()) else 0)!!
+                    c++
+                    calls!!.put(path.toString(), c)
+                    return super.getInputStream(path)
+                }
 
-  private SingleBuildFileCache underTest;
+                @Throws(IOException::class)
+                public override fun getDigest(path: PathFragment): ByteArray? {
+                    val override = digestOverrides!!.get(path.getPathString())
+                    return if (override != null) override else super.getDigest(path)
+                }
 
-  @Before
-  public final void setUp() throws Exception {
-    calls = new HashMap<>();
-    digestOverrides = new HashMap<>();
-    fs =
-        new InMemoryFileSystem(DigestHashFunction.SHA256) {
-          @Override
-          public InputStream getInputStream(PathFragment path) throws IOException {
-            int c = calls.containsKey(path.toString()) ? calls.get(path.toString()) : 0;
-            c++;
-            calls.put(path.toString(), c);
-            return super.getInputStream(path);
-          }
+                @Throws(IOException::class)
+                public override fun getFastDigest(path: PathFragment?): ByteArray? {
+                    return null
+                }
+            }
+        underTest =
+            SingleBuildFileCache(
+                "/", PathFragment.create("dummy-output-path"), fs, SyscallCache.NO_CACHE
+            )
+        FileSystemUtils.createEmptyFile(fs.getPath("/empty"))
+    }
 
-          @Override
-          public byte[] getDigest(PathFragment path) throws IOException {
-            byte[] override = digestOverrides.get(path.getPathString());
-            return override != null ? override : super.getDigest(path);
-          }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNonExistentPath() {
+        val empty: ActionInput? = ActionInputHelper.fromPath("/noexist")
+        org.junit.Assert.assertThrows<IOException?>(
+            "non existent file should raise exception",
+            IOException::class.java,
+            org.junit.function.ThrowingRunnable { underTest.getInputMetadata(empty) })
+    }
 
-          @Override
-          public byte[] getFastDigest(PathFragment path) throws IOException {
-            return null;
-          }
-        };
-    underTest =
-        new SingleBuildFileCache(
-            "/", PathFragment.create("dummy-output-path"), fs, SyscallCache.NO_CACHE);
-    FileSystemUtils.createEmptyFile(fs.getPath("/empty"));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testDirectory() {
+        val file: Path = fs.getPath("/directory")
+        file.createDirectory()
+        val input: ActionInput? = ActionInputHelper.fromPath(file.getPathString())
+        val expected: DigestOfDirectoryException? =
+            org.junit.Assert.assertThrows<T?>(
+                "directory should raise exception",
+                DigestOfDirectoryException::class.java,
+                org.junit.function.ThrowingRunnable { underTest.getInputMetadata(input) })
+        assertThat(expected).hasMessageThat().isEqualTo("Input is a directory: /directory")
+    }
 
-  @Test
-  public void testNonExistentPath() throws Exception {
-    ActionInput empty = ActionInputHelper.fromPath("/noexist");
-    assertThrows(
-        "non existent file should raise exception",
-        IOException.class,
-        () -> underTest.getInputMetadata(empty));
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCache() {
+        val empty: ActionInput? = ActionInputHelper.fromPath("/empty")
+        underTest.getInputMetadata(empty).getDigest()
+        Truth.assertThat(calls).containsKey("/empty")
+        Truth.assertThat(calls!!.get("/empty") as Int).isEqualTo(1)
+        underTest.getInputMetadata(empty).getDigest()
+        Truth.assertThat(calls!!.get("/empty") as Int).isEqualTo(1)
+    }
 
-  @Test
-  public void testDirectory() throws Exception {
-    Path file = fs.getPath("/directory");
-    file.createDirectory();
-    ActionInput input = ActionInputHelper.fromPath(file.getPathString());
-    DigestOfDirectoryException expected =
-        assertThrows(
-            "directory should raise exception",
-            DigestOfDirectoryException.class,
-            () -> underTest.getInputMetadata(input));
-    assertThat(expected).hasMessageThat().isEqualTo("Input is a directory: /directory");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testBasic() {
+        val empty: ActionInput? = ActionInputHelper.fromPath("/empty")
+        assertThat(underTest.getInputMetadata(empty).getSize()).isEqualTo(0)
+        val digest: ByteArray? = underTest.getInputMetadata(empty).getDigest()
+        val expected: ByteArray? = fs.getDigestFunction().getHashFunction().hashBytes(ByteArray(0)).asBytes()
+        Truth.assertThat(digest).isEqualTo(expected)
+    }
 
-  @Test
-  public void testCache() throws Exception {
-    ActionInput empty = ActionInputHelper.fromPath("/empty");
-    underTest.getInputMetadata(empty).getDigest();
-    assertThat(calls).containsKey("/empty");
-    assertThat((int) calls.get("/empty")).isEqualTo(1);
-    underTest.getInputMetadata(empty).getDigest();
-    assertThat((int) calls.get("/empty")).isEqualTo(1);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testUnreadableFileWhenFileSystemSupportsDigest() {
+        val expectedDigest: ByteArray? = "expected".toByteArray(java.nio.charset.StandardCharsets.UTF_8)
+        digestOverrides!!.put("/unreadable", expectedDigest)
 
-  @Test
-  public void testBasic() throws Exception {
-    ActionInput empty = ActionInputHelper.fromPath("/empty");
-    assertThat(underTest.getInputMetadata(empty).getSize()).isEqualTo(0);
-    byte[] digest = underTest.getInputMetadata(empty).getDigest();
-    byte[] expected = fs.getDigestFunction().getHashFunction().hashBytes(new byte[0]).asBytes();
-    assertThat(digest).isEqualTo(expected);
-  }
-
-  @Test
-  public void testUnreadableFileWhenFileSystemSupportsDigest() throws Exception {
-    byte[] expectedDigest = "expected".getBytes(StandardCharsets.UTF_8);
-    digestOverrides.put("/unreadable", expectedDigest);
-
-    ActionInput input = ActionInputHelper.fromPath("/unreadable");
-    Path file = fs.getPath("/unreadable");
-    FileSystemUtils.createEmptyFile(file);
-    file.chmod(0);
-    byte[] actualDigest = underTest.getInputMetadata(input).getDigest();
-    assertThat(actualDigest).isEqualTo(expectedDigest);
-  }
+        val input: ActionInput? = ActionInputHelper.fromPath("/unreadable")
+        val file: Path = fs.getPath("/unreadable")
+        FileSystemUtils.createEmptyFile(file)
+        file.chmod(0)
+        val actualDigest: ByteArray? = underTest.getInputMetadata(input).getDigest()
+        Truth.assertThat(actualDigest).isEqualTo(expectedDigest)
+    }
 }

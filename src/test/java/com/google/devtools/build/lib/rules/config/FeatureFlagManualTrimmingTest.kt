@@ -11,75 +11,57 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License
+package com.google.devtools.build.lib.rules.config
 
-package com.google.devtools.build.lib.rules.config;
+import com.google.common.base.Splitter
+import com.google.common.collect.ImmutableList
+import com.google.common.collect.ImmutableSortedMap
+import com.google.common.collect.Iterables
+import com.google.common.collect.Ordering
+import com.google.devtools.build.lib.actions.Artifact
+import org.junit.Test
+import java.util.Map
+import java.util.function.Function
 
-import static com.google.common.collect.ImmutableSortedMap.toImmutableSortedMap;
-import static com.google.common.truth.Truth.assertThat;
+/** Tests for manual trimming of feature flags with the transitive_configs attribute.  */
+@RunWith(JUnit4::class)
+class FeatureFlagManualTrimmingTest : BuildViewTestCase() {
+    @Before
+    @Throws(Exception::class)
+    fun enableManualTrimming() {
+        enableManualTrimmingAnd()
+    }
 
-import com.google.common.base.Splitter;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSortedMap;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Ordering;
-import com.google.devtools.build.lib.actions.Artifact;
-import com.google.devtools.build.lib.analysis.BaseRuleClasses;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.analysis.RuleContext;
-import com.google.devtools.build.lib.analysis.actions.FileWriteAction;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.config.BuildOptionsView;
-import com.google.devtools.build.lib.analysis.config.transitions.PatchTransition;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.Rule;
-import com.google.devtools.build.lib.packages.RuleTransitionData;
-import com.google.devtools.build.lib.testutil.TestRuleClassProvider;
-import java.util.Map;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @Throws(Exception::class)
+    private fun enableManualTrimmingAnd(vararg otherFlags: String?) {
+        val flags = ImmutableList.Builder<String?>()
+            .add("--enforce_transitive_configs_for_config_feature_flag")
+            .add(*otherFlags)
+            .build()
+        useConfiguration(*flags.toArray<String?>(arrayOfNulls<String>(0)))
+    }
 
-/** Tests for manual trimming of feature flags with the transitive_configs attribute. */
-@RunWith(JUnit4.class)
-public final class FeatureFlagManualTrimmingTest extends BuildViewTestCase {
+    override fun createRuleClassProvider(): ConfiguredRuleClassProvider {
+        val builder: ConfiguredRuleClassProvider.Builder =
+            Builder().addRuleDefinition(FeatureFlagSetterRule())
+        TestRuleClassProvider.addStandardRules(builder)
+        return builder.build()
+    }
 
-  @Before
-  public void enableManualTrimming() throws Exception {
-    enableManualTrimmingAnd();
-  }
-
-  private void enableManualTrimmingAnd(String... otherFlags) throws Exception {
-    ImmutableList<String> flags = new ImmutableList.Builder<String>()
-        .add("--enforce_transitive_configs_for_config_feature_flag")
-        .add(otherFlags)
-        .build();
-    useConfiguration(flags.toArray(new String[0]));
-  }
-
-  @Override
-  protected ConfiguredRuleClassProvider createRuleClassProvider() {
-    ConfiguredRuleClassProvider.Builder builder =
-        new ConfiguredRuleClassProvider.Builder().addRuleDefinition(new FeatureFlagSetterRule());
-    TestRuleClassProvider.addStandardRules(builder);
-    return builder.build();
-  }
-
-  @Before
-  public void setUpFlagReadingRule() throws Exception {
-    scratch.file(
-        "test/read_flags.bzl",
-        """
+    @Before
+    @Throws(Exception::class)
+    fun setUpFlagReadingRule() {
+        scratch.file(
+            "test/read_flags.bzl",
+            """
         _FFI = config_common.FeatureFlagInfo
 
         def _read_flags_impl(ctx):
             result = ""
             for dep in ctx.attr.flags:
                 if result:
-                    result += "\\n"
+                    result += "\
+                    "
                 result += str(dep.label) + ":::"
                 if dep[_FFI].error == None:
                     result += dep[_FFI].value
@@ -98,14 +80,17 @@ public final class FeatureFlagManualTrimmingTest extends BuildViewTestCase {
             },
             outputs = {"flagdict": "%{name}.flags"},
         )
-        """);
-  }
+        
+        """.trimIndent()
+        )
+    }
 
-  @Before
-  public void setUpHostTransitionRule() throws Exception {
-    scratch.file(
-        "test/host_transition.bzl",
-        """
+    @Before
+    @Throws(Exception::class)
+    fun setUpHostTransitionRule() {
+        scratch.file(
+            "test/host_transition.bzl",
+            """
         def _host_transition_impl(ctx):
             files = depset(transitive = [src[DefaultInfo].files for src in ctx.attr.srcs])
             return [DefaultInfo(files = files)]
@@ -114,26 +99,30 @@ public final class FeatureFlagManualTrimmingTest extends BuildViewTestCase {
             implementation = _host_transition_impl,
             attrs = {"srcs": attr.label_list(cfg = "exec")},
         )
-        """);
-  }
+        
+        """.trimIndent()
+        )
+    }
 
-  private ImmutableSortedMap<Label, String> getFlagValuesFromOutputFile(Artifact flagDict) {
-    String fileContents =
-        ((FileWriteAction) getActionGraph().getGeneratingAction(flagDict)).getFileContents();
-    return Splitter.on('\n').withKeyValueSeparator(":::").split(fileContents).entrySet().stream()
-        .collect(
-            toImmutableSortedMap(
-                Ordering.natural(),
-                (entry) -> Label.parseCanonicalUnchecked(entry.getKey()),
-                Map.Entry::getValue));
-  }
+    private fun getFlagValuesFromOutputFile(flagDict: Artifact?): ImmutableSortedMap<Label?, String?> {
+        val fileContents: String =
+            (actionGraph.getGeneratingAction(flagDict) as FileWriteAction).getFileContents()
+        return Splitter.on('\n').withKeyValueSeparator(":::").split(fileContents).entrySet().stream()
+            .collect(
+                ImmutableSortedMap.toImmutableSortedMap<Any?, Comparable<*>?, Any?>(
+                    Ordering.natural<Comparable<*>?>(),
+                    Function { entry: Any? -> Label.parseCanonicalUnchecked(entry.getKey()) },
+                    Function { Map.Entry.getValue() })
+            )
+    }
 
-  @Test
-  public void duplicateTargetsCreatedWithTrimmingDisabled() throws Exception {
-    useConfiguration("--noenforce_transitive_configs_for_config_feature_flag");
-    scratch.file(
-        "test/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun duplicateTargetsCreatedWithTrimmingDisabled() {
+        useConfiguration("--noenforce_transitive_configs_for_config_feature_flag")
+        scratch.file(
+            "test/BUILD",
+            """
         load(":read_flags.bzl", "read_flags")
 
         feature_flag_setter(
@@ -181,21 +170,24 @@ public final class FeatureFlagManualTrimmingTest extends BuildViewTestCase {
             ],
             default_value = "default",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    Artifact leftFlags =
-        Iterables.getOnlyElement(getFilesToBuild(getConfiguredTarget("//test:left")).toList());
-    Artifact rightFlags =
-        Iterables.getOnlyElement(getFilesToBuild(getConfiguredTarget("//test:right")).toList());
+        val leftFlags: Artifact? =
+            Iterables.getOnlyElement<T?>(getFilesToBuild(getConfiguredTarget("//test:left")).toList())
+        val rightFlags: Artifact? =
+            Iterables.getOnlyElement<T?>(getFilesToBuild(getConfiguredTarget("//test:right")).toList())
 
-    assertThat(leftFlags).isNotEqualTo(rightFlags);
-  }
+        assertThat(leftFlags).isNotEqualTo(rightFlags)
+    }
 
-  @Test
-  public void featureFlagSetAndInTransitiveConfigs_getsSetValue() throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun featureFlagSetAndInTransitiveConfigs_getsSetValue() {
+        scratch.file(
+            "test/BUILD",
+            """
         load(":read_flags.bzl", "read_flags")
 
         feature_flag_setter(
@@ -233,21 +225,23 @@ public final class FeatureFlagManualTrimmingTest extends BuildViewTestCase {
             ],
             default_value = "default",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    Artifact targetFlags =
-        Iterables.getOnlyElement(getFilesToBuild(getConfiguredTarget("//test:target")).toList());
+        val targetFlags: Artifact? =
+            Iterables.getOnlyElement<T?>(getFilesToBuild(getConfiguredTarget("//test:target")).toList())
 
-    Label usedFlag = Label.parseCanonical("//test:used_flag");
-    assertThat(getFlagValuesFromOutputFile(targetFlags)).containsEntry(usedFlag, "configured");
-  }
+        val usedFlag: Label? = Label.parseCanonical("//test:used_flag")
+        Truth.assertThat(getFlagValuesFromOutputFile(targetFlags)).containsEntry(usedFlag, "configured")
+    }
 
-  @Test
-  public void featureFlagSetButNotInTransitiveConfigs_isTrimmedOutAndCollapsesDuplicates()
-      throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun featureFlagSetButNotInTransitiveConfigs_isTrimmedOutAndCollapsesDuplicates() {
+        scratch.file(
+            "test/BUILD",
+            """
         load(":read_flags.bzl", "read_flags")
 
         feature_flag_setter(
@@ -295,22 +289,25 @@ public final class FeatureFlagManualTrimmingTest extends BuildViewTestCase {
             ],
             default_value = "default",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    Artifact leftFlags =
-        Iterables.getOnlyElement(getFilesToBuild(getConfiguredTarget("//test:left")).toList());
-    Artifact rightFlags =
-        Iterables.getOnlyElement(getFilesToBuild(getConfiguredTarget("//test:right")).toList());
+        val leftFlags: Artifact? =
+            Iterables.getOnlyElement<T?>(getFilesToBuild(getConfiguredTarget("//test:left")).toList())
+        val rightFlags: Artifact? =
+            Iterables.getOnlyElement<T?>(getFilesToBuild(getConfiguredTarget("//test:right")).toList())
 
-    assertThat(leftFlags).isEqualTo(rightFlags);
-    assertThat(leftFlags.getArtifactOwner()).isEqualTo(rightFlags.getArtifactOwner());
-  }
+        assertThat(leftFlags).isEqualTo(rightFlags)
+        assertThat(leftFlags.getArtifactOwner()).isEqualTo(rightFlags.getArtifactOwner())
+    }
 
-  @Test
-  public void featureFlagInTransitiveConfigsButNotSet_getsDefaultValue() throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun featureFlagInTransitiveConfigsButNotSet_getsDefaultValue() {
+        scratch.file(
+            "test/BUILD",
+            """
         load(":read_flags.bzl", "read_flags")
 
         feature_flag_setter(
@@ -347,21 +344,23 @@ public final class FeatureFlagManualTrimmingTest extends BuildViewTestCase {
             ],
             default_value = "default",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    Artifact targetFlags =
-        Iterables.getOnlyElement(getFilesToBuild(getConfiguredTarget("//test:target")).toList());
+        val targetFlags: Artifact? =
+            Iterables.getOnlyElement<T?>(getFilesToBuild(getConfiguredTarget("//test:target")).toList())
 
-    Label usedFlag = Label.parseCanonical("//test:used_flag");
-    assertThat(getFlagValuesFromOutputFile(targetFlags)).containsEntry(usedFlag, "default");
-  }
+        val usedFlag: Label? = Label.parseCanonical("//test:used_flag")
+        Truth.assertThat(getFlagValuesFromOutputFile(targetFlags)).containsEntry(usedFlag, "default")
+    }
 
-  @Test
-  public void featureFlagInTransitiveConfigsButNotInTransitiveClosure_isWastefulButDoesNotError()
-      throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun featureFlagInTransitiveConfigsButNotInTransitiveClosure_isWastefulButDoesNotError() {
+        scratch.file(
+            "test/BUILD",
+            """
         load(":read_flags.bzl", "read_flags")
 
         feature_flag_setter(
@@ -418,22 +417,25 @@ public final class FeatureFlagManualTrimmingTest extends BuildViewTestCase {
             ],
             default_value = "default",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    Artifact leftFlags =
-        Iterables.getOnlyElement(getFilesToBuild(getConfiguredTarget("//test:left")).toList());
-    Artifact rightFlags =
-        Iterables.getOnlyElement(getFilesToBuild(getConfiguredTarget("//test:right")).toList());
+        val leftFlags: Artifact? =
+            Iterables.getOnlyElement<T?>(getFilesToBuild(getConfiguredTarget("//test:left")).toList())
+        val rightFlags: Artifact? =
+            Iterables.getOnlyElement<T?>(getFilesToBuild(getConfiguredTarget("//test:right")).toList())
 
-    assertThat(leftFlags).isNotEqualTo(rightFlags);
-    assertThat(leftFlags.getArtifactOwner()).isNotEqualTo(rightFlags.getArtifactOwner());
-  }
+        assertThat(leftFlags).isNotEqualTo(rightFlags)
+        assertThat(leftFlags.getArtifactOwner()).isNotEqualTo(rightFlags.getArtifactOwner())
+    }
 
-  @Test
-  public void emptyTransitiveConfigs_equivalentRegardlessOfFeatureFlags() throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun emptyTransitiveConfigs_equivalentRegardlessOfFeatureFlags() {
+        scratch.file(
+            "test/BUILD",
+            """
         load(":read_flags.bzl", "read_flags")
 
         feature_flag_setter(
@@ -468,24 +470,27 @@ public final class FeatureFlagManualTrimmingTest extends BuildViewTestCase {
             ],
             default_value = "default",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    Artifact leftFlags =
-        Iterables.getOnlyElement(getFilesToBuild(getConfiguredTarget("//test:left")).toList());
-    Artifact rightFlags =
-        Iterables.getOnlyElement(getFilesToBuild(getConfiguredTarget("//test:right")).toList());
-    Artifact directFlags =
-        Iterables.getOnlyElement(getFilesToBuild(getConfiguredTarget("//test:reader")).toList());
+        val leftFlags: Artifact? =
+            Iterables.getOnlyElement<T?>(getFilesToBuild(getConfiguredTarget("//test:left")).toList())
+        val rightFlags: Artifact? =
+            Iterables.getOnlyElement<T?>(getFilesToBuild(getConfiguredTarget("//test:right")).toList())
+        val directFlags: Artifact? =
+            Iterables.getOnlyElement<T?>(getFilesToBuild(getConfiguredTarget("//test:reader")).toList())
 
-    assertThat(leftFlags).isEqualTo(rightFlags);
-    assertThat(leftFlags).isEqualTo(directFlags);
-  }
+        assertThat(leftFlags).isEqualTo(rightFlags)
+        assertThat(leftFlags).isEqualTo(directFlags)
+    }
 
-  @Test
-  public void absentTransitiveConfigs_equivalentRegardlessOfFeatureFlags() throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun absentTransitiveConfigs_equivalentRegardlessOfFeatureFlags() {
+        scratch.file(
+            "test/BUILD",
+            """
         load(":read_flags.bzl", "read_flags")
 
         feature_flag_setter(
@@ -520,24 +525,27 @@ public final class FeatureFlagManualTrimmingTest extends BuildViewTestCase {
             ],
             default_value = "default",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    Artifact leftFlags =
-        Iterables.getOnlyElement(getFilesToBuild(getConfiguredTarget("//test:left")).toList());
-    Artifact rightFlags =
-        Iterables.getOnlyElement(getFilesToBuild(getConfiguredTarget("//test:right")).toList());
-    Artifact directFlags =
-        Iterables.getOnlyElement(getFilesToBuild(getConfiguredTarget("//test:reader")).toList());
+        val leftFlags: Artifact? =
+            Iterables.getOnlyElement<T?>(getFilesToBuild(getConfiguredTarget("//test:left")).toList())
+        val rightFlags: Artifact? =
+            Iterables.getOnlyElement<T?>(getFilesToBuild(getConfiguredTarget("//test:right")).toList())
+        val directFlags: Artifact? =
+            Iterables.getOnlyElement<T?>(getFilesToBuild(getConfiguredTarget("//test:reader")).toList())
 
-    assertThat(leftFlags).isEqualTo(rightFlags);
-    assertThat(leftFlags).isEqualTo(directFlags);
-  }
+        assertThat(leftFlags).isEqualTo(rightFlags)
+        assertThat(leftFlags).isEqualTo(directFlags)
+    }
 
-  @Test
-  public void magicLabelInTransitiveConfigs_doesNotError() throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun magicLabelInTransitiveConfigs_doesNotError() {
+        scratch.file(
+            "test/BUILD",
+            """
         load(":read_flags.bzl", "read_flags")
 
         feature_flag_setter(
@@ -563,17 +571,20 @@ public final class FeatureFlagManualTrimmingTest extends BuildViewTestCase {
             ],
             default_value = "default",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    getConfiguredTarget("//test:target");
-    assertNoEvents();
-  }
+        getConfiguredTarget("//test:target")
+        assertNoEvents()
+    }
 
-  @Test
-  public void flagSetBySetterButNotInTransitiveConfigs_canBeUsedByDeps() throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun flagSetBySetterButNotInTransitiveConfigs_canBeUsedByDeps() {
+        scratch.file(
+            "test/BUILD",
+            """
         load(":read_flags.bzl", "read_flags")
 
         feature_flag_setter(
@@ -600,18 +611,20 @@ public final class FeatureFlagManualTrimmingTest extends BuildViewTestCase {
             ],
             default_value = "default",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    getConfiguredTarget("//test:target");
-    assertNoEvents();
-  }
+        getConfiguredTarget("//test:target")
+        assertNoEvents()
+    }
 
-  @Test
-  public void featureFlagInUnusedSelectBranchButNotInTransitiveConfigs_doesNotError()
-      throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun featureFlagInUnusedSelectBranchButNotInTransitiveConfigs_doesNotError() {
+        scratch.file(
+            "test/BUILD",
+            """
         load(":read_flags.bzl", "read_flags")
 
         feature_flag_setter(
@@ -657,17 +670,20 @@ public final class FeatureFlagManualTrimmingTest extends BuildViewTestCase {
             ],
             default_value = "default",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    getConfiguredTarget("//test:target");
-    assertNoEvents();
-  }
+        getConfiguredTarget("//test:target")
+        assertNoEvents()
+    }
 
-  @Test
-  public void featureFlagTarget_isTrimmedToOnlyItself() throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun featureFlagTarget_isTrimmedToOnlyItself() {
+        scratch.file(
+            "test/BUILD",
+            """
         load(":read_flags.bzl", "read_flags")
 
         feature_flag_setter(
@@ -702,25 +718,27 @@ public final class FeatureFlagManualTrimmingTest extends BuildViewTestCase {
             ],
             default_value = "default",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    ConfiguredTarget target = getConfiguredTarget("//test:target");
-    RuleContext ruleContext = getRuleContext(target);
-    BuildConfigurationValue childConfiguration =
-        Iterables.getOnlyElement(ruleContext.getPrerequisiteConfiguredTargets("exports_flag"))
-            .getConfiguration();
+        val target: ConfiguredTarget = getConfiguredTarget("//test:target")
+        val ruleContext: RuleContext = getRuleContext(target)
+        val childConfiguration: BuildConfigurationValue =
+            Iterables.getOnlyElement<T?>(ruleContext.getPrerequisiteConfiguredTargets("exports_flag"))
+                .getConfiguration()
 
-    Label childLabel = Label.parseCanonicalUnchecked("//test:read_flag");
-    assertThat(childConfiguration.getOptions().getStarlarkOptions().keySet())
-        .containsExactly(childLabel);
-  }
+        val childLabel: Label? = Label.parseCanonicalUnchecked("//test:read_flag")
+        assertThat(childConfiguration.getOptions().getStarlarkOptions().keySet())
+            .containsExactly(childLabel)
+    }
 
-  @Test
-  public void featureFlagReferencedByPathWithMissingLabel_producesNoImmediateError()
-      throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun featureFlagReferencedByPathWithMissingLabel_producesNoImmediateError() {
+        scratch.file(
+            "test/BUILD",
+            """
         load(":read_flags.bzl", "read_flags")
 
         feature_flag_setter(
@@ -754,18 +772,21 @@ public final class FeatureFlagManualTrimmingTest extends BuildViewTestCase {
             ],
             default_value = "default",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    getConfiguredTarget("//test:target");
-    assertNoEvents();
-  }
+        getConfiguredTarget("//test:target")
+        assertNoEvents()
+    }
 
-  @Test
-  public void featureFlagAccessedByPathWithMissingLabel_producesImmediateError() throws Exception {
-    reporter.removeHandler(failFastHandler); // expecting an error
-    scratch.file(
-        "test/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun featureFlagAccessedByPathWithMissingLabel_producesImmediateError() {
+        reporter.removeHandler(failFastHandler) // expecting an error
+        scratch.file(
+            "test/BUILD",
+            """
         load(":read_flags.bzl", "read_flags")
 
         feature_flag_setter(
@@ -799,21 +820,25 @@ public final class FeatureFlagManualTrimmingTest extends BuildViewTestCase {
             ],
             default_value = "default",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertThat(getConfiguredTarget("//test:target")).isNull();
-    assertContainsEvent(
-        "Feature flag //test:used_flag was accessed in a configuration it is not present in. All "
-            + "targets which depend on //test:used_flag directly or indirectly must name it in "
-            + "their transitive_configs attribute.");
-  }
+        assertThat(getConfiguredTarget("//test:target")).isNull()
+        assertContainsEvent(
+            ("Feature flag //test:used_flag was accessed in a configuration it is not present in. All "
+                    + "targets which depend on //test:used_flag directly or indirectly must name it in "
+                    + "their transitive_configs attribute.")
+        )
+    }
 
-  @Test
-  public void featureFlagAccessedByPathWithMissingLabelAndSelect_producesError() throws Exception {
-    reporter.removeHandler(failFastHandler); // expecting an error
-    scratch.file(
-        "test/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun featureFlagAccessedByPathWithMissingLabelAndSelect_producesError() {
+        reporter.removeHandler(failFastHandler) // expecting an error
+        scratch.file(
+            "test/BUILD",
+            """
         feature_flag_setter(
             name = "target",
             flag_values = {
@@ -853,22 +878,25 @@ public final class FeatureFlagManualTrimmingTest extends BuildViewTestCase {
             ],
             default_value = "default",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertThat(getConfiguredTarget("//test:target")).isNull();
-    assertContainsEvent(
-        "Feature flag //test:used_flag was accessed in a configuration it is not present in. All "
-            + "targets which depend on //test:used_flag directly or indirectly must name it in "
-            + "their transitive_configs attribute.");
-  }
+        assertThat(getConfiguredTarget("//test:target")).isNull()
+        assertContainsEvent(
+            ("Feature flag //test:used_flag was accessed in a configuration it is not present in. All "
+                    + "targets which depend on //test:used_flag directly or indirectly must name it in "
+                    + "their transitive_configs attribute.")
+        )
+    }
 
-  @Test
-  public void featureFlagAccessedByPathWithMissingTransitiveConfigs_producesError()
-      throws Exception {
-    reporter.removeHandler(failFastHandler); // expecting an error
-    scratch.file(
-        "test/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun featureFlagAccessedByPathWithMissingTransitiveConfigs_producesError() {
+        reporter.removeHandler(failFastHandler) // expecting an error
+        scratch.file(
+            "test/BUILD",
+            """
         load(":read_flags.bzl", "read_flags")
 
         feature_flag_setter(
@@ -910,20 +938,24 @@ public final class FeatureFlagManualTrimmingTest extends BuildViewTestCase {
             ],
             default_value = "default",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertThat(getConfiguredTarget("//test:target")).isNull();
-    assertContainsEvent(
-        "Feature flag //test:used_flag was accessed in a configuration it is not present in. All "
-            + "targets which depend on //test:used_flag directly or indirectly must name it in "
-            + "their transitive_configs attribute.");
-  }
+        assertThat(getConfiguredTarget("//test:target")).isNull()
+        assertContainsEvent(
+            ("Feature flag //test:used_flag was accessed in a configuration it is not present in. All "
+                    + "targets which depend on //test:used_flag directly or indirectly must name it in "
+                    + "their transitive_configs attribute.")
+        )
+    }
 
-  @Test
-  public void featureFlagInExecConfiguration_hasDefaultValue() throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun featureFlagInExecConfiguration_hasDefaultValue() {
+        scratch.file(
+            "test/BUILD",
+            """
         load(":host_transition.bzl", "host_transition")
         load(":read_flags.bzl", "read_flags")
 
@@ -957,20 +989,23 @@ public final class FeatureFlagManualTrimmingTest extends BuildViewTestCase {
             ],
             default_value = "default",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    Artifact targetFlags =
-        Iterables.getOnlyElement(getFilesToBuild(getConfiguredTarget("//test:target")).toList());
+        val targetFlags: Artifact? =
+            Iterables.getOnlyElement<T?>(getFilesToBuild(getConfiguredTarget("//test:target")).toList())
 
-    Label usedFlag = Label.parseCanonical("//test:used_flag");
-    assertThat(getFlagValuesFromOutputFile(targetFlags)).containsEntry(usedFlag, "default");
-  }
+        val usedFlag: Label? = Label.parseCanonical("//test:used_flag")
+        Truth.assertThat(getFlagValuesFromOutputFile(targetFlags)).containsEntry(usedFlag, "default")
+    }
 
-  @Test
-  public void featureFlagInExecConfiguration_hasNoTransitiveConfigEnforcement() throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun featureFlagInExecConfiguration_hasNoTransitiveConfigEnforcement() {
+        scratch.file(
+            "test/BUILD",
+            """
         load(":host_transition.bzl", "host_transition")
         load(":read_flags.bzl", "read_flags")
 
@@ -1004,17 +1039,20 @@ public final class FeatureFlagManualTrimmingTest extends BuildViewTestCase {
             ],
             default_value = "default",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    getConfiguredTarget("//test:target");
-    assertNoEvents();
-  }
+        getConfiguredTarget("//test:target")
+        assertNoEvents()
+    }
 
-  @Test
-  public void featureFlagAccessedDirectly_returnsDefaultValue() throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun featureFlagAccessedDirectly_returnsDefaultValue() {
+        scratch.file(
+            "test/BUILD",
+            """
         config_feature_flag(
             name = "used_flag",
             allowed_values = [
@@ -1024,19 +1062,23 @@ public final class FeatureFlagManualTrimmingTest extends BuildViewTestCase {
             ],
             default_value = "default",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    assertThat(
+        assertThat(
             ConfigFeatureFlagProvider.fromTarget(getConfiguredTarget("//test:used_flag"))
-                .getFlagValue())
-        .isEqualTo("default");
-  }
+                .getFlagValue()
+        )
+            .isEqualTo("default")
+    }
 
-  @Test
-  public void featureFlagAccessedViaTopLevelLibraryTarget_returnsDefaultValue() throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun featureFlagAccessedViaTopLevelLibraryTarget_returnsDefaultValue() {
+        scratch.file(
+            "test/BUILD",
+            """
         load(":read_flags.bzl", "read_flags")
 
         read_flags(
@@ -1054,26 +1096,29 @@ public final class FeatureFlagManualTrimmingTest extends BuildViewTestCase {
             ],
             default_value = "default",
         )
-        """);
-    Artifact targetFlags =
-        Iterables.getOnlyElement(getFilesToBuild(getConfiguredTarget("//test:reader")).toList());
+        
+        """.trimIndent()
+        )
+        val targetFlags: Artifact? =
+            Iterables.getOnlyElement<T?>(getFilesToBuild(getConfiguredTarget("//test:reader")).toList())
 
-    Label usedFlag = Label.parseCanonical("//test:used_flag");
-    assertThat(getFlagValuesFromOutputFile(targetFlags)).containsEntry(usedFlag, "default");
-  }
+        val usedFlag: Label? = Label.parseCanonical("//test:used_flag")
+        Truth.assertThat(getFlagValuesFromOutputFile(targetFlags)).containsEntry(usedFlag, "default")
+    }
 
-  @Test
-  public void featureFlagSettingRules_overrideFlagsFromReverseTransitiveClosure() throws Exception {
-    // In other words: if you have a dependency which sets feature flags itself, you don't need to
-    // name any of the feature flags used by that target or its transitive closure, as it sets
-    // feature flags itself.
-    // This is because the feature flag setting transition (which calls replaceFlagValues) runs
-    // before the trimming transition and completely replaces the feature flag set. Thus, when
-    // the trimming transition (which calls trimFlagValues) runs, its requests are always satisfied.
+    @Test
+    @Throws(Exception::class)
+    fun featureFlagSettingRules_overrideFlagsFromReverseTransitiveClosure() {
+        // In other words: if you have a dependency which sets feature flags itself, you don't need to
+        // name any of the feature flags used by that target or its transitive closure, as it sets
+        // feature flags itself.
+        // This is because the feature flag setting transition (which calls replaceFlagValues) runs
+        // before the trimming transition and completely replaces the feature flag set. Thus, when
+        // the trimming transition (which calls trimFlagValues) runs, its requests are always satisfied.
 
-    scratch.file(
-        "test/BUILD",
-        """
+        scratch.file(
+            "test/BUILD",
+            """
         load(":read_flags.bzl", "read_flags")
 
         filegroup(
@@ -1117,23 +1162,26 @@ public final class FeatureFlagManualTrimmingTest extends BuildViewTestCase {
             ],
             default_value = "default",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    Artifact targetFlags =
-        Iterables.getOnlyElement(getFilesToBuild(getConfiguredTarget("//test:toplevel")).toList());
+        val targetFlags: Artifact? =
+            Iterables.getOnlyElement<T?>(getFilesToBuild(getConfiguredTarget("//test:toplevel")).toList())
 
-    Label usedFlag = Label.parseCanonical("//test:used_flag");
-    assertThat(getFlagValuesFromOutputFile(targetFlags)).containsEntry(usedFlag, "configured");
-  }
+        val usedFlag: Label? = Label.parseCanonical("//test:used_flag")
+        Truth.assertThat(getFlagValuesFromOutputFile(targetFlags)).containsEntry(usedFlag, "configured")
+    }
 
-  @Test
-  public void trimmingTransitionReturnsOriginalOptionsWhenNothingIsTrimmed() throws Exception {
-    // This is a performance regression test. The trimming transition applies over every configured
-    // target in a build. Since BuildOptions.hashCode is expensive, if that produced a unique
-    // BuildOptions instance for every configured target
-    scratch.file(
-        "test/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun trimmingTransitionReturnsOriginalOptionsWhenNothingIsTrimmed() {
+        // This is a performance regression test. The trimming transition applies over every configured
+        // target in a build. Since BuildOptions.hashCode is expensive, if that produced a unique
+        // BuildOptions instance for every configured target
+        scratch.file(
+            "test/BUILD",
+            """
         load(":read_flags.bzl", "read_flags")
 
         feature_flag_setter(
@@ -1160,25 +1208,29 @@ public final class FeatureFlagManualTrimmingTest extends BuildViewTestCase {
             ],
             default_value = "default",
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    BuildOptions topLevelOptions =
-        getConfiguration(getConfiguredTarget("//test:toplevel_target")).getOptions();
-    PatchTransition transition =
-        new ConfigFeatureFlagTaggedTrimmingTransitionFactory(BaseRuleClasses.TAGGED_TRIMMING_ATTR)
-            .create(RuleTransitionData.create((Rule) getTarget("//test:dep"), null, ""));
-    BuildOptions depOptions =
-        transition.patch(
-            new BuildOptionsView(topLevelOptions, transition.requiresOptionFragments()),
-            eventCollector);
-    assertThat(depOptions).isSameInstanceAs(topLevelOptions);
-  }
+        val topLevelOptions: BuildOptions? =
+            getConfiguration(getConfiguredTarget("//test:toplevel_target")).getOptions()
+        val transition: PatchTransition =
+            ConfigFeatureFlagTaggedTrimmingTransitionFactory(BaseRuleClasses.TAGGED_TRIMMING_ATTR)
+                .create(RuleTransitionData.create(getTarget("//test:dep") as Rule?, null, ""))
+        val depOptions: BuildOptions? =
+            transition.patch(
+                BuildOptionsView(topLevelOptions, transition.requiresOptionFragments()),
+                eventCollector
+            )
+        assertThat(depOptions).isSameInstanceAs(topLevelOptions)
+    }
 
-  @Test
-  public void featureFlagSetAndInTransitiveConfigs_getsSetValueWhenTrimTest() throws Exception {
-    scratch.file(
-        "test/BUILD",
-        """
+    @Test
+    @Throws(Exception::class)
+    fun featureFlagSetAndInTransitiveConfigs_getsSetValueWhenTrimTest() {
+        scratch.file(
+            "test/BUILD",
+            """
         load(":read_flags.bzl", "read_flags")
 
         feature_flag_setter(
@@ -1216,13 +1268,15 @@ public final class FeatureFlagManualTrimmingTest extends BuildViewTestCase {
             ],
             default_value = "default",
         )
-        """);
-    enableManualTrimmingAnd("--trim_test_configuration");
+        
+        """.trimIndent()
+        )
+        enableManualTrimmingAnd("--trim_test_configuration")
 
-    Artifact targetFlags =
-        Iterables.getOnlyElement(getFilesToBuild(getConfiguredTarget("//test:target")).toList());
+        val targetFlags: Artifact? =
+            Iterables.getOnlyElement<T?>(getFilesToBuild(getConfiguredTarget("//test:target")).toList())
 
-    Label usedFlag = Label.parseCanonical("//test:used_flag");
-    assertThat(getFlagValuesFromOutputFile(targetFlags)).containsEntry(usedFlag, "configured");
-  }
+        val usedFlag: Label? = Label.parseCanonical("//test:used_flag")
+        Truth.assertThat(getFlagValuesFromOutputFile(targetFlags)).containsEntry(usedFlag, "configured")
+    }
 }

@@ -11,178 +11,168 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.skyframe;
+package com.google.devtools.build.lib.skyframe
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.Mockito.when;
+import com.google.devtools.build.lib.cmdline.Label
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.PackageIdentifier;
-import com.google.devtools.build.lib.packages.NoSuchPackageException;
-import com.google.devtools.build.lib.packages.NoSuchTargetException;
-import com.google.devtools.build.lib.packages.Package;
-import com.google.devtools.build.lib.skyframe.TargetLoadingUtil.TargetAndErrorIfAny;
-import com.google.devtools.build.lib.skyframe.util.SkyframeExecutorTestUtils;
-import com.google.devtools.build.skyframe.EvaluationResult;
-import com.google.devtools.build.skyframe.GroupedDeps;
-import com.google.devtools.build.skyframe.SimpleSkyframeLookupResult;
-import com.google.devtools.build.skyframe.SkyFunction;
-import com.google.devtools.build.skyframe.SkyKey;
-import com.google.devtools.build.skyframe.SkyframeLookupResult;
-import com.google.devtools.build.skyframe.ValueOrUntypedException;
-import java.util.concurrent.atomic.AtomicBoolean;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-import org.mockito.Mockito;
+/** Test for [TransitiveTraversalFunction].  */
+@RunWith(JUnit4::class)
+class TransitiveTraversalFunctionTest : BuildViewTestCase() {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun noRepeatedLabelVisitationForTransitiveTraversalFunction() {
+        // Create a basic package with a target //foo:foo.
+        val label: Label = Label.parseCanonical("//foo:foo")
+        scratch.file(
+            "foo/BUILD",
+            "load('//test_defs:foo_library.bzl', 'foo_library')",
+            "foo_library(name = '" + label.name + "')"
+        )
+        val pkg: Package = loadPackage(label.getPackageIdentifier())
+        val targetAndErrorIfAny: TargetAndErrorIfAny =
+            TargetAndErrorIfAny( /* packageLoadedSuccessfully= */
+                true,  /* errorLoadingTarget= */
+                null,
+                pkg.getTarget(label.name),
+                pkg
+            )
+        val function: TransitiveTraversalFunction =
+            object : TransitiveTraversalFunction() {
+                public override fun loadTarget(env: Environment?, label: Label?): TargetAndErrorIfAny {
+                    return targetAndErrorIfAny
+                }
+            }
+        // Create the GroupedDeps saying we had already requested two targets the last time we called
+        // #compute.
+        val groupedDeps: GroupedDeps = GroupedDeps()
+        groupedDeps.appendSingleton(label.getPackageIdentifier())
+        // Note that these targets don't actually exist in the package we created initially. It doesn't
+        // matter for the purpose of this test, the original package was just to create some objects
+        // that we needed.
+        val fakeDep1: SkyKey? = function.getKey(Label.parseCanonical("//foo:bar"))
+        val fakeDep2: SkyKey? = function.getKey(Label.parseCanonical("//foo:baz"))
+        groupedDeps.appendGroup(com.google.common.collect.ImmutableList.of<E?>(fakeDep1, fakeDep2))
 
-/** Test for {@link TransitiveTraversalFunction}. */
-@RunWith(JUnit4.class)
-public class TransitiveTraversalFunctionTest extends BuildViewTestCase {
+        val wasOptimizationUsed: AtomicBoolean = AtomicBoolean(false)
+        val mockEnv: SkyFunction.Environment =
+            Mockito.mock<SkyFunction.Environment>(SkyFunction.Environment::class.java)
+        Mockito.`when`<T?>(mockEnv.getTemporaryDirectDeps()).thenReturn(groupedDeps)
+        Mockito.`when`<T?>(mockEnv.getValuesAndExceptions(groupedDeps.getDepGroup(1)))
+            .thenAnswer(
+                Answer { invocationOnMock: InvocationOnMock? ->
+                    wasOptimizationUsed.set(true)
+                    SimpleSkyframeLookupResult( /* valuesMissingCallback= */
+                        java.lang.Runnable {},
+                        java.util.function.Function { k: SkyKey? ->
+                            throw java.lang.IllegalStateException("Shouldn't have been called: " + k)
+                        })
+                })
+        Mockito.`when`<T?>(mockEnv.valuesMissing()).thenReturn(true)
 
-  @Test
-  public void noRepeatedLabelVisitationForTransitiveTraversalFunction() throws Exception {
-    // Create a basic package with a target //foo:foo.
-    Label label = Label.parseCanonical("//foo:foo");
-    scratch.file(
-        "foo/BUILD",
-        "load('//test_defs:foo_library.bzl', 'foo_library')",
-        "foo_library(name = '" + label.name + "')");
-    Package pkg = loadPackage(label.getPackageIdentifier());
-    TargetAndErrorIfAny targetAndErrorIfAny =
-        new TargetAndErrorIfAny(
-            /* packageLoadedSuccessfully= */ true,
-            /* errorLoadingTarget= */ null,
-            pkg.getTarget(label.name),
-            pkg);
-    TransitiveTraversalFunction function =
-        new TransitiveTraversalFunction() {
-          @Override
-          TargetAndErrorIfAny loadTarget(Environment env, Label label) {
-            return targetAndErrorIfAny;
-          }
-        };
-    // Create the GroupedDeps saying we had already requested two targets the last time we called
-    // #compute.
-    GroupedDeps groupedDeps = new GroupedDeps();
-    groupedDeps.appendSingleton(label.getPackageIdentifier());
-    // Note that these targets don't actually exist in the package we created initially. It doesn't
-    // matter for the purpose of this test, the original package was just to create some objects
-    // that we needed.
-    SkyKey fakeDep1 = function.getKey(Label.parseCanonical("//foo:bar"));
-    SkyKey fakeDep2 = function.getKey(Label.parseCanonical("//foo:baz"));
-    groupedDeps.appendGroup(ImmutableList.of(fakeDep1, fakeDep2));
+        // Run the compute function and check that we returned null.
+        assertThat(function.compute(function.getKey(label), mockEnv)).isNull()
 
-    AtomicBoolean wasOptimizationUsed = new AtomicBoolean(false);
-    SkyFunction.Environment mockEnv = Mockito.mock(SkyFunction.Environment.class);
-    when(mockEnv.getTemporaryDirectDeps()).thenReturn(groupedDeps);
-    when(mockEnv.getValuesAndExceptions(groupedDeps.getDepGroup(1)))
-        .thenAnswer(
-            (invocationOnMock) -> {
-              wasOptimizationUsed.set(true);
-              // It doesn't matter what this SkyframeLookupResult is, we'll return true in the
-              // valuesMissing() call.
-              return new SimpleSkyframeLookupResult(
-                  /* valuesMissingCallback= */ () -> {},
-                  k -> {
-                    throw new IllegalStateException("Shouldn't have been called: " + k);
-                  });
-            });
-    when(mockEnv.valuesMissing()).thenReturn(true);
+        // Verify that the mock was called with the arguments we expected.
+        Truth.assertThat(wasOptimizationUsed.get()).isTrue()
+    }
 
-    // Run the compute function and check that we returned null.
-    assertThat(function.compute(function.getKey(label), mockEnv)).isNull();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun multipleErrorsForTransitiveTraversalFunction() {
+        val label: Label = Label.parseCanonical("//foo:foo")
+        scratch.file(
+            "foo/BUILD",
+            "load('//test_defs:foo_library.bzl', 'foo_library')",
+            "foo_library(name = '" + label.name + "', deps = [':bar', ':baz'])"
+        )
+        val pkg: Package = loadPackage(label.getPackageIdentifier())
+        val targetAndErrorIfAny: TargetAndErrorIfAny =
+            TargetAndErrorIfAny( /* packageLoadedSuccessfully= */
+                true,  /* errorLoadingTarget= */
+                null,
+                pkg.getTarget(label.name),
+                pkg
+            )
+        val function: TransitiveTraversalFunction =
+            object : TransitiveTraversalFunction() {
+                public override fun loadTarget(env: Environment?, label: Label?): TargetAndErrorIfAny {
+                    return targetAndErrorIfAny
+                }
+            }
+        val dep1: SkyKey = function.getKey(Label.parseCanonical("//foo:bar"))
+        val dep2: SkyKey? = function.getKey(Label.parseCanonical("//foo:baz"))
+        val mockEnv: SkyFunction.Environment =
+            Mockito.mock<SkyFunction.Environment>(SkyFunction.Environment::class.java)
+        val exp1: NoSuchTargetException = NoSuchTargetException("bad bar")
+        val exp2: NoSuchTargetException = NoSuchTargetException("bad baz")
+        val returnedDeps: SkyframeLookupResult =
+            SimpleSkyframeLookupResult(
+                java.lang.Runnable {},
+                java.util.function.Function { key: SkyKey? ->
+                    if (key.equals(dep1))
+                        ValueOrUntypedException.ofExn(exp1)
+                    else
+                        if (key.equals(dep2)) ValueOrUntypedException.ofExn(exp2) else null
+                })
 
-    // Verify that the mock was called with the arguments we expected.
-    assertThat(wasOptimizationUsed.get()).isTrue();
-  }
+        Mockito.`when`<T?>(mockEnv.getValuesAndExceptions(com.google.common.collect.ImmutableSet.of<E?>(dep1, dep2)))
+            .thenReturn(returnedDeps)
+        Mockito.`when`<T?>(mockEnv.valuesMissing()).thenReturn(false)
 
-  @Test
-  public void multipleErrorsForTransitiveTraversalFunction() throws Exception {
-    Label label = Label.parseCanonical("//foo:foo");
-    scratch.file(
-        "foo/BUILD",
-        "load('//test_defs:foo_library.bzl', 'foo_library')",
-        "foo_library(name = '" + label.name + "', deps = [':bar', ':baz'])");
-    Package pkg = loadPackage(label.getPackageIdentifier());
-    TargetAndErrorIfAny targetAndErrorIfAny =
-        new TargetAndErrorIfAny(
-            /* packageLoadedSuccessfully= */ true,
-            /* errorLoadingTarget= */ null,
-            pkg.getTarget(label.name),
-            pkg);
-    TransitiveTraversalFunction function =
-        new TransitiveTraversalFunction() {
-          @Override
-          TargetAndErrorIfAny loadTarget(Environment env, Label label) {
-            return targetAndErrorIfAny;
-          }
-        };
-    SkyKey dep1 = function.getKey(Label.parseCanonical("//foo:bar"));
-    SkyKey dep2 = function.getKey(Label.parseCanonical("//foo:baz"));
-    SkyFunction.Environment mockEnv = Mockito.mock(SkyFunction.Environment.class);
-    NoSuchTargetException exp1 = new NoSuchTargetException("bad bar");
-    NoSuchTargetException exp2 = new NoSuchTargetException("bad baz");
-    SkyframeLookupResult returnedDeps =
-        new SimpleSkyframeLookupResult(
-            () -> {},
-            key ->
-                key.equals(dep1)
-                    ? ValueOrUntypedException.ofExn(exp1)
-                    : key.equals(dep2) ? ValueOrUntypedException.ofExn(exp2) : null);
+        assertThat(
+            (function.compute(function.getKey(label), mockEnv) as TransitiveTraversalValue).errorMessage
+        )
+            .isEqualTo("bad bar")
+    }
 
-    when(mockEnv.getValuesAndExceptions(ImmutableSet.of(dep1, dep2))).thenReturn(returnedDeps);
-    when(mockEnv.valuesMissing()).thenReturn(false);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun selfErrorWins() {
+        val label: Label = Label.parseCanonical("//foo:foo")
+        scratch.file(
+            "foo/BUILD",
+            "load('//test_defs:foo_library.bzl', 'foo_library')",
+            "foo_library(name = '" + label.name + "', deps = [':bar'])"
+        )
+        val pkg: Package = loadPackage(label.getPackageIdentifier())
+        val targetAndErrorIfAny: TargetAndErrorIfAny =
+            TargetAndErrorIfAny( /* packageLoadedSuccessfully= */
+                true,  /* errorLoadingTarget= */
+                NoSuchTargetException("self error is long and last"),
+                pkg.getTarget(label.name),
+                pkg
+            )
+        val function: TransitiveTraversalFunction =
+            object : TransitiveTraversalFunction() {
+                public override fun loadTarget(env: Environment?, label: Label?): TargetAndErrorIfAny {
+                    return targetAndErrorIfAny
+                }
+            }
+        val dep: SkyKey = function.getKey(Label.parseCanonical("//foo:bar"))
+        val exp: NoSuchTargetException = NoSuchTargetException("bad bar")
+        val returnedDep: SkyframeLookupResult =
+            SimpleSkyframeLookupResult(
+                java.lang.Runnable {},
+                java.util.function.Function { key: SkyKey? -> if (key.equals(dep)) ValueOrUntypedException.ofExn(exp) else null })
+        val mockEnv: SkyFunction.Environment =
+            Mockito.mock<SkyFunction.Environment>(SkyFunction.Environment::class.java)
+        Mockito.`when`<T?>(mockEnv.getValuesAndExceptions(com.google.common.collect.ImmutableSet.of<E?>(dep)))
+            .thenReturn(returnedDep)
+        Mockito.`when`<T?>(mockEnv.valuesMissing()).thenReturn(false)
 
-    assertThat(
-            ((TransitiveTraversalValue) function.compute(function.getKey(label), mockEnv)).errorMessage)
-        .isEqualTo("bad bar");
-  }
+        val transitiveTraversalValue: TransitiveTraversalValue =
+            function.compute(function.getKey(label), mockEnv) as TransitiveTraversalValue
+        assertThat(transitiveTraversalValue.errorMessage).isEqualTo("self error is long and last")
+    }
 
-  @Test
-  public void selfErrorWins() throws Exception {
-    Label label = Label.parseCanonical("//foo:foo");
-    scratch.file(
-        "foo/BUILD",
-        "load('//test_defs:foo_library.bzl', 'foo_library')",
-        "foo_library(name = '" + label.name + "', deps = [':bar'])");
-    Package pkg = loadPackage(label.getPackageIdentifier());
-    TargetAndErrorIfAny targetAndErrorIfAny =
-        new TargetAndErrorIfAny(
-            /* packageLoadedSuccessfully= */ true,
-            /* errorLoadingTarget= */ new NoSuchTargetException("self error is long and last"),
-            pkg.getTarget(label.name),
-            pkg);
-    TransitiveTraversalFunction function =
-        new TransitiveTraversalFunction() {
-          @Override
-          TargetAndErrorIfAny loadTarget(Environment env, Label label) {
-            return targetAndErrorIfAny;
-          }
-        };
-    SkyKey dep = function.getKey(Label.parseCanonical("//foo:bar"));
-    NoSuchTargetException exp = new NoSuchTargetException("bad bar");
-    SkyframeLookupResult returnedDep =
-        new SimpleSkyframeLookupResult(
-            () -> {}, key -> key.equals(dep) ? ValueOrUntypedException.ofExn(exp) : null);
-    SkyFunction.Environment mockEnv = Mockito.mock(SkyFunction.Environment.class);
-    when(mockEnv.getValuesAndExceptions(ImmutableSet.of(dep))).thenReturn(returnedDep);
-    when(mockEnv.valuesMissing()).thenReturn(false);
-
-    TransitiveTraversalValue transitiveTraversalValue =
-        (TransitiveTraversalValue) function.compute(function.getKey(label), mockEnv);
-    assertThat(transitiveTraversalValue.errorMessage).isEqualTo("self error is long and last");
-  }
-
-  @Test
-  public void getStrictLabelAspectKeys() throws Exception {
-    Label label = Label.parseCanonical("//test:foo");
-    scratch.file(
-        "test/aspect.bzl",
-        """
+    @get:Throws(java.lang.Exception::class)
+    @get:org.junit.Test
+    val strictLabelAspectKeys: Unit
+        get() {
+            val label: Label = Label.parseCanonical("//test:foo")
+            scratch.file(
+                "test/aspect.bzl",
+                """
         def _aspect_impl(target, ctx):
             return []
 
@@ -200,56 +190,67 @@ public class TransitiveTraversalFunctionTest extends BuildViewTestCase {
                 "attr": attr.label_list(mandatory = True, aspects = [MyAspect]),
             },
         )
-        """);
-    scratch.file(
-        "test/BUILD",
-        """
+        
+        """.trimIndent()
+            )
+            scratch.file(
+                "test/BUILD",
+                """
         load("//test:aspect.bzl", "my_rule")
 
         my_rule(
             name = "foo",
             attr = [":bad"],
         )
-        """);
-    Package pkg = loadPackage(label.getPackageIdentifier());
-    TargetAndErrorIfAny targetAndErrorIfAny =
-        new TargetAndErrorIfAny(
-            /* packageLoadedSuccessfully= */ true,
-            /* errorLoadingTarget= */ null,
-            pkg.getTarget(label.name),
-            pkg);
-    TransitiveTraversalFunction function =
-        new TransitiveTraversalFunction() {
-          @Override
-          TargetAndErrorIfAny loadTarget(Environment env, Label label) {
-            return targetAndErrorIfAny;
-          }
-        };
-    SkyKey badDep = function.getKey(Label.parseCanonical("//test:bad"));
-    NoSuchTargetException exp = new NoSuchTargetException("bad test");
-    AtomicBoolean valuesMissing = new AtomicBoolean(false);
-    SkyframeLookupResult returnedDep =
-        new SimpleSkyframeLookupResult(
-            () -> valuesMissing.set(true),
-            key -> key.equals(badDep) ? ValueOrUntypedException.ofExn(exp) : null);
-    SkyFunction.Environment mockEnv = Mockito.mock(SkyFunction.Environment.class);
-    when(mockEnv.getValuesAndExceptions(ImmutableSet.of(badDep))).thenReturn(returnedDep);
+        
+        """.trimIndent()
+            )
+            val pkg: Package = loadPackage(label.getPackageIdentifier())
+            val targetAndErrorIfAny: TargetAndErrorIfAny =
+                TargetAndErrorIfAny( /* packageLoadedSuccessfully= */
+                    true,  /* errorLoadingTarget= */
+                    null,
+                    pkg.getTarget(label.name),
+                    pkg
+                )
+            val function: TransitiveTraversalFunction =
+                object : TransitiveTraversalFunction() {
+                    public override fun loadTarget(env: Environment?, label: Label?): TargetAndErrorIfAny {
+                        return targetAndErrorIfAny
+                    }
+                }
+            val badDep: SkyKey = function.getKey(Label.parseCanonical("//test:bad"))
+            val exp: NoSuchTargetException = NoSuchTargetException("bad test")
+            val valuesMissing: AtomicBoolean = AtomicBoolean(false)
+            val returnedDep: SkyframeLookupResult =
+                SimpleSkyframeLookupResult(
+                    java.lang.Runnable { valuesMissing.set(true) },
+                    java.util.function.Function { key: SkyKey? ->
+                        if (key.equals(badDep)) ValueOrUntypedException.ofExn(
+                            exp
+                        ) else null
+                    })
+            val mockEnv: SkyFunction.Environment =
+                Mockito.mock<SkyFunction.Environment>(SkyFunction.Environment::class.java)
+            Mockito.`when`<T?>(mockEnv.getValuesAndExceptions(com.google.common.collect.ImmutableSet.of<E?>(badDep)))
+                .thenReturn(returnedDep)
 
-    TransitiveTraversalValue transitiveTraversalValue =
-        (TransitiveTraversalValue) function.compute(function.getKey(label), mockEnv);
-    assertThat(transitiveTraversalValue.errorMessage).isEqualTo("bad test");
-    assertThat(valuesMissing.get()).isFalse();
-  }
+            val transitiveTraversalValue: TransitiveTraversalValue =
+                function.compute(function.getKey(label), mockEnv) as TransitiveTraversalValue
+            assertThat(transitiveTraversalValue.errorMessage).isEqualTo("bad test")
+            Truth.assertThat(valuesMissing.get()).isFalse()
+        }
 
-  /* Invokes the loading phase, using Skyframe. */
-  private Package loadPackage(PackageIdentifier pkgid)
-      throws InterruptedException, NoSuchPackageException {
-    EvaluationResult<PackageValue> result =
-        SkyframeExecutorTestUtils.evaluate(
-            getSkyframeExecutor(), pkgid, /* keepGoing= */ false, reporter);
-    if (result.hasError()) {
-      throw (NoSuchPackageException) result.getError(pkgid).getException();
+    /* Invokes the loading phase, using Skyframe. */
+    @Throws(java.lang.InterruptedException::class, NoSuchPackageException::class)
+    private fun loadPackage(pkgid: PackageIdentifier?): Package {
+        val result: EvaluationResult<PackageValue?> =
+            SkyframeExecutorTestUtils.evaluate<T?>(
+                getSkyframeExecutor(), pkgid,  /* keepGoing= */false, reporter
+            )
+        if (result.hasError()) {
+            throw result.getError(pkgid).getException() as NoSuchPackageException?
+        }
+        return result.get(pkgid).getPackage()
     }
-    return result.get(pkgid).getPackage();
-  }
 }

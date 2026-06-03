@@ -11,274 +11,280 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.runtime
 
-package com.google.devtools.build.lib.runtime;
+import com.google.devtools.build.lib.runtime.MemoryPressure.MemoryPressureStats
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.common.truth.extensions.proto.ProtoTruth.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.verifyNoMoreInteractions;
+@RunWith(JUnit4::class)
+class GcChurningDetectorTest {
+    private val mockBugReporter: BugReporter? = Mockito.mock<BugReporter?>(BugReporter::class.java)
 
-import com.google.devtools.build.lib.bugreport.BugReporter;
-import com.google.devtools.build.lib.bugreport.Crash;
-import com.google.devtools.build.lib.runtime.MemoryPressure.MemoryPressureStats;
-import com.google.devtools.build.lib.runtime.MemoryPressure.MemoryPressureStats.FullGcFractionPoint;
-import com.google.devtools.build.lib.server.FailureDetails.Crash.OomCauseCategory;
-import com.google.devtools.build.lib.testutil.ManualClock;
-import java.time.Duration;
-import org.junit.After;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-import org.mockito.ArgumentCaptor;
+    @org.junit.Test
+    fun populateStats() {
+        val fakeClock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
 
-@RunWith(JUnit4.class)
-public class GcChurningDetectorTest {
-  private final BugReporter mockBugReporter = mock(BugReporter.class);
+        val underTest: GcChurningDetector =
+            GcChurningDetector( /* thresholdPercentage= */
+                100,  /* thresholdPercentageIfMultipleTopLevelTargets= */
+                100,
+                fakeClock,
+                mockBugReporter
+            )
 
-  @Test
-  public void populateStats() {
-    ManualClock fakeClock = new ManualClock();
+        run {
+            val actualBuilder: MemoryPressureStats.Builder = MemoryPressureStats.newBuilder()
+            underTest.populateStats(actualBuilder)
+            assertThat(actualBuilder.build()).isEqualTo(MemoryPressureStats.getDefaultInstance())
+        }
 
-    GcChurningDetector underTest =
-        new GcChurningDetector(
-            /* thresholdPercentage= */ 100,
-            /* thresholdPercentageIfMultipleTopLevelTargets= */ 100,
-            fakeClock,
-            mockBugReporter);
+        fakeClock.advance(java.time.Duration.ofMillis(50L))
+        underTest.handle(fullGcEvent(java.time.Duration.ofMillis(10L)))
 
-    {
-      MemoryPressureStats.Builder actualBuilder = MemoryPressureStats.newBuilder();
-      underTest.populateStats(actualBuilder);
+        fakeClock.advance(java.time.Duration.ofMillis(50L))
+        underTest.handle(fullGcEvent(java.time.Duration.ofMillis(40L)))
 
-      assertThat(actualBuilder.build()).isEqualTo(MemoryPressureStats.getDefaultInstance());
+        fakeClock.advance(java.time.Duration.ofMillis(50L))
+        underTest.handle(fullGcEvent(java.time.Duration.ofMillis(10L)))
+
+        run {
+            val actualBuilder: MemoryPressureStats.Builder = MemoryPressureStats.newBuilder()
+            underTest.populateStats(actualBuilder)
+            assertThat(actualBuilder.build())
+                .isEqualTo(
+                    MemoryPressureStats.newBuilder()
+                        .addFullGcFractionPoint(
+                            FullGcFractionPoint.newBuilder()
+                                .setInvocationWallTimeSoFarMs(50)
+                                .setFullGcFractionSoFar(0.2)
+                                .build()
+                        )
+                        .addFullGcFractionPoint(
+                            FullGcFractionPoint.newBuilder()
+                                .setInvocationWallTimeSoFarMs(100)
+                                .setFullGcFractionSoFar(0.5)
+                                .build()
+                        )
+                        .addFullGcFractionPoint(
+                            FullGcFractionPoint.newBuilder()
+                                .setInvocationWallTimeSoFarMs(150)
+                                .setFullGcFractionSoFar(0.4)
+                                .build()
+                        )
+                        .setPeakFullGcFractionPoint(
+                            FullGcFractionPoint.newBuilder()
+                                .setInvocationWallTimeSoFarMs(100)
+                                .setFullGcFractionSoFar(0.5)
+                                .build()
+                        )
+                        .build()
+                )
+        }
+
+        verifyNoOom()
     }
 
-    fakeClock.advance(Duration.ofMillis(50L));
-    underTest.handle(fullGcEvent(Duration.ofMillis(10L)));
+    @org.junit.Test
+    fun doesNotRecordDataPointIfInvocationWallTimeSoFarIsLessThanOneMillisecond() {
+        val fakeClock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
 
-    fakeClock.advance(Duration.ofMillis(50L));
-    underTest.handle(fullGcEvent(Duration.ofMillis(40L)));
+        val underTest: GcChurningDetector =
+            GcChurningDetector( /* thresholdPercentage= */
+                100,  /* thresholdPercentageIfMultipleTopLevelTargets= */
+                100,
+                fakeClock,
+                mockBugReporter
+            )
 
-    fakeClock.advance(Duration.ofMillis(50L));
-    underTest.handle(fullGcEvent(Duration.ofMillis(10L)));
+        fakeClock.advance(java.time.Duration.ofNanos(456L))
+        underTest.handle(fullGcEvent(java.time.Duration.ofNanos(123L)))
 
-    {
-      MemoryPressureStats.Builder actualBuilder = MemoryPressureStats.newBuilder();
-      underTest.populateStats(actualBuilder);
+        fakeClock.advance(java.time.Duration.ofMillis(2L))
+        underTest.handle(fullGcEvent(java.time.Duration.ofMillis(1L)))
 
-      assertThat(actualBuilder.build())
-          .isEqualTo(
-              MemoryPressureStats.newBuilder()
-                  .addFullGcFractionPoint(
-                      FullGcFractionPoint.newBuilder()
-                          .setInvocationWallTimeSoFarMs(50)
-                          .setFullGcFractionSoFar(0.2)
-                          .build())
-                  .addFullGcFractionPoint(
-                      FullGcFractionPoint.newBuilder()
-                          .setInvocationWallTimeSoFarMs(100)
-                          .setFullGcFractionSoFar(0.5)
-                          .build())
-                  .addFullGcFractionPoint(
-                      FullGcFractionPoint.newBuilder()
-                          .setInvocationWallTimeSoFarMs(150)
-                          .setFullGcFractionSoFar(0.4)
-                          .build())
-                  .setPeakFullGcFractionPoint(
-                      FullGcFractionPoint.newBuilder()
-                          .setInvocationWallTimeSoFarMs(100)
-                          .setFullGcFractionSoFar(0.5)
-                          .build())
-                  .build());
+        val actualBuilder: MemoryPressureStats.Builder = MemoryPressureStats.newBuilder()
+        underTest.populateStats(actualBuilder)
+
+        assertThat(actualBuilder.build())
+            .isEqualTo(
+                MemoryPressureStats.newBuilder()
+                    .addFullGcFractionPoint(
+                        FullGcFractionPoint.newBuilder()
+                            .setInvocationWallTimeSoFarMs(2)
+                            .setFullGcFractionSoFar(0.5)
+                            .build()
+                    )
+                    .setPeakFullGcFractionPoint(
+                        FullGcFractionPoint.newBuilder()
+                            .setInvocationWallTimeSoFarMs(2)
+                            .setFullGcFractionSoFar(0.5)
+                            .build()
+                    )
+                    .build()
+            )
     }
 
-    verifyNoOom();
-  }
+    @org.junit.Test
+    fun oom() {
+        val fakeClock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
 
-  @Test
-  public void doesNotRecordDataPointIfInvocationWallTimeSoFarIsLessThanOneMillisecond() {
-    ManualClock fakeClock = new ManualClock();
+        val underTest: GcChurningDetector =
+            GcChurningDetector( /* thresholdPercentage= */
+                50,  /* thresholdPercentageIfMultipleTopLevelTargets= */
+                50,
+                fakeClock,
+                mockBugReporter
+            )
 
-    GcChurningDetector underTest =
-        new GcChurningDetector(
-            /* thresholdPercentage= */ 100,
-            /* thresholdPercentageIfMultipleTopLevelTargets= */ 100,
-            fakeClock,
-            mockBugReporter);
+        fakeClock.advance(java.time.Duration.ofMinutes(3L))
+        underTest.handle(fullGcEvent(java.time.Duration.ofMinutes(1L)))
+        verifyNoOom()
 
-    fakeClock.advance(Duration.ofNanos(456L));
-    underTest.handle(fullGcEvent(Duration.ofNanos(123L)));
+        fakeClock.advance(java.time.Duration.ofMinutes(1L))
+        underTest.handle(fullGcEvent(java.time.Duration.ofMinutes(1L)))
+        verifyOom()
+    }
 
-    fakeClock.advance(Duration.ofMillis(2L));
-    underTest.handle(fullGcEvent(Duration.ofMillis(1L)));
+    @org.junit.Test
+    fun minInvocationWallTimeDuration() {
+        val fakeClock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
 
-    MemoryPressureStats.Builder actualBuilder = MemoryPressureStats.newBuilder();
-    underTest.populateStats(actualBuilder);
+        val underTest: GcChurningDetector =
+            GcChurningDetector( /* thresholdPercentage= */
+                50,  /* thresholdPercentageIfMultipleTopLevelTargets= */
+                50,
+                fakeClock,
+                mockBugReporter
+            )
 
-    assertThat(actualBuilder.build())
-        .isEqualTo(
-            MemoryPressureStats.newBuilder()
-                .addFullGcFractionPoint(
-                    FullGcFractionPoint.newBuilder()
-                        .setInvocationWallTimeSoFarMs(2)
-                        .setFullGcFractionSoFar(0.5)
-                        .build())
-                .setPeakFullGcFractionPoint(
-                    FullGcFractionPoint.newBuilder()
-                        .setInvocationWallTimeSoFarMs(2)
-                        .setFullGcFractionSoFar(0.5)
-                        .build())
-                .build());
-  }
+        fakeClock.advance(java.time.Duration.ofSeconds(30L))
+        underTest.handle(fullGcEvent(java.time.Duration.ofSeconds(15L)))
+        verifyNoOom()
 
-  @Test
-  public void oom() {
-    ManualClock fakeClock = new ManualClock();
+        fakeClock.advance(java.time.Duration.ofSeconds(29L))
+        underTest.handle(fullGcEvent(java.time.Duration.ofSeconds(14L)))
+        verifyNoOom()
 
-    GcChurningDetector underTest =
-        new GcChurningDetector(
-            /* thresholdPercentage= */ 50,
-            /* thresholdPercentageIfMultipleTopLevelTargets= */ 50,
-            fakeClock,
-            mockBugReporter);
+        fakeClock.advance(java.time.Duration.ofSeconds(1L))
+        underTest.handle(fullGcEvent(java.time.Duration.ofSeconds(1L)))
+        verifyOom()
+    }
 
-    fakeClock.advance(Duration.ofMinutes(3L));
-    underTest.handle(fullGcEvent(Duration.ofMinutes(1L)));
-    verifyNoOom();
+    @org.junit.Test
+    fun thresholdPercentageIfMultipleTopLevelTargets_onlySingleTarget() {
+        val fakeClock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
 
-    fakeClock.advance(Duration.ofMinutes(1L));
-    underTest.handle(fullGcEvent(Duration.ofMinutes(1L)));
-    verifyOom();
-  }
+        val underTest: GcChurningDetector =
+            GcChurningDetector( /* thresholdPercentage= */
+                100,  /* thresholdPercentageIfMultipleTopLevelTargets= */
+                50,
+                fakeClock,
+                mockBugReporter
+            )
 
-  @Test
-  public void minInvocationWallTimeDuration() {
-    ManualClock fakeClock = new ManualClock();
+        fakeClock.advance(java.time.Duration.ofSeconds(60L))
+        underTest.handle(fullGcEvent(java.time.Duration.ofSeconds(30L)))
+        verifyNoOom()
 
-    GcChurningDetector underTest =
-        new GcChurningDetector(
-            /* thresholdPercentage= */ 50,
-            /* thresholdPercentageIfMultipleTopLevelTargets= */ 50,
-            fakeClock,
-            mockBugReporter);
+        underTest.targetParsingComplete(1)
+        fakeClock.advance(java.time.Duration.ofSeconds(30L))
+        underTest.handle(fullGcEvent(java.time.Duration.ofSeconds(20L)))
+        verifyNoOom()
+    }
 
-    fakeClock.advance(Duration.ofSeconds(30L));
-    underTest.handle(fullGcEvent(Duration.ofSeconds(15L)));
-    verifyNoOom();
+    @org.junit.Test
+    fun thresholdPercentageIfMultipleTopLevelTargets() {
+        val fakeClock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
 
-    fakeClock.advance(Duration.ofSeconds(29L));
-    underTest.handle(fullGcEvent(Duration.ofSeconds(14L)));
-    verifyNoOom();
+        val underTest: GcChurningDetector =
+            GcChurningDetector( /* thresholdPercentage= */
+                100,  /* thresholdPercentageIfMultipleTopLevelTargets= */
+                50,
+                fakeClock,
+                mockBugReporter
+            )
 
-    fakeClock.advance(Duration.ofSeconds(1L));
-    underTest.handle(fullGcEvent(Duration.ofSeconds(1L)));
-    verifyOom();
-  }
+        fakeClock.advance(java.time.Duration.ofSeconds(60L))
+        underTest.handle(fullGcEvent(java.time.Duration.ofSeconds(40L)))
+        verifyNoOom()
 
-  @Test
-  public void thresholdPercentageIfMultipleTopLevelTargets_onlySingleTarget() {
-    ManualClock fakeClock = new ManualClock();
+        underTest.targetParsingComplete(2)
+        fakeClock.advance(java.time.Duration.ofSeconds(30L))
+        underTest.handle(fullGcEvent(java.time.Duration.ofSeconds(20L)))
+        verifyOom()
+    }
 
-    GcChurningDetector underTest =
-        new GcChurningDetector(
-            /* thresholdPercentage= */ 100,
-            /* thresholdPercentageIfMultipleTopLevelTargets= */ 50,
-            fakeClock,
-            mockBugReporter);
+    @org.junit.Test
+    fun fullGcStartedBeforeInvocationStarted() {
+        val fakeClock: com.google.devtools.build.lib.testutil.ManualClock =
+            com.google.devtools.build.lib.testutil.ManualClock()
 
-    fakeClock.advance(Duration.ofSeconds(60L));
-    underTest.handle(fullGcEvent(Duration.ofSeconds(30L)));
-    verifyNoOom();
+        val underTest: GcChurningDetector =
+            GcChurningDetector( /* thresholdPercentage= */
+                100,  /* thresholdPercentageIfMultipleTopLevelTargets= */
+                100,
+                fakeClock,
+                mockBugReporter
+            )
 
-    underTest.targetParsingComplete(1);
-    fakeClock.advance(Duration.ofSeconds(30L));
-    underTest.handle(fullGcEvent(Duration.ofSeconds(20L)));
-    verifyNoOom();
-  }
+        fakeClock.advance(java.time.Duration.ofMillis(1L))
+        underTest.handle(fullGcEvent(java.time.Duration.ofSeconds(2L)))
 
-  @Test
-  public void thresholdPercentageIfMultipleTopLevelTargets() {
-    ManualClock fakeClock = new ManualClock();
+        val actualBuilder: MemoryPressureStats.Builder = MemoryPressureStats.newBuilder()
+        underTest.populateStats(actualBuilder)
 
-    GcChurningDetector underTest =
-        new GcChurningDetector(
-            /* thresholdPercentage= */ 100,
-            /* thresholdPercentageIfMultipleTopLevelTargets= */ 50,
-            fakeClock,
-            mockBugReporter);
+        assertThat(actualBuilder.build())
+            .isEqualTo(
+                MemoryPressureStats.newBuilder()
+                    .addFullGcFractionPoint(
+                        FullGcFractionPoint.newBuilder()
+                            .setInvocationWallTimeSoFarMs(1)
+                            .setFullGcFractionSoFar(1.0)
+                            .build()
+                    )
+                    .setPeakFullGcFractionPoint(
+                        FullGcFractionPoint.newBuilder()
+                            .setInvocationWallTimeSoFarMs(1)
+                            .setFullGcFractionSoFar(1.0)
+                            .build()
+                    )
+                    .build()
+            )
+    }
 
-    fakeClock.advance(Duration.ofSeconds(60L));
-    underTest.handle(fullGcEvent(Duration.ofSeconds(40L)));
-    verifyNoOom();
+    private fun verifyNoOom() {
+        Mockito.verifyNoInteractions(mockBugReporter)
+    }
 
-    underTest.targetParsingComplete(2);
-    fakeClock.advance(Duration.ofSeconds(30L));
-    underTest.handle(fullGcEvent(Duration.ofSeconds(20L)));
-    verifyOom();
-  }
+    private fun verifyOom() {
+        val crashArgument: ArgumentCaptor<Crash> = ArgumentCaptor.forClass<Crash?, Crash?>(Crash::class.java)
+        Mockito.verify<BugReporter?>(mockBugReporter)
+            .handleCrash(crashArgument.capture(), ArgumentMatchers.any<CrashContext?>())
+        val crash: Crash = crashArgument.getValue()
+        val oom: Throwable = crash.throwable
+        Truth.assertThat(oom).isInstanceOf(java.lang.OutOfMemoryError::class.java)
+        assertThat(crash.detailedExitCode.getFailureDetail().getCrash().getOomCauseCategory())
+            .isEqualTo(OomCauseCategory.GC_CHURNING)
+    }
 
-  @Test
-  public void fullGcStartedBeforeInvocationStarted() {
-    ManualClock fakeClock = new ManualClock();
+    @org.junit.After
+    fun verifyNoMoreBugReports() {
+        Mockito.verifyNoMoreInteractions(mockBugReporter)
+    }
 
-    GcChurningDetector underTest =
-        new GcChurningDetector(
-            /* thresholdPercentage= */ 100,
-            /* thresholdPercentageIfMultipleTopLevelTargets= */ 100,
-            fakeClock,
-            mockBugReporter);
-
-    fakeClock.advance(Duration.ofMillis(1L));
-    underTest.handle(fullGcEvent(Duration.ofSeconds(2L)));
-
-    MemoryPressureStats.Builder actualBuilder = MemoryPressureStats.newBuilder();
-    underTest.populateStats(actualBuilder);
-
-    assertThat(actualBuilder.build())
-        .isEqualTo(
-            MemoryPressureStats.newBuilder()
-                .addFullGcFractionPoint(
-                    FullGcFractionPoint.newBuilder()
-                        .setInvocationWallTimeSoFarMs(1)
-                        .setFullGcFractionSoFar(1.0)
-                        .build())
-                .setPeakFullGcFractionPoint(
-                    FullGcFractionPoint.newBuilder()
-                        .setInvocationWallTimeSoFarMs(1)
-                        .setFullGcFractionSoFar(1.0)
-                        .build())
-                .build());
-  }
-
-  private void verifyNoOom() {
-    verifyNoInteractions(mockBugReporter);
-  }
-
-  private void verifyOom() {
-    ArgumentCaptor<Crash> crashArgument = ArgumentCaptor.forClass(Crash.class);
-    verify(mockBugReporter).handleCrash(crashArgument.capture(), any());
-    Crash crash = crashArgument.getValue();
-    Throwable oom = crash.throwable;
-    assertThat(oom).isInstanceOf(OutOfMemoryError.class);
-    assertThat(crash.detailedExitCode.getFailureDetail().getCrash().getOomCauseCategory())
-        .isEqualTo(OomCauseCategory.GC_CHURNING);
-  }
-
-  @After
-  public void verifyNoMoreBugReports() {
-    verifyNoMoreInteractions(mockBugReporter);
-  }
-
-  private static MemoryPressureEvent fullGcEvent(Duration duration) {
-    return MemoryPressureEvent.newBuilder()
-        .setWasFullGc(true)
-        .setTenuredSpaceUsedBytes(1234L)
-        .setTenuredSpaceMaxBytes(5678L)
-        .setDuration(duration)
-        .build();
-  }
+    companion object {
+        private fun fullGcEvent(duration: java.time.Duration?): MemoryPressureEvent {
+            return MemoryPressureEvent.newBuilder()
+                .setWasFullGc(true)
+                .setTenuredSpaceUsedBytes(1234L)
+                .setTenuredSpaceMaxBytes(5678L)
+                .setDuration(duration)
+                .build()
+        }
+    }
 }

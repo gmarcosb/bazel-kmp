@@ -11,108 +11,107 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.rules.cpp
 
-package com.google.devtools.build.lib.rules.cpp;
+import com.google.devtools.build.lib.analysis.ConfiguredTarget
 
-import com.google.devtools.build.lib.analysis.ConfiguredTarget;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.collect.nestedset.Depset;
-import com.google.devtools.build.lib.collect.nestedset.Depset.TypeException;
-import com.google.devtools.build.lib.collect.nestedset.NestedSet;
-import com.google.devtools.build.lib.packages.Info;
-import com.google.devtools.build.lib.packages.RuleClass.ConfiguredTargetFactory.RuleErrorException;
-import com.google.devtools.build.lib.packages.StarlarkInfo;
-import com.google.devtools.build.lib.packages.StarlarkProviderWrapper;
-import com.google.devtools.build.lib.skyframe.BzlLoadValue;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import net.starlark.java.eval.EvalException;
-
-/** Provider for C++ compilation and linking information. */
-public final class CcInfo {
-  public static final CcInfoProvider PROVIDER = new CcInfoProvider();
-  public static final RulesCcCcInfoProvider RULES_CC_PROVIDER = new RulesCcCcInfoProvider();
-
-  public static CcInfo get(ConfiguredTarget target) throws RuleErrorException {
-    CcInfo ccInfo = target.get(CcInfo.PROVIDER);
-    if (ccInfo == null) {
-      ccInfo = target.get(CcInfo.RULES_CC_PROVIDER);
-    }
-    return ccInfo;
-  }
-
-  /** A wrapper around the Starlark provider. */
-  public static class CcInfoProvider extends StarlarkProviderWrapper<CcInfo> {
-    public CcInfoProvider() {
-      super(
-          BzlLoadValue.keyForBuild(
-              Label.parseCanonicalUnchecked(
-                  TestConstants.RULES_CC_CANNONICAL + "/private:cc_info.bzl")),
-          "CcInfo");
+/** Provider for C++ compilation and linking information.  */
+class CcInfo private constructor(starlarkInfo: StarlarkInfo) {
+    /** A wrapper around the Starlark provider.  */
+    class CcInfoProvider : StarlarkProviderWrapper<CcInfo?>(
+        BzlLoadValue.keyForBuild(
+            Label.parseCanonicalUnchecked(
+                TestConstants.RULES_CC_CANNONICAL + "/private:cc_info.bzl"
+            )
+        ),
+        "CcInfo"
+    ) {
+        public override fun wrap(value: Info?): CcInfo {
+            return CcInfo(value as StarlarkInfo?)
+        }
     }
 
-    @Override
-    public CcInfo wrap(Info value) {
-      return new CcInfo((StarlarkInfo) value);
-    }
-  }
-
-  public static class RulesCcCcInfoProvider extends StarlarkProviderWrapper<CcInfo> {
-    public RulesCcCcInfoProvider() {
-      super(
-          BzlLoadValue.keyForBuild(
-              Label.parseCanonicalUnchecked("@rules_cc+//cc/private:cc_info.bzl")),
-          "CcInfo");
+    class RulesCcCcInfoProvider : StarlarkProviderWrapper<CcInfo?>(
+        BzlLoadValue.keyForBuild(
+            Label.parseCanonicalUnchecked("@rules_cc+//cc/private:cc_info.bzl")
+        ),
+        "CcInfo"
+    ) {
+        public override fun wrap(value: Info?): CcInfo {
+            return CcInfo(value as StarlarkInfo?)
+        }
     }
 
-    @Override
-    public CcInfo wrap(Info value) {
-      return new CcInfo((StarlarkInfo) value);
+    private val starlarkInfo: StarlarkInfo
+
+    init {
+        this.starlarkInfo = starlarkInfo
     }
-  }
 
-  private final StarlarkInfo starlarkInfo;
+    val ccCompilationContext: CcCompilationContext
+        get() {
+            try {
+                return CcCompilationContext.of(
+                    starlarkInfo.getValue("compilation_context", StarlarkInfo::class.java)
+                )
+            } catch (e: net.starlark.java.eval.EvalException) {
+                throw java.lang.IllegalStateException(e)
+            }
+        }
 
-  private CcInfo(StarlarkInfo starlarkInfo) {
-    this.starlarkInfo = starlarkInfo;
-  }
+    val ccLinkingContext: CcLinkingContext
+        get() {
+            try {
+                return CcLinkingContext.Companion.of(
+                    starlarkInfo.getValue(
+                        "linking_context",
+                        StarlarkInfo::class.java
+                    )
+                )
+            } catch (e: net.starlark.java.eval.EvalException) {
+                throw java.lang.IllegalStateException(e)
+            }
+        }
 
-  public static CcInfo wrap(StarlarkInfo starlarkInfo) {
-    return new CcInfo(starlarkInfo);
-  }
+    val ccDebugInfoContext: StarlarkInfo
+        get() {
+            try {
+                return starlarkInfo.getValue("_debug_context", StarlarkInfo::class.java)
+            } catch (e: net.starlark.java.eval.EvalException) {
+                throw java.lang.IllegalStateException(e)
+            }
+        }
 
-  public CcCompilationContext getCcCompilationContext() {
-    try {
-      return CcCompilationContext.of(
-          starlarkInfo.getValue("compilation_context", StarlarkInfo.class));
-    } catch (EvalException e) {
-      throw new IllegalStateException(e);
+    val transitiveCcNativeLibrariesForTests: NestedSet<LibraryToLink?>?
+        get() {
+            try {
+                return wrap(
+                    starlarkInfo
+                        .getValue("_legacy_transitive_native_libraries", Depset::class.java)
+                        .getSet(StarlarkInfo::class.java)
+                )
+            } catch (e: net.starlark.java.eval.EvalException) {
+                throw java.lang.IllegalStateException(e)
+            } catch (e: TypeException) {
+                throw java.lang.IllegalStateException(e)
+            }
+        }
+
+    companion object {
+        val PROVIDER: CcInfoProvider = CcInfoProvider()
+        val RULES_CC_PROVIDER: RulesCcCcInfoProvider = RulesCcCcInfoProvider()
+
+        @Throws(RuleErrorException::class)
+        fun get(target: ConfiguredTarget): CcInfo? {
+            var ccInfo: CcInfo? = target.get(PROVIDER)
+            if (ccInfo == null) {
+                ccInfo = target.get(RULES_CC_PROVIDER)
+            }
+            return ccInfo
+        }
+
+        fun wrap(starlarkInfo: StarlarkInfo): CcInfo {
+            return CcInfo(starlarkInfo)
+        }
     }
-  }
-
-  public CcLinkingContext getCcLinkingContext() {
-    try {
-      return CcLinkingContext.of(starlarkInfo.getValue("linking_context", StarlarkInfo.class));
-    } catch (EvalException e) {
-      throw new IllegalStateException(e);
-    }
-  }
-
-  public StarlarkInfo getCcDebugInfoContext() {
-    try {
-      return starlarkInfo.getValue("_debug_context", StarlarkInfo.class);
-    } catch (EvalException e) {
-      throw new IllegalStateException(e);
-    }
-  }
-
-  public NestedSet<LibraryToLink> getTransitiveCcNativeLibrariesForTests() {
-    try {
-      return LibraryToLink.wrap(
-          starlarkInfo
-              .getValue("_legacy_transitive_native_libraries", Depset.class)
-              .getSet(StarlarkInfo.class));
-    } catch (EvalException | TypeException e) {
-      throw new IllegalStateException(e);
-    }
-  }
 }

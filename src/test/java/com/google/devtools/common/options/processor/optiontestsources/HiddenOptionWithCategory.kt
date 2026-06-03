@@ -11,25 +11,25 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.common.options.processor.optiontestsources;
+package com.google.devtools.common.options.processor.optiontestsources
 
-import com.google.devtools.common.options.Option;
-import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.OptionEffectTag;
-import com.google.devtools.common.options.OptionMetadataTag;
-import com.google.devtools.common.options.OptionsBase;
-import com.google.devtools.common.options.OptionsClass;
+import OptionFilters.OptionEffectTag
+import OptionFilters.OptionMetadataTag
+import com.google.devtools.common.options.OptionDocumentationCategory
+import com.google.devtools.common.options.OptionEffectTag
+import com.google.devtools.common.options.OptionMetadataTag
+import com.google.devtools.common.options.OptionsBase
+import com.google.devtools.common.options.OptionsClass
 
-/** This example options class should fail to compile. */
+/** This example options class should fail to compile.  */
 @OptionsClass
-public abstract class HiddenOptionWithCategory extends OptionsBase {
-  @Option(
-      name = "hidden_option_wants_to_be_documented",
-      defaultValue = "true",
-      documentationCategory = OptionDocumentationCategory.BAZEL_CLIENT_OPTIONS,
-      effectTags = OptionEffectTag.AFFECTS_OUTPUTS,
-      metadataTags = OptionMetadataTag.HIDDEN)
-  public abstract boolean getHiddenOptionWithDocumentation();
-
-  public abstract void setHiddenOptionWithDocumentation(boolean value);
+abstract class HiddenOptionWithCategory : OptionsBase() {
+    @get:com.google.devtools.common.options.Option(
+        name = "hidden_option_wants_to_be_documented",
+        defaultValue = "true",
+        documentationCategory = OptionDocumentationCategory.BAZEL_CLIENT_OPTIONS,
+        effectTags = [OptionEffectTag.AFFECTS_OUTPUTS],
+        metadataTags = [OptionMetadataTag.HIDDEN]
+    )
+    abstract var hiddenOptionWithDocumentation: Boolean
 }

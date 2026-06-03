@@ -11,295 +11,336 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.packages
 
-package com.google.devtools.build.lib.packages;
+import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertThrows;
+/** Unit tests for PackageFactory's management of the predeclared Starlark symbols.  */
+@RunWith(JUnit4::class)
+class BazelStarlarkEnvironmentTest : BuildViewTestCase() {
+    private var starlarkEnv: BazelStarlarkEnvironment? = null
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
-import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.analysis.util.MockRule;
-import com.google.devtools.build.lib.packages.BazelStarlarkEnvironment.InjectionException;
-import com.google.devtools.build.lib.testutil.TestRuleClassProvider;
-import java.util.HashMap;
-import java.util.Map;
-import net.starlark.java.eval.Structure;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+    @Before
+    fun setUp() {
+        this.starlarkEnv = ruleClassProvider.getBazelStarlarkEnvironment()
+    }
 
-/** Unit tests for PackageFactory's management of the predeclared Starlark symbols. */
-@RunWith(JUnit4.class)
-public final class BazelStarlarkEnvironmentTest extends BuildViewTestCase {
+    override fun createRuleClassProvider(): ConfiguredRuleClassProvider {
+        // Add a fake rule and top-level symbol to override.
+        val builder: ConfiguredRuleClassProvider.Builder =
+            Builder() // While reading, feel free to mentally substitute overridable_rule -> cc_library and
+                // overridable_symbol -> CcInfo.
+                .addRuleDefinition(OVERRIDABLE_RULE)
+                .addBzlToplevel("overridable_symbol", "original_value")
+                .addBzlToplevel("another_overridable_symbol", "another_original_value")
+        TestRuleClassProvider.addStandardRules(builder)
+        return builder.build()
+    }
 
-  private static final MockRule OVERRIDABLE_RULE = () -> MockRule.define("overridable_rule");
+    // TODO(#11954): We want BUILD- and MODULE-loaded bzl files to have the exact same environment.
+    // In the meantime these two tests help avoid regressions.
+    // This property is important for BzlCompileFunction, which relies on the symbol names in the env
+    // matching even if the symbols themselves differ.
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun buildAndModuleBzlEnvsDeclareSameNames() {
+        assertThat(starlarkEnv.getUninjectedBuildBzlEnv().keySet())
+            .containsExactlyElementsIn(starlarkEnv.getUninjectedModuleBzlEnv().keySet())
+    }
 
-  private BazelStarlarkEnvironment starlarkEnv;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun buildAndModuleBzlEnvsAreSameExceptForNative() {
+        val buildBzlEnv: MutableMap<String?, Any?> = HashMap<String?, Any?>()
+        buildBzlEnv.putAll(starlarkEnv.getUninjectedBuildBzlEnv())
+        buildBzlEnv.remove("native")
+        val moduleBzlEnv: MutableMap<String?, Any?> = HashMap<String?, Any?>()
+        moduleBzlEnv.putAll(starlarkEnv.getUninjectedModuleBzlEnv())
+        moduleBzlEnv.remove("native")
+        Truth.assertThat(buildBzlEnv).isEqualTo(moduleBzlEnv)
+    }
 
-  @Before
-  public void setUp() {
-    this.starlarkEnv = ruleClassProvider.getBazelStarlarkEnvironment();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun builtinsBzlEnv() {
+        val env: com.google.common.collect.ImmutableMap<String?, Any?>? = starlarkEnv.getBuiltinsBzlEnv()
+        // Can see general toplevel symbols.
+        Truth.assertThat(env).containsKey("rule")
+        // Cannot see rule-specific toplevel symbols.
+        Truth.assertThat(env).doesNotContainKey("overridable_symbol")
+        // Has the special builtins-internal module.
+        Truth.assertThat(env).containsKey("_builtins")
+    }
 
-  @Override
-  protected ConfiguredRuleClassProvider createRuleClassProvider() {
-    // Add a fake rule and top-level symbol to override.
-    ConfiguredRuleClassProvider.Builder builder =
-        new ConfiguredRuleClassProvider.Builder()
-            // While reading, feel free to mentally substitute overridable_rule -> cc_library and
-            // overridable_symbol -> CcInfo.
-            .addRuleDefinition(OVERRIDABLE_RULE)
-            .addBzlToplevel("overridable_symbol", "original_value")
-            .addBzlToplevel("another_overridable_symbol", "another_original_value");
-    TestRuleClassProvider.addStandardRules(builder);
-    return builder.build();
-  }
+    /**
+     * Asserts that injection for a BUILD-loaded .bzl file fails, using the given maps and expecting
+     * the given error substring. The overrides list is empty.
+     */
+    private fun assertBuildBzlInjectionFailure(
+        exportedToplevels: MutableMap<String?, Any?>?, exportedRules: MutableMap<String?, Any?>?, message: String?
+    ) {
+        val ex: InjectionException? =
+            org.junit.Assert.assertThrows<T?>(
+                InjectionException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    starlarkEnv.createBuildBzlEnvUsingInjection(
+                        exportedToplevels,
+                        exportedRules,  /* overridesList= */
+                        com.google.common.collect.ImmutableList.of<E?>()
+                    )
+                })
+        assertThat(ex).hasMessageThat().contains(message)
+    }
 
-  // TODO(#11954): We want BUILD- and MODULE-loaded bzl files to have the exact same environment.
-  // In the meantime these two tests help avoid regressions.
+    /**
+     * Asserts that injection for a BUILD file fails, using the given map and expecting the given
+     * error substring. The overrides list is empty.
+     */
+    private fun assertBuildInjectionFailure(exportedRules: MutableMap<String?, Any?>?, message: String?) {
+        val ex: InjectionException? =
+            org.junit.Assert.assertThrows<T?>(
+                InjectionException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    starlarkEnv.createBuildEnvUsingInjection(
+                        exportedRules,  /* overridesList= */com.google.common.collect.ImmutableList.of<E?>()
+                    )
+                })
+        assertThat(ex).hasMessageThat().contains(message)
+    }
 
-  // This property is important for BzlCompileFunction, which relies on the symbol names in the env
-  // matching even if the symbols themselves differ.
-  @Test
-  public void buildAndModuleBzlEnvsDeclareSameNames() throws Exception {
-    assertThat(starlarkEnv.getUninjectedBuildBzlEnv().keySet())
-        .containsExactlyElementsIn(starlarkEnv.getUninjectedModuleBzlEnv().keySet());
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun buildBzlInjection() {
+        val env: MutableMap<String?, Any?> =
+            starlarkEnv.createBuildBzlEnvUsingInjection(
+                com.google.common.collect.ImmutableMap.of<K?, V?>("overridable_symbol", "new_value"),
+                com.google.common.collect.ImmutableMap.of<K?, V?>("overridable_rule", "new_rule"),  /* overridesList= */
+                com.google.common.collect.ImmutableList.of<E?>()
+            )
+        Truth.assertThat(env).containsEntry("overridable_symbol", "new_value")
+        Truth.assertThat((env.get("native") as Structure).getValue("overridable_rule")).isEqualTo("new_rule")
+    }
 
-  @Test
-  public void buildAndModuleBzlEnvsAreSameExceptForNative() throws Exception {
-    Map<String, Object> buildBzlEnv = new HashMap<>();
-    buildBzlEnv.putAll(starlarkEnv.getUninjectedBuildBzlEnv());
-    buildBzlEnv.remove("native");
-    Map<String, Object> moduleBzlEnv = new HashMap<>();
-    moduleBzlEnv.putAll(starlarkEnv.getUninjectedModuleBzlEnv());
-    moduleBzlEnv.remove("native");
-    assertThat(buildBzlEnv).isEqualTo(moduleBzlEnv);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun buildInjection() {
+        val env: MutableMap<String?, Any?>? =
+            starlarkEnv.createBuildEnvUsingInjection(
+                com.google.common.collect.ImmutableMap.of<K?, V?>("overridable_rule", "new_rule"),  /* overridesList= */
+                com.google.common.collect.ImmutableList.of<E?>()
+            )
+        Truth.assertThat(env).containsEntry("overridable_rule", "new_rule")
+    }
 
-  @Test
-  public void builtinsBzlEnv() throws Exception {
-    ImmutableMap<String, Object> env = starlarkEnv.getBuiltinsBzlEnv();
-    // Can see general toplevel symbols.
-    assertThat(env).containsKey("rule");
-    // Cannot see rule-specific toplevel symbols.
-    assertThat(env).doesNotContainKey("overridable_symbol");
-    // Has the special builtins-internal module.
-    assertThat(env).containsKey("_builtins");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun injectedNameMustOverrideExistingName_toplevel() {
+        assertBuildBzlInjectionFailure(
+            com.google.common.collect.ImmutableMap.of<String?, Any?>("brand_new_toplevel", "foo"),
+            com.google.common.collect.ImmutableMap.of<String?, Any?>(),
+            "Injected top-level symbol 'brand_new_toplevel' must override an existing one by that"
+                    + " name"
+        )
+    }
 
-  /**
-   * Asserts that injection for a BUILD-loaded .bzl file fails, using the given maps and expecting
-   * the given error substring. The overrides list is empty.
-   */
-  private void assertBuildBzlInjectionFailure(
-      Map<String, Object> exportedToplevels, Map<String, Object> exportedRules, String message) {
-    InjectionException ex =
-        assertThrows(
-            InjectionException.class,
-            () ->
-                starlarkEnv.createBuildBzlEnvUsingInjection(
-                    exportedToplevels, exportedRules, /* overridesList= */ ImmutableList.of()));
-    assertThat(ex).hasMessageThat().contains(message);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun injectedNameMustOverrideExistingName_rule() {
+        assertBuildBzlInjectionFailure(
+            com.google.common.collect.ImmutableMap.of<String?, Any?>(),
+            com.google.common.collect.ImmutableMap.of<String?, Any?>("brand_new_rule", "foo"),
+            "Injected rule 'brand_new_rule' must override an existing one by that name"
+        )
+        assertBuildInjectionFailure(
+            com.google.common.collect.ImmutableMap.of<String?, Any?>("brand_new_rule", "foo"),
+            "Injected rule 'brand_new_rule' must override an existing one by that name"
+        )
+    }
 
-  /**
-   * Asserts that injection for a BUILD file fails, using the given map and expecting the given
-   * error substring. The overrides list is empty.
-   */
-  private void assertBuildInjectionFailure(Map<String, Object> exportedRules, String message) {
-    InjectionException ex =
-        assertThrows(
-            InjectionException.class,
-            () ->
-                starlarkEnv.createBuildEnvUsingInjection(
-                    exportedRules, /* overridesList= */ ImmutableList.of()));
-    assertThat(ex).hasMessageThat().contains(message);
-  }
+    @org.junit.Test
+    fun cannotInjectGeneralSymbol_toplevel() {
+        assertBuildBzlInjectionFailure(
+            com.google.common.collect.ImmutableMap.of<String?, Any?>("provider", "new_builtin"),
+            com.google.common.collect.ImmutableMap.of<String?, Any?>(),
+            "Cannot override 'provider' with an injected top-level symbol"
+        )
+    }
 
-  @Test
-  public void buildBzlInjection() throws Exception {
-    Map<String, Object> env =
-        starlarkEnv.createBuildBzlEnvUsingInjection(
-            ImmutableMap.of("overridable_symbol", "new_value"),
-            ImmutableMap.of("overridable_rule", "new_rule"),
-            /* overridesList= */ ImmutableList.of());
-    assertThat(env).containsEntry("overridable_symbol", "new_value");
-    assertThat(((Structure) env.get("native")).getValue("overridable_rule")).isEqualTo("new_rule");
-  }
+    @org.junit.Test
+    fun cannotInjectGeneralSymbol_nativeField() {
+        // (Native field for bzl files, toplevel for BUILD files.)
+        assertBuildBzlInjectionFailure(
+            com.google.common.collect.ImmutableMap.of<String?, Any?>(),
+            com.google.common.collect.ImmutableMap.of<String?, Any?>("glob", "new_builtin"),
+            "Cannot override 'glob' with an injected rule"
+        )
+        assertBuildInjectionFailure(
+            com.google.common.collect.ImmutableMap.of<String?, Any?>("glob", "new_builtin"),
+            "Cannot override 'glob' with an injected rule"
+        )
+    }
 
-  @Test
-  public void buildInjection() throws Exception {
-    Map<String, Object> env =
-        starlarkEnv.createBuildEnvUsingInjection(
-            ImmutableMap.of("overridable_rule", "new_rule"),
-            /* overridesList= */ ImmutableList.of());
-    assertThat(env).containsEntry("overridable_rule", "new_rule");
-  }
+    @org.junit.Test
+    fun cannotInjectGeneralSymbol_nativeModuleItself() {
+        assertBuildBzlInjectionFailure(
+            com.google.common.collect.ImmutableMap.of<String?, Any?>("native", "new_builtin"),
+            com.google.common.collect.ImmutableMap.of<String?, Any?>(),
+            "Cannot override 'native' with an injected top-level symbol"
+        )
+    }
 
-  @Test
-  public void injectedNameMustOverrideExistingName_toplevel() throws Exception {
-    assertBuildBzlInjectionFailure(
-        ImmutableMap.of("brand_new_toplevel", "foo"),
-        ImmutableMap.of(),
-        "Injected top-level symbol 'brand_new_toplevel' must override an existing one by that"
-            + " name");
-  }
+    @org.junit.Test
+    fun cannotInjectGeneralSymbol_universe() {
+        assertBuildBzlInjectionFailure(
+            com.google.common.collect.ImmutableMap.of<String?, Any?>("len", "new_builtin"),
+            com.google.common.collect.ImmutableMap.of<String?, Any?>(),
+            "Cannot override 'len' with an injected top-level symbol"
+        )
+        assertBuildInjectionFailure(
+            com.google.common.collect.ImmutableMap.of<String?, Any?>("len", "new_builtin"),
+            "Cannot override 'len' with an injected rule"
+        )
+    }
 
-  @Test
-  public void injectedNameMustOverrideExistingName_rule() throws Exception {
-    assertBuildBzlInjectionFailure(
-        ImmutableMap.of(),
-        ImmutableMap.of("brand_new_rule", "foo"),
-        "Injected rule 'brand_new_rule' must override an existing one by that name");
-    assertBuildInjectionFailure(
-        ImmutableMap.of("brand_new_rule", "foo"),
-        "Injected rule 'brand_new_rule' must override an existing one by that name");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun injectionStatus_respectsDefault() {
+        val env: MutableMap<String?, Any?> =
+            starlarkEnv.createBuildBzlEnvUsingInjection(
+                com.google.common.collect.ImmutableMap.of<K?, V?>(
+                    "+overridable_symbol",
+                    "new_value",
+                    "-another_overridable_symbol",
+                    "another_new_value"
+                ),
+                com.google.common.collect.ImmutableMap.of<K?, V?>(
+                    "-overridable_rule",
+                    "new_rule"
+                ),  /* overridesList= */
+                com.google.common.collect.ImmutableList.of<E?>()
+            )
+        Truth.assertThat(env).containsEntry("overridable_symbol", "new_value")
+        Truth.assertThat(env).containsEntry("another_overridable_symbol", "another_original_value")
+        // Match the original rule's toString since the actual specific object is not easily accessible.
+        val overridableRuleValue: Any? = (env.get("native") as Structure).getValue("overridable_rule")
+        Truth.assertThat(overridableRuleValue.toString()).contains("overridable_rule")
+    }
 
-  @Test
-  public void cannotInjectGeneralSymbol_toplevel() {
-    assertBuildBzlInjectionFailure(
-        ImmutableMap.of("provider", "new_builtin"),
-        ImmutableMap.of(),
-        "Cannot override 'provider' with an injected top-level symbol");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun injectionStatus_canBeOverridden() {
+        val env: MutableMap<String?, Any?> =
+            starlarkEnv.createBuildBzlEnvUsingInjection(
+                com.google.common.collect.ImmutableMap.of<K?, V?>(
+                    "+overridable_symbol",
+                    "new_value",
+                    "-another_overridable_symbol",
+                    "another_new_value"
+                ),
+                com.google.common.collect.ImmutableMap.of<K?, V?>("-overridable_rule", "new_rule"),
+                com.google.common.collect.ImmutableList.of<E?>(
+                    "-overridable_symbol", "+another_overridable_symbol", "+overridable_rule"
+                )
+            )
+        Truth.assertThat(env).containsEntry("overridable_symbol", "original_value")
+        Truth.assertThat(env).containsEntry("another_overridable_symbol", "another_new_value")
+        Truth.assertThat((env.get("native") as Structure).getValue("overridable_rule")).isEqualTo("new_rule")
+    }
 
-  @Test
-  public void cannotInjectGeneralSymbol_nativeField() {
-    // (Native field for bzl files, toplevel for BUILD files.)
-    assertBuildBzlInjectionFailure(
-        ImmutableMap.of(),
-        ImmutableMap.of("glob", "new_builtin"),
-        "Cannot override 'glob' with an injected rule");
-    assertBuildInjectionFailure(
-        ImmutableMap.of("glob", "new_builtin"), "Cannot override 'glob' with an injected rule");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun injectionStatus_cannotBeOverriddenForUnprefixedKeys() {
+        val env: MutableMap<String?, Any?>? =
+            starlarkEnv.createBuildBzlEnvUsingInjection(
+                com.google.common.collect.ImmutableMap.of<K?, V?>(
+                    "overridable_symbol",
+                    "new_value",
+                    "another_overridable_symbol",
+                    "another_new_value"
+                ),
+                com.google.common.collect.ImmutableMap.of<K?, V?>(),
+                com.google.common.collect.ImmutableList.of<E?>("+overridable_symbol", "-another_overridable_symbol")
+            )
+        // Both the + and - are no-ops since the keys aren't prefixed.
+        Truth.assertThat(env).containsEntry("overridable_symbol", "new_value")
+        Truth.assertThat(env).containsEntry("another_overridable_symbol", "another_new_value")
+    }
 
-  @Test
-  public void cannotInjectGeneralSymbol_nativeModuleItself() {
-    assertBuildBzlInjectionFailure(
-        ImmutableMap.of("native", "new_builtin"),
-        ImmutableMap.of(),
-        "Cannot override 'native' with an injected top-level symbol");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun injectionStatus_overridingUnknownKeysIsNoop() {
+        val env: MutableMap<String?, Any?>? =
+            starlarkEnv.createBuildBzlEnvUsingInjection(
+                com.google.common.collect.ImmutableMap.of<K?, V?>("-overridable_symbol", "new_value"),
+                com.google.common.collect.ImmutableMap.of<K?, V?>(),
+                com.google.common.collect.ImmutableList.of<E?>(
+                    "+overridable_symbol",
+                    "+unknown_symbol",
+                    "-another_unknown_symbol"
+                )
+            )
+        // Both the + and - are no-ops since the keys aren't prefixed.
+        Truth.assertThat(env).containsEntry("overridable_symbol", "new_value")
+    }
 
-  @Test
-  public void cannotInjectGeneralSymbol_universe() {
-    assertBuildBzlInjectionFailure(
-        ImmutableMap.of("len", "new_builtin"),
-        ImmutableMap.of(),
-        "Cannot override 'len' with an injected top-level symbol");
-    assertBuildInjectionFailure(
-        ImmutableMap.of("len", "new_builtin"), "Cannot override 'len' with an injected rule");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun injectionStatus_lastOverrideTakesPrecedence() {
+        val env: MutableMap<String?, Any?>? =
+            starlarkEnv.createBuildBzlEnvUsingInjection(
+                com.google.common.collect.ImmutableMap.of<K?, V?>("-overridable_symbol", "new_value"),
+                com.google.common.collect.ImmutableMap.of<K?, V?>(),
+                com.google.common.collect.ImmutableList.of<E?>("+overridable_symbol", "-overridable_symbol")
+            )
+        // Both the + and - are no-ops since the keys aren't prefixed.
+        Truth.assertThat(env).containsEntry("overridable_symbol", "original_value")
+    }
 
-  @Test
-  public void injectionStatus_respectsDefault() throws Exception {
-    Map<String, Object> env =
-        starlarkEnv.createBuildBzlEnvUsingInjection(
-            ImmutableMap.of(
-                "+overridable_symbol",
-                "new_value",
-                "-another_overridable_symbol",
-                "another_new_value"),
-            ImmutableMap.of("-overridable_rule", "new_rule"),
-            /* overridesList= */ ImmutableList.of());
-    assertThat(env).containsEntry("overridable_symbol", "new_value");
-    assertThat(env).containsEntry("another_overridable_symbol", "another_original_value");
-    // Match the original rule's toString since the actual specific object is not easily accessible.
-    Object overridableRuleValue = ((Structure) env.get("native")).getValue("overridable_rule");
-    assertThat(overridableRuleValue.toString()).contains("overridable_rule");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun injectionStatus_invalidOverrideItem_empty() {
+        val ex: InjectionException? =
+            org.junit.Assert.assertThrows<T?>(
+                InjectionException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    starlarkEnv.createBuildBzlEnvUsingInjection(
+                        com.google.common.collect.ImmutableMap.of<K?, V?>(),
+                        com.google.common.collect.ImmutableMap.of<K?, V?>(),
+                        com.google.common.collect.ImmutableList.of<E?>("")
+                    )
+                })
+        assertThat(ex).hasMessageThat().contains("Invalid injection override item: ''")
+    }
 
-  @Test
-  public void injectionStatus_canBeOverridden() throws Exception {
-    Map<String, Object> env =
-        starlarkEnv.createBuildBzlEnvUsingInjection(
-            ImmutableMap.of(
-                "+overridable_symbol",
-                "new_value",
-                "-another_overridable_symbol",
-                "another_new_value"),
-            ImmutableMap.of("-overridable_rule", "new_rule"),
-            ImmutableList.of(
-                "-overridable_symbol", "+another_overridable_symbol", "+overridable_rule"));
-    assertThat(env).containsEntry("overridable_symbol", "original_value");
-    assertThat(env).containsEntry("another_overridable_symbol", "another_new_value");
-    assertThat(((Structure) env.get("native")).getValue("overridable_rule")).isEqualTo("new_rule");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun injectionStatus_invalidOverrideItem_unprefixed() {
+        val ex: InjectionException? =
+            org.junit.Assert.assertThrows<T?>(
+                InjectionException::class.java,
+                org.junit.function.ThrowingRunnable {
+                    starlarkEnv.createBuildBzlEnvUsingInjection(
+                        com.google.common.collect.ImmutableMap.of<K?, V?>(),
+                        com.google.common.collect.ImmutableMap.of<K?, V?>(),
+                        com.google.common.collect.ImmutableList.of<E?>("foo")
+                    )
+                })
+        assertThat(ex).hasMessageThat().contains("Invalid injection override item: 'foo'")
+    }
 
-  @Test
-  public void injectionStatus_cannotBeOverriddenForUnprefixedKeys() throws Exception {
-    Map<String, Object> env =
-        starlarkEnv.createBuildBzlEnvUsingInjection(
-            ImmutableMap.of(
-                "overridable_symbol",
-                "new_value",
-                "another_overridable_symbol",
-                "another_new_value"),
-            ImmutableMap.of(),
-            ImmutableList.of("+overridable_symbol", "-another_overridable_symbol"));
-    // Both the + and - are no-ops since the keys aren't prefixed.
-    assertThat(env).containsEntry("overridable_symbol", "new_value");
-    assertThat(env).containsEntry("another_overridable_symbol", "another_new_value");
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun injectionStatus_appliesToBuildFiles() {
+        val env: MutableMap<String?, Any?> =
+            starlarkEnv.createBuildEnvUsingInjection(
+                com.google.common.collect.ImmutableMap.of<K?, V?>("+overridable_rule", "new_rule"),
+                com.google.common.collect.ImmutableList.of<E?>("-overridable_rule")
+            )
+        // Match the original rule's toString since the actual specific object is not easily accessible.
+        Truth.assertThat(env.get("overridable_rule").toString()).contains("overridable_rule")
+    }
 
-  @Test
-  public void injectionStatus_overridingUnknownKeysIsNoop() throws Exception {
-    Map<String, Object> env =
-        starlarkEnv.createBuildBzlEnvUsingInjection(
-            ImmutableMap.of("-overridable_symbol", "new_value"),
-            ImmutableMap.of(),
-            ImmutableList.of("+overridable_symbol", "+unknown_symbol", "-another_unknown_symbol"));
-    // Both the + and - are no-ops since the keys aren't prefixed.
-    assertThat(env).containsEntry("overridable_symbol", "new_value");
-  }
-
-  @Test
-  public void injectionStatus_lastOverrideTakesPrecedence() throws Exception {
-    Map<String, Object> env =
-        starlarkEnv.createBuildBzlEnvUsingInjection(
-            ImmutableMap.of("-overridable_symbol", "new_value"),
-            ImmutableMap.of(),
-            ImmutableList.of("+overridable_symbol", "-overridable_symbol"));
-    // Both the + and - are no-ops since the keys aren't prefixed.
-    assertThat(env).containsEntry("overridable_symbol", "original_value");
-  }
-
-  @Test
-  public void injectionStatus_invalidOverrideItem_empty() throws Exception {
-    InjectionException ex =
-        assertThrows(
-            InjectionException.class,
-            () ->
-                starlarkEnv.createBuildBzlEnvUsingInjection(
-                    ImmutableMap.of(), ImmutableMap.of(), ImmutableList.of("")));
-    assertThat(ex).hasMessageThat().contains("Invalid injection override item: ''");
-  }
-
-  @Test
-  public void injectionStatus_invalidOverrideItem_unprefixed() throws Exception {
-    InjectionException ex =
-        assertThrows(
-            InjectionException.class,
-            () ->
-                starlarkEnv.createBuildBzlEnvUsingInjection(
-                    ImmutableMap.of(), ImmutableMap.of(), ImmutableList.of("foo")));
-    assertThat(ex).hasMessageThat().contains("Invalid injection override item: 'foo'");
-  }
-
-  @Test
-  public void injectionStatus_appliesToBuildFiles() throws Exception {
-    Map<String, Object> env =
-        starlarkEnv.createBuildEnvUsingInjection(
-            ImmutableMap.of("+overridable_rule", "new_rule"),
-            ImmutableList.of("-overridable_rule"));
-    // Match the original rule's toString since the actual specific object is not easily accessible.
-    assertThat(env.get("overridable_rule").toString()).contains("overridable_rule");
-  }
+    companion object {
+        private val OVERRIDABLE_RULE: MockRule = MockRule { MockRule.define("overridable_rule") }
+    }
 }

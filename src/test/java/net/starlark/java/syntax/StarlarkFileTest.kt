@@ -11,60 +11,70 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package net.starlark.java.syntax;
+package net.starlark.java.syntax
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.common.truth.Truth
+import net.starlark.java.syntax.SyntaxError.Exception.errors
+import net.starlark.java.syntax.SyntaxError.location
+import net.starlark.java.syntax.TypeTable.errors
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import com.google.common.base.Joiner;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests of StarlarkFile parsing.  */ // TODO(adonovan): move tests of parsing into ParserTest.
+@RunWith(JUnit4::class)
+class StarlarkFileTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testParsesFineWithNewlines() {
+        val file: net.starlark.java.syntax.StarlarkFile = parseFile("foo()", "bar()", "something = baz()", "bar()")
+        Truth.assertThat(file.getStatements()).hasSize(4)
+    }
 
-/** Tests of StarlarkFile parsing. */
-// TODO(adonovan): move tests of parsing into ParserTest.
-@RunWith(JUnit4.class)
-public class StarlarkFileTest {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testFailsIfNewlinesAreMissing() {
+        val file: net.starlark.java.syntax.StarlarkFile = parseFile("foo() bar() something = baz() bar()")
 
-  /**
-   * Parses the contents of the specified string (using 'foo.star' as the apparent filename) and
-   * returns the AST. Resets the error handler beforehand.
-   */
-  private static StarlarkFile parseFile(String... lines) {
-    String src = Joiner.on("\n").join(lines);
-    ParserInput input = ParserInput.fromString(src, "foo.star");
-    return StarlarkFile.parse(input);
-  }
+        val error: net.starlark.java.syntax.SyntaxError =
+            net.starlark.java.syntax.TestUtils.assertContainsError(
+                file.errors(),
+                "syntax error at \'bar\': expected newline"
+            )
+        Truth.assertThat(error.location().toString()).isEqualTo("foo.star:1:7")
+    }
 
-  @Test
-  public void testParsesFineWithNewlines() throws Exception {
-    StarlarkFile file = parseFile("foo()", "bar()", "something = baz()", "bar()");
-    assertThat(file.getStatements()).hasSize(4);
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testImplicitStringConcatenationFails() {
+        // TODO(adonovan): move to ParserTest.
+        val file: net.starlark.java.syntax.StarlarkFile = parseFile("a = 'foo' 'bar'")
+        val error: net.starlark.java.syntax.SyntaxError =
+            net.starlark.java.syntax.TestUtils.assertContainsError(
+                file.errors(), "Implicit string concatenation is forbidden, use the + operator"
+            )
+        Truth.assertThat(error.location().toString()).isEqualTo("foo.star:1:11") // start of 'bar'
+    }
 
-  @Test
-  public void testFailsIfNewlinesAreMissing() throws Exception {
-    StarlarkFile file = parseFile("foo() bar() something = baz() bar()");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testImplicitStringConcatenationAcrossLinesIsIllegal() {
+        val file: net.starlark.java.syntax.StarlarkFile = parseFile("a = 'foo'\n  'bar'")
 
-    SyntaxError error =
-        TestUtils.assertContainsError(file.errors(), "syntax error at \'bar\': expected newline");
-    assertThat(error.location().toString()).isEqualTo("foo.star:1:7");
-  }
+        val error: net.starlark.java.syntax.SyntaxError =
+            net.starlark.java.syntax.TestUtils.assertContainsError(file.errors(), "indentation error")
+        Truth.assertThat(error.location().toString()).isEqualTo("foo.star:2:2")
+    }
 
-  @Test
-  public void testImplicitStringConcatenationFails() throws Exception {
-    // TODO(adonovan): move to ParserTest.
-    StarlarkFile file = parseFile("a = 'foo' 'bar'");
-    SyntaxError error =
-        TestUtils.assertContainsError(
-            file.errors(), "Implicit string concatenation is forbidden, use the + operator");
-    assertThat(error.location().toString()).isEqualTo("foo.star:1:11"); // start of 'bar'
-  }
-
-  @Test
-  public void testImplicitStringConcatenationAcrossLinesIsIllegal() throws Exception {
-    StarlarkFile file = parseFile("a = 'foo'\n  'bar'");
-
-    SyntaxError error = TestUtils.assertContainsError(file.errors(), "indentation error");
-    assertThat(error.location().toString()).isEqualTo("foo.star:2:2");
-  }
+    companion object {
+        /**
+         * Parses the contents of the specified string (using 'foo.star' as the apparent filename) and
+         * returns the AST. Resets the error handler beforehand.
+         */
+        private fun parseFile(vararg lines: String?): net.starlark.java.syntax.StarlarkFile {
+            val src: String = com.google.common.base.Joiner.on("\n").join(lines)
+            val input: net.starlark.java.syntax.ParserInput? =
+                net.starlark.java.syntax.ParserInput.fromString(src, "foo.star")
+            return net.starlark.java.syntax.StarlarkFile.parse(input)
+        }
+    }
 }

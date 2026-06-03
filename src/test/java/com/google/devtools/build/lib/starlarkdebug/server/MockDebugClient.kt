@@ -11,156 +11,145 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.build.lib.starlarkdebug.server
 
-package com.google.devtools.build.lib.starlarkdebug.server;
+import com.google.devtools.build.lib.starlarkdebugging.StarlarkDebuggingProtos.DebugEvent
 
-import com.google.common.collect.ImmutableList;
-import com.google.devtools.build.lib.starlarkdebugging.StarlarkDebuggingProtos.DebugEvent;
-import com.google.devtools.build.lib.starlarkdebugging.StarlarkDebuggingProtos.DebugRequest;
-import java.io.IOException;
-import java.net.InetAddress;
-import java.net.InetSocketAddress;
-import java.net.Socket;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.function.Predicate;
-import javax.annotation.Nullable;
+/** A basic implementation of a Starlark debugging client, for use in integration tests.  */
+internal class MockDebugClient {
+    private var clientSocket: java.net.Socket? = null
 
-/** A basic implementation of a Starlark debugging client, for use in integration tests. */
-class MockDebugClient {
+    val unnumberedEvents: MutableList<DebugEvent?> = java.util.ArrayList<DebugEvent?>()
+    val responses: MutableMap<Long?, DebugEvent?> = HashMap<Long?, DebugEvent?>()
 
-  private static final int RESPONSE_TIMEOUT_MILLIS = 10000;
-  private static final ExecutorService readTaskExecutor = Executors.newFixedThreadPool(1);
+    private var readTask: java.util.concurrent.Future<*>? = null
 
-  private Socket clientSocket;
-
-  final List<DebugEvent> unnumberedEvents = new ArrayList<>();
-  final Map<Long, DebugEvent> responses = new HashMap<>();
-
-  private Future<?> readTask;
-
-  /** Connects to the debug server, and starts listening for events. */
-  void connect(InetAddress addr, int port, Duration timeout) {
-    long startTimeMillis = System.currentTimeMillis();
-    IOException exception = null;
-    while (System.currentTimeMillis() - startTimeMillis < timeout.toMillis()) {
-      try {
-        clientSocket = new Socket();
-        clientSocket.connect(new InetSocketAddress(addr, port), 100);
-        readTask =
-            readTaskExecutor.submit(
-                () -> {
-                  while (true) {
-                    eventReceived(DebugEvent.parseDelimitedFrom(clientSocket.getInputStream()));
-                  }
-                });
-        return;
-      } catch (IOException e) {
-        exception = e;
-      }
-    }
-    throw new RuntimeException("Couldn't connect to the debug server", exception);
-  }
-
-  void close() throws IOException {
-    if (clientSocket != null) {
-      clientSocket.close();
-    }
-    if (readTask != null) {
-      readTask.cancel(true);
-    }
-  }
-
-  /**
-   * Blocks waiting for an unnumbered event (not a direct response to a request). Returns null if no
-   * event arrives before the timeout.
-   */
-  @Nullable
-  DebugEvent waitForEvent(Predicate<DebugEvent> predicate, Duration timeout) {
-    waitForEvents(list -> list.stream().anyMatch(predicate), timeout);
-    return unnumberedEvents.stream().filter(predicate).findFirst().orElse(null);
-  }
-
-  /**
-   * Blocks waiting for a condition on all unnumbered events to be satisfied. Returns true if the
-   * condition was satisfied before the timeout.
-   */
-  boolean waitForEvents(Predicate<List<DebugEvent>> predicate, Duration timeout) {
-    long startTime = System.currentTimeMillis();
-    synchronized (unnumberedEvents) {
-      while (!predicate.test(ImmutableList.copyOf(unnumberedEvents))
-          && System.currentTimeMillis() - startTime < timeout.toMillis()) {
-        try {
-          unnumberedEvents.wait(timeout.toMillis());
-        } catch (InterruptedException e) {
-          throw new AssertionError(e);
+    /** Connects to the debug server, and starts listening for events.  */
+    fun connect(addr: InetAddress?, port: Int, timeout: java.time.Duration) {
+        val startTimeMillis: Long = java.lang.System.currentTimeMillis()
+        var exception: IOException? = null
+        while (java.lang.System.currentTimeMillis() - startTimeMillis < timeout.toMillis()) {
+            try {
+                clientSocket = java.net.Socket()
+                clientSocket.connect(InetSocketAddress(addr, port), 100)
+                readTask =
+                    com.google.devtools.build.lib.starlarkdebug.server.MockDebugClient.Companion.readTaskExecutor.submit<Any?>(
+                        java.util.concurrent.Callable {
+                            while (true) {
+                                eventReceived(DebugEvent.parseDelimitedFrom(clientSocket.getInputStream()))
+                            }
+                        })
+                return
+            } catch (e: IOException) {
+                exception = e
+            }
         }
-      }
+        throw java.lang.RuntimeException("Couldn't connect to the debug server", exception)
     }
-    return predicate.test(ImmutableList.copyOf(unnumberedEvents));
-  }
 
-  /**
-   * Sends a {@link DebugRequest} to the server, and blocks waiting for a response.
-   *
-   * @return the {@link DebugEvent} response from the server, or null if no response was received.
-   */
-  @Nullable
-  DebugEvent sendRequestAndWaitForResponse(DebugRequest request) throws IOException {
-    request.writeDelimitedTo(clientSocket.getOutputStream());
-    clientSocket.getOutputStream().flush();
-    return waitForResponse(request.getSequenceNumber());
-  }
-
-  private void eventReceived(DebugEvent event) {
-    if (event.getSequenceNumber() == 0) {
-      synchronized (unnumberedEvents) {
-        unnumberedEvents.add(event);
-        unnumberedEvents.notifyAll();
-      }
-      return;
-    }
-    synchronized (responses) {
-      DebugEvent existing = responses.put(event.getSequenceNumber(), event);
-      if (existing != null) {
-        throw new AssertionError(
-            "There's already an event in the response queue corresponding to sequence number "
-                + event.getSequenceNumber());
-      }
-      responses.notifyAll();
-    }
-  }
-
-  /**
-   * Wait for a response from the debug server. Returns null if no response was received, or this
-   * thread was interrupted.
-   */
-  @Nullable
-  private DebugEvent waitForResponse(long sequence) {
-    DebugEvent response = null;
-    long startTime = System.currentTimeMillis();
-    synchronized (responses) {
-      while (response == null && shouldWaitForResponse(startTime)) {
-        try {
-          responses.wait(1000);
-        } catch (InterruptedException e) {
-          throw new AssertionError(e);
+    @Throws(IOException::class)
+    fun close() {
+        if (clientSocket != null) {
+            clientSocket.close()
         }
-        response = responses.remove(sequence);
-      }
+        if (readTask != null) {
+            readTask.cancel(true)
+        }
     }
-    return response;
-  }
 
-  private boolean shouldWaitForResponse(long startTime) {
-    return clientSocket.isConnected()
-        && !readTask.isDone()
-        && System.currentTimeMillis() - startTime < RESPONSE_TIMEOUT_MILLIS;
-  }
+    /**
+     * Blocks waiting for an unnumbered event (not a direct response to a request). Returns null if no
+     * event arrives before the timeout.
+     */
+    fun waitForEvent(predicate: java.util.function.Predicate<DebugEvent?>?, timeout: java.time.Duration): DebugEvent? {
+        waitForEvents(java.util.function.Predicate { list: MutableList<DebugEvent?>? ->
+            list.stream().anyMatch(predicate)
+        }, timeout)
+        return unnumberedEvents.stream().filter(predicate).findFirst().orElse(null)
+    }
+
+    /**
+     * Blocks waiting for a condition on all unnumbered events to be satisfied. Returns true if the
+     * condition was satisfied before the timeout.
+     */
+    fun waitForEvents(
+        predicate: java.util.function.Predicate<MutableList<DebugEvent?>?>,
+        timeout: java.time.Duration
+    ): Boolean {
+        val startTime: Long = java.lang.System.currentTimeMillis()
+        synchronized(unnumberedEvents) {
+            while (!predicate.test(com.google.common.collect.ImmutableList.copyOf<DebugEvent?>(unnumberedEvents))
+                && java.lang.System.currentTimeMillis() - startTime < timeout.toMillis()
+            ) {
+                try {
+                    (unnumberedEvents as java.lang.Object).wait(timeout.toMillis())
+                } catch (e: java.lang.InterruptedException) {
+                    throw java.lang.AssertionError(e)
+                }
+            }
+        }
+        return predicate.test(com.google.common.collect.ImmutableList.copyOf<DebugEvent?>(unnumberedEvents))
+    }
+
+    /**
+     * Sends a [DebugRequest] to the server, and blocks waiting for a response.
+     * 
+     * @return the [DebugEvent] response from the server, or null if no response was received.
+     */
+    @Throws(IOException::class)
+    fun sendRequestAndWaitForResponse(request: DebugRequest): DebugEvent? {
+        request.writeDelimitedTo(clientSocket.getOutputStream())
+        clientSocket.getOutputStream().flush()
+        return waitForResponse(request.getSequenceNumber())
+    }
+
+    private fun eventReceived(event: DebugEvent) {
+        if (event.getSequenceNumber() === 0) {
+            synchronized(unnumberedEvents) {
+                unnumberedEvents.add(event)
+                (unnumberedEvents as java.lang.Object).notifyAll()
+            }
+            return
+        }
+        synchronized(responses) {
+            val existing: DebugEvent? = responses.put(event.getSequenceNumber(), event)
+            if (existing != null) {
+                throw java.lang.AssertionError(
+                    "There's already an event in the response queue corresponding to sequence number "
+                            + event.getSequenceNumber()
+                )
+            }
+            (responses as java.lang.Object).notifyAll()
+        }
+    }
+
+    /**
+     * Wait for a response from the debug server. Returns null if no response was received, or this
+     * thread was interrupted.
+     */
+    private fun waitForResponse(sequence: Long): DebugEvent? {
+        var response: DebugEvent? = null
+        val startTime: Long = java.lang.System.currentTimeMillis()
+        synchronized(responses) {
+            while (response == null && shouldWaitForResponse(startTime)) {
+                try {
+                    (responses as java.lang.Object).wait(1000)
+                } catch (e: java.lang.InterruptedException) {
+                    throw java.lang.AssertionError(e)
+                }
+                response = responses.remove(sequence)
+            }
+        }
+        return response
+    }
+
+    private fun shouldWaitForResponse(startTime: Long): Boolean {
+        return clientSocket.isConnected()
+                && !readTask.isDone() && java.lang.System.currentTimeMillis() - startTime < com.google.devtools.build.lib.starlarkdebug.server.MockDebugClient.Companion.RESPONSE_TIMEOUT_MILLIS
+    }
+
+    companion object {
+        private const val RESPONSE_TIMEOUT_MILLIS = 10000
+        private val readTaskExecutor: ExecutorService = Executors.newFixedThreadPool(1)
+    }
 }

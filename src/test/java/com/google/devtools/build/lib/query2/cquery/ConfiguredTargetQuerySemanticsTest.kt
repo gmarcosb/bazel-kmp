@@ -11,92 +11,54 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.query2.cquery;
+package com.google.devtools.build.lib.query2.cquery
 
-import static com.google.common.collect.ImmutableList.toImmutableList;
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.packages.Attribute.attr;
-import static com.google.devtools.build.lib.packages.BuildType.LABEL;
-import static com.google.devtools.build.lib.packages.BuildType.LABEL_LIST;
-import static com.google.devtools.build.lib.packages.Type.STRING;
-import static com.google.devtools.build.lib.packages.Types.STRING_LIST;
-import static org.junit.Assert.assertThrows;
-
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterables;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationValue;
-import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.config.BuildOptionsView;
-import com.google.devtools.build.lib.analysis.config.ExecutionTransitionFactory;
-import com.google.devtools.build.lib.analysis.config.FragmentOptions;
-import com.google.devtools.build.lib.analysis.config.transitions.ConfigurationTransition;
-import com.google.devtools.build.lib.analysis.config.transitions.PatchTransition;
-import com.google.devtools.build.lib.analysis.config.transitions.TransitionFactory;
-import com.google.devtools.build.lib.analysis.test.TestConfiguration.TestOptions;
-import com.google.devtools.build.lib.analysis.util.DummyTestFragment.DummyTestOptions;
-import com.google.devtools.build.lib.analysis.util.MockRule;
-import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.TargetParsingException;
-import com.google.devtools.build.lib.events.EventHandler;
-import com.google.devtools.build.lib.packages.AttributeTransitionData;
-import com.google.devtools.build.lib.packages.BuildType;
-import com.google.devtools.build.lib.packages.LabelPrinter;
-import com.google.devtools.build.lib.query2.common.CqueryNode;
-import com.google.devtools.build.lib.query2.engine.QueryEnvironment.Setting;
-import com.google.devtools.build.lib.query2.engine.QueryException;
-import com.google.devtools.build.lib.query2.testutil.PostAnalysisQueryHelper;
-import com.google.devtools.build.lib.server.FailureDetails;
-import com.google.devtools.build.lib.server.FailureDetails.ConfigurableQuery;
-import com.google.devtools.build.lib.server.FailureDetails.Query;
-import com.google.devtools.build.lib.server.FailureDetails.Query.Code;
-import com.google.devtools.build.lib.util.FileTypeSet;
-import com.google.devtools.build.lib.vfs.Path;
-import java.util.Iterator;
-import java.util.Set;
-import java.util.stream.Collectors;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import com.google.devtools.build.lib.packages.Attribute.attr
 
 /**
- * Tests for {@link ConfiguredTargetQueryEnvironment}.
- *
- * <p>This tests core cquery behavior (behavior that doesn't depend on <code>--output</code>).
+ * Tests for [ConfiguredTargetQueryEnvironment].
+ * 
+ * 
+ * This tests core cquery behavior (behavior that doesn't depend on `--output`).
  * Output format-specific behavior is covered in dedicated test classes.
  */
-@RunWith(JUnit4.class)
-public class ConfiguredTargetQuerySemanticsTest extends ConfiguredTargetQueryTest {
-  @Test
-  public void testConfigurationRespected() throws Exception {
-    writeBuildFilesWithConfigurableAttributesUnconditionally();
-    assertThat(eval("deps(//configurable:main) ^ //configurable:adep")).isEmpty();
-    assertThat(eval("deps(//configurable:main) ^ //configurable:defaultdep")).hasSize(1);
-  }
+@RunWith(JUnit4::class)
+class ConfiguredTargetQuerySemanticsTest : ConfiguredTargetQueryTest() {
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testConfigurationRespected() {
+        writeBuildFilesWithConfigurableAttributesUnconditionally()
+        Truth.assertThat(eval("deps(//configurable:main) ^ //configurable:adep")).isEmpty()
+        Truth.assertThat(eval("deps(//configurable:main) ^ //configurable:defaultdep")).hasSize(1)
+    }
 
-  private void setUpLabelsFunctionTests() throws Exception {
-    MockRule ruleWithTransitions =
-        () ->
-            MockRule.define(
-                "rule_with_transitions",
-                attr("patch_dep", LABEL)
-                    .allowedFileTypes(FileTypeSet.ANY_FILE)
-                    .cfg(new FooPatchAttrTransitionFactory("SET BY PATCH")),
-                attr("string_dep", STRING),
-                attr("split_dep", LABEL)
-                    .allowedFileTypes(FileTypeSet.ANY_FILE)
-                    .cfg(new FooSplitTransitionFactory("SET BY SPLIT 1", "SET BY SPLIT 2")),
-                attr("patch_dep_list", LABEL_LIST)
-                    .allowedFileTypes(FileTypeSet.ANY_FILE)
-                    .cfg(new FooPatchAttrTransitionFactory("SET BY PATCH 2")));
-    MockRule noAttributeRule = () -> MockRule.define("no_attribute_rule");
+    @Throws(java.lang.Exception::class)
+    private fun setUpLabelsFunctionTests() {
+        val ruleWithTransitions: MockRule =
+            MockRule {
+                MockRule.define(
+                    "rule_with_transitions",
+                    attr("patch_dep", LABEL)
+                        .allowedFileTypes(FileTypeSet.ANY_FILE)
+                        .cfg(FooPatchAttrTransitionFactory("SET BY PATCH")),
+                    attr("string_dep", STRING),
+                    attr("split_dep", LABEL)
+                        .allowedFileTypes(FileTypeSet.ANY_FILE)
+                        .cfg(FooSplitTransitionFactory("SET BY SPLIT 1", "SET BY SPLIT 2")),
+                    attr("patch_dep_list", LABEL_LIST)
+                        .allowedFileTypes(FileTypeSet.ANY_FILE)
+                        .cfg(FooPatchAttrTransitionFactory("SET BY PATCH 2"))
+                )
+            }
+        val noAttributeRule: MockRule = MockRule { MockRule.define("no_attribute_rule") }
 
-    helper.useRuleClassProvider(
-        setRuleClassProviders(ruleWithTransitions, noAttributeRule).build());
+        helper.useRuleClassProvider(
+            setRuleClassProviders(ruleWithTransitions, noAttributeRule).build()
+        )
 
-    writeFile(
-        "test/BUILD",
-        """
+        writeFile(
+            "test/BUILD",
+            """
         rule_with_transitions(
             name = "my_rule",
             patch_dep = ":dep-1",
@@ -115,96 +77,112 @@ public class ConfiguredTargetQuerySemanticsTest extends ConfiguredTargetQueryTes
         no_attribute_rule(name = "dep-3")
 
         no_attribute_rule(name = "dep-4")
-        """);
+        
+        """.trimIndent()
+        )
 
-    helper.setUniverseScope("//test:*");
-  }
-
-  @Test
-  public void testLabelFunction_getsCorrectConfigurations() throws Exception {
-    setUpLabelsFunctionTests();
-
-    // (Test that you can use the labels function without an error (b/112593112)).
-    // Note - 'labels' as a command for cquery is a slight misnomer since it always prints
-    // labels AND configurations. But still a helpful function so oh well.
-    assertThat(Iterables.getOnlyElement(eval("labels('patch_dep', //test:my_rule)"))).isNotNull();
-  }
-
-  @Test
-  public void testLabelFunction_getCorrectlyConfiguredDeps() throws Exception {
-    setUpLabelsFunctionTests();
-
-    // Test that this retrieves the correctly configured version(s) of the dep(s).
-    CqueryNode patchDep = Iterables.getOnlyElement(eval("labels('patch_dep', //test:my_rule)"));
-    CqueryNode myRule = Iterables.getOnlyElement(eval("//test:my_rule"));
-    String targetConfiguration = myRule.getConfigurationChecksum();
-    assertThat(patchDep.getConfigurationChecksum()).doesNotMatch(targetConfiguration);
-  }
-
-  @Test
-  public void testLabelsFunction_splitTransitionAttribute() throws Exception {
-    setUpLabelsFunctionTests();
-
-    CqueryNode myRule = Iterables.getOnlyElement(eval("//test:my_rule"));
-    String targetConfiguration = myRule.getConfigurationChecksum();
-
-    Set<CqueryNode> splitDeps = eval("labels('split_dep', //test:my_rule)");
-    assertThat(splitDeps).hasSize(2);
-    for (CqueryNode kct : splitDeps) {
-      assertThat(kct.getConfigurationChecksum()).doesNotMatch(targetConfiguration);
+        helper.setUniverseScope("//test:*")
     }
-  }
 
-  @Test
-  public void testLabelsFunction_labelListAttribute() throws Exception {
-    setUpLabelsFunctionTests();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLabelFunction_getsCorrectConfigurations() {
+        setUpLabelsFunctionTests()
 
-    CqueryNode myRule = Iterables.getOnlyElement(eval("//test:my_rule"));
-    String targetConfiguration = myRule.getConfigurationChecksum();
-
-    // Test that this works for label_lists as well.
-    Set<CqueryNode> deps = eval("labels('patch_dep_list', //test:my_rule)");
-    assertThat(deps).hasSize(2);
-    for (CqueryNode kct : deps) {
-      assertThat(kct.getConfigurationChecksum()).doesNotMatch(targetConfiguration);
+        // (Test that you can use the labels function without an error (b/112593112)).
+        // Note - 'labels' as a command for cquery is a slight misnomer since it always prints
+        // labels AND configurations. But still a helpful function so oh well.
+        assertThat(com.google.common.collect.Iterables.getOnlyElement<CqueryNode?>(eval("labels('patch_dep', //test:my_rule)"))).isNotNull()
     }
-  }
 
-  @Test
-  public void testLabelsFunction_errorsOnBadAttribute() throws Exception {
-    setUpLabelsFunctionTests();
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLabelFunction_getCorrectlyConfiguredDeps() {
+        setUpLabelsFunctionTests()
 
-    // Test that the proper error is thrown when requesting an attribute that doesn't exist.
-    EvalThrowsResult evalThrowsResult = evalThrows("labels('fake_attr', //test:my_rule)", true);
-    assertConfigurableQueryCode(
-        evalThrowsResult.getFailureDetail(), ConfigurableQuery.Code.ATTRIBUTE_MISSING);
-    assertThat(evalThrowsResult.getMessage())
-        .isEqualTo(
-            "in 'fake_attr' of rule //test:my_rule: configured target of type"
-                + " rule_with_transitions does not have attribute 'fake_attr'");
-  }
+        // Test that this retrieves the correctly configured version(s) of the dep(s).
+        val patchDep: CqueryNode? =
+            com.google.common.collect.Iterables.getOnlyElement<CqueryNode?>(eval("labels('patch_dep', //test:my_rule)"))
+        val myRule: CqueryNode? =
+            com.google.common.collect.Iterables.getOnlyElement<CqueryNode?>(eval("//test:my_rule"))
+        val targetConfiguration: String? = myRule.getConfigurationChecksum()
+        assertThat(patchDep.getConfigurationChecksum()).doesNotMatch(targetConfiguration)
+    }
 
-  @Test
-  public void testLabelsFunction_nonLabelAttribute() throws Exception {
-    setUpLabelsFunctionTests();
-    assertThat(eval("labels('string_dep', //test:my_rule)")).isEmpty();
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLabelsFunction_splitTransitionAttribute() {
+        setUpLabelsFunctionTests()
 
-  /**
-   * Regression test for b/162431514. the {@code labels} query operator uses {@link
-   * ConfiguredTargetAccessor#getPrerequisites} which is the actual logic being tested here.
-   */
-  @Test
-  public void testGetPrerequisitesFromAliasReturnsActualPrerequisites() throws Exception {
-    MockRule ruleWithDep =
-        () ->
-            MockRule.define(
-                "rule_with_dep", attr("dep", LABEL).allowedFileTypes(FileTypeSet.ANY_FILE));
+        val myRule: CqueryNode? =
+            com.google.common.collect.Iterables.getOnlyElement<CqueryNode?>(eval("//test:my_rule"))
+        val targetConfiguration: String? = myRule.getConfigurationChecksum()
 
-    helper.useRuleClassProvider(setRuleClassProviders(ruleWithDep).build());
-    writeFile(
-        "test/BUILD",
-        """
+        val splitDeps: MutableSet<CqueryNode> = eval("labels('split_dep', //test:my_rule)")
+        Truth.assertThat(splitDeps).hasSize(2)
+        for (kct in splitDeps) {
+            assertThat(kct.getConfigurationChecksum()).doesNotMatch(targetConfiguration)
+        }
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLabelsFunction_labelListAttribute() {
+        setUpLabelsFunctionTests()
+
+        val myRule: CqueryNode? =
+            com.google.common.collect.Iterables.getOnlyElement<CqueryNode?>(eval("//test:my_rule"))
+        val targetConfiguration: String? = myRule.getConfigurationChecksum()
+
+        // Test that this works for label_lists as well.
+        val deps: MutableSet<CqueryNode> = eval("labels('patch_dep_list', //test:my_rule)")
+        Truth.assertThat(deps).hasSize(2)
+        for (kct in deps) {
+            assertThat(kct.getConfigurationChecksum()).doesNotMatch(targetConfiguration)
+        }
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLabelsFunction_errorsOnBadAttribute() {
+        setUpLabelsFunctionTests()
+
+        // Test that the proper error is thrown when requesting an attribute that doesn't exist.
+        val evalThrowsResult: EvalThrowsResult = evalThrows("labels('fake_attr', //test:my_rule)", true)
+        PostAnalysisQueryTest.Companion.assertConfigurableQueryCode(
+            evalThrowsResult.getFailureDetail(), ConfigurableQuery.Code.ATTRIBUTE_MISSING
+        )
+        Truth.assertThat(evalThrowsResult.getMessage())
+            .isEqualTo(
+                "in 'fake_attr' of rule //test:my_rule: configured target of type"
+                        + " rule_with_transitions does not have attribute 'fake_attr'"
+            )
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLabelsFunction_nonLabelAttribute() {
+        setUpLabelsFunctionTests()
+        Truth.assertThat(eval("labels('string_dep', //test:my_rule)")).isEmpty()
+    }
+
+    /**
+     * Regression test for b/162431514. the `labels` query operator uses [ ][ConfiguredTargetAccessor.getPrerequisites] which is the actual logic being tested here.
+     */
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testGetPrerequisitesFromAliasReturnsActualPrerequisites() {
+        val ruleWithDep: MockRule =
+            MockRule {
+                MockRule.define(
+                    "rule_with_dep", attr("dep", LABEL).allowedFileTypes(FileTypeSet.ANY_FILE)
+                )
+            }
+
+        helper.useRuleClassProvider(setRuleClassProviders(ruleWithDep).build())
+        writeFile(
+            "test/BUILD",
+            """
         alias(
             name = "alias",
             actual = ":actual",
@@ -216,30 +194,36 @@ public class ConfiguredTargetQuerySemanticsTest extends ConfiguredTargetQueryTes
         )
 
         rule_with_dep(name = "dep")
-        """);
+        
+        """.trimIndent()
+        )
 
-    CqueryNode dep = Iterables.getOnlyElement(eval("labels('dep', '//test:alias')"));
-    assertThat(dep.getLabel()).isEqualTo(Label.parseCanonicalUnchecked("//test:dep"));
-  }
+        val dep: CqueryNode? =
+            com.google.common.collect.Iterables.getOnlyElement<CqueryNode?>(eval("labels('dep', '//test:alias')"))
+        assertThat(dep.getLabel()).isEqualTo(Label.parseCanonicalUnchecked("//test:dep"))
+    }
 
-  @Test
-  public void testAlias_filtering() throws Exception {
-    MockRule ruleWithExecDep =
-        () ->
-            MockRule.define(
-                "rule_with_exec_dep",
-                attr("exec_dep", LABEL)
-                    .allowedFileTypes(FileTypeSet.ANY_FILE)
-                    .cfg(ExecutionTransitionFactory.createFactory()),
-                attr("$impl_dep", LABEL)
-                    .allowedFileTypes(FileTypeSet.ANY_FILE)
-                    .value(Label.parseCanonicalUnchecked("//test:other")));
-    MockRule simpleRule = () -> MockRule.define("simple_rule");
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAlias_filtering() {
+        val ruleWithExecDep: MockRule =
+            MockRule {
+                MockRule.define(
+                    "rule_with_exec_dep",
+                    attr("exec_dep", LABEL)
+                        .allowedFileTypes(FileTypeSet.ANY_FILE)
+                        .cfg(ExecutionTransitionFactory.createFactory()),
+                    attr("\$impl_dep", LABEL)
+                        .allowedFileTypes(FileTypeSet.ANY_FILE)
+                        .value(Label.parseCanonicalUnchecked("//test:other"))
+                )
+            }
+        val simpleRule: MockRule = MockRule { MockRule.define("simple_rule") }
 
-    helper.useRuleClassProvider(setRuleClassProviders(ruleWithExecDep, simpleRule).build());
-    writeFile(
-        "test/BUILD",
-        """
+        helper.useRuleClassProvider(setRuleClassProviders(ruleWithExecDep, simpleRule).build())
+        writeFile(
+            "test/BUILD",
+            """
         alias(
             name = "other_my_rule",
             actual = ":my_rule",
@@ -263,64 +247,79 @@ public class ConfiguredTargetQuerySemanticsTest extends ConfiguredTargetQueryTes
         )
 
         simple_rule(name = "impl_dep")
-        """);
+        
+        """.trimIndent()
+        )
 
-    CqueryNode other = Iterables.getOnlyElement(eval("//test:other_my_rule"));
-    CqueryNode myRule = Iterables.getOnlyElement(eval("//test:my_rule"));
-    // Note: {@link ConfiguredTarget#getLabel} returns the label of the "actual" value not the
-    // label of the alias, so we need to check the underlying label.
-    assertThat(other.getLabel()).isEqualTo(myRule.getLabel());
+        val other: CqueryNode? =
+            com.google.common.collect.Iterables.getOnlyElement<CqueryNode?>(eval("//test:other_my_rule"))
+        val myRule: CqueryNode? =
+            com.google.common.collect.Iterables.getOnlyElement<CqueryNode?>(eval("//test:my_rule"))
+        // Note: {@link ConfiguredTarget#getLabel} returns the label of the "actual" value not the
+        // label of the alias, so we need to check the underlying label.
+        assertThat(other.getLabel()).isEqualTo(myRule.getLabel())
 
-    // Regression test for b/73496081 in which alias-ed configured targets were skipping filtering.
-    helper.setQuerySettings(Setting.ONLY_TARGET_DEPS, Setting.NO_IMPLICIT_DEPS);
-    assertThat(
+        // Regression test for b/73496081 in which alias-ed configured targets were skipping filtering.
+        helper.setQuerySettings(
+            com.google.devtools.build.lib.query2.engine.QueryEnvironment.Setting.ONLY_TARGET_DEPS,
+            com.google.devtools.build.lib.query2.engine.QueryEnvironment.Setting.NO_IMPLICIT_DEPS
+        )
+        Truth.assertThat(
             evalToListOfStrings(
                 "deps(//test:other_my_rule)-//test:other_my_rule"
-                    + getDependencyCorrectionWithGen()))
-        .isEqualTo(evalToListOfStrings("//test:my_rule"));
-  }
+                        + getDependencyCorrectionWithGen()
+            )
+        )
+            .isEqualTo(evalToListOfStrings("//test:my_rule"))
+    }
 
-  @Test
-  public void testTopLevelTransition() throws Exception {
-    MockRule ruleClassTransition =
-        () ->
-            MockRule.define(
-                "rule_class_transition",
-                (builder, env) ->
-                    builder.cfg(new FooPatchRuleTransitionFactory("SET BY PATCH")).build());
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testTopLevelTransition() {
+        val ruleClassTransition: MockRule =
+            MockRule {
+                MockRule.define(
+                    "rule_class_transition",
+                    { builder, env -> builder.cfg(FooPatchRuleTransitionFactory("SET BY PATCH")).build() })
+            }
 
-    helper.useRuleClassProvider(setRuleClassProviders(ruleClassTransition).build());
-    helper.setUniverseScope("//test:rule_class");
+        helper.useRuleClassProvider(setRuleClassProviders(ruleClassTransition).build())
+        helper.setUniverseScope("//test:rule_class")
 
-    writeFile("test/BUILD", "rule_class_transition(name='rule_class')");
+        writeFile("test/BUILD", "rule_class_transition(name='rule_class')")
 
-    Set<CqueryNode> ruleClass = eval("//test:rule_class");
-    DummyTestOptions testOptions =
-        getConfiguration(Iterables.getOnlyElement(ruleClass))
-            .getOptions()
-            .get(DummyTestOptions.class);
-    assertThat(testOptions.getFoo()).isEqualTo("SET BY PATCH");
-  }
+        val ruleClass: MutableSet<CqueryNode> = eval("//test:rule_class")
+        val testOptions: com.google.devtools.build.lib.analysis.util.DummyTestFragment.DummyTestOptions =
+            getConfiguration(com.google.common.collect.Iterables.getOnlyElement<CqueryNode?>(ruleClass))
+                .getOptions()
+                .get(com.google.devtools.build.lib.analysis.util.DummyTestFragment.DummyTestOptions::class.java)
+        Truth.assertThat(testOptions.foo).isEqualTo("SET BY PATCH")
+    }
 
-  private void createConfigRulesAndBuild() throws Exception {
-    MockRule ruleWithTransitions =
-        () ->
-            MockRule.define(
-                "my_rule",
-                attr("target", LABEL).allowedFileTypes(FileTypeSet.ANY_FILE),
-                attr("exec", LABEL)
-                    .allowedFileTypes(FileTypeSet.ANY_FILE)
-                    .cfg(ExecutionTransitionFactory.createFactory()),
-                attr("deps", BuildType.LABEL_LIST).allowedFileTypes(FileTypeSet.ANY_FILE));
-    MockRule simpleRule =
-        () ->
-            MockRule.define(
-                "simple_rule", attr("dep", LABEL).allowedFileTypes(FileTypeSet.ANY_FILE));
-    helper.useRuleClassProvider(setRuleClassProviders(ruleWithTransitions, simpleRule).build());
+    @Throws(java.lang.Exception::class)
+    private fun createConfigRulesAndBuild() {
+        val ruleWithTransitions: MockRule =
+            MockRule {
+                MockRule.define(
+                    "my_rule",
+                    attr("target", LABEL).allowedFileTypes(FileTypeSet.ANY_FILE),
+                    attr("exec", LABEL)
+                        .allowedFileTypes(FileTypeSet.ANY_FILE)
+                        .cfg(ExecutionTransitionFactory.createFactory()),
+                    attr("deps", BuildType.LABEL_LIST).allowedFileTypes(FileTypeSet.ANY_FILE)
+                )
+            }
+        val simpleRule: MockRule =
+            MockRule {
+                MockRule.define(
+                    "simple_rule", attr("dep", LABEL).allowedFileTypes(FileTypeSet.ANY_FILE)
+                )
+            }
+        helper.useRuleClassProvider(setRuleClassProviders(ruleWithTransitions, simpleRule).build())
 
-    writeFile(
-        "test/BUILD",
-        """
+        writeFile(
+            "test/BUILD",
+            """
         my_rule(
             name = "my_rule",
             exec = ":exec_dep",
@@ -339,23 +338,28 @@ public class ConfiguredTargetQuerySemanticsTest extends ConfiguredTargetQueryTes
         )
 
         simple_rule(name = "dep")
-        """);
-  }
+        
+        """.trimIndent()
+        )
+    }
 
-  private void createConfigTransitioningRuleClass() throws Exception {
-    overwriteFile(
-        "tools/allowlists/function_transition_allowlist/BUILD",
-        """
+    @Throws(java.lang.Exception::class)
+    private fun createConfigTransitioningRuleClass() {
+        overwriteFile(
+            "tools/allowlists/function_transition_allowlist/BUILD",
+            """
         package_group(
             name = "function_transition_allowlist",
             packages = [
                 "//test/...",
             ],
         )
-        """);
-    writeFile(
-        "test/rules.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        writeFile(
+            "test/rules.bzl",
+            """
         def _rule_impl(ctx):
             return []
 
@@ -382,254 +386,62 @@ public class ConfiguredTargetQuerySemanticsTest extends ConfiguredTargetQueryTes
             implementation = _rule_impl,
             attrs = {},
         )
-        """);
-  }
-
-  @Test
-  public void testConfig_target() throws Exception {
-    createConfigRulesAndBuild();
-
-    assertThat(eval("config(//test:target_dep, target)")).isEqualTo(eval("//test:target_dep"));
-
-    getHelper().setWholeTestUniverseScope("test:my_rule");
-
-    assertThat(eval("config(//test:target_dep, target)")).isEqualTo(eval("//test:target_dep"));
-    EvalThrowsResult execResult = evalThrows("config(//test:exec_dep, target)", true);
-    assertThat(execResult.getMessage())
-        .isEqualTo("No target (in) //test:exec_dep could be found in the 'target' configuration");
-    assertConfigurableQueryCode(
-        execResult.getFailureDetail(), ConfigurableQuery.Code.TARGET_MISSING);
-
-    BuildConfigurationValue configuration =
-        getConfiguration(Iterables.getOnlyElement(eval("config(//test:dep, target)")));
-
-    assertThat(configuration).isNotNull();
-    assertThat(configuration.isExecConfiguration()).isFalse();
-    assertThat(configuration.isToolConfiguration()).isFalse();
-  }
-
-  @Test
-  public void testConfig_nullConfig() throws Exception {
-    writeFile(
-        "test/BUILD",
-        """
-        load("@rules_java//java:defs.bzl", "java_library")
-        java_library(
-            name = "my_java",
-            srcs = ["foo.java"],
+        
+        """.trimIndent()
         )
-        """);
-
-    assertThat(getConfiguration(Iterables.getOnlyElement(eval("config(//test:foo.java,null)"))))
-        .isNull();
-  }
-
-  @Test
-  public void testConfig_configHash() throws Exception {
-    createConfigTransitioningRuleClass();
-    writeFile(
-        "test/BUILD",
-        """
-        load("//test:rules.bzl", "rule_with_deps_transition", "simple_rule", "string_flag")
-
-        string_flag(
-            name = "my_flag",
-            build_setting_default = "",
-        )
-
-        rule_with_deps_transition(
-            name = "buildme",
-            deps = [":mydep"],
-        )
-
-        simple_rule(name = "mydep")
-        """);
-
-    // If we don't set --universe_scope=//test:buildme, cquery builds both //test:buildme and
-    // //test:mydep as top-level targets. That means //test:mydep will have two configured targets:
-    // one under the transitioned configuration and one under the top-level configuration. By
-    // setting --universe_scope we ensure only the transitioned version exists.
-    helper.setUniverseScope("//test:buildme");
-    helper.setQuerySettings(Setting.ONLY_TARGET_DEPS, Setting.NO_IMPLICIT_DEPS);
-    Set<CqueryNode> result = eval("deps(//test:buildme, 1)" + getDependencyCorrection());
-    assertThat(result).hasSize(2);
-
-    ImmutableList<CqueryNode> stableOrderList = ImmutableList.copyOf(result);
-    int myDepIndex = stableOrderList.get(0).getLabel().toString().equals("//test:mydep") ? 0 : 1;
-    BuildConfigurationValue myDepConfig = getConfiguration(stableOrderList.get(myDepIndex));
-    BuildConfigurationValue stringFlagConfig =
-        getConfiguration(stableOrderList.get(1 - myDepIndex));
-
-    // Note: eval() resets the universe scope after each call. We have to xplicitly set it again.
-    helper.setUniverseScope("//test:buildme");
-    assertThat(eval("config(//test:mydep, " + myDepConfig.checksum() + ")")).hasSize(1);
-
-    helper.setUniverseScope("//test:buildme");
-    QueryException e =
-        assertThrows(
-            QueryException.class,
-            () -> eval("config(//test:mydep, " + stringFlagConfig.checksum() + ")"));
-    assertThat(e)
-        .hasMessageThat()
-        .contains("No target (in) //test:mydep could be found in the configuration with checksum");
-  }
-
-  @Test
-  public void testConfig_configHashPrefix() throws Exception {
-    createConfigRulesAndBuild();
-    writeFile("mytest/BUILD", "simple_rule(name = 'mytarget')");
-
-    Set<CqueryNode> result = eval("//mytest:mytarget");
-    String configHash = getConfiguration(Iterables.getOnlyElement(result)).checksum();
-    String hashPrefix = configHash.substring(0, configHash.length() / 2);
-
-    Set<CqueryNode> resultFromPrefix = eval("config(//mytest:mytarget," + hashPrefix + ")");
-    assertThat(resultFromPrefix).containsExactlyElementsIn(result);
-  }
-
-  @Test
-  public void testConfig_configHashUnknownPrefix() throws Exception {
-    createConfigRulesAndBuild();
-    writeFile("mytest/BUILD", "simple_rule(name = 'mytarget')");
-
-    Set<CqueryNode> result = eval("//mytest:mytarget");
-    String configHash = getConfiguration(Iterables.getOnlyElement(result)).checksum();
-    String rightPrefix = configHash.substring(0, configHash.length() / 2);
-    char lastChar = rightPrefix.charAt(rightPrefix.length() - 1);
-    String wrongPrefix = rightPrefix.substring(0, rightPrefix.length() - 1) + (char) (lastChar + 1);
-
-    QueryException e =
-        assertThrows(
-            QueryException.class, () -> eval("config(//mytest:mytarget," + wrongPrefix + ")"));
-    assertConfigurableQueryCode(
-        e.getFailureDetail(), ConfigurableQuery.Code.INCORRECT_CONFIG_ARGUMENT_ERROR);
-    assertThat(e)
-        .hasMessageThat()
-        .contains("config()'s second argument must identify a unique configuration");
-  }
-
-  @Test
-  public void testConfig_anyExec() throws Exception {
-    createConfigRulesAndBuild();
-
-    // Needed to prime exec_dep with //test:my_rule which configures it in exec.
-    Set<CqueryNode> unused = eval("//test:my_rule");
-    Set<CqueryNode> resultFromAnyExec = eval("config(//test:exec_dep, anyexec)");
-    assertThat(resultFromAnyExec).hasSize(1);
-    CqueryNode node = Iterables.getOnlyElement(resultFromAnyExec);
-    assertThat(node.getDescription(LabelPrinter.legacy())).isEqualTo("//test:exec_dep");
-
-    BuildConfigurationValue execDepConfig = getConfiguration(node);
-    assertThat(execDepConfig.isExecConfiguration()).isTrue();
-  }
-
-  @Test
-  public void testConfig_exprArgumentFailure() throws Exception {
-    writeFile(
-        "test/BUILD",
-        """
-        load("@rules_java//java:defs.bzl", "java_library")
-        java_library(
-            name = "my_java",
-            srcs = ["foo.java"],
-        )
-        """);
-
-    EvalThrowsResult evalThrowsResult =
-        evalThrows(
-            "config(filter(\"??not-a-valid-regex\", //test:foo.java), null)",
-            /* unconditionallyThrows= */ true);
-    assertThat(evalThrowsResult.getMessage())
-        .startsWith("illegal 'filter' pattern regexp '??not-a-valid-regex'");
-    assertThat(evalThrowsResult.getFailureDetail().hasQuery()).isTrue();
-    assertThat(evalThrowsResult.getFailureDetail().getQuery().getCode())
-        .isEqualTo(Code.SYNTAX_ERROR);
-  }
-
-  @Test
-  public void testExecTransitionNotFilteredByNoToolDeps() throws Exception {
-    createConfigRulesAndBuild();
-    helper.setQuerySettings(Setting.ONLY_TARGET_DEPS, Setting.NO_IMPLICIT_DEPS);
-    assertThat(evalToListOfStrings("deps(//test:my_rule)" + getDependencyCorrection()))
-        .containsExactly("//test:my_rule", "//test:target_dep", "//test:dep");
-  }
-
-  @Test
-  public void testRecursiveTargetPatternNeverThrowsError() throws Exception {
-    Path parent =
-        getHelper()
-            .getScratch()
-            .file("parent/BUILD", "filegroup(name = 'parent')")
-            .getParentDirectory();
-    Path child = parent.getRelative("child");
-    child.createDirectory();
-    Path badBuild = child.getRelative("BUILD");
-    badBuild.createSymbolicLink(badBuild);
-
-    helper.setKeepGoing(true);
-    assertThat(eval("//parent:all")).isEqualTo(eval("//parent:parent"));
-
-    helper.setKeepGoing(false);
-    getHelper().turnOffFailFast();
-    TargetParsingException e =
-        assertThrows(TargetParsingException.class, () -> eval("//parent/..."));
-    assertThat(e)
-        .hasMessageThat()
-        .isEqualTo(
-            "error loading package under directory 'parent': no such package 'parent/child':"
-                + " Symlink cycle detected while trying to find BUILD file"
-                + " /workspace/parent/child/BUILD");
-    assertThat(e.getDetailedExitCode().getFailureDetail().getPackageLoading().getCode())
-        .isEqualTo(FailureDetails.PackageLoading.Code.SYMLINK_CYCLE_OR_INFINITE_EXPANSION);
-  }
-
-  // Regression test for b/175739699
-  @Test
-  public void testRecursiveTargetPatternOutsideOfScopeFailsGracefully() throws Exception {
-    writeFile("testA/BUILD", "filegroup(name = 'testA')");
-    writeFile("testB/BUILD", "filegroup(name = 'testB')");
-    writeFile("testB/testC/BUILD", "filegroup(name = 'testC')");
-    helper.setUniverseScope("//testA");
-    QueryException e = assertThrows(QueryException.class, () -> eval("//testB/..."));
-    assertThat(e.getFailureDetail().getQuery().getCode())
-        .isEqualTo(Query.Code.TARGET_NOT_IN_UNIVERSE_SCOPE);
-    assertThat(e).hasMessageThat().contains("package is not in scope");
-  }
-
-  @Override
-  @Test
-  public void testMultipleTopLevelConfigurations_nullConfigs() throws Exception {
-    writeFile(
-        "test/BUILD",
-        """
-        load("@rules_java//java:defs.bzl", "java_library")
-        java_library(
-            name = "my_java",
-            srcs = ["foo.java"],
-        )
-        """);
-
-    Set<CqueryNode> result = eval("//test:my_java+//test:foo.java");
-
-    assertThat(result).hasSize(2);
-
-    Iterator<CqueryNode> resultIterator = result.iterator();
-    CqueryNode first = resultIterator.next();
-    if (first.getLabel().toString().equals("//test:foo.java")) {
-      assertThat(getConfiguration(first)).isNull();
-      assertThat(getConfiguration(resultIterator.next())).isNotNull();
-    } else {
-      assertThat(getConfiguration(first)).isNotNull();
-      assertThat(getConfiguration(resultIterator.next())).isNull();
     }
-  }
 
-  @Test
-  public void testSomePath_depInCustomConfiguration() throws Exception {
-    createConfigTransitioningRuleClass();
-    writeFile(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testConfig_target() {
+        createConfigRulesAndBuild()
+
+        Truth.assertThat(eval("config(//test:target_dep, target)")).isEqualTo(eval("//test:target_dep"))
+
+        getHelper().setWholeTestUniverseScope("test:my_rule")
+
+        Truth.assertThat(eval("config(//test:target_dep, target)")).isEqualTo(eval("//test:target_dep"))
+        val execResult: EvalThrowsResult = evalThrows("config(//test:exec_dep, target)", true)
+        Truth.assertThat(execResult.getMessage())
+            .isEqualTo("No target (in) //test:exec_dep could be found in the 'target' configuration")
+        PostAnalysisQueryTest.Companion.assertConfigurableQueryCode(
+            execResult.getFailureDetail(), ConfigurableQuery.Code.TARGET_MISSING
+        )
+
+        val configuration: BuildConfigurationValue =
+            getConfiguration(com.google.common.collect.Iterables.getOnlyElement<CqueryNode?>(eval("config(//test:dep, target)")))
+
+        assertThat(configuration).isNotNull()
+        assertThat(configuration.isExecConfiguration()).isFalse()
+        assertThat(configuration.isToolConfiguration()).isFalse()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testConfig_nullConfig() {
+        writeFile(
+            "test/BUILD",
+            """
+        load("@rules_java//java:defs.bzl", "java_library")
+        java_library(
+            name = "my_java",
+            srcs = ["foo.java"],
+        )
+        
+        """.trimIndent()
+        )
+
+        assertThat(getConfiguration(com.google.common.collect.Iterables.getOnlyElement<CqueryNode?>(eval("config(//test:foo.java,null)"))))
+            .isNull()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testConfig_configHash() {
+        createConfigTransitioningRuleClass()
+        writeFile(
+            "test/BUILD",
+            """
         load("//test:rules.bzl", "rule_with_deps_transition", "simple_rule", "string_flag")
 
         string_flag(
@@ -643,69 +455,308 @@ public class ConfiguredTargetQuerySemanticsTest extends ConfiguredTargetQueryTes
         )
 
         simple_rule(name = "mydep")
-        """);
+        
+        """.trimIndent()
+        )
 
-    // If we don't set --universe_scope=//test:buildme, then cquery builds both //test:buildme and
-    // //test:mydep as top-level targets. That means //test:mydep will have two configured targets:
-    // one under the transitioned configuration and one under the top-level configuration. In these
-    // cases cquery prefers the top-level configured one, which won't produce a match since that's
-    // not the one down this dependency path.
-    helper.setUniverseScope("//test:buildme");
-    Set<CqueryNode> result = eval("somepath(//test:buildme, //test:mydep)");
-    assertThat(result.stream().map(kct -> kct.getLabel().toString()).collect(Collectors.toList()))
-        .contains("//test:mydep");
-  }
+        // If we don't set --universe_scope=//test:buildme, cquery builds both //test:buildme and
+        // //test:mydep as top-level targets. That means //test:mydep will have two configured targets:
+        // one under the transitioned configuration and one under the top-level configuration. By
+        // setting --universe_scope we ensure only the transitioned version exists.
+        helper.setUniverseScope("//test:buildme")
+        helper.setQuerySettings(
+            com.google.devtools.build.lib.query2.engine.QueryEnvironment.Setting.ONLY_TARGET_DEPS,
+            com.google.devtools.build.lib.query2.engine.QueryEnvironment.Setting.NO_IMPLICIT_DEPS
+        )
+        val result: MutableSet<CqueryNode> = eval("deps(//test:buildme, 1)" + getDependencyCorrection())
+        Truth.assertThat(result).hasSize(2)
 
-  /** Return an empty BuildOptions for testing fragment dropping. * */
-  public static class RemoveTestOptionsTransitionFactory
-      implements TransitionFactory<AttributeTransitionData> {
+        val stableOrderList: com.google.common.collect.ImmutableList<CqueryNode?> =
+            com.google.common.collect.ImmutableList.copyOf<CqueryNode?>(result)
+        val myDepIndex = if (stableOrderList.get(0).getLabel().toString().equals("//test:mydep")) 0 else 1
+        val myDepConfig: BuildConfigurationValue = getConfiguration(stableOrderList.get(myDepIndex))
+        val stringFlagConfig: BuildConfigurationValue =
+            getConfiguration(stableOrderList.get(1 - myDepIndex))
 
-    @Override
-    public ConfigurationTransition create(AttributeTransitionData data) {
-      return new PatchTransition() {
-        @Override
-        public ImmutableSet<Class<? extends FragmentOptions>> requiresOptionFragments() {
-          return ImmutableSet.of(TestOptions.class);
+        // Note: eval() resets the universe scope after each call. We have to xplicitly set it again.
+        helper.setUniverseScope("//test:buildme")
+        Truth.assertThat(eval("config(//test:mydep, " + myDepConfig.checksum() + ")")).hasSize(1)
+
+        helper.setUniverseScope("//test:buildme")
+        val e: com.google.devtools.build.lib.query2.engine.QueryException? =
+            org.junit.Assert.assertThrows<com.google.devtools.build.lib.query2.engine.QueryException?>(
+                com.google.devtools.build.lib.query2.engine.QueryException::class.java,
+                org.junit.function.ThrowingRunnable { eval("config(//test:mydep, " + stringFlagConfig.checksum() + ")") })
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("No target (in) //test:mydep could be found in the configuration with checksum")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testConfig_configHashPrefix() {
+        createConfigRulesAndBuild()
+        writeFile("mytest/BUILD", "simple_rule(name = 'mytarget')")
+
+        val result: MutableSet<CqueryNode> = eval("//mytest:mytarget")
+        val configHash: String =
+            getConfiguration(com.google.common.collect.Iterables.getOnlyElement<CqueryNode?>(result)).checksum()
+        val hashPrefix: String = configHash.substring(0, configHash.length / 2)
+
+        val resultFromPrefix: MutableSet<CqueryNode> = eval("config(//mytest:mytarget," + hashPrefix + ")")
+        Truth.assertThat(resultFromPrefix).containsExactlyElementsIn(result)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testConfig_configHashUnknownPrefix() {
+        createConfigRulesAndBuild()
+        writeFile("mytest/BUILD", "simple_rule(name = 'mytarget')")
+
+        val result: MutableSet<CqueryNode> = eval("//mytest:mytarget")
+        val configHash: String =
+            getConfiguration(com.google.common.collect.Iterables.getOnlyElement<CqueryNode?>(result)).checksum()
+        val rightPrefix: String = configHash.substring(0, configHash.length / 2)
+        val lastChar = rightPrefix.get(rightPrefix.length - 1)
+        val wrongPrefix = rightPrefix.substring(0, rightPrefix.length - 1) + (lastChar.code + 1).toChar()
+
+        val e: com.google.devtools.build.lib.query2.engine.QueryException =
+            org.junit.Assert.assertThrows<com.google.devtools.build.lib.query2.engine.QueryException>(
+                com.google.devtools.build.lib.query2.engine.QueryException::class.java,
+                org.junit.function.ThrowingRunnable { eval("config(//mytest:mytarget," + wrongPrefix + ")") })
+        PostAnalysisQueryTest.Companion.assertConfigurableQueryCode(
+            e.getFailureDetail(), ConfigurableQuery.Code.INCORRECT_CONFIG_ARGUMENT_ERROR
+        )
+        Truth.assertThat(e)
+            .hasMessageThat()
+            .contains("config()'s second argument must identify a unique configuration")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testConfig_anyExec() {
+        createConfigRulesAndBuild()
+
+        // Needed to prime exec_dep with //test:my_rule which configures it in exec.
+        val unused: MutableSet<CqueryNode> = eval("//test:my_rule")
+        val resultFromAnyExec: MutableSet<CqueryNode> = eval("config(//test:exec_dep, anyexec)")
+        Truth.assertThat(resultFromAnyExec).hasSize(1)
+        val node: CqueryNode? = com.google.common.collect.Iterables.getOnlyElement<CqueryNode?>(resultFromAnyExec)
+        assertThat(node.getDescription(LabelPrinter.legacy())).isEqualTo("//test:exec_dep")
+
+        val execDepConfig: BuildConfigurationValue = getConfiguration(node)
+        assertThat(execDepConfig.isExecConfiguration()).isTrue()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testConfig_exprArgumentFailure() {
+        writeFile(
+            "test/BUILD",
+            """
+        load("@rules_java//java:defs.bzl", "java_library")
+        java_library(
+            name = "my_java",
+            srcs = ["foo.java"],
+        )
+        
+        """.trimIndent()
+        )
+
+        val evalThrowsResult: EvalThrowsResult =
+            evalThrows(
+                "config(filter(\"??not-a-valid-regex\", //test:foo.java), null)",  /* unconditionallyThrows= */
+                true
+            )
+        Truth.assertThat(evalThrowsResult.getMessage())
+            .startsWith("illegal 'filter' pattern regexp '??not-a-valid-regex'")
+        assertThat(evalThrowsResult.getFailureDetail().hasQuery()).isTrue()
+        assertThat(evalThrowsResult.getFailureDetail().getQuery().getCode())
+            .isEqualTo(Code.SYNTAX_ERROR)
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testExecTransitionNotFilteredByNoToolDeps() {
+        createConfigRulesAndBuild()
+        helper.setQuerySettings(
+            com.google.devtools.build.lib.query2.engine.QueryEnvironment.Setting.ONLY_TARGET_DEPS,
+            com.google.devtools.build.lib.query2.engine.QueryEnvironment.Setting.NO_IMPLICIT_DEPS
+        )
+        Truth.assertThat(evalToListOfStrings("deps(//test:my_rule)" + getDependencyCorrection()))
+            .containsExactly("//test:my_rule", "//test:target_dep", "//test:dep")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRecursiveTargetPatternNeverThrowsError() {
+        val parent: Path =
+            getHelper()
+                .getScratch()
+                .file("parent/BUILD", "filegroup(name = 'parent')")
+                .getParentDirectory()
+        val child: Path = parent.getRelative("child")
+        child.createDirectory()
+        val badBuild: Path = child.getRelative("BUILD")
+        badBuild.createSymbolicLink(badBuild)
+
+        helper.setKeepGoing(true)
+        Truth.assertThat(eval("//parent:all")).isEqualTo(eval("//parent:parent"))
+
+        helper.setKeepGoing(false)
+        getHelper().turnOffFailFast()
+        val e: TargetParsingException =
+            org.junit.Assert.assertThrows<T>(
+                TargetParsingException::class.java,
+                org.junit.function.ThrowingRunnable { eval("//parent/...") })
+        assertThat(e)
+            .hasMessageThat()
+            .isEqualTo(
+                ("error loading package under directory 'parent': no such package 'parent/child':"
+                        + " Symlink cycle detected while trying to find BUILD file"
+                        + " /workspace/parent/child/BUILD")
+            )
+        assertThat(e.getDetailedExitCode().getFailureDetail().getPackageLoading().getCode())
+            .isEqualTo(FailureDetails.PackageLoading.Code.SYMLINK_CYCLE_OR_INFINITE_EXPANSION)
+    }
+
+    // Regression test for b/175739699
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testRecursiveTargetPatternOutsideOfScopeFailsGracefully() {
+        writeFile("testA/BUILD", "filegroup(name = 'testA')")
+        writeFile("testB/BUILD", "filegroup(name = 'testB')")
+        writeFile("testB/testC/BUILD", "filegroup(name = 'testC')")
+        helper.setUniverseScope("//testA")
+        val e: com.google.devtools.build.lib.query2.engine.QueryException =
+            org.junit.Assert.assertThrows<com.google.devtools.build.lib.query2.engine.QueryException>(
+                com.google.devtools.build.lib.query2.engine.QueryException::class.java,
+                org.junit.function.ThrowingRunnable { eval("//testB/...") })
+        assertThat(e.getFailureDetail().getQuery().getCode())
+            .isEqualTo(Query.Code.TARGET_NOT_IN_UNIVERSE_SCOPE)
+        Truth.assertThat(e).hasMessageThat().contains("package is not in scope")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    override fun testMultipleTopLevelConfigurations_nullConfigs() {
+        writeFile(
+            "test/BUILD",
+            """
+        load("@rules_java//java:defs.bzl", "java_library")
+        java_library(
+            name = "my_java",
+            srcs = ["foo.java"],
+        )
+        
+        """.trimIndent()
+        )
+
+        val result: MutableSet<CqueryNode> = eval("//test:my_java+//test:foo.java")
+
+        Truth.assertThat(result).hasSize(2)
+
+        val resultIterator: MutableIterator<CqueryNode> = result.iterator()
+        val first: CqueryNode = resultIterator.next()
+        if (first.getLabel().toString().equals("//test:foo.java")) {
+            assertThat(getConfiguration(first)).isNull()
+            assertThat(getConfiguration(resultIterator.next())).isNotNull()
+        } else {
+            assertThat(getConfiguration(first)).isNotNull()
+            assertThat(getConfiguration(resultIterator.next())).isNull()
         }
+    }
 
-        @Override
-        public BuildOptions patch(BuildOptionsView options, EventHandler eventHandler) {
-          BuildOptions.Builder builder = BuildOptions.builder();
-          for (FragmentOptions option : options.underlying().getNativeOptions()) {
-            if (!(option instanceof TestOptions)) {
-              builder.addFragmentOptions(option);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testSomePath_depInCustomConfiguration() {
+        createConfigTransitioningRuleClass()
+        writeFile(
+            "test/BUILD",
+            """
+        load("//test:rules.bzl", "rule_with_deps_transition", "simple_rule", "string_flag")
+
+        string_flag(
+            name = "my_flag",
+            build_setting_default = "",
+        )
+
+        rule_with_deps_transition(
+            name = "buildme",
+            deps = [":mydep"],
+        )
+
+        simple_rule(name = "mydep")
+        
+        """.trimIndent()
+        )
+
+        // If we don't set --universe_scope=//test:buildme, then cquery builds both //test:buildme and
+        // //test:mydep as top-level targets. That means //test:mydep will have two configured targets:
+        // one under the transitioned configuration and one under the top-level configuration. In these
+        // cases cquery prefers the top-level configured one, which won't produce a match since that's
+        // not the one down this dependency path.
+        helper.setUniverseScope("//test:buildme")
+        val result: MutableSet<CqueryNode> = eval("somepath(//test:buildme, //test:mydep)")
+        Truth.assertThat(result.stream().map<Any?> { kct: CqueryNode -> kct.getLabel().toString() }
+            .collect(Collectors.toList()))
+            .contains("//test:mydep")
+    }
+
+    /** Return an empty BuildOptions for testing fragment dropping. *  */
+    class RemoveTestOptionsTransitionFactory
+
+        : TransitionFactory<AttributeTransitionData?> {
+        public override fun create(data: AttributeTransitionData?): ConfigurationTransition? {
+            return object : PatchTransition() {
+                public override fun requiresOptionFragments(): com.google.common.collect.ImmutableSet<java.lang.Class<out FragmentOptions?>?> {
+                    return com.google.common.collect.ImmutableSet.of<E?>(TestOptions::class.java)
+                }
+
+                public override fun patch(
+                    options: BuildOptionsView,
+                    eventHandler: com.google.devtools.build.lib.events.EventHandler?
+                ): BuildOptions {
+                    val builder: BuildOptions.Builder = BuildOptions.builder()
+                    for (option in options.underlying().getNativeOptions()) {
+                        if (option !is TestOptions) {
+                            builder.addFragmentOptions(option)
+                        }
+                    }
+                    // This does not copy over Starlark options!!
+                    return builder.build()
+                }
             }
-          }
-          // This does not copy over Starlark options!!
-          return builder.build();
         }
-      };
+
+        public override fun transitionType(): TransitionType {
+            return TransitionType.ATTRIBUTE
+        }
     }
 
-    @Override
-    public TransitionType transitionType() {
-      return TransitionType.ATTRIBUTE;
-    }
-  }
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testQueryHandlesDroppingFragments() {
+        val ruleDropOptions: MockRule =
+            MockRule {
+                MockRule.define(
+                    "rule_drop_options",
+                    attr("dep", LABEL)
+                        .allowedFileTypes(FileTypeSet.ANY_FILE)
+                        .cfg(RemoveTestOptionsTransitionFactory())
+                )
+            }
+        val simpleRule: MockRule =
+            MockRule {
+                MockRule.define(
+                    "simple_rule", attr("deps", LABEL_LIST).allowedFileTypes(FileTypeSet.ANY_FILE)
+                )
+            }
 
-  @Test
-  public void testQueryHandlesDroppingFragments() throws Exception {
-    MockRule ruleDropOptions =
-        () ->
-            MockRule.define(
-                "rule_drop_options",
-                attr("dep", LABEL)
-                    .allowedFileTypes(FileTypeSet.ANY_FILE)
-                    .cfg(new RemoveTestOptionsTransitionFactory()));
-    MockRule simpleRule =
-        () ->
-            MockRule.define(
-                "simple_rule", attr("deps", LABEL_LIST).allowedFileTypes(FileTypeSet.ANY_FILE));
-
-    helper.useRuleClassProvider(setRuleClassProviders(ruleDropOptions, simpleRule).build());
-    writeFile(
-        "test/BUILD",
-        """
+        helper.useRuleClassProvider(setRuleClassProviders(ruleDropOptions, simpleRule).build())
+        writeFile(
+            "test/BUILD",
+            """
         rule_drop_options(
             name = "top",
             dep = ":foo",
@@ -717,18 +768,21 @@ public class ConfiguredTargetQuerySemanticsTest extends ConfiguredTargetQueryTes
         )
 
         simple_rule(name = "bar")
-        """);
+        
+        """.trimIndent()
+        )
 
-    Set<CqueryNode> result = eval("somepath(//test:top, filter(//test:bar, deps(//test:top)))");
-    assertThat(result).isNotEmpty();
-  }
+        val result: MutableSet<CqueryNode> = eval("somepath(//test:top, filter(//test:bar, deps(//test:top)))")
+        Truth.assertThat(result).isNotEmpty()
+    }
 
-  @Test
-  public void testLabelExpressionsMatchesAllConfiguredTargetsWithLabel() throws Exception {
-    createConfigTransitioningRuleClass();
-    writeFile(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testLabelExpressionsMatchesAllConfiguredTargetsWithLabel() {
+        createConfigTransitioningRuleClass()
+        writeFile(
+            "test/BUILD",
+            """
         load("//test:rules.bzl", "rule_with_deps_transition", "simple_rule", "string_flag")
 
         string_flag(
@@ -742,22 +796,25 @@ public class ConfiguredTargetQuerySemanticsTest extends ConfiguredTargetQueryTes
         )
 
         simple_rule(name = "simple")
-        """);
+        
+        """.trimIndent()
+        )
 
-    helper.setUniverseScope("//test:transitioner,//test:simple");
-    Set<CqueryNode> result = eval("//test:simple");
-    assertThat(result.size()).isEqualTo(2);
-  }
+        helper.setUniverseScope("//test:transitioner,//test:simple")
+        val result: MutableSet<CqueryNode> = eval("//test:simple")
+        Truth.assertThat(result.size).isEqualTo(2)
+    }
 
-  @Test
-  public void testConfigFunctionRefinesMultipleMatches() throws Exception {
-    // Peer to testLabelExpressionsMatchesAllConfiguredTargetsWithLabel. The point of that test is
-    // to show "cquery //foo:bar" might return multiple configured targets. The point of this test
-    // is to show that config() can refine the same query to a specific one.
-    createConfigTransitioningRuleClass();
-    writeFile(
-        "test/BUILD",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testConfigFunctionRefinesMultipleMatches() {
+        // Peer to testLabelExpressionsMatchesAllConfiguredTargetsWithLabel. The point of that test is
+        // to show "cquery //foo:bar" might return multiple configured targets. The point of this test
+        // is to show that config() can refine the same query to a specific one.
+        createConfigTransitioningRuleClass()
+        writeFile(
+            "test/BUILD",
+            """
         load("//test:rules.bzl", "rule_with_deps_transition", "simple_rule", "string_flag")
 
         string_flag(
@@ -771,18 +828,21 @@ public class ConfiguredTargetQuerySemanticsTest extends ConfiguredTargetQueryTes
         )
 
         simple_rule(name = "simple")
-        """);
+        
+        """.trimIndent()
+        )
 
-    helper.setUniverseScope("//test:transitioner,//test:simple");
-    Set<CqueryNode> result = eval("config(//test:simple, target)");
-    assertThat(result.size()).isEqualTo(1);
-  }
+        helper.setUniverseScope("//test:transitioner,//test:simple")
+        val result: MutableSet<CqueryNode> = eval("config(//test:simple, target)")
+        Truth.assertThat(result.size).isEqualTo(1)
+    }
 
-  @Test
-  public void testAspectDepsAppearInCqueryDeps() throws Exception {
-    writeFile(
-        "donut/test.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAspectDepsAppearInCqueryDeps() {
+        writeFile(
+            "donut/test.bzl",
+            """
         TestAspectInfo = provider("TestAspectInfo", fields = ["info"])
 
         def _test_aspect_impl(target, ctx):
@@ -815,10 +875,12 @@ public class ConfiguredTargetQuerySemanticsTest extends ConfiguredTargetQueryTes
                 ),
             },
         )
-        """);
-    writeFile(
-        "donut/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        writeFile(
+            "donut/BUILD",
+            """
         load(":test.bzl", "test_rule")
 
         filegroup(
@@ -834,37 +896,46 @@ public class ConfiguredTargetQuerySemanticsTest extends ConfiguredTargetQueryTes
             name = "test_rule",
             deps = [":test_rule_dep"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    helper.setQuerySettings(Setting.INCLUDE_ASPECTS, Setting.EXPLICIT_ASPECTS);
-    var result =
-        eval("filter(//donut, deps(//donut:test_rule))").stream()
-            .map(cf -> cf.getDescription(LabelPrinter.legacy()))
-            .collect(ImmutableList.toImmutableList());
-    assertThat(result)
-        .containsExactly(
-            "//donut:test_rule",
-            "//donut:test_rule_dep",
-            "//donut:test.bzl%_test_aspect of //donut:test_rule_dep",
-            "//donut:test.bzl",
-            "//donut:test_filegroup");
-  }
+        helper.setQuerySettings(
+            com.google.devtools.build.lib.query2.engine.QueryEnvironment.Setting.INCLUDE_ASPECTS,
+            com.google.devtools.build.lib.query2.engine.QueryEnvironment.Setting.EXPLICIT_ASPECTS
+        )
+        val result: com.google.common.collect.ImmutableList<Any> =
+            eval("filter(//donut, deps(//donut:test_rule))").stream()
+                .map<Any?> { cf: CqueryNode -> cf.getDescription(LabelPrinter.legacy()) }
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<Any?>())
+        Truth.assertThat(result)
+            .containsExactly(
+                "//donut:test_rule",
+                "//donut:test_rule_dep",
+                "//donut:test.bzl%_test_aspect of //donut:test_rule_dep",
+                "//donut:test.bzl",
+                "//donut:test_filegroup"
+            )
+    }
 
-  @Test
-  public void testToolchainPropagatingAspectDepsAppearInCqueryDeps() throws Exception {
-    writeFile(
-        "donut_toolchains/test_toolchain.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testToolchainPropagatingAspectDepsAppearInCqueryDeps() {
+        writeFile(
+            "donut_toolchains/test_toolchain.bzl",
+            """
         def _impl(ctx):
             return [platform_common.ToolchainInfo()]
 
         test_toolchain = rule(
             implementation = _impl,
         )
-        """);
-    writeFile(
-        "donut_toolchains/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        writeFile(
+            "donut_toolchains/BUILD",
+            """
         load("//donut_toolchains:test_toolchain.bzl", "test_toolchain")
 
         toolchain_type(name = "toolchain_type_1")
@@ -878,10 +949,12 @@ public class ConfiguredTargetQuerySemanticsTest extends ConfiguredTargetQueryTes
             toolchain = ":foo",
             toolchain_type = ":toolchain_type_1",
         )
-        """);
-    writeFile(
-        "donut/test.bzl",
-        """
+        
+        """.trimIndent()
+        )
+        writeFile(
+            "donut/test.bzl",
+            """
         TestAspectInfo = provider("TestAspectInfo", fields = ["info"])
 
         def _test_aspect_impl(target, ctx):
@@ -919,10 +992,12 @@ public class ConfiguredTargetQuerySemanticsTest extends ConfiguredTargetQueryTes
             _test_impl,
             toolchains = ["//donut_toolchains:toolchain_type_1"],
         )
-        """);
-    writeFile(
-        "donut/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        writeFile(
+            "donut/BUILD",
+            """
         load(":test.bzl", "test_rule", "rule_with_toolchain")
 
         filegroup(
@@ -938,33 +1013,40 @@ public class ConfiguredTargetQuerySemanticsTest extends ConfiguredTargetQueryTes
             name = "test_rule",
             deps = [":test_rule_dep"],
         )
-        """);
-    helper.setQuerySettings(Setting.INCLUDE_ASPECTS, Setting.EXPLICIT_ASPECTS);
-    ((PostAnalysisQueryHelper<CqueryNode>) helper)
-        .useConfiguration("--extra_toolchains=//donut_toolchains:foo_toolchain");
+        
+        """.trimIndent()
+        )
+        helper.setQuerySettings(
+            com.google.devtools.build.lib.query2.engine.QueryEnvironment.Setting.INCLUDE_ASPECTS,
+            com.google.devtools.build.lib.query2.engine.QueryEnvironment.Setting.EXPLICIT_ASPECTS
+        )
+        (helper as PostAnalysisQueryHelper<CqueryNode?>)
+            .useConfiguration("--extra_toolchains=//donut_toolchains:foo_toolchain")
 
-    var result =
-        eval("filter(//donut, deps(//donut:test_rule))").stream()
-            .map(cf -> cf.getDescription(LabelPrinter.legacy()))
-            .collect(ImmutableList.toImmutableList());
+        val result: com.google.common.collect.ImmutableList<Any> =
+            eval("filter(//donut, deps(//donut:test_rule))").stream()
+                .map<Any?> { cf: CqueryNode -> cf.getDescription(LabelPrinter.legacy()) }
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<Any?>())
 
-    assertThat(result)
-        .containsExactly(
-            "//donut:test_rule",
-            "//donut:test_rule_dep",
-            "//donut:test.bzl%_test_aspect of //donut:test_rule_dep",
-            "//donut:test.bzl",
-            "//donut:test_filegroup",
-            "//donut_toolchains:foo",
-            "//donut_toolchains:toolchain_type_1",
-            "//donut:test.bzl%_test_aspect of //donut_toolchains:foo");
-  }
+        Truth.assertThat(result)
+            .containsExactly(
+                "//donut:test_rule",
+                "//donut:test_rule_dep",
+                "//donut:test.bzl%_test_aspect of //donut:test_rule_dep",
+                "//donut:test.bzl",
+                "//donut:test_filegroup",
+                "//donut_toolchains:foo",
+                "//donut_toolchains:toolchain_type_1",
+                "//donut:test.bzl%_test_aspect of //donut_toolchains:foo"
+            )
+    }
 
-  @Test
-  public void testAspectOnAspectDepsAppearInCqueryDeps() throws Exception {
-    writeFile(
-        "donut/test.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAspectOnAspectDepsAppearInCqueryDeps() {
+        writeFile(
+            "donut/test.bzl",
+            """
         TestAspectInfo = provider("TestAspectInfo", fields = ["info"])
         TestAspectOnAspectInfo = provider("TestAspectOnAspectInfo", fields = ["info"])
 
@@ -1033,12 +1115,14 @@ public class ConfiguredTargetQuerySemanticsTest extends ConfiguredTargetQueryTes
                 ),
             },
         )
-        """);
-    writeFile("donut/test_aspect.file");
-    writeFile("donut/test_aspect_on_aspect.file");
-    writeFile(
-        "donut/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        writeFile("donut/test_aspect.file")
+        writeFile("donut/test_aspect_on_aspect.file")
+        writeFile(
+            "donut/BUILD",
+            """
         load(":test.bzl", "test_aspect_on_aspect_rule", "test_rule")
 
         filegroup(
@@ -1064,36 +1148,43 @@ public class ConfiguredTargetQuerySemanticsTest extends ConfiguredTargetQueryTes
             name = "test_aspect_on_aspect_rule",
             deps = ["test_rule"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    helper.setUniverseScope("//donut/...");
-    helper.setQuerySettings(Setting.INCLUDE_ASPECTS, Setting.EXPLICIT_ASPECTS);
-    var result =
-        eval("filter(//donut, deps(//donut:test_aspect_on_aspect_rule))").stream()
-            .map(cf -> cf.getDescription(LabelPrinter.legacy()))
-            .collect(toImmutableList());
-    assertThat(result)
-        .containsExactly(
-            "//donut:test.bzl%_test_aspect_on_aspect on top of"
-                + " [//donut:test.bzl%_test_aspect of //donut:test_rule_dep]",
-            "//donut:test.bzl%_test_aspect_on_aspect on top of"
-                + " [//donut:test.bzl%_test_aspect of //donut:test_rule]",
-            "//donut:test_rule_dep",
-            "//donut:test_rule",
-            "//donut:test.bzl%_test_aspect of //donut:test_rule_dep",
-            "//donut:test.bzl%_test_aspect of //donut:test_rule",
-            "//donut:test_aspect_on_aspect_rule",
-            "//donut:test_aspect.file",
-            "//donut:test_aspect_on_aspect_filegroup",
-            "//donut:test_aspect_on_aspect.file",
-            "//donut:test_aspect_filegroup");
-  }
+        helper.setUniverseScope("//donut/...")
+        helper.setQuerySettings(
+            com.google.devtools.build.lib.query2.engine.QueryEnvironment.Setting.INCLUDE_ASPECTS,
+            com.google.devtools.build.lib.query2.engine.QueryEnvironment.Setting.EXPLICIT_ASPECTS
+        )
+        val result: com.google.common.collect.ImmutableList<Any> =
+            eval("filter(//donut, deps(//donut:test_aspect_on_aspect_rule))").stream()
+                .map<Any?> { cf: CqueryNode -> cf.getDescription(LabelPrinter.legacy()) }
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<Any?>())
+        Truth.assertThat(result)
+            .containsExactly(
+                "//donut:test.bzl%_test_aspect_on_aspect on top of"
+                        + " [//donut:test.bzl%_test_aspect of //donut:test_rule_dep]",
+                "//donut:test.bzl%_test_aspect_on_aspect on top of"
+                        + " [//donut:test.bzl%_test_aspect of //donut:test_rule]",
+                "//donut:test_rule_dep",
+                "//donut:test_rule",
+                "//donut:test.bzl%_test_aspect of //donut:test_rule_dep",
+                "//donut:test.bzl%_test_aspect of //donut:test_rule",
+                "//donut:test_aspect_on_aspect_rule",
+                "//donut:test_aspect.file",
+                "//donut:test_aspect_on_aspect_filegroup",
+                "//donut:test_aspect_on_aspect.file",
+                "//donut:test_aspect_filegroup"
+            )
+    }
 
-  @Test
-  public void testAspectDepsAppearInCqueryRdeps() throws Exception {
-    writeFile(
-        "donut/test.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAspectDepsAppearInCqueryRdeps() {
+        writeFile(
+            "donut/test.bzl",
+            """
         TestAspectInfo = provider("TestAspectInfo", fields = ["info"])
 
         def _test_aspect_impl(target, ctx):
@@ -1126,10 +1217,12 @@ public class ConfiguredTargetQuerySemanticsTest extends ConfiguredTargetQueryTes
                 ),
             },
         )
-        """);
-    writeFile(
-        "donut/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        writeFile(
+            "donut/BUILD",
+            """
         load(":test.bzl", "test_rule")
 
         filegroup(
@@ -1145,39 +1238,48 @@ public class ConfiguredTargetQuerySemanticsTest extends ConfiguredTargetQueryTes
             name = "test_rule",
             deps = [":test_rule_dep"],
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    helper.setQuerySettings(Setting.INCLUDE_ASPECTS, Setting.EXPLICIT_ASPECTS);
-    var result =
-        eval("rdeps(//donut/..., //donut:test_filegroup)").stream()
-            .map(cf -> cf.getDescription(LabelPrinter.legacy()))
-            .collect(toImmutableList());
-    assertThat(result)
-        .containsExactly(
-            "//donut:test_filegroup",
-            "//donut:test_rule",
-            "//donut:test.bzl%_test_aspect of //donut:test_rule_dep");
-  }
+        helper.setQuerySettings(
+            com.google.devtools.build.lib.query2.engine.QueryEnvironment.Setting.INCLUDE_ASPECTS,
+            com.google.devtools.build.lib.query2.engine.QueryEnvironment.Setting.EXPLICIT_ASPECTS
+        )
+        val result: com.google.common.collect.ImmutableList<Any> =
+            eval("rdeps(//donut/..., //donut:test_filegroup)").stream()
+                .map<Any?> { cf: CqueryNode -> cf.getDescription(LabelPrinter.legacy()) }
+                .collect(com.google.common.collect.ImmutableList.toImmutableList<Any?>())
+        Truth.assertThat(result)
+            .containsExactly(
+                "//donut:test_filegroup",
+                "//donut:test_rule",
+                "//donut:test.bzl%_test_aspect of //donut:test_rule_dep"
+            )
+    }
 
-  @Test
-  public void testAttrRespectsConfiguration() throws Exception {
-    MockRule ruleWithList =
-        () -> MockRule.define("rule_with_list", attr("string_values", STRING_LIST));
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testAttrRespectsConfiguration() {
+        val ruleWithList: MockRule =
+            MockRule { MockRule.define("rule_with_list", attr("string_values", STRING_LIST)) }
 
-    helper.useRuleClassProvider(setRuleClassProviders(ruleWithList).build());
+        helper.useRuleClassProvider(setRuleClassProviders(ruleWithList).build())
 
-    writeFile(
-        "test/BUILD",
-        """
+        writeFile(
+            "test/BUILD",
+            """
         load(":flag.bzl", "bool_flag")
         bool_flag(
             name = "enable",
             build_setting_default = False,
         )
-        """);
-    writeFile(
-        "configurable/BUILD",
-        """
+        
+        """.trimIndent()
+        )
+        writeFile(
+            "configurable/BUILD",
+            """
         config_setting(
             name = "enabled",
             define_values = {"test_enable": "true"})
@@ -1188,28 +1290,31 @@ public class ConfiguredTargetQuerySemanticsTest extends ConfiguredTargetQueryTes
                 '//conditions:default': ['quux'],
             }),
         )
-        """);
+        
+        """.trimIndent()
+        )
 
-    // Using default configuration, 'quux' is the only value in the attribute.
-    assertThat(evalToString("attr(string_values, 'foo', '//configurable:target')")).isEmpty();
-    assertThat(evalToString("attr(string_values, 'bar', '//configurable:target')")).isEmpty();
-    assertThat(evalToString("attr(string_values, 'quux', '//configurable:target')"))
-        .isEqualTo("//configurable:target");
+        // Using default configuration, 'quux' is the only value in the attribute.
+        Truth.assertThat(evalToString("attr(string_values, 'foo', '//configurable:target')")).isEmpty()
+        Truth.assertThat(evalToString("attr(string_values, 'bar', '//configurable:target')")).isEmpty()
+        Truth.assertThat(evalToString("attr(string_values, 'quux', '//configurable:target')"))
+            .isEqualTo("//configurable:target")
 
-    // When the flag is enabled, 'foo' and 'bar' are present, but not 'quux'
-    ((PostAnalysisQueryHelper<CqueryNode>) helper).useConfiguration("--define=test_enable=true");
-    assertThat(evalToString("attr(string_values, 'foo', '//configurable:target')"))
-        .isEqualTo("//configurable:target");
-    assertThat(evalToString("attr(string_values, 'bar', '//configurable:target')"))
-        .isEqualTo("//configurable:target");
-    assertThat(evalToString("attr(string_values, 'quux', '//configurable:target')")).isEmpty();
-  }
+        // When the flag is enabled, 'foo' and 'bar' are present, but not 'quux'
+        (helper as PostAnalysisQueryHelper<CqueryNode?>).useConfiguration("--define=test_enable=true")
+        Truth.assertThat(evalToString("attr(string_values, 'foo', '//configurable:target')"))
+            .isEqualTo("//configurable:target")
+        Truth.assertThat(evalToString("attr(string_values, 'bar', '//configurable:target')"))
+            .isEqualTo("//configurable:target")
+        Truth.assertThat(evalToString("attr(string_values, 'quux', '//configurable:target')")).isEmpty()
+    }
 
-  @Test
-  public void testOnlySelectedDormantDepsReturned() throws Exception {
-    writeFile(
-        "a/a.bzl",
-        """
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testOnlySelectedDormantDepsReturned() {
+        writeFile(
+            "a/a.bzl",
+            """
         ComponentInfo = provider(fields=["dormant"])
 
         def _bin_impl(ctx):
@@ -1231,11 +1336,13 @@ public class ConfiguredTargetQuerySemanticsTest extends ConfiguredTargetQueryTes
           implementation = _component_impl,
           dependency_resolution_rule = True,
           attrs = { "impl": attr.dormant_label_list() })
-        """);
+        
+        """.trimIndent()
+        )
 
-    writeFile(
-        "a/BUILD",
-        """
+        writeFile(
+            "a/BUILD",
+            """
         load("a.bzl", "bin", "component")
 
         filegroup(name="a_yes")
@@ -1243,19 +1350,22 @@ public class ConfiguredTargetQuerySemanticsTest extends ConfiguredTargetQueryTes
 
         bin(name="bin", dep=":c")
         component(name="c", impl=[":a_yes", "b_no"])
-        """);
+        
+        """.trimIndent()
+        )
 
-    ((PostAnalysisQueryHelper<CqueryNode>) helper).useConfiguration("--experimental_dormant_deps");
-    ImmutableList<String> deps = evalToListOfStrings("deps('//a:bin')");
-    assertThat(deps).containsAtLeast("//a:bin", "//a:c", "//a:a_yes");
-    assertThat(deps).doesNotContain("//a:b_no");
-  }
+        (helper as PostAnalysisQueryHelper<CqueryNode?>).useConfiguration("--experimental_dormant_deps")
+        val deps: com.google.common.collect.ImmutableList<String>? = evalToListOfStrings("deps('//a:bin')")
+        Truth.assertThat(deps).containsAtLeast("//a:bin", "//a:c", "//a:a_yes")
+        Truth.assertThat(deps).doesNotContain("//a:b_no")
+    }
 
-  @Test
-  public void testMaterializerRuleQuery() throws Exception {
-    writeFile(
-        "defs.bzl",
-"""
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMaterializerRuleQuery() {
+        writeFile(
+            "defs.bzl",
+            """
 # Component ######################################
 
 ComponentInfo = provider(fields = ["output"])
@@ -1297,11 +1407,13 @@ binary = rule(
         "deps": attr.label_list(providers = [ComponentInfo]),
     },
 )
-""");
 
-    writeFile(
-        "BUILD",
-"""
+""".trimIndent()
+        )
+
+        writeFile(
+            "BUILD",
+            """
 load(":defs.bzl", "component", "component_selector", "binary")
 
 binary(
@@ -1324,33 +1436,36 @@ component(name = "b_yes")
 component(name = "c_no")
 component(name = "d_no")
 component(name = "zzz")
-""");
 
-    ((PostAnalysisQueryHelper<CqueryNode>) helper).useConfiguration("--experimental_dormant_deps");
-    ImmutableList<String> directDeps = evalToListOfStrings("deps('//:bin', 1)");
-    // The direct deps should not contain the unanalyzed (i.e. non-selected) dormant deps.
-    // cquery should also include the materializer rule in the direct deps, even though it
-    // "disappears" from the perspective of the depending target, since changing the materializer
-    // rule (e.g. its implementation function) could change the depending target.
-    assertThat(directDeps).containsAtLeast("//:a_yes", "//:b_yes", "//:component_selector");
-    assertThat(directDeps).containsNoneOf("//:c_no", "//:d_no");
+""".trimIndent()
+        )
 
-    ImmutableList<String> allDeps = evalToListOfStrings("deps('//:bin')");
-    // All deps should still not contain the non-selected dormant deps.
-    assertThat(allDeps).containsAtLeast("//:a_yes", "//:b_yes", "//:component_selector");
-    assertThat(allDeps).containsNoneOf("//:c_no", "//:d_no");
+        (helper as PostAnalysisQueryHelper<CqueryNode?>).useConfiguration("--experimental_dormant_deps")
+        val directDeps: com.google.common.collect.ImmutableList<String>? = evalToListOfStrings("deps('//:bin', 1)")
+        // The direct deps should not contain the unanalyzed (i.e. non-selected) dormant deps.
+        // cquery should also include the materializer rule in the direct deps, even though it
+        // "disappears" from the perspective of the depending target, since changing the materializer
+        // rule (e.g. its implementation function) could change the depending target.
+        Truth.assertThat(directDeps).containsAtLeast("//:a_yes", "//:b_yes", "//:component_selector")
+        Truth.assertThat(directDeps).containsNoneOf("//:c_no", "//:d_no")
 
-    // component_selector shouldn't have deps because they're all through a dormant_label_list.
-    ImmutableList<String> componentSelectorDeps =
-        evalToListOfStrings("deps('//:component_selector', 1)");
-    assertThat(componentSelectorDeps).containsNoneOf("//:a_yes", "//:b_yes", "//:c_no", "//:d_no");
-  }
+        val allDeps: com.google.common.collect.ImmutableList<String>? = evalToListOfStrings("deps('//:bin')")
+        // All deps should still not contain the non-selected dormant deps.
+        Truth.assertThat(allDeps).containsAtLeast("//:a_yes", "//:b_yes", "//:component_selector")
+        Truth.assertThat(allDeps).containsNoneOf("//:c_no", "//:d_no")
 
-  @Test
-  public void testMaterializerRuleRealDepsQuery() throws Exception {
-    writeFile(
-        "defs.bzl",
-"""
+        // component_selector shouldn't have deps because they're all through a dormant_label_list.
+        val componentSelectorDeps: com.google.common.collect.ImmutableList<String>? =
+            evalToListOfStrings("deps('//:component_selector', 1)")
+        Truth.assertThat(componentSelectorDeps).containsNoneOf("//:a_yes", "//:b_yes", "//:c_no", "//:d_no")
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testMaterializerRuleRealDepsQuery() {
+        writeFile(
+            "defs.bzl",
+            """
 # Component ######################################
 
 ComponentInfo = provider(fields = ["output", "info"])
@@ -1396,11 +1511,13 @@ binary = rule(
         "deps": attr.label_list(providers = [ComponentInfo]),
     },
 )
-""");
 
-    writeFile(
-        "BUILD",
-"""
+""".trimIndent()
+        )
+
+        writeFile(
+            "BUILD",
+            """
 load(":defs.bzl", "component", "component_selector", "binary")
 
 binary(
@@ -1423,25 +1540,27 @@ component(name = "b", info = "yes")
 component(name = "c", info = "no")
 component(name = "d", info = "no")
 component(name = "zzz")
-""");
 
-    ((PostAnalysisQueryHelper<CqueryNode>) helper).useConfiguration("--experimental_dormant_deps");
-    ImmutableList<String> directDeps = evalToListOfStrings("deps('//:bin', 1)");
-    // The direct deps of bin should not contain the non-selected deps.
-    // cquery should also include the materializer rule in the direct deps, even though it
-    // "disappears" from the perspective of the depending target, since changing the materializer
-    // rule (e.g. its implementation function) could change the depending target.
-    assertThat(directDeps).containsAtLeast("//:a", "//:b", "//:component_selector");
-    assertThat(directDeps).containsNoneOf("//:c", "//:d");
+""".trimIndent()
+        )
 
-    // All deps will contain the non-selected deps because they're non-dormant ("real") deps of the
-    // materializer rule.
-    ImmutableList<String> allDeps = evalToListOfStrings("deps('//:bin')");
-    assertThat(allDeps).containsAtLeast("//:a", "//:b", "//:c", "//:d", "//:component_selector");
+        (helper as PostAnalysisQueryHelper<CqueryNode?>).useConfiguration("--experimental_dormant_deps")
+        val directDeps: com.google.common.collect.ImmutableList<String>? = evalToListOfStrings("deps('//:bin', 1)")
+        // The direct deps of bin should not contain the non-selected deps.
+        // cquery should also include the materializer rule in the direct deps, even though it
+        // "disappears" from the perspective of the depending target, since changing the materializer
+        // rule (e.g. its implementation function) could change the depending target.
+        Truth.assertThat(directDeps).containsAtLeast("//:a", "//:b", "//:component_selector")
+        Truth.assertThat(directDeps).containsNoneOf("//:c", "//:d")
 
-    // component_selector all the deps because they're all through a label_list.
-    ImmutableList<String> componentSelectorDeps =
-        evalToListOfStrings("deps('//:component_selector', 1)");
-    assertThat(componentSelectorDeps).containsAtLeast("//:a", "//:b", "//:c", "//:d");
-  }
+        // All deps will contain the non-selected deps because they're non-dormant ("real") deps of the
+        // materializer rule.
+        val allDeps: com.google.common.collect.ImmutableList<String>? = evalToListOfStrings("deps('//:bin')")
+        Truth.assertThat(allDeps).containsAtLeast("//:a", "//:b", "//:c", "//:d", "//:component_selector")
+
+        // component_selector all the deps because they're all through a label_list.
+        val componentSelectorDeps: com.google.common.collect.ImmutableList<String>? =
+            evalToListOfStrings("deps('//:component_selector', 1)")
+        Truth.assertThat(componentSelectorDeps).containsAtLeast("//:a", "//:b", "//:c", "//:d")
+    }
 }

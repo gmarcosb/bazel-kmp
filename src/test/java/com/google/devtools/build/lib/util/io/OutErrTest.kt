@@ -11,65 +11,64 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.util.io;
+package com.google.devtools.build.lib.util.io
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.analysis.util.ConfigurationTestCase.create
+import com.google.devtools.build.lib.packages.util.MockToolsConfig.create
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
+import java.io.ByteArrayOutputStream
 
-import java.io.ByteArrayOutputStream;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests [OutErr].  */
+@RunWith(JUnit4::class)
+class OutErrTest {
+    private val out = ByteArrayOutputStream()
+    private val err = ByteArrayOutputStream()
+    private val outErr: OutErr = OutErr.create(out, err)
 
-/** Tests {@link OutErr}. */
-@RunWith(JUnit4.class)
-public class OutErrTest {
+    @Test
+    fun testRetainsOutErr() {
+        assertThat(outErr.getOutputStream()).isSameInstanceAs(out)
+        assertThat(outErr.getErrorStream()).isSameInstanceAs(err)
+    }
 
-  private ByteArrayOutputStream out = new ByteArrayOutputStream();
-  private ByteArrayOutputStream err = new ByteArrayOutputStream();
-  private OutErr outErr = OutErr.create(out, err);
+    @Test
+    fun testPrintsToOut() {
+        outErr.printOut("Hello, world.")
+        Truth.assertThat(String(out.toByteArray())).isEqualTo("Hello, world.")
+    }
 
-  @Test
-  public void testRetainsOutErr() {
-    assertThat(outErr.getOutputStream()).isSameInstanceAs(out);
-    assertThat(outErr.getErrorStream()).isSameInstanceAs(err);
-  }
+    @Test
+    fun testPrintsToErr() {
+        outErr.printErr("Hello, moon.")
+        Truth.assertThat(String(err.toByteArray())).isEqualTo("Hello, moon.")
+    }
 
-  @Test
-  public void testPrintsToOut() {
-    outErr.printOut("Hello, world.");
-    assertThat(new String(out.toByteArray())).isEqualTo("Hello, world.");
-  }
+    @Test
+    fun testPrintsToOutWithANewline() {
+        outErr.printOutLn("With a newline.")
+        Truth.assertThat(String(out.toByteArray())).isEqualTo("With a newline.\n")
+    }
 
-  @Test
-  public void testPrintsToErr() {
-    outErr.printErr("Hello, moon.");
-    assertThat(new String(err.toByteArray())).isEqualTo("Hello, moon.");
-  }
+    @Test
+    fun testPrintsToErrWithANewline() {
+        outErr.printErrLn("With a newline.")
+        Truth.assertThat(String(err.toByteArray())).isEqualTo("With a newline.\n")
+    }
 
-  @Test
-  public void testPrintsToOutWithANewline() {
-    outErr.printOutLn("With a newline.");
-    assertThat(new String(out.toByteArray())).isEqualTo("With a newline.\n");
-  }
+    @Test
+    fun testPrintsTwoLinesToOut() {
+        outErr.printOutLn("line 1")
+        outErr.printOutLn("line 2")
+        Truth.assertThat(String(out.toByteArray())).isEqualTo("line 1\nline 2\n")
+    }
 
-  @Test
-  public void testPrintsToErrWithANewline() {
-    outErr.printErrLn("With a newline.");
-    assertThat(new String(err.toByteArray())).isEqualTo("With a newline.\n");
-  }
-
-  @Test
-  public void testPrintsTwoLinesToOut() {
-    outErr.printOutLn("line 1");
-    outErr.printOutLn("line 2");
-    assertThat(new String(out.toByteArray())).isEqualTo("line 1\nline 2\n");
-  }
-
-  @Test
-  public void testPrintsTwoLinesToErr() {
-    outErr.printErrLn("line 1");
-    outErr.printErrLn("line 2");
-    assertThat(new String(err.toByteArray())).isEqualTo("line 1\nline 2\n");
-  }
-
+    @Test
+    fun testPrintsTwoLinesToErr() {
+        outErr.printErrLn("line 1")
+        outErr.printErrLn("line 2")
+        Truth.assertThat(String(err.toByteArray())).isEqualTo("line 1\nline 2\n")
+    }
 }

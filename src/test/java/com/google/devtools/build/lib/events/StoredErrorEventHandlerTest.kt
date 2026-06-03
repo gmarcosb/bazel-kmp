@@ -11,56 +11,54 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.events;
+package com.google.devtools.build.lib.events
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.common.truth.Truth
+import com.google.devtools.build.lib.events.StoredEventHandler
+import org.junit.runner.RunWith
+import org.junit.runners.JUnit4
 
-import com.google.common.collect.ImmutableList;
-import java.util.List;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
-
-/** Tests the {@link StoredEventHandler} class. */
-@RunWith(JUnit4.class)
-public class StoredErrorEventHandlerTest {
-
-  @Test
-  public void hasErrors() {
-    StoredEventHandler eventHandler = new StoredEventHandler();
-    assertThat(eventHandler.hasErrors()).isFalse();
-    eventHandler.handle(Event.warn("warning"));
-    assertThat(eventHandler.hasErrors()).isFalse();
-    eventHandler.handle(Event.info("info"));
-    assertThat(eventHandler.hasErrors()).isFalse();
-    eventHandler.handle(Event.error("error"));
-    assertThat(eventHandler.hasErrors()).isTrue();
-  }
-
-  @Test
-  public void replayOnWithoutEvents() {
-    StoredEventHandler eventHandler = new StoredEventHandler();
-    StoredEventHandler sink = new StoredEventHandler();
-
-    eventHandler.replayOn(sink);
-    assertThat(sink.isEmpty()).isTrue();
-  }
-
-  @Test
-  public void replayOn() {
-    StoredEventHandler eventHandler = new StoredEventHandler();
-    StoredEventHandler sink = new StoredEventHandler();
-
-    List<Event> events = ImmutableList.of(
-        Event.warn("a"),
-        Event.error("b"),
-        Event.info("c"),
-        Event.warn("d"));
-    for (Event e : events) {
-      eventHandler.handle(e);
+/** Tests the [StoredEventHandler] class.  */
+@RunWith(JUnit4::class)
+class StoredErrorEventHandlerTest {
+    @org.junit.Test
+    fun hasErrors() {
+        val eventHandler: StoredEventHandler = StoredEventHandler()
+        Truth.assertThat(eventHandler.hasErrors()).isFalse()
+        eventHandler.handle(com.google.devtools.build.lib.events.Event.warn("warning"))
+        Truth.assertThat(eventHandler.hasErrors()).isFalse()
+        eventHandler.handle(com.google.devtools.build.lib.events.Event.info("info"))
+        Truth.assertThat(eventHandler.hasErrors()).isFalse()
+        eventHandler.handle(com.google.devtools.build.lib.events.Event.error("error"))
+        Truth.assertThat(eventHandler.hasErrors()).isTrue()
     }
 
-    eventHandler.replayOn(sink);
-    assertThat(sink.getEvents()).isEqualTo(events);
-  }
+    @org.junit.Test
+    fun replayOnWithoutEvents() {
+        val eventHandler: StoredEventHandler = StoredEventHandler()
+        val sink: StoredEventHandler = StoredEventHandler()
+
+        eventHandler.replayOn(sink)
+        Truth.assertThat(sink.isEmpty()).isTrue()
+    }
+
+    @org.junit.Test
+    fun replayOn() {
+        val eventHandler: StoredEventHandler = StoredEventHandler()
+        val sink: StoredEventHandler = StoredEventHandler()
+
+        val events: MutableList<com.google.devtools.build.lib.events.Event?> =
+            com.google.common.collect.ImmutableList.of<com.google.devtools.build.lib.events.Event?>(
+                com.google.devtools.build.lib.events.Event.warn("a"),
+                com.google.devtools.build.lib.events.Event.error("b"),
+                com.google.devtools.build.lib.events.Event.info("c"),
+                com.google.devtools.build.lib.events.Event.warn("d")
+            )
+        for (e in events) {
+            eventHandler.handle(e)
+        }
+
+        eventHandler.replayOn(sink)
+        Truth.assertThat(sink.getEvents()).isEqualTo(events)
+    }
 }

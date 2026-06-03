@@ -11,688 +11,658 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.remote;
+package com.google.devtools.build.lib.remote
 
-import static com.google.common.truth.Truth.assertThat;
-import static com.google.devtools.build.lib.util.io.CommandExtensionReporter.NO_OP_COMMAND_EXTENSION_REPORTER;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import com.google.devtools.build.lib.util.io.CommandExtensionReporter.NO_OP_COMMAND_EXTENSION_REPORTER
 
-import build.bazel.remote.execution.v2.ActionCacheUpdateCapabilities;
-import build.bazel.remote.execution.v2.CacheCapabilities;
-import build.bazel.remote.execution.v2.CapabilitiesGrpc.CapabilitiesImplBase;
-import build.bazel.remote.execution.v2.DigestFunction.Value;
-import build.bazel.remote.execution.v2.ExecutionCapabilities;
-import build.bazel.remote.execution.v2.GetCapabilitiesRequest;
-import build.bazel.remote.execution.v2.ServerCapabilities;
-import build.bazel.remote.execution.v2.SymlinkAbsolutePathStrategy;
-import com.github.benmanes.caffeine.cache.Cache;
-import com.github.benmanes.caffeine.cache.Caffeine;
-import com.google.auth.Credentials;
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.truth.extensions.proto.ProtoTruth;
-import com.google.devtools.build.lib.analysis.BlazeDirectories;
-import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
-import com.google.devtools.build.lib.analysis.ServerDirectories;
-import com.google.devtools.build.lib.analysis.config.CoreOptions;
-import com.google.devtools.build.lib.analysis.test.TestConfiguration.TestOptions;
-import com.google.devtools.build.lib.authandtls.AuthAndTLSOptions;
-import com.google.devtools.build.lib.authandtls.credentialhelper.CredentialHelperEnvironment;
-import com.google.devtools.build.lib.authandtls.credentialhelper.CredentialModule;
-import com.google.devtools.build.lib.authandtls.credentialhelper.GetCredentialsResponse;
-import com.google.devtools.build.lib.events.EventBusEventHandler;
-import com.google.devtools.build.lib.events.Reporter;
-import com.google.devtools.build.lib.exec.BinTools;
-import com.google.devtools.build.lib.exec.ExecutionOptions;
-import com.google.devtools.build.lib.pkgcache.PackageOptions;
-import com.google.devtools.build.lib.remote.circuitbreaker.FailureCircuitBreaker;
-import com.google.devtools.build.lib.remote.disk.DiskCacheGarbageCollector.CollectionPolicy;
-import com.google.devtools.build.lib.remote.disk.DiskCacheGarbageCollectorIdleTask;
-import com.google.devtools.build.lib.remote.downloader.GrpcRemoteDownloader;
-import com.google.devtools.build.lib.remote.options.RemoteOptions;
-import com.google.devtools.build.lib.runtime.BlazeModule;
-import com.google.devtools.build.lib.runtime.BlazeRuntime;
-import com.google.devtools.build.lib.runtime.BlazeServerStartupOptions;
-import com.google.devtools.build.lib.runtime.BlazeWorkspace;
-import com.google.devtools.build.lib.runtime.BlockWaitingModule;
-import com.google.devtools.build.lib.runtime.ClientOptions;
-import com.google.devtools.build.lib.runtime.Command;
-import com.google.devtools.build.lib.runtime.CommandEnvironment;
-import com.google.devtools.build.lib.runtime.CommandLinePathFactory;
-import com.google.devtools.build.lib.runtime.CommonCommandOptions;
-import com.google.devtools.build.lib.runtime.ConfigFlagDefinitions;
-import com.google.devtools.build.lib.runtime.commands.BuildCommand;
-import com.google.devtools.build.lib.runtime.proto.InvocationPolicyOuterClass.InvocationPolicy;
-import com.google.devtools.build.lib.testutil.Scratch;
-import com.google.devtools.build.lib.testutil.TestConstants;
-import com.google.devtools.build.lib.testutil.TestUtils;
-import com.google.devtools.build.lib.util.AbruptExitException;
-import com.google.devtools.build.lib.vfs.DigestHashFunction;
-import com.google.devtools.build.lib.vfs.FileSystem;
-import com.google.devtools.build.lib.vfs.Path;
-import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.lib.vfs.inmemoryfs.InMemoryFileSystem;
-import com.google.devtools.common.options.Options;
-import com.google.devtools.common.options.OptionsParser;
-import com.google.devtools.common.options.OptionsParsingResult;
-import com.google.errorprone.annotations.CanIgnoreReturnValue;
-import io.grpc.BindableService;
-import io.grpc.Server;
-import io.grpc.ServerInterceptors;
-import io.grpc.inprocess.InProcessChannelBuilder;
-import io.grpc.inprocess.InProcessServerBuilder;
-import io.grpc.stub.StreamObserver;
-import io.grpc.util.MutableHandlerRegistry;
-import java.io.IOException;
-import java.net.URI;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Optional;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+/** Tests for [RemoteModule].  */
+@RunWith(JUnit4::class)
+class RemoteModuleTest {
+    internal class CapabilitiesImpl(caps: ServerCapabilities?) : CapabilitiesImplBase() {
+        var requestCount: Int = 0
+            private set
+        private val caps: ServerCapabilities?
 
-/** Tests for {@link RemoteModule}. */
-@RunWith(JUnit4.class)
-public final class RemoteModuleTest {
-  private static final String EXECUTION_SERVER_NAME = "execution-server";
-  private static final String CACHE_SERVER_NAME = "cache-server";
-  private static final String OUTPUT_SERVICE_SERVER_NAME = "output-service";
-  private static final ServerCapabilities CACHE_ONLY_CAPS =
-      ServerCapabilities.newBuilder()
-          .setLowApiVersion(ApiVersion.low.toSemVer())
-          .setHighApiVersion(ApiVersion.high.toSemVer())
-          .setCacheCapabilities(
-              CacheCapabilities.newBuilder()
-                  .addDigestFunctions(Value.SHA256)
-                  .setActionCacheUpdateCapabilities(
-                      ActionCacheUpdateCapabilities.newBuilder().setUpdateEnabled(true).build())
-                  .setSymlinkAbsolutePathStrategy(SymlinkAbsolutePathStrategy.Value.ALLOWED)
-                  .build())
-          .build();
+        init {
+            this.caps = caps
+        }
 
-  private static final ServerCapabilities EXEC_AND_CACHE_CAPS =
-      ServerCapabilities.newBuilder()
-          .setLowApiVersion(ApiVersion.low.toSemVer())
-          .setHighApiVersion(ApiVersion.high.toSemVer())
-          .setExecutionCapabilities(
-              ExecutionCapabilities.newBuilder()
-                  .setExecEnabled(true)
-                  .setDigestFunction(Value.SHA256)
-                  .build())
-          .setCacheCapabilities(
-              CacheCapabilities.newBuilder().addDigestFunctions(Value.SHA256).build())
-          .build();
-
-  private static final ServerCapabilities EXEC_ONLY_CAPS =
-      ServerCapabilities.newBuilder()
-          .setLowApiVersion(ApiVersion.low.toSemVer())
-          .setHighApiVersion(ApiVersion.high.toSemVer())
-          .setExecutionCapabilities(
-              ExecutionCapabilities.newBuilder()
-                  .setExecEnabled(true)
-                  .setDigestFunction(Value.SHA256)
-                  .build())
-          .build();
-
-  private static CommandEnvironment createTestCommandEnvironment(
-      RemoteModule remoteModule, RemoteOptions remoteOptions)
-      throws IOException, AbruptExitException {
-    CoreOptions coreOptions = Options.getDefaults(CoreOptions.class);
-    CommonCommandOptions commonCommandOptions = Options.getDefaults(CommonCommandOptions.class);
-    PackageOptions packageOptions = Options.getDefaults(PackageOptions.class);
-    ClientOptions clientOptions = Options.getDefaults(ClientOptions.class);
-    ExecutionOptions executionOptions = Options.getDefaults(ExecutionOptions.class);
-    TestOptions testOptions = Options.getDefaults(TestOptions.class);
-
-    AuthAndTLSOptions authAndTLSOptions = Options.getDefaults(AuthAndTLSOptions.class);
-
-    OptionsParsingResult options = mock(OptionsParsingResult.class);
-    when(options.getOptions(CoreOptions.class)).thenReturn(coreOptions);
-    when(options.getOptions(CommonCommandOptions.class)).thenReturn(commonCommandOptions);
-    when(options.getOptions(PackageOptions.class)).thenReturn(packageOptions);
-    when(options.getOptions(ClientOptions.class)).thenReturn(clientOptions);
-    when(options.getOptions(RemoteOptions.class)).thenReturn(remoteOptions);
-    when(options.getOptions(AuthAndTLSOptions.class)).thenReturn(authAndTLSOptions);
-    when(options.getOptions(ExecutionOptions.class)).thenReturn(executionOptions);
-    when(options.getOptions(TestOptions.class)).thenReturn(testOptions);
-
-    String productName = "bazel";
-    Scratch scratch = new Scratch(new InMemoryFileSystem(DigestHashFunction.SHA256));
-    ServerDirectories serverDirectories =
-        new ServerDirectories(
-            scratch.dir("install"), scratch.dir("output"), scratch.dir("user_root"));
-
-    BlazeRuntime runtime =
-        new BlazeRuntime.Builder()
-            .setProductName(productName)
-            .setFileSystem(scratch.getFileSystem())
-            .setServerDirectories(serverDirectories)
-            .setStartupOptionsProvider(
-                OptionsParser.builder().optionsClasses(BlazeServerStartupOptions.class).build())
-            .addBlazeModule(new CredentialModule())
-            .addBlazeModule(remoteModule)
-            .addBlazeModule(new BlockWaitingModule())
-            .addBlazeModule(
-                new BlazeModule() {
-                  @Override
-                  public void initializeRuleClasses(ConfiguredRuleClassProvider.Builder builder) {
-                    builder.setRunfilesPrefix(TestConstants.WORKSPACE_NAME);
-                  }
-                })
-            .build();
-
-    BlazeDirectories directories =
-        new BlazeDirectories(
-            serverDirectories,
-            scratch.dir("/workspace"),
-            productName);
-    BlazeWorkspace workspace = runtime.initWorkspace(directories, BinTools.empty(directories));
-    Command command = BuildCommand.class.getAnnotation(Command.class);
-    return workspace.initCommand(
-        command,
-        options,
-        InvocationPolicy.getDefaultInstance(),
-        /* warnings= */ new ArrayList<>(),
-        /* waitTimeInMs= */ 0,
-        /* commandStartTime= */ 0,
-        /* idleTaskResultsFromPreviousIdlePeriod= */ ImmutableList.of(),
-        /* shutdownReasonConsumer= */ s -> {},
-        /* commandExtensions= */ ImmutableList.of(),
-        NO_OP_COMMAND_EXTENSION_REPORTER,
-        /* attemptNumber= */ 1,
-        /* buildRequestIdOverride= */ null,
-        ConfigFlagDefinitions.NONE);
-  }
-
-  static class CapabilitiesImpl extends CapabilitiesImplBase {
-
-    private int requestCount;
-    private final ServerCapabilities caps;
-
-    CapabilitiesImpl(ServerCapabilities caps) {
-      this.caps = caps;
+        public override fun getCapabilities(
+            request: GetCapabilitiesRequest?, responseObserver: StreamObserver<ServerCapabilities?>
+        ) {
+            ++requestCount
+            responseObserver.onNext(caps)
+            responseObserver.onCompleted()
+        }
     }
 
-    @Override
-    public void getCapabilities(
-        GetCapabilitiesRequest request, StreamObserver<ServerCapabilities> responseObserver) {
-      ++requestCount;
-      responseObserver.onNext(caps);
-      responseObserver.onCompleted();
+    private var remoteModule: RemoteModule? = null
+    private var remoteOptions: RemoteOptions? = null
+
+    @Before
+    fun initialize() {
+        remoteModule = RemoteModule()
+        remoteModule.setChannelFactory(
+            { target, proxy, options, interceptors ->
+                InProcessChannelBuilder.forName(target).directExecutor().build()
+            })
+        remoteOptions = com.google.devtools.common.options.Options.getDefaults<O>(RemoteOptions::class.java)
     }
 
-    int getRequestCount() {
-      return requestCount;
-    }
-  }
-
-  private static Server createFakeServer(String serverName, BindableService... services) {
-    MutableHandlerRegistry executionServerRegistry = new MutableHandlerRegistry();
-    for (BindableService service : services) {
-      executionServerRegistry.addService(ServerInterceptors.intercept(service));
-    }
-    return InProcessServerBuilder.forName(serverName)
-        .fallbackHandlerRegistry(executionServerRegistry)
-        .directExecutor()
-        .build();
-  }
-
-  private RemoteModule remoteModule;
-  private RemoteOptions remoteOptions;
-
-  @Before
-  public void initialize() {
-    remoteModule = new RemoteModule();
-    remoteModule.setChannelFactory(
-        (target, proxy, options, interceptors) ->
-            InProcessChannelBuilder.forName(target).directExecutor().build());
-    remoteOptions = Options.getDefaults(RemoteOptions.class);
-  }
-
-  @Test
-  public void testVerifyCapabilities_none() throws Exception {
-    // Test that Bazel doesn't issue GetCapabilities calls if the requirement is NONE.
-    // Regression test for https://github.com/bazelbuild/bazel/issues/20342.
-    CapabilitiesImpl executionServerCapabilitiesImpl = new CapabilitiesImpl(EXEC_AND_CACHE_CAPS);
-    Server executionServer =
-        createFakeServer(EXECUTION_SERVER_NAME, executionServerCapabilitiesImpl);
-    executionServer.start();
-
-    CapabilitiesImpl cacheCapabilitiesImpl = new CapabilitiesImpl(CACHE_ONLY_CAPS);
-    Server cacheServer = createFakeServer(CACHE_SERVER_NAME, cacheCapabilitiesImpl);
-    cacheServer.start();
-
-    try {
-      remoteOptions.setRemoteExecutor(EXECUTION_SERVER_NAME);
-      remoteOptions.setRemoteDownloader(CACHE_SERVER_NAME);
-
-      beforeCommand();
-
-      // Wait for the channel to be connected.
-      var downloader = (GrpcRemoteDownloader) remoteModule.getRemoteDownloader();
-      var unused = downloader.getChannel().withChannelBlocking(ch -> new Object());
-
-      // Remote downloader uses Remote Asset API, and Bazel doesn't have any capability requirement
-      // on the endpoint. Expecting the request count is 0.
-      assertThat(cacheCapabilitiesImpl.getRequestCount()).isEqualTo(0);
-
-      // Retrieve the execution capabilities so that the asynchronous task that eagerly requests
-      // them doesn't leak and accidentally interfere with other test cases.
-      ProtoTruth.assertThat(
-              remoteModule
-                  .getActionContextProvider()
-                  .getCombinedCache()
-                  .getRemoteCacheCapabilities())
-          .isEqualTo(EXEC_AND_CACHE_CAPS.getCacheCapabilities());
-
-      assertCircuitBreakerInstance();
-    } finally {
-      executionServer.shutdownNow();
-      cacheServer.shutdownNow();
-
-      executionServer.awaitTermination();
-      cacheServer.awaitTermination();
-    }
-  }
-
-  @Test
-  public void testVerifyCapabilities_executionAndCacheForSingleEndpoint() throws Exception {
-    CapabilitiesImpl executionServerCapabilitiesImpl = new CapabilitiesImpl(EXEC_AND_CACHE_CAPS);
-    Server executionServer =
-        createFakeServer(EXECUTION_SERVER_NAME, executionServerCapabilitiesImpl);
-    executionServer.start();
-
-    try {
-      remoteOptions.setRemoteExecutor(EXECUTION_SERVER_NAME);
-
-      beforeCommand();
-
-      assertThat(
-              remoteModule
-                  .getActionContextProvider()
-                  .getCombinedCache()
-                  .getRemoteCacheCapabilities())
-          .isEqualTo(EXEC_AND_CACHE_CAPS.getCacheCapabilities());
-      assertThat(
-              remoteModule
-                  .getActionContextProvider()
-                  .getRemoteExecutionClient()
-                  .getServerCapabilities())
-          .isEqualTo(EXEC_AND_CACHE_CAPS);
-      assertThat(Thread.interrupted()).isFalse();
-      assertThat(executionServerCapabilitiesImpl.getRequestCount()).isEqualTo(1);
-      assertCircuitBreakerInstance();
-    } finally {
-      executionServer.shutdownNow();
-      executionServer.awaitTermination();
-    }
-  }
-
-  @Test
-  public void testVerifyCapabilities_cacheOnlyEndpoint() throws Exception {
-    CapabilitiesImpl cacheServerCapabilitiesImpl = new CapabilitiesImpl(CACHE_ONLY_CAPS);
-    Server cacheServer = createFakeServer(CACHE_SERVER_NAME, cacheServerCapabilitiesImpl);
-    cacheServer.start();
-
-    try {
-      remoteOptions.setRemoteCache(CACHE_SERVER_NAME);
-
-      beforeCommand();
-
-      assertThat(
-              remoteModule
-                  .getActionContextProvider()
-                  .getCombinedCache()
-                  .getRemoteCacheCapabilities())
-          .isEqualTo(CACHE_ONLY_CAPS.getCacheCapabilities());
-      assertThat(Thread.interrupted()).isFalse();
-      assertThat(cacheServerCapabilitiesImpl.getRequestCount()).isEqualTo(1);
-      assertCircuitBreakerInstance();
-    } finally {
-      cacheServer.shutdownNow();
-      cacheServer.awaitTermination();
-    }
-  }
-
-  @Test
-  public void testVerifyCapabilities_executionAndCacheForDifferentEndpoints() throws Exception {
-    CapabilitiesImpl executionServerCapabilitiesImpl = new CapabilitiesImpl(EXEC_AND_CACHE_CAPS);
-    Server executionServer =
-        createFakeServer(EXECUTION_SERVER_NAME, executionServerCapabilitiesImpl);
-    executionServer.start();
-
-    CapabilitiesImpl cacheServerCapabilitiesImpl = new CapabilitiesImpl(EXEC_AND_CACHE_CAPS);
-    Server cacheServer = createFakeServer(CACHE_SERVER_NAME, cacheServerCapabilitiesImpl);
-    cacheServer.start();
-
-    try {
-      remoteOptions.setRemoteExecutor(EXECUTION_SERVER_NAME);
-      remoteOptions.setRemoteCache(CACHE_SERVER_NAME);
-
-      beforeCommand();
-
-      assertThat(
-              remoteModule
-                  .getActionContextProvider()
-                  .getCombinedCache()
-                  .getRemoteCacheCapabilities())
-          .isEqualTo(EXEC_AND_CACHE_CAPS.getCacheCapabilities());
-      assertThat(
-              remoteModule
-                  .getActionContextProvider()
-                  .getRemoteExecutionClient()
-                  .getServerCapabilities())
-          .isEqualTo(EXEC_AND_CACHE_CAPS);
-      assertThat(Thread.interrupted()).isFalse();
-      assertThat(executionServerCapabilitiesImpl.getRequestCount()).isEqualTo(1);
-      assertThat(cacheServerCapabilitiesImpl.getRequestCount()).isEqualTo(1);
-      assertCircuitBreakerInstance();
-    } finally {
-      executionServer.shutdownNow();
-      cacheServer.shutdownNow();
-
-      executionServer.awaitTermination();
-      cacheServer.awaitTermination();
-    }
-  }
-
-  @Test
-  public void testVerifyCapabilities_executionOnlyAndCacheOnlyEndpoints() throws Exception {
-    CapabilitiesImpl executionServerCapabilitiesImpl = new CapabilitiesImpl(EXEC_ONLY_CAPS);
-    Server executionServer =
-        createFakeServer(EXECUTION_SERVER_NAME, executionServerCapabilitiesImpl);
-    executionServer.start();
-
-    CapabilitiesImpl cacheServerCapabilitiesImpl = new CapabilitiesImpl(CACHE_ONLY_CAPS);
-    Server cacheServer = createFakeServer(CACHE_SERVER_NAME, cacheServerCapabilitiesImpl);
-    cacheServer.start();
-
-    try {
-      remoteOptions.setRemoteExecutor(EXECUTION_SERVER_NAME);
-      remoteOptions.setRemoteCache(CACHE_SERVER_NAME);
-
-      beforeCommand();
-
-      assertThat(
-              remoteModule
-                  .getActionContextProvider()
-                  .getCombinedCache()
-                  .getRemoteCacheCapabilities())
-          .isEqualTo(CACHE_ONLY_CAPS.getCacheCapabilities());
-      assertThat(
-              remoteModule
-                  .getActionContextProvider()
-                  .getRemoteExecutionClient()
-                  .getServerCapabilities())
-          .isEqualTo(EXEC_ONLY_CAPS);
-      assertThat(Thread.interrupted()).isFalse();
-      assertThat(executionServerCapabilitiesImpl.getRequestCount()).isEqualTo(1);
-      assertThat(cacheServerCapabilitiesImpl.getRequestCount()).isEqualTo(1);
-      assertCircuitBreakerInstance();
-    } finally {
-      executionServer.shutdownNow();
-      cacheServer.shutdownNow();
-
-      executionServer.awaitTermination();
-      cacheServer.awaitTermination();
-    }
-  }
-
-  @Test
-  public void testNetrc_netrcWithoutRemoteCache() throws Exception {
-    String netrc = "/.netrc";
-    FileSystem fileSystem = new InMemoryFileSystem(DigestHashFunction.SHA256);
-    Scratch scratch = new Scratch(fileSystem);
-    scratch.file(netrc, "machine foo.example.org login baruser password barpass");
-    AuthAndTLSOptions authAndTLSOptions = Options.getDefaults(AuthAndTLSOptions.class);
-    Cache<URI, GetCredentialsResponse> credentialCache = Caffeine.newBuilder().build();
-
-    Credentials credentials =
-        RemoteModule.createCredentials(
-            CredentialHelperEnvironment.newBuilder()
-                .setEventReporter(new Reporter(EventBusEventHandler.createWithNewEventBus()))
-                .setWorkspacePath(fileSystem.getPath("/workspace"))
-                .setClientEnvironment(ImmutableMap.of("NETRC", netrc))
-                .setHelperExecutionTimeout(Duration.ZERO)
-                .build(),
-            credentialCache,
-            new CommandLinePathFactory(fileSystem, ImmutableMap.of()),
-            fileSystem,
-            authAndTLSOptions,
-            remoteOptions);
-
-    assertThat(credentials).isNotNull();
-    assertThat(credentials.getRequestMetadata(URI.create("https://foo.example.org"))).isNotEmpty();
-    assertThat(credentials.getRequestMetadata(URI.create("https://bar.example.org"))).isEmpty();
-  }
-
-  @Test
-  public void testCacheCapabilities_propagatedToRemoteCache() throws Exception {
-    CapabilitiesImpl cacheServerCapabilitiesImpl = new CapabilitiesImpl(CACHE_ONLY_CAPS);
-    Server cacheServer = createFakeServer(CACHE_SERVER_NAME, cacheServerCapabilitiesImpl);
-    cacheServer.start();
-
-    try {
-      remoteOptions.setRemoteCache(CACHE_SERVER_NAME);
-
-      beforeCommand();
-
-      assertThat(Thread.interrupted()).isFalse();
-      RemoteActionContextProvider actionContextProvider = remoteModule.getActionContextProvider();
-      assertThat(actionContextProvider).isNotNull();
-      assertThat(actionContextProvider.getCombinedCache()).isNotNull();
-      assertThat(actionContextProvider.getCombinedCache().getRemoteCacheCapabilities())
-          .isEqualTo(CACHE_ONLY_CAPS.getCacheCapabilities());
-    } finally {
-      cacheServer.shutdownNow();
-      cacheServer.awaitTermination();
-    }
-  }
-
-  @Test
-  public void testCacheCapabilities_propagatedToRemoteExecutionCache() throws Exception {
-    CapabilitiesImpl executionServerCapabilitiesImpl = new CapabilitiesImpl(EXEC_AND_CACHE_CAPS);
-    Server executionServer =
-        createFakeServer(EXECUTION_SERVER_NAME, executionServerCapabilitiesImpl);
-    executionServer.start();
-
-    try {
-      remoteOptions.setRemoteExecutor(EXECUTION_SERVER_NAME);
-
-      beforeCommand();
-
-      assertThat(Thread.interrupted()).isFalse();
-      RemoteActionContextProvider actionContextProvider = remoteModule.getActionContextProvider();
-      assertThat(actionContextProvider).isNotNull();
-      assertThat(actionContextProvider.getCombinedCache()).isNotNull();
-      assertThat(actionContextProvider.getCombinedCache().getRemoteCacheCapabilities())
-          .isEqualTo(EXEC_AND_CACHE_CAPS.getCacheCapabilities());
-    } finally {
-      executionServer.shutdownNow();
-      executionServer.awaitTermination();
-    }
-  }
-
-  @Test
-  public void testVerifyCapabilities_executionAndCacheForSingleEndpointWithCircuitBreaker()
-      throws Exception {
-    CapabilitiesImpl executionServerCapabilitiesImpl = new CapabilitiesImpl(EXEC_AND_CACHE_CAPS);
-    Server executionServer =
-        createFakeServer(EXECUTION_SERVER_NAME, executionServerCapabilitiesImpl);
-    executionServer.start();
-
-    try {
-      remoteOptions.setRemoteExecutor(EXECUTION_SERVER_NAME);
-      remoteOptions.setCircuitBreakerStrategy(RemoteOptions.CircuitBreakerStrategy.FAILURE);
-
-      beforeCommand();
-
-      assertThat(
-              remoteModule
-                  .getActionContextProvider()
-                  .getRemoteExecutionClient()
-                  .getServerCapabilities())
-          .isEqualTo(EXEC_AND_CACHE_CAPS);
-      assertThat(Thread.interrupted()).isFalse();
-      assertThat(executionServerCapabilitiesImpl.getRequestCount()).isEqualTo(1);
-      assertCircuitBreakerInstance();
-    } finally {
-      executionServer.shutdownNow();
-      executionServer.awaitTermination();
-    }
-  }
-
-  @Test
-  public void testVerifyCapabilities_cacheOnlyEndpointWithCircuitBreaker() throws Exception {
-    CapabilitiesImpl cacheServerCapabilitiesImpl = new CapabilitiesImpl(CACHE_ONLY_CAPS);
-    Server cacheServer = createFakeServer(CACHE_SERVER_NAME, cacheServerCapabilitiesImpl);
-    cacheServer.start();
-
-    try {
-      remoteOptions.setRemoteCache(CACHE_SERVER_NAME);
-      remoteOptions.setCircuitBreakerStrategy(RemoteOptions.CircuitBreakerStrategy.FAILURE);
-
-      beforeCommand();
-
-      assertThat(
-              remoteModule
-                  .getActionContextProvider()
-                  .getCombinedCache()
-                  .getRemoteCacheCapabilities())
-          .isEqualTo(CACHE_ONLY_CAPS.getCacheCapabilities());
-      assertThat(Thread.interrupted()).isFalse();
-      assertThat(cacheServerCapabilitiesImpl.getRequestCount()).isEqualTo(1);
-      assertCircuitBreakerInstance();
-    } finally {
-      cacheServer.shutdownNow();
-      cacheServer.awaitTermination();
-    }
-  }
-
-  @Test
-  public void bazelOutputService_noRemoteCache_exit() throws Exception {
-    Server outputServiceService = createFakeServer(OUTPUT_SERVICE_SERVER_NAME);
-    try {
-      remoteOptions.setRemoteOutputService(OUTPUT_SERVICE_SERVER_NAME);
-
-      var exception = Assert.assertThrows(AbruptExitException.class, this::beforeCommand);
-
-      assertThat(exception).hasMessageThat().contains("--experimental_remote_output_service");
-    } finally {
-      outputServiceService.shutdownNow();
-      outputServiceService.awaitTermination();
-    }
-  }
-
-  @Test
-  public void diskCacheGarbageCollectionIdleTask_disabled() throws Exception {
-    var diskCacheDir = TestUtils.createUniqueTmpDir(null);
-    remoteOptions.setDiskCache(diskCacheDir.asFragment());
-
-    var env = beforeCommand();
-
-    assertThat(env.getIdleTasks()).isEmpty();
-  }
-
-  @Test
-  public void diskCacheGarbageCollectionIdleTask_enabled() throws Exception {
-    var diskCacheDir = TestUtils.createUniqueTmpDir(null);
-    remoteOptions.setDiskCache(diskCacheDir.asFragment());
-    remoteOptions.setDiskCacheGcIdleDelay(Duration.ofMinutes(2));
-    remoteOptions.setDiskCacheGcMaxSize(1234567890L);
-    remoteOptions.setDiskCacheGcMaxAge(Duration.ofDays(7));
-
-    var env = beforeCommand();
-
-    assertThat(env.getIdleTasks()).hasSize(1);
-    assertThat(env.getIdleTasks().get(0)).isInstanceOf(DiskCacheGarbageCollectorIdleTask.class);
-    var idleTask = (DiskCacheGarbageCollectorIdleTask) env.getIdleTasks().get(0);
-    assertThat(idleTask.delay()).isEqualTo(Duration.ofMinutes(2));
-    assertThat(idleTask.getGarbageCollector().getRoot().getPathString())
-        .isEqualTo(diskCacheDir.getPathString());
-    assertThat(idleTask.getGarbageCollector().getPolicy())
-        .isEqualTo(new CollectionPolicy(Optional.of(1234567890L), Optional.of(Duration.ofDays(7))));
-  }
-
-  @CanIgnoreReturnValue
-  private CommandEnvironment beforeCommand() throws IOException, AbruptExitException {
-    CommandEnvironment env = createTestCommandEnvironment(remoteModule, remoteOptions);
-    remoteModule.beforeCommand(env);
-    env.throwPendingException();
-    return env;
-  }
-
-  @Test
-  public void diskCache_defaultLocation_resolvesToOutputUserRoot() throws Exception {
-    remoteOptions.setDiskCache(PathFragment.EMPTY_FRAGMENT);
-
-    var env = beforeCommand();
-
-    // The disk cache should be resolved to <outputUserRoot>/cache/disk.
-    Path outputUserRoot = env.getDirectories().getServerDirectories().getOutputUserRoot();
-    PathFragment resolved = remoteOptions.getDiskCachePath(outputUserRoot);
-    assertThat(resolved).isNotNull();
-    assertThat(resolved.getPathString())
-        .isEqualTo(outputUserRoot.getRelative("cache/disk").getPathString());
-    assertThat(resolved.isAbsolute()).isTrue();
-  }
-
-  @Test
-  public void diskCache_defaultLocation_withGarbageCollection() throws Exception {
-    remoteOptions.setDiskCache(PathFragment.EMPTY_FRAGMENT);
-    remoteOptions.setDiskCacheGcIdleDelay(Duration.ofMinutes(2));
-    remoteOptions.setDiskCacheGcMaxSize(1234567890L);
-
-    var env = beforeCommand();
-
-    Path outputUserRoot = env.getDirectories().getServerDirectories().getOutputUserRoot();
-    Path expectedPath = outputUserRoot.getRelative("cache/disk");
-    assertThat(env.getIdleTasks()).hasSize(1);
-    assertThat(env.getIdleTasks().get(0)).isInstanceOf(DiskCacheGarbageCollectorIdleTask.class);
-    var idleTask = (DiskCacheGarbageCollectorIdleTask) env.getIdleTasks().get(0);
-    assertThat(idleTask.getGarbageCollector().getRoot().getPathString())
-        .isEqualTo(expectedPath.getPathString());
-  }
-
-  @Test
-  public void diskCacheUnset_disablesDiskCache() throws Exception {
-    remoteOptions.setDiskCache(null);
-
-    var env = beforeCommand();
-
-    assertThat(remoteOptions.getDiskCache()).isNull();
-    assertThat(env.getIdleTasks()).isEmpty();
-  }
-
-  private void assertCircuitBreakerInstance() {
-    RemoteActionContextProvider actionContextProvider = remoteModule.getActionContextProvider();
-    assertThat(actionContextProvider).isNotNull();
-
-    Retrier.CircuitBreaker circuitBreaker;
-    if (actionContextProvider.getCombinedCache() != null) {
-      circuitBreaker =
-          ((GrpcCacheClient) actionContextProvider.getCombinedCache().remoteCacheClient)
-              .getRetrier()
-              .getCircuitBreaker();
-    } else if (actionContextProvider.getRemoteExecutionClient() != null) {
-      circuitBreaker =
-          ((GrpcRemoteExecutor) actionContextProvider.getRemoteExecutionClient())
-              .getRetrier()
-              .getCircuitBreaker();
-    } else {
-      // no remote cache or execution configured, circuitBreaker is null
-      return;
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testVerifyCapabilities_none() {
+        // Test that Bazel doesn't issue GetCapabilities calls if the requirement is NONE.
+        // Regression test for https://github.com/bazelbuild/bazel/issues/20342.
+        val executionServerCapabilitiesImpl = CapabilitiesImpl(EXEC_AND_CACHE_CAPS)
+        val executionServer: io.grpc.Server =
+            createFakeServer(EXECUTION_SERVER_NAME, executionServerCapabilitiesImpl)
+        executionServer.start()
+
+        val cacheCapabilitiesImpl = CapabilitiesImpl(CACHE_ONLY_CAPS)
+        val cacheServer: io.grpc.Server = createFakeServer(CACHE_SERVER_NAME, cacheCapabilitiesImpl)
+        cacheServer.start()
+
+        try {
+            remoteOptions.remoteExecutor = EXECUTION_SERVER_NAME
+            remoteOptions.remoteDownloader = CACHE_SERVER_NAME
+
+            beforeCommand()
+
+            // Wait for the channel to be connected.
+            val downloader: GrpcRemoteDownloader = remoteModule.getRemoteDownloader() as GrpcRemoteDownloader
+            val unused: Unit /* TODO: class org.jetbrains.kotlin.nj2k.types.JKJavaNullPrimitiveType */? =
+                downloader.getChannel().withChannelBlocking({ ch -> Any() })
+
+            // Remote downloader uses Remote Asset API, and Bazel doesn't have any capability requirement
+            // on the endpoint. Expecting the request count is 0.
+            Truth.assertThat(cacheCapabilitiesImpl.requestCount).isEqualTo(0)
+
+            // Retrieve the execution capabilities so that the asynchronous task that eagerly requests
+            // them doesn't leak and accidentally interfere with other test cases.
+            ProtoTruth.assertThat(
+                remoteModule
+                    .getActionContextProvider()
+                    .getCombinedCache()
+                    .getRemoteCacheCapabilities()
+            )
+                .isEqualTo(EXEC_AND_CACHE_CAPS.getCacheCapabilities())
+
+            assertCircuitBreakerInstance()
+        } finally {
+            executionServer.shutdownNow()
+            cacheServer.shutdownNow()
+
+            executionServer.awaitTermination()
+            cacheServer.awaitTermination()
+        }
     }
 
-    if (remoteOptions.getCircuitBreakerStrategy() == RemoteOptions.CircuitBreakerStrategy.FAILURE) {
-      assertThat(circuitBreaker).isInstanceOf(FailureCircuitBreaker.class);
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testVerifyCapabilities_executionAndCacheForSingleEndpoint() {
+        val executionServerCapabilitiesImpl = CapabilitiesImpl(EXEC_AND_CACHE_CAPS)
+        val executionServer: io.grpc.Server =
+            createFakeServer(EXECUTION_SERVER_NAME, executionServerCapabilitiesImpl)
+        executionServer.start()
+
+        try {
+            remoteOptions.remoteExecutor = EXECUTION_SERVER_NAME
+
+            beforeCommand()
+
+            assertThat(
+                remoteModule
+                    .getActionContextProvider()
+                    .getCombinedCache()
+                    .getRemoteCacheCapabilities()
+            )
+                .isEqualTo(EXEC_AND_CACHE_CAPS.getCacheCapabilities())
+            assertThat(
+                remoteModule
+                    .getActionContextProvider()
+                    .getRemoteExecutionClient()
+                    .getServerCapabilities()
+            )
+                .isEqualTo(EXEC_AND_CACHE_CAPS)
+            Truth.assertThat(java.lang.Thread.interrupted()).isFalse()
+            Truth.assertThat(executionServerCapabilitiesImpl.requestCount).isEqualTo(1)
+            assertCircuitBreakerInstance()
+        } finally {
+            executionServer.shutdownNow()
+            executionServer.awaitTermination()
+        }
     }
-    if (remoteOptions.getCircuitBreakerStrategy() == null) {
-      assertThat(circuitBreaker).isEqualTo(Retrier.ALLOW_ALL_CALLS);
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testVerifyCapabilities_cacheOnlyEndpoint() {
+        val cacheServerCapabilitiesImpl = CapabilitiesImpl(CACHE_ONLY_CAPS)
+        val cacheServer: io.grpc.Server = createFakeServer(CACHE_SERVER_NAME, cacheServerCapabilitiesImpl)
+        cacheServer.start()
+
+        try {
+            remoteOptions.remoteCache = CACHE_SERVER_NAME
+
+            beforeCommand()
+
+            assertThat(
+                remoteModule
+                    .getActionContextProvider()
+                    .getCombinedCache()
+                    .getRemoteCacheCapabilities()
+            )
+                .isEqualTo(CACHE_ONLY_CAPS.getCacheCapabilities())
+            Truth.assertThat(java.lang.Thread.interrupted()).isFalse()
+            Truth.assertThat(cacheServerCapabilitiesImpl.requestCount).isEqualTo(1)
+            assertCircuitBreakerInstance()
+        } finally {
+            cacheServer.shutdownNow()
+            cacheServer.awaitTermination()
+        }
     }
-  }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testVerifyCapabilities_executionAndCacheForDifferentEndpoints() {
+        val executionServerCapabilitiesImpl = CapabilitiesImpl(EXEC_AND_CACHE_CAPS)
+        val executionServer: io.grpc.Server =
+            createFakeServer(EXECUTION_SERVER_NAME, executionServerCapabilitiesImpl)
+        executionServer.start()
+
+        val cacheServerCapabilitiesImpl = CapabilitiesImpl(EXEC_AND_CACHE_CAPS)
+        val cacheServer: io.grpc.Server = createFakeServer(CACHE_SERVER_NAME, cacheServerCapabilitiesImpl)
+        cacheServer.start()
+
+        try {
+            remoteOptions.remoteExecutor = EXECUTION_SERVER_NAME
+            remoteOptions.remoteCache = CACHE_SERVER_NAME
+
+            beforeCommand()
+
+            assertThat(
+                remoteModule
+                    .getActionContextProvider()
+                    .getCombinedCache()
+                    .getRemoteCacheCapabilities()
+            )
+                .isEqualTo(EXEC_AND_CACHE_CAPS.getCacheCapabilities())
+            assertThat(
+                remoteModule
+                    .getActionContextProvider()
+                    .getRemoteExecutionClient()
+                    .getServerCapabilities()
+            )
+                .isEqualTo(EXEC_AND_CACHE_CAPS)
+            Truth.assertThat(java.lang.Thread.interrupted()).isFalse()
+            Truth.assertThat(executionServerCapabilitiesImpl.requestCount).isEqualTo(1)
+            Truth.assertThat(cacheServerCapabilitiesImpl.requestCount).isEqualTo(1)
+            assertCircuitBreakerInstance()
+        } finally {
+            executionServer.shutdownNow()
+            cacheServer.shutdownNow()
+
+            executionServer.awaitTermination()
+            cacheServer.awaitTermination()
+        }
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testVerifyCapabilities_executionOnlyAndCacheOnlyEndpoints() {
+        val executionServerCapabilitiesImpl = CapabilitiesImpl(EXEC_ONLY_CAPS)
+        val executionServer: io.grpc.Server =
+            createFakeServer(EXECUTION_SERVER_NAME, executionServerCapabilitiesImpl)
+        executionServer.start()
+
+        val cacheServerCapabilitiesImpl = CapabilitiesImpl(CACHE_ONLY_CAPS)
+        val cacheServer: io.grpc.Server = createFakeServer(CACHE_SERVER_NAME, cacheServerCapabilitiesImpl)
+        cacheServer.start()
+
+        try {
+            remoteOptions.remoteExecutor = EXECUTION_SERVER_NAME
+            remoteOptions.remoteCache = CACHE_SERVER_NAME
+
+            beforeCommand()
+
+            assertThat(
+                remoteModule
+                    .getActionContextProvider()
+                    .getCombinedCache()
+                    .getRemoteCacheCapabilities()
+            )
+                .isEqualTo(CACHE_ONLY_CAPS.getCacheCapabilities())
+            assertThat(
+                remoteModule
+                    .getActionContextProvider()
+                    .getRemoteExecutionClient()
+                    .getServerCapabilities()
+            )
+                .isEqualTo(EXEC_ONLY_CAPS)
+            Truth.assertThat(java.lang.Thread.interrupted()).isFalse()
+            Truth.assertThat(executionServerCapabilitiesImpl.requestCount).isEqualTo(1)
+            Truth.assertThat(cacheServerCapabilitiesImpl.requestCount).isEqualTo(1)
+            assertCircuitBreakerInstance()
+        } finally {
+            executionServer.shutdownNow()
+            cacheServer.shutdownNow()
+
+            executionServer.awaitTermination()
+            cacheServer.awaitTermination()
+        }
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testNetrc_netrcWithoutRemoteCache() {
+        val netrc = "/.netrc"
+        val fileSystem: FileSystem = InMemoryFileSystem(DigestHashFunction.SHA256)
+        val scratch: Scratch = Scratch(fileSystem)
+        scratch.file(netrc, "machine foo.example.org login baruser password barpass")
+        val authAndTLSOptions: AuthAndTLSOptions? =
+            com.google.devtools.common.options.Options.getDefaults<O?>(AuthAndTLSOptions::class.java)
+        val credentialCache: com.github.benmanes.caffeine.cache.Cache<java.net.URI?, GetCredentialsResponse?> =
+            Caffeine.newBuilder().build<java.net.URI?, GetCredentialsResponse?>()
+
+        val credentials: com.google.auth.Credentials? =
+            RemoteModule.createCredentials(
+                CredentialHelperEnvironment.newBuilder()
+                    .setEventReporter(com.google.devtools.build.lib.events.Reporter(EventBusEventHandler.createWithNewEventBus()))
+                    .setWorkspacePath(fileSystem.getPath("/workspace"))
+                    .setClientEnvironment(com.google.common.collect.ImmutableMap.of<K?, V?>("NETRC", netrc))
+                    .setHelperExecutionTimeout(java.time.Duration.ZERO)
+                    .build(),
+                credentialCache,
+                CommandLinePathFactory(fileSystem, com.google.common.collect.ImmutableMap.of<K?, V?>()),
+                fileSystem,
+                authAndTLSOptions,
+                remoteOptions
+            )
+
+        Truth.assertThat(credentials).isNotNull()
+        Truth.assertThat(credentials.getRequestMetadata(java.net.URI.create("https://foo.example.org"))).isNotEmpty()
+        Truth.assertThat(credentials.getRequestMetadata(java.net.URI.create("https://bar.example.org"))).isEmpty()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCacheCapabilities_propagatedToRemoteCache() {
+        val cacheServerCapabilitiesImpl = CapabilitiesImpl(CACHE_ONLY_CAPS)
+        val cacheServer: io.grpc.Server = createFakeServer(CACHE_SERVER_NAME, cacheServerCapabilitiesImpl)
+        cacheServer.start()
+
+        try {
+            remoteOptions.remoteCache = CACHE_SERVER_NAME
+
+            beforeCommand()
+
+            Truth.assertThat(java.lang.Thread.interrupted()).isFalse()
+            val actionContextProvider: RemoteActionContextProvider = remoteModule.getActionContextProvider()
+            assertThat(actionContextProvider).isNotNull()
+            assertThat(actionContextProvider.getCombinedCache()).isNotNull()
+            assertThat(actionContextProvider.getCombinedCache().getRemoteCacheCapabilities())
+                .isEqualTo(CACHE_ONLY_CAPS.getCacheCapabilities())
+        } finally {
+            cacheServer.shutdownNow()
+            cacheServer.awaitTermination()
+        }
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testCacheCapabilities_propagatedToRemoteExecutionCache() {
+        val executionServerCapabilitiesImpl = CapabilitiesImpl(EXEC_AND_CACHE_CAPS)
+        val executionServer: io.grpc.Server =
+            createFakeServer(EXECUTION_SERVER_NAME, executionServerCapabilitiesImpl)
+        executionServer.start()
+
+        try {
+            remoteOptions.remoteExecutor = EXECUTION_SERVER_NAME
+
+            beforeCommand()
+
+            Truth.assertThat(java.lang.Thread.interrupted()).isFalse()
+            val actionContextProvider: RemoteActionContextProvider = remoteModule.getActionContextProvider()
+            assertThat(actionContextProvider).isNotNull()
+            assertThat(actionContextProvider.getCombinedCache()).isNotNull()
+            assertThat(actionContextProvider.getCombinedCache().getRemoteCacheCapabilities())
+                .isEqualTo(EXEC_AND_CACHE_CAPS.getCacheCapabilities())
+        } finally {
+            executionServer.shutdownNow()
+            executionServer.awaitTermination()
+        }
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testVerifyCapabilities_executionAndCacheForSingleEndpointWithCircuitBreaker() {
+        val executionServerCapabilitiesImpl = CapabilitiesImpl(EXEC_AND_CACHE_CAPS)
+        val executionServer: io.grpc.Server =
+            createFakeServer(EXECUTION_SERVER_NAME, executionServerCapabilitiesImpl)
+        executionServer.start()
+
+        try {
+            remoteOptions.remoteExecutor = EXECUTION_SERVER_NAME
+            remoteOptions.circuitBreakerStrategy = RemoteOptions.CircuitBreakerStrategy.FAILURE
+
+            beforeCommand()
+
+            assertThat(
+                remoteModule
+                    .getActionContextProvider()
+                    .getRemoteExecutionClient()
+                    .getServerCapabilities()
+            )
+                .isEqualTo(EXEC_AND_CACHE_CAPS)
+            Truth.assertThat(java.lang.Thread.interrupted()).isFalse()
+            Truth.assertThat(executionServerCapabilitiesImpl.requestCount).isEqualTo(1)
+            assertCircuitBreakerInstance()
+        } finally {
+            executionServer.shutdownNow()
+            executionServer.awaitTermination()
+        }
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun testVerifyCapabilities_cacheOnlyEndpointWithCircuitBreaker() {
+        val cacheServerCapabilitiesImpl = CapabilitiesImpl(CACHE_ONLY_CAPS)
+        val cacheServer: io.grpc.Server = createFakeServer(CACHE_SERVER_NAME, cacheServerCapabilitiesImpl)
+        cacheServer.start()
+
+        try {
+            remoteOptions.remoteCache = CACHE_SERVER_NAME
+            remoteOptions.circuitBreakerStrategy = RemoteOptions.CircuitBreakerStrategy.FAILURE
+
+            beforeCommand()
+
+            assertThat(
+                remoteModule
+                    .getActionContextProvider()
+                    .getCombinedCache()
+                    .getRemoteCacheCapabilities()
+            )
+                .isEqualTo(CACHE_ONLY_CAPS.getCacheCapabilities())
+            Truth.assertThat(java.lang.Thread.interrupted()).isFalse()
+            Truth.assertThat(cacheServerCapabilitiesImpl.requestCount).isEqualTo(1)
+            assertCircuitBreakerInstance()
+        } finally {
+            cacheServer.shutdownNow()
+            cacheServer.awaitTermination()
+        }
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun bazelOutputService_noRemoteCache_exit() {
+        val outputServiceService: io.grpc.Server = createFakeServer(OUTPUT_SERVICE_SERVER_NAME)
+        try {
+            remoteOptions.remoteOutputService = OUTPUT_SERVICE_SERVER_NAME
+
+            val exception: T? = org.junit.Assert.assertThrows<T?>(
+                AbruptExitException::class.java,
+                org.junit.function.ThrowingRunnable { this.beforeCommand() })
+
+            assertThat(exception).hasMessageThat().contains("--experimental_remote_output_service")
+        } finally {
+            outputServiceService.shutdownNow()
+            outputServiceService.awaitTermination()
+        }
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun diskCacheGarbageCollectionIdleTask_disabled() {
+        val diskCacheDir: Path = com.google.devtools.build.lib.testutil.TestUtils.createUniqueTmpDir(null)
+        remoteOptions.diskCache = diskCacheDir.asFragment()
+
+        val env: CommandEnvironment = beforeCommand()
+
+        assertThat(env.getIdleTasks()).isEmpty()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun diskCacheGarbageCollectionIdleTask_enabled() {
+        val diskCacheDir: Path = com.google.devtools.build.lib.testutil.TestUtils.createUniqueTmpDir(null)
+        remoteOptions.diskCache = diskCacheDir.asFragment()
+        remoteOptions.diskCacheGcIdleDelay = java.time.Duration.ofMinutes(2)
+        remoteOptions.diskCacheGcMaxSize = 1234567890L
+        remoteOptions.diskCacheGcMaxAge = java.time.Duration.ofDays(7)
+
+        val env: CommandEnvironment = beforeCommand()
+
+        assertThat(env.getIdleTasks()).hasSize(1)
+        assertThat(env.getIdleTasks().get(0)).isInstanceOf(DiskCacheGarbageCollectorIdleTask::class.java)
+        val idleTask: DiskCacheGarbageCollectorIdleTask = env.getIdleTasks().get(0) as DiskCacheGarbageCollectorIdleTask
+        Truth.assertThat<java.time.Duration?>(idleTask.delay()).isEqualTo(java.time.Duration.ofMinutes(2))
+        assertThat(idleTask.garbageCollector.root.getPathString())
+            .isEqualTo(diskCacheDir.getPathString())
+        Truth.assertThat(idleTask.garbageCollector.policy)
+            .isEqualTo(
+                CollectionPolicy(
+                    java.util.Optional.of<Long?>(1234567890L),
+                    java.util.Optional.of<java.time.Duration?>(java.time.Duration.ofDays(7))
+                )
+            )
+    }
+
+    @com.google.errorprone.annotations.CanIgnoreReturnValue
+    @Throws(IOException::class, AbruptExitException::class)
+    private fun beforeCommand(): CommandEnvironment {
+        val env: CommandEnvironment = createTestCommandEnvironment(remoteModule, remoteOptions)
+        remoteModule.beforeCommand(env)
+        env.throwPendingException()
+        return env
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun diskCache_defaultLocation_resolvesToOutputUserRoot() {
+        remoteOptions.diskCache = PathFragment.EMPTY_FRAGMENT
+
+        val env: CommandEnvironment = beforeCommand()
+
+        // The disk cache should be resolved to <outputUserRoot>/cache/disk.
+        val outputUserRoot: Path = env.getDirectories().getServerDirectories().getOutputUserRoot()
+        val resolved: PathFragment = remoteOptions.getDiskCachePath(outputUserRoot)
+        assertThat(resolved).isNotNull()
+        assertThat(resolved.getPathString())
+            .isEqualTo(outputUserRoot.getRelative("cache/disk").getPathString())
+        assertThat(resolved.isAbsolute()).isTrue()
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun diskCache_defaultLocation_withGarbageCollection() {
+        remoteOptions.diskCache = PathFragment.EMPTY_FRAGMENT
+        remoteOptions.diskCacheGcIdleDelay = java.time.Duration.ofMinutes(2)
+        remoteOptions.diskCacheGcMaxSize = 1234567890L
+
+        val env: CommandEnvironment = beforeCommand()
+
+        val outputUserRoot: Path = env.getDirectories().getServerDirectories().getOutputUserRoot()
+        val expectedPath: Path = outputUserRoot.getRelative("cache/disk")
+        assertThat(env.getIdleTasks()).hasSize(1)
+        assertThat(env.getIdleTasks().get(0)).isInstanceOf(DiskCacheGarbageCollectorIdleTask::class.java)
+        val idleTask: DiskCacheGarbageCollectorIdleTask = env.getIdleTasks().get(0) as DiskCacheGarbageCollectorIdleTask
+        assertThat(idleTask.garbageCollector.root.getPathString())
+            .isEqualTo(expectedPath.getPathString())
+    }
+
+    @org.junit.Test
+    @Throws(java.lang.Exception::class)
+    fun diskCacheUnset_disablesDiskCache() {
+        remoteOptions.diskCache = null
+
+        val env: CommandEnvironment = beforeCommand()
+
+        assertThat(remoteOptions.diskCache).isNull()
+        assertThat(env.getIdleTasks()).isEmpty()
+    }
+
+    private fun assertCircuitBreakerInstance() {
+        val actionContextProvider: RemoteActionContextProvider = remoteModule.getActionContextProvider()
+        assertThat(actionContextProvider).isNotNull()
+
+        val circuitBreaker: CircuitBreaker?
+        if (actionContextProvider.getCombinedCache() != null) {
+            circuitBreaker =
+                (actionContextProvider.getCombinedCache().remoteCacheClient as GrpcCacheClient)
+                    .getRetrier()
+                    .getCircuitBreaker()
+        } else if (actionContextProvider.getRemoteExecutionClient() != null) {
+            circuitBreaker =
+                (actionContextProvider.getRemoteExecutionClient() as GrpcRemoteExecutor)
+                    .getRetrier()
+                    .getCircuitBreaker()
+        } else {
+            // no remote cache or execution configured, circuitBreaker is null
+            return
+        }
+
+        if (remoteOptions.circuitBreakerStrategy == RemoteOptions.CircuitBreakerStrategy.FAILURE) {
+            assertThat(circuitBreaker).isInstanceOf(FailureCircuitBreaker::class.java)
+        }
+        if (remoteOptions.circuitBreakerStrategy == null) {
+            assertThat(circuitBreaker).isEqualTo(Retrier.ALLOW_ALL_CALLS)
+        }
+    }
+
+    companion object {
+        private const val EXECUTION_SERVER_NAME = "execution-server"
+        private const val CACHE_SERVER_NAME = "cache-server"
+        private const val OUTPUT_SERVICE_SERVER_NAME = "output-service"
+        private val CACHE_ONLY_CAPS: ServerCapabilities = ServerCapabilities.newBuilder()
+            .setLowApiVersion(ApiVersion.low.toSemVer())
+            .setHighApiVersion(ApiVersion.high.toSemVer())
+            .setCacheCapabilities(
+                CacheCapabilities.newBuilder()
+                    .addDigestFunctions(Value.SHA256)
+                    .setActionCacheUpdateCapabilities(
+                        ActionCacheUpdateCapabilities.newBuilder().setUpdateEnabled(true).build()
+                    )
+                    .setSymlinkAbsolutePathStrategy(SymlinkAbsolutePathStrategy.Value.ALLOWED)
+                    .build()
+            )
+            .build()
+
+        private val EXEC_AND_CACHE_CAPS: ServerCapabilities = ServerCapabilities.newBuilder()
+            .setLowApiVersion(ApiVersion.low.toSemVer())
+            .setHighApiVersion(ApiVersion.high.toSemVer())
+            .setExecutionCapabilities(
+                ExecutionCapabilities.newBuilder()
+                    .setExecEnabled(true)
+                    .setDigestFunction(Value.SHA256)
+                    .build()
+            )
+            .setCacheCapabilities(
+                CacheCapabilities.newBuilder().addDigestFunctions(Value.SHA256).build()
+            )
+            .build()
+
+        private val EXEC_ONLY_CAPS: ServerCapabilities? = ServerCapabilities.newBuilder()
+            .setLowApiVersion(ApiVersion.low.toSemVer())
+            .setHighApiVersion(ApiVersion.high.toSemVer())
+            .setExecutionCapabilities(
+                ExecutionCapabilities.newBuilder()
+                    .setExecEnabled(true)
+                    .setDigestFunction(Value.SHA256)
+                    .build()
+            )
+            .build()
+
+        @Throws(IOException::class, AbruptExitException::class)
+        private fun createTestCommandEnvironment(
+            remoteModule: RemoteModule?, remoteOptions: RemoteOptions?
+        ): CommandEnvironment {
+            val coreOptions: CoreOptions? =
+                com.google.devtools.common.options.Options.getDefaults<O?>(CoreOptions::class.java)
+            val commonCommandOptions: CommonCommandOptions? =
+                com.google.devtools.common.options.Options.getDefaults<O?>(CommonCommandOptions::class.java)
+            val packageOptions: PackageOptions? =
+                com.google.devtools.common.options.Options.getDefaults<O?>(PackageOptions::class.java)
+            val clientOptions: ClientOptions? =
+                com.google.devtools.common.options.Options.getDefaults<O?>(ClientOptions::class.java)
+            val executionOptions: ExecutionOptions? =
+                com.google.devtools.common.options.Options.getDefaults<O?>(ExecutionOptions::class.java)
+            val testOptions: TestOptions? =
+                com.google.devtools.common.options.Options.getDefaults<O?>(TestOptions::class.java)
+
+            val authAndTLSOptions: AuthAndTLSOptions? =
+                com.google.devtools.common.options.Options.getDefaults<O?>(AuthAndTLSOptions::class.java)
+
+            val options: OptionsParsingResult = Mockito.mock<OptionsParsingResult>(OptionsParsingResult::class.java)
+            Mockito.`when`<T?>(options.getOptions<O?>(CoreOptions::class.java)).thenReturn(coreOptions)
+            Mockito.`when`<T?>(options.getOptions<O?>(CommonCommandOptions::class.java))
+                .thenReturn(commonCommandOptions)
+            Mockito.`when`<T?>(options.getOptions<O?>(PackageOptions::class.java)).thenReturn(packageOptions)
+            Mockito.`when`<T?>(options.getOptions<O?>(ClientOptions::class.java)).thenReturn(clientOptions)
+            Mockito.`when`<T?>(options.getOptions<O?>(RemoteOptions::class.java)).thenReturn(remoteOptions)
+            Mockito.`when`<T?>(options.getOptions<O?>(AuthAndTLSOptions::class.java)).thenReturn(authAndTLSOptions)
+            Mockito.`when`<T?>(options.getOptions<O?>(ExecutionOptions::class.java)).thenReturn(executionOptions)
+            Mockito.`when`<T?>(options.getOptions<O?>(TestOptions::class.java)).thenReturn(testOptions)
+
+            val productName = "bazel"
+            val scratch: Scratch = Scratch(InMemoryFileSystem(DigestHashFunction.SHA256))
+            val serverDirectories: ServerDirectories =
+                ServerDirectories(
+                    scratch.dir("install"), scratch.dir("output"), scratch.dir("user_root")
+                )
+
+            val runtime: BlazeRuntime =
+                Builder()
+                    .setProductName(productName)
+                    .setFileSystem(scratch.getFileSystem())
+                    .setServerDirectories(serverDirectories)
+                    .setStartupOptionsProvider(
+                        OptionsParser.builder().optionsClasses(BlazeServerStartupOptions::class.java).build()
+                    )
+                    .addBlazeModule(CredentialModule())
+                    .addBlazeModule(remoteModule)
+                    .addBlazeModule(BlockWaitingModule())
+                    .addBlazeModule(
+                        object : BlazeModule() {
+                            public override fun initializeRuleClasses(builder: ConfiguredRuleClassProvider.Builder) {
+                                builder.setRunfilesPrefix(TestConstants.WORKSPACE_NAME)
+                            }
+                        })
+                    .build()
+
+            val directories: BlazeDirectories =
+                BlazeDirectories(
+                    serverDirectories,
+                    scratch.dir("/workspace"),
+                    productName
+                )
+            val workspace: BlazeWorkspace = runtime.initWorkspace(directories, BinTools.empty(directories))
+            val command: Command? = BuildCommand::class.java.getAnnotation<A?>(Command::class.java)
+            return workspace.initCommand(
+                command,
+                options,
+                InvocationPolicy.getDefaultInstance(),  /* warnings= */
+                java.util.ArrayList<E?>(),  /* waitTimeInMs= */
+                0,  /* commandStartTime= */
+                0,  /* idleTaskResultsFromPreviousIdlePeriod= */
+                com.google.common.collect.ImmutableList.of<E?>(),  /* shutdownReasonConsumer= */
+                { s -> },  /* commandExtensions= */
+                com.google.common.collect.ImmutableList.of<E?>(),
+                NO_OP_COMMAND_EXTENSION_REPORTER,  /* attemptNumber= */
+                1,  /* buildRequestIdOverride= */
+                null,
+                ConfigFlagDefinitions.NONE
+            )
+        }
+
+        private fun createFakeServer(serverName: String, vararg services: BindableService): io.grpc.Server {
+            val executionServerRegistry: MutableHandlerRegistry = MutableHandlerRegistry()
+            for (service in services) {
+                executionServerRegistry.addService(ServerInterceptors.intercept(service))
+            }
+            return InProcessServerBuilder.forName(serverName)
+                .fallbackHandlerRegistry(executionServerRegistry)
+                .directExecutor()
+                .build()
+        }
+    }
 }

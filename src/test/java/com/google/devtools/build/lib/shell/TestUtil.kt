@@ -11,18 +11,15 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-package com.google.devtools.build.lib.shell;
+package com.google.devtools.build.lib.shell
 
-import static com.google.common.truth.Truth.assertThat;
+import com.google.common.truth.Truth
 
 /**
  * Some tiny conveniences for writing tests.
  */
-class TestUtil {
-
-  private TestUtil() {}
-
-  public static void assertArrayEquals(byte[] expected, byte[] actual) {
-    assertThat(actual).isEqualTo(expected);
-  }
+internal object TestUtil {
+    fun assertArrayEquals(expected: ByteArray?, actual: ByteArray?) {
+        Truth.assertThat(actual).isEqualTo(expected)
+    }
 }
